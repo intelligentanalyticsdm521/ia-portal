@@ -1,0 +1,58 @@
+trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  node_version: '20.x'                # Node on the build agent
+  webAppName: 'app-portal-iadm-prod'  # Azure App Service name
+  azureSubscription: 'IADM-Prod-ARM'  # DevOps service connection name
+
+stages:
+- stage: Build
+  displayName: 'Build IADM Portal'
+  jobs:
+  - job: Build
+    steps:
+    - task: NodeTool@0
+      displayName: 'Use Node.js $(node_version)'
+      inputs:
+        versionSpec: '$(node_version)'
+        checkLatest: true
+
+    - script: |
+        npm install
+        npm run build
+      displayName: 'Install dependencies and build'
+
+    - task: ArchiveFiles@2
+      displayName: 'Archive build output + server'
+      inputs:
+        # Zip the entire repo so server.mjs, package.json and dist are included
+        rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/drop.zip'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish artifact'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/drop.zip'
+        ArtifactName: 'drop'
+
+- stage: Deploy
+  displayName: 'Deploy to App Service'
+  dependsOn: Build
+  jobs:
+  - job: Deploy
+    steps:
+    - download: current
+      artifact: drop
+
+    - task: AzureWebApp@1
+      displayName: 'Deploy to $(webAppName)'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        appName: '$(webAppName)'
+        package: '$(Pipeline.Workspace)/drop/drop.zip'
