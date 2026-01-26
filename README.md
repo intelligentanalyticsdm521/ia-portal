@@ -1,4 +1,4 @@
-# IADM Portal v1 (React + Vite + TypeScript)
+# IADM Portal v1 (React + Vite + TypeScript) 
 
 This repository is the production-grade SPA for **iadm-portal v1** and is designed for deployment to **Azure Static Web Apps**.
 
