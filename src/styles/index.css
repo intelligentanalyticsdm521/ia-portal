@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+}
+
+@layer base {
+  :root {
+    /* Brand palette (requested) */
+    --iadm-orange: 239 108 51; /* #ef6c33 */
+    --iadm-dark-blue: 12 74 96; /* #0c4a60 */
+    --iadm-light-blue: 171 223 241; /* #abdff1 */
+    --iadm-light-gray: 225 221 219; /* #e1dddb */
+    --iadm-bg: 255 255 255; /* #ffffff */
+  }
+
+  body {
+    @apply bg-iadm-background text-gray-900 antialiased;
+  }
+
+  /* Basic, consistent focus behavior */
+  :focus-visible {
+    @apply outline-none ring-2 ring-iadm-lightBlue ring-offset-2 ring-offset-white;
+  }
+}
+
+@layer components {
+  /* App shell */
+  .iadm-shell {
+    @apply min-h-screen bg-iadm-background;
+  }
+
+  /* Header bar: dark shell with subtle depth */
+  .iadm-header {
+    background: linear-gradient(180deg, rgba(12, 74, 96, 0.98) 0%, rgba(12, 74, 96, 0.92) 100%);
+    @apply border-b border-iadm-lightGray/30;
+  }
+
+  .iadm-header-inner {
+    @apply flex items-center justify-between gap-4 px-6 py-3;
+  }
+
+  .iadm-header-tenant {
+    @apply text-sm text-white/90;
+  }
+
+  /* Sidebar: dark shell */
+  .iadm-sidebar {
+    background: linear-gradient(180deg, rgba(12, 74, 96, 0.98) 0%, rgba(8, 55, 71, 0.98) 100%);
+    @apply h-full border-r border-iadm-lightGray/25;
+  }
+
+  .iadm-sidebar-inner {
+    @apply px-4 py-4;
+  }
+
+  .iadm-nav-title {
+    @apply mb-3 px-2 text-xs font-semibold uppercase tracking-wide text-white/60;
+  }
+
+  .iadm-nav-item {
+    @apply relative flex items-start justify-between gap-2 rounded-md px-2 py-2 text-sm text-white/90 hover:bg-white/10;
+  }
+
+  .iadm-nav-item-active {
+    @apply bg-white/10 font-medium;
+  }
+
+  .iadm-nav-item-active::before {
+    content: '';
+    @apply absolute left-0 top-1/2 h-6 -translate-y-1/2 rounded-r-sm;
+    width: 3px;
+    background-color: rgb(var(--iadm-orange));
+  }
+
+  .iadm-badge {
+    @apply shrink-0 rounded-full px-2 py-0.5 text-xs;
+  }
+
+  .iadm-badge-enabled {
+    @apply bg-white/15 text-white;
+  }
+
+  .iadm-badge-soon {
+    @apply bg-white/10 text-white/80;
+  }
+
+  /* Content area */
+  .iadm-content {
+    @apply px-8 py-8;
+  }
+
+  /* Cards / panels */
+  .iadm-card {
+    @apply rounded-lg border border-iadm-lightGray/80 bg-white shadow-panel;
+  }
+
+  .iadm-card-header {
+    @apply flex items-center justify-between gap-4 border-b border-iadm-lightGray/70 px-6 py-4;
+  }
+
+  .iadm-card-body {
+    @apply px-6 py-5;
+  }
+
+  /* Buttons */
+  .iadm-btn {
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition;
+  }
+
+  .iadm-btn-primary {
+    @apply iadm-btn bg-iadm-orange text-white hover:opacity-95;
+  }
+
+  .iadm-btn-secondary {
+    @apply iadm-btn border border-iadm-lightGray bg-white text-gray-900 hover:bg-gray-50;
+  }
+
+  .iadm-btn-ghost {
+    @apply iadm-btn text-white/90 hover:bg-white/10;
+  }
+
+  /* Inputs */
+  .iadm-input {
+    @apply w-full rounded-md border border-iadm-lightGray bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400;
+  }
+
+  .iadm-input:focus {
+    @apply border-iadm-lightBlue ring-2 ring-iadm-lightBlue/50;
+  }
+}
