@@ -18,7 +18,7 @@ export const LAYER_LABELS: Record<PortalService['section'], string> = {
   ARION: 'ARION — Web & Digital Presence',
   STELLA: 'STELLA — Reporting & BI',
   OLIVER: 'OLIVER — Operations & Portals',
-  LUMEN: 'LUMEN — CRM (Email)',
+  LUMEN: 'SPARK — Growth Platform',
   FORGE: 'FORGE — Software & Integrations',
   ARGUS: 'ARGUS — Orchestration & Automation'
 };
@@ -111,30 +111,51 @@ export const SERVICE_CATALOG: PortalService[] = [
     description: 'Job states and workflow surfaces (placeholder).'
   },
 
-  // LUMEN
+  // LUMEN / SPARK — Growth Platform
+  {
+    key: 'lumen_overview',
+    displayName: 'Overview — Standard',
+    section: 'LUMEN',
+    defaultStatus: 'coming_soon',
+    route: '/app/services/lumen_overview',
+    description:
+      'High-level growth summary for SPARK (Sales Pipeline Acceleration & Relationship Kit). In future versions this will show cards for email & SMS usage, upcoming sends, and basic health indicators.'
+  },
   {
     key: 'lumen_contacts',
-    displayName: 'Contacts',
+    displayName: 'CRM — Standard',
     section: 'LUMEN',
     defaultStatus: 'coming_soon',
     route: '/app/services/lumen_contacts',
-    description: 'Contacts, consent, and segments (placeholder).'
+    description:
+      'Read-only CRM view: contacts, tags, segments, and consent status. Editing and advanced workflows live inside the SPARK app.'
   },
   {
     key: 'lumen_campaigns',
-    displayName: 'Campaigns',
+    displayName: 'Campaigns & Messaging — Standard',
     section: 'LUMEN',
     defaultStatus: 'coming_soon',
     route: '/app/services/lumen_campaigns',
-    description: 'Campaign creation and sending (placeholder).'
+    description:
+      'Read-only summary of scheduled email/SMS campaigns and simple performance metrics. Campaign creation, templates, and testing live inside SPARK.'
   },
   {
-    key: 'lumen_deliverability',
-    displayName: 'Deliverability',
+    key: 'lumen_leads',
+    displayName: 'Leads — Preview',
     section: 'LUMEN',
     defaultStatus: 'coming_soon',
-    route: '/app/services/lumen_deliverability',
-    description: 'Delivery, bounces, and unsubscribes (placeholder).'
+    route: '/app/services/lumen_leads',
+    description:
+      'Placeholder surface for future SPARK lead generation and prioritization (high-intent vs nurture). Not implemented in v1.'
+  },
+  {
+    key: 'lumen_reporting',
+    displayName: 'Reporting — Preview',
+    section: 'LUMEN',
+    defaultStatus: 'coming_soon',
+    route: '/app/services/lumen_reporting',
+    description:
+      'Placeholder surface for deeper SPARK + STELLA reporting (funnels, capacity, attribution). Not implemented in v1.'
   },
 
   // FORGE
