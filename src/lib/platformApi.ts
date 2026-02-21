@@ -106,8 +106,7 @@ export async function verifyAuth(params: {
     headers: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json',
-      'x-tenant-key': params.tenantKey,
-      'x-portal-context': params.portalContext
+      'x-tenant-key': params.tenantKey
     }
   });
 
@@ -122,7 +121,18 @@ export async function verifyAuth(params: {
     throw new PlatformApiError(msg, res.status, body);
   }
 
-  return body as VerifyResponse;
+  // IMPORTANT (LOCKED): Portal context must NOT influence platform-api login.
+  // The portal still tracks portalContext for UI/UX, but platform-api should not
+  // gate /auth/verify based on it.
+  //
+  // To preserve the existing VerifyResponse contract, we fill portalContext with
+  // the portal's current UI context if the API does not provide it.
+  const v = (body || {}) as any;
+  if (v.portalContext !== 'customer' && v.portalContext !== 'employee') {
+    v.portalContext = params.portalContext;
+  }
+  if (!Array.isArray(v.roles)) v.roles = [];
+  return v as VerifyResponse;
 }
 
 /**

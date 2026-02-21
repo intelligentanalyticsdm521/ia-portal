@@ -31,7 +31,8 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         const tokenResult = await getToken();
         const accessToken = tokenResult.accessToken;
 
-        // platform-api requires Authorization Bearer token + x-tenant-key + x-portal-context
+        // platform-api requires Authorization Bearer token + x-tenant-key.
+        // Portal context is UI-only and must NOT influence /auth/verify.
         const v = await verifyAuth({
           baseUrl: import.meta.env.VITE_PLATFORM_API_BASE_URL,
           bearerToken: accessToken,
