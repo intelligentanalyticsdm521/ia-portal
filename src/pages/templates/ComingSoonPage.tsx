@@ -64,24 +64,24 @@ const SPARK_TIERS: SparkTier[] = [
     label: '150,000 emails / month',
     emailsPerMonth: 150000,
     contactsIncluded: 100000,
-    smsIncluded: 2000,
-    priceMonthly: 209,
+    smsIncluded: 1500,
+    priceMonthly: 199,
   },
   {
     id: 'tier-250k',
     label: '250,000 emails / month',
     emailsPerMonth: 250000,
     contactsIncluded: 200000,
-    smsIncluded: 3000,
-    priceMonthly: 279,
+    smsIncluded: 2500,
+    priceMonthly: 299,
   },
   {
     id: 'tier-350k',
     label: '350,000 emails / month',
     emailsPerMonth: 350000,
     contactsIncluded: 350000,
-    smsIncluded: 4000,
-    priceMonthly: 349,
+    smsIncluded: 3500,
+    priceMonthly: 379,
   },
   {
     id: 'tier-500k',
@@ -89,13 +89,13 @@ const SPARK_TIERS: SparkTier[] = [
     emailsPerMonth: 500000,
     contactsIncluded: 500000,
     smsIncluded: 5000,
-    priceMonthly: 429,
+    priceMonthly: 449,
   },
 ];
 
 export function ComingSoonPage({ service }: { service: PortalService }) {
   // Special-case SPARK (internal IL key: LUMEN)
-  if (service.key === 'LUMEN') {
+  if (service.section === 'LUMEN') {
     return <SparkPreview />;
   }
 
@@ -175,8 +175,8 @@ function SparkPreview() {
           <div className="space-y-4">
             <div className="flex items-center justify-between text-xs text-gray-600">
               <span>5k emails</span>
-              <span>50k emails</span>
-              <span>250k+</span>
+              <span>100k emails</span>
+              <span>500k emails</span>
             </div>
             <input
               type="range"
@@ -200,8 +200,10 @@ function SparkPreview() {
               <ul className="list-disc pl-5 space-y-1">
                 <li>Full CRM contact database with tags &amp; basic segmentation</li>
                 <li>Email campaigns, scheduling, and simple templates</li>
-                <li>Lightweight SMS sending for confirmations &amp; small campaigns</li>
+                <li>Lightweight SMS sending for confirmations &amp; small campaigns (bundle scales by tier)</li>
                 <li>Core performance metrics for campaigns and contacts</li>
+                <li>No overage billing (upgrade tier only)</li>
+                <li>Contacts hard cap at 500,000 (500k+ is custom)</li>
               </ul>
             </div>
             <div className="space-y-2 text-sm text-gray-700">
@@ -211,6 +213,13 @@ function SparkPreview() {
                 <li>&quot;Open SPARK&quot; and &quot;Manage subscription&quot; CTAs when enabled</li>
                 <li>Read-only overview surfaces across Overview, CRM, Campaigns, Leads, and Reporting</li>
               </ul>
+            </div>
+          </div>
+
+          <div className="rounded-md bg-gray-50 px-4 py-3 text-sm text-gray-700">
+            <div className="font-semibold">Leads add-on</div>
+            <div className="mt-1 text-gray-600">
+              Leads are a separate add-on and are not bundled into Standard volume tiers.
             </div>
           </div>
         </div>
