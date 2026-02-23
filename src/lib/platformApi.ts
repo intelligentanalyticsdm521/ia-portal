@@ -1,13 +1,49 @@
-export type PortalContext = 'customer' | 'employee';
-
 /**
- * Existing /auth/verify response contract (DO NOT CHANGE)
+ * platform-api client
+ *
+ * ✅ Auth v1.0 Contract:
+ * - POST /session/verify
+ *   - IADM Portal: returns user + tenant memberships (no x-tenant-key)
+ * - POST /session/select-tenant
+ *   - IADM Portal: selects active tenant and returns services/features/roles
+ *
+ * IMPORTANT:
+ * - Portal surface is derived from the token's client app id (azp/appid) server-side.
+ * - We do NOT send x-portal-context.
  */
-export interface VerifyResponse {
+
+export interface SessionVerifyResponse {
+  surface: 'iadm_portal' | 'employee_portal' | 'customer_portal';
+  user: {
+    userId: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+    displayName: string | null;
+  };
+  tenants?: Array<{
+    tenantId: string;
+    tenantName: string;
+    tenantFullName: string | null;
+    status?: string | null;
+    subscriptionTier?: string | null;
+  }>;
+
+  // Client portal verify returns active tenant context; kept optional so IADM Portal can ignore.
+  tenant?: {
+    tenantId: string;
+    tenantName: string;
+    tenantFullName: string | null;
+  };
+  roles?: string[];
+}
+
+export interface SelectTenantResponse {
+  surface: 'iadm_portal';
   tenant: {
     tenantId: string;
     tenantName: string;
-    tenantFullName: string;
+    tenantFullName: string | null;
   };
   user: {
     userId: string;
@@ -17,14 +53,12 @@ export interface VerifyResponse {
     lastName: string | null;
     displayName: string | null;
   };
-  portalContext: PortalContext;
   roles: string[];
+  services: Array<{ serviceId: string; serviceKey: string; name: string }>;
+  serviceRoles: Array<{ serviceId: string; serviceKey: string; roleKey: string; roleName: string }>;
+  features: Array<{ featureId: string; featureKey: string; name: string; serviceId: string; serviceKey: string }>;
 }
 
-/**
- * New /me/profile contract (v1 editable profile)
- * Note: This is independent of /auth/verify and does not alter it.
- */
 export interface ProfileResponse {
   user: {
     firstName: string | null;
@@ -90,23 +124,16 @@ function safeJsonParse(text: string): unknown {
   }
 }
 
-/**
- * ✅ RESTORED: verifyAuth (required by AppGate)
- * This must remain exported to avoid breaking portal boot.
- */
-export async function verifyAuth(params: {
+export async function sessionVerify(params: {
   baseUrl: string;
   bearerToken: string;
-  tenantKey: string;
-  portalContext: PortalContext;
-}): Promise<VerifyResponse> {
-  const url = `${normalizeBaseUrl(params.baseUrl)}/auth/verify`;
+}): Promise<SessionVerifyResponse> {
+  const url = `${normalizeBaseUrl(params.baseUrl)}/session/verify`;
   const res = await fetch(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${params.bearerToken}`,
-      'Content-Type': 'application/json',
-      'x-tenant-key': params.tenantKey
+      'Content-Type': 'application/json'
     }
   });
 
@@ -121,27 +148,45 @@ export async function verifyAuth(params: {
     throw new PlatformApiError(msg, res.status, body);
   }
 
-  // IMPORTANT (LOCKED): Portal context must NOT influence platform-api login.
-  // The portal still tracks portalContext for UI/UX, but platform-api should not
-  // gate /auth/verify based on it.
-  //
-  // To preserve the existing VerifyResponse contract, we fill portalContext with
-  // the portal's current UI context if the API does not provide it.
-  const v = (body || {}) as any;
-  if (v.portalContext !== 'customer' && v.portalContext !== 'employee') {
-    v.portalContext = params.portalContext;
+  return body as SessionVerifyResponse;
+}
+
+export async function selectTenant(params: {
+  baseUrl: string;
+  bearerToken: string;
+  tenantId: string;
+}): Promise<SelectTenantResponse> {
+  const url = `${normalizeBaseUrl(params.baseUrl)}/session/select-tenant`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${params.bearerToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ tenantId: params.tenantId })
+  });
+
+  const text = await res.text();
+  const body = text ? safeJsonParse(text) : null;
+
+  if (!res.ok) {
+    const msg =
+      typeof body === 'object' && body && 'error' in body
+        ? String((body as any).error)
+        : `Request failed (${res.status})`;
+    throw new PlatformApiError(msg, res.status, body);
   }
-  if (!Array.isArray(v.roles)) v.roles = [];
-  return v as VerifyResponse;
+
+  return body as SelectTenantResponse;
 }
 
 /**
- * Profile endpoints (new)
+ * Profile endpoints (tenant-scoped)
  */
 export async function getProfile(params: {
   baseUrl: string;
   bearerToken: string;
-  tenantKey: string;
+  tenantId: string;
 }): Promise<ProfileResponse> {
   const url = `${normalizeBaseUrl(params.baseUrl)}/me/profile`;
   const res = await fetch(url, {
@@ -149,7 +194,7 @@ export async function getProfile(params: {
     headers: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json',
-      'x-tenant-key': params.tenantKey
+      'x-tenant-key': params.tenantId
     }
   });
 
@@ -170,7 +215,7 @@ export async function getProfile(params: {
 export async function updateProfile(params: {
   baseUrl: string;
   bearerToken: string;
-  tenantKey: string;
+  tenantId: string;
   payload: UpdateProfileRequest;
 }): Promise<ProfileResponse> {
   const url = `${normalizeBaseUrl(params.baseUrl)}/me/profile`;
@@ -179,7 +224,7 @@ export async function updateProfile(params: {
     headers: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json',
-      'x-tenant-key': params.tenantKey
+      'x-tenant-key': params.tenantId
     },
     body: JSON.stringify(params.payload)
   });

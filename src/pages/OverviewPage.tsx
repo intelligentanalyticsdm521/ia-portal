@@ -3,7 +3,7 @@ import { useAppState } from '../app/AppState';
 import { SERVICE_CATALOG, resolveServiceStatus } from '../config/serviceCatalog';
 
 export function OverviewPage() {
-  const { session, enabledServices } = useAppState();
+  const { active, enabledServices } = useAppState();
 
   const quickLinks = SERVICE_CATALOG.filter((s) => s.key !== 'portal_overview')
     .map((s) => ({ svc: s, status: resolveServiceStatus(s, enabledServices) }))
@@ -15,7 +15,7 @@ export function OverviewPage() {
         <div className="iadm-card-body">
         <h1 className="text-2xl font-semibold">Overview</h1>
         <p className="mt-2 text-sm text-gray-600">
-          Tenant: <span className="font-medium">{session?.tenant?.tenantFullName}</span>
+          Tenant: <span className="font-medium">{active?.tenant?.tenantFullName}</span>
         </p>
         </div>
       </section>

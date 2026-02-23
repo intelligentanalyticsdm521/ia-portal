@@ -81,7 +81,7 @@ function formatApiError(err: unknown): string {
 }
 
 export function ProfilePage() {
-  const { tenantKey, session } = useAppState();
+  const { activeTenantId, active } = useAppState();
   const { getToken } = useAccessToken();
 
   const baseUrl = import.meta.env.VITE_PLATFORM_API_BASE_URL;
@@ -95,8 +95,8 @@ export function ProfilePage() {
   const [saved, setSaved] = useState(false);
 
   const welcomeName = useMemo(() => {
-    return session?.tenant?.tenantFullName || session?.tenant?.tenantName || 'Welcome';
-  }, [session?.tenant?.tenantFullName, session?.tenant?.tenantName]);
+    return active?.tenant?.tenantFullName || active?.tenant?.tenantName || 'Welcome';
+  }, [active?.tenant?.tenantFullName, active?.tenant?.tenantName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,7 +110,7 @@ export function ProfilePage() {
         const p = await getProfile({
           baseUrl,
           bearerToken: token.accessToken,
-          tenantKey
+          tenantId: activeTenantId!
         });
 
         if (cancelled) return;
@@ -128,7 +128,7 @@ export function ProfilePage() {
     return () => {
       cancelled = true;
     };
-  }, [baseUrl, tenantKey, getToken]);
+  }, [baseUrl, activeTenantId, getToken]);
 
   return (
     <div className="space-y-6">
@@ -178,7 +178,7 @@ export function ProfilePage() {
                 const next = await updateProfile({
                   baseUrl,
                   bearerToken: token.accessToken,
-                  tenantKey,
+          tenantId: activeTenantId!,
                   payload: buildUpdatePayload(form)
                 });
 

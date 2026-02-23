@@ -4,11 +4,11 @@ import { useAppState } from '../app/AppState';
 
 export function SettingsViewPage() {
   const navigate = useNavigate();
-  const { session } = useAppState();
+  const { active } = useAppState();
 
   const welcomeName = useMemo(() => {
-    return session?.tenant?.tenantFullName || session?.tenant?.tenantName || 'Welcome';
-  }, [session?.tenant?.tenantFullName, session?.tenant?.tenantName]);
+    return active?.tenant?.tenantFullName || active?.tenant?.tenantName || 'Welcome';
+  }, [active?.tenant?.tenantFullName, active?.tenant?.tenantName]);
 
   return (
     <div className="space-y-6">

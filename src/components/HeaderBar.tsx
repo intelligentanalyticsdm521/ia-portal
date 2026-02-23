@@ -4,11 +4,11 @@ import { useAccessToken } from '../auth/useAccessToken';
 import { AccountMenu } from './AccountMenu';
 
 export function HeaderBar() {
-  const { session } = useAppState();
+  const { active } = useAppState();
   const { activeAccount, logout } = useAccessToken();
 
-  const tenantLabel = session?.tenant?.tenantFullName || session?.tenant?.tenantName || 'Your account';
-  const rawUserLabel = session?.user?.displayName || activeAccount?.name || activeAccount?.username || 'Signed in';
+  const tenantLabel = active?.tenant?.tenantFullName || active?.tenant?.tenantName || 'Your account';
+  const rawUserLabel = active?.user?.displayName || activeAccount?.name || activeAccount?.username || 'Signed in';
   const userLabel = rawUserLabel === 'unknown' ? 'Signed in' : rawUserLabel;
 
   return (

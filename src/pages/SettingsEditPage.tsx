@@ -12,11 +12,11 @@ type ConfirmState = {
 
 export function SettingsEditPage() {
   const navigate = useNavigate();
-  const { session } = useAppState();
+  const { active } = useAppState();
 
   const welcomeName = useMemo(() => {
-    return session?.tenant?.tenantFullName || session?.tenant?.tenantName || 'Welcome';
-  }, [session?.tenant?.tenantFullName, session?.tenant?.tenantName]);
+    return active?.tenant?.tenantFullName || active?.tenant?.tenantName || 'Welcome';
+  }, [active?.tenant?.tenantFullName, active?.tenant?.tenantName]);
 
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 

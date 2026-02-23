@@ -2,11 +2,11 @@ import { useMemo } from 'react';
 import { useAppState } from '../app/AppState';
 
 export function SettingsPage() {
-  const { session } = useAppState();
+  const { active } = useAppState();
 
   const tenantLabel = useMemo(() => {
-    return session?.tenant?.tenantFullName || session?.tenant?.tenantName || 'Tenant';
-  }, [session?.tenant?.tenantFullName, session?.tenant?.tenantName]);
+    return active?.tenant?.tenantFullName || active?.tenant?.tenantName || 'Tenant';
+  }, [active?.tenant?.tenantFullName, active?.tenant?.tenantName]);
 
   return (
     <div className="space-y-6">

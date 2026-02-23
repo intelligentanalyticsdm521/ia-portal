@@ -21,7 +21,7 @@ function formatApiError(err: unknown): string {
 
 export function ProfileViewPage() {
   const navigate = useNavigate();
-  const { tenantKey, session } = useAppState();
+  const { activeTenantId, active } = useAppState();
   const { getToken } = useAccessToken();
   const baseUrl = import.meta.env.VITE_PLATFORM_API_BASE_URL;
 
@@ -30,8 +30,8 @@ export function ProfileViewPage() {
   const [error, setError] = useState<string | null>(null);
 
   const welcomeName = useMemo(() => {
-    return session?.tenant?.tenantFullName || session?.tenant?.tenantName || 'Welcome';
-  }, [session?.tenant?.tenantFullName, session?.tenant?.tenantName]);
+    return active?.tenant?.tenantFullName || active?.tenant?.tenantName || 'Welcome';
+  }, [active?.tenant?.tenantFullName, active?.tenant?.tenantName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,7 +45,7 @@ export function ProfileViewPage() {
         const p = await getProfile({
           baseUrl,
           bearerToken: token.accessToken,
-          tenantKey
+          tenantId: activeTenantId!
         });
 
         if (cancelled) return;
@@ -62,7 +62,7 @@ export function ProfileViewPage() {
     return () => {
       cancelled = true;
     };
-  }, [baseUrl, tenantKey, getToken]);
+  }, [baseUrl, activeTenantId, getToken]);
 
   const fullAddress = useMemo(() => {
     if (!profile) return 'Not set';
