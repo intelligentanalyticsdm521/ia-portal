@@ -13,6 +13,7 @@ export function AppGate({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const inFlightRef = useRef(false);
+  const runIdRef = useRef(0);
 
   const tenantOptions = useMemo(() => bootstrap?.tenants || [], [bootstrap]);
 
@@ -22,17 +23,16 @@ export function AppGate({ children }: { children: React.ReactNode }) {
   }, [isAuthenticated, activeAccount]);
 
   useEffect(() => {
-    let cancelled = false;
+    const runId = ++runIdRef.current;
 
     async function run() {
       if (!isAuthenticated) return;
       if (!activeAccount) return;
 
-      // If we already have an active tenant session, do NOT re-run bootstrap.
-      // Without this guard, any auth/account churn can cause a fetch loop that keeps the UI stuck on "Signing you in".
+      // If we already established an active session, do not re-bootstrap.
       if (active) return;
 
-      // Prevent overlapping bootstrap runs (can happen during token/account state churn).
+      // Prevent overlapping bootstraps (e.g., rapid auth/account churn).
       if (inFlightRef.current) return;
       inFlightRef.current = true;
 
@@ -48,7 +48,6 @@ export function AppGate({ children }: { children: React.ReactNode }) {
           bearerToken: accessToken
         });
 
-        if (cancelled) return;
         setBootstrap(v);
 
         if (v.surface !== 'iadm_portal') {
@@ -83,13 +82,10 @@ export function AppGate({ children }: { children: React.ReactNode }) {
           tenantId: tenantToSelect
         });
 
-        if (cancelled) return;
-
-        setActiveTenantId(tenantToSelect);
+        // IMPORTANT: set active first so any effect re-run short-circuits immediately
         setActive(selected);
+        setActiveTenantId(tenantToSelect);
       } catch (err) {
-        if (cancelled) return;
-
         if (err instanceof PlatformApiError) {
           if (err.status === 401) {
             setError('Authentication failed (401). Your token was rejected by platform-api.');
@@ -110,18 +106,18 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         setActive(null);
       } finally {
         inFlightRef.current = false;
-        if (!cancelled) setLoading(false);
+
+        // Only the newest run is allowed to clear loading. This prevents "stuck loading"
+        // when React re-runs effects and cleans up prior runs.
+        if (runId === runIdRef.current) setLoading(false);
       }
     }
 
     run();
-
-    return () => {
-      cancelled = true;
-    };
   }, [
     isAuthenticated,
     activeAccount,
+    active,
     getToken,
     activeTenantId,
     setBootstrap,
@@ -143,8 +139,8 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         tenantId
       });
 
-      setActiveTenantId(tenantId);
       setActive(selected);
+      setActiveTenantId(tenantId);
     } catch (err) {
       if (err instanceof PlatformApiError) {
         setError(`platform-api error (${err.status}).`);
