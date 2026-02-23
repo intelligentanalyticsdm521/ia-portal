@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useIsAuthenticated } from '@azure/msal-react';
 import { useAccessToken } from '../auth/useAccessToken';
 import { useAppState } from './AppState';
@@ -11,6 +11,8 @@ export function AppGate({ children }: { children: React.ReactNode }) {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const inFlightRef = useRef(false);
 
   const tenantOptions = useMemo(() => bootstrap?.tenants || [], [bootstrap]);
 
@@ -25,6 +27,14 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     async function run() {
       if (!isAuthenticated) return;
       if (!activeAccount) return;
+
+      // If we already have an active tenant session, do NOT re-run bootstrap.
+      // Without this guard, any auth/account churn can cause a fetch loop that keeps the UI stuck on "Signing you in".
+      if (active) return;
+
+      // Prevent overlapping bootstrap runs (can happen during token/account state churn).
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
 
       setLoading(true);
 
@@ -99,6 +109,7 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         setBootstrap(null);
         setActive(null);
       } finally {
+        inFlightRef.current = false;
         if (!cancelled) setLoading(false);
       }
     }
