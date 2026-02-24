@@ -112,6 +112,27 @@ export class PlatformApiError extends Error {
   }
 }
 
+const DEFAULT_API_TIMEOUT_MS = Number.parseInt(
+  import.meta.env.VITE_PLATFORM_API_TIMEOUT_MS || "15000",
+  10
+);
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = DEFAULT_API_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err: any) {
+    if (err?.name === "AbortError") {
+      throw new PlatformApiError(`Request timed out after ${timeoutMs}ms`, 408);
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, '');
 }
@@ -129,7 +150,7 @@ export async function sessionVerify(params: {
   bearerToken: string;
 }): Promise<SessionVerifyResponse> {
   const url = `${normalizeBaseUrl(params.baseUrl)}/session/verify`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${params.bearerToken}`,
@@ -157,7 +178,7 @@ export async function selectTenant(params: {
   tenantId: string;
 }): Promise<SelectTenantResponse> {
   const url = `${normalizeBaseUrl(params.baseUrl)}/session/select-tenant`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${params.bearerToken}`,
@@ -189,7 +210,7 @@ export async function getProfile(params: {
   tenantId: string;
 }): Promise<ProfileResponse> {
   const url = `${normalizeBaseUrl(params.baseUrl)}/me/profile`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${params.bearerToken}`,
@@ -219,7 +240,7 @@ export async function updateProfile(params: {
   payload: UpdateProfileRequest;
 }): Promise<ProfileResponse> {
   const url = `${normalizeBaseUrl(params.baseUrl)}/me/profile`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'PUT',
     headers: {
       Authorization: `Bearer ${params.bearerToken}`,

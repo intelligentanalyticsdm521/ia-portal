@@ -91,6 +91,8 @@ export function AppGate({ children }: { children: React.ReactNode }) {
             setError('Authentication failed (401). Your token was rejected by platform-api.');
           } else if (err.status === 403) {
             setError('Not authorized (403). Your account is authenticated but not allowed for the requested tenant.');
+          } else if (err.status === 408) {
+            setError('platform-api request timed out. This usually means the API is restarting, not running, or stuck connecting to SQL. Check /health and /__meta on platform-api.');
           } else if (err.status === 400) {
             setError('Bad request (400).');
           } else {
