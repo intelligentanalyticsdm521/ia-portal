@@ -26,37 +26,44 @@ export interface SessionVerifyResponse {
     tenantName: string;
     tenantFullName: string | null;
     status?: string | null;
-    subscriptionTier?: string | null;
+    subscriptions?: Array<{
+      serviceKey: string;
+      planKey: string;
+      isActive: boolean;
+    }>;
   }>;
-
-  // Client portal verify returns active tenant context; kept optional so IADM Portal can ignore.
-  tenant?: {
+  // Optional “active tenant” view if already selected
+  activeTenant?: {
     tenantId: string;
     tenantName: string;
     tenantFullName: string | null;
+    status?: string | null;
+    subscriptions?: Array<{
+      serviceKey: string;
+      planKey: string;
+      isActive: boolean;
+    }>;
   };
-  roles?: string[];
 }
 
 export interface SelectTenantResponse {
-  surface: 'iadm_portal';
   tenant: {
     tenantId: string;
     tenantName: string;
     tenantFullName: string | null;
+    status?: string | null;
   };
-  user: {
-    userId: string;
-    tenantUserId: string;
-    email: string;
-    firstName: string | null;
-    lastName: string | null;
-    displayName: string | null;
-  };
-  roles: string[];
-  services: Array<{ serviceId: string; serviceKey: string; name: string }>;
-  serviceRoles: Array<{ serviceId: string; serviceKey: string; roleKey: string; roleName: string }>;
-  features: Array<{ featureId: string; featureKey: string; name: string; serviceId: string; serviceKey: string }>;
+  services: Array<{
+    serviceKey: string;
+    displayName: string;
+    description?: string | null;
+    enabled: boolean;
+    planKey: string | null;
+  }>;
+  roles: Array<{
+    serviceKey: string;
+    roleKey: string;
+  }>;
 }
 
 export interface ProfileResponse {
@@ -124,24 +131,29 @@ function safeJsonParse(text: string): unknown {
   }
 }
 
-const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_PLATFORM_API_TIMEOUT_MS || 15000);
-
-async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs = 20000
+): Promise<Response> {
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(input, { ...init, signal: controller.signal });
-    return res;
-  } catch (err: any) {
-    if (err?.name === 'AbortError') {
-      throw new PlatformApiError('Request timed out', 408);
-    }
-    throw err;
-  } finally {
-    clearTimeout(t);
-  }
-}
+  const id = setTimeout(() => controller.abort(), timeoutMs);
 
+  const opts: RequestInit = { ...options, signal: controller.signal };
+
+  return fetch(url, opts)
+    .catch((err: any) => {
+      if (err && (err.name === 'AbortError' || (err as any).code === 'ABORT_ERR')) {
+        throw new PlatformApiError(
+          `Request to platform-api timed out after ${timeoutMs}ms`,
+          0,
+          null
+        );
+      }
+      throw err;
+    })
+    .finally(() => clearTimeout(id));
+}
 
 export async function sessionVerify(params: {
   baseUrl: string;
@@ -154,7 +166,7 @@ export async function sessionVerify(params: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json'
     }
-  }, DEFAULT_TIMEOUT_MS);
+  });
 
   const text = await res.text();
   const body = text ? safeJsonParse(text) : null;
@@ -183,7 +195,7 @@ export async function selectTenant(params: {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ tenantId: params.tenantId })
-  }, DEFAULT_TIMEOUT_MS);
+  });
 
   const text = await res.text();
   const body = text ? safeJsonParse(text) : null;
@@ -215,7 +227,7 @@ export async function getProfile(params: {
       'Content-Type': 'application/json',
       'x-tenant-key': params.tenantId
     }
-  }, DEFAULT_TIMEOUT_MS);
+  });
 
   const text = await res.text();
   const body = text ? safeJsonParse(text) : null;
@@ -246,7 +258,7 @@ export async function updateProfile(params: {
       'x-tenant-key': params.tenantId
     },
     body: JSON.stringify(params.payload)
-  }, DEFAULT_TIMEOUT_MS);
+  });
 
   const text = await res.text();
   const body = text ? safeJsonParse(text) : null;
