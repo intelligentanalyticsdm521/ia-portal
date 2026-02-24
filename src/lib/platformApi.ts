@@ -112,27 +112,6 @@ export class PlatformApiError extends Error {
   }
 }
 
-const DEFAULT_API_TIMEOUT_MS = Number.parseInt(
-  import.meta.env.VITE_PLATFORM_API_TIMEOUT_MS || "15000",
-  10
-);
-
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = DEFAULT_API_TIMEOUT_MS) {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } catch (err: any) {
-    if (err?.name === "AbortError") {
-      throw new PlatformApiError(`Request timed out after ${timeoutMs}ms`, 408);
-    }
-    throw err;
-  } finally {
-    window.clearTimeout(timer);
-  }
-}
-
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, '');
 }
@@ -145,6 +124,25 @@ function safeJsonParse(text: string): unknown {
   }
 }
 
+const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_PLATFORM_API_TIMEOUT_MS || 15000);
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(input, { ...init, signal: controller.signal });
+    return res;
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new PlatformApiError('Request timed out', 408);
+    }
+    throw err;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+
 export async function sessionVerify(params: {
   baseUrl: string;
   bearerToken: string;
@@ -156,7 +154,7 @@ export async function sessionVerify(params: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json'
     }
-  });
+  }, DEFAULT_TIMEOUT_MS);
 
   const text = await res.text();
   const body = text ? safeJsonParse(text) : null;
@@ -185,7 +183,7 @@ export async function selectTenant(params: {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ tenantId: params.tenantId })
-  });
+  }, DEFAULT_TIMEOUT_MS);
 
   const text = await res.text();
   const body = text ? safeJsonParse(text) : null;
@@ -217,7 +215,7 @@ export async function getProfile(params: {
       'Content-Type': 'application/json',
       'x-tenant-key': params.tenantId
     }
-  });
+  }, DEFAULT_TIMEOUT_MS);
 
   const text = await res.text();
   const body = text ? safeJsonParse(text) : null;
@@ -248,7 +246,7 @@ export async function updateProfile(params: {
       'x-tenant-key': params.tenantId
     },
     body: JSON.stringify(params.payload)
-  });
+  }, DEFAULT_TIMEOUT_MS);
 
   const text = await res.text();
   const body = text ? safeJsonParse(text) : null;
