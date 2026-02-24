@@ -47,22 +47,43 @@ export interface SessionVerifyResponse {
 }
 
 export interface SelectTenantResponse {
+  surface: 'iadm_portal' | 'employee_portal' | 'customer_portal';
   tenant: {
     tenantId: string;
     tenantName: string;
     tenantFullName: string | null;
     status?: string | null;
   };
+  user: {
+    userId: string;
+    tenantUserId: string;
+    email: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    displayName: string | null;
+  };
+  // simple role keys like ["owner", "admin", ...]
+  roles: string[];
+  // enabled services for this tenant
   services: Array<{
+    serviceId: string;
     serviceKey: string;
-    displayName: string;
-    description?: string | null;
-    enabled: boolean;
-    planKey: string | null;
+    name: string;
   }>;
-  roles: Array<{
+  // per-service roles for this user
+  serviceRoles: Array<{
+    serviceId: string;
     serviceKey: string;
     roleKey: string;
+    roleName: string;
+  }>;
+  // enabled features for this tenant
+  features: Array<{
+    featureId: string;
+    featureKey: string;
+    name: string;
+    serviceId: string;
+    serviceKey: string;
   }>;
 }
 
@@ -131,6 +152,11 @@ function safeJsonParse(text: string): unknown {
   }
 }
 
+/**
+ * fetchWithTimeout
+ * - aborts the request after timeoutMs
+ * - surfaces timeouts as PlatformApiError with status = 0
+ */
 function fetchWithTimeout(
   url: string,
   options: RequestInit,
