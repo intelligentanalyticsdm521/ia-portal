@@ -12,8 +12,8 @@ export function AppGate({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Only used to avoid overlapping bootstraps
   const inFlightRef = useRef(false);
-  const runIdRef = useRef(0);
 
   const tenantOptions = useMemo(() => bootstrap?.tenants || [], [bootstrap]);
 
@@ -23,8 +23,6 @@ export function AppGate({ children }: { children: React.ReactNode }) {
   }, [isAuthenticated, activeAccount]);
 
   useEffect(() => {
-    const runId = ++runIdRef.current;
-
     async function run() {
       if (!isAuthenticated) return;
       if (!activeAccount) return;
@@ -51,14 +49,18 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         setBootstrap(v);
 
         if (v.surface !== 'iadm_portal') {
-          setError('This application is the IADM Portal. Your token indicates a different portal surface.');
+          setError(
+            'This application is the IADM Portal. Your token indicates a different portal surface.'
+          );
           setActive(null);
           return;
         }
 
         const tenants = v.tenants || [];
         if (!tenants.length) {
-          setError('Your account is authenticated, but no tenants are assigned. Contact IADM support.');
+          setError(
+            'Your account is authenticated, but no tenants are assigned. Contact IADM support.'
+          );
           setActive(null);
           return;
         }
@@ -67,7 +69,8 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         const stored = activeTenantId;
         const storedMatch = stored ? tenants.find((t) => t.tenantId === stored) : null;
 
-        const tenantToSelect = storedMatch?.tenantId || (tenants.length === 1 ? tenants[0].tenantId : null);
+        const tenantToSelect =
+          storedMatch?.tenantId || (tenants.length === 1 ? tenants[0].tenantId : null);
 
         if (!tenantToSelect) {
           // user must select tenant
@@ -90,9 +93,13 @@ export function AppGate({ children }: { children: React.ReactNode }) {
           if (err.status === 401) {
             setError('Authentication failed (401). Your token was rejected by platform-api.');
           } else if (err.status === 403) {
-            setError('Not authorized (403). Your account is authenticated but not allowed for the requested tenant.');
+            setError(
+              'Not authorized (403). Your account is authenticated but not allowed for the requested tenant.'
+            );
           } else if (err.status === 408) {
-            setError('platform-api request timed out. This usually means the API is restarting, not running, or stuck connecting to SQL. Check /health and /__meta on platform-api.');
+            setError(
+              'platform-api request timed out. This usually means the API is restarting or stuck connecting to SQL. Check /health and /__meta on platform-api.'
+            );
           } else if (err.status === 400) {
             setError('Bad request (400).');
           } else {
@@ -108,10 +115,7 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         setActive(null);
       } finally {
         inFlightRef.current = false;
-
-        // Only the newest run is allowed to clear loading. This prevents "stuck loading"
-        // when React re-runs effects and cleans up prior runs.
-        if (runId === runIdRef.current) setLoading(false);
+        setLoading(false);
       }
     }
 
@@ -120,8 +124,8 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     isAuthenticated,
     activeAccount,
     active,
-    getToken,
     activeTenantId,
+    getToken,
     setBootstrap,
     setActive,
     setActiveTenantId
@@ -161,10 +165,12 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     return (
       <div className="mx-auto flex max-w-xl flex-col gap-4 px-6 py-16">
         <h1 className="text-2xl font-semibold">IADM Portal</h1>
-        <p className="text-gray-600">Sign in to access your services and Intelligence Layers.</p>
+        <p className="text-gray-600">
+          Sign in to access your tenant dashboard, modules, and account settings.
+        </p>
         <button
           type="button"
-          className="w-fit rounded-md bg-gray-900 px-4 py-2 text-white hover:bg-gray-800"
+          className="inline-flex w-fit items-center justify-center rounded-md bg-black px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
           onClick={() => login()}
         >
           Sign in
@@ -184,38 +190,28 @@ export function AppGate({ children }: { children: React.ReactNode }) {
 
   if (error) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-16">
+      <div className="mx-auto max-w-xl px-6 py-16">
         <h1 className="text-lg font-semibold">Access error</h1>
-        <p className="mt-2 text-sm text-gray-700">{error}</p>
-        <p className="mt-4 text-sm text-gray-600">
-          If you believe this is incorrect, contact <span className="font-medium">info@intelligentanalyticsdm.com</span>.
+        <p className="mt-2 text-sm text-red-600">{error}</p>
+        <p className="mt-4 text-xs text-gray-500">
+          If this continues, contact <a href="mailto:info@intelligentanalyticsdm.com"
+            className="underline"
+          >
+            info@intelligentanalyticsdm.com
+          </a>
+          .
         </p>
       </div>
     );
   }
 
-  // Tenant selection UI (multi-tenant)
-  if (bootstrap && !active) {
+  if (!bootstrap) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-16">
-        <h1 className="text-lg font-semibold">Select your workspace</h1>
-        <p className="mt-2 text-sm text-gray-700">You have access to multiple tenants. Choose one to continue.</p>
-
-        <div className="mt-6 flex flex-col gap-2">
-          {tenantOptions.map((t) => (
-            <button
-              key={t.tenantId}
-              type="button"
-              className="rounded-md border border-gray-200 px-4 py-3 text-left hover:bg-gray-50"
-              onClick={() => handleSelectTenant(t.tenantId)}
-            >
-              <div className="font-medium">{t.tenantFullName || t.tenantName}</div>
-              <div className="text-xs text-gray-600">{t.tenantId}</div>
-            </button>
-          ))}
-        </div>
-
-        <p className="mt-6 text-xs text-gray-500">This selection is saved in your browser until you switch tenants.</p>
+        <h1 className="text-lg font-semibold">Session not established</h1>
+        <p className="mt-2 text-sm text-gray-700">
+          You are signed in, but platform-api did not return any bootstrap information.
+        </p>
       </div>
     );
   }
@@ -223,8 +219,23 @@ export function AppGate({ children }: { children: React.ReactNode }) {
   if (!active) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-16">
-        <h1 className="text-lg font-semibold">Session not established</h1>
-        <p className="mt-2 text-sm text-gray-700">You are signed in, but platform-api did not return an active tenant session.</p>
+        <h1 className="text-lg font-semibold">Select a tenant</h1>
+        <p className="mt-2 text-sm text-gray-700">
+          Choose which tenant you want to work with in this session.
+        </p>
+        <div className="mt-4 space-y-2">
+          {tenantOptions.map((t) => (
+            <button
+              key={t.tenantId}
+              type="button"
+              className="block w-full rounded-md border border-gray-200 px-4 py-2 text-left text-sm hover:bg-gray-50"
+              onClick={() => handleSelectTenant(t.tenantId)}
+            >
+              <div className="font-medium">{t.tenantFullName || t.tenantName}</div>
+              <div className="text-xs text-gray-500">{t.tenantId}</div>
+            </button>
+          ))}
+        </div>
       </div>
     );
   }
