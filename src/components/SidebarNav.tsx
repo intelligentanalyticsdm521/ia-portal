@@ -9,23 +9,25 @@ import {
 } from '../config/serviceCatalog';
 
 function statusDotClasses(status: ServiceStatus): string {
+  // Brand-aligned status colors for nav dots:
+  // - enabled        → IADM orange
+  // - not_subscribed → IADM dark blue
+  // - coming_soon    → IADM light gray
   switch (status) {
     case 'enabled':
-      return 'bg-iadm-orange';       // Accessible
+      return 'bg-[rgb(var(--iadm-orange))]';
     case 'not_subscribed':
-      return 'bg-iadm-darkBlue';     // In production, not subscribed
+      return 'bg-[rgb(var(--iadm-dark-blue))]';
     case 'coming_soon':
     default:
-      return 'bg-iadm-lightGray';    // Not in production yet
+      return 'bg-[rgb(var(--iadm-light-gray))]';
   }
 }
 
 function navItemClasses(isActive: boolean): string {
   return [
     'flex items-center gap-2 rounded-md px-2 py-1.5 text-xs',
-    isActive
-      ? 'bg-iadm-darkBlue text-white'
-      : 'text-slate-100 hover:bg-slate-800 hover:text-white'
+    isActive ? 'bg-sky-900 text-white' : 'text-slate-100 hover:bg-slate-800 hover:text-white'
   ].join(' ');
 }
 
@@ -45,61 +47,47 @@ export function SidebarNav() {
     'ARION',
     'STELLA',
     'OLIVER',
-    'SPARK',
+    'LUMEN',
     'FORGE',
     'ARGUS'
   ];
 
-  const orderedSections = sectionOrder.filter((section) => sections[section]?.length);
-
   return (
     <nav className="flex h-full flex-col bg-slate-900 text-slate-100">
-      <div className="flex-1 overflow-y-auto px-3 py-4 text-xs">
-        <div className="mb-6">
-          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-            Navigation
-          </p>
-          <ul className="space-y-1">
-            {overview && (
-              <li>
-                <NavLink
-                  to={overview.path}
-                  className={({ isActive }) => navItemClasses(isActive)}
-                  end
-                >
-                  <span className="inline-flex h-1.5 w-1.5 flex-shrink-0 rounded-full bg-iadm-orange" />
-                  <span className="flex-1 truncate">{overview.displayName}</span>
-                </NavLink>
-              </li>
-            )}
-          </ul>
-        </div>
-
+      <div className="flex-1 overflow-y-auto px-3 py-4">
         <ul className="space-y-4">
-          {orderedSections.map((sectionKey) => {
-            const sectionServices = sections[sectionKey] ?? [];
-            const label = LAYER_LABELS[sectionKey];
+          {overview && (
+            <li>
+              <NavLink to={overview.route} className={({ isActive }) => navItemClasses(isActive)}>
+                {/* Overview dot is always “enabled” / accessible */}
+                <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[rgb(var(--iadm-orange))]" />
+                <span className="truncate">{overview.displayName}</span>
+              </NavLink>
+            </li>
+          )}
+
+          {sectionOrder.map((section) => {
+            const services = sections[section];
+            if (!services || services.length === 0) return null;
 
             return (
-              <li key={sectionKey}>
-                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                  {label}
-                </p>
+              <li key={section}>
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  {LAYER_LABELS[section]}
+                </div>
                 <ul className="space-y-0.5">
-                  {sectionServices.map((service) => {
+                  {services.map((service) => {
                     const status = resolveServiceStatus(service, enabledServices);
-
                     return (
                       <li key={service.key}>
                         <NavLink
-                          to={service.path}
+                          to={service.route}
                           className={({ isActive }) => navItemClasses(isActive)}
                         >
                           <span
-                            className={[
-                              'inline-flex h-1.5 w-1.5 flex-shrink-0 rounded-full',
-                              statusDotClasses(status)
-                            ].join(' ')}
+                            className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${statusDotClasses(
+                              status
+                            )}`}
                           />
                           <span className="truncate">{service.displayName}</span>
                         </NavLink>
