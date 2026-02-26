@@ -14,7 +14,7 @@ export interface PortalService {
  * This is UI-only. It does not change authentication, tenant verification, or backend contracts.
  */
 export const LAYER_LABELS: Record<PortalService['section'], string> = {
-  Shared: 'Shared',
+  Shared: 'Overview',
   ARION: 'ARION — Web & Digital Presence',
   STELLA: 'STELLA — Reporting & BI',
   OLIVER: 'OLIVER — Operations & Portals',
@@ -23,22 +23,15 @@ export const LAYER_LABELS: Record<PortalService['section'], string> = {
   ARGUS: 'ARGUS — Orchestration & Automation'
 };
 
-/**
- * Portal v1 catalogs all services for navigation.
- *
- * IMPORTANT: platform-api v1 does not expose a "tenant services" endpoint.
- * To avoid inventing new backend behavior, v1 determines "enabled" services
- * using VITE_ENABLED_SERVICES (comma-separated service keys). Everything else
- * falls back to defaultStatus.
- */
 export const SERVICE_CATALOG: PortalService[] = [
+  // Shared
   {
     key: 'portal_overview',
     displayName: 'Overview',
     section: 'Shared',
     defaultStatus: 'enabled',
     route: '/app/overview',
-    description: 'High-level overview and quick links.'
+    description: 'High-level account overview and shortcuts into each Intelligence Layer.'
   },
 
   // ARION
@@ -48,7 +41,7 @@ export const SERVICE_CATALOG: PortalService[] = [
     section: 'ARION',
     defaultStatus: 'coming_soon',
     route: '/app/services/arion_websites',
-    description: 'Website provisioning and managed web presence.'
+    description: 'Website and landing page status (read-only preview surface).'
   },
   {
     key: 'arion_hosting',
@@ -56,15 +49,15 @@ export const SERVICE_CATALOG: PortalService[] = [
     section: 'ARION',
     defaultStatus: 'coming_soon',
     route: '/app/services/arion_hosting',
-    description: 'Hosting status visibility and managed workflows.'
+    description: 'Hosting status, environments, and uptime (placeholder).'
   },
   {
-    key: 'arion_domains_ssl',
+    key: 'arion_domains',
     displayName: 'Domains & SSL',
     section: 'ARION',
     defaultStatus: 'coming_soon',
-    route: '/app/services/arion_domains_ssl',
-    description: 'Domain connection state and SSL health visibility.'
+    route: '/app/services/arion_domains',
+    description: 'Domain connection and SSL status (placeholder).'
   },
 
   // STELLA
@@ -74,41 +67,25 @@ export const SERVICE_CATALOG: PortalService[] = [
     section: 'STELLA',
     defaultStatus: 'coming_soon',
     route: '/app/services/stella_dashboards',
-    description: 'KPI dashboards and operational performance panels.'
-  },
-  {
-    key: 'stella_reports',
-    displayName: 'Reports',
-    section: 'STELLA',
-    defaultStatus: 'coming_soon',
-    route: '/app/services/stella_reports',
-    description: 'Saved reports and exports (placeholder).'
+    description: 'KPI dashboards and operational performance panels (placeholder).'
   },
 
   // OLIVER
   {
-    key: 'oliver_customer_portal',
-    displayName: 'Customer Portal',
+    key: 'oliver_operations',
+    displayName: 'Operations',
     section: 'OLIVER',
     defaultStatus: 'coming_soon',
-    route: '/app/services/oliver_customer_portal',
-    description: 'Customer-facing portal experience (placeholder).'
+    route: '/app/services/oliver_operations',
+    description: 'Job lifecycle views and basic pipeline surfaces (placeholder).'
   },
   {
-    key: 'oliver_employee_portal',
-    displayName: 'Employee Portal',
+    key: 'oliver_portals',
+    displayName: 'Portals',
     section: 'OLIVER',
     defaultStatus: 'coming_soon',
-    route: '/app/services/oliver_employee_portal',
-    description: 'Employee/contractor portal experience (placeholder).'
-  },
-  {
-    key: 'oliver_job_lifecycle',
-    displayName: 'Job Lifecycle',
-    section: 'OLIVER',
-    defaultStatus: 'coming_soon',
-    route: '/app/services/oliver_job_lifecycle',
-    description: 'Job states and workflow surfaces (placeholder).'
+    route: '/app/services/oliver_portals',
+    description: 'Customer and employee portals (placeholder).'
   },
 
   // LUMEN / SPARK — Growth Platform
@@ -116,28 +93,26 @@ export const SERVICE_CATALOG: PortalService[] = [
     key: 'lumen_overview',
     displayName: 'Overview — Standard',
     section: 'LUMEN',
-    defaultStatus: 'coming_soon',
+    defaultStatus: 'not_subscribed',
     route: '/app/services/lumen_overview',
     description:
-      'High-level growth summary for SPARK (Sales Pipeline Acceleration & Relationship Kit). In future versions this will show cards for email & SMS usage, upcoming sends, and basic health indicators.'
+      'High-level SPARK growth summary: email & SMS usage, active audiences, and recent performance.'
   },
   {
     key: 'lumen_contacts',
     displayName: 'CRM — Standard',
     section: 'LUMEN',
-    defaultStatus: 'coming_soon',
+    defaultStatus: 'not_subscribed',
     route: '/app/services/lumen_contacts',
-    description:
-      'Read-only CRM view: contacts, tags, segments, and consent status. Editing and advanced workflows live inside the SPARK app.'
+    description: 'Read-only CRM view into SPARK contacts, segments, and basic engagement.'
   },
   {
     key: 'lumen_campaigns',
-    displayName: 'Campaigns & Messaging — Standard',
+    displayName: 'Campaigns & Messaging',
     section: 'LUMEN',
-    defaultStatus: 'coming_soon',
+    defaultStatus: 'not_subscribed',
     route: '/app/services/lumen_campaigns',
-    description:
-      'Read-only summary of scheduled email/SMS campaigns and simple performance metrics. Campaign creation, templates, and testing live inside SPARK.'
+    description: 'Recent and upcoming SPARK email & SMS campaigns.'
   },
   {
     key: 'lumen_leads',
@@ -146,16 +121,7 @@ export const SERVICE_CATALOG: PortalService[] = [
     defaultStatus: 'coming_soon',
     route: '/app/services/lumen_leads',
     description:
-      'Placeholder surface for future SPARK lead generation and prioritization (high-intent vs nurture). Not implemented in v1.'
-  },
-  {
-    key: 'lumen_reporting',
-    displayName: 'Reporting — Preview',
-    section: 'LUMEN',
-    defaultStatus: 'coming_soon',
-    route: '/app/services/lumen_reporting',
-    description:
-      'Placeholder surface for deeper SPARK + STELLA reporting (funnels, capacity, attribution). Not implemented in v1.'
+      'Future lead capture and routing surfaces for SPARK + OLIVER. Placeholder only in v1.'
   },
 
   // FORGE
@@ -165,33 +131,17 @@ export const SERVICE_CATALOG: PortalService[] = [
     section: 'FORGE',
     defaultStatus: 'coming_soon',
     route: '/app/services/forge_integrations',
-    description: 'Connected systems and integration health (placeholder).'
-  },
-  {
-    key: 'forge_builds',
-    displayName: 'Builds',
-    section: 'FORGE',
-    defaultStatus: 'coming_soon',
-    route: '/app/services/forge_builds',
-    description: 'Custom builds and implementation tracking (placeholder).'
+    description: 'Integration health and sync status (placeholder).'
   },
 
   // ARGUS
   {
-    key: 'argus_automations',
-    displayName: 'Automations',
+    key: 'argus_automation',
+    displayName: 'Automation',
     section: 'ARGUS',
     defaultStatus: 'coming_soon',
-    route: '/app/services/argus_automations',
-    description: 'Automation orchestration (placeholder).'
-  },
-  {
-    key: 'argus_intelligence_layers',
-    displayName: 'Intelligence Layers',
-    section: 'ARGUS',
-    defaultStatus: 'coming_soon',
-    route: '/app/services/argus_intelligence_layers',
-    description: 'IADM-IL configuration surfaces (placeholder).'
+    route: '/app/services/argus_automation',
+    description: 'Automation orchestration and Intelligence Layer wiring (placeholder).'
   }
 ];
 

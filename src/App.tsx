@@ -1,18 +1,16 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppStateProvider } from './app/AppState';
-import { LandingPage } from './pages/LandingPage';
-import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { AppGate } from './app/AppGate';
-import { AppLayout } from './components/AppLayout';
+import { AppLayout } from './layout/AppLayout';
+import { AuthCallbackPage } from './pages/AuthCallbackPage';
+import { LandingPage } from './pages/LandingPage';
 import { OverviewPage } from './pages/OverviewPage';
-import { ServiceRouter } from './pages/ServiceRouter';
-
-import { ProfileViewPage } from './pages/ProfileViewPage';
 import { ProfilePage } from './pages/ProfilePage';
-
-// ✅ NEW
-import { SettingsViewPage } from './pages/SettingsViewPage';
+import { ProfileViewPage } from './pages/ProfileViewPage';
+import { ServiceRouter } from './pages/ServiceRouter';
 import { SettingsEditPage } from './pages/SettingsEditPage';
+import { SettingsViewPage } from './pages/SettingsViewPage';
+import { SparkPricingPage } from './pages/spark/SparkPricingPage';
 
 export function App() {
   return (
@@ -32,14 +30,15 @@ export function App() {
           >
             <Route index element={<Navigate to="overview" replace />} />
             <Route path="overview" element={<OverviewPage />} />
-
             <Route path="profile" element={<ProfileViewPage />} />
             <Route path="profile/edit" element={<ProfilePage />} />
-
-            {/* ✅ Settings view/edit */}
             <Route path="settings" element={<SettingsViewPage />} />
             <Route path="settings/edit" element={<SettingsEditPage />} />
 
+            {/* SPARK pricing page used by “Subscribe” buttons */}
+            <Route path="spark/pricing" element={<SparkPricingPage />} />
+
+            {/* All other feature pages are routed via service keys */}
             <Route path="services/:serviceKey" element={<ServiceRouter />} />
           </Route>
 

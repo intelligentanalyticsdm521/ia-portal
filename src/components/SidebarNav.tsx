@@ -1,99 +1,98 @@
-import { NavLink, useLocation } from 'react-router-dom';
-import { LAYER_LABELS, SERVICE_CATALOG, resolveServiceStatus, type PortalService } from '../config/serviceCatalog';
+import { NavLink } from 'react-router-dom';
 import { useAppState } from '../app/AppState';
+import {
+  LAYER_LABELS,
+  SERVICE_CATALOG,
+  resolveServiceStatus,
+  type PortalService,
+  type ServiceStatus
+} from '../config/serviceCatalog';
 
-function statusBadge(status: string) {
-  if (status === 'enabled') return 'Enabled';
-  if (status === 'not_subscribed') return 'Sign up';
-  return 'Coming soon';
+function statusDotClasses(status: ServiceStatus): string {
+  switch (status) {
+    case 'enabled':
+      return 'bg-emerald-400';
+    case 'not_subscribed':
+      return 'bg-amber-400';
+    case 'coming_soon':
+    default:
+      return 'bg-slate-500';
+  }
+}
+
+function navItemClasses(isActive: boolean): string {
+  return [
+    'flex items-center gap-2 rounded-md px-2 py-1.5 text-xs',
+    isActive ? 'bg-sky-900 text-white' : 'text-slate-100 hover:bg-slate-800 hover:text-white'
+  ].join(' ');
 }
 
 export function SidebarNav() {
   const { enabledServices } = useAppState();
-  const location = useLocation();
 
-  const overview = SERVICE_CATALOG.find((s) => s.key === 'portal_overview');
-  const bySection = SERVICE_CATALOG.filter((s) => s.section !== 'Shared').reduce<Record<string, PortalService[]>>(
-    (acc, svc) => {
-      (acc[svc.section] ??= []).push(svc);
-      return acc;
-    },
-    {}
-  );
+  const overview = SERVICE_CATALOG.find((s) => s.key === 'portal_overview') ?? null;
 
-  const sectionOrder: PortalService['section'][] = ['ARION', 'STELLA', 'OLIVER', 'LUMEN', 'FORGE', 'ARGUS'];
+  const sections = SERVICE_CATALOG.filter((s) => s.section !== 'Shared').reduce<
+    Record<PortalService['section'], PortalService[]>
+  >((acc, service) => {
+    (acc[service.section] ??= []).push(service);
+    return acc;
+  }, {} as Record<PortalService['section'], PortalService[]>);
+
+  const sectionOrder: PortalService['section'][] = [
+    'ARION',
+    'STELLA',
+    'OLIVER',
+    'LUMEN',
+    'FORGE',
+    'ARGUS'
+  ];
 
   return (
-    <nav className="iadm-sidebar">
-      <div className="iadm-sidebar-inner">
-        <div className="iadm-nav-title">Navigation</div>
-      <ul className="space-y-1">
-        {overview ? (
-          <li key={overview.key}>
-            <NavLink
-              to={overview.route}
-              className={({ isActive }) =>
-                `iadm-nav-item ${isActive ? 'iadm-nav-item-active' : ''}`
-              }
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block truncate">{overview.displayName}</span>
-              </span>
-              <span className="iadm-badge iadm-badge-enabled">Enabled</span>
-            </NavLink>
-          </li>
-        ) : null}
+    <nav className="flex h-full flex-col bg-slate-900 text-slate-100">
+      <div className="flex-1 overflow-y-auto px-3 py-4">
+        <ul className="space-y-4">
+          {overview && (
+            <li>
+              <NavLink to={overview.route} className={({ isActive }) => navItemClasses(isActive)}>
+                <span className="truncate">{overview.displayName}</span>
+              </NavLink>
+            </li>
+          )}
 
-        <li className="my-3 border-t border-white/10" aria-hidden="true" />
+          {sectionOrder.map((section) => {
+            const services = sections[section];
+            if (!services || services.length === 0) return null;
 
-        {sectionOrder.map((section) => {
-          const items = bySection[section] ?? [];
-          if (items.length === 0) return null;
-
-          const isSectionActive = items.some((i) => location.pathname === i.route);
-
-          return (
-            <li key={section}>
-              <details className="group" open={isSectionActive}>
-                <summary className="cursor-pointer list-none rounded-md px-2 py-2 text-sm font-medium text-white/90 hover:bg-white/10">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate">{LAYER_LABELS[section]}</span>
-                    <span className="text-xs text-white/50 group-open:rotate-90" aria-hidden="true">
-                      ▸
-                    </span>
-                  </div>
-                </summary>
-
-                <ul className="mt-1 space-y-1 pl-2">
-                  {items.map((svc) => {
-                    const status = resolveServiceStatus(svc, enabledServices);
+            return (
+              <li key={section}>
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  {LAYER_LABELS[section]}
+                </div>
+                <ul className="space-y-0.5">
+                  {services.map((service) => {
+                    const status = resolveServiceStatus(service, enabledServices);
                     return (
-                      <li key={svc.key}>
+                      <li key={service.key}>
                         <NavLink
-                          to={svc.route}
-                          className={({ isActive }) =>
-                            `iadm-nav-item ${isActive ? 'iadm-nav-item-active' : ''}`
-                          }
+                          to={service.route}
+                          className={({ isActive }) => navItemClasses(isActive)}
                         >
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate">{svc.displayName}</span>
-                            <span className="block truncate text-xs text-white/60">{statusBadge(status)}</span>
-                          </span>
                           <span
-                            className={`iadm-badge ${status === 'enabled' ? 'iadm-badge-enabled' : 'iadm-badge-soon'}`}
-                          >
-                            {statusBadge(status)}
-                          </span>
+                            className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${statusDotClasses(
+                              status
+                            )}`}
+                          />
+                          <span className="truncate">{service.displayName}</span>
                         </NavLink>
                       </li>
                     );
                   })}
                 </ul>
-              </details>
-            </li>
-          );
-        })}
-      </ul>
+              </li>
+            );
+          })}
+        </ul>
       </div>
     </nav>
   );
