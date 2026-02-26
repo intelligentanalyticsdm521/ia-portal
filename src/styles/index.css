@@ -48,9 +48,10 @@ body {
   }
 
   /* Sidebar: dark shell */
-  .iadm-sidebar {
+   .iadm-sidebar {
     background: linear-gradient(180deg, rgba(12, 74, 96, 0.98) 0%, rgba(8, 55, 71, 0.98) 100%);
-    @apply h-full border-r border-iadm-lightGray/25;
+    /* Always cover the full viewport height; will grow taller if content is taller */
+    @apply min-h-screen border-r border-iadm-lightGray/25;
   }
 
   .iadm-sidebar-inner {
