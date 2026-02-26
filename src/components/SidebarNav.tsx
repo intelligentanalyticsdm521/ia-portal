@@ -25,9 +25,24 @@ function statusDotClasses(status: ServiceStatus): string {
 }
 
 function navItemClasses(isActive: boolean): string {
+  const base =
+    'flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors border-b-2 border-transparent';
+
+  if (isActive) {
+    return [
+      base,
+      'text-[rgb(var(--iadm-dark-blue))]',
+      'font-semibold',
+      'border-[rgb(var(--iadm-orange))]',
+      'bg-transparent'
+    ].join(' ');
+  }
+
   return [
-    'flex items-center gap-2 rounded-md px-2 py-1.5 text-xs',
-    isActive ? 'bg-sky-900 text-white' : 'text-slate-100 hover:bg-slate-800 hover:text-white'
+    base,
+    'text-slate-900',
+    'hover:bg-white/60',
+    'hover:text-[rgb(var(--iadm-dark-blue))]'
   ].join(' ');
 }
 
@@ -53,7 +68,7 @@ export function SidebarNav() {
   ];
 
   return (
-    <nav className="flex h-full flex-col bg-slate-900 text-slate-100">
+    <nav className="flex h-full flex-col bg-[rgb(var(--iadm-light-blue))] text-slate-900 border-r border-slate-200">
       <div className="flex-1 overflow-y-auto px-3 py-4">
         <ul className="space-y-4">
           {overview && (
@@ -72,7 +87,7 @@ export function SidebarNav() {
 
             return (
               <li key={section}>
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
                   {LAYER_LABELS[section]}
                 </div>
                 <ul className="space-y-0.5">
