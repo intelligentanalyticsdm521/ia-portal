@@ -1,120 +1,109 @@
-import { NavLink } from 'react-router-dom';
-import { useAppState } from '../app/AppState';
+import { NavLink } from "react-router-dom";
+import { useAppState } from "../app/AppState";
 import {
   LAYER_LABELS,
   SERVICE_CATALOG,
   resolveServiceStatus,
   type PortalService,
-  type ServiceStatus
-} from '../config/serviceCatalog';
+  type ServiceStatus,
+} from "../config/serviceCatalog";
 
 function statusDotClasses(status: ServiceStatus): string {
-  // Brand-aligned status colors for nav dots:
+  // Dot colors:
   // - enabled        → IADM orange
   // - not_subscribed → IADM dark blue
   // - coming_soon    → IADM light gray
   switch (status) {
-    case 'enabled':
-      return 'bg-[rgb(var(--iadm-orange))]';
-    case 'not_subscribed':
-      return 'bg-[rgb(var(--iadm-dark-blue))]';
-    case 'coming_soon':
+    case "enabled":
+      return "bg-[rgb(var(--iadm-orange))]";
+    case "not_subscribed":
+      return "bg-[rgb(var(--iadm-dark-blue))]";
+    case "coming_soon":
     default:
-      return 'bg-[rgb(var(--iadm-light-gray))]';
+      return "bg-[rgb(var(--iadm-light-gray))]";
   }
 }
 
-function navItemClasses(isActive: boolean): string {
-  const base =
-    'flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors border-b-2 border-transparent';
-
-  if (isActive) {
-    return [
-      base,
-      'text-[rgb(var(--iadm-dark-blue))]',
-      'font-semibold',
-      'border-[rgb(var(--iadm-orange))]',
-      'bg-transparent'
-    ].join(' ');
-  }
-
-  return [
-    base,
-    'text-slate-900',
-    'hover:bg-white/60',
-    'hover:text-[rgb(var(--iadm-dark-blue))]'
-  ].join(' ');
+function navItemClass(isActive: boolean): string {
+  // Branding & active underline handled in index.css via:
+  // .iadm-nav-item and .iadm-nav-item-active
+  return isActive ? "iadm-nav-item iadm-nav-item-active" : "iadm-nav-item";
 }
 
 export function SidebarNav() {
   const { enabledServices } = useAppState();
 
-  const overview = SERVICE_CATALOG.find((s) => s.key === 'portal_overview') ?? null;
+  // Shared "overview" item (top of nav)
+  const overview = SERVICE_CATALOG.find((s) => s.key === "portal_overview");
 
-  const sections = SERVICE_CATALOG.filter((s) => s.section !== 'Shared').reduce<
-    Record<PortalService['section'], PortalService[]>
+  // Group services by section, excluding "Shared"
+  const sections = SERVICE_CATALOG.filter((s) => s.section !== "Shared").reduce<
+    Record<PortalService["section"], PortalService[]>
   >((acc, service) => {
     (acc[service.section] ??= []).push(service);
     return acc;
-  }, {} as Record<PortalService['section'], PortalService[]>);
+  }, {} as Record<PortalService["section"], PortalService[]>);
 
-  const sectionOrder: PortalService['section'][] = [
-    'ARION',
-    'STELLA',
-    'OLIVER',
-    'LUMEN',
-    'FORGE',
-    'ARGUS'
+  const sectionOrder: PortalService["section"][] = [
+    "ARION",
+    "STELLA",
+    "OLIVER",
+    "LUMEN", // label shows as SPARK — Growth Platform via LAYER_LABELS
+    "FORGE",
+    "ARGUS",
   ];
 
   return (
-    <nav className="flex h-full flex-col bg-[rgb(var(--iadm-light-blue))] text-slate-900 border-r border-slate-200">
-      <div className="flex-1 overflow-y-auto px-3 py-4">
-        <ul className="space-y-4">
-          {overview && (
-            <li>
-              <NavLink to={overview.route} className={({ isActive }) => navItemClasses(isActive)}>
-                {/* Overview dot is always “enabled” / accessible */}
-                <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[rgb(var(--iadm-orange))]" />
+    // All shell styling (background gradient, padding) comes from index.css
+    <nav className="iadm-sidebar-inner flex h-full flex-col text-white">
+      <ul className="space-y-4">
+        {/* Top-level Overview item */}
+        {overview && (
+          <li>
+            <NavLink to={overview.route} className={({ isActive }) => navItemClass(isActive)}>
+              <div className="flex items-center gap-2">
+                {/* Overview dot is always “enabled” */}
+                <span className="h-1.5 w-1.5 rounded-full bg-[rgb(var(--iadm-orange))]" />
                 <span className="truncate">{overview.displayName}</span>
-              </NavLink>
-            </li>
-          )}
+              </div>
+            </NavLink>
+          </li>
+        )}
 
-          {sectionOrder.map((section) => {
-            const services = sections[section];
-            if (!services || services.length === 0) return null;
+        {/* Product layers: ARION / STELLA / OLIVER / SPARK(LUMEN) / FORGE / ARGUS */}
+        {sectionOrder.map((section) => {
+          const services = sections[section];
+          if (!services || services.length === 0) return null;
 
-            return (
-              <li key={section}>
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
-                  {LAYER_LABELS[section]}
-                </div>
-                <ul className="space-y-0.5">
-                  {services.map((service) => {
-                    const status = resolveServiceStatus(service, enabledServices);
-                    return (
-                      <li key={service.key}>
-                        <NavLink
-                          to={service.route}
-                          className={({ isActive }) => navItemClasses(isActive)}
-                        >
+          return (
+            <li key={section}>
+              <div className="iadm-nav-title">{LAYER_LABELS[section]}</div>
+              <ul className="space-y-0.5">
+                {services.map((service) => {
+                  const status = resolveServiceStatus(service, enabledServices);
+                  return (
+                    <li key={service.key}>
+                      <NavLink
+                        to={service.route}
+                        className={({ isActive }) => navItemClass(isActive)}
+                      >
+                        <div className="flex items-center gap-2">
                           <span
                             className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${statusDotClasses(
                               status
                             )}`}
                           />
                           <span className="truncate">{service.displayName}</span>
-                        </NavLink>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+                        </div>
+                      </NavLink>
+                    </li>
+                  );
+                })}
+              </ul>
+            </li>
+          );
+        })}
+      </ul>
     </nav>
   );
 }

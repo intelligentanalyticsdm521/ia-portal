@@ -132,3 +132,65 @@ body {
     @apply border-iadm-lightBlue ring-2 ring-iadm-lightBlue/50;
   }
 }
+
+
+  /* Upsell / subscription banners shared across services */
+  .iadm-upsell-backdrop {
+    @apply absolute inset-0 flex items-center justify-center;
+    background:
+      radial-gradient(circle at top, rgba(239, 108, 51, 0.10), transparent 60%),
+      radial-gradient(circle at bottom, rgba(239, 108, 51, 0.06), transparent 55%),
+      rgba(15, 23, 42, 0.04);
+  }
+
+  .iadm-upsell-card {
+    @apply pointer-events-auto w-full max-w-4xl rounded-3xl bg-white px-10 py-8 shadow-2xl;
+    /* Light neutral border using your palette */
+    border: 1px solid rgba(225, 221, 219, 0.9);
+  }
+
+  .iadm-upsell-title {
+    @apply text-center text-2xl font-semibold text-slate-900;
+  }
+
+  .iadm-upsell-title-highlight {
+    color: rgb(var(--iadm-orange));
+  }
+
+  .iadm-upsell-subtitle {
+    @apply mt-4 text-center text-sm leading-relaxed text-slate-700;
+  }
+
+  .iadm-upsell-divider {
+    @apply my-6 h-px w-full bg-slate-200;
+  }
+
+  .iadm-upsell-feature-grid {
+    @apply grid gap-5 text-left text-sm text-slate-800 md:grid-cols-2;
+  }
+
+  .iadm-upsell-feature-row {
+    @apply flex items-start gap-3;
+  }
+
+  .iadm-upsell-feature-icon {
+    @apply mt-0.5 flex h-9 w-9 items-center justify-center rounded-2xl;
+    background-color: rgb(var(--iadm-orange) / 0.12);
+    color: rgb(var(--iadm-orange));
+  }
+
+  .iadm-upsell-feature-title {
+    @apply font-semibold text-slate-900;
+  }
+
+  .iadm-upsell-feature-text {
+    @apply text-xs text-slate-600;
+  }
+
+  .iadm-upsell-cta-wrapper {
+    @apply mt-8 flex justify-center;
+  }
+
+  .iadm-upsell-cta {
+    @apply iadm-btn-primary px-10 py-2.5 text-sm font-semibold shadow-lg;
+  }

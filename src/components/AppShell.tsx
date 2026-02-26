@@ -1,16 +1,26 @@
-import type { PropsWithChildren } from 'react';
-import { HeaderBar } from './HeaderBar';
-import { SidebarNav } from './SidebarNav';
+import { Outlet } from "react-router-dom";
+import { HeaderBar } from "./HeaderBar";
+import { SidebarNav } from "./SidebarNav";
 
-export function AppShell({ children }: PropsWithChildren) {
+export function AppShell() {
   return (
-    <div className="iadm-shell text-gray-900">
-      <HeaderBar />
-      <div className="flex min-h-[calc(100vh-56px)]">
-        <aside className="w-72 shrink-0">
+    <div className="iadm-shell flex min-h-screen flex-col">
+      {/* Top header uses .iadm-header from index.css */}
+      <header className="iadm-header">
+        <HeaderBar />
+      </header>
+
+      {/* Main layout: sidebar + content */}
+      <div className="flex flex-1">
+        {/* Sidebar branding is now handled entirely by .iadm-sidebar in index.css */}
+        <aside className="w-72 shrink-0 iadm-sidebar">
           <SidebarNav />
         </aside>
-        <main className="min-w-0 flex-1 iadm-content">{children}</main>
+
+        {/* Main content area */}
+        <main className="flex-1 bg-iadm-background">
+          <Outlet />
+        </main>
       </div>
     </div>
   );
