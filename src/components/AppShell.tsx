@@ -10,10 +10,10 @@ export function AppShell() {
         <HeaderBar />
       </header>
 
-      {/* Main layout: sidebar + content */}
-      <div className="flex flex-1">
-        {/* Sidebar branding is now handled entirely by .iadm-sidebar in index.css */}
-        <aside className="w-72 shrink-0 iadm-sidebar">
+      {/* Main layout: sidebar + content, stretched to fill remaining height */}
+      <div className="flex flex-1 min-h-0">
+        {/* Sidebar branding handled entirely by .iadm-sidebar in index.css */}
+        <aside className="iadm-sidebar flex w-72 shrink-0">
           <SidebarNav />
         </aside>
 

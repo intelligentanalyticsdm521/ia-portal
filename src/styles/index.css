@@ -136,11 +136,13 @@ body {
 
   /* Upsell / subscription banners shared across services */
   .iadm-upsell-backdrop {
-    @apply absolute inset-0 flex items-center justify-center;
+    /* Full-screen modal backdrop, centered both axes */
+    @apply fixed inset-0 z-30 flex items-center justify-center;
+
     background:
       radial-gradient(circle at top, rgba(239, 108, 51, 0.10), transparent 60%),
       radial-gradient(circle at bottom, rgba(239, 108, 51, 0.06), transparent 55%),
-      rgba(15, 23, 42, 0.04);
+      rgba(15, 23, 42, 0.20); /* a bit more dim so the card pops */
   }
 
   .iadm-upsell-card {
