@@ -181,31 +181,52 @@ function fetchWithTimeout(
     .finally(() => clearTimeout(id));
 }
 
+function shouldRetryPlatformError(err: unknown): err is PlatformApiError {
+  return err instanceof PlatformApiError && (err.status === 0 || err.status >= 500);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withSingleRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!shouldRetryPlatformError(err)) throw err;
+    await delay(350);
+    return fn();
+  }
+}
+
 export async function sessionVerify(params: {
   baseUrl: string;
   bearerToken: string;
 }): Promise<SessionVerifyResponse> {
   const url = `${normalizeBaseUrl(params.baseUrl)}/session/verify`;
-  const res = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${params.bearerToken}`,
-      'Content-Type': 'application/json'
+
+  return withSingleRetry(async () => {
+    const res = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${params.bearerToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const text = await res.text();
+    const body = text ? safeJsonParse(text) : null;
+
+    if (!res.ok) {
+      const msg =
+        typeof body === 'object' && body && 'error' in body
+          ? String((body as any).error)
+          : `Request failed (${res.status})`;
+      throw new PlatformApiError(msg, res.status, body);
     }
+
+    return body as SessionVerifyResponse;
   });
-
-  const text = await res.text();
-  const body = text ? safeJsonParse(text) : null;
-
-  if (!res.ok) {
-    const msg =
-      typeof body === 'object' && body && 'error' in body
-        ? String((body as any).error)
-        : `Request failed (${res.status})`;
-    throw new PlatformApiError(msg, res.status, body);
-  }
-
-  return body as SessionVerifyResponse;
 }
 
 export async function selectTenant(params: {
@@ -214,27 +235,30 @@ export async function selectTenant(params: {
   tenantId: string;
 }): Promise<SelectTenantResponse> {
   const url = `${normalizeBaseUrl(params.baseUrl)}/session/select-tenant`;
-  const res = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${params.bearerToken}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ tenantId: params.tenantId })
+
+  return withSingleRetry(async () => {
+    const res = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${params.bearerToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ tenantId: params.tenantId })
+    });
+
+    const text = await res.text();
+    const body = text ? safeJsonParse(text) : null;
+
+    if (!res.ok) {
+      const msg =
+        typeof body === 'object' && body && 'error' in body
+          ? String((body as any).error)
+          : `Request failed (${res.status})`;
+      throw new PlatformApiError(msg, res.status, body);
+    }
+
+    return body as SelectTenantResponse;
   });
-
-  const text = await res.text();
-  const body = text ? safeJsonParse(text) : null;
-
-  if (!res.ok) {
-    const msg =
-      typeof body === 'object' && body && 'error' in body
-        ? String((body as any).error)
-        : `Request failed (${res.status})`;
-    throw new PlatformApiError(msg, res.status, body);
-  }
-
-  return body as SelectTenantResponse;
 }
 
 /**

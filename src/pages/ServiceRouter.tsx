@@ -7,6 +7,9 @@ import {
   type PortalService,
   type ServiceStatus
 } from '../config/serviceCatalog';
+import { ArionDomainsPage } from './arion/ArionDomainsPage';
+import { ArionHostingPage } from './arion/ArionHostingPage';
+import { ArionWebsitesPage } from './arion/ArionWebsitesPage';
 import { SparkOverviewPage } from './spark/SparkOverviewPage';
 import { SparkCrmPage } from './spark/SparkCrmPage';
 import { SparkCampaignsPage } from './spark/SparkCampaignsPage';
@@ -35,7 +38,19 @@ export function ServiceRouter() {
 
   const status: ServiceStatus = resolveServiceStatus(service, enabledServices);
 
-  // LUMEN / SPARK services get their own read-only presentation pages.
+  if (service.section === 'ARION') {
+    switch (service.key) {
+      case 'arion_websites':
+        return <ArionWebsitesPage service={service} status={status} />;
+      case 'arion_hosting':
+        return <ArionHostingPage service={service} status={status} />;
+      case 'arion_domains':
+        return <ArionDomainsPage service={service} status={status} />;
+      default:
+        break;
+    }
+  }
+
   if (service.section === 'LUMEN') {
     switch (service.key) {
       case 'lumen_overview':
@@ -51,7 +66,6 @@ export function ServiceRouter() {
     }
   }
 
-  // All other services use a generic placeholder shell with state-aware messaging.
   return <GenericServicePage service={service} status={status} />;
 }
 
