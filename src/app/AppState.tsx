@@ -37,19 +37,24 @@ function loadEnabledServicesFromEnv(): Set<string> {
 
 function buildEnabledServices(active: SelectTenantResponse | null): Set<string> {
   const keys = loadEnabledServicesFromEnv();
-
   const activeServiceKeys = new Set(
     (active?.services || []).map((svc) => String(svc.serviceKey || '').trim().toLowerCase())
   );
 
-  // ARION: if the tenant has the ARION service enabled, light up the ARION section.
   if (activeServiceKeys.has('arion')) {
-    keys.add('arion_websites');
+    keys.add('arion_overview');
+    keys.add('arion_website_analytics');
     keys.add('arion_hosting');
-    keys.add('arion_domains');
+    keys.add('arion_seo');
+    keys.add('arion_console');
+    keys.add('arion_my_business');
   }
 
-  // Future-safe: if any feature keys match portal routes directly, honor them.
+  if (activeServiceKeys.has('oliver')) {
+    keys.add('oliver_operations');
+    keys.add('oliver_portals');
+  }
+
   for (const feature of active?.features || []) {
     const key = String(feature.featureKey || '').trim();
     if (key) keys.add(key);
@@ -74,13 +79,10 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const value: AppStateValue = {
     bootstrap,
     setBootstrap,
-
     active,
     setActive,
-
     activeTenantId,
     setActiveTenantId,
-
     enabledServices
   };
 

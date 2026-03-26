@@ -9,10 +9,6 @@ export interface PortalService {
   description: string;
 }
 
-/**
- * Display labels for left-nav parent sections.
- * This is UI-only. It does not change authentication, tenant verification, or backend contracts.
- */
 export const LAYER_LABELS: Record<PortalService['section'], string> = {
   Shared: 'Overview',
   ARION: 'ARION — Web & Digital Presence',
@@ -24,7 +20,6 @@ export const LAYER_LABELS: Record<PortalService['section'], string> = {
 };
 
 export const SERVICE_CATALOG: PortalService[] = [
-  // Shared
   {
     key: 'portal_overview',
     displayName: 'Overview',
@@ -33,15 +28,21 @@ export const SERVICE_CATALOG: PortalService[] = [
     route: '/app/overview',
     description: 'High-level account overview and shortcuts into each Intelligence Layer.'
   },
-
-  // ARION
   {
-    key: 'arion_websites',
-    displayName: 'Websites',
+    key: 'arion_overview',
+    displayName: 'Overview',
     section: 'ARION',
     defaultStatus: 'coming_soon',
-    route: '/app/services/arion_websites',
-    description: 'Website and landing page status (read-only preview surface).'
+    route: '/app/services/arion_overview',
+    description: 'High-level website, hosting, console, maps, and SEO status.'
+  },
+  {
+    key: 'arion_website_analytics',
+    displayName: 'Website Analytics',
+    section: 'ARION',
+    defaultStatus: 'coming_soon',
+    route: '/app/services/arion_website_analytics',
+    description: 'Google and Bing website analytics with site-level performance.'
   },
   {
     key: 'arion_hosting',
@@ -49,18 +50,32 @@ export const SERVICE_CATALOG: PortalService[] = [
     section: 'ARION',
     defaultStatus: 'coming_soon',
     route: '/app/services/arion_hosting',
-    description: 'Hosting status, environments, and uptime (placeholder).'
+    description: 'Hosting details, health, WordPress, PHP, and plugin update readiness.'
   },
   {
-    key: 'arion_domains',
-    displayName: 'Domains & SSL',
+    key: 'arion_seo',
+    displayName: 'SEO',
     section: 'ARION',
     defaultStatus: 'coming_soon',
-    route: '/app/services/arion_domains',
-    description: 'Domain connection and SSL status (placeholder).'
+    route: '/app/services/arion_seo',
+    description: 'SE Ranking powered SEO package visibility, reporting, and project status.'
   },
-
-  // STELLA
+  {
+    key: 'arion_console',
+    displayName: 'Console',
+    section: 'ARION',
+    defaultStatus: 'coming_soon',
+    route: '/app/services/arion_console',
+    description: 'Google Search Console and Bing Webmaster reporting and setup.'
+  },
+  {
+    key: 'arion_my_business',
+    displayName: 'My Business',
+    section: 'ARION',
+    defaultStatus: 'coming_soon',
+    route: '/app/services/arion_my_business',
+    description: 'Google, Apple, and Bing business profile management.'
+  },
   {
     key: 'stella_dashboards',
     displayName: 'Dashboards',
@@ -69,34 +84,29 @@ export const SERVICE_CATALOG: PortalService[] = [
     route: '/app/services/stella_dashboards',
     description: 'KPI dashboards and operational performance panels (placeholder).'
   },
-
-  // OLIVER
   {
     key: 'oliver_operations',
     displayName: 'Operations',
     section: 'OLIVER',
-    defaultStatus: 'coming_soon',
+    defaultStatus: 'not_subscribed',
     route: '/app/services/oliver_operations',
-    description: 'Job lifecycle views and basic pipeline surfaces (placeholder).'
+    description: 'Job lifecycle management: active jobs, revenue, invoices, scheduling, and dispatch.'
   },
   {
     key: 'oliver_portals',
     displayName: 'Portals',
     section: 'OLIVER',
-    defaultStatus: 'coming_soon',
+    defaultStatus: 'not_subscribed',
     route: '/app/services/oliver_portals',
-    description: 'Customer and employee portals (placeholder).'
+    description: 'Customer-facing and employee-facing portals for job tracking, payments, and field ops.'
   },
-
-  // LUMEN / SPARK — Growth Platform
   {
     key: 'lumen_overview',
     displayName: 'Overview — Standard',
     section: 'LUMEN',
     defaultStatus: 'not_subscribed',
     route: '/app/services/lumen_overview',
-    description:
-      'High-level SPARK growth summary: email & SMS usage, active audiences, and recent performance.'
+    description: 'High-level SPARK growth summary: email & SMS usage, active audiences, and recent performance.'
   },
   {
     key: 'lumen_contacts',
@@ -120,11 +130,8 @@ export const SERVICE_CATALOG: PortalService[] = [
     section: 'LUMEN',
     defaultStatus: 'coming_soon',
     route: '/app/services/lumen_leads',
-    description:
-      'Future lead capture and routing surfaces for SPARK + OLIVER. Placeholder only in v1.'
+    description: 'Future lead capture and routing surfaces for SPARK + OLIVER. Placeholder only in v1.'
   },
-
-  // FORGE
   {
     key: 'forge_integrations',
     displayName: 'Integrations',
@@ -133,8 +140,6 @@ export const SERVICE_CATALOG: PortalService[] = [
     route: '/app/services/forge_integrations',
     description: 'Integration health and sync status (placeholder).'
   },
-
-  // ARGUS
   {
     key: 'argus_automation',
     displayName: 'Automation',

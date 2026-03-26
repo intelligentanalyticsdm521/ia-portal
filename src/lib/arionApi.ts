@@ -1,76 +1,97 @@
+export type SetupMode = 'ARION_AUTO_SETUP' | 'EXISTING_INTEGRATION';
+
 export interface ArionSiteSummary {
   siteId: string;
   tenantId: string;
   wpUrl: string;
   status: string;
-  hostingerWebsiteId: string | null;
-  hostingerPlanId: string | null;
-  templateKey: string | null;
   primaryDomain: string | null;
   sslStatus: string | null;
+  packageCode: string | null;
+  isEcommerceEnabled: boolean;
   createdAt: string;
   updatedAt: string;
-  packageCode: string | null;
-  packagePriceUsd: number | null;
-  isEcommerceEnabled: boolean;
-  notes: string | null;
-  health: {
+  integrationCount?: number;
+}
+
+export interface OverviewResponse {
+  tenant: { tenantId: string; tenantName: string; tenantFullName: string | null };
+  site: ArionSiteSummary | null;
+  permissions: {
+    siteCount: number;
+    siteLimit: number | null;
+    canCreateSite: boolean;
+    extraSitePriceMonthly: number;
+    extraSitePriceAnnual: number;
+  };
+  integrations: {
+    googleAnalytics: boolean;
+    googleSearchConsole: boolean;
+    googleBusinessProfile: boolean;
+    bingWebmaster: boolean;
+    bingPlaces: boolean;
+    appleBusinessConnect: boolean;
+    seRankingProject: boolean;
+  };
+  overview: {
+    users: number | null;
+    sessions: number | null;
+    clicks: number | null;
+    impressions: number | null;
+    ctr: number | null;
+    avgPosition: number | null;
+  };
+  hosting: {
     siteStatus: string | null;
     sslStatus: string | null;
     pluginUpdatesAvailable: number | null;
-    themeUpdatesAvailable: number | null;
+    wordpressVersion: string | null;
+    phpVersion: string | null;
     performanceScore: number | null;
-    formDeliveryStatus: string | null;
     lastHealthCheckAt: string | null;
   };
   seo: {
-    ga4Connected: boolean;
-    searchConsoleConnected: boolean;
-    bingWebmasterConnected: boolean;
-    sitemapDetected: boolean;
-    indexedPages: number | null;
-    lastCheckedAt: string | null;
+    connected: boolean;
+    seoPackageCode: string | null;
+    visibilityScore: number | null;
+    auditScore: number | null;
+    trackedKeywords: number | null;
+    trackedCompetitors: number | null;
+    trackedModels: number | null;
   };
-  latestSnapshot: {
-    snapshotDate: string;
-    sessions: number | null;
-    users: number | null;
-    pageviews: number | null;
-    conversions: number | null;
-    leads: number | null;
-    orders: number | null;
-    revenueUsd: number | null;
-    sourceSystem: string | null;
-  } | null;
-  integrationCount: number;
-  openRequestCount: number;
+  myBusiness: {
+    google: BusinessProfileData;
+    apple: BusinessProfileData;
+    bing: BusinessProfileData;
+  };
 }
 
-export interface ArionSiteDashboard {
-  tenant: {
-    tenantId: string;
-    tenantName: string;
-    tenantFullName: string | null;
+export interface WebsiteAnalyticsResponse {
+  site: ArionSiteSummary | null;
+  provider: 'GOOGLE' | 'BING';
+  connected: boolean;
+  summary: {
+    users: number | null;
+    sessions: number | null;
+    views: number | null;
+    engagementRate: number | null;
+    avgEngagementTimeSeconds: number | null;
+    conversions: number | null;
+    revenueUsd: number | null;
   };
-  site: {
-    siteId: string;
-    tenantId: string;
-    wpUrl: string;
-    status: string;
-    hostingerWebsiteId: string | null;
-    hostingerPlanId: string | null;
-    templateKey: string | null;
-    primaryDomain: string | null;
-    sslStatus: string | null;
-    createdAt: string;
-    updatedAt: string;
-    packageCode: string | null;
-    packagePriceUsd: number | null;
-    isEcommerceEnabled: boolean;
-    notes: string | null;
+  breakdowns: {
+    topPages: Array<Record<string, unknown>>;
+    topSources: Array<Record<string, unknown>>;
+    devices: Array<Record<string, unknown>>;
+    geos: Array<Record<string, unknown>>;
+    landingPages: Array<Record<string, unknown>>;
   };
+  integration: IntegrationRecord | null;
+}
+
+export interface HostingResponse {
+  site: ArionSiteSummary | null;
   health: {
-    siteHealthId: string;
     wordpressVersion: string | null;
     phpVersion: string | null;
     pluginUpdatesAvailable: number | null;
@@ -79,105 +100,101 @@ export interface ArionSiteDashboard {
     siteStatus: string | null;
     lastHealthCheckAt: string | null;
     formDeliveryStatus: string | null;
-    lastFormTestAt: string | null;
     performanceScore: number | null;
-    lastPerfCheckAt: string | null;
   } | null;
-  seo: {
-    siteSeoStatusId: string;
-    ga4Connected: boolean;
-    searchConsoleConnected: boolean;
-    bingWebmasterConnected: boolean;
-    sitemapDetected: boolean;
-    robotsOk: boolean | null;
-    indexedPages: number | null;
-    lastCheckedAt: string | null;
-  } | null;
-  presence: {
-    sitePresenceId: string;
-    businessName: string | null;
-    phone: string | null;
-    addressLine1: string | null;
-    addressLine2: string | null;
-    city: string | null;
-    state: string | null;
-    postalCode: string | null;
-    country: string | null;
-    googleBusinessProfileUrl: string | null;
-    appleBusinessConnectUrl: string | null;
-    bingPlacesUrl: string | null;
-    googleMapsUrl: string | null;
-    appleMapsUrl: string | null;
-    bingMapsUrl: string | null;
-    mapEmbedUrl: string | null;
-  } | null;
-  integrations: Array<{
-    siteIntegrationId: string;
-    providerCode: string;
-    integrationAccountId: string | null;
-    status: string;
-    config: unknown;
-    createdAt: string;
-    updatedAt: string;
-  }>;
   plugins: Array<{
-    sitePluginId: string;
     pluginKey: string;
     pluginName: string | null;
     pluginVersion: string | null;
     isRequired: boolean;
     isActive: boolean;
     lastCheckedAt: string | null;
-    createdAt: string;
   }>;
   requests: Array<{
     siteRequestId: string;
     requestType: string;
     requestStatus: string;
-    requestedByEmail: string | null;
-    notes: string | null;
     requestedAt: string;
-    closedAt: string | null;
-    isTest: boolean;
+    notes: string | null;
   }>;
-  analytics: {
-    latest: {
-      snapshotId: string;
-      snapshotDate: string;
-      sessions: number | null;
-      users: number | null;
-      pageviews: number | null;
-      conversions: number | null;
-      leads: number | null;
-      orders: number | null;
-      revenueUsd: number | null;
-      sourceSystem: string | null;
-      createdAt: string;
-    } | null;
-    series: Array<{
-      snapshotId: string;
-      snapshotDate: string;
-      sessions: number | null;
-      users: number | null;
-      pageviews: number | null;
-      conversions: number | null;
-      leads: number | null;
-      orders: number | null;
-      revenueUsd: number | null;
-      sourceSystem: string | null;
-      createdAt: string;
-    }>;
+}
+
+export interface ConsoleResponse {
+  site: ArionSiteSummary | null;
+  provider: 'GOOGLE' | 'BING';
+  connected: boolean;
+  summary: {
+    clicks: number | null;
+    impressions: number | null;
+    ctr: number | null;
+    avgPosition: number | null;
   };
-  events: Array<{
-    siteEventId: string;
-    eventType: string;
-    eventStatus: string;
-    message: string | null;
-    details: unknown;
-    jobKey: string | null;
-    isTest: boolean;
-    createdAt: string;
-  }>;
+  breakdowns: {
+    queries: Array<Record<string, unknown>>;
+    pages: Array<Record<string, unknown>>;
+    devices: Array<Record<string, unknown>>;
+    countries: Array<Record<string, unknown>>;
+    comparisons: Array<Record<string, unknown>>;
+  };
+  integration: IntegrationRecord | null;
+}
+
+export interface SeoResponse {
+  site: ArionSiteSummary | null;
+  connected: boolean;
+  integration: IntegrationRecord | null;
+  package: {
+    code: string | null;
+    label: string | null;
+    keywordLimit: number | null;
+    competitorLimit: number | null;
+    modelLimit: number | null;
+    groupLimit: number | null;
+    aiEnabled: boolean;
+    dataApiEnabled: boolean;
+  };
+  snapshot: {
+    visibilityScore: number | null;
+    auditScore: number | null;
+    trackedKeywords: number | null;
+    trackedCompetitors: number | null;
+    trackedModels: number | null;
+    criticalIssues: number | null;
+    warningIssues: number | null;
+  };
+  breakdowns: Record<string, unknown>;
+}
+
+export interface BusinessProfileData {
+  connected: boolean;
+  editable: boolean;
+  displayName: string | null;
+  primaryCategory: string | null;
+  websiteUrl: string | null;
+  mapsUrl: string | null;
+  phone: string | null;
+  address: Record<string, unknown> | null;
+  hours: Record<string, unknown> | null;
+  resourceUrl: string | null;
+  integration: IntegrationRecord | null;
+}
+
+export interface IntegrationRecord {
+  siteIntegrationId: string;
+  providerCode: string;
+  status: string;
+  config: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GoogleConnectResponse {
+  authUrl: string;
+}
+
+export interface CreateSeoProjectResponse {
+  integration: IntegrationRecord;
+  snapshot?: Record<string, unknown> | null;
 }
 
 export class ArionApiError extends Error {
@@ -240,58 +257,99 @@ async function requestJson<T>(params: {
   const body = text ? safeJsonParse(text) : null;
 
   if (!res.ok) {
-    const msg =
-      typeof body === 'object' && body && 'error' in body
-        ? String((body as any).error)
-        : `Request failed (${res.status})`;
+    const msg = typeof body === 'object' && body && 'error' in body ? String((body as any).error) : `Request failed (${res.status})`;
     throw new ArionApiError(msg, res.status, body);
   }
 
   return body as T;
 }
 
-export async function listArionSites(params: {
-  baseUrl: string;
-  bearerToken: string;
-  tenantId: string;
-}): Promise<{ sites: ArionSiteSummary[] }> {
-  return requestJson<{ sites: ArionSiteSummary[] }>({
+export async function listArionSites(params: { baseUrl: string; bearerToken: string; tenantId: string }) {
+  return requestJson<{ tenant: OverviewResponse['tenant']; sites: ArionSiteSummary[] }>({ ...params, path: '/arion/sites' });
+}
+
+export async function getArionOverview(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId?: string | null }) {
+  const qs = params.siteId ? `?siteId=${encodeURIComponent(params.siteId)}` : '';
+  return requestJson<OverviewResponse>({ ...params, path: `/arion/overview${qs}` });
+}
+
+export async function getWebsiteAnalytics(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; provider: 'google' | 'bing'; periodCode?: string }) {
+  const qp = new URLSearchParams({ siteId: params.siteId });
+  if (params.periodCode) qp.set('periodCode', params.periodCode);
+  return requestJson<WebsiteAnalyticsResponse>({ ...params, path: `/arion/website-analytics/${params.provider}?${qp.toString()}` });
+}
+
+export async function getHosting(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<HostingResponse>({ ...params, path: `/arion/hosting?siteId=${encodeURIComponent(params.siteId)}` });
+}
+
+export async function getConsoleReport(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; provider: 'google' | 'bing'; periodCode?: string }) {
+  const qp = new URLSearchParams({ siteId: params.siteId });
+  if (params.periodCode) qp.set('periodCode', params.periodCode);
+  return requestJson<ConsoleResponse>({ ...params, path: `/arion/console/${params.provider}?${qp.toString()}` });
+}
+
+export async function getSeo(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<SeoResponse>({ ...params, path: `/arion/seo?siteId=${encodeURIComponent(params.siteId)}` });
+}
+
+export async function getMyBusiness(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; provider: 'google' | 'apple' | 'bing' }) {
+  return requestJson<{ site: ArionSiteSummary | null; provider: string; profile: BusinessProfileData }>({
     ...params,
-    path: '/arion/sites'
+    path: `/arion/my-business/${params.provider}?siteId=${encodeURIComponent(params.siteId)}`
   });
 }
 
-export async function getArionDashboard(params: {
-  baseUrl: string;
-  bearerToken: string;
-  tenantId: string;
-  siteId: string;
-}): Promise<ArionSiteDashboard> {
-  return requestJson<ArionSiteDashboard>({
-    baseUrl: params.baseUrl,
-    bearerToken: params.bearerToken,
-    tenantId: params.tenantId,
-    path: `/arion/sites/${params.siteId}/dashboard`
-  });
-}
-
-export async function createArionRequest(params: {
-  baseUrl: string;
-  bearerToken: string;
-  tenantId: string;
-  siteId: string;
-  requestType: string;
-  notes: string;
-}): Promise<{ request: unknown }> {
-  return requestJson<{ request: unknown }>({
-    baseUrl: params.baseUrl,
-    bearerToken: params.bearerToken,
-    tenantId: params.tenantId,
-    path: `/arion/sites/${params.siteId}/requests`,
+export async function connectGoogle(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; setupMode: SetupMode; returnUrl: string }) {
+  return requestJson<GoogleConnectResponse>({
+    ...params,
     method: 'POST',
-    body: {
-      requestType: params.requestType,
-      notes: params.notes
-    }
+    path: '/arion/integrations/google/connect',
+    body: { siteId: params.siteId, setupMode: params.setupMode, returnUrl: params.returnUrl }
+  });
+}
+
+export async function updateGoogleBusiness(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; body: Record<string, unknown> }) {
+  return requestJson<{ ok: true; profile: BusinessProfileData }>({
+    ...params,
+    method: 'PUT',
+    path: `/arion/my-business/google?siteId=${encodeURIComponent(params.siteId)}`,
+    body: params.body
+  });
+}
+
+export async function updateLinkedBusinessProfile(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; provider: 'apple' | 'bing'; body: Record<string, unknown> }) {
+  return requestJson<{ ok: true; profile: BusinessProfileData }>({
+    ...params,
+    method: 'PUT',
+    path: `/arion/my-business/${params.provider}?siteId=${encodeURIComponent(params.siteId)}`,
+    body: params.body
+  });
+}
+
+export async function createSeoProject(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; body: Record<string, unknown> }) {
+  return requestJson<CreateSeoProjectResponse>({
+    ...params,
+    method: 'POST',
+    path: '/arion/seo/project/create',
+    body: { siteId: params.siteId, ...params.body }
+  });
+}
+
+export async function linkSeoProject(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; body: Record<string, unknown> }) {
+  return requestJson<CreateSeoProjectResponse>({
+    ...params,
+    method: 'POST',
+    path: '/arion/seo/project/link',
+    body: { siteId: params.siteId, ...params.body }
+  });
+}
+
+export async function createArionRequest(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; requestType: string; notes: string }) {
+  return requestJson<{ request: { siteRequestId: string } }>({
+    ...params,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(params.siteId)}/requests`,
+    body: { requestType: params.requestType, notes: params.notes }
   });
 }
