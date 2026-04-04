@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import type { PortalService, ServiceStatus } from '../../config/serviceCatalog';
 import { useAppState } from '../../app/AppState';
 import { useAccessToken } from '../../auth/useAccessToken';
-import { ArionApiError, connectGoogle, getConsoleReport, type ConsoleResponse } from '../../lib/arionApi';
+import { ArionApiError, getConsoleReport, type ConsoleResponse } from '../../lib/arionApi';
 import { ArionCard, ArionServiceLayout, ArionTabBar, EmptyPanel, StatGrid } from './ArionServiceLayout';
 import { useArionSites } from './useArionSites';
+
+const ARION_CLIENT_URL = import.meta.env.VITE_ARION_CLIENT_URL || 'https://arion.intelligentanalyticsdm.com';
 
 interface Props { service: PortalService; status: ServiceStatus }
 
@@ -35,18 +37,6 @@ export function ArionConsolePage({ service, status }: Props) {
     run();
   }, [activeTenantId, apiBaseUrl, getToken, selectedSiteId, tab]);
 
-  async function handleGoogleConnect() {
-    if (!activeTenantId || !apiBaseUrl || !selectedSiteId) return;
-    try {
-      const token = await getToken();
-      const res = await connectGoogle({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId: selectedSiteId, setupMode: 'EXISTING_INTEGRATION', returnUrl: window.location.href });
-      window.location.assign(res.authUrl);
-    } catch (err) {
-      console.error(err);
-      setError('Unable to start Google connection.');
-    }
-  }
-
   return (
     <ArionServiceLayout
       service={service}
@@ -56,7 +46,7 @@ export function ArionConsolePage({ service, status }: Props) {
       onSelectSite={setSelectedSiteId}
       loading={loadingSites || loading}
       error={sitesError || error}
-      actions={<div className="flex flex-wrap gap-2"><ArionTabBar tabs={[{ key: 'google', label: 'Google' }, { key: 'bing', label: 'Bing' }]} activeTab={tab} onChange={(value) => setTab(value as 'google' | 'bing')} />{tab === 'google' && <button type="button" onClick={handleGoogleConnect} className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 shadow-sm hover:bg-sky-100">Connect Google</button>}</div>}
+      actions={<div className="flex flex-wrap gap-2"><ArionTabBar tabs={[{ key: 'google', label: 'Google' }, { key: 'bing', label: 'Bing' }]} activeTab={tab} onChange={(value) => setTab(value as 'google' | 'bing')} /><a href={`${ARION_CLIENT_URL}/search-console?tenant=${activeTenantId}`} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800">Open in ARION</a></div>}
     >
       {!selectedSite ? <EmptyPanel title="No sites connected" body="Create or connect an ARION site to view console reporting." /> : (
         <>

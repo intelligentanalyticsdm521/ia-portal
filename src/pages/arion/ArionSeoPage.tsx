@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import type { PortalService, ServiceStatus } from '../../config/serviceCatalog';
 import { useAppState } from '../../app/AppState';
 import { useAccessToken } from '../../auth/useAccessToken';
-import { ArionApiError, createSeoProject, getSeo, linkSeoProject, type SeoResponse } from '../../lib/arionApi';
+import { ArionApiError, getSeo, type SeoResponse } from '../../lib/arionApi';
 import { ArionCard, ArionServiceLayout, EmptyPanel, StatGrid } from './ArionServiceLayout';
 import { useArionSites } from './useArionSites';
+
+const ARION_CLIENT_URL = import.meta.env.VITE_ARION_CLIENT_URL || 'https://arion.intelligentanalyticsdm.com';
 
 interface Props { service: PortalService; status: ServiceStatus }
 
@@ -16,10 +18,6 @@ export function ArionSeoPage({ service, status }: Props) {
   const [data, setData] = useState<SeoResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [projectName, setProjectName] = useState('');
-  const [manualProjectId, setManualProjectId] = useState('');
-
   useEffect(() => {
     async function run() {
       if (!activeTenantId || !apiBaseUrl || !selectedSiteId) { setData(null); return; }
@@ -48,50 +46,8 @@ export function ArionSeoPage({ service, status }: Props) {
     { label: 'Project Linked', value: data?.connected ? 'Yes' : 'No' }
   ], [data]);
 
-  async function handleCreateProject() {
-    if (!activeTenantId || !apiBaseUrl || !selectedSiteId) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const token = await getToken();
-      await createSeoProject({
-        baseUrl: apiBaseUrl,
-        bearerToken: token.accessToken,
-        tenantId: activeTenantId,
-        siteId: selectedSiteId,
-        body: { projectName: projectName || selectedSite?.primaryDomain || selectedSite?.wpUrl }
-      });
-      const res = await getSeo({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId: selectedSiteId });
-      setData(res);
-    } catch (err) {
-      console.error(err);
-      setError('Unable to create the SE Ranking project.');
-    } finally { setSubmitting(false); }
-  }
-
-  async function handleLinkProject() {
-    if (!activeTenantId || !apiBaseUrl || !selectedSiteId || !manualProjectId.trim()) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const token = await getToken();
-      await linkSeoProject({
-        baseUrl: apiBaseUrl,
-        bearerToken: token.accessToken,
-        tenantId: activeTenantId,
-        siteId: selectedSiteId,
-        body: { projectId: manualProjectId.trim(), projectName: projectName || selectedSite?.primaryDomain || selectedSite?.wpUrl }
-      });
-      const res = await getSeo({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId: selectedSiteId });
-      setData(res);
-    } catch (err) {
-      console.error(err);
-      setError('Unable to link the SE Ranking project.');
-    } finally { setSubmitting(false); }
-  }
-
   return (
-    <ArionServiceLayout service={service} status={status} sites={sites} selectedSiteId={selectedSiteId} onSelectSite={setSelectedSiteId} loading={loadingSites || loading} error={sitesError || error}>
+    <ArionServiceLayout service={service} status={status} sites={sites} selectedSiteId={selectedSiteId} onSelectSite={setSelectedSiteId} loading={loadingSites || loading} error={sitesError || error} actions={<a href={`${ARION_CLIENT_URL}/seo-tools?tenant=${activeTenantId}`} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800">Open in ARION</a>}>
       {!selectedSite ? <EmptyPanel title="No sites connected" body="Create or connect an ARION site to enable SEO packages." /> : (
         <>
           <StatGrid items={packageRows} />
@@ -107,16 +63,9 @@ export function ArionSeoPage({ service, status }: Props) {
                 <SimpleRow label="Warning Issues" value={formatNumber(data?.snapshot.warningIssues)} />
               </div>
             </ArionCard>
-            <ArionCard title="SE Ranking Project" subtitle="Create or link the SEO project for this site.">
-              <div className="space-y-3">
-                <input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="Project name (optional)" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={handleCreateProject} disabled={submitting} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800">{submitting ? 'Working…' : 'Create Project in SE Ranking'}</button>
-                </div>
-                <div className="border-t border-slate-100 pt-3">
-                  <input value={manualProjectId} onChange={(e) => setManualProjectId(e.target.value)} placeholder="Existing SE Ranking project ID" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
-                  <div className="mt-2"><button type="button" onClick={handleLinkProject} disabled={submitting || !manualProjectId.trim()} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">Link Existing Project</button></div>
-                </div>
+            <ArionCard title="SE Ranking Project" subtitle="Manage SE Ranking projects in ARION.">
+              <div className="space-y-2 text-sm">
+                <SimpleRow label="Project Linked" value={data?.connected ? 'Yes' : 'No'} />
               </div>
             </ArionCard>
           </div>

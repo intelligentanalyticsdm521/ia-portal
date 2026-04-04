@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import type { PortalService, ServiceStatus } from '../../config/serviceCatalog';
 import { useAccessToken } from '../../auth/useAccessToken';
 import { useAppState } from '../../app/AppState';
-import { ArionApiError, connectGoogle, getArionOverview, type OverviewResponse } from '../../lib/arionApi';
+import { ArionApiError, getArionOverview, type OverviewResponse } from '../../lib/arionApi';
 import { ArionCard, ArionServiceLayout, EmptyPanel, SiteActionLink, StatGrid } from './ArionServiceLayout';
 import { useArionSites } from './useArionSites';
+
+const ARION_CLIENT_URL = import.meta.env.VITE_ARION_CLIENT_URL || 'https://arion.intelligentanalyticsdm.com';
 
 interface Props { service: PortalService; status: ServiceStatus }
 
@@ -16,7 +18,7 @@ export function ArionOverviewPage({ service, status }: Props) {
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState(false);
+  // Interactive features moved to ARION Client App
 
   useEffect(() => {
     async function run() {
@@ -52,26 +54,9 @@ export function ArionOverviewPage({ service, status }: Props) {
     { label: 'SEO Package', value: data?.seo.seoPackageCode ?? 'Not enabled' }
   ], [data, sites.length]);
 
-  async function handleGoogleConnect() {
-    if (!activeTenantId || !apiBaseUrl || !selectedSiteId) return;
-    setConnecting(true);
-    try {
-      const token = await getToken();
-      const res = await connectGoogle({
-        baseUrl: apiBaseUrl,
-        bearerToken: token.accessToken,
-        tenantId: activeTenantId,
-        siteId: selectedSiteId,
-        setupMode: 'ARION_AUTO_SETUP',
-        returnUrl: window.location.href
-      });
-      window.location.assign(res.authUrl);
-    } catch (err) {
-      console.error(err);
-      setError('Unable to start Google connection flow.');
-      setConnecting(false);
-    }
-  }
+  const openArionUrl = selectedSiteId
+    ? `${ARION_CLIENT_URL}?tenant=${activeTenantId}&siteId=${selectedSiteId}`
+    : ARION_CLIENT_URL;
 
   return (
     <ArionServiceLayout
@@ -83,10 +68,7 @@ export function ArionOverviewPage({ service, status }: Props) {
       loading={loadingSites || loading}
       error={sitesError || error}
       actions={<div className="flex flex-wrap gap-2">
-        <button type="button" disabled={!data?.permissions.canCreateSite} className={`rounded-lg px-3 py-2 text-sm font-medium shadow-sm ${data?.permissions.canCreateSite ? 'bg-slate-900 text-white hover:bg-slate-800' : 'border border-slate-200 bg-slate-100 text-slate-400'}`}>Create New Website</button>
-        <button type="button" onClick={handleGoogleConnect} disabled={connecting || !selectedSiteId} className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 shadow-sm hover:bg-sky-100">
-          {connecting ? 'Connecting…' : 'Connect Google'}
-        </button>
+        <a href={openArionUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800">Open ARION</a>
       </div>}
     >
       {!selectedSite ? (

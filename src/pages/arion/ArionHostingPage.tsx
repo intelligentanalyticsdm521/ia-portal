@@ -6,6 +6,8 @@ import { ArionApiError, getHosting, type HostingResponse } from '../../lib/arion
 import { ArionCard, ArionServiceLayout, EmptyPanel, SiteActionLink, StatGrid } from './ArionServiceLayout';
 import { useArionSites } from './useArionSites';
 
+const ARION_CLIENT_URL = import.meta.env.VITE_ARION_CLIENT_URL || 'https://arion.intelligentanalyticsdm.com';
+
 interface Props { service: PortalService; status: ServiceStatus }
 
 export function ArionHostingPage({ service, status }: Props) {
@@ -54,7 +56,7 @@ export function ArionHostingPage({ service, status }: Props) {
       onSelectSite={setSelectedSiteId}
       loading={loadingSites || loading}
       error={sitesError || error}
-      actions={<SiteActionLink href={selectedSite?.wpUrl}>Go To Website</SiteActionLink>}
+      actions={<div className="flex flex-wrap gap-2"><SiteActionLink href={selectedSite?.wpUrl}>Go To Website</SiteActionLink> <a href={`${ARION_CLIENT_URL}/hosting?tenant=${activeTenantId}`} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800">Open in ARION</a></div>}
     >
       {!selectedSite ? (
         <EmptyPanel title="No sites connected" body="Create or connect an ARION site to view hosting details." />

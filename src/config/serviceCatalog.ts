@@ -77,6 +77,14 @@ export const SERVICE_CATALOG: PortalService[] = [
     description: 'Google, Apple, and Bing business profile management.'
   },
   {
+    key: 'arion_brand',
+    displayName: 'Your Brand',
+    section: 'ARION',
+    defaultStatus: 'coming_soon',
+    route: '/app/services/arion_brand',
+    description: 'Brand management tools — assets, style guides, and digital brand presence.'
+  },
+  {
     key: 'stella_dashboards',
     displayName: 'Dashboards',
     section: 'STELLA',
