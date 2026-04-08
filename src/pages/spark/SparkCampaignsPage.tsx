@@ -27,8 +27,8 @@ export function SparkCampaignsPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await get<Campaign[]>("/api/v1/campaigns");
-        if (!cancelled) setCampaigns(res);
+        const raw = await get<{ data: Campaign[] }>("/api/v1/campaigns");
+        if (!cancelled) setCampaigns(raw.data || []);
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {

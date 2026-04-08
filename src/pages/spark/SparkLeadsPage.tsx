@@ -26,8 +26,8 @@ export function SparkLeadsPage() {
     setError(null);
     try {
       const params = filter !== "all" ? `?score=${filter}` : "";
-      const res = await get<Lead[]>(`/api/v1/leads${params}`);
-      setLeads(res);
+      const raw = await get<{ data: Lead[] }>(`/api/v1/leads${params}`);
+      setLeads(raw.data || []);
     } catch (err) {
       setError(err);
     } finally {

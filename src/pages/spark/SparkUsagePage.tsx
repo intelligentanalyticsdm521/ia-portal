@@ -26,8 +26,8 @@ export function SparkUsagePage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await get<UsageData>("/api/v1/usage");
-        if (!cancelled) setUsage(res);
+        const raw = await get<{ data: UsageData }>("/api/v1/usage");
+        if (!cancelled) setUsage(raw.data || null);
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {

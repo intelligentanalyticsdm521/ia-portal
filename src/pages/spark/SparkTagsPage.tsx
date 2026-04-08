@@ -34,8 +34,8 @@ export function SparkTagsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await get<Tag[]>("/api/v1/tags");
-      setTags(res);
+      const raw = await get<{ data: Tag[] }>("/api/v1/tags");
+      setTags(raw.data || []);
     } catch (err) {
       setError(err);
     } finally {

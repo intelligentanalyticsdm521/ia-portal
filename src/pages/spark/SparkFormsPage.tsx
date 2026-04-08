@@ -24,8 +24,8 @@ export function SparkFormsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await get<SparkForm[]>("/api/v1/forms");
-      setForms(res);
+      const raw = await get<{ data: SparkForm[] }>("/api/v1/forms");
+      setForms(raw.data || []);
     } catch (err) {
       setError(err);
     } finally {

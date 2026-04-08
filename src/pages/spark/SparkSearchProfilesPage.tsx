@@ -26,8 +26,8 @@ export function SparkSearchProfilesPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await get<SearchProfile[]>("/api/v1/leads/profiles");
-      setProfiles(res);
+      const raw = await get<{ data: SearchProfile[] }>("/api/v1/leads/profiles");
+      setProfiles(raw.data || []);
     } catch (err) {
       setError(err);
     } finally {

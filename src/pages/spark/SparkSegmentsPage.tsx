@@ -24,8 +24,8 @@ export function SparkSegmentsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await get<Segment[]>("/api/v1/segments");
-      setSegments(res);
+      const raw = await get<{ data: Segment[] }>("/api/v1/segments");
+      setSegments(raw.data || []);
     } catch (err) {
       setError(err);
     } finally {

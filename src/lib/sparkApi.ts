@@ -60,10 +60,7 @@ async function sparkFetch<T>(
 
   if (res.status === 204) return undefined as T;
   const json = await res.json();
-  // If response has both data + meta (paginated list), return the full object so pages get meta
-  // If response has only data (single item), unwrap it
-  if (json && typeof json === "object" && "data" in json && "meta" in json) return json as T;
-  if (json && typeof json === "object" && "data" in json) return json.data as T;
+  // Never unwrap — return the full API response so pages can access both data and meta
   return json as T;
 }
 

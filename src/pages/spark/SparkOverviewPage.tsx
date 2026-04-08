@@ -37,13 +37,13 @@ export function SparkOverviewPage() {
       setLoading(true);
       setError(null);
       try {
-        const [u, c] = await Promise.all([
-          get<UsageData>("/api/v1/usage"),
-          get<Contact[]>("/api/v1/contacts?limit=5"),
+        const [uRaw, cRaw] = await Promise.all([
+          get<{ data: UsageData }>("/api/v1/usage"),
+          get<{ data: Contact[] }>("/api/v1/contacts?limit=5"),
         ]);
         if (!cancelled) {
-          setUsage(u);
-          setContacts(c);
+          setUsage(uRaw.data || null);
+          setContacts(cRaw.data || []);
         }
       } catch (err) {
         if (!cancelled) setError(err);

@@ -34,9 +34,9 @@ export function SparkContactsPage() {
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
       if (search) params.set("search", search);
-      const res = await get<{ data: Contact[]; total: number }>(`/api/v1/contacts?${params}`);
-      setContacts(res.data);
-      setTotal(res.total);
+      const raw = await get<{ data: Contact[]; meta: { total: number } }>(`/api/v1/contacts?${params}`);
+      setContacts(raw.data || []);
+      setTotal(raw.meta?.total || 0);
     } catch (err) {
       setError(err);
     } finally {

@@ -23,8 +23,8 @@ export function SparkListsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await get<ContactList[]>("/api/v1/lists");
-      setLists(res);
+      const raw = await get<{ data: ContactList[] }>("/api/v1/lists");
+      setLists(raw.data || []);
     } catch (err) {
       setError(err);
     } finally {

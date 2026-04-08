@@ -37,8 +37,8 @@ export function SparkIntelligencePage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await get<IntelligenceSummary>("/api/v1/intelligence/summary");
-        if (!cancelled) setSummary(res);
+        const raw = await get<{ data: IntelligenceSummary }>("/api/v1/intelligence/summary");
+        if (!cancelled) setSummary(raw.data || null);
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {
