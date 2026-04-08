@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
 interface Worker {
   id: string;
@@ -15,7 +16,7 @@ export function OliverWorkersPage() {
   const { get, post, ready } = useOliverApi();
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", type: "employee" });
   const [creating, setCreating] = useState(false);
@@ -30,7 +31,7 @@ export function OliverWorkersPage() {
         const data = await get<Worker[]>("/workers");
         if (!cancelled) setWorkers(data);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load workers");
+        if (!cancelled) setError(err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -54,29 +55,9 @@ export function OliverWorkersPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="p-6 space-y-3">
-        <div className="h-8 w-32 bg-gray-200 rounded animate-pulse" />
-        {[...Array(5)].map((_, i) => (
-          <div key={i} className="h-12 bg-gray-200 rounded animate-pulse" />
-        ))}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="rounded-xl bg-red-50 ring-1 ring-red-200 p-5 text-red-700">{error}</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 space-y-4">
+    <OliverPageWrapper title="Workers" subtitle="Manage field workers and crew" error={error} loading={loading}>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900">Workers</h1>
         <button
           onClick={() => setShowAdd(true)}
           className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
@@ -163,6 +144,6 @@ export function OliverWorkersPage() {
           </div>
         </div>
       )}
-    </div>
+    </OliverPageWrapper>
   );
 }

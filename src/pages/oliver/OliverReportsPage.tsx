@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
 interface JobReport {
   status: string;
@@ -27,7 +28,7 @@ export function OliverReportsPage() {
   const [revenue, setRevenue] = useState<RevenueReport | null>(null);
   const [completion, setCompletion] = useState<CompletionReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -43,7 +44,7 @@ export function OliverReportsPage() {
         ]);
         if (!cancelled) { setJobReport(j); setRevenue(r); setCompletion(c); }
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load reports");
+        if (!cancelled) setError(err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -51,27 +52,6 @@ export function OliverReportsPage() {
     load();
     return () => { cancelled = true; };
   }, [get, ready]);
-
-  if (loading) {
-    return (
-      <div className="p-6 space-y-4">
-        <div className="h-8 w-32 bg-gray-200 rounded animate-pulse" />
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="rounded-xl bg-white ring-1 ring-gray-200 p-5 animate-pulse h-24" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="rounded-xl bg-red-50 ring-1 ring-red-200 p-5 text-red-700">{error}</div>
-      </div>
-    );
-  }
 
   const maxJobCount = Math.max(1, ...jobReport.map((j) => j.count));
 
@@ -86,9 +66,7 @@ export function OliverReportsPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-semibold text-slate-900">Reports</h1>
-
+    <OliverPageWrapper title="Reports" subtitle="Business analytics and reporting" error={error} loading={loading}>
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="rounded-xl bg-white ring-1 ring-gray-200 p-5">
@@ -185,6 +163,6 @@ export function OliverReportsPage() {
           </table>
         </div>
       </div>
-    </div>
+    </OliverPageWrapper>
   );
 }

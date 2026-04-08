@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
 interface Job {
   id: string;
@@ -22,7 +23,7 @@ export function OliverDispatchPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [offering, setOffering] = useState<string | null>(null);
   const [selectedWorker, setSelectedWorker] = useState<Record<string, string>>({});
 
@@ -39,7 +40,7 @@ export function OliverDispatchPage() {
         ]);
         if (!cancelled) { setJobs(j); setWorkers(w); }
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load dispatch data");
+        if (!cancelled) setError(err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -68,28 +69,8 @@ export function OliverDispatchPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="p-6 space-y-3">
-        <div className="h-8 w-40 bg-gray-200 rounded animate-pulse" />
-        {[...Array(4)].map((_, i) => (
-          <div key={i} className="rounded-xl bg-white ring-1 ring-gray-200 p-4 animate-pulse h-20" />
-        ))}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="rounded-xl bg-red-50 ring-1 ring-red-200 p-5 text-red-700">{error}</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-semibold text-slate-900">Dispatch</h1>
+    <OliverPageWrapper title="Dispatch" subtitle="Assign workers to jobs" error={error} loading={loading}>
 
       {jobs.length === 0 ? (
         <div className="rounded-xl bg-white ring-1 ring-gray-200 p-8 text-center text-slate-400">
@@ -138,6 +119,6 @@ export function OliverDispatchPage() {
           ))}
         </div>
       )}
-    </div>
+    </OliverPageWrapper>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
 interface RevenueReport {
   total_revenue: number;
@@ -14,7 +15,7 @@ export function OliverPaymentsPage() {
   const { get, ready } = useOliverApi();
   const [data, setData] = useState<RevenueReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -26,7 +27,7 @@ export function OliverPaymentsPage() {
         const d = await get<RevenueReport>("/reports/revenue");
         if (!cancelled) setData(d);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load payments data");
+        if (!cancelled) setError(err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -34,30 +35,6 @@ export function OliverPaymentsPage() {
     load();
     return () => { cancelled = true; };
   }, [get, ready]);
-
-  if (loading) {
-    return (
-      <div className="p-6 space-y-4">
-        <div className="h-8 w-36 bg-gray-200 rounded animate-pulse" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="rounded-xl bg-white ring-1 ring-gray-200 p-5 animate-pulse">
-              <div className="h-4 w-24 bg-gray-200 rounded mb-3" />
-              <div className="h-8 w-28 bg-gray-200 rounded" />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="rounded-xl bg-red-50 ring-1 ring-red-200 p-5 text-red-700">{error}</div>
-      </div>
-    );
-  }
 
   const kpis = [
     { label: "Total Revenue", value: `$${(data?.total_revenue ?? 0).toLocaleString()}`, color: "text-green-600" },
@@ -69,9 +46,7 @@ export function OliverPaymentsPage() {
   ];
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-semibold text-slate-900">Payments</h1>
-
+    <OliverPageWrapper title="Payments" subtitle="Payment overview" error={error} loading={loading}>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {kpis.map((k) => (
           <div key={k.label} className="rounded-xl bg-white ring-1 ring-gray-200 p-5">
@@ -88,6 +63,6 @@ export function OliverPaymentsPage() {
           Outstanding amounts include all sent invoices that have not yet been paid.
         </p>
       </div>
-    </div>
+    </OliverPageWrapper>
   );
 }

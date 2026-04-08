@@ -47,6 +47,22 @@ async function oliverFetch<T>(
 
   if (!res.ok) {
     const text = await res.text();
+    // Parse tier-gate 403s into a structured error the UI can handle
+    if (res.status === 403) {
+      try {
+        const body = JSON.parse(text);
+        if (body.error === "feature_not_available") {
+          throw {
+            type: "tier_gate" as const,
+            tierRequired: body.tier_required || "pro",
+            currentTier: body.current_tier || "standard",
+          };
+        }
+      } catch (e) {
+        // If it's already our tier_gate object, rethrow it
+        if (typeof e === "object" && e !== null && "type" in e) throw e;
+      }
+    }
     throw new Error(`OLIVER API ${res.status}: ${text}`);
   }
 

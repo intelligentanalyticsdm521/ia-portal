@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
 interface TenantSettings {
   businessName: string;
@@ -14,7 +15,7 @@ export function OliverSettingsPage() {
   const { get, ready } = useOliverApi();
   const [settings, setSettings] = useState<TenantSettings | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -26,7 +27,7 @@ export function OliverSettingsPage() {
         const data = await get<TenantSettings>("/settings");
         if (!cancelled) setSettings(data);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load settings");
+        if (!cancelled) setError(err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -34,27 +35,6 @@ export function OliverSettingsPage() {
     load();
     return () => { cancelled = true; };
   }, [get, ready]);
-
-  if (loading) {
-    return (
-      <div className="p-6 space-y-3">
-        <div className="h-8 w-32 bg-gray-200 rounded animate-pulse" />
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 p-5 animate-pulse">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="h-6 bg-gray-200 rounded mb-3" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="rounded-xl bg-red-50 ring-1 ring-red-200 p-5 text-red-700">{error}</div>
-      </div>
-    );
-  }
 
   const entries: [string, string][] = [
     ["Business Name", settings?.businessName ?? "—"],
@@ -65,9 +45,7 @@ export function OliverSettingsPage() {
   ];
 
   return (
-    <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-semibold text-slate-900">Settings</h1>
-
+    <OliverPageWrapper title="Settings" subtitle="Tenant configuration" error={error} loading={loading}>
       <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <tbody className="divide-y divide-gray-100">
@@ -90,6 +68,6 @@ export function OliverSettingsPage() {
           </tbody>
         </table>
       </div>
-    </div>
+    </OliverPageWrapper>
   );
 }

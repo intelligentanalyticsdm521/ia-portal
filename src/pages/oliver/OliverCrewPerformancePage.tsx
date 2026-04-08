@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
 interface CrewStat {
   worker_id: string;
@@ -14,7 +15,7 @@ export function OliverCrewPerformancePage() {
   const { get, ready } = useOliverApi();
   const [crew, setCrew] = useState<CrewStat[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -26,7 +27,7 @@ export function OliverCrewPerformancePage() {
         const data = await get<CrewStat[]>("/reports/crew");
         if (!cancelled) setCrew(data);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load crew performance");
+        if (!cancelled) setError(err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -35,31 +36,10 @@ export function OliverCrewPerformancePage() {
     return () => { cancelled = true; };
   }, [get, ready]);
 
-  if (loading) {
-    return (
-      <div className="p-6 space-y-3">
-        <div className="h-8 w-48 bg-gray-200 rounded animate-pulse" />
-        {[...Array(5)].map((_, i) => (
-          <div key={i} className="h-14 bg-gray-200 rounded animate-pulse" />
-        ))}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="rounded-xl bg-red-50 ring-1 ring-red-200 p-5 text-red-700">{error}</div>
-      </div>
-    );
-  }
-
   const maxAssignments = Math.max(1, ...crew.map((c) => c.total_assignments));
 
   return (
-    <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-semibold text-slate-900">Crew Performance</h1>
-
+    <OliverPageWrapper title="Crew Performance" subtitle="Per-worker completion stats" error={error} loading={loading}>
       <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-left text-xs text-slate-500 uppercase tracking-wide">
@@ -112,6 +92,6 @@ export function OliverCrewPerformancePage() {
           </tbody>
         </table>
       </div>
-    </div>
+    </OliverPageWrapper>
   );
 }

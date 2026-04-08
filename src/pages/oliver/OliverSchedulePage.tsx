@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
 interface CalendarEvent {
   id: string;
@@ -12,7 +13,7 @@ export function OliverSchedulePage() {
   const { get, ready } = useOliverApi();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -32,7 +33,7 @@ export function OliverSchedulePage() {
         const data = await get<CalendarEvent[]>(`/schedule/calendar?start=${startStr}&end=${endStr}`);
         if (!cancelled) setEvents(data);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load schedule");
+        if (!cancelled) setError(err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -71,18 +72,9 @@ export function OliverSchedulePage() {
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
   }
 
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="rounded-xl bg-red-50 ring-1 ring-red-200 p-5 text-red-700">{error}</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 space-y-4">
+    <OliverPageWrapper title="Schedule" subtitle="Calendar view of scheduled jobs" error={error} loading={loading}>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900">Schedule</h1>
         <div className="flex items-center gap-3">
           <button onClick={prevMonth} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50">&larr;</button>
           <span className="text-sm font-medium text-slate-700">{monthLabel}</span>
@@ -91,7 +83,6 @@ export function OliverSchedulePage() {
       </div>
 
       <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">
-        {loading && <div className="h-1 bg-blue-100"><div className="h-1 bg-blue-500 animate-pulse w-1/2" /></div>}
         <div className="grid grid-cols-7 text-center text-xs font-semibold text-slate-500 uppercase bg-gray-50 py-2">
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
             <div key={d}>{d}</div>
@@ -128,6 +119,6 @@ export function OliverSchedulePage() {
           })}
         </div>
       </div>
-    </div>
+    </OliverPageWrapper>
   );
 }

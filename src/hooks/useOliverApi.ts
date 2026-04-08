@@ -1,11 +1,26 @@
 /**
  * useOliverApi — Hook that provides typed OLIVER API methods
- * bound to the current MSAL account. Use in any OLIVER portal page.
+ * bound to the current MSAL account. Parses tier-gate 403s.
  */
 
 import { useCallback } from "react";
 import { useMsal } from "@azure/msal-react";
 import { oliverGet, oliverPost, oliverPatch, oliverDelete } from "../lib/oliverApi";
+
+export interface TierGateError {
+  type: "tier_gate";
+  tierRequired: string;
+  currentTier: string;
+}
+
+export function isTierGateError(err: unknown): err is TierGateError {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "type" in err &&
+    (err as TierGateError).type === "tier_gate"
+  );
+}
 
 export function useOliverApi() {
   const { instance, accounts } = useMsal();

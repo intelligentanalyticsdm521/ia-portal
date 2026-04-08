@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
 interface ActivityEvent {
   id: string;
@@ -12,7 +13,7 @@ export function OliverNotificationsPage() {
   const { get, ready } = useOliverApi();
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -24,7 +25,7 @@ export function OliverNotificationsPage() {
         const data = await get<ActivityEvent[]>("/dashboard/activity");
         if (!cancelled) setEvents(data.filter((e) => e.type === "notification" || e.type === "email"));
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load notifications");
+        if (!cancelled) setError(err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -33,26 +34,8 @@ export function OliverNotificationsPage() {
     return () => { cancelled = true; };
   }, [get, ready]);
 
-  if (loading) {
-    return (
-      <div className="p-6 space-y-3">
-        <div className="h-8 w-40 bg-gray-200 rounded animate-pulse" />
-        <div className="h-32 bg-gray-200 rounded animate-pulse" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="rounded-xl bg-red-50 ring-1 ring-red-200 p-5 text-red-700">{error}</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-semibold text-slate-900">Notifications</h1>
+    <OliverPageWrapper title="Notifications" subtitle="Email notification history" error={error} loading={loading}>
 
       <div className="rounded-xl bg-white ring-1 ring-gray-200 p-6">
         <h2 className="text-lg font-semibold text-slate-800">Notification History</h2>
@@ -82,6 +65,6 @@ export function OliverNotificationsPage() {
           </ul>
         </div>
       )}
-    </div>
+    </OliverPageWrapper>
   );
 }

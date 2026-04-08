@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
 interface Quote {
   id: string;
@@ -14,7 +15,7 @@ export function OliverQuotesPage() {
   const { get, post, ready } = useOliverApi();
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ jobId: "", amount: "" });
@@ -30,7 +31,7 @@ export function OliverQuotesPage() {
         const data = await get<Quote[]>("/quotes");
         if (!cancelled) setQuotes(data);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load quotes");
+        if (!cancelled) setError(err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -86,29 +87,9 @@ export function OliverQuotesPage() {
     converted: "bg-indigo-50 text-indigo-700",
   };
 
-  if (loading) {
-    return (
-      <div className="p-6 space-y-3">
-        <div className="h-8 w-32 bg-gray-200 rounded animate-pulse" />
-        {[...Array(5)].map((_, i) => (
-          <div key={i} className="h-12 bg-gray-200 rounded animate-pulse" />
-        ))}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="rounded-xl bg-red-50 ring-1 ring-red-200 p-5 text-red-700">{error}</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 space-y-4">
+    <OliverPageWrapper title="Quotes" subtitle="Create and manage quotes" error={error} loading={loading}>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900">Quotes</h1>
         <button onClick={() => setShowCreate(true)} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700">
           Create Quote
         </button>
@@ -186,6 +167,6 @@ export function OliverQuotesPage() {
           </div>
         </div>
       )}
-    </div>
+    </OliverPageWrapper>
   );
 }

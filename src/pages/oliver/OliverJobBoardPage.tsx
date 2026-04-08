@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
 interface Job {
   id: string;
@@ -17,7 +18,7 @@ export function OliverJobBoardPage() {
   const { get, post, ready } = useOliverApi();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [filter, setFilter] = useState<string>("all");
   const [view, setView] = useState<"list" | "kanban">("list");
   const [showCreate, setShowCreate] = useState(false);
@@ -34,7 +35,7 @@ export function OliverJobBoardPage() {
         const data = await get<Job[]>("/jobs");
         if (!cancelled) setJobs(data);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load jobs");
+        if (!cancelled) setError(err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -60,32 +61,9 @@ export function OliverJobBoardPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="p-6 space-y-4">
-        <div className="h-8 w-48 bg-gray-200 rounded animate-pulse" />
-        {[...Array(5)].map((_, i) => (
-          <div key={i} className="rounded-xl bg-white ring-1 ring-gray-200 p-4 animate-pulse">
-            <div className="h-4 bg-gray-200 rounded w-3/4 mb-2" />
-            <div className="h-4 bg-gray-200 rounded w-1/2" />
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="rounded-xl bg-red-50 ring-1 ring-red-200 p-5 text-red-700">{error}</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 space-y-4">
+    <OliverPageWrapper title="Job Board" subtitle="Manage and track all service jobs" error={error} loading={loading}>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900">Job Board</h1>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setView(view === "list" ? "kanban" : "list")}
@@ -236,6 +214,6 @@ export function OliverJobBoardPage() {
           </div>
         </div>
       )}
-    </div>
+    </OliverPageWrapper>
   );
 }

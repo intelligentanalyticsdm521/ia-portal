@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
 interface Subscription {
   id: string;
@@ -27,7 +28,7 @@ export function OliverRecurringPage() {
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [recurring, setRecurring] = useState<RecurringJob[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
@@ -43,7 +44,7 @@ export function OliverRecurringPage() {
         ]);
         if (!cancelled) { setSubs(s); setRecurring(r); }
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load recurring data");
+        if (!cancelled) setError(err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -65,29 +66,9 @@ export function OliverRecurringPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="p-6 space-y-3">
-        <div className="h-8 w-56 bg-gray-200 rounded animate-pulse" />
-        {[...Array(4)].map((_, i) => (
-          <div key={i} className="h-12 bg-gray-200 rounded animate-pulse" />
-        ))}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="rounded-xl bg-red-50 ring-1 ring-red-200 p-5 text-red-700">{error}</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 space-y-4">
+    <OliverPageWrapper title="Recurring & Subscriptions" subtitle="Manage recurring jobs and subscriptions" error={error} loading={loading}>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900">Recurring &amp; Subscriptions</h1>
         <button
           onClick={handleSync}
           disabled={syncing}
@@ -182,6 +163,6 @@ export function OliverRecurringPage() {
           </table>
         </div>
       )}
-    </div>
+    </OliverPageWrapper>
   );
 }

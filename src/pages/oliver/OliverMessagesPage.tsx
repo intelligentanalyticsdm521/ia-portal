@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
 interface Thread {
   id: string;
@@ -24,7 +25,7 @@ export function OliverMessagesPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [msgsLoading, setMsgsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [newMsg, setNewMsg] = useState("");
   const [sending, setSending] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
@@ -40,7 +41,7 @@ export function OliverMessagesPage() {
         const data = await get<Thread[]>("/messages/threads");
         if (!cancelled) setThreads(data);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load messages");
+        if (!cancelled) setError(err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -92,29 +93,9 @@ export function OliverMessagesPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="p-6 space-y-3">
-        <div className="h-8 w-36 bg-gray-200 rounded animate-pulse" />
-        {[...Array(4)].map((_, i) => (
-          <div key={i} className="h-16 bg-gray-200 rounded animate-pulse" />
-        ))}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="rounded-xl bg-red-50 ring-1 ring-red-200 p-5 text-red-700">{error}</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 space-y-4">
+    <OliverPageWrapper title="Messages" subtitle="2-way messaging with customers and crew" error={error} loading={loading}>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900">Messages</h1>
         <button onClick={() => setShowCompose(true)} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700">
           New Thread
         </button>
@@ -223,6 +204,6 @@ export function OliverMessagesPage() {
           </div>
         </div>
       )}
-    </div>
+    </OliverPageWrapper>
   );
 }
