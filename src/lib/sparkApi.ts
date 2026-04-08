@@ -8,7 +8,7 @@ import { authScopes } from "../auth/msalConfig";
 const SPARK_API_BASE =
   (import.meta.env.VITE_SPARK_API_BASE as string) ||
   (import.meta.env.VITE_LUMEN_API_BASE as string) ||
-  "https://app-lumen-api-prod-d2bxe0fqaqfkgph4.centralus-01.azurewebsites.net";
+  "https://app-lumen-api-prod-c6afftekgua4axh9.centralus-01.azurewebsites.net";
 
 async function getToken(msal: IPublicClientApplication, account: AccountInfo): Promise<string> {
   const r = await msal.acquireTokenSilent({ scopes: authScopes, account });
