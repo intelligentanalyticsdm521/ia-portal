@@ -60,7 +60,11 @@ async function sparkFetch<T>(
 
   if (res.status === 204) return undefined as T;
   const json = await res.json();
-  return (json && typeof json === "object" && "data" in json ? json.data : json) as T;
+  // If response has both data + meta (paginated list), return the full object so pages get meta
+  // If response has only data (single item), unwrap it
+  if (json && typeof json === "object" && "data" in json && "meta" in json) return json as T;
+  if (json && typeof json === "object" && "data" in json) return json.data as T;
+  return json as T;
 }
 
 export function sparkGet<T>(msal: IPublicClientApplication, account: AccountInfo, path: string) {
