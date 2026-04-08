@@ -12,8 +12,23 @@ import { SparkOverviewPage } from './spark/SparkOverviewPage';
 import { SparkCrmPage } from './spark/SparkCrmPage';
 import { SparkCampaignsPage } from './spark/SparkCampaignsPage';
 import { SparkLeadsPage } from './spark/SparkLeadsPage';
-import { OliverOverviewPage } from './oliver/OliverOverviewPage';
-import { OliverPortalsPage } from './oliver/OliverPortalsPage';
+import { OliverDashboardPage } from './oliver/OliverDashboardPage';
+import { OliverJobBoardPage } from './oliver/OliverJobBoardPage';
+import { OliverSchedulePage } from './oliver/OliverSchedulePage';
+import { OliverDispatchPage } from './oliver/OliverDispatchPage';
+import { OliverWorkersPage } from './oliver/OliverWorkersPage';
+import { OliverCrewPerformancePage } from './oliver/OliverCrewPerformancePage';
+import { OliverContactsPage } from './oliver/OliverContactsPage';
+import { OliverServiceRequestsPage } from './oliver/OliverServiceRequestsPage';
+import { OliverQuotesPage } from './oliver/OliverQuotesPage';
+import { OliverInvoicesPage } from './oliver/OliverInvoicesPage';
+import { OliverPaymentsPage } from './oliver/OliverPaymentsPage';
+import { OliverRecurringPage } from './oliver/OliverRecurringPage';
+import { OliverMessagesPage } from './oliver/OliverMessagesPage';
+import { OliverNotificationsPage } from './oliver/OliverNotificationsPage';
+import { OliverReportsPage } from './oliver/OliverReportsPage';
+import { OliverActivityLogPage } from './oliver/OliverActivityLogPage';
+import { OliverSettingsPage } from './oliver/OliverSettingsPage';
 
 export function ServiceRouter() {
   const { serviceKey } = useParams<{ serviceKey: string }>();
@@ -49,8 +64,23 @@ export function ServiceRouter() {
 
   if (service.section === 'OLIVER') {
     switch (service.key) {
-      case 'oliver_operations': return <OliverOverviewPage service={service} status={status} />;
-      case 'oliver_portals': return <OliverPortalsPage service={service} status={status} />;
+      case 'oliver_dashboard': return <OliverDashboardPage />;
+      case 'oliver_job_board': return <OliverJobBoardPage />;
+      case 'oliver_schedule': return <OliverSchedulePage />;
+      case 'oliver_dispatch': return <OliverDispatchPage />;
+      case 'oliver_workers': return <OliverWorkersPage />;
+      case 'oliver_crew_performance': return <OliverCrewPerformancePage />;
+      case 'oliver_contacts': return <OliverContactsPage />;
+      case 'oliver_service_requests': return <OliverServiceRequestsPage />;
+      case 'oliver_quotes': return <OliverQuotesPage />;
+      case 'oliver_invoices': return <OliverInvoicesPage />;
+      case 'oliver_payments': return <OliverPaymentsPage />;
+      case 'oliver_recurring': return <OliverRecurringPage />;
+      case 'oliver_messages': return <OliverMessagesPage />;
+      case 'oliver_notifications': return <OliverNotificationsPage />;
+      case 'oliver_reports': return <OliverReportsPage />;
+      case 'oliver_activity_log': return <OliverActivityLogPage />;
+      case 'oliver_settings': return <OliverSettingsPage />;
       default: break;
     }
   }

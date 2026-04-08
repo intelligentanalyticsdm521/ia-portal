@@ -92,22 +92,24 @@ export const SERVICE_CATALOG: PortalService[] = [
     route: '/app/services/stella_dashboards',
     description: 'KPI dashboards and operational performance panels (placeholder).'
   },
-  {
-    key: 'oliver_operations',
-    displayName: 'Operations',
-    section: 'OLIVER',
-    defaultStatus: 'not_subscribed',
-    route: '/app/services/oliver_operations',
-    description: 'Job lifecycle management: active jobs, revenue, invoices, scheduling, and dispatch.'
-  },
-  {
-    key: 'oliver_portals',
-    displayName: 'Portals',
-    section: 'OLIVER',
-    defaultStatus: 'not_subscribed',
-    route: '/app/services/oliver_portals',
-    description: 'Customer-facing and employee-facing portals for job tracking, payments, and field ops.'
-  },
+  // OLIVER — Full FSM suite (16 pages)
+  { key: 'oliver_dashboard', displayName: 'Dashboard', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_dashboard', description: 'KPI overview: active jobs, revenue, open invoices, and recent activity.' },
+  { key: 'oliver_job_board', displayName: 'Job Board', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_job_board', description: 'List and Kanban views of all jobs with status filtering.' },
+  { key: 'oliver_schedule', displayName: 'Schedule', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_schedule', description: 'Calendar view of scheduled jobs and assignments.' },
+  { key: 'oliver_dispatch', displayName: 'Dispatch', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_dispatch', description: 'Worker assignment, offer/accept dispatch flow.' },
+  { key: 'oliver_workers', displayName: 'Workers', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_workers', description: 'Manage field workers and crew members.' },
+  { key: 'oliver_crew_performance', displayName: 'Crew Performance', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_crew_performance', description: 'Per-worker job completion stats and assignment counts.' },
+  { key: 'oliver_contacts', displayName: 'Contacts', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_contacts', description: 'Customer contact list from SPARK CRM cache.' },
+  { key: 'oliver_service_requests', displayName: 'Service Requests', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_service_requests', description: 'Inbound job inquiries from the customer portal.' },
+  { key: 'oliver_quotes', displayName: 'Quotes', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_quotes', description: 'Create, send, and track quotes. Convert accepted quotes to invoices.' },
+  { key: 'oliver_invoices', displayName: 'Invoices', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_invoices', description: 'Invoice management with Stripe payment links.' },
+  { key: 'oliver_payments', displayName: 'Payments', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_payments', description: 'Payment history and received payment overview.' },
+  { key: 'oliver_recurring', displayName: 'Recurring & Subscriptions', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_recurring', description: 'Stripe subscriptions and recurring job templates.' },
+  { key: 'oliver_messages', displayName: 'Messages', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_messages', description: '2-way messaging with customers and crew.' },
+  { key: 'oliver_notifications', displayName: 'Notifications', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_notifications', description: 'ACS email notification history.' },
+  { key: 'oliver_reports', displayName: 'Reports', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_reports', description: 'Revenue, job volume, and completion analytics with charts.' },
+  { key: 'oliver_activity_log', displayName: 'Activity Log', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_activity_log', description: 'Full audit trail of all job status transitions.' },
+  { key: 'oliver_settings', displayName: 'Settings', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_settings', description: 'Tenant settings and Stripe configuration.' },
   {
     key: 'lumen_overview',
     displayName: 'Overview — Standard',
