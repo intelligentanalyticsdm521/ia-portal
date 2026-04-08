@@ -5,9 +5,9 @@ import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 interface SparkForm {
   id: string;
   name: string;
-  submissionCount: number;
-  active: boolean;
-  createdAt: string;
+  submission_count: number;
+  is_active: boolean;
+  created_at: string;
 }
 
 export function SparkFormsPage() {
@@ -51,8 +51,8 @@ export function SparkFormsPage() {
 
   async function toggleActive(form: SparkForm) {
     try {
-      await put(`/api/v1/forms/${form.id}`, { active: !form.active });
-      setForms((prev) => prev.map((f) => f.id === form.id ? { ...f, active: !f.active } : f));
+      await put(`/api/v1/forms/${form.id}`, { is_active: !form.is_active });
+      setForms((prev) => prev.map((f) => f.id === form.id ? { ...f, is_active: !f.is_active } : f));
     } catch (err) {
       setError(err);
     }
@@ -85,16 +85,16 @@ export function SparkFormsPage() {
               {forms.map((f) => (
                 <tr key={f.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-slate-900">{f.name}</td>
-                  <td className="px-4 py-3 text-slate-600">{f.submissionCount.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-slate-600">{f.submission_count.toLocaleString()}</td>
                   <td className="px-4 py-3">
                     <button
                       onClick={() => toggleActive(f)}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${f.active ? "bg-blue-600" : "bg-gray-300"}`}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${f.is_active ? "bg-blue-600" : "bg-gray-300"}`}
                     >
-                      <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${f.active ? "translate-x-4" : "translate-x-0.5"}`} />
+                      <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${f.is_active ? "translate-x-4" : "translate-x-0.5"}`} />
                     </button>
                   </td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">{new Date(f.createdAt).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 text-slate-400 text-xs">{new Date(f.created_at).toLocaleDateString()}</td>
                 </tr>
               ))}
               {forms.length === 0 && !loading && (

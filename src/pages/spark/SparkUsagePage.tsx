@@ -2,20 +2,18 @@ import { useEffect, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
-interface UsageData {
-  emailsSent: number;
-  emailsLimit: number;
-  smsSent: number;
-  smsLimit: number;
-  contactsUsed: number;
-  contactsLimit: number;
-  leadsUsed: number;
-  leadsLimit: number;
+interface UsageResponse {
+  data: {
+    tier: string;
+    usage: { emails_sent: number; sms_sent: number; contacts_count: number; leads_issued: number };
+    limits: { emails_per_month: number; sms_per_month: number; contacts_max: number };
+    remaining: { emails: number; sms: number; contacts: number };
+  };
 }
 
 export function SparkUsagePage() {
   const { get, ready } = useSparkApi();
-  const [usage, setUsage] = useState<UsageData | null>(null);
+  const [usage, setUsage] = useState<UsageResponse["data"] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 
@@ -26,7 +24,7 @@ export function SparkUsagePage() {
       setLoading(true);
       setError(null);
       try {
-        const raw = await get<{ data: UsageData }>("/api/v1/usage");
+        const raw = await get<UsageResponse>("/api/v1/usage");
         if (!cancelled) setUsage(raw.data || null);
       } catch (err) {
         if (!cancelled) setError(err);
@@ -63,10 +61,10 @@ export function SparkUsagePage() {
 
   const bars = usage
     ? [
-        { label: "Emails Sent", used: usage.emailsSent, limit: usage.emailsLimit, icon: "envelope" },
-        { label: "SMS Sent", used: usage.smsSent, limit: usage.smsLimit, icon: "chat" },
-        { label: "Contacts", used: usage.contactsUsed, limit: usage.contactsLimit, icon: "users" },
-        { label: "Leads", used: usage.leadsUsed, limit: usage.leadsLimit, icon: "target" },
+        { label: "Emails Sent", used: usage.usage.emails_sent, limit: usage.limits.emails_per_month, icon: "envelope" },
+        { label: "SMS Sent", used: usage.usage.sms_sent, limit: usage.limits.sms_per_month, icon: "chat" },
+        { label: "Contacts", used: usage.usage.contacts_count, limit: usage.limits.contacts_max, icon: "users" },
+        { label: "Leads", used: usage.usage.leads_issued, limit: 50, icon: "target" },
       ]
     : [];
 

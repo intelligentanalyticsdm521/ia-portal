@@ -8,8 +8,8 @@ interface SearchProfile {
   cities: string[];
   categories: string[];
   tier: string;
-  lastRunAt: string | null;
-  createdAt: string;
+  last_run_at: string | null;
+  created_at: string;
 }
 
 export function SparkSearchProfilesPage() {
@@ -91,7 +91,7 @@ export function SparkSearchProfilesPage() {
                       {p.tier}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">{p.lastRunAt ? new Date(p.lastRunAt).toLocaleDateString() : "Never"}</td>
+                  <td className="px-4 py-3 text-slate-400 text-xs">{p.last_run_at ? new Date(p.last_run_at).toLocaleDateString() : "Never"}</td>
                 </tr>
               ))}
               {profiles.length === 0 && !loading && (

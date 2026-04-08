@@ -5,9 +5,9 @@ import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 interface Segment {
   id: string;
   name: string;
-  filterSummary: string;
-  contactCount: number;
-  createdAt: string;
+  filter_summary: string;
+  contact_count: number;
+  created_at: string;
 }
 
 export function SparkSegmentsPage() {
@@ -16,7 +16,7 @@ export function SparkSegmentsPage() {
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name: "", filterSummary: "" });
+  const [form, setForm] = useState({ name: "", filter_summary: "" });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -40,7 +40,7 @@ export function SparkSegmentsPage() {
     try {
       await post("/api/v1/segments", form);
       setShowModal(false);
-      setForm({ name: "", filterSummary: "" });
+      setForm({ name: "", filter_summary: "" });
       await load();
     } catch (err) {
       setError(err);
@@ -76,9 +76,9 @@ export function SparkSegmentsPage() {
               {segments.map((s) => (
                 <tr key={s.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-slate-900">{s.name}</td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">{s.filterSummary || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{s.contactCount.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">{new Date(s.createdAt).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 text-slate-500 text-xs">{s.filter_summary || "—"}</td>
+                  <td className="px-4 py-3 text-slate-600">{s.contact_count.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-slate-400 text-xs">{new Date(s.created_at).toLocaleDateString()}</td>
                 </tr>
               ))}
               {segments.length === 0 && !loading && (
@@ -106,8 +106,8 @@ export function SparkSegmentsPage() {
                 />
                 <textarea
                   placeholder="Filter description (e.g., contacts tagged 'VIP' in Texas)"
-                  value={form.filterSummary}
-                  onChange={(e) => setForm({ ...form, filterSummary: e.target.value })}
+                  value={form.filter_summary}
+                  onChange={(e) => setForm({ ...form, filter_summary: e.target.value })}
                   rows={3}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />

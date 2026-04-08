@@ -2,29 +2,32 @@ import { useEffect, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
+interface TierDistribution {
+  tier: string;
+  count: number;
+  avg_score: number;
+}
+
 interface IntelligenceSummary {
-  xCount: number;
-  xAvgScore: number;
-  yCount: number;
-  yAvgScore: number;
-  zCount: number;
-  zAvgScore: number;
-  contacts: IntelligenceContact[];
+  distribution: TierDistribution[];
+  total_contacts: number;
+  scored_contacts: number;
 }
 
 interface IntelligenceContact {
   id: string;
-  firstName: string;
-  lastName: string;
+  first_name: string;
+  last_name: string;
   email: string;
-  tier: "X" | "Y" | "Z";
-  score: number;
-  lastUpdated: string;
+  contact_intelligence_tier: "X" | "Y" | "Z";
+  contact_intelligence_score: number;
+  contact_intelligence_updated_at: string;
 }
 
 export function SparkIntelligencePage() {
   const { get, post, ready } = useSparkApi();
   const [summary, setSummary] = useState<IntelligenceSummary | null>(null);
+  const [contacts, setContacts] = useState<IntelligenceContact[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"all" | "X" | "Y" | "Z">("all");
@@ -37,8 +40,14 @@ export function SparkIntelligencePage() {
       setLoading(true);
       setError(null);
       try {
-        const raw = await get<{ data: IntelligenceSummary }>("/api/v1/intelligence/summary");
-        if (!cancelled) setSummary(raw.data || null);
+        const [summaryRaw, contactsRaw] = await Promise.all([
+          get<{ data: IntelligenceSummary }>("/api/v1/intelligence/summary"),
+          get<{ data: IntelligenceContact[] }>("/api/v1/contacts?limit=50"),
+        ]);
+        if (!cancelled) {
+          setSummary(summaryRaw.data || null);
+          setContacts(contactsRaw.data || []);
+        }
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {
@@ -60,16 +69,23 @@ export function SparkIntelligencePage() {
     }
   }
 
+  const tierColorMap: Record<string, { color: string; bg: string }> = {
+    X: { color: "text-emerald-600", bg: "bg-emerald-50" },
+    Y: { color: "text-blue-600", bg: "bg-blue-50" },
+    Z: { color: "text-gray-600", bg: "bg-gray-50" },
+  };
+
   const tiers = summary
-    ? [
-        { label: "X-Tier", count: summary.xCount, avg: summary.xAvgScore, color: "text-emerald-600", bg: "bg-emerald-50" },
-        { label: "Y-Tier", count: summary.yCount, avg: summary.yAvgScore, color: "text-blue-600", bg: "bg-blue-50" },
-        { label: "Z-Tier", count: summary.zCount, avg: summary.zAvgScore, color: "text-gray-600", bg: "bg-gray-50" },
-      ]
+    ? summary.distribution.map((d) => ({
+        label: `${d.tier}-Tier`,
+        count: d.count,
+        avg: d.avg_score,
+        color: tierColorMap[d.tier]?.color || "text-gray-600",
+        bg: tierColorMap[d.tier]?.bg || "bg-gray-50",
+      }))
     : [];
 
-  const contacts = summary?.contacts ?? [];
-  const filtered = tab === "all" ? contacts : contacts.filter((c) => c.tier === tab);
+  const filtered = tab === "all" ? contacts : contacts.filter((c) => c.contact_intelligence_tier === tab);
 
   return (
     <OliverPageWrapper title="Contact Intelligence" subtitle="X/Y/Z scoring with cross-platform signals" error={error} loading={loading}>
@@ -128,15 +144,15 @@ export function SparkIntelligencePage() {
                 };
                 return (
                   <tr key={c.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-slate-900">{c.firstName} {c.lastName}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{c.first_name} {c.last_name}</td>
                     <td className="px-4 py-3 text-slate-600">{c.email}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tierColors[c.tier]}`}>
-                        {c.tier}
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tierColors[c.contact_intelligence_tier]}`}>
+                        {c.contact_intelligence_tier}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{c.score}</td>
-                    <td className="px-4 py-3 text-slate-400 text-xs">{new Date(c.lastUpdated).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-slate-600">{c.contact_intelligence_score}</td>
+                    <td className="px-4 py-3 text-slate-400 text-xs">{c.contact_intelligence_updated_at ? new Date(c.contact_intelligence_updated_at).toLocaleDateString() : "—"}</td>
                   </tr>
                 );
               })}

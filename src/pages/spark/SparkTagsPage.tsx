@@ -6,7 +6,7 @@ interface Tag {
   id: string;
   name: string;
   color: string;
-  contactCount: number;
+  contact_count: number;
 }
 
 const TAG_COLORS = [
@@ -84,7 +84,7 @@ export function SparkTagsPage() {
                   <span className="h-3 w-3 rounded-full" style={{ backgroundColor: tag.color }} />
                   <span className="font-medium text-slate-900">{tag.name}</span>
                 </div>
-                <p className="mt-2 text-sm text-slate-500">{tag.contactCount.toLocaleString()} contact{tag.contactCount !== 1 ? "s" : ""}</p>
+                <p className="mt-2 text-sm text-slate-500">{tag.contact_count.toLocaleString()} contact{tag.contact_count !== 1 ? "s" : ""}</p>
               </div>
             ))}
           </div>

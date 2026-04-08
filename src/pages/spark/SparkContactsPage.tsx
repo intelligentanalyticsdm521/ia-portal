@@ -3,15 +3,15 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
 interface Contact {
-  id: string;
-  firstName: string;
-  lastName: string;
+  id: number;
+  first_name: string;
+  last_name: string;
   email: string;
   phone: string;
   company: string;
   source: string;
-  intelligenceTier: string | null;
-  createdAt: string;
+  contact_intelligence_tier: string | null;
+  created_at: string;
 }
 
 export function SparkContactsPage() {
@@ -23,7 +23,7 @@ export function SparkContactsPage() {
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", company: "" });
+  const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", company: "" });
   const [saving, setSaving] = useState(false);
   const pageSize = 25;
 
@@ -51,7 +51,7 @@ export function SparkContactsPage() {
     try {
       await post("/api/v1/contacts", form);
       setShowModal(false);
-      setForm({ firstName: "", lastName: "", email: "", phone: "", company: "" });
+      setForm({ first_name: "", last_name: "", email: "", phone: "", company: "" });
       await load();
     } catch (err) {
       setError(err);
@@ -110,12 +110,12 @@ export function SparkContactsPage() {
             <tbody className="divide-y divide-gray-100">
               {contacts.map((c) => (
                 <tr key={c.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-slate-900">{c.firstName} {c.lastName}</td>
+                  <td className="px-4 py-3 font-medium text-slate-900">{c.first_name} {c.last_name}</td>
                   <td className="px-4 py-3 text-slate-600">{c.email}</td>
                   <td className="px-4 py-3 text-slate-600">{c.phone || "—"}</td>
                   <td className="px-4 py-3 text-slate-600">{c.company || "—"}</td>
                   <td className="px-4 py-3 text-slate-500 text-xs">{c.source || "—"}</td>
-                  <td className="px-4 py-3">{tierBadge(c.intelligenceTier)}</td>
+                  <td className="px-4 py-3">{tierBadge(c.contact_intelligence_tier)}</td>
                 </tr>
               ))}
               {contacts.length === 0 && !loading && (
@@ -145,11 +145,11 @@ export function SparkContactsPage() {
             <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
               <h3 className="text-lg font-semibold text-slate-900 mb-4">Add Contact</h3>
               <div className="space-y-3">
-                {(["firstName", "lastName", "email", "phone", "company"] as const).map((field) => (
+                {(["first_name", "last_name", "email", "phone", "company"] as const).map((field) => (
                   <input
                     key={field}
                     type={field === "email" ? "email" : "text"}
-                    placeholder={field === "firstName" ? "First name" : field === "lastName" ? "Last name" : field.charAt(0).toUpperCase() + field.slice(1)}
+                    placeholder={field === "first_name" ? "First name" : field === "last_name" ? "Last name" : field.charAt(0).toUpperCase() + field.slice(1)}
                     value={form[field]}
                     onChange={(e) => setForm({ ...form, [field]: e.target.value })}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"

@@ -4,13 +4,13 @@ import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
 interface Lead {
   id: string;
-  businessName: string;
-  score: "Hot" | "Warm" | "Cold";
+  business_name: string;
+  hot_warm_cold: "Hot" | "Warm" | "Cold";
   email: string;
   phone: string;
   status: string;
   source: string;
-  createdAt: string;
+  created_at: string;
 }
 
 export function SparkLeadsPage() {
@@ -25,7 +25,7 @@ export function SparkLeadsPage() {
     setLoading(true);
     setError(null);
     try {
-      const params = filter !== "all" ? `?score=${filter}` : "";
+      const params = filter !== "all" ? `?hot_warm_cold=${filter}` : "";
       const raw = await get<{ data: Lead[] }>(`/api/v1/leads${params}`);
       setLeads(raw.data || []);
     } catch (err) {
@@ -95,8 +95,8 @@ export function SparkLeadsPage() {
             <tbody className="divide-y divide-gray-100">
               {leads.map((l) => (
                 <tr key={l.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-slate-900">{l.businessName}</td>
-                  <td className="px-4 py-3">{scoreBadge(l.score)}</td>
+                  <td className="px-4 py-3 font-medium text-slate-900">{l.business_name}</td>
+                  <td className="px-4 py-3">{scoreBadge(l.hot_warm_cold)}</td>
                   <td className="px-4 py-3 text-slate-600">{l.email || "—"}</td>
                   <td className="px-4 py-3 text-slate-600">{l.phone || "—"}</td>
                   <td className="px-4 py-3 text-slate-500 text-xs capitalize">{l.status}</td>

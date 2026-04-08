@@ -5,8 +5,8 @@ import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 interface ContactList {
   id: string;
   name: string;
-  contactCount: number;
-  createdAt: string;
+  contact_count: number;
+  created_at: string;
 }
 
 export function SparkListsPage() {
@@ -74,8 +74,8 @@ export function SparkListsPage() {
               {lists.map((l) => (
                 <tr key={l.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-slate-900">{l.name}</td>
-                  <td className="px-4 py-3 text-slate-600">{l.contactCount.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">{new Date(l.createdAt).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 text-slate-600">{l.contact_count.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-slate-400 text-xs">{new Date(l.created_at).toLocaleDateString()}</td>
                 </tr>
               ))}
               {lists.length === 0 && !loading && (

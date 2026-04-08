@@ -7,10 +7,12 @@ interface Campaign {
   name: string;
   channel: "email" | "sms";
   status: string;
-  recipientCount: number;
-  openRate: number | null;
-  sentAt: string | null;
-  createdAt: string;
+  total_recipients: number;
+  total_sent: number;
+  total_opened: number;
+  total_clicked: number;
+  sent_at: string | null;
+  created_at: string;
 }
 
 export function SparkCampaignsPage() {
@@ -92,9 +94,9 @@ export function SparkCampaignsPage() {
                 <tr key={c.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
                   <td className="px-4 py-3">{statusBadge(c.status)}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.recipientCount.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.openRate != null ? `${c.openRate}%` : "—"}</td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">{c.sentAt ? new Date(c.sentAt).toLocaleDateString() : "—"}</td>
+                  <td className="px-4 py-3 text-slate-600">{c.total_recipients.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-slate-600">{c.total_sent ? `${Math.round((c.total_opened / c.total_sent) * 100)}%` : "—"}</td>
+                  <td className="px-4 py-3 text-slate-400 text-xs">{c.sent_at ? new Date(c.sent_at).toLocaleDateString() : "—"}</td>
                 </tr>
               ))}
               {filtered.length === 0 && !loading && (
