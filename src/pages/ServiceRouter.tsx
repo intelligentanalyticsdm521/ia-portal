@@ -9,9 +9,17 @@ import { ArionSeoPage } from './arion/ArionSeoPage';
 import { ArionConsolePage } from './arion/ArionConsolePage';
 import { ArionMyBusinessPage } from './arion/ArionMyBusinessPage';
 import { SparkOverviewPage } from './spark/SparkOverviewPage';
-import { SparkCrmPage } from './spark/SparkCrmPage';
+import { SparkContactsPage } from './spark/SparkContactsPage';
+import { SparkListsPage } from './spark/SparkListsPage';
+import { SparkTagsPage } from './spark/SparkTagsPage';
+import { SparkSegmentsPage } from './spark/SparkSegmentsPage';
 import { SparkCampaignsPage } from './spark/SparkCampaignsPage';
+import { SparkFormsPage } from './spark/SparkFormsPage';
+import { SparkAutomationsPage } from './spark/SparkAutomationsPage';
 import { SparkLeadsPage } from './spark/SparkLeadsPage';
+import { SparkSearchProfilesPage } from './spark/SparkSearchProfilesPage';
+import { SparkIntelligencePage } from './spark/SparkIntelligencePage';
+import { SparkUsagePage } from './spark/SparkUsagePage';
 import { OliverDashboardPage } from './oliver/OliverDashboardPage';
 import { OliverJobBoardPage } from './oliver/OliverJobBoardPage';
 import { OliverSchedulePage } from './oliver/OliverSchedulePage';
@@ -87,10 +95,23 @@ export function ServiceRouter() {
 
   if (service.section === 'LUMEN') {
     switch (service.key) {
-      case 'lumen_overview': return <SparkOverviewPage service={service} status={status} />;
-      case 'lumen_contacts': return <SparkCrmPage service={service} status={status} />;
-      case 'lumen_campaigns': return <SparkCampaignsPage service={service} status={status} />;
-      case 'lumen_leads': return <SparkLeadsPage service={service} status={status} />;
+      case 'spark_overview': return <SparkOverviewPage />;
+      case 'spark_contacts': return <SparkContactsPage />;
+      case 'spark_lists': return <SparkListsPage />;
+      case 'spark_tags': return <SparkTagsPage />;
+      case 'spark_segments': return <SparkSegmentsPage />;
+      case 'spark_campaigns': return <SparkCampaignsPage />;
+      case 'spark_forms': return <SparkFormsPage />;
+      case 'spark_automations': return <SparkAutomationsPage />;
+      case 'spark_leads': return <SparkLeadsPage />;
+      case 'spark_search_profiles': return <SparkSearchProfilesPage />;
+      case 'spark_intelligence': return <SparkIntelligencePage />;
+      case 'spark_usage': return <SparkUsagePage />;
+      // Backward compat aliases for old lumen_* keys
+      case 'lumen_overview': return <SparkOverviewPage />;
+      case 'lumen_contacts': return <SparkContactsPage />;
+      case 'lumen_campaigns': return <SparkCampaignsPage />;
+      case 'lumen_leads': return <SparkLeadsPage />;
       default: break;
     }
   }

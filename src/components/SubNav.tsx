@@ -122,20 +122,43 @@ const SPARK_NAV: SubNavConfig = {
     {
       label: "",
       items: [
-        { key: "lumen_overview", label: "Overview", route: "/app/services/lumen_overview" },
+        { key: "spark_overview", label: "Overview", route: "/app/services/spark_overview" },
       ],
     },
     {
       label: "CRM",
       items: [
-        { key: "lumen_contacts", label: "CRM", route: "/app/services/lumen_contacts" },
-        { key: "lumen_leads", label: "Leads", route: "/app/services/lumen_leads" },
+        { key: "spark_contacts", label: "Contacts", route: "/app/services/spark_contacts" },
+        { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
+        { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags" },
+        { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments" },
       ],
     },
     {
       label: "Marketing",
       items: [
-        { key: "lumen_campaigns", label: "Campaigns", route: "/app/services/lumen_campaigns" },
+        { key: "spark_campaigns", label: "Campaigns", route: "/app/services/spark_campaigns" },
+        { key: "spark_forms", label: "Forms", route: "/app/services/spark_forms" },
+        { key: "spark_automations", label: "Automations", route: "/app/services/spark_automations" },
+      ],
+    },
+    {
+      label: "Lead Generation",
+      items: [
+        { key: "spark_leads", label: "Lead Inbox", route: "/app/services/spark_leads" },
+        { key: "spark_search_profiles", label: "Search Profiles", route: "/app/services/spark_search_profiles" },
+      ],
+    },
+    {
+      label: "Intelligence",
+      items: [
+        { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence" },
+      ],
+    },
+    {
+      label: "",
+      items: [
+        { key: "spark_usage", label: "Usage & Billing", route: "/app/services/spark_usage" },
       ],
     },
   ],

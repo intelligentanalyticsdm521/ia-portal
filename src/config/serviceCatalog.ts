@@ -110,38 +110,19 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_reports', displayName: 'Reports', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_reports', description: 'Revenue, job volume, and completion analytics with charts.' },
   { key: 'oliver_activity_log', displayName: 'Activity Log', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_activity_log', description: 'Full audit trail of all job status transitions.' },
   { key: 'oliver_settings', displayName: 'Settings', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_settings', description: 'Tenant settings and Stripe configuration.' },
-  {
-    key: 'lumen_overview',
-    displayName: 'Overview — Standard',
-    section: 'LUMEN',
-    defaultStatus: 'not_subscribed',
-    route: '/app/services/lumen_overview',
-    description: 'High-level SPARK growth summary: email & SMS usage, active audiences, and recent performance.'
-  },
-  {
-    key: 'lumen_contacts',
-    displayName: 'CRM — Standard',
-    section: 'LUMEN',
-    defaultStatus: 'not_subscribed',
-    route: '/app/services/lumen_contacts',
-    description: 'Read-only CRM view into SPARK contacts, segments, and basic engagement.'
-  },
-  {
-    key: 'lumen_campaigns',
-    displayName: 'Campaigns & Messaging',
-    section: 'LUMEN',
-    defaultStatus: 'not_subscribed',
-    route: '/app/services/lumen_campaigns',
-    description: 'Recent and upcoming SPARK email & SMS campaigns.'
-  },
-  {
-    key: 'lumen_leads',
-    displayName: 'Leads — Preview',
-    section: 'LUMEN',
-    defaultStatus: 'coming_soon',
-    route: '/app/services/lumen_leads',
-    description: 'Future lead capture and routing surfaces for SPARK + OLIVER. Placeholder only in v1.'
-  },
+  // SPARK — Full CRM + Lead Gen + Intelligence suite
+  { key: 'spark_overview', displayName: 'Overview', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_overview', description: 'SPARK CRM summary: contacts, campaigns, leads pipeline, usage.' },
+  { key: 'spark_contacts', displayName: 'Contacts', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_contacts', description: 'Contact management with dedup, search, import, and activity history.' },
+  { key: 'spark_lists', displayName: 'Lists', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_lists', description: 'Static contact lists for campaign targeting.' },
+  { key: 'spark_tags', displayName: 'Tags', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_tags', description: 'Color-coded contact tags for organization.' },
+  { key: 'spark_segments', displayName: 'Segments', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_segments', description: 'Dynamic contact segments with filter rules.' },
+  { key: 'spark_campaigns', displayName: 'Campaigns', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_campaigns', description: 'Email and SMS campaign management with analytics.' },
+  { key: 'spark_forms', displayName: 'Forms', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_forms', description: 'Form builder with hosted URLs and embedded widgets.' },
+  { key: 'spark_automations', displayName: 'Automations', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_automations', description: 'Welcome and re-engagement email sequences.' },
+  { key: 'spark_leads', displayName: 'Lead Inbox', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_leads', description: 'B2B lead inbox with Hot/Warm/Cold scoring.' },
+  { key: 'spark_search_profiles', displayName: 'Search Profiles', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_search_profiles', description: 'Saved lead search configurations.' },
+  { key: 'spark_intelligence', displayName: 'Contact Scoring', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_intelligence', description: 'X/Y/Z contact intelligence with OLIVER cross-platform signals.' },
+  { key: 'spark_usage', displayName: 'Usage & Billing', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_usage', description: 'Email, SMS, contact, and lead usage vs tier limits.' },
   {
     key: 'forge_integrations',
     displayName: 'Integrations',
