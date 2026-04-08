@@ -7,28 +7,32 @@ import { PlatformApiError, selectTenant, sessionVerify } from '../lib/platformAp
 export function AppGate({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useIsAuthenticated();
   const { activeAccount, login, getToken } = useAccessToken();
-  const { bootstrap, setBootstrap, active, setActive, activeTenantId, setActiveTenantId } = useAppState();
+  const appState = useAppState();
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Only used to avoid overlapping bootstraps
+  // Refs to avoid stale closures and prevent re-trigger loops
   const inFlightRef = useRef(false);
+  const bootstrapDoneRef = useRef(false);
 
-  const tenantOptions = useMemo(() => bootstrap?.tenants || [], [bootstrap]);
+  const tenantOptions = useMemo(() => appState.bootstrap?.tenants || [], [appState.bootstrap]);
 
   useEffect(() => {
     // reset view-level errors when auth state changes
     setError(null);
+    // Reset bootstrap flag so a new account triggers a fresh bootstrap
+    bootstrapDoneRef.current = false;
   }, [isAuthenticated, activeAccount]);
 
+  // Bootstrap effect — depends ONLY on auth identity, not on state it writes to
   useEffect(() => {
     async function run() {
       if (!isAuthenticated) return;
       if (!activeAccount) return;
 
-      // If we already established an active session, do not re-bootstrap.
-      if (active) return;
+      // Already bootstrapped for this session — don't re-run
+      if (bootstrapDoneRef.current) return;
 
       // Prevent overlapping bootstraps (e.g., rapid auth/account churn).
       if (inFlightRef.current) return;
@@ -46,13 +50,14 @@ export function AppGate({ children }: { children: React.ReactNode }) {
           bearerToken: accessToken
         });
 
-        setBootstrap(v);
+        appState.setBootstrap(v);
 
         if (v.surface !== 'iadm_portal') {
           setError(
             'This application is the IADM Portal. Your token indicates a different portal surface.'
           );
-          setActive(null);
+          appState.setActive(null);
+          bootstrapDoneRef.current = true;
           return;
         }
 
@@ -61,20 +66,22 @@ export function AppGate({ children }: { children: React.ReactNode }) {
           setError(
             'Your account is authenticated, but no tenants are assigned. Contact IADM support.'
           );
-          setActive(null);
+          appState.setActive(null);
+          bootstrapDoneRef.current = true;
           return;
         }
 
         // 2) Determine active tenant
-        const stored = activeTenantId;
+        const stored = appState.activeTenantId;
         const storedMatch = stored ? tenants.find((t) => t.tenantId === stored) : null;
 
         const tenantToSelect =
           storedMatch?.tenantId || (tenants.length === 1 ? tenants[0].tenantId : null);
 
         if (!tenantToSelect) {
-          // user must select tenant
-          setActive(null);
+          // user must select tenant — show picker
+          appState.setActive(null);
+          bootstrapDoneRef.current = true;
           return;
         }
 
@@ -85,9 +92,9 @@ export function AppGate({ children }: { children: React.ReactNode }) {
           tenantId: tenantToSelect
         });
 
-        // IMPORTANT: set active first so any effect re-run short-circuits immediately
-        setActive(selected);
-        setActiveTenantId(tenantToSelect);
+        appState.setActive(selected);
+        appState.setActiveTenantId(tenantToSelect);
+        bootstrapDoneRef.current = true;
       } catch (err) {
         if (err instanceof PlatformApiError) {
           if (err.status === 401) {
@@ -111,8 +118,9 @@ export function AppGate({ children }: { children: React.ReactNode }) {
           console.error(err);
         }
 
-        setBootstrap(null);
-        setActive(null);
+        appState.setBootstrap(null);
+        appState.setActive(null);
+        bootstrapDoneRef.current = true; // Don't retry on error — show error UI instead
       } finally {
         inFlightRef.current = false;
         setLoading(false);
@@ -120,16 +128,9 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     }
 
     run();
-  }, [
-    isAuthenticated,
-    activeAccount,
-    active,
-    activeTenantId,
-    getToken,
-    setBootstrap,
-    setActive,
-    setActiveTenantId
-  ]);
+    // Only re-run when auth identity changes — NOT when appState changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, activeAccount]);
 
   async function handleSelectTenant(tenantId: string) {
     setError(null);
@@ -145,8 +146,8 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         tenantId
       });
 
-      setActive(selected);
-      setActiveTenantId(tenantId);
+      appState.setActive(selected);
+      appState.setActiveTenantId(tenantId);
     } catch (err) {
       if (err instanceof PlatformApiError) {
         setError(`platform-api error (${err.status}).`);
@@ -155,7 +156,7 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         setError('Unexpected error selecting tenant.');
         console.error(err);
       }
-      setActive(null);
+      appState.setActive(null);
     } finally {
       setLoading(false);
     }
@@ -205,7 +206,7 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!bootstrap) {
+  if (!appState.bootstrap) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-16">
         <h1 className="text-lg font-semibold">Session not established</h1>
@@ -216,7 +217,7 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!active) {
+  if (!appState.active) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-16">
         <h1 className="text-lg font-semibold">Select a tenant</h1>
