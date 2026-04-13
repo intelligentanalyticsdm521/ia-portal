@@ -194,6 +194,34 @@ export function AppGate({ children }: { children: React.ReactNode }) {
       <div className="mx-auto max-w-xl px-6 py-16">
         <h1 className="text-lg font-semibold">Access error</h1>
         <p className="mt-2 text-sm text-red-600">{error}</p>
+        <div className="mt-4 flex gap-3">
+          <button
+            type="button"
+            className="inline-flex items-center rounded-md bg-black px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-gray-900"
+            onClick={() => {
+              setError(null);
+              bootstrapDoneRef.current = false;
+              inFlightRef.current = false;
+            }}
+          >
+            Retry
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            onClick={() => {
+              localStorage.removeItem('iadm.portal.activeTenantId');
+              setError(null);
+              appState.setActiveTenantId(null);
+              appState.setActive(null);
+              appState.setBootstrap(null);
+              bootstrapDoneRef.current = false;
+              inFlightRef.current = false;
+            }}
+          >
+            Switch Tenant
+          </button>
+        </div>
         <p className="mt-4 text-xs text-gray-500">
           If this continues, contact <a href="mailto:info@intelligentanalyticsdm.com"
             className="underline"
