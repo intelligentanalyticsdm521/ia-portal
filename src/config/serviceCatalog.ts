@@ -3,7 +3,7 @@ export type ServiceStatus = 'enabled' | 'not_subscribed' | 'coming_soon';
 export interface PortalService {
   key: string;
   displayName: string;
-  section: 'Shared' | 'ARION' | 'STELLA' | 'OLIVER' | 'LUMEN' | 'FORGE' | 'ARGUS';
+  section: 'Shared' | 'ARION' | 'STELLA' | 'OLIVER' | 'LUMEN' | 'FORGE' | 'ARGUS' | 'CONSULTING';
   defaultStatus: ServiceStatus;
   route: string;
   description: string;
@@ -16,7 +16,8 @@ export const LAYER_LABELS: Record<PortalService['section'], string> = {
   OLIVER: 'OLIVER — Operations & Portals',
   LUMEN: 'SPARK — Growth Platform',
   FORGE: 'FORGE — Software & Integrations',
-  ARGUS: 'ARGUS — Orchestration & Automation'
+  ARGUS: 'ARGUS — Orchestration & Automation',
+  CONSULTING: 'CONSULTING — IA Work & Deliverables'
 };
 
 export const SERVICE_CATALOG: PortalService[] = [
@@ -138,7 +139,18 @@ export const SERVICE_CATALOG: PortalService[] = [
     defaultStatus: 'coming_soon',
     route: '/app/services/argus_automation',
     description: 'Automation orchestration and Intelligence Layer wiring (placeholder).'
-  }
+  },
+  // CONSULTING — IA Work & Deliverables (platform-level, always enabled for all tenants)
+  { key: 'consulting_overview', displayName: 'Overview', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_overview', description: 'Summary of active engagements, tasks, deliverables, and upcoming events.' },
+  { key: 'consulting_brand_tasks', displayName: 'Brand Tasks', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_brand_tasks', description: 'Build Your Brand engagement tasks — logo, identity, website, GBP, SEO.' },
+  { key: 'consulting_brand_deliverables', displayName: 'Brand Deliverables', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_brand_deliverables', description: 'Build Your Brand deliverables for review and approval.' },
+  { key: 'consulting_foundation_tasks', displayName: 'Foundation Tasks', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_foundation_tasks', description: 'Build Your Foundation tasks — OLIVER setup, CRM config, process design.' },
+  { key: 'consulting_foundation_deliverables', displayName: 'Foundation Deliverables', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_foundation_deliverables', description: 'Build Your Foundation deliverables for review and approval.' },
+  { key: 'consulting_clarity_tasks', displayName: 'Clarity Tasks', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_clarity_tasks', description: 'Build Your Clarity tasks — analytics, reporting, dashboards.' },
+  { key: 'consulting_clarity_deliverables', displayName: 'Clarity Deliverables', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_clarity_deliverables', description: 'Build Your Clarity deliverables for review and approval.' },
+  { key: 'consulting_engine_tasks', displayName: 'Engine Tasks', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_engine_tasks', description: 'Build Your Engine tasks — custom development, automation, integrations.' },
+  { key: 'consulting_engine_deliverables', displayName: 'Engine Deliverables', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_engine_deliverables', description: 'Build Your Engine deliverables for review and approval.' },
+  { key: 'consulting_calendar', displayName: 'Calendar & Events', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_calendar', description: 'Scheduled events — discovery calls, QBRs, strategy sessions, reviews.' },
 ];
 
 export function resolveServiceStatus(service: PortalService, enabledKeys: Set<string>): ServiceStatus {

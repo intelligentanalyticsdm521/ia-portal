@@ -37,6 +37,9 @@ import { OliverNotificationsPage } from './oliver/OliverNotificationsPage';
 import { OliverReportsPage } from './oliver/OliverReportsPage';
 import { OliverActivityLogPage } from './oliver/OliverActivityLogPage';
 import { OliverSettingsPage } from './oliver/OliverSettingsPage';
+import { ConsultingOverviewPage } from './consulting/ConsultingOverviewPage';
+import { ConsultingEngagementWrapper } from './consulting/ConsultingEngagementWrapper';
+import { ConsultingCalendarPage } from './consulting/ConsultingCalendarPage';
 
 export function ServiceRouter() {
   const { serviceKey } = useParams<{ serviceKey: string }>();
@@ -112,6 +115,22 @@ export function ServiceRouter() {
       case 'lumen_contacts': return <SparkContactsPage />;
       case 'lumen_campaigns': return <SparkCampaignsPage />;
       case 'lumen_leads': return <SparkLeadsPage />;
+      default: break;
+    }
+  }
+
+  if (service.section === 'CONSULTING') {
+    switch (service.key) {
+      case 'consulting_overview': return <ConsultingOverviewPage />;
+      case 'consulting_brand_tasks': return <ConsultingEngagementWrapper engagementType="build_your_brand" view="tasks" />;
+      case 'consulting_brand_deliverables': return <ConsultingEngagementWrapper engagementType="build_your_brand" view="deliverables" />;
+      case 'consulting_foundation_tasks': return <ConsultingEngagementWrapper engagementType="build_your_foundation" view="tasks" />;
+      case 'consulting_foundation_deliverables': return <ConsultingEngagementWrapper engagementType="build_your_foundation" view="deliverables" />;
+      case 'consulting_clarity_tasks': return <ConsultingEngagementWrapper engagementType="build_your_clarity" view="tasks" />;
+      case 'consulting_clarity_deliverables': return <ConsultingEngagementWrapper engagementType="build_your_clarity" view="deliverables" />;
+      case 'consulting_engine_tasks': return <ConsultingEngagementWrapper engagementType="build_your_engine" view="tasks" />;
+      case 'consulting_engine_deliverables': return <ConsultingEngagementWrapper engagementType="build_your_engine" view="deliverables" />;
+      case 'consulting_calendar': return <ConsultingCalendarPage />;
       default: break;
     }
   }

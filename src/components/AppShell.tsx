@@ -17,6 +17,7 @@ function deriveProduct(pathname: string): ProductKey {
     stella: "stella",
     forge: "forge",
     argus: "argus",
+    consulting: "consulting",
   };
   return map[prefix] ?? "overview";
 }

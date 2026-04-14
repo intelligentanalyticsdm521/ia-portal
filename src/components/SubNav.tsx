@@ -164,6 +164,53 @@ const SPARK_NAV: SubNavConfig = {
   ],
 };
 
+const CONSULTING_NAV: SubNavConfig = {
+  productName: "Consulting",
+  tagline: "IA Work & Deliverables",
+  groups: [
+    {
+      label: "",
+      items: [
+        { key: "consulting_overview", label: "Overview", route: "/app/services/consulting_overview" },
+      ],
+    },
+    {
+      label: "Build Your Brand",
+      items: [
+        { key: "consulting_brand_tasks", label: "Tasks", route: "/app/services/consulting_brand_tasks" },
+        { key: "consulting_brand_deliverables", label: "Deliverables", route: "/app/services/consulting_brand_deliverables" },
+      ],
+    },
+    {
+      label: "Build Your Foundation",
+      items: [
+        { key: "consulting_foundation_tasks", label: "Tasks", route: "/app/services/consulting_foundation_tasks" },
+        { key: "consulting_foundation_deliverables", label: "Deliverables", route: "/app/services/consulting_foundation_deliverables" },
+      ],
+    },
+    {
+      label: "Build Your Clarity",
+      items: [
+        { key: "consulting_clarity_tasks", label: "Tasks", route: "/app/services/consulting_clarity_tasks" },
+        { key: "consulting_clarity_deliverables", label: "Deliverables", route: "/app/services/consulting_clarity_deliverables" },
+      ],
+    },
+    {
+      label: "Build Your Engine",
+      items: [
+        { key: "consulting_engine_tasks", label: "Tasks", route: "/app/services/consulting_engine_tasks" },
+        { key: "consulting_engine_deliverables", label: "Deliverables", route: "/app/services/consulting_engine_deliverables" },
+      ],
+    },
+    {
+      label: "",
+      items: [
+        { key: "consulting_calendar", label: "Calendar & Events", route: "/app/services/consulting_calendar" },
+      ],
+    },
+  ],
+};
+
 const PLACEHOLDER_NAV = (name: string, tagline: string): SubNavConfig => ({
   productName: name,
   tagline,
@@ -180,6 +227,7 @@ export const SUB_NAV_CONFIGS: Record<ProductKey, SubNavConfig | null> = {
   arion: ARION_NAV,
   oliver: OLIVER_NAV,
   spark: SPARK_NAV,
+  consulting: CONSULTING_NAV,
   stella: PLACEHOLDER_NAV("STELLA", "Reporting & BI"),
   forge: PLACEHOLDER_NAV("FORGE", "Integrations"),
   argus: PLACEHOLDER_NAV("ARGUS", "Orchestration"),
