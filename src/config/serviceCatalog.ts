@@ -78,6 +78,46 @@ export const SERVICE_CATALOG: PortalService[] = [
     description: 'Google, Apple, and Bing business profile management.'
   },
   {
+    key: 'arion_content_seo',
+    displayName: 'Content SEO',
+    section: 'ARION',
+    defaultStatus: 'coming_soon',
+    route: '/app/services/arion_content_seo',
+    description: 'Rank Math SEO scores, meta tags, focus keywords, and schema status for all pages and posts.'
+  },
+  {
+    key: 'arion_security',
+    displayName: 'Security',
+    section: 'ARION',
+    defaultStatus: 'coming_soon',
+    route: '/app/services/arion_security',
+    description: 'Wordfence scan results, vulnerability checks, firewall status, and login security.'
+  },
+  {
+    key: 'arion_performance',
+    displayName: 'Performance',
+    section: 'ARION',
+    defaultStatus: 'coming_soon',
+    route: '/app/services/arion_performance',
+    description: 'PageSpeed scores, Core Web Vitals history, cache management, and image optimization.'
+  },
+  {
+    key: 'arion_bing',
+    displayName: 'Bing & Copilot',
+    section: 'ARION',
+    defaultStatus: 'coming_soon',
+    route: '/app/services/arion_bing',
+    description: 'Bing Webmaster, Copilot AI appearances, IndexNow status, and Bing Places management.'
+  },
+  {
+    key: 'arion_ia_insights',
+    displayName: 'IA Insights',
+    section: 'ARION',
+    defaultStatus: 'coming_soon',
+    route: '/app/services/arion_ia_insights',
+    description: 'Cross-channel analytics funnel and ARGUS-powered automated reports.'
+  },
+  {
     key: 'arion_brand',
     displayName: 'Your Brand',
     section: 'ARION',

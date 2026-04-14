@@ -48,6 +48,11 @@ function buildEnabledServices(active: SelectTenantResponse | null): Set<string> 
     keys.add('arion_seo');
     keys.add('arion_console');
     keys.add('arion_my_business');
+    keys.add('arion_content_seo');
+    keys.add('arion_security');
+    keys.add('arion_performance');
+    keys.add('arion_bing');
+    keys.add('arion_ia_insights');
   }
 
   if (activeServiceKeys.has('oliver')) {

@@ -353,3 +353,24 @@ export async function createArionRequest(params: { baseUrl: string; bearerToken:
     body: { requestType: params.requestType, notes: params.notes }
   });
 }
+
+export async function getContentSeo(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<{ data: { pages: any[]; posts: any[]; summary: { avg_score: number; missing_meta: number; no_focus_keyword: number; total: number } } }>({
+    ...params,
+    path: `/arion/sites/${encodeURIComponent(params.siteId)}/content-seo`
+  });
+}
+
+export async function getVulnerabilities(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<{ data: { vulnerabilities: any[]; plugins_checked: number; critical: number; high: number; medium: number } }>({
+    ...params,
+    path: `/arion/sites/${encodeURIComponent(params.siteId)}/vulnerabilities`
+  });
+}
+
+export async function getPagespeedHistory(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<{ data: { snapshots: any[] } }>({
+    ...params,
+    path: `/arion/sites/${encodeURIComponent(params.siteId)}/pagespeed-history`
+  });
+}

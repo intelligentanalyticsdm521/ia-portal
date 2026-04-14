@@ -8,6 +8,11 @@ import { ArionHostingPage } from './arion/ArionHostingPage';
 import { ArionSeoPage } from './arion/ArionSeoPage';
 import { ArionConsolePage } from './arion/ArionConsolePage';
 import { ArionMyBusinessPage } from './arion/ArionMyBusinessPage';
+import { ArionContentSeoPage } from './arion/ArionContentSeoPage';
+import { ArionSecurityPage } from './arion/ArionSecurityPage';
+import { ArionPerformancePage } from './arion/ArionPerformancePage';
+import { ArionBingPage } from './arion/ArionBingPage';
+import { ArionIAInsightsPage } from './arion/ArionIAInsightsPage';
 import { SparkOverviewPage } from './spark/SparkOverviewPage';
 import { SparkContactsPage } from './spark/SparkContactsPage';
 import { SparkListsPage } from './spark/SparkListsPage';
@@ -69,6 +74,11 @@ export function ServiceRouter() {
       case 'arion_seo': return <ArionSeoPage service={service} status={status} />;
       case 'arion_console': return <ArionConsolePage service={service} status={status} />;
       case 'arion_my_business': return <ArionMyBusinessPage service={service} status={status} />;
+      case 'arion_content_seo': return <ArionContentSeoPage service={service} status={status} />;
+      case 'arion_security': return <ArionSecurityPage service={service} status={status} />;
+      case 'arion_performance': return <ArionPerformancePage service={service} status={status} />;
+      case 'arion_bing': return <ArionBingPage service={service} status={status} />;
+      case 'arion_ia_insights': return <ArionIAInsightsPage service={service} status={status} />;
       default: break;
     }
   }
