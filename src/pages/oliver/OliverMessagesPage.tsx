@@ -94,7 +94,7 @@ export function OliverMessagesPage() {
   }
 
   return (
-    <OliverPageWrapper title="Messages" subtitle="2-way messaging with customers and crew" error={error} loading={loading}>
+    <OliverPageWrapper title="Messages" subtitle="2-way messaging with customers and team" error={error} loading={loading}>
       <div className="flex items-center justify-between">
         <button onClick={() => setShowCompose(true)} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700">
           New Thread

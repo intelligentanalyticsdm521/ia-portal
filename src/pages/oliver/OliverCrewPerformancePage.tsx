@@ -39,7 +39,7 @@ export function OliverCrewPerformancePage() {
   const maxAssignments = Math.max(1, ...crew.map((c) => c.total_assignments));
 
   return (
-    <OliverPageWrapper title="Crew Performance" subtitle="Per-worker completion stats" error={error} loading={loading}>
+    <OliverPageWrapper title="Team Performance" subtitle="Per-member completion stats" error={error} loading={loading}>
       <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-left text-xs text-slate-500 uppercase tracking-wide">

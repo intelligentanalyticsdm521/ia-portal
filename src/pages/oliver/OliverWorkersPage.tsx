@@ -56,7 +56,7 @@ export function OliverWorkersPage() {
   }
 
   return (
-    <OliverPageWrapper title="Workers" subtitle="Manage field workers and crew" error={error} loading={loading}>
+    <OliverPageWrapper title="Team" subtitle="Manage team members and contractors" error={error} loading={loading}>
       <div className="flex items-center justify-between">
         <button
           onClick={() => setShowAdd(true)}
