@@ -1,5 +1,6 @@
 import {
   InteractionRequiredAuthError,
+  BrowserAuthError,
   type AccountInfo,
   type AuthenticationResult
 } from '@azure/msal-browser';
@@ -24,7 +25,11 @@ export function useAccessToken() {
         scopes: authScopes
       });
     } catch (err) {
-      if (err instanceof InteractionRequiredAuthError) {
+      // Silent token refresh failed — redirect to interactive login
+      // Catches both InteractionRequiredAuthError and BrowserAuthError
+      // (e.g. monitor_window_timeout when iframe auth times out)
+      if (err instanceof InteractionRequiredAuthError ||
+          (err instanceof BrowserAuthError && (err as any).errorCode === 'monitor_window_timeout')) {
         // This triggers a full redirect and returns to /auth/callback
         await instance.acquireTokenRedirect({
           account: activeAccount,
