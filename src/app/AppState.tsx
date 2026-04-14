@@ -42,17 +42,53 @@ function buildEnabledServices(active: SelectTenantResponse | null): Set<string> 
   );
 
   if (activeServiceKeys.has('arion')) {
-    keys.add('arion_overview');
-    keys.add('arion_website_analytics');
-    keys.add('arion_hosting');
-    keys.add('arion_seo');
-    keys.add('arion_console');
-    keys.add('arion_my_business');
-    keys.add('arion_content_seo');
-    keys.add('arion_security');
-    keys.add('arion_performance');
-    keys.add('arion_bing');
-    keys.add('arion_ia_insights');
+    keys.add('arion_dashboard');
+    keys.add('arion_website_overview');
+    keys.add('arion_website_content');
+    keys.add('arion_website_content_seo_overview');
+    keys.add('arion_website_content_seo_pages');
+    keys.add('arion_website_content_seo_posts');
+    keys.add('arion_website_content_seo_schema');
+    keys.add('arion_website_security_overview');
+    keys.add('arion_website_security_vulnerabilities');
+    keys.add('arion_website_security_firewall');
+    keys.add('arion_website_performance_cache');
+    keys.add('arion_website_performance_images');
+    keys.add('arion_website_updates');
+    keys.add('arion_website_staging');
+    keys.add('arion_website_support');
+    keys.add('arion_website_settings');
+    keys.add('arion_hosting_overview');
+    keys.add('arion_hosting_domain_dns');
+    keys.add('arion_hosting_backups');
+    keys.add('arion_hosting_performance');
+    keys.add('arion_analytics_overview');
+    keys.add('arion_analytics_traffic');
+    keys.add('arion_analytics_conversions');
+    keys.add('arion_analytics_pages');
+    keys.add('arion_analytics_reports');
+    keys.add('arion_analytics_ia_cross_channel');
+    keys.add('arion_analytics_ia_reports');
+    keys.add('arion_seo_overview');
+    keys.add('arion_seo_rankings');
+    keys.add('arion_seo_site_audit');
+    keys.add('arion_seo_competitors');
+    keys.add('arion_seo_opportunities');
+    keys.add('arion_seo_reports');
+    keys.add('arion_search_performance');
+    keys.add('arion_search_indexing');
+    keys.add('arion_search_sitemaps');
+    keys.add('arion_search_core_web_vitals');
+    keys.add('arion_search_bing_copilot');
+    keys.add('arion_search_bing_indexnow');
+    keys.add('arion_business_overview');
+    keys.add('arion_business_reviews');
+    keys.add('arion_business_insights');
+    keys.add('arion_business_posts');
+    keys.add('arion_business_services');
+    keys.add('arion_business_bing_overview');
+    keys.add('arion_business_apple_overview');
+    keys.add('arion_brand');
   }
 
   if (activeServiceKeys.has('oliver')) {

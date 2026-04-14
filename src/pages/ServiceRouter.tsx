@@ -3,16 +3,60 @@ import { useParams } from 'react-router-dom';
 import { useAppState } from '../app/AppState';
 import { SERVICE_CATALOG, resolveServiceStatus, type PortalService, type ServiceStatus } from '../config/serviceCatalog';
 import { ArionOverviewPage } from './arion/ArionOverviewPage';
-import { ArionWebsiteAnalyticsPage } from './arion/ArionWebsiteAnalyticsPage';
-import { ArionHostingPage } from './arion/ArionHostingPage';
-import { ArionSeoPage } from './arion/ArionSeoPage';
-import { ArionConsolePage } from './arion/ArionConsolePage';
-import { ArionMyBusinessPage } from './arion/ArionMyBusinessPage';
-import { ArionContentSeoPage } from './arion/ArionContentSeoPage';
-import { ArionSecurityPage } from './arion/ArionSecurityPage';
-import { ArionPerformancePage } from './arion/ArionPerformancePage';
-import { ArionBingPage } from './arion/ArionBingPage';
-import { ArionIAInsightsPage } from './arion/ArionIAInsightsPage';
+import { ArionPageWrapper } from '../arion/ArionPageWrapper';
+// Website pages
+import { WebsiteOverview } from '../arion/pages/website/WebsiteOverview';
+import { WebsiteContent } from '../arion/pages/website/WebsiteContent';
+import { ContentSeoOverview } from '../arion/pages/website/ContentSeoOverview';
+import { ContentSeoPages } from '../arion/pages/website/ContentSeoPages';
+import { ContentSeoPosts } from '../arion/pages/website/ContentSeoPosts';
+import { ContentSeoSchema } from '../arion/pages/website/ContentSeoSchema';
+import { SecurityOverview } from '../arion/pages/website/SecurityOverview';
+import { SecurityVulnerabilities } from '../arion/pages/website/SecurityVulnerabilities';
+import { SecurityFirewall } from '../arion/pages/website/SecurityFirewall';
+import { PerformanceCache } from '../arion/pages/website/PerformanceCache';
+import { PerformanceImages } from '../arion/pages/website/PerformanceImages';
+import { WebsiteUpdates } from '../arion/pages/website/WebsiteUpdates';
+import { WebsiteStaging } from '../arion/pages/website/WebsiteStaging';
+import { WebsiteSupport } from '../arion/pages/website/WebsiteSupport';
+import { WebsiteSettings } from '../arion/pages/website/WebsiteSettings';
+// Hosting pages
+import { HostingOverview } from '../arion/pages/hosting/HostingOverview';
+import { HostingDomainDns } from '../arion/pages/hosting/HostingDomainDns';
+import { HostingBackups } from '../arion/pages/hosting/HostingBackups';
+import { HostingPerformance } from '../arion/pages/hosting/HostingPerformance';
+// Analytics pages
+import { AnalyticsOverview } from '../arion/pages/analytics/AnalyticsOverview';
+import { AnalyticsTraffic } from '../arion/pages/analytics/AnalyticsTraffic';
+import { AnalyticsConversions } from '../arion/pages/analytics/AnalyticsConversions';
+import { AnalyticsPages } from '../arion/pages/analytics/AnalyticsPages';
+import { AnalyticsReports } from '../arion/pages/analytics/AnalyticsReports';
+import { IAInsightsCrossChannel } from '../arion/pages/analytics/IAInsightsCrossChannel';
+import { IAInsightsReports } from '../arion/pages/analytics/IAInsightsReports';
+// SEO pages
+import { SeoOverview } from '../arion/pages/seo/SeoOverview';
+import { SeoRankings } from '../arion/pages/seo/SeoRankings';
+import { SeoSiteAudit } from '../arion/pages/seo/SeoSiteAudit';
+import { SeoCompetitors } from '../arion/pages/seo/SeoCompetitors';
+import { SeoOpportunities } from '../arion/pages/seo/SeoOpportunities';
+import { SeoReports } from '../arion/pages/seo/SeoReports';
+// Search pages
+import { SearchPerformance } from '../arion/pages/search/SearchPerformance';
+import { SearchIndexing } from '../arion/pages/search/SearchIndexing';
+import { SearchSitemaps } from '../arion/pages/search/SearchSitemaps';
+import { SearchCoreWebVitals } from '../arion/pages/search/SearchCoreWebVitals';
+import { SearchBingCopilot } from '../arion/pages/search/SearchBingCopilot';
+import { SearchBingIndexNow } from '../arion/pages/search/SearchBingIndexNow';
+// Business pages
+import { BusinessOverview } from '../arion/pages/business/BusinessOverview';
+import { BusinessReviews } from '../arion/pages/business/BusinessReviews';
+import { BusinessInsights } from '../arion/pages/business/BusinessInsights';
+import { BusinessPosts } from '../arion/pages/business/BusinessPosts';
+import { BusinessServices } from '../arion/pages/business/BusinessServices';
+import { BusinessBingOverview } from '../arion/pages/business/BusinessBingOverview';
+import { BusinessAppleOverview } from '../arion/pages/business/BusinessAppleOverview';
+// Brand page
+import { BrandPage } from '../arion/pages/BrandPage';
 import { SparkOverviewPage } from './spark/SparkOverviewPage';
 import { SparkContactsPage } from './spark/SparkContactsPage';
 import { SparkListsPage } from './spark/SparkListsPage';
@@ -68,17 +112,53 @@ export function ServiceRouter() {
 
   if (service.section === 'ARION') {
     switch (service.key) {
-      case 'arion_overview': return <ArionOverviewPage service={service} status={status} />;
-      case 'arion_website_analytics': return <ArionWebsiteAnalyticsPage service={service} status={status} />;
-      case 'arion_hosting': return <ArionHostingPage service={service} status={status} />;
-      case 'arion_seo': return <ArionSeoPage service={service} status={status} />;
-      case 'arion_console': return <ArionConsolePage service={service} status={status} />;
-      case 'arion_my_business': return <ArionMyBusinessPage service={service} status={status} />;
-      case 'arion_content_seo': return <ArionContentSeoPage service={service} status={status} />;
-      case 'arion_security': return <ArionSecurityPage service={service} status={status} />;
-      case 'arion_performance': return <ArionPerformancePage service={service} status={status} />;
-      case 'arion_bing': return <ArionBingPage service={service} status={status} />;
-      case 'arion_ia_insights': return <ArionIAInsightsPage service={service} status={status} />;
+      case 'arion_dashboard': return <ArionOverviewPage service={service} status={status} />;
+      case 'arion_website_overview': return <ArionPageWrapper><WebsiteOverview /></ArionPageWrapper>;
+      case 'arion_website_content': return <ArionPageWrapper><WebsiteContent /></ArionPageWrapper>;
+      case 'arion_website_content_seo_overview': return <ArionPageWrapper><ContentSeoOverview /></ArionPageWrapper>;
+      case 'arion_website_content_seo_pages': return <ArionPageWrapper><ContentSeoPages /></ArionPageWrapper>;
+      case 'arion_website_content_seo_posts': return <ArionPageWrapper><ContentSeoPosts /></ArionPageWrapper>;
+      case 'arion_website_content_seo_schema': return <ArionPageWrapper><ContentSeoSchema /></ArionPageWrapper>;
+      case 'arion_website_security_overview': return <ArionPageWrapper><SecurityOverview /></ArionPageWrapper>;
+      case 'arion_website_security_vulnerabilities': return <ArionPageWrapper><SecurityVulnerabilities /></ArionPageWrapper>;
+      case 'arion_website_security_firewall': return <ArionPageWrapper><SecurityFirewall /></ArionPageWrapper>;
+      case 'arion_website_performance_cache': return <ArionPageWrapper><PerformanceCache /></ArionPageWrapper>;
+      case 'arion_website_performance_images': return <ArionPageWrapper><PerformanceImages /></ArionPageWrapper>;
+      case 'arion_website_updates': return <ArionPageWrapper><WebsiteUpdates /></ArionPageWrapper>;
+      case 'arion_website_staging': return <ArionPageWrapper><WebsiteStaging /></ArionPageWrapper>;
+      case 'arion_website_support': return <ArionPageWrapper><WebsiteSupport /></ArionPageWrapper>;
+      case 'arion_website_settings': return <ArionPageWrapper><WebsiteSettings /></ArionPageWrapper>;
+      case 'arion_hosting_overview': return <ArionPageWrapper><HostingOverview /></ArionPageWrapper>;
+      case 'arion_hosting_domain_dns': return <ArionPageWrapper><HostingDomainDns /></ArionPageWrapper>;
+      case 'arion_hosting_backups': return <ArionPageWrapper><HostingBackups /></ArionPageWrapper>;
+      case 'arion_hosting_performance': return <ArionPageWrapper><HostingPerformance /></ArionPageWrapper>;
+      case 'arion_analytics_overview': return <ArionPageWrapper><AnalyticsOverview /></ArionPageWrapper>;
+      case 'arion_analytics_traffic': return <ArionPageWrapper><AnalyticsTraffic /></ArionPageWrapper>;
+      case 'arion_analytics_conversions': return <ArionPageWrapper><AnalyticsConversions /></ArionPageWrapper>;
+      case 'arion_analytics_pages': return <ArionPageWrapper><AnalyticsPages /></ArionPageWrapper>;
+      case 'arion_analytics_reports': return <ArionPageWrapper><AnalyticsReports /></ArionPageWrapper>;
+      case 'arion_analytics_ia_cross_channel': return <ArionPageWrapper><IAInsightsCrossChannel /></ArionPageWrapper>;
+      case 'arion_analytics_ia_reports': return <ArionPageWrapper><IAInsightsReports /></ArionPageWrapper>;
+      case 'arion_seo_overview': return <ArionPageWrapper><SeoOverview /></ArionPageWrapper>;
+      case 'arion_seo_rankings': return <ArionPageWrapper><SeoRankings /></ArionPageWrapper>;
+      case 'arion_seo_site_audit': return <ArionPageWrapper><SeoSiteAudit /></ArionPageWrapper>;
+      case 'arion_seo_competitors': return <ArionPageWrapper><SeoCompetitors /></ArionPageWrapper>;
+      case 'arion_seo_opportunities': return <ArionPageWrapper><SeoOpportunities /></ArionPageWrapper>;
+      case 'arion_seo_reports': return <ArionPageWrapper><SeoReports /></ArionPageWrapper>;
+      case 'arion_search_performance': return <ArionPageWrapper><SearchPerformance /></ArionPageWrapper>;
+      case 'arion_search_indexing': return <ArionPageWrapper><SearchIndexing /></ArionPageWrapper>;
+      case 'arion_search_sitemaps': return <ArionPageWrapper><SearchSitemaps /></ArionPageWrapper>;
+      case 'arion_search_core_web_vitals': return <ArionPageWrapper><SearchCoreWebVitals /></ArionPageWrapper>;
+      case 'arion_search_bing_copilot': return <ArionPageWrapper><SearchBingCopilot /></ArionPageWrapper>;
+      case 'arion_search_bing_indexnow': return <ArionPageWrapper><SearchBingIndexNow /></ArionPageWrapper>;
+      case 'arion_business_overview': return <ArionPageWrapper><BusinessOverview /></ArionPageWrapper>;
+      case 'arion_business_reviews': return <ArionPageWrapper><BusinessReviews /></ArionPageWrapper>;
+      case 'arion_business_insights': return <ArionPageWrapper><BusinessInsights /></ArionPageWrapper>;
+      case 'arion_business_posts': return <ArionPageWrapper><BusinessPosts /></ArionPageWrapper>;
+      case 'arion_business_services': return <ArionPageWrapper><BusinessServices /></ArionPageWrapper>;
+      case 'arion_business_bing_overview': return <ArionPageWrapper><BusinessBingOverview /></ArionPageWrapper>;
+      case 'arion_business_apple_overview': return <ArionPageWrapper><BusinessAppleOverview /></ArionPageWrapper>;
+      case 'arion_brand': return <ArionPageWrapper><BrandPage /></ArionPageWrapper>;
       default: break;
     }
   }

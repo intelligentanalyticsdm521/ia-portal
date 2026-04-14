@@ -197,3 +197,207 @@ body {
   .iadm-upsell-cta {
     @apply iadm-btn-primary px-10 py-2.5 text-sm font-semibold shadow-lg;
   }
+
+/* ══════════════════════════════════════════════════════
+   ARION Design System — scoped under .arion-page
+   Ported from arion-client-app/src/style.css
+   ══════════════════════════════════════════════════════ */
+.arion-page {
+  --ia-core-blue: #0C4A60;
+  --ia-action-orange: #EF6C33;
+  --ia-ink: #0B1C24;
+  --ia-core-blue-light: #D5E8F0;
+  --ia-core-blue-mid: #A8CDD8;
+  --arion-sky: #2D9CDB;
+  --arion-sky-tint: #E8F4FB;
+  --arion-sky-dark: #1A7DB5;
+  --page-bg: #F2F6F9;
+  --border-color: rgba(45,156,219,0.12);
+  --text-primary: #0B1C24;
+  --text-muted: #5A7A8A;
+  --success: #16A34A;
+  --warning: #D97706;
+  --error: #DC2626;
+
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--page-bg);
+  padding: 16px 0;
+}
+
+/* Stat row + cards */
+.arion-page .stat-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 14px; }
+.arion-page .stat-card { background: #fff; border: 1px solid rgba(45,156,219,0.14); border-top: 2px solid var(--arion-sky); border-radius: 8px; padding: 11px 13px; }
+.arion-page .stat-lbl { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.4px; }
+.arion-page .stat-val { font-size: 20px; font-weight: 600; color: var(--text-primary); }
+.arion-page .stat-delta { font-size: 11px; color: var(--arion-sky-dark); margin-top: 2px; }
+.arion-page .stat-delta.neg { color: var(--error); }
+.arion-page .stat-delta.neu { color: var(--text-muted); }
+
+/* Metric cards */
+.arion-page .mcards { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 14px; }
+.arion-page .mcard { background: var(--arion-sky-tint); border-radius: 7px; padding: 10px 12px; }
+.arion-page .mcard-lbl { font-size: 10px; color: var(--arion-sky-dark); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px; }
+.arion-page .mcard-val { font-size: 19px; font-weight: 600; color: var(--text-primary); }
+.arion-page .mcard-delta { font-size: 10px; color: var(--arion-sky-dark); margin-top: 2px; }
+
+/* Cards */
+.arion-page .card { background: #fff; border: 1px solid var(--border-color); border-radius: 9px; padding: 14px 16px; margin-bottom: 12px; }
+.arion-page .card-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.arion-page .card-ttl { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.arion-page .card-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* Access buttons */
+.arion-page .abtn { display: flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; border: none; }
+.arion-page .abtn-outline { background: #fff; color: var(--text-primary); border: 1px solid rgba(45,156,219,0.28); }
+.arion-page .abtn-sky { background: var(--arion-sky); color: #fff; }
+.arion-page .abtn-dark { background: var(--ia-core-blue); color: #fff; }
+
+/* Health rows */
+.arion-page .hrow { display: flex; align-items: center; gap: 9px; padding: 7px 0; border-bottom: 1px solid rgba(45,156,219,0.07); }
+.arion-page .hrow:last-child { border-bottom: none; }
+.arion-page .hdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.arion-page .hdot.ok { background: var(--success); }
+.arion-page .hdot.warn { background: var(--warning); }
+.arion-page .hdot.err { background: var(--error); }
+.arion-page .hlbl { font-size: 12px; color: var(--text-primary); flex: 1; }
+.arion-page .hval { font-size: 11px; color: var(--text-muted); }
+
+/* Two column + layout */
+.arion-page .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.arion-page .dash-layout { display: grid; grid-template-columns: 1fr 280px; gap: 14px; margin-bottom: 14px; }
+
+/* Tier gate */
+.arion-page .gated { position: relative; border-radius: 9px; overflow: hidden; margin-bottom: 12px; }
+.arion-page .gated-blur { filter: blur(3px); pointer-events: none; user-select: none; }
+.arion-page .gate-overlay { position: absolute; inset: 0; background: rgba(242,246,249,0.88); display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 9px; border: 1px dashed rgba(45,156,219,0.22); gap: 5px; }
+.arion-page .gate-ttl { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+.arion-page .gate-sub { font-size: 11px; color: var(--text-muted); }
+.arion-page .gate-btn { margin-top: 5px; background: var(--ia-action-orange); color: #fff; border: none; padding: 6px 14px; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer; }
+
+/* Addon banner */
+.arion-page .addon-banner { background: var(--ia-core-blue); border-radius: 9px; padding: 18px 20px; margin-bottom: 14px; display: flex; align-items: center; gap: 18px; position: relative; overflow: hidden; }
+.arion-page .addon-ttl { color: #fff; font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.arion-page .addon-desc { color: rgba(255,255,255,0.58); font-size: 11px; line-height: 1.5; }
+.arion-page .addon-body { flex: 1; }
+.arion-page .addon-right { text-align: right; flex-shrink: 0; }
+.arion-page .addon-price { color: #fff; font-size: 24px; font-weight: 600; }
+.arion-page .addon-price span { font-size: 12px; font-weight: 400; opacity: 0.52; }
+.arion-page .addon-plan { font-size: 10px; color: rgba(255,255,255,0.38); margin-bottom: 8px; }
+.arion-page .addon-cta { background: var(--ia-action-orange); color: #fff; border: none; padding: 7px 15px; border-radius: 5px; font-size: 12px; font-weight: 600; cursor: pointer; }
+
+/* Tables */
+.arion-page .tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.arion-page .tbl th { text-align: left; padding: 5px 8px; font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; border-bottom: 1px solid rgba(45,156,219,0.1); }
+.arion-page .tbl td { padding: 8px; border-bottom: 1px solid rgba(45,156,219,0.07); color: var(--text-primary); }
+.arion-page .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.arion-page .data-table th { text-align: left; padding: 5px 8px; font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; border-bottom: 1px solid rgba(45,156,219,0.1); }
+.arion-page .data-table td { padding: 8px; border-bottom: 1px solid rgba(45,156,219,0.07); color: var(--text-primary); }
+
+/* Badges */
+.arion-page .badge-ia { background: var(--arion-sky-tint); color: var(--arion-sky-dark); font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px; }
+.arion-page .badge-update { background: #FEF3C7; color: #92400E; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px; }
+.arion-page .badge-security { background: #FEE2E2; color: #991B1B; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px; }
+.arion-page .badge-ok { background: #F1F5F9; color: #64748B; font-size: 10px; padding: 1px 6px; border-radius: 3px; }
+.arion-page .badge-claimed { background: var(--arion-sky-tint); color: var(--arion-sky-dark); font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 4px; }
+.arion-page .badge-unclaimed { background: #FEE2E2; color: #991B1B; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 4px; }
+
+/* Platform tabs */
+.arion-page .ptabs { display: flex; margin-bottom: 14px; background: #fff; border: 1px solid rgba(45,156,219,0.14); border-radius: 7px; overflow: hidden; width: fit-content; }
+.arion-page .ptab { padding: 6px 14px; font-size: 12px; font-weight: 500; color: var(--text-muted); cursor: pointer; border: none; background: transparent; }
+.arion-page .ptab.active { background: var(--arion-sky); color: #fff; }
+
+/* Reviews */
+.arion-page .rev { padding: 9px 0; border-bottom: 1px solid rgba(45,156,219,0.07); }
+.arion-page .rev-top { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
+.arion-page .rev-name { font-size: 12px; font-weight: 600; }
+.arion-page .stars-yellow { color: var(--warning); font-size: 11px; }
+.arion-page .rev-date { font-size: 10px; color: var(--text-muted); margin-left: auto; }
+.arion-page .rev-txt { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+
+/* Info / Warn */
+.arion-page .info-card { background: var(--arion-sky-tint); border: 1px solid rgba(45,156,219,0.22); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; }
+.arion-page .info-ttl { font-size: 12px; font-weight: 600; color: var(--arion-sky-dark); margin-bottom: 3px; }
+.arion-page .info-body { font-size: 11px; color: var(--arion-sky-dark); opacity: 0.82; line-height: 1.5; }
+.arion-page .warn-notice { background: #FFF7ED; border: 1px solid rgba(239,108,51,0.22); border-radius: 7px; padding: 9px 12px; font-size: 11px; color: #7C3A0A; margin-top: 10px; line-height: 1.5; }
+
+/* Mini bars */
+.arion-page .bars { display: flex; align-items: flex-end; gap: 3px; height: 48px; margin: 10px 0 6px; }
+.arion-page .bar { flex: 1; background: var(--arion-sky-tint); border-radius: 2px 2px 0 0; }
+.arion-page .bar.hi { background: var(--arion-sky); }
+
+/* Form fields */
+.arion-page .field-row { display: flex; align-items: center; gap: 12px; margin-bottom: 9px; }
+.arion-page .field-row strong { font-size: 12px; color: var(--text-muted); width: 140px; flex-shrink: 0; }
+.arion-page .field-row span { font-size: 12px; color: var(--text-primary); }
+.arion-page .profile-fields { padding: 4px 0; }
+
+/* Quick links + dashboard */
+.arion-page .quick-links { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 14px; }
+.arion-page .quick-link { background: #fff; border: 1px solid var(--border-color); border-radius: 10px; padding: 14px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: border-color 0.15s; }
+.arion-page .quick-link:hover { border-color: var(--arion-sky); }
+.arion-page .quick-link-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.arion-page .quick-link-text { font-size: 13px; font-weight: 500; }
+.arion-page .quick-link-sub { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+
+/* Score circle */
+.arion-page .score-circle { width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; position: relative; }
+.arion-page .score-circle::before { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 4px solid #E5E7EB; }
+.arion-page .score-circle.good { color: var(--success); }
+.arion-page .score-circle.good::before { border-color: var(--success); }
+.arion-page .score-circle.average { color: var(--warning); }
+.arion-page .score-circle.average::before { border-color: var(--warning); }
+.arion-page .score-circle.poor { color: var(--error); }
+.arion-page .score-circle.poor::before { border-color: var(--error); }
+
+/* Sidebar + status pill */
+.arion-page .info-sidebar { display: flex; flex-direction: column; gap: 8px; }
+.arion-page .sidebar-card { background: #fff; border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; }
+.arion-page .sidebar-card-label { font-size: 12px; color: var(--text-primary); font-weight: 500; }
+.arion-page .sidebar-card-value { font-size: 12px; font-weight: 600; color: var(--arion-sky); }
+.arion-page .sidebar-card-value.success { color: var(--success); }
+.arion-page .status-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 12px; }
+.arion-page .status-pill.active { background: #ECFDF5; color: var(--success); }
+.arion-page .status-pill.warning { background: #FFF7ED; color: var(--warning); }
+.arion-page .status-pill.error { background: #FEF2F2; color: var(--error); }
+.arion-page .status-pill.info { background: var(--arion-sky-tint); color: var(--arion-sky-dark); }
+
+/* Site banner */
+.arion-page .site-banner { background: #fff; border: 1px solid var(--border-color); border-radius: 12px; padding: 18px 20px; margin-bottom: 14px; display: flex; align-items: center; gap: 14px; }
+
+/* DNS form */
+.arion-page .dns-form-row { display: flex; gap: 8px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border-color); margin-bottom: 12px; }
+.arion-page .dns-form-row select, .arion-page .dns-form-row input { padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; background: #fff; color: var(--text-primary); outline: none; }
+
+/* Text buttons */
+.arion-page .text-btn { background: none; border: none; font-size: 11px; font-weight: 600; cursor: pointer; padding: 2px 6px; }
+.arion-page .text-btn.danger { color: var(--error); }
+.arion-page .text-btn.primary { color: var(--arion-sky); }
+
+/* Completeness bar */
+.arion-page .comp-bar { background: var(--arion-sky-tint); border-radius: 4px; height: 6px; margin: 7px 0 6px; overflow: hidden; }
+.arion-page .comp-fill { height: 100%; background: var(--arion-sky); border-radius: 4px; }
+
+/* Upsell card */
+.arion-page .upsell-card { background: #0B1C24; border: 0.5px solid rgba(45,156,219,.2); border-radius: 8px; padding: 14px 16px; margin-top: 12px; display: flex; align-items: center; gap: 12px; }
+.arion-page .upsell-icon { width: 36px; height: 36px; background: rgba(239,108,51,.15); border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.arion-page .upsell-body { flex: 1; }
+.arion-page .upsell-t { font-size: 12px; font-weight: 600; color: rgba(255,255,255,.88); margin-bottom: 2px; }
+.arion-page .upsell-s { font-size: 10.5px; color: rgba(255,255,255,.42); line-height: 1.4; }
+.arion-page .upsell-btn { background: #EF6C33; color: #fff; border: none; padding: 7px 14px; border-radius: 5px; font-size: 10.5px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+.arion-page .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.arion-page .modal { background: #fff; border-radius: 10px; padding: 24px; width: 420px; max-width: 90vw; }
+.arion-page .btn { padding: 8px 16px; border-radius: 6px; border: 1px solid #ddd; background: #fff; font-size: 12px; cursor: pointer; }
+.arion-page .btn-primary { background: #EF6C33; color: #fff; border-color: #EF6C33; }
+
+/* Grid helpers */
+.arion-page .grid2 { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; }
+.arion-page .grid3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 14px; }
+
+/* Responsive */
+@media (max-width: 980px) {
+  .arion-page .stat-row { grid-template-columns: repeat(2, 1fr); }
+  .arion-page .two-col { grid-template-columns: 1fr; }
+  .arion-page .mcards { grid-template-columns: repeat(2, 1fr); }
+  .arion-page .quick-links { grid-template-columns: repeat(2, 1fr); }
+  .arion-page .dash-layout { grid-template-columns: 1fr; }
+}

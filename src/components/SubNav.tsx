@@ -1,4 +1,5 @@
-import { NavLink } from "react-router-dom";
+import { useState } from "react";
+import { NavLink, useLocation } from "react-router-dom";
 import type { ProductKey } from "./IconRail";
 
 export interface SubNavItem {
@@ -9,8 +10,9 @@ export interface SubNavItem {
 }
 
 export interface SubNavGroup {
-  label: string; // italic group label (not clickable)
+  label: string; // italic group label (not clickable), or collapsible section header
   items: SubNavItem[];
+  collapsible?: boolean; // if true, group is collapsible accordion section
 }
 
 export interface SubNavConfig {
@@ -87,40 +89,92 @@ const ARION_NAV: SubNavConfig = {
   groups: [
     {
       label: "",
-      items: [
-        { key: "arion_overview", label: "Overview", route: "/app/services/arion_overview" },
-      ],
+      items: [{ key: "arion_dashboard", label: "Dashboard", route: "/app/services/arion_dashboard" }],
     },
     {
       label: "Website",
+      collapsible: true,
       items: [
-        { key: "arion_website_analytics", label: "Website Analytics", route: "/app/services/arion_website_analytics" },
-        { key: "arion_hosting", label: "Hosting", route: "/app/services/arion_hosting" },
-        { key: "arion_content_seo", label: "Content SEO", route: "/app/services/arion_content_seo" },
-        { key: "arion_security", label: "Security", route: "/app/services/arion_security" },
-        { key: "arion_performance", label: "Performance", route: "/app/services/arion_performance" },
+        { key: "arion_website_overview", label: "Overview", route: "/app/services/arion_website_overview" },
+        { key: "arion_website_content", label: "Content", route: "/app/services/arion_website_content" },
+        { key: "arion_website_content_seo_overview", label: "Content SEO: Overview", route: "/app/services/arion_website_content_seo_overview" },
+        { key: "arion_website_content_seo_pages", label: "Content SEO: Pages", route: "/app/services/arion_website_content_seo_pages" },
+        { key: "arion_website_content_seo_posts", label: "Content SEO: Posts", route: "/app/services/arion_website_content_seo_posts" },
+        { key: "arion_website_content_seo_schema", label: "Content SEO: Schema", route: "/app/services/arion_website_content_seo_schema" },
+        { key: "arion_website_security_overview", label: "Security: Overview", route: "/app/services/arion_website_security_overview" },
+        { key: "arion_website_security_vulnerabilities", label: "Security: Vulnerabilities", route: "/app/services/arion_website_security_vulnerabilities" },
+        { key: "arion_website_security_firewall", label: "Security: Firewall", route: "/app/services/arion_website_security_firewall" },
+        { key: "arion_website_performance_cache", label: "Performance: Cache", route: "/app/services/arion_website_performance_cache" },
+        { key: "arion_website_performance_images", label: "Performance: Images", route: "/app/services/arion_website_performance_images" },
+        { key: "arion_website_updates", label: "Updates", route: "/app/services/arion_website_updates" },
+        { key: "arion_website_staging", label: "Staging", route: "/app/services/arion_website_staging" },
+        { key: "arion_website_support", label: "Support", route: "/app/services/arion_website_support" },
+        { key: "arion_website_settings", label: "Settings", route: "/app/services/arion_website_settings" },
       ],
     },
     {
-      label: "Marketing",
+      label: "Hosting",
+      collapsible: true,
       items: [
-        { key: "arion_seo", label: "SEO", route: "/app/services/arion_seo" },
-        { key: "arion_console", label: "Console", route: "/app/services/arion_console" },
-        { key: "arion_my_business", label: "My Business", route: "/app/services/arion_my_business" },
-        { key: "arion_bing", label: "Bing & Copilot", route: "/app/services/arion_bing" },
+        { key: "arion_hosting_overview", label: "Overview", route: "/app/services/arion_hosting_overview" },
+        { key: "arion_hosting_domain_dns", label: "Domain & DNS", route: "/app/services/arion_hosting_domain_dns" },
+        { key: "arion_hosting_backups", label: "Backups", route: "/app/services/arion_hosting_backups" },
+        { key: "arion_hosting_performance", label: "Performance", route: "/app/services/arion_hosting_performance", gated: true },
       ],
     },
     {
-      label: "Intelligence",
+      label: "Analytics",
+      collapsible: true,
       items: [
-        { key: "arion_ia_insights", label: "IA Insights", route: "/app/services/arion_ia_insights" },
+        { key: "arion_analytics_overview", label: "Overview", route: "/app/services/arion_analytics_overview" },
+        { key: "arion_analytics_traffic", label: "Traffic", route: "/app/services/arion_analytics_traffic" },
+        { key: "arion_analytics_conversions", label: "Conversions", route: "/app/services/arion_analytics_conversions" },
+        { key: "arion_analytics_pages", label: "Pages", route: "/app/services/arion_analytics_pages", gated: true },
+        { key: "arion_analytics_reports", label: "Reports", route: "/app/services/arion_analytics_reports", gated: true },
+        { key: "arion_analytics_ia_cross_channel", label: "IA: Cross-Channel", route: "/app/services/arion_analytics_ia_cross_channel" },
+        { key: "arion_analytics_ia_reports", label: "IA: Reports", route: "/app/services/arion_analytics_ia_reports" },
+      ],
+    },
+    {
+      label: "SEO",
+      collapsible: true,
+      items: [
+        { key: "arion_seo_overview", label: "Overview", route: "/app/services/arion_seo_overview" },
+        { key: "arion_seo_rankings", label: "Rankings", route: "/app/services/arion_seo_rankings" },
+        { key: "arion_seo_site_audit", label: "Site Audit", route: "/app/services/arion_seo_site_audit" },
+        { key: "arion_seo_competitors", label: "Competitors", route: "/app/services/arion_seo_competitors" },
+        { key: "arion_seo_opportunities", label: "Opportunities", route: "/app/services/arion_seo_opportunities" },
+        { key: "arion_seo_reports", label: "Reports", route: "/app/services/arion_seo_reports" },
+      ],
+    },
+    {
+      label: "Search",
+      collapsible: true,
+      items: [
+        { key: "arion_search_performance", label: "Performance", route: "/app/services/arion_search_performance" },
+        { key: "arion_search_indexing", label: "Indexing", route: "/app/services/arion_search_indexing" },
+        { key: "arion_search_sitemaps", label: "Sitemaps", route: "/app/services/arion_search_sitemaps" },
+        { key: "arion_search_core_web_vitals", label: "Core Web Vitals", route: "/app/services/arion_search_core_web_vitals" },
+        { key: "arion_search_bing_copilot", label: "Bing: Copilot AI", route: "/app/services/arion_search_bing_copilot" },
+        { key: "arion_search_bing_indexnow", label: "Bing: IndexNow", route: "/app/services/arion_search_bing_indexnow" },
+      ],
+    },
+    {
+      label: "Business Profile",
+      collapsible: true,
+      items: [
+        { key: "arion_business_overview", label: "Overview", route: "/app/services/arion_business_overview" },
+        { key: "arion_business_reviews", label: "Reviews", route: "/app/services/arion_business_reviews" },
+        { key: "arion_business_insights", label: "Insights", route: "/app/services/arion_business_insights" },
+        { key: "arion_business_posts", label: "Posts", route: "/app/services/arion_business_posts", gated: true },
+        { key: "arion_business_services", label: "Services", route: "/app/services/arion_business_services", gated: true },
+        { key: "arion_business_bing_overview", label: "Bing Places", route: "/app/services/arion_business_bing_overview" },
+        { key: "arion_business_apple_overview", label: "Apple Maps", route: "/app/services/arion_business_apple_overview" },
       ],
     },
     {
       label: "",
-      items: [
-        { key: "arion_brand", label: "Your Brand", route: "/app/services/arion_brand" },
-      ],
+      items: [{ key: "arion_brand", label: "My Brand", route: "/app/services/arion_brand" }],
     },
   ],
 };
@@ -250,8 +304,29 @@ interface SubNavProps {
 }
 
 export function SubNav({ config }: SubNavProps) {
+  const location = useLocation();
+  // Auto-expand groups that contain the active route
+  const [expanded, setExpanded] = useState<Set<number>>(() => {
+    const initial = new Set<number>();
+    config.groups.forEach((group, gi) => {
+      if (group.collapsible && group.items.some(item => location.pathname.startsWith(item.route))) {
+        initial.add(gi);
+      }
+    });
+    return initial;
+  });
+
+  const toggleGroup = (gi: number) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(gi)) next.delete(gi);
+      else next.add(gi);
+      return next;
+    });
+  };
+
   return (
-    <div className="flex w-48 flex-col bg-[#0C4A60] py-4">
+    <div className="flex w-52 flex-col bg-[#0C4A60] py-4">
       {/* Product header */}
       <div className="mb-4 px-4">
         <h2 className="text-sm font-bold text-white">{config.productName}</h2>
@@ -260,43 +335,66 @@ export function SubNav({ config }: SubNavProps) {
 
       {/* Nav groups */}
       <nav className="flex-1 overflow-y-auto px-2">
-        {config.groups.map((group, gi) => (
-          <div key={gi} className={gi > 0 ? "mt-3" : ""}>
-            {/* Group label — italic, non-clickable */}
-            {group.label && (
-              <div className="mb-1 px-2 text-[9.5px] italic text-[#A8CDD8]/45">
-                {group.label}
-              </div>
-            )}
-            {/* Items */}
-            <ul className="space-y-0.5">
-              {group.items.map((item) => (
-                <li key={item.key}>
-                  <NavLink
-                    to={item.route}
-                    className={({ isActive }) =>
-                      `flex items-center gap-2 rounded px-2 py-1.5 text-[12px] transition-colors ${
-                        isActive
-                          ? "bg-white/10 font-medium text-white"
-                          : "text-[#D5E8F0] hover:bg-white/5 hover:text-white"
-                      }`
-                    }
+        {config.groups.map((group, gi) => {
+          const isExpanded = !group.collapsible || expanded.has(gi);
+          const hasActiveItem = group.items.some(item => location.pathname.startsWith(item.route));
+
+          return (
+            <div key={gi} className={gi > 0 ? "mt-2" : ""}>
+              {/* Group label — collapsible or italic */}
+              {group.label && (
+                group.collapsible ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(gi)}
+                    className={`mb-1 flex w-full items-center justify-between px-2 py-1 text-[11px] font-semibold transition-colors ${
+                      hasActiveItem ? "text-white" : "text-[#A8CDD8]/70 hover:text-[#A8CDD8]"
+                    }`}
                   >
-                    {/* Dot indicator */}
-                    <span className="h-1 w-1 flex-shrink-0 rounded-full bg-current opacity-50" />
-                    <span className="truncate">{item.label}</span>
-                    {/* Lock icon for gated items */}
-                    {item.gated && (
-                      <svg className="ml-auto h-3 w-3 flex-shrink-0 text-[#A8CDD8]/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-                      </svg>
-                    )}
-                  </NavLink>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+                    <span>{group.label}</span>
+                    <svg
+                      className={`h-3 w-3 flex-shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                    </svg>
+                  </button>
+                ) : (
+                  <div className="mb-1 px-2 text-[9.5px] italic text-[#A8CDD8]/45">
+                    {group.label}
+                  </div>
+                )
+              )}
+              {/* Items — hidden when collapsed */}
+              {isExpanded && (
+                <ul className="space-y-0.5">
+                  {group.items.map((item) => (
+                    <li key={item.key}>
+                      <NavLink
+                        to={item.route}
+                        className={({ isActive }) =>
+                          `flex items-center gap-2 rounded px-2 py-1.5 text-[11px] transition-colors ${
+                            isActive
+                              ? "bg-white/10 font-medium text-white"
+                              : "text-[#D5E8F0] hover:bg-white/5 hover:text-white"
+                          }`
+                        }
+                      >
+                        <span className="h-1 w-1 flex-shrink-0 rounded-full bg-current opacity-50" />
+                        <span className="truncate">{item.label}</span>
+                        {item.gated && (
+                          <svg className="ml-auto h-3 w-3 flex-shrink-0 text-[#A8CDD8]/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                          </svg>
+                        )}
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
       </nav>
     </div>
   );
