@@ -96,6 +96,9 @@ const ARION_NAV: SubNavConfig = {
       items: [
         { key: "arion_website_analytics", label: "Website Analytics", route: "/app/services/arion_website_analytics" },
         { key: "arion_hosting", label: "Hosting", route: "/app/services/arion_hosting" },
+        { key: "arion_content_seo", label: "Content SEO", route: "/app/services/arion_content_seo" },
+        { key: "arion_security", label: "Security", route: "/app/services/arion_security" },
+        { key: "arion_performance", label: "Performance", route: "/app/services/arion_performance" },
       ],
     },
     {
@@ -104,6 +107,13 @@ const ARION_NAV: SubNavConfig = {
         { key: "arion_seo", label: "SEO", route: "/app/services/arion_seo" },
         { key: "arion_console", label: "Console", route: "/app/services/arion_console" },
         { key: "arion_my_business", label: "My Business", route: "/app/services/arion_my_business" },
+        { key: "arion_bing", label: "Bing & Copilot", route: "/app/services/arion_bing" },
+      ],
+    },
+    {
+      label: "Intelligence",
+      items: [
+        { key: "arion_ia_insights", label: "IA Insights", route: "/app/services/arion_ia_insights" },
       ],
     },
     {
