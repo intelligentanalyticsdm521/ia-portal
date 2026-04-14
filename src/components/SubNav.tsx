@@ -1,18 +1,24 @@
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
 import { NavLink, useLocation } from "react-router-dom";
+import {
+  Monitor, Server, ShieldCheck, BarChart2, TrendingUp,
+  Search as SearchIcon, MapPin, Star, ChevronDown, Settings,
+} from "lucide-react";
 import type { ProductKey } from "./IconRail";
 
 export interface SubNavItem {
   key: string;
   label: string;
   route: string;
-  gated?: boolean; // show lock icon
+  gated?: boolean;
 }
 
 export interface SubNavGroup {
-  label: string; // italic group label (not clickable), or collapsible section header
+  label: string;
   items: SubNavItem[];
-  collapsible?: boolean; // if true, group is collapsible accordion section
+  collapsible?: boolean;
+  icon?: ComponentType<{ className?: string }>;
+  sectionId?: string; // used for auto-collapse matching
 }
 
 export interface SubNavConfig {
@@ -92,64 +98,57 @@ const ARION_NAV: SubNavConfig = {
       items: [{ key: "arion_dashboard", label: "Dashboard", route: "/app/services/arion_dashboard" }],
     },
     {
-      label: "Website",
-      collapsible: true,
+      label: "Website", icon: Monitor, collapsible: true, sectionId: "website",
       items: [
         { key: "arion_website_overview", label: "Overview", route: "/app/services/arion_website_overview" },
         { key: "arion_website_content", label: "Content", route: "/app/services/arion_website_content" },
-        { key: "arion_website_content_seo_overview", label: "Content SEO: Overview", route: "/app/services/arion_website_content_seo_overview" },
+        { key: "arion_website_content_seo_overview", label: "Content SEO", route: "/app/services/arion_website_content_seo_overview" },
         { key: "arion_website_content_seo_pages", label: "Content SEO: Pages", route: "/app/services/arion_website_content_seo_pages" },
         { key: "arion_website_content_seo_posts", label: "Content SEO: Posts", route: "/app/services/arion_website_content_seo_posts" },
-        { key: "arion_website_content_seo_schema", label: "Content SEO: Schema", route: "/app/services/arion_website_content_seo_schema" },
-        { key: "arion_website_security_overview", label: "Security: Overview", route: "/app/services/arion_website_security_overview" },
-        { key: "arion_website_security_vulnerabilities", label: "Security: Vulnerabilities", route: "/app/services/arion_website_security_vulnerabilities" },
-        { key: "arion_website_security_firewall", label: "Security: Firewall", route: "/app/services/arion_website_security_firewall" },
-        { key: "arion_website_performance_cache", label: "Performance: Cache", route: "/app/services/arion_website_performance_cache" },
-        { key: "arion_website_performance_images", label: "Performance: Images", route: "/app/services/arion_website_performance_images" },
-        { key: "arion_website_updates", label: "Updates", route: "/app/services/arion_website_updates" },
         { key: "arion_website_staging", label: "Staging", route: "/app/services/arion_website_staging" },
-        { key: "arion_website_support", label: "Support", route: "/app/services/arion_website_support" },
-        { key: "arion_website_settings", label: "Settings", route: "/app/services/arion_website_settings" },
       ],
     },
     {
-      label: "Hosting",
-      collapsible: true,
+      label: "Hosting", icon: Server, collapsible: true, sectionId: "hosting",
       items: [
         { key: "arion_hosting_overview", label: "Overview", route: "/app/services/arion_hosting_overview" },
         { key: "arion_hosting_domain_dns", label: "Domain & DNS", route: "/app/services/arion_hosting_domain_dns" },
         { key: "arion_hosting_backups", label: "Backups", route: "/app/services/arion_hosting_backups" },
-        { key: "arion_hosting_performance", label: "Performance", route: "/app/services/arion_hosting_performance", gated: true },
       ],
     },
     {
-      label: "Analytics",
-      collapsible: true,
+      label: "Security & Performance", icon: ShieldCheck, collapsible: true, sectionId: "security",
+      items: [
+        { key: "arion_website_security_overview", label: "Security: Overview", route: "/app/services/arion_website_security_overview" },
+        { key: "arion_website_security_vulnerabilities", label: "Security: Vulnerabilities", route: "/app/services/arion_website_security_vulnerabilities" },
+        { key: "arion_website_security_firewall", label: "Security: Firewall", route: "/app/services/arion_website_security_firewall" },
+        { key: "arion_website_performance_cache", label: "Performance", route: "/app/services/arion_website_performance_cache" },
+        { key: "arion_website_performance_images", label: "Media", route: "/app/services/arion_website_performance_images" },
+        { key: "arion_website_updates", label: "Plugins", route: "/app/services/arion_website_updates" },
+      ],
+    },
+    {
+      label: "Analytics", icon: BarChart2, collapsible: true, sectionId: "analytics",
       items: [
         { key: "arion_analytics_overview", label: "Overview", route: "/app/services/arion_analytics_overview" },
         { key: "arion_analytics_traffic", label: "Traffic", route: "/app/services/arion_analytics_traffic" },
         { key: "arion_analytics_conversions", label: "Conversions", route: "/app/services/arion_analytics_conversions" },
-        { key: "arion_analytics_pages", label: "Pages", route: "/app/services/arion_analytics_pages", gated: true },
-        { key: "arion_analytics_reports", label: "Reports", route: "/app/services/arion_analytics_reports", gated: true },
         { key: "arion_analytics_ia_cross_channel", label: "IA: Cross-Channel", route: "/app/services/arion_analytics_ia_cross_channel" },
-        { key: "arion_analytics_ia_reports", label: "IA: Reports", route: "/app/services/arion_analytics_ia_reports" },
+        { key: "arion_analytics_ia_reports", label: "IA: Insights", route: "/app/services/arion_analytics_ia_reports" },
       ],
     },
     {
-      label: "SEO",
-      collapsible: true,
+      label: "SEO", icon: TrendingUp, collapsible: true, sectionId: "seo",
       items: [
         { key: "arion_seo_overview", label: "Overview", route: "/app/services/arion_seo_overview" },
         { key: "arion_seo_rankings", label: "Rankings", route: "/app/services/arion_seo_rankings" },
         { key: "arion_seo_site_audit", label: "Site Audit", route: "/app/services/arion_seo_site_audit" },
         { key: "arion_seo_competitors", label: "Competitors", route: "/app/services/arion_seo_competitors" },
         { key: "arion_seo_opportunities", label: "Opportunities", route: "/app/services/arion_seo_opportunities" },
-        { key: "arion_seo_reports", label: "Reports", route: "/app/services/arion_seo_reports" },
       ],
     },
     {
-      label: "Search",
-      collapsible: true,
+      label: "Search", icon: SearchIcon, collapsible: true, sectionId: "search",
       items: [
         { key: "arion_search_performance", label: "Performance", route: "/app/services/arion_search_performance" },
         { key: "arion_search_indexing", label: "Indexing", route: "/app/services/arion_search_indexing" },
@@ -160,8 +159,7 @@ const ARION_NAV: SubNavConfig = {
       ],
     },
     {
-      label: "Business Profile",
-      collapsible: true,
+      label: "Business Profile", icon: MapPin, collapsible: true, sectionId: "business",
       items: [
         { key: "arion_business_overview", label: "Overview", route: "/app/services/arion_business_overview" },
         { key: "arion_business_reviews", label: "Reviews", route: "/app/services/arion_business_reviews" },
@@ -173,7 +171,7 @@ const ARION_NAV: SubNavConfig = {
       ],
     },
     {
-      label: "",
+      label: "", icon: Star,
       items: [{ key: "arion_brand", label: "My Brand", route: "/app/services/arion_brand" }],
     },
   ],
@@ -303,9 +301,29 @@ interface SubNavProps {
   config: SubNavConfig;
 }
 
+// Determine which section should auto-expand based on current path
+function getDefaultSection(path: string): string | null {
+  if (path.includes("arion_website_security") || path.includes("arion_website_performance") || path.includes("arion_website_updates")) return "security";
+  if (path.includes("arion_website_")) return "website";
+  if (path.includes("arion_hosting_")) return "hosting";
+  if (path.includes("arion_analytics_")) return "analytics";
+  if (path.includes("arion_seo_")) return "seo";
+  if (path.includes("arion_search_")) return "search";
+  if (path.includes("arion_business_")) return "business";
+  return null;
+}
+
 export function SubNav({ config }: SubNavProps) {
   const location = useLocation();
-  // Auto-expand groups that contain the active route
+  const isArion = config.productName === "ARION";
+
+  // Fix 3: single active section at a time (ARION only)
+  const [activeSection, setActiveSection] = useState<string | null>(() => {
+    if (!isArion) return null;
+    return getDefaultSection(location.pathname);
+  });
+
+  // Legacy expanded set for non-ARION products
   const [expanded, setExpanded] = useState<Set<number>>(() => {
     const initial = new Set<number>();
     config.groups.forEach((group, gi) => {
@@ -316,58 +334,57 @@ export function SubNav({ config }: SubNavProps) {
     return initial;
   });
 
+  const toggleSection = (sectionId: string) => {
+    setActiveSection(prev => prev === sectionId ? null : sectionId);
+  };
+
   const toggleGroup = (gi: number) => {
     setExpanded(prev => {
-      if (prev.has(gi)) {
-        const next = new Set(prev);
-        next.delete(gi);
-        return next;
-      }
+      if (prev.has(gi)) { const n = new Set(prev); n.delete(gi); return n; }
       return new Set([gi]);
     });
   };
 
   return (
-    <div className="flex w-52 flex-col bg-[#0B1C24] py-4">
+    <div className="flex h-full w-52 flex-col bg-[#0B1C24]">
       {/* Product header */}
-      <div className="mb-4 px-4">
+      <div className="px-4 pb-3 pt-4">
         <h2 className="text-sm font-bold text-white">{config.productName}</h2>
         <p className="text-[10px] text-[#A8CDD8]">{config.tagline}</p>
       </div>
 
-      {/* Nav groups */}
-      <nav className="flex-1 overflow-y-auto px-2">
+      {/* Scrollable nav groups */}
+      <nav className="flex-1 overflow-y-auto px-2 py-2">
         {config.groups.map((group, gi) => {
-          const isExpanded = !group.collapsible || expanded.has(gi);
+          const sid = group.sectionId;
+          const isExpanded = isArion && sid
+            ? activeSection === sid
+            : !group.collapsible || expanded.has(gi);
           const hasActiveItem = group.items.some(item => location.pathname.startsWith(item.route));
+          const Icon = group.icon;
 
           return (
-            <div key={gi} className={gi > 0 ? "mt-2" : ""}>
-              {/* Group label — collapsible or italic */}
-              {group.label && (
-                group.collapsible ? (
-                  <button
-                    type="button"
-                    onClick={() => toggleGroup(gi)}
-                    className={`mb-1 flex w-full items-center justify-between px-2 py-1 text-[11px] font-semibold transition-colors ${
-                      hasActiveItem ? "text-white" : "text-[#A8CDD8]/70 hover:text-[#A8CDD8]"
-                    }`}
-                  >
-                    <span>{group.label}</span>
-                    <svg
-                      className={`h-3 w-3 flex-shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                    </svg>
-                  </button>
-                ) : (
-                  <div className="mb-1 px-2 text-[9.5px] italic text-[#A8CDD8]/45">
+            <div key={gi} className={gi > 0 ? "mt-1" : ""}>
+              {/* Section header — collapsible with icon, or standalone link */}
+              {group.label && group.collapsible ? (
+                <button
+                  type="button"
+                  onClick={() => sid ? toggleSection(sid) : toggleGroup(gi)}
+                  className={`mb-0.5 flex w-full items-center justify-between rounded px-2 py-1.5 text-[12px] font-semibold transition-colors ${
+                    hasActiveItem || isExpanded ? "text-white" : "text-[#A8CDD8]/70 hover:text-[#A8CDD8]"
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    {Icon && <Icon className="h-3.5 w-3.5 flex-shrink-0" />}
                     {group.label}
-                  </div>
-                )
-              )}
-              {/* Items — hidden when collapsed */}
+                  </span>
+                  <ChevronDown className={`h-3 w-3 flex-shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                </button>
+              ) : group.label ? (
+                <div className="mb-1 px-2 text-[9.5px] italic text-[#A8CDD8]/45">{group.label}</div>
+              ) : null}
+
+              {/* Sub-items — visible when section is expanded */}
               {isExpanded && (
                 <ul className="space-y-0.5">
                   {group.items.map((item) => (
@@ -375,10 +392,10 @@ export function SubNav({ config }: SubNavProps) {
                       <NavLink
                         to={item.route}
                         className={({ isActive }) =>
-                          `flex items-center gap-2 rounded px-2 py-1.5 text-[11px] transition-colors ${
+                          `flex items-center gap-2 rounded px-2 py-1.5 text-[12px] transition-colors ${
                             isActive
                               ? "bg-white/10 font-medium text-white"
-                              : "text-[#D5E8F0] hover:bg-white/5 hover:text-white"
+                              : "text-[#D5E8F0]/80 hover:bg-white/5 hover:text-white"
                           }`
                         }
                       >
@@ -398,6 +415,23 @@ export function SubNav({ config }: SubNavProps) {
           );
         })}
       </nav>
+
+      {/* Fix 4: Pinned Settings gear at bottom */}
+      {isArion && (
+        <div className="border-t border-white/10 px-2 py-3">
+          <NavLink
+            to="/app/services/arion_website_settings"
+            className={({ isActive }) =>
+              `flex items-center gap-2 rounded px-2 py-1.5 text-[12px] transition-colors ${
+                isActive ? "bg-white/10 font-medium text-white" : "text-[#A8CDD8]/70 hover:bg-white/5 hover:text-white"
+              }`
+            }
+          >
+            <Settings className="h-3.5 w-3.5 flex-shrink-0" />
+            <span>Settings</span>
+          </NavLink>
+        </div>
+      )}
     </div>
   );
 }

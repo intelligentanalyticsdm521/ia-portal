@@ -10,6 +10,7 @@ export function HeaderBar() {
   const tenantLabel = active?.tenant?.tenantFullName || active?.tenant?.tenantName || 'Your account';
   const rawUserLabel = active?.user?.displayName || activeAccount?.name || activeAccount?.username || 'Signed in';
   const userLabel = rawUserLabel === 'unknown' ? 'Signed in' : rawUserLabel;
+  const userEmail = activeAccount?.username || '';
 
   return (
     <header className="iadm-header">
@@ -23,7 +24,7 @@ export function HeaderBar() {
             <span className="text-white/70">Welcome,</span> <span className="font-medium text-white">{tenantLabel}</span>
           </div>
 
-          <AccountMenu userLabel={userLabel} onSignOut={() => logout()} />
+          <AccountMenu userLabel={userLabel} userEmail={userEmail} onSignOut={() => logout()} />
         </div>
       </div>
     </header>

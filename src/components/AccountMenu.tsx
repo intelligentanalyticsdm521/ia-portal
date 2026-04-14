@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { User, CreditCard, Bell, Users, Link2, LogOut } from 'lucide-react';
 
 export function AccountMenu({
   userLabel,
+  userEmail,
   onSignOut
 }: {
   userLabel: string;
+  userEmail?: string;
   onSignOut: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -51,45 +54,62 @@ export function AccountMenu({
         <div
           role="menu"
           aria-label="Account menu"
-          className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-md border bg-white shadow-sm"
+          className="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg"
         >
-          <div className="border-b px-3 py-2">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Account</div>
-            <div className="mt-1 truncate text-sm font-medium text-gray-900">{userLabel}</div>
+          {/* User header */}
+          <div className="border-b border-gray-100 px-4 py-3">
+            <div className="text-sm font-semibold text-gray-900">{userLabel}</div>
+            {userEmail && <div className="mt-0.5 text-xs text-gray-500">{userEmail}</div>}
           </div>
 
-          <ul className="p-1">
-            <li>
-              <Link
-                to="/app/profile"
-                role="menuitem"
-                className="block rounded-md px-3 py-2 text-sm hover:bg-gray-50"
-                onClick={() => setOpen(false)}
-              >
-                Profile
-              </Link>
-            </li>
-            <li>
-              <Link
-                to="/app/settings"
-                role="menuitem"
-                className="block rounded-md px-3 py-2 text-sm hover:bg-gray-50"
-                onClick={() => setOpen(false)}
-              >
-                Settings
-              </Link>
-            </li>
-            <li className="my-1 border-t" aria-hidden="true" />
+          {/* Menu items */}
+          <ul className="p-1.5">
+            <MenuItem
+              to="/app/profile"
+              icon={<User className="h-4 w-4" />}
+              label="Profile & Personal Info"
+              onClick={() => setOpen(false)}
+            />
+            <MenuItem
+              to="/app/settings"
+              icon={<CreditCard className="h-4 w-4" />}
+              label="Subscription & Billing"
+              onClick={() => setOpen(false)}
+            />
+            <MenuItem
+              to="/app/settings"
+              icon={<Bell className="h-4 w-4" />}
+              label="Notification Preferences"
+              onClick={() => setOpen(false)}
+            />
+            <MenuItem
+              to="/app/settings"
+              icon={<Users className="h-4 w-4" />}
+              label="Team & User Management"
+              onClick={() => setOpen(false)}
+            />
+            <MenuItem
+              to="/app/settings"
+              icon={<Link2 className="h-4 w-4" />}
+              label="Connected Accounts"
+              onClick={() => setOpen(false)}
+            />
+
+            {/* Divider */}
+            <li className="my-1.5 border-t border-gray-100" aria-hidden="true" />
+
+            {/* Sign out */}
             <li>
               <button
                 type="button"
                 role="menuitem"
-                className="w-full rounded-md px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50"
+                className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-red-600 hover:bg-red-50"
                 onClick={() => {
                   setOpen(false);
                   onSignOut();
                 }}
               >
+                <LogOut className="h-4 w-4" />
                 Sign out
               </button>
             </li>
@@ -97,5 +117,21 @@ export function AccountMenu({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function MenuItem({ to, icon, label, onClick }: { to: string; icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <li>
+      <Link
+        to={to}
+        role="menuitem"
+        className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+        onClick={onClick}
+      >
+        <span className="text-gray-400">{icon}</span>
+        {label}
+      </Link>
+    </li>
   );
 }
