@@ -318,15 +318,17 @@ export function SubNav({ config }: SubNavProps) {
 
   const toggleGroup = (gi: number) => {
     setExpanded(prev => {
-      const next = new Set(prev);
-      if (next.has(gi)) next.delete(gi);
-      else next.add(gi);
-      return next;
+      if (prev.has(gi)) {
+        const next = new Set(prev);
+        next.delete(gi);
+        return next;
+      }
+      return new Set([gi]);
     });
   };
 
   return (
-    <div className="flex w-52 flex-col bg-[#0C4A60] py-4">
+    <div className="flex w-52 flex-col bg-[#0B1C24] py-4">
       {/* Product header */}
       <div className="mb-4 px-4">
         <h2 className="text-sm font-bold text-white">{config.productName}</h2>

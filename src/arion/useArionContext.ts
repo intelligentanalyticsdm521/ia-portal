@@ -131,12 +131,33 @@ export function useArionContext() {
 
   // ---------------------------------------------------------------------------
   // Build the arionApi object that mirrors the standalone createArionApi shape.
-  // Every method acquires a fresh token and injects baseUrl / tenantId.
+  // Token is cached for 4 minutes to prevent concurrent MSAL iframe acquisitions.
   // ---------------------------------------------------------------------------
   const arionApi = useMemo(() => {
+    let cachedToken: string | null = null;
+    let tokenExpiresAt = 0;
+    let tokenPromise: Promise<string> | null = null;
+
+    async function getTokenCached(): Promise<string> {
+      if (cachedToken && Date.now() < tokenExpiresAt) return cachedToken;
+      // Deduplicate concurrent token requests
+      if (tokenPromise) return tokenPromise;
+      tokenPromise = (async () => {
+        try {
+          const result = await getToken();
+          cachedToken = result.accessToken;
+          tokenExpiresAt = Date.now() + 4 * 60 * 1000; // cache 4 min
+          return cachedToken;
+        } finally {
+          tokenPromise = null;
+        }
+      })();
+      return tokenPromise;
+    }
+
     async function base() {
-      const token = await getToken();
-      return { baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId! };
+      const bearerToken = await getTokenCached();
+      return { baseUrl: apiBaseUrl, bearerToken, tenantId: activeTenantId! };
     }
 
     return {

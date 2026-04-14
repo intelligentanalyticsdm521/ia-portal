@@ -84,7 +84,7 @@ export function SearchSitemaps() {
             }
           }}
         >
-          {generating ? 'Submitting...' : 'Generate & Submit'}
+          {generating ? 'Submitting...' : 'Resubmit to Search Engines'}
         </button>
       </div>
 

@@ -1,4 +1,4 @@
-import { StatCard, Card, Loading, EmptyPanel, ConsultingUpsell } from '../../components/Ui';
+import { StatCard, Card, Loading, EmptyPanel, ConsultingUpsell, InfoCard } from '../../components/Ui';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 
@@ -31,6 +31,9 @@ export function WebsiteContent() {
   const recentPages = Array.isArray(content.recentPages) ? content.recentPages : [];
   const recentPosts = Array.isArray(content.recentPosts) ? content.recentPosts : [];
 
+  // Check GA4 connection status from overview
+  const gaConnected = ov?.integrations?.googleAnalytics === true;
+
   // Build a lookup of page path -> view counts from GA4 page data
   const gaData = analytics as Record<string, any> | null;
   const pageRows = (gaData?.data?.pages ?? gaData?.breakdowns?.pages ?? []) as any[];
@@ -62,6 +65,12 @@ export function WebsiteContent() {
         <StatCard label="Blog Posts" value={String(posts)} />
         <StatCard label="Forms" value={String(formCount)} />
       </div>
+
+      {!gaConnected && (
+        <InfoCard title="Google Analytics Not Connected">
+          <p style={{ margin: 0 }}>Connect Google Analytics to see 7-day and 30-day page view data. View counts will show '--' until GA4 is linked.</p>
+        </InfoCard>
+      )}
 
       <Card title="Top Pages">
         {recentPages.length > 0 ? (

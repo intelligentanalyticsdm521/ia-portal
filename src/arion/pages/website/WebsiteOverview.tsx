@@ -3,7 +3,7 @@ import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import {
   Card, HealthRow, Loading, EmptyPanel,
-  ScoreCircle, QuickLink, SidebarCard, ConsultingUpsell, PlatformTabs,
+  ScoreCircle, SidebarCard, ConsultingUpsell, PlatformTabs,
 } from '../../components/Ui';
 
 const WpIcon = () => (
@@ -19,12 +19,6 @@ const ExtIcon = () => (
   </svg>
 );
 
-const SeoIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>;
-const ChartIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 3v18h18"/><path d="m7 16 4-8 4 4 5-6"/></svg>;
-const ListIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 19.5v-15A2.5 2.5 0 016.5 2H20v20H6.5a2.5 2.5 0 010-5H20"/></svg>;
-const PinIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>;
-const MsgIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>;
-const GearIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>;
 
 export function WebsiteOverview() {
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
@@ -107,16 +101,6 @@ export function WebsiteOverview() {
       )}
 
       {tab === 'overview' && <>
-      {/* ── Quick Links ── */}
-      <div className="quick-links">
-        <QuickLink to="/seo/rankings" icon={<SeoIcon />} label="SEO" sublabel="Rankings & optimization" />
-        <QuickLink to="/analytics/overview" icon={<ChartIcon />} label="Analytics" sublabel="Traffic & visitors" />
-        <QuickLink to="/search/performance" icon={<ListIcon />} label="Search" sublabel="Search console data" />
-        <QuickLink to="/business/overview" icon={<PinIcon />} label="Business Profile" sublabel="Google Business" />
-        <QuickLink to="/website/support" icon={<MsgIcon />} label="Support" sublabel="Help & tickets" />
-        <QuickLink to="/website/settings" icon={<GearIcon />} label="Settings" sublabel="Site configuration" />
-      </div>
-
       {/* ── Dashboard panels ── */}
       <div className="dash-layout">
         <div>

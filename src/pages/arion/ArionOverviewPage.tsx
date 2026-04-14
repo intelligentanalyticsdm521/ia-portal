@@ -6,7 +6,6 @@ import { ArionApiError, getArionOverview, type OverviewResponse } from '../../li
 import { ArionCard, ArionServiceLayout, EmptyPanel, SiteActionLink, StatGrid } from './ArionServiceLayout';
 import { useArionSites } from './useArionSites';
 
-const ARION_CLIENT_URL = import.meta.env.VITE_ARION_CLIENT_URL || 'https://arion.intelligentanalyticsdm.com';
 
 interface Props { service: PortalService; status: ServiceStatus }
 
@@ -54,10 +53,6 @@ export function ArionOverviewPage({ service, status }: Props) {
     { label: 'SEO Package', value: data?.seo.seoPackageCode ?? 'Not enabled' }
   ], [data, sites.length]);
 
-  const openArionUrl = selectedSiteId
-    ? `${ARION_CLIENT_URL}?tenant=${activeTenantId}&siteId=${selectedSiteId}`
-    : ARION_CLIENT_URL;
-
   return (
     <ArionServiceLayout
       service={service}
@@ -67,9 +62,6 @@ export function ArionOverviewPage({ service, status }: Props) {
       onSelectSite={setSelectedSiteId}
       loading={loadingSites || loading}
       error={sitesError || error}
-      actions={<div className="flex flex-wrap gap-2">
-        <a href={openArionUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800">Open ARION</a>
-      </div>}
     >
       {!selectedSite ? (
         <EmptyPanel title="No ARION sites found" body="Create your first ARION website to begin tracking analytics, console, hosting, maps, and SEO data." />

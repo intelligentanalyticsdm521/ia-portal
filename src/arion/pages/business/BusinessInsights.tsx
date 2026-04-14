@@ -19,7 +19,25 @@ export function BusinessInsights() {
   const snapshots = (d?.data as any[]) ?? [];
 
   if (snapshots.length === 0) {
-    return <EmptyPanel message="No GBP insights data available yet." />;
+    return (
+      <div>
+        <div className="mcards">
+          <MetricCard label="Search Impressions" value="--" />
+          <MetricCard label="Website Clicks" value="--" />
+          <MetricCard label="Direction Requests" value="--" />
+          <MetricCard label="Phone Calls" value="--" />
+        </div>
+        <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, padding: '24px 0' }}>
+          Data will populate once GBP insights sync begins.
+        </div>
+        <ConsultingUpsell
+          headline="IA manages your entire local presence — GBP, Bing, Apple Maps."
+          subtext="Full-service local SEO management included with Pro+ plans."
+          serviceType="Local SEO"
+          triggerPage="business-insights"
+        />
+      </div>
+    );
   }
 
   const totals = snapshots.reduce(

@@ -21,18 +21,13 @@ export function SearchBingIndexNow() {
   const lastDate = lastSubmission?.lastSubmitted ?? lastSubmission?.last_submitted ?? '--';
   const pagesThisMonth = sitemaps.reduce((sum: number, s: any) => sum + (Number(s.pagesSubmitted ?? s.pages_submitted ?? 0)), 0);
 
-  // Placeholder recent submissions
   const recentSubmissions = sitemaps.length > 0
     ? sitemaps.slice(0, 5).map((s: any, i: number) => ({
         url: s.url ?? `Page ${i + 1}`,
         status: s.status ?? 'Submitted',
         date: s.lastSubmitted ?? s.last_submitted ?? '--',
       }))
-    : [
-        { url: '/blog/latest-post', status: 'Accepted', date: '--' },
-        { url: '/services', status: 'Accepted', date: '--' },
-        { url: '/about', status: 'Pending', date: '--' },
-      ];
+    : [];
 
   return (
     <div>
@@ -57,28 +52,34 @@ export function SearchBingIndexNow() {
 
       {/* Recent submissions table */}
       <Card title="Recent Submissions">
-        <table className="tbl">
-          <thead>
-            <tr><th>URL</th><th>Status</th><th>Date</th></tr>
-          </thead>
-          <tbody>
-            {recentSubmissions.map((s, i) => (
-              <tr key={i}>
-                <td>{s.url}</td>
-                <td>
-                  <span style={{
-                    color: s.status === 'Accepted' ? 'var(--arion-green, #22c55e)' : 'var(--text-muted)',
-                    fontWeight: 600,
-                    fontSize: 12,
-                  }}>
-                    {s.status}
-                  </span>
-                </td>
-                <td>{s.date}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {recentSubmissions.length > 0 ? (
+          <table className="tbl">
+            <thead>
+              <tr><th>URL</th><th>Status</th><th>Date</th></tr>
+            </thead>
+            <tbody>
+              {recentSubmissions.map((s, i) => (
+                <tr key={i}>
+                  <td>{s.url}</td>
+                  <td>
+                    <span style={{
+                      color: s.status === 'Accepted' ? 'var(--arion-green, #22c55e)' : 'var(--text-muted)',
+                      fontWeight: 600,
+                      fontSize: 12,
+                    }}>
+                      {s.status}
+                    </span>
+                  </td>
+                  <td>{s.date}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+            No submissions recorded yet.
+          </div>
+        )}
       </Card>
 
       <ConsultingUpsell

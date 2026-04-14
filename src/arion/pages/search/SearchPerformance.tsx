@@ -21,7 +21,7 @@ export function SearchPerformance() {
   const summary = d?.summary ?? {};
   const queries = (d?.breakdowns?.queries as any[]) ?? [];
   const pages = (d?.breakdowns?.pages as any[]) ?? [];
-  const hasLowCtr = queries.some((q: any) => Number(q.ctr) < 2 && Number(q.impressions) >= 100);
+  const hasLowCtr = queries.some((q: any) => { const c = Number(q.ctr); return (c < 1 ? c * 100 : c) < 2 && Number(q.impressions) >= 100; });
 
   return (
     <>
@@ -38,7 +38,7 @@ export function SearchPerformance() {
           <div className="mcards">
             <MetricCard label="Impressions" value={summary.impressions ?? '--'} />
             <MetricCard label="Clicks" value={summary.clicks ?? '--'} />
-            <MetricCard label="CTR" value={summary.ctr != null ? `${summary.ctr}%` : '--'} />
+            <MetricCard label="CTR" value={summary.ctr != null ? `${(Number(summary.ctr) < 1 ? Number(summary.ctr) * 100 : Number(summary.ctr)).toFixed(2)}%` : '--'} />
             <MetricCard label="Avg Position" value={summary.avgPosition ?? '--'} />
           </div>
 
@@ -69,19 +69,20 @@ export function SearchPerformance() {
               </thead>
               <tbody>
                 {queries.length > 0 ? queries.map((q: any, i: number) => {
-                  const ctr = Number(q.ctr);
+                  const rawCtr = Number(q.ctr);
+                  const ctrPct = rawCtr < 1 ? rawCtr * 100 : rawCtr;
                   const imp = Number(q.impressions);
-                  const isLow = ctr < 2 && imp >= 100;
-                  const isOk = ctr > 5;
+                  const isLow = ctrPct < 2 && imp >= 100;
+                  const isOk = ctrPct > 5;
                   return (
                     <tr key={i}>
                       <td>{q.query ?? '--'}</td>
                       <td>{q.impressions ?? '--'}</td>
                       <td>{q.clicks ?? '--'}</td>
                       <td className={isLow ? 'ctr-low' : isOk ? 'ctr-ok' : ''}>
-                        {q.ctr != null ? `${q.ctr}%` : '--'}{isLow ? ' \u26A0' : ''}
+                        {q.ctr != null ? `${ctrPct.toFixed(2)}%` : '--'}{isLow ? ' \u26A0' : ''}
                       </td>
-                      <td>{q.position ?? '--'}</td>
+                      <td>{q.position ?? q.avgPosition ?? q.avg_position ?? '--'}</td>
                     </tr>
                   );
                 }) : (
@@ -102,8 +103,8 @@ export function SearchPerformance() {
                     <td>{p.page ?? p.url ?? '--'}</td>
                     <td>{p.impressions ?? '--'}</td>
                     <td>{p.clicks ?? '--'}</td>
-                    <td>{p.ctr != null ? `${p.ctr}%` : '--'}</td>
-                    <td>{p.position ?? '--'}</td>
+                    <td>{p.ctr != null ? `${(Number(p.ctr) < 1 ? Number(p.ctr) * 100 : Number(p.ctr)).toFixed(2)}%` : '--'}</td>
+                    <td>{p.position ?? p.avgPosition ?? p.avg_position ?? '--'}</td>
                   </tr>
                 )) : (
                   <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No page data available</td></tr>

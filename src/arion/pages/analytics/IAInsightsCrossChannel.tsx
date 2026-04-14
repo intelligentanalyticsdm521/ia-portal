@@ -40,6 +40,9 @@ export function IAInsightsCrossChannel() {
 
   return (
     <div>
+      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>IA Cross-Channel Funnel</h2>
+      <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>Combined view of website traffic, form leads, and platform engagement.</p>
+
       {/* Stat Row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
         <StatCard label="Website Sessions" value={sessions} />
