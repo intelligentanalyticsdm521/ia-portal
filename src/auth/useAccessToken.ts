@@ -43,6 +43,15 @@ export function useAccessToken() {
   }, [instance, activeAccount]);
 
   const login = useCallback((forcePrompt?: 'login' | 'select_account') => {
+    if (forcePrompt === 'login') {
+      // Nuclear option: redirect to CIAM end-session endpoint first to kill
+      // server-side session, then come back and do a fresh login.
+      // This bypasses MSAL entirely for the logout step.
+      const authority = import.meta.env.VITE_AUTH_AUTHORITY as string;
+      const postLogout = encodeURIComponent(window.location.origin + '/');
+      window.location.href = `${authority}/oauth2/v2.0/logout?post_logout_redirect_uri=${postLogout}`;
+      return new Promise<void>(() => {}); // never resolves, page navigates away
+    }
     return instance.loginRedirect({
       scopes: authScopes,
       ...(forcePrompt ? { prompt: forcePrompt } : {}),
