@@ -169,13 +169,22 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         <p className="text-gray-600">
           Sign in to access your tenant dashboard, modules, and account settings.
         </p>
-        <button
-          type="button"
-          className="inline-flex w-fit items-center justify-center rounded-md bg-black px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
-          onClick={() => login()}
-        >
-          Sign in
-        </button>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            className="inline-flex w-fit items-center justify-center rounded-md bg-black px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
+            onClick={() => login()}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            className="inline-flex w-fit items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            onClick={() => login('login')}
+          >
+            Sign in as different account
+          </button>
+        </div>
       </div>
     );
   }
