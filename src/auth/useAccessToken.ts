@@ -11,7 +11,6 @@ import { authScopes } from './msalConfig';
 export function useAccessToken() {
   const { instance, accounts } = useMsal();
 
-  // Keep the selected account stable unless accounts changes
   const activeAccount: AccountInfo | null = useMemo(() => accounts[0] || null, [accounts]);
 
   const getToken = useCallback(async (): Promise<AuthenticationResult> => {
@@ -25,16 +24,19 @@ export function useAccessToken() {
         scopes: authScopes
       });
     } catch (err) {
-      // Silent token refresh failed — redirect to interactive login
-      // Catches both InteractionRequiredAuthError and BrowserAuthError
-      // (e.g. monitor_window_timeout when iframe auth times out)
-      if (err instanceof InteractionRequiredAuthError ||
-          (err instanceof BrowserAuthError && (err as any).errorCode === 'monitor_window_timeout')) {
-        // This triggers a full redirect and returns to /auth/callback
+      // Any silent token failure should redirect to interactive login.
+      // This includes InteractionRequiredAuthError, BrowserAuthError
+      // (monitor_window_timeout, iframe_closed_prematurely, etc.),
+      // and any other MSAL error that prevents silent acquisition.
+      if (err instanceof InteractionRequiredAuthError || err instanceof BrowserAuthError) {
         await instance.acquireTokenRedirect({
           account: activeAccount,
           scopes: authScopes
         });
+        // acquireTokenRedirect triggers a full page redirect.
+        // Return a never-resolving promise so the caller doesn't
+        // proceed with error handling before the redirect completes.
+        return new Promise<AuthenticationResult>(() => {});
       }
       throw err;
     }
