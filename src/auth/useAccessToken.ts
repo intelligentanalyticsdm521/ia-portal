@@ -43,7 +43,7 @@ export function useAccessToken() {
   }, [instance, activeAccount]);
 
   const login = useCallback(() => {
-    return instance.loginRedirect({ scopes: authScopes, prompt: 'select_account' });
+    return instance.loginRedirect({ scopes: authScopes });
   }, [instance]);
 
   const logout = useCallback(() => {
