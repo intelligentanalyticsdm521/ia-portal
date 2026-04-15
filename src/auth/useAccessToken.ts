@@ -31,7 +31,8 @@ export function useAccessToken() {
       if (err instanceof InteractionRequiredAuthError || err instanceof BrowserAuthError) {
         await instance.acquireTokenRedirect({
           account: activeAccount,
-          scopes: authScopes
+          scopes: authScopes,
+          prompt: 'select_account'
         });
         // acquireTokenRedirect triggers a full page redirect.
         // Return a never-resolving promise so the caller doesn't
@@ -43,12 +44,16 @@ export function useAccessToken() {
   }, [instance, activeAccount]);
 
   const login = useCallback(() => {
-    return instance.loginRedirect({ scopes: authScopes });
+    return instance.loginRedirect({ scopes: authScopes, prompt: 'select_account' });
   }, [instance]);
 
   const logout = useCallback(() => {
     return instance.logoutRedirect();
   }, [instance]);
 
-  return { activeAccount, getToken, login, logout };
+  const switchAccount = useCallback(() => {
+    return instance.loginRedirect({ scopes: authScopes, prompt: 'select_account' });
+  }, [instance]);
+
+  return { activeAccount, getToken, login, logout, switchAccount };
 }
