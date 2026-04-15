@@ -6,7 +6,7 @@ import { PlatformApiError, selectTenant, sessionVerify } from '../lib/platformAp
 
 export function AppGate({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useIsAuthenticated();
-  const { activeAccount, login, getToken } = useAccessToken();
+  const { activeAccount, login, getToken, switchAccount } = useAccessToken();
   const appState = useAppState();
 
   const [loading, setLoading] = useState(false);
@@ -209,17 +209,9 @@ export function AppGate({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             className="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-            onClick={() => {
-              localStorage.removeItem('iadm.portal.activeTenantId');
-              setError(null);
-              appState.setActiveTenantId(null);
-              appState.setActive(null);
-              appState.setBootstrap(null);
-              bootstrapDoneRef.current = false;
-              inFlightRef.current = false;
-            }}
+            onClick={() => switchAccount()}
           >
-            Switch Tenant
+            Switch Account
           </button>
         </div>
         <p className="mt-4 text-xs text-gray-500">

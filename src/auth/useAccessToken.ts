@@ -47,12 +47,34 @@ export function useAccessToken() {
   }, [instance]);
 
   const logout = useCallback(() => {
-    return instance.logoutRedirect();
-  }, [instance]);
+    // Clear all MSAL accounts from cache before redirecting to Azure end-session
+    const allAccounts = instance.getAllAccounts();
+    for (const acct of allAccounts) {
+      instance.setActiveAccount(null);
+    }
+    // Also clear any portal-specific cached state
+    localStorage.removeItem('iadm.portal.activeTenantId');
 
-  const switchAccount = useCallback(() => {
-    return instance.loginRedirect({ scopes: authScopes, prompt: 'select_account' });
-  }, [instance]);
+    return instance.logoutRedirect({
+      account: activeAccount,
+      postLogoutRedirectUri: window.location.origin + '/',
+    });
+  }, [instance, activeAccount]);
+
+  const switchAccount = useCallback(async () => {
+    // Clear all cached accounts so Azure shows a fresh account picker
+    const allAccounts = instance.getAllAccounts();
+    for (const acct of allAccounts) {
+      instance.setActiveAccount(null);
+    }
+    localStorage.removeItem('iadm.portal.activeTenantId');
+
+    // Logout first to end the Azure CIAM session, then re-login with account picker
+    await instance.logoutRedirect({
+      account: activeAccount,
+      postLogoutRedirectUri: window.location.origin + '/',
+    });
+  }, [instance, activeAccount]);
 
   return { activeAccount, getToken, login, logout, switchAccount };
 }
