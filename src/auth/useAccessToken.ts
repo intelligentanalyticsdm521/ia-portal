@@ -31,8 +31,7 @@ export function useAccessToken() {
       if (err instanceof InteractionRequiredAuthError || err instanceof BrowserAuthError) {
         await instance.acquireTokenRedirect({
           account: activeAccount,
-          scopes: authScopes,
-          prompt: 'select_account'
+          scopes: authScopes
         });
         // acquireTokenRedirect triggers a full page redirect.
         // Return a never-resolving promise so the caller doesn't
