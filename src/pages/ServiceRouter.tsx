@@ -112,7 +112,7 @@ export function ServiceRouter() {
 
   if (service.section === 'ARION') {
     switch (service.key) {
-      case 'arion_dashboard': return <ArionOverviewPage service={service} status={status} />;
+      case 'arion_dashboard': return <ArionPageWrapper><ArionOverviewPage service={service} status={status} /></ArionPageWrapper>;
       case 'arion_website_overview': return <ArionPageWrapper><WebsiteOverview /></ArionPageWrapper>;
       case 'arion_website_content': return <ArionPageWrapper><WebsiteContent /></ArionPageWrapper>;
       case 'arion_website_content_seo_overview': return <ArionPageWrapper><ContentSeoOverview /></ArionPageWrapper>;

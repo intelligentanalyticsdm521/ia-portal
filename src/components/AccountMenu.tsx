@@ -65,7 +65,7 @@ export function AccountMenu({
           {/* Menu items */}
           <ul className="p-1.5">
             <MenuItem
-              to="/app/profile"
+              to="/app/account"
               icon={<User className="h-4 w-4" />}
               label="Profile & Personal Info"
               onClick={() => setOpen(false)}
@@ -77,7 +77,7 @@ export function AccountMenu({
               onClick={() => setOpen(false)}
             />
             <MenuItem
-              to="/app/settings"
+              to="/app/account"
               icon={<Bell className="h-4 w-4" />}
               label="Notification Preferences"
               onClick={() => setOpen(false)}

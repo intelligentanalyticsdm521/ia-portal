@@ -15,6 +15,8 @@ import { ProfilePage } from './pages/ProfilePage';
 
 import { SettingsViewPage } from './pages/SettingsViewPage';
 import { SettingsEditPage } from './pages/SettingsEditPage';
+import { TenantSettings } from './pages/settings/TenantSettings';
+import { PersonalSettings } from './pages/settings/PersonalSettings';
 
 // NEW: SPARK pricing page route
 import { SparkPricingPage } from './pages/spark/SparkPricingPage';
@@ -47,9 +49,12 @@ export function App() {
             <Route path="profile" element={<ProfileViewPage />} />
             <Route path="profile/edit" element={<ProfilePage />} />
 
-            {/* Settings view/edit */}
-            <Route path="settings" element={<SettingsViewPage />} />
+            {/* Settings — tenant-level (icon rail gear) */}
+            <Route path="settings" element={<TenantSettings />} />
             <Route path="settings/edit" element={<SettingsEditPage />} />
+
+            {/* Personal account settings (hamburger menu items) */}
+            <Route path="account" element={<PersonalSettings />} />
 
             {/* NEW: SPARK pricing page used by subscribe buttons */}
             <Route path="spark/pricing" element={<SparkPricingPage />} />
