@@ -1,4 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useAppState } from '../../app/AppState';
+import { useAccessToken } from '../../auth/useAccessToken';
+import { connectGoogle, getGoogleProperties, selectGoogleProperties, listArionSites } from '../../lib/arionApi';
 
 /* ------------------------------------------------------------------ */
 /*  Types & constants                                                  */
@@ -347,23 +351,244 @@ function TeamTab() {
 /*  Tab: Connected Accounts                                            */
 /* ------------------------------------------------------------------ */
 
-const INTEGRATIONS = [
-  { key: 'ga', name: 'Google Analytics', connected: false },
-  { key: 'gsc', name: 'Google Search Console', connected: false },
-  { key: 'gbp', name: 'Google Business Profile', connected: false },
-  { key: 'bwt', name: 'Bing Webmaster', connected: false },
-  { key: 'abc', name: 'Apple Business Connect', connected: false },
-] as const;
+interface GooglePropertyModalProps {
+  ga4Properties: Array<{ propertyId: string; displayName: string; account: string }>;
+  gscSites: Array<{ siteUrl: string; permissionLevel: string }>;
+  currentGa4PropertyId: string | null;
+  loading: boolean;
+  onSelect: (ga4PropertyId: string, gscSiteUrl: string) => void;
+  onClose: () => void;
+}
+
+function GooglePropertyModal({ ga4Properties, gscSites, currentGa4PropertyId, loading, onSelect, onClose }: GooglePropertyModalProps) {
+  const [selectedGa4, setSelectedGa4] = useState(currentGa4PropertyId || '');
+  const [selectedGsc, setSelectedGsc] = useState('');
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-lg">
+        <h3 className="text-lg font-semibold text-gray-900">Select Google Properties</h3>
+        <p className="mt-1 text-sm text-gray-500">Choose which GA4 property and Search Console site to connect.</p>
+
+        <div className="mt-4 space-y-4">
+          {/* GA4 Property */}
+          <div>
+            <label htmlFor="ga4-select" className="block text-sm font-medium text-gray-700">GA4 Property</label>
+            {ga4Properties.length === 0 ? (
+              <p className="mt-1 text-sm text-gray-400">No GA4 properties found for this Google account.</p>
+            ) : (
+              <select
+                id="ga4-select"
+                value={selectedGa4}
+                onChange={(e) => setSelectedGa4(e.target.value)}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+              >
+                <option value="">-- Select a property --</option>
+                {ga4Properties.map((p) => (
+                  <option key={p.propertyId} value={p.propertyId}>
+                    {p.displayName} ({p.account}) - {p.propertyId}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* GSC Site */}
+          <div>
+            <label htmlFor="gsc-select" className="block text-sm font-medium text-gray-700">Search Console Site</label>
+            {gscSites.length === 0 ? (
+              <p className="mt-1 text-sm text-gray-400">No Search Console sites found for this Google account.</p>
+            ) : (
+              <select
+                id="gsc-select"
+                value={selectedGsc}
+                onChange={(e) => setSelectedGsc(e.target.value)}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+              >
+                <option value="">-- Select a site --</option>
+                {gscSites.map((s) => (
+                  <option key={s.siteUrl} value={s.siteUrl}>
+                    {s.siteUrl} ({s.permissionLevel})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-5 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={loading || (!selectedGa4 && !selectedGsc)}
+            onClick={() => onSelect(selectedGa4, selectedGsc)}
+            className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+          >
+            {loading ? 'Saving...' : 'Save selections'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ConnectedAccountsTab() {
+  const { activeTenantId } = useAppState();
+  const { getToken } = useAccessToken();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const apiBaseUrl = import.meta.env.VITE_ARION_API_BASE_URL as string;
+
   const [toast, setToast] = useState('');
+  const [gaConnecting, setGaConnecting] = useState(false);
+  const [gaConnected, setGaConnected] = useState(false);
+  const [siteId, setSiteId] = useState<string | null>(null);
+
+  // Property selector modal state
+  const [showPropertyModal, setShowPropertyModal] = useState(false);
+  const [propertyModalLoading, setPropertyModalLoading] = useState(false);
+  const [ga4Properties, setGa4Properties] = useState<Array<{ propertyId: string; displayName: string; account: string }>>([]);
+  const [gscSites, setGscSites] = useState<Array<{ siteUrl: string; permissionLevel: string }>>([]);
+  const [currentGa4PropertyId, setCurrentGa4PropertyId] = useState<string | null>(null);
+
+  // Load the first ARION site on mount so we have a siteId for API calls
+  const siteLoadedRef = useRef(false);
+  useEffect(() => {
+    if (siteLoadedRef.current || !activeTenantId || !apiBaseUrl) return;
+    siteLoadedRef.current = true;
+    (async () => {
+      try {
+        const token = await getToken();
+        const resp = await listArionSites({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId });
+        const first = resp.sites?.[0];
+        if (first) {
+          setSiteId(first.siteId);
+        }
+      } catch (e) {
+        console.warn('[ConnectedAccounts] Failed to load sites:', e);
+      }
+    })();
+  }, [activeTenantId, apiBaseUrl, getToken]);
+
+  // Detect OAuth return: if google_connected=1 is in the URL, show property selector
+  useEffect(() => {
+    if (searchParams.get('google_connected') === '1' && siteId) {
+      // Clear the param from the URL
+      const next = new URLSearchParams(searchParams);
+      next.delete('google_connected');
+      setSearchParams(next, { replace: true });
+      // Open property selector
+      openPropertySelector();
+    }
+  }, [searchParams, siteId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openPropertySelector = useCallback(async () => {
+    if (!siteId || !activeTenantId || !apiBaseUrl) return;
+    setPropertyModalLoading(true);
+    setShowPropertyModal(true);
+    try {
+      const token = await getToken();
+      const resp = await getGoogleProperties({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+      setGa4Properties(resp.data.ga4Properties || []);
+      setGscSites(resp.data.gscSites || []);
+      setCurrentGa4PropertyId(resp.data.currentGa4PropertyId || null);
+      if (resp.data.currentGa4PropertyId) setGaConnected(true);
+    } catch (e: any) {
+      console.error('[ConnectedAccounts] Failed to load Google properties:', e);
+      setToast(e.message || 'Failed to load Google properties');
+      setShowPropertyModal(false);
+    } finally {
+      setPropertyModalLoading(false);
+    }
+  }, [siteId, activeTenantId, apiBaseUrl, getToken]);
+
+  const handleGoogleConnect = useCallback(async () => {
+    if (!siteId || !activeTenantId || !apiBaseUrl) {
+      setToast('No ARION site found. Create a site first.');
+      return;
+    }
+    setGaConnecting(true);
+    try {
+      const token = await getToken();
+      const returnUrl = window.location.origin + window.location.pathname + '?google_connected=1';
+      const resp = await connectGoogle({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId, setupMode: 'ARION_AUTO_SETUP', returnUrl });
+      if (resp.authUrl) {
+        window.location.href = resp.authUrl;
+      }
+    } catch (e: any) {
+      console.error('[ConnectedAccounts] Google connect failed:', e);
+      setToast(e.message || 'Failed to start Google connection');
+      setGaConnecting(false);
+    }
+  }, [siteId, activeTenantId, apiBaseUrl, getToken]);
+
+  const handlePropertySelect = useCallback(async (ga4PropertyId: string, gscSiteUrl: string) => {
+    if (!siteId || !activeTenantId || !apiBaseUrl) return;
+    setPropertyModalLoading(true);
+    try {
+      const token = await getToken();
+      await selectGoogleProperties({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId, ga4PropertyId, gscSiteUrl });
+      setGaConnected(true);
+      setShowPropertyModal(false);
+      setToast('Google properties saved successfully');
+    } catch (e: any) {
+      console.error('[ConnectedAccounts] Failed to save property selection:', e);
+      setToast(e.message || 'Failed to save property selection');
+    } finally {
+      setPropertyModalLoading(false);
+    }
+  }, [siteId, activeTenantId, apiBaseUrl, getToken]);
+
+  const OTHER_INTEGRATIONS = [
+    { key: 'gsc', name: 'Google Search Console', connected: false },
+    { key: 'gbp', name: 'Google Business Profile', connected: false },
+    { key: 'bwt', name: 'Bing Webmaster', connected: false },
+    { key: 'abc', name: 'Apple Business Connect', connected: false },
+  ] as const;
 
   return (
     <div className="space-y-6">
       <SectionLabel title="Third-party integrations" description="Connect your external accounts to enable data syncing." />
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {INTEGRATIONS.map((int) => (
+        {/* Google Analytics card -- functional */}
+        <div className="rounded-lg border bg-white p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-gray-900">Google Analytics</div>
+              <div className="mt-1 flex items-center gap-1.5">
+                <span className={`h-2 w-2 rounded-full ${gaConnected ? 'bg-green-500' : 'bg-gray-300'}`} />
+                <span className="text-xs text-gray-500">{gaConnected ? 'Connected' : 'Not connected'}</span>
+              </div>
+            </div>
+            {gaConnected ? (
+              <button
+                type="button"
+                onClick={openPropertySelector}
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Change property
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={gaConnecting || !siteId}
+                onClick={handleGoogleConnect}
+                className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+              >
+                {gaConnecting ? 'Connecting...' : 'Connect'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Other integration cards -- still coming soon */}
+        {OTHER_INTEGRATIONS.map((int) => (
           <div key={int.key} className="rounded-lg border bg-white p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -388,6 +613,18 @@ function ConnectedAccountsTab() {
           </div>
         ))}
       </div>
+
+      {/* Google property selector modal */}
+      {showPropertyModal && (
+        <GooglePropertyModal
+          ga4Properties={ga4Properties}
+          gscSites={gscSites}
+          currentGa4PropertyId={currentGa4PropertyId}
+          loading={propertyModalLoading}
+          onSelect={handlePropertySelect}
+          onClose={() => setShowPropertyModal(false)}
+        />
+      )}
 
       {toast && <Toast message={toast} onDone={() => setToast('')} />}
     </div>

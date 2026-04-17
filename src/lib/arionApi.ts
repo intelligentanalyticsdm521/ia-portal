@@ -482,6 +482,22 @@ export async function submitConsultingInquiry(params: { baseUrl: string; bearerT
   return requestJson<any>({ ...params, method: 'POST', path: `/arion/sites/${encodeURIComponent(params.siteId)}/consulting-inquiry`, body: { service_type: params.serviceType, description: params.description, trigger_page: params.triggerPage, contact_pref: params.contactPref || 'email' } });
 }
 
+export async function getGoogleProperties(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<{ data: { ga4Properties: Array<{ propertyId: string; displayName: string; account: string }>; gscSites: Array<{ siteUrl: string; permissionLevel: string }>; currentGa4PropertyId: string | null } }>({
+    ...params,
+    path: `/arion/integrations/google/properties?siteId=${encodeURIComponent(params.siteId)}`
+  });
+}
+
+export async function selectGoogleProperties(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; ga4PropertyId: string; gscSiteUrl: string }) {
+  return requestJson<{ data: { ok: true } }>({
+    ...params,
+    method: 'POST',
+    path: '/arion/integrations/google/select',
+    body: { siteId: params.siteId, ga4PropertyId: params.ga4PropertyId, gscSiteUrl: params.gscSiteUrl }
+  });
+}
+
 export async function getGscData(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; days?: number }) {
   const qp = params.days ? `?days=${params.days}` : '';
   return requestJson<any>({ ...params, path: `/arion/sites/${encodeURIComponent(params.siteId)}/gsc${qp}` });
