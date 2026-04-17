@@ -121,8 +121,7 @@ const ARION_NAV: SubNavConfig = {
       items: [
         { key: "arion_website_security_overview", label: "Security: Overview", route: "/app/services/arion_website_security_overview" },
         { key: "arion_website_security_vulnerabilities", label: "Security: Vulnerabilities", route: "/app/services/arion_website_security_vulnerabilities" },
-        { key: "arion_website_security_firewall", label: "Security: Firewall", route: "/app/services/arion_website_security_firewall" },
-        { key: "arion_website_performance_cache", label: "Performance", route: "/app/services/arion_website_performance_cache" },
+        { key: "arion_website_performance_cache", label: "Core Web Vitals", route: "/app/services/arion_website_performance_cache" },
         { key: "arion_website_performance_images", label: "Media", route: "/app/services/arion_website_performance_images" },
         { key: "arion_website_updates", label: "Plugins", route: "/app/services/arion_website_updates" },
       ],
@@ -151,9 +150,7 @@ const ARION_NAV: SubNavConfig = {
       label: "Search", icon: SearchIcon, collapsible: true, sectionId: "search",
       items: [
         { key: "arion_search_performance", label: "Performance", route: "/app/services/arion_search_performance" },
-        { key: "arion_search_indexing", label: "Indexing", route: "/app/services/arion_search_indexing" },
-        { key: "arion_search_sitemaps", label: "Sitemaps", route: "/app/services/arion_search_sitemaps" },
-        { key: "arion_search_core_web_vitals", label: "Core Web Vitals", route: "/app/services/arion_search_core_web_vitals" },
+        { key: "arion_search_indexing", label: "Search & Indexing", route: "/app/services/arion_search_indexing" },
         { key: "arion_search_bing_copilot", label: "Bing: Copilot AI", route: "/app/services/arion_search_bing_copilot" },
         { key: "arion_search_bing_indexnow", label: "Bing: IndexNow", route: "/app/services/arion_search_bing_indexnow" },
       ],
@@ -346,7 +343,7 @@ export function SubNav({ config }: SubNavProps) {
   };
 
   return (
-    <div className="flex h-full w-52 flex-col bg-[#0B1C24]">
+    <div className="flex min-h-screen w-52 flex-col bg-[#0B1C24]">
       {/* Product header */}
       <div className="px-4 pb-3 pt-4">
         <h2 className="text-sm font-bold text-white">{config.productName}</h2>
@@ -392,7 +389,7 @@ export function SubNav({ config }: SubNavProps) {
                       <NavLink
                         to={item.route}
                         className={({ isActive }) =>
-                          `flex items-center gap-2 rounded px-2 py-1.5 text-[12px] transition-colors ${
+                          `flex items-center gap-2 rounded px-2 py-1.5 text-[13px] transition-colors ${
                             isActive
                               ? "bg-white/10 font-medium text-white"
                               : "text-[#D5E8F0]/80 hover:bg-white/5 hover:text-white"
@@ -416,22 +413,7 @@ export function SubNav({ config }: SubNavProps) {
         })}
       </nav>
 
-      {/* Fix 4: Pinned Settings gear at bottom */}
-      {isArion && (
-        <div className="border-t border-white/10 px-2 py-3">
-          <NavLink
-            to="/app/services/arion_website_settings"
-            className={({ isActive }) =>
-              `flex items-center gap-2 rounded px-2 py-1.5 text-[12px] transition-colors ${
-                isActive ? "bg-white/10 font-medium text-white" : "text-[#A8CDD8]/70 hover:bg-white/5 hover:text-white"
-              }`
-            }
-          >
-            <Settings className="h-3.5 w-3.5 flex-shrink-0" />
-            <span>Settings</span>
-          </NavLink>
-        </div>
-      )}
+      {/* Settings gear removed from ARION sub-nav — moved to global icon rail */}
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import { useNavigate, useLocation } from "react-router-dom";
+import { Settings } from "lucide-react";
 import { useAppState } from "../app/AppState";
 import { resolveServiceStatus, SERVICE_CATALOG } from "../config/serviceCatalog";
 
@@ -74,6 +76,9 @@ interface IconRailProps {
 }
 
 export function IconRail({ activeProduct, onSelect }: IconRailProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isSettingsActive = location.pathname.startsWith("/app/settings");
   const { enabledServices } = useAppState();
 
   const products: ProductDef[] = PRODUCTS.map((p) => {
@@ -116,6 +121,20 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
           );
         })}
       </div>
+
+      {/* Global Settings gear — pinned at bottom */}
+      <button
+        onClick={() => navigate("/app/settings")}
+        title="Settings"
+        className={`mt-auto flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
+          isSettingsActive ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white/80"
+        }`}
+      >
+        <span className="flex h-6 w-6 items-center justify-center">
+          <Settings className="h-5 w-5" />
+        </span>
+        <span className="text-[9px] font-medium leading-tight">Settings</span>
+      </button>
     </div>
   );
 }
