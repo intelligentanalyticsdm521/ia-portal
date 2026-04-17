@@ -1,16 +1,22 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip } from 'chart.js';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import { useArionContext } from '../../useArionContext';
 import { useAnalyticsData } from '../../analytics/useAnalyticsData';
-import { ARION_COLORS, ARION_PALETTE, CHART_FILLS, DELTA_COLORS, formatNumber, formatPct, formatDuration, bounceColor } from '../../analytics/chartConfig';
+import { ARION_COLORS, ARION_PALETTE, CHART_FILLS, DELTA_COLORS, PERIOD_OPTIONS, formatNumber, formatPct, formatDuration, bounceColor } from '../../analytics/chartConfig';
 import { ConsultingUpsell } from '../../components/Ui';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip);
 
 export function AnalyticsAudience() {
   const { selectedSite, activeSiteId } = useArionContext();
-  const { data, loading, error } = useAnalyticsData(activeSiteId);
+  const tier = (selectedSite?.arionTier || 'standard') as keyof typeof PERIOD_OPTIONS;
+  const [period, setPeriod] = useState(30);
+  const [compare, setCompare] = useState<'none' | 'previous_period'>('none');
+  const periodOptions = PERIOD_OPTIONS[tier] || PERIOD_OPTIONS.standard;
+  const canCompare = tier === 'pro' || tier === 'business';
+
+  const { data, loading, error } = useAnalyticsData(activeSiteId, period, compare);
 
   if (loading) {
     return <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>Loading audience data...</div>;
@@ -94,8 +100,46 @@ export function AnalyticsAudience() {
 
   return (
     <div>
+      {/* Period selector + comparison toggle */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <select
+          value={period}
+          onChange={e => setPeriod(Number(e.target.value))}
+          style={{
+            padding: '5px 10px',
+            borderRadius: 6,
+            border: '1px solid rgba(45,156,219,0.18)',
+            fontSize: 12,
+            background: '#fff',
+            color: '#0B1C24',
+            cursor: 'pointer',
+          }}
+        >
+          {periodOptions.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        {canCompare && (
+          <button
+            onClick={() => setCompare(c => c === 'none' ? 'previous_period' : 'none')}
+            style={{
+              padding: '5px 10px',
+              borderRadius: 6,
+              border: `1px solid ${compare !== 'none' ? ARION_COLORS.sky : 'rgba(45,156,219,0.18)'}`,
+              background: compare !== 'none' ? 'rgba(45,156,219,0.08)' : '#fff',
+              fontSize: 12,
+              color: compare !== 'none' ? ARION_COLORS.sky : '#5A7A8A',
+              cursor: 'pointer',
+              fontWeight: compare !== 'none' ? 600 : 400,
+            }}
+          >
+            {compare !== 'none' ? 'Comparing' : 'Compare'}
+          </button>
+        )}
+      </div>
+
       {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
         <StatCard label="New Users" value={formatNumber(newUsers)} accent={ARION_COLORS.sky} />
         <StatCard label="Returning Users" value={formatNumber(returningUsers)} accent={ARION_COLORS.orange} />
         <StatCard label="Scroll Depth" value={formatNumber(scrollDepth)} accent={ARION_COLORS.coreBlueMid} />
@@ -103,33 +147,33 @@ export function AnalyticsAudience() {
       </div>
 
       {/* 2-column: New vs Returning | Browser */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
-        <div style={{ background: 'var(--card-bg, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 10, padding: 20 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>New vs Returning</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-            <div style={{ width: 160, height: 160 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+        <div style={{ background: 'var(--card-bg, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, padding: '12px 16px', maxHeight: 200 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>New vs Returning</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 120, height: 120, maxHeight: 180 }}>
               <Doughnut
                 data={nvrData}
                 options={{ responsive: true, maintainAspectRatio: true, cutout: '68%', plugins: { legend: { display: false }, tooltip: { enabled: true } } }}
               />
             </div>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#2D9CDB' }} />
-                <span style={{ fontSize: 13 }}>New: {formatNumber(newUsers)} ({newPct}%)</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#2D9CDB' }} />
+                <span style={{ fontSize: 11 }}>New: {formatNumber(newUsers)} ({newPct}%)</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#EF6C33' }} />
-                <span style={{ fontSize: 13 }}>Returning: {formatNumber(returningUsers)} ({retPct}%)</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#EF6C33' }} />
+                <span style={{ fontSize: 11 }}>Returning: {formatNumber(returningUsers)} ({retPct}%)</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div style={{ background: 'var(--card-bg, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 10, padding: 20 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Browser Distribution</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-            <div style={{ width: 160, height: 160 }}>
+        <div style={{ background: 'var(--card-bg, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, padding: '12px 16px', maxHeight: 200 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Browser Distribution</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 120, height: 120, maxHeight: 180 }}>
               <Doughnut
                 data={browserData}
                 options={{ responsive: true, maintainAspectRatio: true, cutout: '68%', plugins: { legend: { display: false }, tooltip: { enabled: true } } }}
@@ -137,9 +181,9 @@ export function AnalyticsAudience() {
             </div>
             <div>
               {browserLabels.map((label, i) => (
-                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: browserColors[i] }} />
-                  <span style={{ fontSize: 13 }}>{label}: {formatNumber(browserValues[i])}</span>
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: browserColors[i] }} />
+                  <span style={{ fontSize: 11 }}>{label}: {formatNumber(browserValues[i])}</span>
                 </div>
               ))}
             </div>
@@ -148,35 +192,38 @@ export function AnalyticsAudience() {
       </div>
 
       {/* 2-column: Day of Week | Hourly Heatmap */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
-        <div style={{ background: 'var(--card-bg, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 10, padding: 20 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Sessions by Day of Week</div>
-          <Bar
-            data={dayOfWeekData}
-            options={{
-              indexAxis: 'y',
-              responsive: true,
-              plugins: {
-                legend: { display: false },
-                tooltip: { enabled: true },
-              },
-              scales: {
-                x: { display: false },
-                y: { grid: { display: false }, ticks: { font: { size: 11 } } },
-              },
-            }}
-          />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+        <div style={{ background: 'var(--card-bg, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, padding: '12px 16px', maxHeight: 200 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Sessions by Day of Week</div>
+          <div style={{ maxHeight: 150 }}>
+            <Bar
+              data={dayOfWeekData}
+              options={{
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { display: false },
+                  tooltip: { enabled: true },
+                },
+                scales: {
+                  x: { display: false },
+                  y: { grid: { display: false }, ticks: { font: { size: 10 } } },
+                },
+              }}
+            />
+          </div>
         </div>
 
-        <div style={{ background: 'var(--card-bg, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 10, padding: 20 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Hourly Traffic</div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', height: 32 }}>
+        <div style={{ background: 'var(--card-bg, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, padding: '12px 16px', maxHeight: 200 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Hourly Traffic</div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', height: 24 }}>
             {hourSessions.map((s: number, i: number) => (
               <div
                 key={i}
                 style={{
                   width: `calc(100% / 24)`,
-                  height: 32,
+                  height: 24,
                   background: `rgba(45,156,219, ${s / maxHour})`,
                   borderRight: i < 23 ? '1px solid var(--card-bg, #fff)' : 'none',
                 }}
@@ -184,7 +231,7 @@ export function AnalyticsAudience() {
               />
             ))}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 10, color: 'var(--text-muted)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 10, color: 'var(--text-muted)' }}>
             <span>12am</span>
             <span>6am</span>
             <span>12pm</span>
@@ -210,12 +257,12 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
     <div style={{
       background: 'var(--card-bg, #fff)',
       border: '1px solid var(--border, #e5e7eb)',
-      borderRadius: 10,
-      padding: '14px 18px',
+      borderRadius: 6,
+      padding: '10px 14px',
       borderTop: `3px solid ${accent}`,
     }}>
-      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 700 }}>{value}</div>
+      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700 }}>{value}</div>
     </div>
   );
 }

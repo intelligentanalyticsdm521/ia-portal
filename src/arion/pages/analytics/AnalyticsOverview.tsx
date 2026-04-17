@@ -13,6 +13,7 @@ import {
   formatPct,
   formatNumber,
   bounceColor,
+  formatDelta,
 } from '../../analytics/chartConfig';
 import { Card, ConsultingUpsell } from '../../components/Ui';
 
@@ -22,9 +23,11 @@ export function AnalyticsOverview() {
   const { selectedSite, activeSiteId } = useArionContext();
   const tier = (selectedSite?.arionTier || 'standard') as keyof typeof PERIOD_OPTIONS;
   const [period, setPeriod] = useState(30);
+  const [compare, setCompare] = useState<'none' | 'previous_period'>('none');
   const periodOptions = PERIOD_OPTIONS[tier] || PERIOD_OPTIONS.standard;
+  const canCompare = tier === 'pro' || tier === 'business';
 
-  const { data, loading } = useAnalyticsData(activeSiteId, period);
+  const { data, loading } = useAnalyticsData(activeSiteId, period, compare);
 
   /* ── Not connected ── */
   if (data?.connected === false) {
@@ -69,16 +72,16 @@ export function AnalyticsOverview() {
 
   return (
     <>
-      {/* ── Period selector (top-right) ── */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+      {/* ── Period selector + comparison toggle (top-right) ── */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <select
           value={period}
           onChange={e => setPeriod(Number(e.target.value))}
           style={{
-            padding: '6px 12px',
+            padding: '5px 10px',
             borderRadius: 6,
             border: '1px solid rgba(45,156,219,0.18)',
-            fontSize: 13,
+            fontSize: 12,
             background: '#fff',
             color: '#0B1C24',
             cursor: 'pointer',
@@ -88,109 +91,159 @@ export function AnalyticsOverview() {
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
+        {canCompare && (
+          <button
+            onClick={() => setCompare(c => c === 'none' ? 'previous_period' : 'none')}
+            style={{
+              padding: '5px 10px',
+              borderRadius: 6,
+              border: `1px solid ${compare !== 'none' ? ARION_COLORS.sky : 'rgba(45,156,219,0.18)'}`,
+              background: compare !== 'none' ? 'rgba(45,156,219,0.08)' : '#fff',
+              fontSize: 12,
+              color: compare !== 'none' ? ARION_COLORS.sky : '#5A7A8A',
+              cursor: 'pointer',
+              fontWeight: compare !== 'none' ? 600 : 400,
+            }}
+          >
+            {compare !== 'none' ? 'Comparing' : 'Compare'}
+          </button>
+        )}
       </div>
 
       {/* ── 4 Stat cards ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
         {[
-          { label: 'Sessions', value: formatNumber(summary.totalSessions), accent: ARION_COLORS.sky },
-          { label: 'Users', value: formatNumber(summary.totalUsers), accent: ARION_COLORS.orange },
-          { label: 'Bounce Rate', value: formatPct(summary.bounceRate), accent: bounceColor(summary.bounceRate) },
-          { label: 'Avg Session Duration', value: formatDuration(summary.avgSessionDuration), accent: ARION_COLORS.coreBlueMid },
-        ].map(card => (
-          <div
-            key={card.label}
-            style={{
-              background: '#fff',
-              border: '1px solid rgba(45,156,219,0.12)',
-              borderRadius: 8,
-              padding: '14px 16px',
-              borderLeft: `3px solid ${card.accent}`,
-            }}
-          >
-            <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.4 }}>{card.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: '#0B1C24', marginTop: 4 }}>{card.value}</div>
-          </div>
-        ))}
+          { label: 'Sessions', value: formatNumber(summary.totalSessions), accent: ARION_COLORS.sky, key: 'totalSessions' },
+          { label: 'Users', value: formatNumber(summary.totalUsers), accent: ARION_COLORS.orange, key: 'totalUsers' },
+          { label: 'Bounce Rate', value: formatPct(summary.bounceRate), accent: bounceColor(summary.bounceRate), key: 'bounceRate' },
+          { label: 'Avg Duration', value: formatDuration(summary.avgSessionDuration), accent: ARION_COLORS.coreBlueMid, key: 'avgSessionDuration' },
+        ].map(card => {
+          const compSummary = data.comparison?.summary;
+          const delta = compare !== 'none' && compSummary ? formatDelta(summary[card.key], compSummary[card.key]) : null;
+          return (
+            <div
+              key={card.label}
+              style={{
+                background: '#fff',
+                border: '1px solid rgba(45,156,219,0.12)',
+                borderRadius: 6,
+                padding: '10px 14px',
+                borderLeft: `3px solid ${card.accent}`,
+              }}
+            >
+              <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.4 }}>{card.label}</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
+                <span style={{ fontSize: 18, fontWeight: 600, color: '#0B1C24' }}>{card.value}</span>
+                {delta && <span style={{ fontSize: 11, fontWeight: 500, color: delta.color }}>{delta.text}</span>}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* ── Sessions line chart ── */}
       <Card title="Sessions">
         {/* Custom legend */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           <span style={{ display: 'inline-block', width: 12, height: 3, borderRadius: 2, background: ARION_COLORS.sky }} />
           <span style={{ fontSize: 11, color: '#5A7A8A' }}>Sessions</span>
+          {compare !== 'none' && (
+            <>
+              <span style={{ display: 'inline-block', width: 12, height: 0, borderTop: '2px dashed #5A7A8A', marginLeft: 8 }} />
+              <span style={{ fontSize: 11, color: '#5A7A8A' }}>Previous period</span>
+            </>
+          )}
         </div>
-        <Line
-          data={{
-            labels: sessionsByDay.map((d: any) => d.date),
-            datasets: [{
-              label: 'Sessions',
-              data: sessionsByDay.map((d: any) => d.sessions),
-              borderColor: ARION_COLORS.sky,
-              backgroundColor: CHART_FILLS.skyLight,
-              borderWidth: 2,
-              fill: true,
-              tension: 0.3,
-              pointRadius: 0,
-              pointHoverRadius: 4,
-            }],
-          }}
-          options={{
-            responsive: true,
-            plugins: { legend: { display: false }, tooltip: { mode: 'index' as const, intersect: false } },
-            scales: {
-              x: { ticks: { maxTicksLimit: 8, font: { size: 10 } }, grid: { display: false } },
-              y: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
-            },
-          }}
-        />
-      </Card>
-
-      {/* ── 2-column: Channel bar + Device doughnut ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 12, marginTop: 12 }}>
-        {/* Channel horizontal bar */}
-        <Card title="Channel Breakdown">
-          {/* Custom legend */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 8 }}>
-            {channelBreakdown.map((c: any, i: number) => (
-              <div key={c.channel} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{
-                  display: 'inline-block',
-                  width: 10,
-                  height: 10,
-                  borderRadius: 2,
-                  background: CHANNEL_COLORS[c.channel] || ARION_PALETTE[i % 5],
-                }} />
-                <span style={{ fontSize: 11, color: '#5A7A8A' }}>{c.channel}</span>
-              </div>
-            ))}
-          </div>
-          <Bar
+        <div style={{ maxHeight: 200, height: 180 }}>
+          <Line
             data={{
-              labels: channelBreakdown.map((c: any) => c.channel),
-              datasets: [{
-                data: channelBreakdown.map((c: any) => c.sessions),
-                backgroundColor: channelBreakdown.map((c: any, i: number) => CHANNEL_COLORS[c.channel] || ARION_PALETTE[i % 5]),
-                borderRadius: 4,
-                barThickness: 20,
-              }],
+              labels: sessionsByDay.map((d: any) => d.date),
+              datasets: [
+                {
+                  label: 'Sessions',
+                  data: sessionsByDay.map((d: any) => d.sessions),
+                  borderColor: ARION_COLORS.sky,
+                  backgroundColor: CHART_FILLS.skyLight,
+                  borderWidth: 2,
+                  fill: true,
+                  tension: 0.3,
+                  pointRadius: 0,
+                  pointHoverRadius: 4,
+                },
+                ...(compare !== 'none' && data.comparison?.sessionsByDay ? [{
+                  label: 'Previous period',
+                  data: data.comparison.sessionsByDay.map((d: any) => d.sessions),
+                  borderColor: '#5A7A8A',
+                  borderDash: [5, 3],
+                  borderWidth: 1.5,
+                  fill: false,
+                  tension: 0.3,
+                  pointRadius: 0,
+                  pointHoverRadius: 3,
+                  backgroundColor: 'transparent',
+                }] : []),
+              ],
             }}
             options={{
-              indexAxis: 'y' as const,
               responsive: true,
-              plugins: { legend: { display: false } },
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false }, tooltip: { mode: 'index' as const, intersect: false } },
               scales: {
-                x: { beginAtZero: true, ticks: { font: { size: 10 } } },
-                y: { ticks: { font: { size: 11 } } },
+                x: { ticks: { maxTicksLimit: 8, font: { size: 10 } }, grid: { display: false } },
+                y: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
               },
             }}
           />
+        </div>
+      </Card>
+
+      {/* ── 2-column: Channel bar + Device doughnut ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 10, marginTop: 10, maxHeight: 220 }}>
+        {/* Channel horizontal bar */}
+        <Card title="Channel Breakdown">
+          {/* Custom legend */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+            {channelBreakdown.map((c: any, i: number) => (
+              <div key={c.channel} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                <span style={{
+                  display: 'inline-block',
+                  width: 8,
+                  height: 8,
+                  borderRadius: 2,
+                  background: CHANNEL_COLORS[c.channel] || ARION_PALETTE[i % 5],
+                }} />
+                <span style={{ fontSize: 10, color: '#5A7A8A' }}>{c.channel}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ maxHeight: 150 }}>
+            <Bar
+              data={{
+                labels: channelBreakdown.map((c: any) => c.channel),
+                datasets: [{
+                  data: channelBreakdown.map((c: any) => c.sessions),
+                  backgroundColor: channelBreakdown.map((c: any, i: number) => CHANNEL_COLORS[c.channel] || ARION_PALETTE[i % 5]),
+                  borderRadius: 3,
+                  barThickness: 16,
+                }],
+              }}
+              options={{
+                indexAxis: 'y' as const,
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                  x: { beginAtZero: true, ticks: { font: { size: 9 } } },
+                  y: { ticks: { font: { size: 10 } } },
+                },
+              }}
+            />
+          </div>
         </Card>
 
         {/* Device doughnut */}
         <Card title="Devices">
-          <div style={{ position: 'relative', maxWidth: 220, margin: '0 auto' }}>
+          <div style={{ position: 'relative', maxWidth: 140, margin: '0 auto' }}>
             <Doughnut
               data={{
                 labels: ['Desktop', 'Mobile', 'Tablet'],
@@ -208,16 +261,16 @@ export function AnalyticsOverview() {
             />
           </div>
           {/* Custom legend */}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 14, marginTop: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 6 }}>
             {[
               { label: 'Desktop', color: ARION_COLORS.sky, value: deviceSplit.desktop },
               { label: 'Mobile', color: ARION_COLORS.orange, value: deviceSplit.mobile },
               { label: 'Tablet', color: ARION_COLORS.coreBlueMid, value: deviceSplit.tablet },
             ].map(d => (
-              <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: d.color }} />
-                <span style={{ fontSize: 11, color: '#5A7A8A' }}>{d.label}</span>
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#0B1C24' }}>{formatPct(d.value / 100)}</span>
+              <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: d.color }} />
+                <span style={{ fontSize: 10, color: '#5A7A8A' }}>{d.label}</span>
+                <span style={{ fontSize: 10, fontWeight: 600, color: '#0B1C24' }}>{formatPct(d.value / 100)}</span>
               </div>
             ))}
           </div>
