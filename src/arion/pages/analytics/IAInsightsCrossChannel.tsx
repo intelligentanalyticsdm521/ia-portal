@@ -20,14 +20,18 @@ export function IAInsightsCrossChannel() {
 
   const ov = overview as Record<string, any> | null;
   const formsData = forms as any;
-  const formLeads = formsData?.meta?.total ?? (Array.isArray(formsData) ? formsData.length : null) ?? '--';
-  const sessions = ov?.overview?.sessions ?? '--';
+  const formLeads = formsData?.meta?.total ?? (Array.isArray(formsData) ? formsData.length : null) ?? 0;
+  const sessions = ov?.overview?.sessions ?? 0;
 
-  /* Placeholders for SPARK and OLIVER until cross-platform integration */
-  const sparkContacts = '--';
-  const oliverJobs = '--';
+  /* Platform values: use actual data when available, 0 when not */
+  const sparkContacts = ov?.overview?.sparkContacts ?? 0;
+  const oliverJobs = ov?.overview?.oliverJobs ?? 0;
 
-  /* Funnel values (use numeric fallback for width calculation) */
+  /* Check subscription status to decide whether to show connect hints */
+  const sparkSubscribed = (selectedSite as any)?.sparkSubscribed === true || sparkContacts > 0;
+  const oliverSubscribed = (selectedSite as any)?.oliverSubscribed === true || oliverJobs > 0;
+
+  /* Funnel values (always numeric, 0 when no data) */
   const funnelSteps = [
     { label: 'Website Sessions', value: sessions, color: '#3b82f6' },
     { label: 'Form Leads', value: formLeads, color: '#8b5cf6' },
@@ -79,14 +83,21 @@ export function IAInsightsCrossChannel() {
             </div>
           ))}
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-          Connect OLIVER and SPARK to populate all funnel stages with live data.
-        </div>
+        {/* Only show connect hint for unsubscribed platforms */}
+        {(!sparkSubscribed || !oliverSubscribed) && (
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+            {!sparkSubscribed && !oliverSubscribed
+              ? 'Subscribe to OLIVER and SPARK to populate all funnel stages with live data.'
+              : !sparkSubscribed
+                ? 'Subscribe to SPARK to see contact data in the funnel.'
+                : 'Subscribe to OLIVER to see job data in the funnel.'}
+          </div>
+        )}
       </Card>
 
       <ConsultingUpsell
-        headline="Connect OLIVER and SPARK to see your full revenue funnel"
-        subtext="Cross-channel insights require platform integration."
+        headline="See your full revenue funnel across all IA platforms"
+        subtext="Cross-channel insights powered by your IA platform data."
         serviceType="Analytics Consulting"
         triggerPage="ia-insights-cross-channel"
       />

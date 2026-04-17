@@ -12,16 +12,10 @@ export function AnalyticsConversions() {
     [activeSiteId]
   );
 
-  const { data: bookings, loading: bookingsLoading } = useArionData(
-    () => activeSiteId ? arionApi.getBookings(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
-  );
-
-  if (formsLoading || bookingsLoading) return <Loading />;
+  if (formsLoading) return <Loading />;
   if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
 
   const formsArr = Array.isArray(forms) ? forms : (forms as any)?.items ?? [];
-  const bookingsArr = Array.isArray(bookings) ? bookings : (bookings as any)?.items ?? [];
 
   return (
     <TierGate currentTier={tier} requiredTier="standard" featureName="Conversion tracking and form analytics">
@@ -41,43 +35,27 @@ export function AnalyticsConversions() {
       )}
 
       <Card title="Form Submissions">
-        <table className="data-table">
-          <thead>
-            <tr><th>Form</th><th>Submissions</th><th>Conversion Rate</th><th>Top Page</th></tr>
-          </thead>
-          <tbody>
-            {formsArr.length > 0 ? formsArr.map((f: any, i: number) => (
-              <tr key={i}>
-                <td>{f.form_name ?? f.name ?? '--'}</td>
-                <td>{f.submissions ?? f.count ?? '--'}</td>
-                <td>{f.conversion_rate ?? '--'}</td>
-                <td>{f.top_page ?? '--'}</td>
-              </tr>
-            )) : (
-              <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No form data available</td></tr>
-            )}
-          </tbody>
-        </table>
-      </Card>
-
-      <Card title="Booking Requests">
-        <table className="data-table">
-          <thead>
-            <tr><th>Type</th><th>Requests</th><th>Conversion Rate</th><th>Top Page</th></tr>
-          </thead>
-          <tbody>
-            {bookingsArr.length > 0 ? bookingsArr.map((b: any, i: number) => (
-              <tr key={i}>
-                <td>{b.type ?? b.booking_type ?? '--'}</td>
-                <td>{b.requests ?? b.count ?? '--'}</td>
-                <td>{b.conversion_rate ?? '--'}</td>
-                <td>{b.top_page ?? '--'}</td>
-              </tr>
-            )) : (
-              <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No booking data available</td></tr>
-            )}
-          </tbody>
-        </table>
+        {formsArr.length > 0 ? (
+          <table className="data-table">
+            <thead>
+              <tr><th>Form</th><th>Submissions</th><th>Conversion Rate</th><th>Top Page</th></tr>
+            </thead>
+            <tbody>
+              {formsArr.map((f: any, i: number) => (
+                <tr key={i}>
+                  <td>{f.form_name ?? f.name ?? '--'}</td>
+                  <td>{f.submissions ?? f.count ?? '--'}</td>
+                  <td>{f.conversion_rate ?? '--'}</td>
+                  <td>{f.top_page ?? '--'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+            Form submissions will appear here once visitors complete forms on your site.
+          </div>
+        )}
       </Card>
 
       <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
