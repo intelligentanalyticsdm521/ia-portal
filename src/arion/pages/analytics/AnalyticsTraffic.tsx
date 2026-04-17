@@ -128,13 +128,17 @@ export function AnalyticsTraffic() {
       {/* ── 4 Stat cards ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
         {[
-          { label: 'Sessions', value: formatNumber(summary.totalSessions), accent: ARION_COLORS.sky, key: 'totalSessions' },
-          { label: 'Users', value: formatNumber(summary.totalUsers), accent: ARION_COLORS.orange, key: 'totalUsers' },
-          { label: 'Pages / Session', value: (summary.pagesPerSession ?? 0).toFixed(1), accent: ARION_COLORS.coreBlueMid, key: 'pagesPerSession' },
-          { label: 'Engagement Rate', value: formatPct(summary.engagementRate ?? 0), accent: ARION_COLORS.gold, key: 'engagementRate' },
+          { label: 'Sessions', value: formatNumber(summary.totalSessions), raw: summary.totalSessions, accent: ARION_COLORS.sky, key: 'totalSessions' },
+          { label: 'Users', value: formatNumber(summary.totalUsers), raw: summary.totalUsers, accent: ARION_COLORS.orange, key: 'totalUsers' },
+          { label: 'Pages / Session', value: (summary.pagesPerSession ?? 0).toFixed(1), raw: summary.pagesPerSession ?? 0, accent: ARION_COLORS.coreBlueMid, key: 'pagesPerSession' },
+          { label: 'Engagement Rate', value: formatPct(summary.engagementRate ?? 0), raw: summary.engagementRate ?? 0, accent: ARION_COLORS.gold, key: 'engagementRate' },
         ].map(card => {
           const compSummary = data.comparison?.summary;
-          const delta = compare !== 'none' && compSummary ? formatDelta(summary[card.key], compSummary[card.key]) : null;
+          const prevRaw = compare !== 'none' && compSummary ? compSummary[card.key] : null;
+          const delta = prevRaw != null ? formatDelta(card.raw, prevRaw) : null;
+          const prevDisplay = prevRaw != null
+            ? (card.key === 'engagementRate' ? formatPct(prevRaw) : card.key === 'pagesPerSession' ? prevRaw.toFixed(1) : formatNumber(prevRaw))
+            : null;
           return (
             <div
               key={card.label}
@@ -147,10 +151,12 @@ export function AnalyticsTraffic() {
               }}
             >
               <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.4 }}>{card.label}</div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
-                <span style={{ fontSize: 22, fontWeight: 600, color: '#0B1C24' }}>{card.value}</span>
-                {delta && <span style={{ fontSize: 11, fontWeight: 500, color: delta.color }}>{delta.text}</span>}
-              </div>
+              <div style={{ fontSize: 22, fontWeight: 600, color: '#0B1C24', marginTop: 4 }}>{card.value}</div>
+              {delta && prevDisplay != null && (
+                <div style={{ fontSize: 11, color: '#5A7A8A', marginTop: 2 }}>
+                  was {prevDisplay} · <span style={{ fontWeight: 500, color: delta.color }}>{delta.text}</span>
+                </div>
+              )}
             </div>
           );
         })}
@@ -161,57 +167,81 @@ export function AnalyticsTraffic() {
         {/* Traffic Sources table */}
         <Card title="Traffic Sources">
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Source / Medium</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>Sessions</th>
-                  {compare !== 'none' && data.comparison?.trafficSources && (
-                    <>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Prev</th>
-                      <th style={{ ...thStyle, textAlign: 'right' }}>Change</th>
-                    </>
-                  )}
-                  <th style={{ ...thStyle, textAlign: 'right' }}>Bounce Rate</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>Avg Duration</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>% of Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {trafficSources.length > 0 ? trafficSources.map((s: any, i: number) => {
-                  const pctTotal = totalSessions > 0 ? (s.sessions / totalSessions) : 0;
-                  const sourceName = s.sourceMedium ?? s.source ?? '--';
-                  const prevSource = compare !== 'none' && data.comparison?.trafficSources
-                    ? data.comparison.trafficSources.find((p: any) => (p.sourceMedium ?? p.source ?? '--') === sourceName) : null;
-                  const delta = prevSource ? formatDelta(s.sessions ?? 0, prevSource.sessions ?? 0) : null;
-                  return (
-                    <tr key={i}>
-                      <td style={tdStyle}>{sourceName}</td>
-                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatNumber(s.sessions ?? 0)}</td>
-                      {compare !== 'none' && data.comparison?.trafficSources && (
-                        <>
-                          <td style={{ ...tdStyle, textAlign: 'right', color: '#5A7A8A' }}>
-                            {prevSource ? formatNumber(prevSource.sessions ?? 0) : '--'}
-                          </td>
-                          <td style={{ ...tdStyle, textAlign: 'right', color: delta?.color ?? '#5A7A8A', fontWeight: 500 }}>
-                            {delta?.text ?? '--'}
-                          </td>
-                        </>
-                      )}
-                      <td style={{ ...tdStyle, textAlign: 'right', color: bounceColor(s.bounceRate ?? 0) }}>
-                        {formatPct(s.bounceRate ?? 0)}
-                      </td>
-                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatDuration(s.avgSessionDuration ?? 0)}</td>
-                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatPct(pctTotal)}</td>
+            {(() => {
+              const hasComparison = compare !== 'none' && !!data.comparison;
+              const hasSourceLevel = hasComparison && !!data.comparison?.trafficSources;
+              const thRight: React.CSSProperties = { ...thStyle, textAlign: 'right' };
+              const thSub: React.CSSProperties = { ...thStyle, textAlign: 'right', fontSize: 9, color: '#8CA4B0', fontWeight: 500 };
+              return (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Source / Medium</th>
+                      <th style={thRight}>Sessions</th>
+                      {hasComparison && <th style={thSub}>Prev</th>}
+                      {hasComparison && <th style={thSub}>Change</th>}
+                      <th style={thRight}>Bounce Rate</th>
+                      {hasComparison && <th style={thSub}>Prev</th>}
+                      <th style={thRight}>Avg Duration</th>
+                      {hasComparison && <th style={thSub}>Prev</th>}
+                      <th style={thRight}>% of Total</th>
                     </tr>
-                  );
-                }) : (
-                  <tr>
-                    <td colSpan={compare !== 'none' && data.comparison?.trafficSources ? 7 : 5} style={{ ...tdStyle, textAlign: 'center', color: '#5A7A8A' }}>No traffic source data available</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {trafficSources.length > 0 ? trafficSources.map((s: any, i: number) => {
+                      const pctTotal = totalSessions > 0 ? (s.sessions / totalSessions) : 0;
+                      const sourceName = s.sourceMedium ?? s.source ?? '--';
+                      const prevSource = hasSourceLevel
+                        ? data.comparison.trafficSources.find((p: any) =>
+                            (p.sourceMedium ?? p.source ?? '--') === sourceName ||
+                            (p.source === s.source && p.medium === s.medium)
+                          ) || null
+                        : null;
+
+                      const sessionsDelta = prevSource ? formatDelta(s.sessions ?? 0, prevSource.sessions ?? 0) : null;
+                      const prevBounce = prevSource?.bounceRate;
+                      const prevDuration = prevSource?.avgSessionDuration;
+
+                      return (
+                        <tr key={i}>
+                          <td style={tdStyle}>{sourceName}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatNumber(s.sessions ?? 0)}</td>
+                          {hasComparison && (
+                            <td style={{ ...tdStyle, textAlign: 'right', color: '#5A7A8A', fontSize: 12 }}>
+                              {prevSource ? formatNumber(prevSource.sessions ?? 0) : 'N/A'}
+                            </td>
+                          )}
+                          {hasComparison && (
+                            <td style={{ ...tdStyle, textAlign: 'right', color: sessionsDelta?.color ?? '#5A7A8A', fontWeight: 500, fontSize: 12 }}>
+                              {sessionsDelta?.text ?? 'N/A'}
+                            </td>
+                          )}
+                          <td style={{ ...tdStyle, textAlign: 'right', color: bounceColor(s.bounceRate ?? 0) }}>
+                            {formatPct(s.bounceRate ?? 0)}
+                          </td>
+                          {hasComparison && (
+                            <td style={{ ...tdStyle, textAlign: 'right', color: '#5A7A8A', fontSize: 12 }}>
+                              {prevBounce != null ? formatPct(prevBounce) : 'N/A'}
+                            </td>
+                          )}
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatDuration(s.avgSessionDuration ?? 0)}</td>
+                          {hasComparison && (
+                            <td style={{ ...tdStyle, textAlign: 'right', color: '#5A7A8A', fontSize: 12 }}>
+                              {prevDuration != null ? formatDuration(prevDuration) : 'N/A'}
+                            </td>
+                          )}
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatPct(pctTotal)}</td>
+                        </tr>
+                      );
+                    }) : (
+                      <tr>
+                        <td colSpan={hasComparison ? 9 : 5} style={{ ...tdStyle, textAlign: 'center', color: '#5A7A8A' }}>No traffic source data available</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              );
+            })()}
           </div>
         </Card>
 

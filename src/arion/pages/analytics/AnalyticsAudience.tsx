@@ -83,14 +83,30 @@ export function AnalyticsAudience() {
   const dayLabels = dayBreakdown.map((d: any) => d.day || d.dayOfWeek || '');
   const dayColors = daySessions.map((s: number) => s >= medianSessions ? '#2D9CDB' : '#EF6C33');
 
+  const prevDayBreakdown = compare !== 'none' ? (data.comparison?.dayOfWeekBreakdown ?? []) : [];
+  const prevDaySessions = dayLabels.map((label: string) => {
+    const prev = prevDayBreakdown.find((d: any) => (d.day || d.dayOfWeek || '') === label);
+    return prev ? (prev.sessions || 0) : null;
+  });
+
   const dayOfWeekData = {
     labels: dayLabels,
-    datasets: [{
-      data: daySessions,
-      backgroundColor: dayColors,
-      borderWidth: 0,
-      borderRadius: 3,
-    }],
+    datasets: [
+      {
+        label: 'Current',
+        data: daySessions,
+        backgroundColor: dayColors,
+        borderWidth: 0,
+        borderRadius: 3,
+      },
+      ...(prevDaySessions.some((v: any) => v != null) ? [{
+        label: 'Previous',
+        data: prevDaySessions.map((v: any) => v ?? 0),
+        backgroundColor: 'rgba(45,156,219,0.18)',
+        borderWidth: 0,
+        borderRadius: 3,
+      }] : []),
+    ],
   };
 
   // -- Hourly heatmap --
@@ -163,35 +179,34 @@ export function AnalyticsAudience() {
                   ? data.comparison.newVsReturning.find((r: any) => r.type === 'new' || r.type === 'New') : null;
                 const compRet = compare !== 'none' && data.comparison?.newVsReturning
                   ? data.comparison.newVsReturning.find((r: any) => r.type === 'returning' || r.type === 'Returning') : null;
-                const compTotal = (compNew?.users ?? 0) + (compRet?.users ?? 0);
-                const prevNewPct = compTotal > 0 ? ((compNew?.users ?? 0) / compTotal * 100).toFixed(1) : null;
-                const prevRetPct = compTotal > 0 ? ((compRet?.users ?? 0) / compTotal * 100).toFixed(1) : null;
-                const newPpDiff = prevNewPct != null ? (Number(newPct) - Number(prevNewPct)).toFixed(1) : null;
-                const retPpDiff = prevRetPct != null ? (Number(retPct) - Number(prevRetPct)).toFixed(1) : null;
+                const prevNewCount = compNew?.users ?? null;
+                const prevRetCount = compRet?.users ?? null;
+                const newDelta = prevNewCount != null ? formatDelta(newUsers, prevNewCount) : null;
+                const retDelta = prevRetCount != null ? formatDelta(returningUsers, prevRetCount) : null;
                 return (
                   <>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                       <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#2D9CDB' }} />
                       <span style={{ fontSize: 11 }}>
                         New: {formatNumber(newUsers)} ({newPct}%)
-                        {newPpDiff != null && (
-                          <span style={{ marginLeft: 4, fontSize: 10, color: Number(newPpDiff) >= 0 ? '#1D9E75' : '#D85A30' }}>
-                            (was {prevNewPct}% {Number(newPpDiff) >= 0 ? '↑' : '↓'} {Math.abs(Number(newPpDiff))}pp)
-                          </span>
-                        )}
                       </span>
                     </div>
+                    {newDelta && prevNewCount != null && (
+                      <div style={{ fontSize: 10, color: '#5A7A8A', marginLeft: 16, marginBottom: 6 }}>
+                        was {formatNumber(prevNewCount)} · <span style={{ color: newDelta.color, fontWeight: 500 }}>{newDelta.text}</span>
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#EF6C33' }} />
                       <span style={{ fontSize: 11 }}>
                         Returning: {formatNumber(returningUsers)} ({retPct}%)
-                        {retPpDiff != null && (
-                          <span style={{ marginLeft: 4, fontSize: 10, color: Number(retPpDiff) >= 0 ? '#1D9E75' : '#D85A30' }}>
-                            (was {prevRetPct}% {Number(retPpDiff) >= 0 ? '↑' : '↓'} {Math.abs(Number(retPpDiff))}pp)
-                          </span>
-                        )}
                       </span>
                     </div>
+                    {retDelta && prevRetCount != null && (
+                      <div style={{ fontSize: 10, color: '#5A7A8A', marginLeft: 16 }}>
+                        was {formatNumber(prevRetCount)} · <span style={{ color: retDelta.color, fontWeight: 500 }}>{retDelta.text}</span>
+                      </div>
+                    )}
                   </>
                 );
               })()}
@@ -209,12 +224,25 @@ export function AnalyticsAudience() {
               />
             </div>
             <div>
-              {browserLabels.map((label, i) => (
-                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: browserColors[i] }} />
-                  <span style={{ fontSize: 11 }}>{label}: {formatNumber(browserValues[i])}</span>
-                </div>
-              ))}
+              {browserLabels.map((label, i) => {
+                const prevBrowsers = compare !== 'none' ? (data.comparison?.browsers ?? []) : [];
+                const prevBrowser = prevBrowsers.find((b: any) => (b.browser || b.name || 'Unknown') === label);
+                const prevCount = prevBrowser ? (prevBrowser.sessions || prevBrowser.users || 0) : null;
+                const delta = prevCount != null ? formatDelta(browserValues[i], prevCount) : null;
+                return (
+                  <div key={label} style={{ marginBottom: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: '50%', background: browserColors[i] }} />
+                      <span style={{ fontSize: 11 }}>{label}: {formatNumber(browserValues[i])}</span>
+                    </div>
+                    {delta && prevCount != null && (
+                      <div style={{ fontSize: 10, color: '#5A7A8A', marginLeft: 16 }}>
+                        was {formatNumber(prevCount)} · <span style={{ color: delta.color, fontWeight: 500 }}>{delta.text}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

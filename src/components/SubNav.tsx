@@ -11,6 +11,7 @@ export interface SubNavItem {
   label: string;
   route: string;
   gated?: boolean;
+  intelligence?: boolean; // ARGUS-powered intelligence item — lime color + badge
 }
 
 export interface SubNavGroup {
@@ -127,15 +128,15 @@ const ARION_NAV: SubNavConfig = {
       ],
     },
     {
-      label: "Analytics", icon: BarChart2, collapsible: true, sectionId: "analytics",
+      label: "Analytics & Intelligence", icon: BarChart2, collapsible: true, sectionId: "analytics",
       items: [
         { key: "arion_analytics_overview", label: "Overview", route: "/app/services/arion_analytics_overview" },
         { key: "arion_analytics_traffic", label: "Traffic", route: "/app/services/arion_analytics_traffic" },
         { key: "arion_analytics_audience", label: "Audience", route: "/app/services/arion_analytics_audience" },
         { key: "arion_analytics_content", label: "Content", route: "/app/services/arion_analytics_content" },
         { key: "arion_analytics_conversions", label: "Conversions", route: "/app/services/arion_analytics_conversions" },
-        { key: "arion_analytics_ia_cross_channel", label: "IA: Cross-Channel", route: "/app/services/arion_analytics_ia_cross_channel" },
-        { key: "arion_analytics_ia_reports", label: "IA: Insights", route: "/app/services/arion_analytics_ia_reports" },
+        { key: "arion_analytics_ia_cross_channel", label: "IA: Cross-Channel", route: "/app/services/arion_analytics_ia_cross_channel", intelligence: true },
+        { key: "arion_analytics_ia_reports", label: "IA: Insights", route: "/app/services/arion_analytics_ia_reports", intelligence: true },
       ],
     },
     {
@@ -386,8 +387,11 @@ export function SubNav({ config }: SubNavProps) {
               {/* Sub-items — visible when section is expanded */}
               {isExpanded && (
                 <ul className="space-y-0.5">
-                  {group.items.map((item) => (
+                  {group.items.map((item, itemIdx) => (
                     <li key={item.key}>
+                      {item.intelligence && (itemIdx === 0 || !group.items[itemIdx - 1]?.intelligence) && (
+                        <div style={{ borderTop: '1px solid rgba(168,205,216,0.15)', margin: '6px 8px 4px' }} />
+                      )}
                       <NavLink
                         to={item.route}
                         className={({ isActive }) =>
@@ -399,7 +403,10 @@ export function SubNav({ config }: SubNavProps) {
                         }
                       >
                         <span className="h-1 w-1 flex-shrink-0 rounded-full bg-current opacity-50" />
-                        <span className="truncate">{item.label}</span>
+                        <span className="truncate" style={item.intelligence ? { color: '#6B9402' } : undefined}>{item.label}</span>
+                        {item.intelligence && (
+                          <span style={{ background: 'rgba(151,204,4,0.12)', color: '#6B9402', fontSize: 9, padding: '1px 5px', borderRadius: 99, flexShrink: 0, marginLeft: 'auto' }}>Intelligence</span>
+                        )}
                         {item.gated && (
                           <svg className="ml-auto h-3 w-3 flex-shrink-0 text-[#A8CDD8]/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
