@@ -85,8 +85,8 @@ export function BusinessBingOverview() {
       </div>
 
       <ConsultingUpsell
-        headline="Bing Places feeds Microsoft Copilot local answers"
-        subtext="IA manages your Bing listing alongside Google."
+        headline="IA can claim and optimize your Bing Places listings as part of your managed plan."
+        subtext="Contact us to get started."
         serviceType="Local SEO"
         triggerPage="business-bing-overview"
       />

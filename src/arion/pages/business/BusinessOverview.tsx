@@ -45,7 +45,7 @@ export function BusinessOverview() {
             <div className="field-row"><strong>Business Name</strong><span>{profile.displayName ?? '--'}</span></div>
             <div className="field-row"><strong>Phone</strong><span>{profile.phone ?? '--'}</span></div>
             <div className="field-row"><strong>Website</strong><span>{profile.websiteUrl ?? '--'}</span></div>
-            <div className="field-row"><strong>Address</strong><span>{profile.address == null ? '--' : typeof profile.address === 'string' ? profile.address : JSON.stringify(profile.address)}</span></div>
+            <div className="field-row"><strong>Address</strong><span>{profile.address == null ? '--' : typeof profile.address === 'string' ? profile.address : [profile.address.addressLines, profile.address.locality, profile.address.administrativeArea, profile.address.postalCode, profile.address.regionCode].flat().filter(Boolean).join(', ') || '--'}</span></div>
             <div className="field-row"><strong>Categories</strong><span>{profile.primaryCategory ?? '--'}</span></div>
           </div>
         ) : (

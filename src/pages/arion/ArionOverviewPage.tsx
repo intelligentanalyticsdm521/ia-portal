@@ -3,7 +3,7 @@ import type { PortalService, ServiceStatus } from '../../config/serviceCatalog';
 import { useAccessToken } from '../../auth/useAccessToken';
 import { useAppState } from '../../app/AppState';
 import { ArionApiError, getArionOverview, type OverviewResponse } from '../../lib/arionApi';
-import { ArionCard, ArionServiceLayout, EmptyPanel, SiteActionLink, StatGrid } from './ArionServiceLayout';
+import { ArionCard, ArionServiceLayout, EmptyPanel } from './ArionServiceLayout';
 import { useArionSites } from './useArionSites';
 
 
@@ -67,7 +67,15 @@ export function ArionOverviewPage({ service, status }: Props) {
         <EmptyPanel title="No ARION sites found" body="Create your first ARION website to begin tracking analytics, console, hosting, maps, and SEO data." />
       ) : (
         <>
-          <StatGrid items={metrics} />
+          {/* Compact 4x2 stat grid for overview */}
+          <div className="grid gap-2 grid-cols-2 md:grid-cols-4 mb-4">
+            {metrics.map((item) => (
+              <div key={item.label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{item.label}</div>
+                <div className="mt-1 text-lg font-semibold text-slate-900">{item.value}</div>
+              </div>
+            ))}
+          </div>
           <div className="grid gap-4 xl:grid-cols-2">
             <ArionCard title="Integrations" subtitle="Connection status across Google, Bing, Apple, and SEO providers">
               <div className="grid gap-3 sm:grid-cols-2">
@@ -77,14 +85,6 @@ export function ArionOverviewPage({ service, status }: Props) {
                 {renderStatus('Bing Webmaster', data?.integrations.bingWebmaster)}
                 {renderStatus('Apple Business', data?.integrations.appleBusinessConnect)}
                 {renderStatus('SEO Project', data?.integrations.seRankingProject)}
-              </div>
-            </ArionCard>
-            <ArionCard title="Quick Links" subtitle="Jump directly into the customer-facing website and key managed resources.">
-              <div className="flex flex-wrap gap-2">
-                <SiteActionLink href={selectedSite.wpUrl}>Go To Website</SiteActionLink>
-                <SiteActionLink href={data?.myBusiness.google.resourceUrl}>Go To Google Business Profile</SiteActionLink>
-                <SiteActionLink href={data?.myBusiness.apple.resourceUrl}>Go To Apple Business Connect</SiteActionLink>
-                <SiteActionLink href={data?.myBusiness.bing.resourceUrl}>Go To Bing Places</SiteActionLink>
               </div>
             </ArionCard>
           </div>

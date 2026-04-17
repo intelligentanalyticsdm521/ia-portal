@@ -73,8 +73,8 @@ export function BusinessAppleOverview() {
       )}
 
       <ConsultingUpsell
-        headline="Apple Maps is the default on every iPhone"
-        subtext="IA claims and optimizes your Apple Maps listing."
+        headline="IA can claim and optimize your Apple Maps listings as part of your managed plan."
+        subtext="Contact us to get started."
         serviceType="Local SEO"
         triggerPage="business-apple-overview"
       />

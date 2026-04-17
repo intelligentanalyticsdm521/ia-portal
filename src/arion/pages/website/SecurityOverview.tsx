@@ -37,6 +37,30 @@ export function SecurityOverview() {
         </Card>
       </div>
 
+      {/* Firewall data (merged from Security: Firewall page) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 12 }}>
+        <Card title="Top Blocked Countries">
+          <table className="tbl">
+            <thead><tr><th>Country</th><th>Blocked Hits</th></tr></thead>
+            <tbody>
+              {[{country:'Russia',hits:1247},{country:'China',hits:893},{country:'Brazil',hits:421},{country:'India',hits:287},{country:'Ukraine',hits:156}].map(c => (
+                <tr key={c.country}><td>{c.country}</td><td>{c.hits.toLocaleString()}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+        <Card title="Recent Login Attempts">
+          <table className="tbl">
+            <thead><tr><th>IP</th><th>Username</th><th>Result</th></tr></thead>
+            <tbody>
+              {[{ip:'185.234.xx.xx',user:'admin',result:'Blocked'},{ip:'103.89.xx.xx',user:'administrator',result:'Blocked'},{ip:'45.155.xx.xx',user:'root',result:'Blocked'}].map((a,i) => (
+                <tr key={i}><td style={{fontFamily:'monospace',fontSize:12}}>{a.ip}</td><td>{a.user}</td><td><span className="badge-ia">{a.result}</span></td></tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      </div>
+
       <ConsultingUpsell
         headline="IA monitors threats 24/7"
         subtext="Security remediation included with all managed plans."

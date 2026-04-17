@@ -21,8 +21,10 @@ export function SearchBingIndexNow() {
   const lastDate = lastSubmission?.lastSubmitted ?? lastSubmission?.last_submitted ?? '--';
   const pagesThisMonth = sitemaps.reduce((sum: number, s: any) => sum + (Number(s.pagesSubmitted ?? s.pages_submitted ?? 0)), 0);
 
-  const recentSubmissions = sitemaps.length > 0
-    ? sitemaps.slice(0, 5).map((s: any, i: number) => ({
+  // Only show actual IndexNow submissions, not generic sitemap entries
+  const indexNowSubmissions = sitemaps.filter((s: any) => s.indexNow || s.protocol === 'indexnow');
+  const recentSubmissions = indexNowSubmissions.length > 0
+    ? indexNowSubmissions.slice(0, 5).map((s: any, i: number) => ({
         url: s.url ?? `Page ${i + 1}`,
         status: s.status ?? 'Submitted',
         date: s.lastSubmitted ?? s.last_submitted ?? '--',
@@ -77,9 +79,21 @@ export function SearchBingIndexNow() {
           </table>
         ) : (
           <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-            No submissions recorded yet.
+            No submissions yet.
           </div>
         )}
+      </Card>
+
+      <Card title="IndexNow Key">
+        <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>
+          An IndexNow key verifies your site ownership for instant indexing notifications to Bing.
+        </p>
+        <button
+          className="abtn abtn-sky"
+          onClick={() => alert('IndexNow key generation coming soon')}
+        >
+          Generate IndexNow Key
+        </button>
       </Card>
 
       <ConsultingUpsell

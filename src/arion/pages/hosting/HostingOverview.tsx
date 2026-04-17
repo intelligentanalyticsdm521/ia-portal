@@ -54,35 +54,6 @@ export function HostingOverview() {
 
   return (
     <div>
-      {/* Site Banner */}
-      <div className="site-banner">
-        <div className="site-banner-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="2" y="2" width="20" height="20" rx="3" />
-            <line x1="2" y1="8" x2="22" y2="8" />
-            <circle cx="5.5" cy="5" r="0.8" fill="currentColor" />
-            <circle cx="8.5" cy="5" r="0.8" fill="currentColor" />
-            <circle cx="11.5" cy="5" r="0.8" fill="currentColor" />
-          </svg>
-        </div>
-        <div className="site-banner-info">
-          <div className="site-banner-domain">
-            {domainName}
-            {domainName !== '--' && (
-              <a href={`https://${domainName}`} target="_blank" rel="noopener noreferrer">
-                <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M3.5 8.5L8.5 3.5M8.5 3.5H4.5M8.5 3.5V7.5" />
-                </svg>
-              </a>
-            )}
-          </div>
-          <div className="site-banner-meta">Hosting plan: {hostingPlan}</div>
-        </div>
-        <div className="site-banner-actions">
-          <StatusPill status={siteStatus === 'active' ? 'active' : 'warning'} label={siteStatus === 'active' ? 'Active' : siteStatus} />
-        </div>
-      </div>
-
       {/* Two-panel dash layout */}
       <div className="dash-layout">
         {/* Left column */}

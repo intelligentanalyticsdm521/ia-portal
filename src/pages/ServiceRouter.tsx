@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Navigate } from 'react-router-dom';
 import { useAppState } from '../app/AppState';
 import { SERVICE_CATALOG, resolveServiceStatus, type PortalService, type ServiceStatus } from '../config/serviceCatalog';
 import { ArionOverviewPage } from './arion/ArionOverviewPage';
@@ -121,7 +121,7 @@ export function ServiceRouter() {
       case 'arion_website_content_seo_schema': return <ArionPageWrapper><ContentSeoSchema /></ArionPageWrapper>;
       case 'arion_website_security_overview': return <ArionPageWrapper><SecurityOverview /></ArionPageWrapper>;
       case 'arion_website_security_vulnerabilities': return <ArionPageWrapper><SecurityVulnerabilities /></ArionPageWrapper>;
-      case 'arion_website_security_firewall': return <ArionPageWrapper><SecurityFirewall /></ArionPageWrapper>;
+      case 'arion_website_security_firewall': return <Navigate to="/app/services/arion_website_security_overview" replace />;
       case 'arion_website_performance_cache': return <ArionPageWrapper><PerformanceCache /></ArionPageWrapper>;
       case 'arion_website_performance_images': return <ArionPageWrapper><PerformanceImages /></ArionPageWrapper>;
       case 'arion_website_updates': return <ArionPageWrapper><WebsiteUpdates /></ArionPageWrapper>;
@@ -147,8 +147,8 @@ export function ServiceRouter() {
       case 'arion_seo_reports': return <ArionPageWrapper><SeoReports /></ArionPageWrapper>;
       case 'arion_search_performance': return <ArionPageWrapper><SearchPerformance /></ArionPageWrapper>;
       case 'arion_search_indexing': return <ArionPageWrapper><SearchIndexing /></ArionPageWrapper>;
-      case 'arion_search_sitemaps': return <ArionPageWrapper><SearchSitemaps /></ArionPageWrapper>;
-      case 'arion_search_core_web_vitals': return <ArionPageWrapper><SearchCoreWebVitals /></ArionPageWrapper>;
+      case 'arion_search_sitemaps': return <Navigate to="/app/services/arion_search_indexing" replace />;
+      case 'arion_search_core_web_vitals': return <Navigate to="/app/services/arion_website_performance_cache" replace />;
       case 'arion_search_bing_copilot': return <ArionPageWrapper><SearchBingCopilot /></ArionPageWrapper>;
       case 'arion_search_bing_indexnow': return <ArionPageWrapper><SearchBingIndexNow /></ArionPageWrapper>;
       case 'arion_business_overview': return <ArionPageWrapper><BusinessOverview /></ArionPageWrapper>;

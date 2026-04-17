@@ -28,7 +28,7 @@ export function BusinessInsights() {
           <MetricCard label="Phone Calls" value="--" />
         </div>
         <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, padding: '24px 0' }}>
-          Data will populate once GBP insights sync begins.
+          GBP insights data populates within 24 hours of connecting.
         </div>
         <ConsultingUpsell
           headline="IA manages your entire local presence — GBP, Bing, Apple Maps."

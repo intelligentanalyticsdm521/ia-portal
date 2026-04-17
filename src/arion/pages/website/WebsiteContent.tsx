@@ -72,51 +72,89 @@ export function WebsiteContent() {
         </InfoCard>
       )}
 
-      <Card title="Top Pages">
-        {recentPages.length > 0 ? (
-          <table className="tbl">
-            <thead><tr><th>Title</th><th>Last Modified</th><th>7d Views</th><th>30d Views</th></tr></thead>
-            <tbody>
-              {recentPages.map((p: any) => {
-                const v = getViews(p);
-                return (
-                  <tr key={p.id}>
-                    <td><a href={p.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--arion-sky)', fontSize: 12 }}>{renderTitle(p)}</a></td>
-                    <td>{p.modified ? new Date(p.modified).toLocaleDateString() : '--'}</td>
-                    <td>{String(v.views7d)}</td>
-                    <td>{String(v.views30d)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        ) : (
-          <EmptyPanel message="No page data available." />
-        )}
-      </Card>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <Card title="Top Pages">
+          {recentPages.length > 0 ? (
+            <table className="tbl">
+              <thead><tr><th>Title</th><th>Last Modified</th><th>7d Views</th><th>30d Views</th></tr></thead>
+              <tbody>
+                {recentPages.map((p: any) => {
+                  const v = getViews(p);
+                  return (
+                    <tr key={p.id}>
+                      <td><a href={p.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--arion-sky)', fontSize: 12 }}>{renderTitle(p)}</a></td>
+                      <td>{p.modified ? new Date(p.modified).toLocaleDateString() : '--'}</td>
+                      <td>{String(v.views7d)}</td>
+                      <td>{String(v.views30d)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <EmptyPanel message="No page data available." />
+          )}
+        </Card>
 
-      <Card title="Top Posts">
-        {recentPosts.length > 0 ? (
-          <table className="tbl">
-            <thead><tr><th>Title</th><th>Last Modified</th><th>7d Views</th><th>30d Views</th></tr></thead>
-            <tbody>
-              {recentPosts.map((p: any) => {
-                const v = getViews(p);
-                return (
+        <Card title="Top Posts">
+          {recentPosts.filter((p: any) => { const title = typeof p.title === 'string' ? p.title : p.title?.rendered || ''; return title.toLowerCase() !== 'test'; }).length > 0 ? (
+            <table className="tbl">
+              <thead><tr><th>Title</th><th>Last Modified</th><th>7d Views</th><th>30d Views</th></tr></thead>
+              <tbody>
+                {recentPosts.filter((p: any) => { const title = typeof p.title === 'string' ? p.title : p.title?.rendered || ''; return title.toLowerCase() !== 'test'; }).map((p: any) => {
+                  const v = getViews(p);
+                  return (
+                    <tr key={p.id}>
+                      <td><a href={p.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--arion-sky)', fontSize: 12 }}>{renderTitle(p)}</a></td>
+                      <td>{p.modified ? new Date(p.modified).toLocaleDateString() : '--'}</td>
+                      <td>{String(v.views7d)}</td>
+                      <td>{String(v.views30d)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <EmptyPanel message="No post data available." />
+          )}
+        </Card>
+
+        <Card title="Most Recent Pages">
+          {recentPages.length > 0 ? (
+            <table className="tbl">
+              <thead><tr><th>Title</th><th>Last Modified</th></tr></thead>
+              <tbody>
+                {[...recentPages].sort((a: any, b: any) => new Date(b.modified || 0).getTime() - new Date(a.modified || 0).getTime()).map((p: any) => (
                   <tr key={p.id}>
-                    <td><a href={p.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--arion-sky)', fontSize: 12 }}>{renderTitle(p)}</a></td>
+                    <td style={{ fontSize: 12 }}>{renderTitle(p)}</td>
                     <td>{p.modified ? new Date(p.modified).toLocaleDateString() : '--'}</td>
-                    <td>{String(v.views7d)}</td>
-                    <td>{String(v.views30d)}</td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        ) : (
-          <EmptyPanel message="No post data available." />
-        )}
-      </Card>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <EmptyPanel message="No page data available." />
+          )}
+        </Card>
+
+        <Card title="Most Recent Posts">
+          {recentPosts.filter((p: any) => { const title = typeof p.title === 'string' ? p.title : p.title?.rendered || ''; return title.toLowerCase() !== 'test'; }).length > 0 ? (
+            <table className="tbl">
+              <thead><tr><th>Title</th><th>Last Modified</th></tr></thead>
+              <tbody>
+                {[...recentPosts].filter((p: any) => { const title = typeof p.title === 'string' ? p.title : p.title?.rendered || ''; return title.toLowerCase() !== 'test'; }).sort((a: any, b: any) => new Date(b.modified || 0).getTime() - new Date(a.modified || 0).getTime()).map((p: any) => (
+                  <tr key={p.id}>
+                    <td style={{ fontSize: 12 }}>{renderTitle(p)}</td>
+                    <td>{p.modified ? new Date(p.modified).toLocaleDateString() : '--'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <EmptyPanel message="No post data available." />
+          )}
+        </Card>
+      </div>
 
       <ConsultingUpsell
         headline="Need professional content? IA writes and optimizes pages for your audience and search engines."
