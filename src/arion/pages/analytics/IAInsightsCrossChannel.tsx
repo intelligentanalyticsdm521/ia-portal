@@ -1,102 +1,119 @@
 import { useArionContext } from '../../useArionContext';
-import { useArionData } from '../../useArionData';
-import { StatCard, Card, Loading, ConsultingUpsell } from '../../components/Ui';
+import { useAnalyticsData } from '../../analytics/useAnalyticsData';
+import { formatNumber } from '../../analytics/chartConfig';
+import { ConsultingUpsell } from '../../components/Ui';
 
 export function IAInsightsCrossChannel() {
-  const { selectedSite, activeSiteId, arionApi } = useArionContext();
+  const { selectedSite, activeSiteId } = useArionContext();
+  const { data, loading } = useAnalyticsData(activeSiteId, 30);
 
-  const { data: overview, loading: ovLoading } = useArionData(
-    () => activeSiteId ? arionApi.getOverview(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
-  );
+  if (!selectedSite) {
+    return <div style={{ padding: 24, color: '#5A7A8A' }}>No ARION site selected.</div>;
+  }
 
-  const { data: forms, loading: formsLoading } = useArionData(
-    () => activeSiteId ? arionApi.getForms(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
-  );
+  if (loading) {
+    return <div style={{ padding: 24, color: '#5A7A8A' }}>Loading...</div>;
+  }
 
-  if (ovLoading || formsLoading) return <Loading />;
-  if (!selectedSite) return <div style={{ padding: 24, color: 'var(--text-muted)' }}>No ARION site selected.</div>;
-
-  const ov = overview as Record<string, any> | null;
-  const formsData = forms as any;
-  const formLeads = formsData?.meta?.total ?? (Array.isArray(formsData) ? formsData.length : null) ?? 0;
-  const sessions = ov?.overview?.sessions ?? 0;
-
-  /* Platform values: use actual data when available, 0 when not */
-  const sparkContacts = ov?.overview?.sparkContacts ?? 0;
-  const oliverJobs = ov?.overview?.oliverJobs ?? 0;
-
-  /* Check subscription status to decide whether to show connect hints */
-  const sparkSubscribed = (selectedSite as any)?.sparkSubscribed === true || sparkContacts > 0;
-  const oliverSubscribed = (selectedSite as any)?.oliverSubscribed === true || oliverJobs > 0;
-
-  /* Funnel values (always numeric, 0 when no data) */
-  const funnelSteps = [
-    { label: 'Website Sessions', value: sessions, color: '#3b82f6' },
-    { label: 'Form Leads', value: formLeads, color: '#8b5cf6' },
-    { label: 'SPARK Contacts', value: sparkContacts, color: '#f59e0b' },
-    { label: 'OLIVER Jobs', value: oliverJobs, color: '#22c55e' },
+  /* ── Funnel stages ── */
+  const stages = [
+    { label: 'Website Sessions', value: data?.summary?.totalSessions || 0, color: '#2D9CDB', available: true },
+    { label: 'Form Submissions', value: 0, color: '#EF6C33', available: true },
+    { label: 'SPARK Contacts', value: 0, color: '#E64A28', available: false },
+    { label: 'Quotes Created', value: 0, color: '#FEC82C', available: false },
+    { label: 'Jobs Won', value: 0, color: 'rgba(254,200,44,0.7)', available: false },
   ];
-
-  /* For the funnel, derive widths from the step index */
-  const funnelWidths = [100, 75, 50, 35];
+  const maxValue = Math.max(...stages.map(s => s.value), 1);
 
   return (
     <div>
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>IA Cross-Channel Funnel</h2>
-      <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>Combined view of website traffic, form leads, and platform engagement.</p>
+      {/* ── Header ── */}
+      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 4, color: '#0B1C24' }}>IA Cross-Channel Funnel</h2>
+      <p style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 16 }}>
+        Combined view of website traffic, form leads, and platform engagement.
+      </p>
 
-      {/* Stat Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
-        <StatCard label="Website Sessions" value={sessions} />
-        <StatCard label="Form Leads" value={formLeads} />
-        <StatCard label="SPARK Contacts" value={sparkContacts} />
-        <StatCard label="OLIVER Jobs" value={oliverJobs} />
+      {/* ── Stat Cards ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+        {[
+          { label: 'Website Sessions', value: formatNumber(data?.summary?.totalSessions || 0), accent: '#2D9CDB' },
+          { label: 'Form Submissions', value: '0', accent: '#EF6C33' },
+          { label: 'SPARK Contacts', value: '--', accent: '#E64A28' },
+          { label: 'OLIVER Jobs', value: '--', accent: '#FEC82C' },
+        ].map((card) => (
+          <div
+            key={card.label}
+            style={{
+              background: '#fff',
+              border: '1px solid rgba(45,156,219,0.12)',
+              borderRadius: 10,
+              padding: '14px 16px',
+              borderTop: `3px solid ${card.accent}`,
+            }}
+          >
+            <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 4 }}>{card.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#0B1C24' }}>{card.value}</div>
+          </div>
+        ))}
       </div>
 
-      {/* Funnel Visualization */}
-      <Card title="Cross-Channel Funnel">
-        <div style={{ padding: '8px 0' }}>
-          {funnelSteps.map((step, i) => (
-            <div key={step.label} style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ width: 140, fontSize: 12, fontWeight: 500, flexShrink: 0 }}>
-                {step.label}
-              </div>
-              <div style={{ flex: 1, position: 'relative' }}>
-                <div style={{
-                  width: `${funnelWidths[i]}%`,
-                  height: 28,
-                  background: step.color,
-                  borderRadius: 4,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#fff',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  transition: 'width 0.3s',
-                }}>
-                  {step.value}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-        {/* Only show connect hint for unsubscribed platforms */}
-        {(!sparkSubscribed || !oliverSubscribed) && (
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-            {!sparkSubscribed && !oliverSubscribed
-              ? 'Subscribe to OLIVER and SPARK to populate all funnel stages with live data.'
-              : !sparkSubscribed
-                ? 'Subscribe to SPARK to see contact data in the funnel.'
-                : 'Subscribe to OLIVER to see job data in the funnel.'}
-          </div>
-        )}
-      </Card>
+      {/* ── Revenue Funnel ── */}
+      <div style={{ background: '#fff', border: '1px solid rgba(45,156,219,0.12)', borderRadius: 10, padding: 20, marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 14 }}>Revenue Funnel</div>
 
+        {stages.map((stage, i) => (
+          <div key={stage.label} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+            <div style={{ width: 130, fontSize: 12, fontWeight: 500, color: '#0B1C24', flexShrink: 0 }}>{stage.label}</div>
+            <div style={{ flex: 1, background: '#F2F6F9', borderRadius: 4, height: 28, position: 'relative' }}>
+              {stage.available ? (
+                <div
+                  style={{
+                    width: `${(stage.value / maxValue) * 100}%`,
+                    minWidth: stage.value > 0 ? 4 : 0,
+                    height: '100%',
+                    background: stage.color,
+                    borderRadius: 4,
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    background: 'rgba(0,0,0,0.04)',
+                    borderRadius: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 10,
+                    color: '#999',
+                  }}
+                >
+                  Subscribe to unlock
+                </div>
+              )}
+            </div>
+            <div style={{ width: 50, fontSize: 13, fontWeight: 600, textAlign: 'right' }}>
+              {stage.available ? stage.value : '--'}
+            </div>
+            <div style={{ width: 50, fontSize: 10, color: '#5A7A8A', textAlign: 'right' }}>
+              {i > 0 && stages[i - 1].value > 0 && stage.available
+                ? ((stage.value / stages[i - 1].value) * 100).toFixed(1) + '%'
+                : ''}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Note ── */}
+      <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 16, lineHeight: 1.5 }}>
+        Quotes are created manually in OLIVER unless auto-quote rules are configured.
+        Form submissions automatically create SPARK contacts.
+      </div>
+
+      {/* ── Consulting Upsell ── */}
       <ConsultingUpsell
-        headline="See your full revenue funnel across all IA platforms"
+        headline="Add SPARK and OLIVER to see your full revenue funnel — from web visit to closed job."
         subtext="Cross-channel insights powered by your IA platform data."
         serviceType="Analytics Consulting"
         triggerPage="ia-insights-cross-channel"

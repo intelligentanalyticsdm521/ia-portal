@@ -28,6 +28,8 @@ import { HostingPerformance } from '../arion/pages/hosting/HostingPerformance';
 // Analytics pages
 import { AnalyticsOverview } from '../arion/pages/analytics/AnalyticsOverview';
 import { AnalyticsTraffic } from '../arion/pages/analytics/AnalyticsTraffic';
+import { AnalyticsAudience } from '../arion/pages/analytics/AnalyticsAudience';
+import { AnalyticsContent } from '../arion/pages/analytics/AnalyticsContent';
 import { AnalyticsConversions } from '../arion/pages/analytics/AnalyticsConversions';
 import { AnalyticsPages } from '../arion/pages/analytics/AnalyticsPages';
 import { AnalyticsReports } from '../arion/pages/analytics/AnalyticsReports';
@@ -134,6 +136,8 @@ export function ServiceRouter() {
       case 'arion_hosting_performance': return <ArionPageWrapper><HostingPerformance /></ArionPageWrapper>;
       case 'arion_analytics_overview': return <ArionPageWrapper><AnalyticsOverview /></ArionPageWrapper>;
       case 'arion_analytics_traffic': return <ArionPageWrapper><AnalyticsTraffic /></ArionPageWrapper>;
+      case 'arion_analytics_audience': return <ArionPageWrapper><AnalyticsAudience /></ArionPageWrapper>;
+      case 'arion_analytics_content': return <ArionPageWrapper><AnalyticsContent /></ArionPageWrapper>;
       case 'arion_analytics_conversions': return <ArionPageWrapper><AnalyticsConversions /></ArionPageWrapper>;
       case 'arion_analytics_pages': return <ArionPageWrapper><AnalyticsPages /></ArionPageWrapper>;
       case 'arion_analytics_reports': return <ArionPageWrapper><AnalyticsReports /></ArionPageWrapper>;

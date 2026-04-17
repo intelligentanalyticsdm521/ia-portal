@@ -131,6 +131,8 @@ const ARION_NAV: SubNavConfig = {
       items: [
         { key: "arion_analytics_overview", label: "Overview", route: "/app/services/arion_analytics_overview" },
         { key: "arion_analytics_traffic", label: "Traffic", route: "/app/services/arion_analytics_traffic" },
+        { key: "arion_analytics_audience", label: "Audience", route: "/app/services/arion_analytics_audience" },
+        { key: "arion_analytics_content", label: "Content", route: "/app/services/arion_analytics_content" },
         { key: "arion_analytics_conversions", label: "Conversions", route: "/app/services/arion_analytics_conversions" },
         { key: "arion_analytics_ia_cross_channel", label: "IA: Cross-Channel", route: "/app/services/arion_analytics_ia_cross_channel" },
         { key: "arion_analytics_ia_reports", label: "IA: Insights", route: "/app/services/arion_analytics_ia_reports" },

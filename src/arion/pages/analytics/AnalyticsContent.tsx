@@ -1,0 +1,160 @@
+import React from 'react';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip } from 'chart.js';
+import { Line, Bar, Doughnut } from 'react-chartjs-2';
+import { useArionContext } from '../../useArionContext';
+import { useAnalyticsData } from '../../analytics/useAnalyticsData';
+import { ARION_COLORS, ARION_PALETTE, CHART_FILLS, DELTA_COLORS, formatNumber, formatPct, formatDuration, bounceColor } from '../../analytics/chartConfig';
+import { ConsultingUpsell } from '../../components/Ui';
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip);
+
+export function AnalyticsContent() {
+  const { selectedSite, activeSiteId } = useArionContext();
+  const { data, loading, error } = useAnalyticsData(activeSiteId);
+
+  if (loading) {
+    return <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>Loading content data...</div>;
+  }
+  if (error) {
+    return <div style={{ padding: 32, textAlign: 'center', color: DELTA_COLORS.negative }}>{error}</div>;
+  }
+  if (!selectedSite) {
+    return <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>No ARION site selected.</div>;
+  }
+  if (!data) {
+    return <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>No content data available.</div>;
+  }
+
+  const totalPageviews = data.summary?.totalPageviews ?? 0;
+  const pages = 68; // placeholder
+  const posts = 97; // placeholder
+
+  // Filter out test pages
+  const topPages = (data.topPages ?? []).filter((p: any) => !/(test)/i.test(p.title || ''));
+  const landingPages = data.landingPages ?? [];
+
+  // Build consulting upsell message from top page data
+  const topPage = topPages[0];
+  const topPageViews = topPage?.views ?? topPage?.pageviews ?? 0;
+  const topPageBounce = topPage?.bounceRate ?? topPage?.bounce_rate ?? 0;
+  const bounceDisplay = typeof topPageBounce === 'number' && topPageBounce <= 1
+    ? (topPageBounce * 100).toFixed(0)
+    : typeof topPageBounce === 'number' ? topPageBounce.toFixed(0) : '0';
+
+  return (
+    <div>
+      {/* Stat cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+        <StatCard label="Total Pageviews" value={formatNumber(totalPageviews)} accent={ARION_COLORS.sky} />
+        <StatCard label="Pages" value={String(pages)} accent={ARION_COLORS.orange} />
+        <StatCard label="Posts" value={String(posts)} accent={ARION_COLORS.coreBlueMid} />
+      </div>
+
+      {/* 2-column: Top Pages | Top Landing Pages */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+        {/* Top Pages by Views */}
+        <div style={{ background: 'var(--card-bg, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 10, padding: 20, overflow: 'auto' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Top Pages by Views</div>
+          {topPages.length > 0 ? (
+            <table className="data-table" style={{ width: '100%', fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left' }}>Page</th>
+                  <th style={{ textAlign: 'right' }}>Views</th>
+                  <th style={{ textAlign: 'right' }}>Bounce Rate</th>
+                  <th style={{ textAlign: 'right' }}>Avg Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topPages.map((p: any, i: number) => {
+                  const bounce = p.bounceRate ?? p.bounce_rate ?? 0;
+                  const bounceNum = typeof bounce === 'number' ? bounce : parseFloat(bounce) || 0;
+                  const normalizedBounce = bounceNum > 1 ? bounceNum / 100 : bounceNum;
+                  const duration = p.avgDuration ?? p.avg_duration ?? p.avgSessionDuration ?? 0;
+                  return (
+                    <tr key={i}>
+                      <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.path || p.page || ''}>
+                        {p.path || p.page || '--'}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>{formatNumber(p.views ?? p.pageviews ?? 0)}</td>
+                      <td style={{ textAlign: 'right', color: bounceColor(normalizedBounce) }}>
+                        {formatPct(normalizedBounce)}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>{formatDuration(Number(duration) || 0)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+              No page data available.
+            </div>
+          )}
+        </div>
+
+        {/* Top Landing Pages */}
+        <div style={{ background: 'var(--card-bg, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 10, padding: 20, overflow: 'auto' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Top Landing Pages</div>
+          {landingPages.length > 0 ? (
+            <table className="data-table" style={{ width: '100%', fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left' }}>Page</th>
+                  <th style={{ textAlign: 'right' }}>Sessions</th>
+                  <th style={{ textAlign: 'right' }}>Bounce Rate</th>
+                  <th style={{ textAlign: 'right' }}>Conversions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {landingPages.map((p: any, i: number) => {
+                  const bounce = p.bounceRate ?? p.bounce_rate ?? 0;
+                  const bounceNum = typeof bounce === 'number' ? bounce : parseFloat(bounce) || 0;
+                  const normalizedBounce = bounceNum > 1 ? bounceNum / 100 : bounceNum;
+                  return (
+                    <tr key={i}>
+                      <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.path || p.page || ''}>
+                        {p.path || p.page || '--'}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>{formatNumber(p.sessions ?? 0)}</td>
+                      <td style={{ textAlign: 'right', color: bounceColor(normalizedBounce) }}>
+                        {formatPct(normalizedBounce)}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>{p.conversions ?? 0}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+              No landing page data available.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <ConsultingUpsell
+        headline={`Your top page gets ${formatNumber(topPageViews)} views but has ${bounceDisplay}% bounce rate. IA optimizes landing pages for better engagement.`}
+        subtext="Content performance optimization backed by data."
+        serviceType="Content Optimization"
+        triggerPage="analytics-content"
+      />
+    </div>
+  );
+}
+
+function StatCard({ label, value, accent }: { label: string; value: string; accent: string }) {
+  return (
+    <div style={{
+      background: 'var(--card-bg, #fff)',
+      border: '1px solid var(--border, #e5e7eb)',
+      borderRadius: 10,
+      padding: '14px 18px',
+      borderTop: `3px solid ${accent}`,
+    }}>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700 }}>{value}</div>
+    </div>
+  );
+}

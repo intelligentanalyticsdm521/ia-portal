@@ -1,142 +1,236 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip } from 'chart.js';
+import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import { useArionContext } from '../../useArionContext';
-import { useArionData } from '../../useArionData';
-import { StatCard, Card, TierGate, MiniBarChart, EmptyPanel, Loading, PlatformTabs, ConsultingUpsell } from '../../components/Ui';
-import { AreaTrendChart } from '../../components/Charts';
+import { useAnalyticsData } from '../../analytics/useAnalyticsData';
+import {
+  ARION_COLORS,
+  ARION_PALETTE,
+  CHANNEL_COLORS,
+  CHART_FILLS,
+  PERIOD_OPTIONS,
+  formatDuration,
+  formatPct,
+  formatNumber,
+  bounceColor,
+} from '../../analytics/chartConfig';
+import { Card, ConsultingUpsell } from '../../components/Ui';
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip);
 
 export function AnalyticsOverview() {
-  const { selectedSite, activeSiteId, arionApi } = useArionContext();
-  const tier = selectedSite?.arionTier || 'standard';
-  const [provider, setProvider] = useState<'google' | 'bing'>('google');
-  const [period] = useState('30d');
+  const { selectedSite, activeSiteId } = useArionContext();
+  const tier = (selectedSite?.arionTier || 'standard') as keyof typeof PERIOD_OPTIONS;
+  const [period, setPeriod] = useState(30);
+  const periodOptions = PERIOD_OPTIONS[tier] || PERIOD_OPTIONS.standard;
 
-  const { data: analyticsData, loading: analyticsLoading } = useArionData(
-    () => activeSiteId ? arionApi.getAnalytics(provider, activeSiteId) : Promise.resolve(null),
-    [activeSiteId, provider]
-  );
+  const { data, loading } = useAnalyticsData(activeSiteId, period);
 
-  const { data: overview, loading: ovLoading } = useArionData(
-    () => activeSiteId ? arionApi.getOverview(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
-  );
+  /* ── Not connected ── */
+  if (data?.connected === false) {
+    return (
+      <div style={{ padding: '48px 16px', textAlign: 'center' }}>
+        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: '#0B1C24' }}>Connect Google Analytics</div>
+        <p style={{ fontSize: 13, color: '#5A7A8A', marginBottom: 20, maxWidth: 420, margin: '0 auto 20px' }}>
+          Link your GA4 property to see sessions, users, channel breakdown, and device data.
+        </p>
+        <a
+          href="/app/settings"
+          style={{
+            display: 'inline-block',
+            padding: '8px 24px',
+            fontSize: 13,
+            fontWeight: 500,
+            background: ARION_COLORS.sky,
+            color: '#fff',
+            borderRadius: 6,
+            textDecoration: 'none',
+          }}
+        >
+          Go to Settings
+        </a>
+      </div>
+    );
+  }
 
-  const { data: forms, loading: formsLoading } = useArionData(
-    () => activeSiteId ? arionApi.getForms(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
-  );
+  /* ── Loading ── */
+  if (loading || !data) {
+    return (
+      <div style={{ padding: '48px 16px', textAlign: 'center', color: '#5A7A8A', fontSize: 13 }}>
+        Loading analytics...
+      </div>
+    );
+  }
 
-  if (ovLoading || formsLoading || analyticsLoading) return <Loading />;
-  if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
-
-  const ov = overview as Record<string, any> | null;
-  const ad = analyticsData as Record<string, any> | null;
-  const formsData = forms as any;
-  const formCountApi = ov?.overview?.formSubmissions30d;
-  const formCountForms = formsData?.meta?.total ?? (Array.isArray(formsData) ? formsData.length : null);
-  const formCount = formCountApi ?? formCountForms ?? '--';
-  const sessions = ad?.summary?.sessions ?? ov?.overview?.sessions ?? '--';
-  const sessionsDelta = ad?.summary?.sessionsDelta ?? null;
-  const gscClicks = ad?.summary?.clicks ?? ov?.overview?.clicks ?? '--';
-  const clicksDelta = ad?.summary?.clicksDelta ?? null;
-  const gscImpressions = ad?.summary?.impressions ?? ov?.overview?.impressions ?? '--';
-  const impressionsDelta = ad?.summary?.impressionsDelta ?? null;
-  const trafficValues = ad?.summary?.trafficLast30Days ?? ov?.overview?.trafficLast30Days;
-
-  const ga4Connected = sessions !== '--';
-
-  const fmtDelta = (d: number | null) => d == null ? '' : d >= 0 ? ` (+${d}%)` : ` (${d}%)`;
+  const summary = data.summary ?? { totalSessions: 0, totalUsers: 0, bounceRate: 0, avgSessionDuration: 0 };
+  const sessionsByDay = data.sessionsByDay ?? [];
+  const channelBreakdown = data.channelBreakdown ?? [];
+  const deviceSplit = data.deviceSplit ?? { desktop: 0, mobile: 0, tablet: 0 };
 
   return (
-    <TierGate currentTier={tier} requiredTier="standard" featureName="Analytics — sessions, conversions, traffic insights">
-      {/* Header row with platform tabs and period selector */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <PlatformTabs
-          tabs={[{ key: 'google', label: 'Google' }, { key: 'bing', label: 'Bing' }]}
-          active={provider}
-          onChange={(t: string) => setProvider(t as 'google' | 'bing')}
-        />
+    <>
+      {/* ── Period selector (top-right) ── */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
         <select
           value={period}
-          disabled
+          onChange={e => setPeriod(Number(e.target.value))}
           style={{
             padding: '6px 12px',
             borderRadius: 6,
-            border: '1px solid var(--border, #d1d5db)',
+            border: '1px solid rgba(45,156,219,0.18)',
             fontSize: 13,
-            background: 'var(--card-bg, #fff)',
-            color: 'var(--text, #111)',
-            cursor: 'default',
+            background: '#fff',
+            color: '#0B1C24',
+            cursor: 'pointer',
           }}
-          title="More date ranges available on Pro tier"
         >
-          <option value="30d">Last 30 Days</option>
-          <option value="7d" disabled>Last 7 Days (Pro)</option>
-          <option value="90d" disabled>Last 90 Days (Pro)</option>
-          <option value="12m" disabled>Last 12 Months (Pro)</option>
+          {periodOptions.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
         </select>
       </div>
 
-      {/* Website Sessions chart or GA4 connect prompt */}
-      {ga4Connected ? (
-        <Card title={`Website Sessions — Last 30 Days${fmtDelta(sessionsDelta)}`}>
-          {Array.isArray(trafficValues) && trafficValues.length > 0 ? (
-            <AreaTrendChart
-              data={trafficValues.map((v: number, i: number) => ({ label: `Day ${i + 1}`, sessions: v }))}
-              dataKey="sessions"
-              xKey="label"
-              color="#2D9CDB"
-              height={220}
-            />
-          ) : (
-            <MiniBarChart values={Array.isArray(trafficValues) ? trafficValues : []} height={56} />
-          )}
-          <div style={{ textAlign: 'right', fontSize: 22, fontWeight: 700, marginTop: 8 }}>{sessions}</div>
-        </Card>
-      ) : (
-        <Card title="Website Sessions">
-          <div style={{ padding: '32px 16px', textAlign: 'center' }}>
-            <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 8 }}>Connect Google Analytics</div>
-            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
-              Connect your GA4 property to see website session data here.
-            </p>
-            <a href="/app/settings" className="btn" style={{ display: 'inline-block', padding: '8px 20px', fontSize: 13 }}>
-              Go to Settings
-            </a>
+      {/* ── 4 Stat cards ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
+        {[
+          { label: 'Sessions', value: formatNumber(summary.totalSessions), accent: ARION_COLORS.sky },
+          { label: 'Users', value: formatNumber(summary.totalUsers), accent: ARION_COLORS.orange },
+          { label: 'Bounce Rate', value: formatPct(summary.bounceRate), accent: bounceColor(summary.bounceRate) },
+          { label: 'Avg Session Duration', value: formatDuration(summary.avgSessionDuration), accent: ARION_COLORS.coreBlueMid },
+        ].map(card => (
+          <div
+            key={card.label}
+            style={{
+              background: '#fff',
+              border: '1px solid rgba(45,156,219,0.12)',
+              borderRadius: 8,
+              padding: '14px 16px',
+              borderLeft: `3px solid ${card.accent}`,
+            }}
+          >
+            <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.4 }}>{card.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 600, color: '#0B1C24', marginTop: 4 }}>{card.value}</div>
           </div>
-        </Card>
-      )}
-
-      {/* Compact stat summary cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 12 }}>
-        <div style={{ background: 'var(--card-bg, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, padding: '10px 14px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Form Submissions (30d)</div>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>{formCount}</div>
-        </div>
-        <div style={{ background: 'var(--card-bg, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, padding: '10px 14px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Search Clicks (30d){fmtDelta(clicksDelta)}</div>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>{gscClicks}</div>
-        </div>
-        <div style={{ background: 'var(--card-bg, #fff)', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, padding: '10px 14px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Impressions (30d){fmtDelta(impressionsDelta)}</div>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>{gscImpressions}</div>
-        </div>
+        ))}
       </div>
 
-      {/* Channel Breakdown placeholder */}
-      <Card title="Channel Breakdown">
-        <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-          {ga4Connected
-            ? 'Channel breakdown data is loading from your analytics provider.'
-            : 'Connect GA4 to see channel data'}
+      {/* ── Sessions line chart ── */}
+      <Card title="Sessions">
+        {/* Custom legend */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <span style={{ display: 'inline-block', width: 12, height: 3, borderRadius: 2, background: ARION_COLORS.sky }} />
+          <span style={{ fontSize: 11, color: '#5A7A8A' }}>Sessions</span>
         </div>
+        <Line
+          data={{
+            labels: sessionsByDay.map((d: any) => d.date),
+            datasets: [{
+              label: 'Sessions',
+              data: sessionsByDay.map((d: any) => d.sessions),
+              borderColor: ARION_COLORS.sky,
+              backgroundColor: CHART_FILLS.skyLight,
+              borderWidth: 2,
+              fill: true,
+              tension: 0.3,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+            }],
+          }}
+          options={{
+            responsive: true,
+            plugins: { legend: { display: false }, tooltip: { mode: 'index' as const, intersect: false } },
+            scales: {
+              x: { ticks: { maxTicksLimit: 8, font: { size: 10 } }, grid: { display: false } },
+              y: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
+            },
+          }}
+        />
       </Card>
 
+      {/* ── 2-column: Channel bar + Device doughnut ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 12, marginTop: 12 }}>
+        {/* Channel horizontal bar */}
+        <Card title="Channel Breakdown">
+          {/* Custom legend */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 8 }}>
+            {channelBreakdown.map((c: any, i: number) => (
+              <div key={c.channel} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{
+                  display: 'inline-block',
+                  width: 10,
+                  height: 10,
+                  borderRadius: 2,
+                  background: CHANNEL_COLORS[c.channel] || ARION_PALETTE[i % 5],
+                }} />
+                <span style={{ fontSize: 11, color: '#5A7A8A' }}>{c.channel}</span>
+              </div>
+            ))}
+          </div>
+          <Bar
+            data={{
+              labels: channelBreakdown.map((c: any) => c.channel),
+              datasets: [{
+                data: channelBreakdown.map((c: any) => c.sessions),
+                backgroundColor: channelBreakdown.map((c: any, i: number) => CHANNEL_COLORS[c.channel] || ARION_PALETTE[i % 5]),
+                borderRadius: 4,
+                barThickness: 20,
+              }],
+            }}
+            options={{
+              indexAxis: 'y' as const,
+              responsive: true,
+              plugins: { legend: { display: false } },
+              scales: {
+                x: { beginAtZero: true, ticks: { font: { size: 10 } } },
+                y: { ticks: { font: { size: 11 } } },
+              },
+            }}
+          />
+        </Card>
+
+        {/* Device doughnut */}
+        <Card title="Devices">
+          <div style={{ position: 'relative', maxWidth: 220, margin: '0 auto' }}>
+            <Doughnut
+              data={{
+                labels: ['Desktop', 'Mobile', 'Tablet'],
+                datasets: [{
+                  data: [deviceSplit.desktop, deviceSplit.mobile, deviceSplit.tablet],
+                  backgroundColor: [ARION_COLORS.sky, ARION_COLORS.orange, ARION_COLORS.coreBlueMid],
+                  borderWidth: 0,
+                }],
+              }}
+              options={{
+                responsive: true,
+                cutout: '68%',
+                plugins: { legend: { display: false } },
+              }}
+            />
+          </div>
+          {/* Custom legend */}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 14, marginTop: 12 }}>
+            {[
+              { label: 'Desktop', color: ARION_COLORS.sky, value: deviceSplit.desktop },
+              { label: 'Mobile', color: ARION_COLORS.orange, value: deviceSplit.mobile },
+              { label: 'Tablet', color: ARION_COLORS.coreBlueMid, value: deviceSplit.tablet },
+            ].map(d => (
+              <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: d.color }} />
+                <span style={{ fontSize: 11, color: '#5A7A8A' }}>{d.label}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#0B1C24' }}>{formatPct(d.value / 100)}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      {/* ── Consulting upsell ── */}
       <ConsultingUpsell
         headline="Want IA to interpret this data and build a growth plan? We turn analytics into actions."
         subtext="Data-driven growth strategies from our analytics team."
         serviceType="Analytics Consulting"
         triggerPage="analytics-overview"
       />
-    </TierGate>
+    </>
   );
 }

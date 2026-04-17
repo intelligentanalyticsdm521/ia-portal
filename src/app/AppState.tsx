@@ -64,6 +64,8 @@ function buildEnabledServices(active: SelectTenantResponse | null): Set<string> 
     keys.add('arion_hosting_performance');
     keys.add('arion_analytics_overview');
     keys.add('arion_analytics_traffic');
+    keys.add('arion_analytics_audience');
+    keys.add('arion_analytics_content');
     keys.add('arion_analytics_conversions');
     keys.add('arion_analytics_pages');
     keys.add('arion_analytics_reports');
