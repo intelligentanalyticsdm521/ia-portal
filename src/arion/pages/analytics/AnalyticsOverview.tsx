@@ -23,7 +23,7 @@ export function AnalyticsOverview() {
   const { selectedSite, activeSiteId } = useArionContext();
   const tier = (selectedSite?.arionTier || 'standard') as keyof typeof PERIOD_OPTIONS;
   const [period, setPeriod] = useState(30);
-  const [compare, setCompare] = useState<'none' | 'previous_period'>('none');
+  const [compare, setCompare] = useState<'none' | 'previous_period'>('previous_period');
   const periodOptions = PERIOD_OPTIONS[tier] || PERIOD_OPTIONS.standard;
   const canCompare = tier === 'pro' || tier === 'business';
 
@@ -171,10 +171,14 @@ export function AnalyticsOverview() {
                   pointHoverRadius: 4,
                 },
                 ...(compare !== 'none' && data.comparison?.sessionsByDay ? [{
-                  label: 'Previous period',
-                  data: data.comparison.sessionsByDay.map((d: any) => d.sessions),
-                  borderColor: '#5A7A8A',
-                  borderDash: [5, 3],
+                  label: 'Previous Period',
+                  data: (() => {
+                    const comp = data.comparison.sessionsByDay.map((d: any) => d.sessions);
+                    const pad = sessionsByDay.length - comp.length;
+                    return pad > 0 ? [...Array(pad).fill(null), ...comp] : comp;
+                  })(),
+                  borderColor: '#EF6C33',
+                  borderDash: [4, 3],
                   borderWidth: 1.5,
                   fill: false,
                   tension: 0.3,
@@ -201,20 +205,28 @@ export function AnalyticsOverview() {
       <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 10, marginTop: 10, maxHeight: 220 }}>
         {/* Channel horizontal bar */}
         <Card title="Channel Breakdown">
-          {/* Custom legend */}
+          {/* Custom legend with comparison deltas */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
-            {channelBreakdown.map((c: any, i: number) => (
-              <div key={c.channel} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                <span style={{
-                  display: 'inline-block',
-                  width: 8,
-                  height: 8,
-                  borderRadius: 2,
-                  background: CHANNEL_COLORS[c.channel] || ARION_PALETTE[i % 5],
-                }} />
-                <span style={{ fontSize: 10, color: '#5A7A8A' }}>{c.channel}</span>
-              </div>
-            ))}
+            {channelBreakdown.map((c: any, i: number) => {
+              const prevChannel = compare !== 'none' && data.comparison?.channelBreakdown
+                ? data.comparison.channelBreakdown.find((p: any) => p.channel === c.channel) : null;
+              const delta = prevChannel ? formatDelta(c.sessions, prevChannel.sessions) : null;
+              return (
+                <div key={c.channel} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <span style={{
+                    display: 'inline-block',
+                    width: 8,
+                    height: 8,
+                    borderRadius: 2,
+                    background: CHANNEL_COLORS[c.channel] || ARION_PALETTE[i % 5],
+                  }} />
+                  <span style={{ fontSize: 10, color: '#5A7A8A' }}>
+                    {c.channel}: {formatNumber(c.sessions)}
+                    {delta && <span style={{ color: delta.color, marginLeft: 3, fontWeight: 500 }}>{delta.text}</span>}
+                  </span>
+                </div>
+              );
+            })}
           </div>
           <div style={{ maxHeight: 150 }}>
             <Bar
@@ -260,19 +272,30 @@ export function AnalyticsOverview() {
               }}
             />
           </div>
-          {/* Custom legend */}
+          {/* Custom legend with comparison deltas */}
           <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 6 }}>
             {[
-              { label: 'Desktop', color: ARION_COLORS.sky, value: deviceSplit.desktop },
-              { label: 'Mobile', color: ARION_COLORS.orange, value: deviceSplit.mobile },
-              { label: 'Tablet', color: ARION_COLORS.coreBlueMid, value: deviceSplit.tablet },
-            ].map(d => (
-              <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: d.color }} />
-                <span style={{ fontSize: 10, color: '#5A7A8A' }}>{d.label}</span>
-                <span style={{ fontSize: 10, fontWeight: 600, color: '#0B1C24' }}>{formatPct(d.value / 100)}</span>
-              </div>
-            ))}
+              { label: 'Desktop', color: ARION_COLORS.sky, value: deviceSplit.desktop, key: 'desktop' },
+              { label: 'Mobile', color: ARION_COLORS.orange, value: deviceSplit.mobile, key: 'mobile' },
+              { label: 'Tablet', color: ARION_COLORS.coreBlueMid, value: deviceSplit.tablet, key: 'tablet' },
+            ].map(d => {
+              const prevDevice = compare !== 'none' && data.comparison?.deviceSplit ? data.comparison.deviceSplit[d.key] : null;
+              const currentPct = (d.value / 100).toFixed(1);
+              const prevPct = prevDevice != null ? (prevDevice / 100).toFixed(1) : null;
+              const ppDiff = prevPct != null ? (d.value / 100 - prevDevice / 100).toFixed(1) : null;
+              return (
+                <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: d.color }} />
+                  <span style={{ fontSize: 10, color: '#5A7A8A' }}>{d.label}</span>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: '#0B1C24' }}>{formatPct(d.value / 100)}</span>
+                  {ppDiff != null && (
+                    <span style={{ fontSize: 9, color: Number(ppDiff) >= 0 ? '#1D9E75' : '#D85A30' }}>
+                      ({Number(ppDiff) >= 0 ? '↑' : '↓'} {Math.abs(Number(ppDiff))}pp)
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </Card>
       </div>

@@ -1,16 +1,22 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip } from 'chart.js';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import { useArionContext } from '../../useArionContext';
 import { useAnalyticsData } from '../../analytics/useAnalyticsData';
-import { ARION_COLORS, ARION_PALETTE, CHART_FILLS, DELTA_COLORS, formatNumber, formatPct, formatDuration, bounceColor } from '../../analytics/chartConfig';
+import { ARION_COLORS, ARION_PALETTE, CHART_FILLS, DELTA_COLORS, PERIOD_OPTIONS, formatNumber, formatPct, formatDuration, bounceColor } from '../../analytics/chartConfig';
 import { ConsultingUpsell } from '../../components/Ui';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip);
 
 export function AnalyticsConversions() {
   const { selectedSite, activeSiteId } = useArionContext();
-  const { data, loading, error } = useAnalyticsData(activeSiteId);
+  const tier = (selectedSite?.arionTier || 'standard') as keyof typeof PERIOD_OPTIONS;
+  const [period, setPeriod] = useState(30);
+  const [compare, setCompare] = useState<'none' | 'previous_period'>('previous_period');
+  const periodOptions = PERIOD_OPTIONS[tier] || PERIOD_OPTIONS.standard;
+  const canCompare = tier === 'pro' || tier === 'business';
+
+  const { data, loading, error } = useAnalyticsData(activeSiteId, period, compare);
 
   if (loading) {
     return <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>Loading conversion data...</div>;
@@ -34,6 +40,44 @@ export function AnalyticsConversions() {
 
   return (
     <div>
+      {/* Period selector + comparison toggle */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <select
+          value={period}
+          onChange={e => setPeriod(Number(e.target.value))}
+          style={{
+            padding: '5px 10px',
+            borderRadius: 6,
+            border: '1px solid rgba(45,156,219,0.18)',
+            fontSize: 12,
+            background: '#fff',
+            color: '#0B1C24',
+            cursor: 'pointer',
+          }}
+        >
+          {periodOptions.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        {canCompare && (
+          <button
+            onClick={() => setCompare(c => c === 'none' ? 'previous_period' : 'none')}
+            style={{
+              padding: '5px 10px',
+              borderRadius: 6,
+              border: `1px solid ${compare !== 'none' ? ARION_COLORS.sky : 'rgba(45,156,219,0.18)'}`,
+              background: compare !== 'none' ? 'rgba(45,156,219,0.08)' : '#fff',
+              fontSize: 12,
+              color: compare !== 'none' ? ARION_COLORS.sky : '#5A7A8A',
+              cursor: 'pointer',
+              fontWeight: compare !== 'none' ? 600 : 400,
+            }}
+          >
+            {compare !== 'none' ? 'Comparing' : 'Compare'}
+          </button>
+        )}
+      </div>
+
       {/* Stat cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
         <StatCard label="Form Submissions" value="0" accent={ARION_COLORS.sky} />

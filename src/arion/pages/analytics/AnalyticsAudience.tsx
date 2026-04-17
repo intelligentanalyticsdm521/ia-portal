@@ -3,7 +3,7 @@ import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import { useArionContext } from '../../useArionContext';
 import { useAnalyticsData } from '../../analytics/useAnalyticsData';
-import { ARION_COLORS, ARION_PALETTE, CHART_FILLS, DELTA_COLORS, PERIOD_OPTIONS, formatNumber, formatPct, formatDuration, bounceColor } from '../../analytics/chartConfig';
+import { ARION_COLORS, ARION_PALETTE, CHART_FILLS, DELTA_COLORS, PERIOD_OPTIONS, formatNumber, formatPct, formatDuration, bounceColor, formatDelta } from '../../analytics/chartConfig';
 import { ConsultingUpsell } from '../../components/Ui';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip);
@@ -12,7 +12,7 @@ export function AnalyticsAudience() {
   const { selectedSite, activeSiteId } = useArionContext();
   const tier = (selectedSite?.arionTier || 'standard') as keyof typeof PERIOD_OPTIONS;
   const [period, setPeriod] = useState(30);
-  const [compare, setCompare] = useState<'none' | 'previous_period'>('none');
+  const [compare, setCompare] = useState<'none' | 'previous_period'>('previous_period');
   const periodOptions = PERIOD_OPTIONS[tier] || PERIOD_OPTIONS.standard;
   const canCompare = tier === 'pro' || tier === 'business';
 
@@ -158,14 +158,43 @@ export function AnalyticsAudience() {
               />
             </div>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#2D9CDB' }} />
-                <span style={{ fontSize: 11 }}>New: {formatNumber(newUsers)} ({newPct}%)</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#EF6C33' }} />
-                <span style={{ fontSize: 11 }}>Returning: {formatNumber(returningUsers)} ({retPct}%)</span>
-              </div>
+              {(() => {
+                const compNew = compare !== 'none' && data.comparison?.newVsReturning
+                  ? data.comparison.newVsReturning.find((r: any) => r.type === 'new' || r.type === 'New') : null;
+                const compRet = compare !== 'none' && data.comparison?.newVsReturning
+                  ? data.comparison.newVsReturning.find((r: any) => r.type === 'returning' || r.type === 'Returning') : null;
+                const compTotal = (compNew?.users ?? 0) + (compRet?.users ?? 0);
+                const prevNewPct = compTotal > 0 ? ((compNew?.users ?? 0) / compTotal * 100).toFixed(1) : null;
+                const prevRetPct = compTotal > 0 ? ((compRet?.users ?? 0) / compTotal * 100).toFixed(1) : null;
+                const newPpDiff = prevNewPct != null ? (Number(newPct) - Number(prevNewPct)).toFixed(1) : null;
+                const retPpDiff = prevRetPct != null ? (Number(retPct) - Number(prevRetPct)).toFixed(1) : null;
+                return (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#2D9CDB' }} />
+                      <span style={{ fontSize: 11 }}>
+                        New: {formatNumber(newUsers)} ({newPct}%)
+                        {newPpDiff != null && (
+                          <span style={{ marginLeft: 4, fontSize: 10, color: Number(newPpDiff) >= 0 ? '#1D9E75' : '#D85A30' }}>
+                            (was {prevNewPct}% {Number(newPpDiff) >= 0 ? '↑' : '↓'} {Math.abs(Number(newPpDiff))}pp)
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#EF6C33' }} />
+                      <span style={{ fontSize: 11 }}>
+                        Returning: {formatNumber(returningUsers)} ({retPct}%)
+                        {retPpDiff != null && (
+                          <span style={{ marginLeft: 4, fontSize: 10, color: Number(retPpDiff) >= 0 ? '#1D9E75' : '#D85A30' }}>
+                            (was {prevRetPct}% {Number(retPpDiff) >= 0 ? '↑' : '↓'} {Math.abs(Number(retPpDiff))}pp)
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>

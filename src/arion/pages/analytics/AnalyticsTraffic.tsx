@@ -10,6 +10,7 @@ import {
   formatPct,
   formatNumber,
   bounceColor,
+  formatDelta,
 } from '../../analytics/chartConfig';
 import { Card, ConsultingUpsell } from '../../components/Ui';
 
@@ -19,9 +20,11 @@ export function AnalyticsTraffic() {
   const { selectedSite, activeSiteId } = useArionContext();
   const tier = (selectedSite?.arionTier || 'standard') as keyof typeof PERIOD_OPTIONS;
   const [period, setPeriod] = useState(30);
+  const [compare, setCompare] = useState<'none' | 'previous_period'>('previous_period');
   const periodOptions = PERIOD_OPTIONS[tier] || PERIOD_OPTIONS.standard;
+  const canCompare = tier === 'pro' || tier === 'business';
 
-  const { data, loading } = useAnalyticsData(activeSiteId, period);
+  const { data, loading } = useAnalyticsData(activeSiteId, period, compare);
 
   /* ── Not connected ── */
   if (data?.connected === false) {
@@ -84,8 +87,8 @@ export function AnalyticsTraffic() {
 
   return (
     <>
-      {/* ── Period selector ── */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+      {/* ── Period selector + comparison toggle ── */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <select
           value={period}
           onChange={e => setPeriod(Number(e.target.value))}
@@ -103,30 +106,54 @@ export function AnalyticsTraffic() {
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
+        {canCompare && (
+          <button
+            onClick={() => setCompare(c => c === 'none' ? 'previous_period' : 'none')}
+            style={{
+              padding: '5px 10px',
+              borderRadius: 6,
+              border: `1px solid ${compare !== 'none' ? ARION_COLORS.sky : 'rgba(45,156,219,0.18)'}`,
+              background: compare !== 'none' ? 'rgba(45,156,219,0.08)' : '#fff',
+              fontSize: 12,
+              color: compare !== 'none' ? ARION_COLORS.sky : '#5A7A8A',
+              cursor: 'pointer',
+              fontWeight: compare !== 'none' ? 600 : 400,
+            }}
+          >
+            {compare !== 'none' ? 'Comparing' : 'Compare'}
+          </button>
+        )}
       </div>
 
       {/* ── 4 Stat cards ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
         {[
-          { label: 'Sessions', value: formatNumber(summary.totalSessions), accent: ARION_COLORS.sky },
-          { label: 'Users', value: formatNumber(summary.totalUsers), accent: ARION_COLORS.orange },
-          { label: 'Pages / Session', value: (summary.pagesPerSession ?? 0).toFixed(1), accent: ARION_COLORS.coreBlueMid },
-          { label: 'Engagement Rate', value: formatPct(summary.engagementRate ?? 0), accent: ARION_COLORS.gold },
-        ].map(card => (
-          <div
-            key={card.label}
-            style={{
-              background: '#fff',
-              border: '1px solid rgba(45,156,219,0.12)',
-              borderRadius: 8,
-              padding: '14px 16px',
-              borderLeft: `3px solid ${card.accent}`,
-            }}
-          >
-            <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.4 }}>{card.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: '#0B1C24', marginTop: 4 }}>{card.value}</div>
-          </div>
-        ))}
+          { label: 'Sessions', value: formatNumber(summary.totalSessions), accent: ARION_COLORS.sky, key: 'totalSessions' },
+          { label: 'Users', value: formatNumber(summary.totalUsers), accent: ARION_COLORS.orange, key: 'totalUsers' },
+          { label: 'Pages / Session', value: (summary.pagesPerSession ?? 0).toFixed(1), accent: ARION_COLORS.coreBlueMid, key: 'pagesPerSession' },
+          { label: 'Engagement Rate', value: formatPct(summary.engagementRate ?? 0), accent: ARION_COLORS.gold, key: 'engagementRate' },
+        ].map(card => {
+          const compSummary = data.comparison?.summary;
+          const delta = compare !== 'none' && compSummary ? formatDelta(summary[card.key], compSummary[card.key]) : null;
+          return (
+            <div
+              key={card.label}
+              style={{
+                background: '#fff',
+                border: '1px solid rgba(45,156,219,0.12)',
+                borderRadius: 8,
+                padding: '14px 16px',
+                borderLeft: `3px solid ${card.accent}`,
+              }}
+            >
+              <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.4 }}>{card.label}</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
+                <span style={{ fontSize: 22, fontWeight: 600, color: '#0B1C24' }}>{card.value}</span>
+                {delta && <span style={{ fontSize: 11, fontWeight: 500, color: delta.color }}>{delta.text}</span>}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* ── 2-column: Traffic Sources table + Device doughnut ── */}
@@ -139,6 +166,12 @@ export function AnalyticsTraffic() {
                 <tr>
                   <th style={thStyle}>Source / Medium</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Sessions</th>
+                  {compare !== 'none' && data.comparison?.trafficSources && (
+                    <>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Prev</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Change</th>
+                    </>
+                  )}
                   <th style={{ ...thStyle, textAlign: 'right' }}>Bounce Rate</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Avg Duration</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>% of Total</th>
@@ -147,10 +180,24 @@ export function AnalyticsTraffic() {
               <tbody>
                 {trafficSources.length > 0 ? trafficSources.map((s: any, i: number) => {
                   const pctTotal = totalSessions > 0 ? (s.sessions / totalSessions) : 0;
+                  const sourceName = s.sourceMedium ?? s.source ?? '--';
+                  const prevSource = compare !== 'none' && data.comparison?.trafficSources
+                    ? data.comparison.trafficSources.find((p: any) => (p.sourceMedium ?? p.source ?? '--') === sourceName) : null;
+                  const delta = prevSource ? formatDelta(s.sessions ?? 0, prevSource.sessions ?? 0) : null;
                   return (
                     <tr key={i}>
-                      <td style={tdStyle}>{s.sourceMedium ?? s.source ?? '--'}</td>
+                      <td style={tdStyle}>{sourceName}</td>
                       <td style={{ ...tdStyle, textAlign: 'right' }}>{formatNumber(s.sessions ?? 0)}</td>
+                      {compare !== 'none' && data.comparison?.trafficSources && (
+                        <>
+                          <td style={{ ...tdStyle, textAlign: 'right', color: '#5A7A8A' }}>
+                            {prevSource ? formatNumber(prevSource.sessions ?? 0) : '--'}
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right', color: delta?.color ?? '#5A7A8A', fontWeight: 500 }}>
+                            {delta?.text ?? '--'}
+                          </td>
+                        </>
+                      )}
                       <td style={{ ...tdStyle, textAlign: 'right', color: bounceColor(s.bounceRate ?? 0) }}>
                         {formatPct(s.bounceRate ?? 0)}
                       </td>
@@ -160,7 +207,7 @@ export function AnalyticsTraffic() {
                   );
                 }) : (
                   <tr>
-                    <td colSpan={5} style={{ ...tdStyle, textAlign: 'center', color: '#5A7A8A' }}>No traffic source data available</td>
+                    <td colSpan={compare !== 'none' && data.comparison?.trafficSources ? 7 : 5} style={{ ...tdStyle, textAlign: 'center', color: '#5A7A8A' }}>No traffic source data available</td>
                   </tr>
                 )}
               </tbody>
