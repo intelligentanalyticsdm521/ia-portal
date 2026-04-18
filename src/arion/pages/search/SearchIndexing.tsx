@@ -342,26 +342,31 @@ export function SearchIndexing() {
         )}
       </Card>
 
-      {/* Fast Indexing — single-button enablement */}
+      {/* Fast Indexing — single-button enablement.
+          NOTE (2026-04-18): feature is temporarily flagged as "Coming soon" while the IA
+          Plugin is rebuilt to support cache-safe token reads and bypass Hostinger's
+          Application-Password blocks. The API + plugin routes are in place — only the
+          auth path between ARION API and the plugin is blocked. Removing the disabled
+          gate after the plugin session will re-enable the button. */}
       <Card title="Fast Indexing">
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 260 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: fastActive ? '#1D9E75' : hasKey ? '#D4A800' : '#D85A30' }} />
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: fastActive ? '#1D9E75' : '#D4A800' }} />
               <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24' }}>
-                {fastActive ? 'Active' : hasKey ? 'Setup in progress' : 'Not enabled'}
+                {fastActive ? 'Active' : 'Coming soon'}
               </div>
             </div>
             <div style={{ fontSize: 11, color: '#5A7A8A', lineHeight: 1.6 }}>
               {fastActive
                 ? 'Whenever you click Request re-indexing on a URL, it will also notify Bing, Yandex, Seznam, and Naver instantly via the IndexNow protocol.'
-                : 'Tell Bing, Yandex, Seznam, and Naver about new or changed pages instantly instead of waiting for their next crawl. No setup required on your end — we handle the site configuration automatically.'}
+                : 'Tell Bing, Yandex, Seznam, and Naver about new or changed pages instantly instead of waiting for their next crawl. This feature is finishing integration with the IA Plugin and will enable in the next plugin release.'}
             </div>
           </div>
           <div style={{ flexShrink: 0, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {!hasKey && !indexNowLoading && (
-              <button className="abtn abtn-sky" onClick={handleEnableFastIndexing} disabled={indexNowAction === 'enable'}>
-                {indexNowAction === 'enable' ? 'Enabling...' : 'Enable Fast Indexing'}
+              <button className="abtn" disabled title="Enabling in the next IA Plugin release" style={{ opacity: 0.6, cursor: 'not-allowed' }}>
+                Enable Fast Indexing
               </button>
             )}
             {hasKey && !fastActive && (
