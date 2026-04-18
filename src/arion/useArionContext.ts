@@ -41,6 +41,11 @@ import {
   getBusinessServices as portalGetBusinessServices,
   getAnalyticsReport as portalGetAnalyticsReport,
   generateSitemap as portalGenerateSitemap,
+  getIndexNowStatus as portalGetIndexNowStatus,
+  generateIndexNowKey as portalGenerateIndexNowKey,
+  verifyIndexNowKey as portalVerifyIndexNowKey,
+  deleteIndexNowKey as portalDeleteIndexNowKey,
+  getIndexNowSubmissions as portalGetIndexNowSubmissions,
   createDnsRecords as portalCreateDnsRecords,
   deleteDnsRecords as portalDeleteDnsRecords,
   runPageSpeed as portalRunPageSpeed,
@@ -307,6 +312,27 @@ export function useArionContext() {
       async getCoreWebVitals(siteId: string) {
         const b = await base();
         return portalGetCoreWebVitals({ ...b, siteId });
+      },
+
+      async getIndexNowStatus(siteId: string) {
+        const b = await base();
+        return portalGetIndexNowStatus({ ...b, siteId });
+      },
+      async generateIndexNowKey(siteId: string) {
+        const b = await base();
+        return portalGenerateIndexNowKey({ ...b, siteId });
+      },
+      async verifyIndexNowKey(siteId: string) {
+        const b = await base();
+        return portalVerifyIndexNowKey({ ...b, siteId });
+      },
+      async deleteIndexNowKey(siteId: string) {
+        const b = await base();
+        return portalDeleteIndexNowKey({ ...b, siteId });
+      },
+      async getIndexNowSubmissions(siteId: string, limit?: number) {
+        const b = await base();
+        return portalGetIndexNowSubmissions({ ...b, siteId, limit });
       },
 
       async getBusinessOverview(provider: string, siteId: string) {

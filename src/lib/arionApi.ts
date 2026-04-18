@@ -474,6 +474,28 @@ export async function generateSitemap(params: { baseUrl: string; bearerToken: st
   return requestJson<any>({ ...params, method: 'POST', path: '/arion/search/generate-sitemap', body: { siteId: params.siteId } });
 }
 
+// IndexNow key management
+export async function getIndexNowStatus(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...params, path: `/arion/search/indexnow?siteId=${encodeURIComponent(params.siteId)}` });
+}
+
+export async function generateIndexNowKey(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...params, method: 'POST', path: `/arion/search/indexnow/generate-key?siteId=${encodeURIComponent(params.siteId)}`, body: {} });
+}
+
+export async function verifyIndexNowKey(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...params, method: 'POST', path: `/arion/search/indexnow/verify?siteId=${encodeURIComponent(params.siteId)}`, body: {} });
+}
+
+export async function deleteIndexNowKey(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...params, method: 'DELETE', path: `/arion/search/indexnow?siteId=${encodeURIComponent(params.siteId)}` });
+}
+
+export async function getIndexNowSubmissions(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; limit?: number }) {
+  const qs = `?siteId=${encodeURIComponent(params.siteId)}&limit=${params.limit || 20}`;
+  return requestJson<any>({ ...params, path: `/arion/search/indexnow/submissions${qs}` });
+}
+
 export async function createDnsRecords(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; records: any[] }) {
   return requestJson<any>({ ...params, method: 'POST', path: `/arion/hosting/dns?siteId=${encodeURIComponent(params.siteId)}`, body: { records: params.records } });
 }
