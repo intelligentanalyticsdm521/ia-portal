@@ -201,11 +201,12 @@ export function SeoRankings() {
                 <Th label="CPC" k="cpc" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
                 <Th label="Competition" k="competition" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} align="right" />
                 <th style={{ textAlign: 'center', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase', padding: '8px 6px' }}>Engines</th>
+                <th style={{ textAlign: 'right', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase', padding: '8px 6px' }}></th>
               </tr>
             </thead>
             <tbody>
               {displayed.length === 0 ? (
-                <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--color-text-tertiary, #5A7A8A)', padding: 20 }}>No keywords match the current filters.</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--color-text-tertiary, #5A7A8A)', padding: 20 }}>No keywords match the current filters.</td></tr>
               ) : displayed.map((k) => {
                 const change = Number(k.positionChange || 0);
                 const changeColor = change > 0 ? '#1D9E75' : change < 0 ? '#D85A30' : 'var(--color-text-tertiary, #5A7A8A)';
@@ -242,6 +243,23 @@ export function SeoRankings() {
                         <span style={{ color: '#1D9E75' }}>●</span> {k.rankingEngineCount} / {k.engineCount}
                         {notRankingCount > 0 && <span style={{ color: '#94A3B8', fontSize: 11 }}>ⓘ</span>}
                       </span>
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '6px 8px' }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSelectedKeywordId(k.keywordId); }}
+                        style={{
+                          fontSize: 11,
+                          padding: '4px 10px',
+                          background: 'transparent',
+                          color: '#2D9CDB',
+                          border: '1px solid #2D9CDB',
+                          borderRadius: 4,
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                        }}
+                      >
+                        View
+                      </button>
                     </td>
                   </tr>
                 );
