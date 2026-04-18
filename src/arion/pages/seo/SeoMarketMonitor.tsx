@@ -1,31 +1,39 @@
 /**
  * Phase 3.5 Market Monitor — Authority tier only.
  *
- * Combines three market-watch feeds into one surface:
- *   1. Backlinks     — new / lost / total referring domains + authority
- *   2. Page Changes  — detected changes on competitor pages we watch
- *   3. Competitor Moves — large jumps or drops by tracked competitors
+ * Live backend (arion-func timer jobs populate these feeds):
+ *   - Competitor Moves: daily position history → diffs rendered here
+ *   - Backlink Watch:   weekly referring-domain snapshot (SE Ranking Data API)
+ *   - Page Changes:     daily content-hash sweep of watched own-site +
+ *                       competitor pages
  *
- * Each subsection follows the Phase 3.5 pattern:
- *   - summary card with 1-2 primary stats + short description
- *   - "See Full Details" button opens a modal with the full feed
+ * Tier gating: server-side. For non-Authority tiers the endpoint returns
+ * authorityGated:true + a message, and we render the upgrade CTA.
  *
- * Tier gating:
- *   Starter / Essentials / Growth → preview with upgrade CTA
- *   Authority                     → full feature unlocked
+ * Empty-state design: when a job hasn't run yet for the site, we still show
+ * the subsection cards with "awaiting first run" copy and the last-run
+ * timestamp (or "never") so the user knows the feature is live.
  */
 import React from 'react';
 import { useArionContext } from '../../useArionContext';
-import { AddonUpsell, EmptyPanel, InfoCard, ConsultingUpsell } from '../../components/Ui';
+import { useArionData } from '../../useArionData';
+import { AddonUpsell, EmptyPanel, InfoCard, ConsultingUpsell, Loading } from '../../components/Ui';
 import { SeoStatCard } from '../../components/SeoUi';
 import { GlossaryIcon, GlossaryPanel } from '../../components/Glossary';
+import type { SeoMarketMonitorMove, SeoMarketMonitorBacklink, SeoMarketMonitorPageChange, SeoMarketMonitorJobStatus } from '../../../lib/arionApi';
 
 type SubSection = 'backlinks' | 'page_changes' | 'competitor_moves';
 
 export function SeoMarketMonitor() {
-  const { selectedSite } = useArionContext();
+  const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const [openModal, setOpenModal] = React.useState<SubSection | null>(null);
 
+  const { data: mm, loading } = useArionData(
+    () => activeSiteId ? arionApi.getSeoMarketMonitor(activeSiteId, 30) : Promise.resolve(null),
+    [activeSiteId]
+  );
+
+  if (loading) return <Loading />;
   if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
 
   const hasSeoAddon = selectedSite?.seoAddonTier != null;
@@ -40,11 +48,11 @@ export function SeoMarketMonitor() {
     );
   }
 
-  const tier = (selectedSite?.seoAddonTier || '').toLowerCase();
-  const isAuthority = tier === 'authority';
+  const data = mm as any;
+  const authorityGated = data?.authorityGated === true;
 
   // Growth/Essentials/Starter preview
-  if (!isAuthority) {
+  if (authorityGated) {
     return (
       <div>
         <InfoCard title="Market Monitor">
@@ -84,21 +92,28 @@ export function SeoMarketMonitor() {
     );
   }
 
-  // Authority: full view
+  const moves: SeoMarketMonitorMove[] = data?.moves ?? [];
+  const newBacklinks: SeoMarketMonitorBacklink[] = data?.backlinks?.new ?? [];
+  const lostBacklinks: SeoMarketMonitorBacklink[] = data?.backlinks?.lost ?? [];
+  const activeBacklinks = data?.backlinks?.totals?.active ?? 0;
+  const pageChanges: SeoMarketMonitorPageChange[] = data?.pageChanges ?? [];
+  const jobStatus = data?.jobStatus ?? { moves: null, backlinks: null, page_changes: null };
+
   return (
     <div>
       <InfoCard title="Market Monitor — Authority">
         <p style={{ margin: 0, fontSize: 12 }}>
           Real-time market signals across your SEO project. Daily backlink checks, competitor page change detection, and large ranking movement alerts.
+          Backend jobs run automatically on the Authority tier.
         </p>
       </InfoCard>
 
       {/* Row 1: headline stat cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 16 }}>
-        <SeoStatCard termKey="backlinks_new" label="New Backlinks" value="—" sub="past 30 days" accent="#1D9E75" />
-        <SeoStatCard termKey="backlinks_lost" label="Lost Backlinks" value="—" sub="past 30 days" accent="#C55" />
-        <SeoStatCard termKey="page_changes" label="Page Changes" value="—" sub="on watched pages" accent="#4285F4" />
-        <SeoStatCard termKey="competitor_moves" label="Competitor Moves" value="—" sub="significant swings" accent="#EF6C33" />
+        <SeoStatCard termKey="backlinks_new" label="New Backlinks" value={String(newBacklinks.length)} sub="past 30 days" accent="#1D9E75" />
+        <SeoStatCard termKey="backlinks_lost" label="Lost Backlinks" value={String(lostBacklinks.length)} sub="past 30 days" accent="#C55" />
+        <SeoStatCard termKey="page_changes" label="Page Changes" value={String(pageChanges.length)} sub="on watched pages" accent="#4285F4" />
+        <SeoStatCard termKey="competitor_moves" label="Competitor Moves" value={String(moves.length)} sub="≥5 position swings" accent="#EF6C33" />
       </div>
 
       {/* Three subsection summary cards */}
@@ -107,29 +122,32 @@ export function SeoMarketMonitor() {
         <SubsectionCard
           title="Backlink Watch"
           description="Referring domains gained or lost, with authority score and first-seen / last-seen dates"
-          primaryStat="—"
-          primaryLabel="active referring domains"
+          primaryStat={String(activeBacklinks || newBacklinks.length)}
+          primaryLabel={activeBacklinks > 0 ? 'active referring domains' : 'new referring domains'}
           accent="#1D9E75"
           onViewDetails={() => setOpenModal('backlinks')}
           termKey="backlinks_new"
+          jobStatus={jobStatus.backlinks}
         />
         <SubsectionCard
           title="Page Changes"
           description="Content change detection on competitor pages and your tracked priority pages"
-          primaryStat="—"
+          primaryStat={String(pageChanges.length)}
           primaryLabel="changes this period"
           accent="#4285F4"
           onViewDetails={() => setOpenModal('page_changes')}
           termKey="page_changes"
+          jobStatus={jobStatus.page_changes}
         />
         <SubsectionCard
           title="Competitor Moves"
           description="Ranking swings greater than 5 positions across your tracked competitors and keywords"
-          primaryStat="—"
+          primaryStat={String(moves.length)}
           primaryLabel="large moves"
           accent="#EF6C33"
           onViewDetails={() => setOpenModal('competitor_moves')}
           termKey="competitor_moves"
+          jobStatus={jobStatus.moves}
         />
       </div>
 
@@ -146,10 +164,27 @@ export function SeoMarketMonitor() {
       />
 
       {openModal && (
-        <MarketSubsectionModal section={openModal} onClose={() => setOpenModal(null)} />
+        <MarketSubsectionModal
+          section={openModal}
+          moves={moves}
+          newBacklinks={newBacklinks}
+          lostBacklinks={lostBacklinks}
+          pageChanges={pageChanges}
+          onClose={() => setOpenModal(null)}
+        />
       )}
     </div>
   );
+}
+
+function formatAgo(iso: string | null | undefined) {
+  if (!iso) return 'never';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 'never';
+  const mins = Math.round((Date.now() - then) / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60 * 24) return `${Math.round(mins / 60)}h ago`;
+  return `${Math.round(mins / (60 * 24))}d ago`;
 }
 
 function SubsectionCard({
@@ -160,6 +195,7 @@ function SubsectionCard({
   accent,
   onViewDetails,
   termKey,
+  jobStatus,
 }: {
   title: string;
   description: string;
@@ -168,7 +204,9 @@ function SubsectionCard({
   accent: string;
   onViewDetails: () => void;
   termKey?: string;
+  jobStatus: SeoMarketMonitorJobStatus | null;
 }) {
+  const lastRunLabel = jobStatus?.completedAt ? `last run ${formatAgo(jobStatus.completedAt)}` : 'awaiting first run';
   return (
     <div style={{ background: '#fff', borderLeft: `3px solid ${accent}`, borderRadius: 8, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24', display: 'inline-flex', alignItems: 'center' }}>
@@ -180,6 +218,7 @@ function SubsectionCard({
         <span style={{ fontSize: 28, fontWeight: 700, color: accent, lineHeight: 1 }}>{primaryStat}</span>
         <span style={{ fontSize: 11, color: '#5A7A8A' }}>{primaryLabel}</span>
       </div>
+      <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 6, fontStyle: 'italic' }}>{lastRunLabel}</div>
       <button
         onClick={onViewDetails}
         style={{ marginTop: 12, padding: '6px 12px', fontSize: 11, fontWeight: 600, background: 'transparent', color: accent, border: `1px solid ${accent}`, borderRadius: 4, cursor: 'pointer', alignSelf: 'flex-start' }}
@@ -190,21 +229,30 @@ function SubsectionCard({
   );
 }
 
-function MarketSubsectionModal({ section, onClose }: { section: SubSection; onClose: () => void }) {
+function MarketSubsectionModal({
+  section,
+  moves,
+  newBacklinks,
+  lostBacklinks,
+  pageChanges,
+  onClose,
+}: {
+  section: SubSection;
+  moves: SeoMarketMonitorMove[];
+  newBacklinks: SeoMarketMonitorBacklink[];
+  lostBacklinks: SeoMarketMonitorBacklink[];
+  pageChanges: SeoMarketMonitorPageChange[];
+  onClose: () => void;
+}) {
   const titles: Record<SubSection, string> = {
     backlinks: 'Backlink Watch — Full Details',
     page_changes: 'Page Changes — Full Details',
     competitor_moves: 'Competitor Moves — Full Details',
   };
-  const descriptions: Record<SubSection, string> = {
-    backlinks: 'Every referring domain we have seen for your site, with first-seen date, last-seen date, authority score, anchor text, and link status. Separated into gained (new since last check) and lost (missing since last check).',
-    page_changes: 'Competitor pages and your own priority pages we re-fetch on a schedule. When content diffs trigger our threshold, the change is logged here with a short before / after excerpt.',
-    competitor_moves: 'For every tracked keyword × tracked competitor pair, we log position changes of five places or more. Sorted by magnitude and recency so the biggest market shifts float to the top.',
-  };
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: 12, maxWidth: 1000, width: '92vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ background: '#fff', borderRadius: 12, maxWidth: 1100, width: '94vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: '16px 24px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontSize: 11, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5 }}>Market Monitor</div>
@@ -213,15 +261,185 @@ function MarketSubsectionModal({ section, onClose }: { section: SubSection; onCl
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#999', padding: '0 4px' }}>&times;</button>
         </div>
         <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-          <p style={{ fontSize: 13, color: '#5A7A8A', marginBottom: 20, lineHeight: 1.6 }}>{descriptions[section]}</p>
-          <div style={{ padding: 24, background: '#F8FAFC', borderRadius: 8, textAlign: 'center', color: '#5A7A8A', fontSize: 13, lineHeight: 1.6 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>Detail data populates as monitors run</div>
-            <p style={{ margin: '0 auto', maxWidth: 480 }}>
-              Market Monitor checks run daily on the Authority tier. The first detail snapshot lands within 24 hours of your next scheduled check.
-            </p>
-          </div>
+          {section === 'competitor_moves' && <MovesTable moves={moves} />}
+          {section === 'backlinks' && <BacklinksTable newBacklinks={newBacklinks} lostBacklinks={lostBacklinks} />}
+          {section === 'page_changes' && <PageChangesTable pageChanges={pageChanges} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+function MovesTable({ moves }: { moves: SeoMarketMonitorMove[] }) {
+  if (moves.length === 0) {
+    return (
+      <EmptyState
+        title="No large competitor moves in this window"
+        body="We only flag ranking swings of 5 positions or more. Once the position-history job has run for 7+ days, any keyword where a tracked competitor gained or lost 5 places will show up here."
+      />
+    );
+  }
+  return (
+    <table className="data-table" style={{ fontSize: 12, width: '100%' }}>
+      <thead>
+        <tr>
+          <th>Keyword</th>
+          <th>Competitor</th>
+          <th style={{ textAlign: 'right' }}>First Position</th>
+          <th style={{ textAlign: 'right' }}>Last Position</th>
+          <th style={{ textAlign: 'right' }}>Change</th>
+          <th style={{ textAlign: 'right' }}>Direction</th>
+        </tr>
+      </thead>
+      <tbody>
+        {moves.map((m, i) => {
+          const isUp = m.direction === 'up';
+          return (
+            <tr key={i}>
+              <td style={{ fontWeight: 500 }}>{m.keyword}</td>
+              <td>{m.competitorDomain}</td>
+              <td style={{ textAlign: 'right' }}>{m.firstPosition ?? '—'}</td>
+              <td style={{ textAlign: 'right' }}>{m.lastPosition ?? '—'}</td>
+              <td style={{ textAlign: 'right', fontWeight: 600, color: isUp ? '#1D9E75' : '#D85A30' }}>
+                {isUp ? '+' : ''}{m.positionChange}
+              </td>
+              <td style={{ textAlign: 'right' }}>
+                <span style={{ background: isUp ? '#F0FDF4' : '#FEF2F2', color: isUp ? '#1D9E75' : '#D85A30', fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 3 }}>
+                  {isUp ? 'gained ground' : 'lost ground'}
+                </span>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function BacklinksTable({ newBacklinks, lostBacklinks }: { newBacklinks: SeoMarketMonitorBacklink[]; lostBacklinks: SeoMarketMonitorBacklink[] }) {
+  if (newBacklinks.length === 0 && lostBacklinks.length === 0) {
+    return (
+      <EmptyState
+        title="Waiting for the first backlink sync"
+        body="Backlink Watch runs weekly on Sunday mornings. Once SE Ranking's Data API returns your first referring-domain snapshot, it will appear here."
+      />
+    );
+  }
+  return (
+    <>
+      <h3 style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>New backlinks ({newBacklinks.length})</h3>
+      {newBacklinks.length > 0 ? (
+        <table className="data-table" style={{ fontSize: 12, width: '100%', marginBottom: 20 }}>
+          <thead>
+            <tr>
+              <th>Referring Domain</th>
+              <th>Target URL</th>
+              <th>Anchor</th>
+              <th style={{ textAlign: 'right' }}>DA</th>
+              <th style={{ textAlign: 'right' }}>First Seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {newBacklinks.map((b, i) => (
+              <tr key={i}>
+                <td style={{ fontWeight: 500 }}>{b.referringDomain}</td>
+                <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.targetUrl || '—'}</td>
+                <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.anchorText || '—'}</td>
+                <td style={{ textAlign: 'right' }}>{b.domainAuthority ?? '—'}</td>
+                <td style={{ textAlign: 'right' }}>{b.firstSeen ? new Date(b.firstSeen).toLocaleDateString() : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div style={{ fontSize: 12, color: '#5A7A8A', padding: '8px 0 20px' }}>No new backlinks detected in this window.</div>
+      )}
+
+      <h3 style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>Lost backlinks ({lostBacklinks.length})</h3>
+      {lostBacklinks.length > 0 ? (
+        <table className="data-table" style={{ fontSize: 12, width: '100%' }}>
+          <thead>
+            <tr>
+              <th>Referring Domain</th>
+              <th style={{ textAlign: 'right' }}>Last Seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lostBacklinks.map((b, i) => (
+              <tr key={i}>
+                <td style={{ fontWeight: 500 }}>{b.referringDomain}</td>
+                <td style={{ textAlign: 'right' }}>{b.lastSeen ? new Date(b.lastSeen).toLocaleDateString() : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div style={{ fontSize: 12, color: '#5A7A8A', padding: '8px 0' }}>No lost backlinks in this window — healthy sign.</div>
+      )}
+    </>
+  );
+}
+
+function PageChangesTable({ pageChanges }: { pageChanges: SeoMarketMonitorPageChange[] }) {
+  if (pageChanges.length === 0) {
+    return (
+      <EmptyState
+        title="No page changes detected"
+        body="The page-watcher runs daily at 05:41 UTC. Once we've captured two hashes of a watched page and they differ, the change is recorded here with a title/content-excerpt diff."
+      />
+    );
+  }
+  return (
+    <table className="data-table" style={{ fontSize: 12, width: '100%' }}>
+      <thead>
+        <tr>
+          <th>Page</th>
+          <th>Type</th>
+          <th style={{ textAlign: 'right' }}>Magnitude</th>
+          <th>Title change</th>
+          <th style={{ textAlign: 'right' }}>Detected</th>
+        </tr>
+      </thead>
+      <tbody>
+        {pageChanges.map((p, i) => {
+          const titleChanged = p.titlePrev !== p.titleNew;
+          return (
+            <tr key={i}>
+              <td style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <a href={p.pageUrl} target="_blank" rel="noreferrer" style={{ color: '#2D9CDB' }}>{p.pageUrl}</a>
+              </td>
+              <td>
+                {p.pageType === 'own_site' ? (
+                  <span style={{ background: '#F0FDF4', color: '#1D9E75', fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3 }}>Own site</span>
+                ) : (
+                  <span style={{ background: '#FEF2F2', color: '#D85A30', fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3 }}>{p.competitorDomain || 'Competitor'}</span>
+                )}
+              </td>
+              <td style={{ textAlign: 'right', fontWeight: 600 }}>{Math.round(p.changeMagnitude * 100)}%</td>
+              <td style={{ fontSize: 11, color: '#5A7A8A' }}>
+                {titleChanged ? (
+                  <>
+                    <div style={{ textDecoration: 'line-through' }}>{p.titlePrev || '—'}</div>
+                    <div style={{ color: '#0B1C24', fontWeight: 500 }}>{p.titleNew || '—'}</div>
+                  </>
+                ) : (
+                  <em>no title change</em>
+                )}
+              </td>
+              <td style={{ textAlign: 'right' }}>{new Date(p.detectedAt).toLocaleDateString()}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function EmptyState({ title, body }: { title: string; body: string }) {
+  return (
+    <div style={{ padding: 32, background: '#F8FAFC', borderRadius: 8, textAlign: 'center' }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>{title}</div>
+      <p style={{ fontSize: 12, color: '#5A7A8A', maxWidth: 520, margin: '0 auto', lineHeight: 1.6 }}>{body}</p>
     </div>
   );
 }

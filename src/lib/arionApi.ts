@@ -566,6 +566,77 @@ export async function getSeoCompetitors(params: { baseUrl: string; bearerToken: 
   });
 }
 
+export interface SeoMarketMonitorMove {
+  keywordId: string;
+  keyword: string;
+  competitorDomain: string;
+  engineId: string;
+  firstPosition: number | null;
+  lastPosition: number | null;
+  positionChange: number;
+  direction: 'up' | 'down';
+  firstDate: string;
+  lastDate: string;
+}
+
+export interface SeoMarketMonitorBacklink {
+  referringDomain: string;
+  targetUrl: string | null;
+  anchorText: string | null;
+  domainAuthority: number | null;
+  firstSeen: string | null;
+  lastSeen: string | null;
+  snapshotDate: string;
+}
+
+export interface SeoMarketMonitorPageChange {
+  pageUrl: string;
+  pageType: 'own_site' | 'competitor';
+  competitorDomain: string | null;
+  changeMagnitude: number;
+  excerptPrev: string | null;
+  excerptNew: string | null;
+  titlePrev: string | null;
+  titleNew: string | null;
+  detectedAt: string;
+}
+
+export interface SeoMarketMonitorJobStatus {
+  status: 'success' | 'error' | 'running' | 'skipped';
+  rowsProcessed: number | null;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+export interface SeoMarketMonitorResponse {
+  connected: boolean;
+  authorityGated: boolean;
+  tier: string;
+  message?: string;
+  windowDays?: number;
+  moves: SeoMarketMonitorMove[];
+  backlinks: {
+    new: SeoMarketMonitorBacklink[];
+    lost: SeoMarketMonitorBacklink[];
+    totals: { active: number; newThisPeriod: number; lostThisPeriod: number };
+  };
+  pageChanges: SeoMarketMonitorPageChange[];
+  jobStatus: {
+    moves: SeoMarketMonitorJobStatus | null;
+    backlinks: SeoMarketMonitorJobStatus | null;
+    page_changes: SeoMarketMonitorJobStatus | null;
+  };
+}
+
+export async function getSeoMarketMonitor(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; windowDays?: number }) {
+  const qp = new URLSearchParams({ siteId: params.siteId });
+  if (params.windowDays) qp.set('windowDays', String(params.windowDays));
+  return requestJson<SeoMarketMonitorResponse>({
+    ...params,
+    path: `/arion/seo/market-monitor?${qp.toString()}`,
+  });
+}
+
 export interface SeoDecayResponse {
   connected: boolean;
   decaying: Array<{

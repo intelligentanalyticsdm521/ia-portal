@@ -77,6 +77,7 @@ import {
   getSeoAudit as portalGetSeoAudit,
   addSeoCompetitor as portalAddSeoCompetitor,
   getSeoCompetitors as portalGetSeoCompetitors,
+  getSeoMarketMonitor as portalGetSeoMarketMonitor,
   getSeoDecay as portalGetSeoDecay,
   getSeoDiagnostic as portalGetSeoDiagnostic,
   getSeoKeywordDetail as portalGetSeoKeywordDetail,
@@ -291,6 +292,11 @@ export function useArionContext() {
       async getSeoCompetitors(siteId: string) {
         const b = await base();
         return portalGetSeoCompetitors({ ...b, siteId });
+      },
+
+      async getSeoMarketMonitor(siteId: string, windowDays?: number) {
+        const b = await base();
+        return portalGetSeoMarketMonitor({ ...b, siteId, windowDays });
       },
 
       async getSeoDecay(siteId: string) {
