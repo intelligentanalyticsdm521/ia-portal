@@ -96,10 +96,12 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
   });
 
   return (
-    // `min-h-0` on the inner scroll container is required so that in a parent flex row with
-    // `min-h-0`, the product list can shrink and scroll internally rather than pushing the
-    // Settings gear below the viewport fold when there are many products.
-    <div className="flex h-full w-16 flex-col items-center bg-[#0B1C24] py-3">
+    // In a flex row parent with min-h-0 and align-items:stretch (default), this column
+    // stretches to the row's full height automatically — no h-full needed and in fact
+    // h-full breaks on some browsers when the parent height is flex-derived rather than
+    // explicit. `min-h-0` on the inner list lets it scroll rather than pushing Settings
+    // off-screen when many products are enabled.
+    <div className="flex w-16 flex-col items-center bg-[#0B1C24] py-3">
       <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
         {products.map((p) => {
           const isActive = activeProduct === p.key;

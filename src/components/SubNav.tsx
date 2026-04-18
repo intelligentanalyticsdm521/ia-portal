@@ -346,7 +346,7 @@ export function SubNav({ config }: SubNavProps) {
   };
 
   return (
-    <div className="flex h-full w-52 flex-col bg-[#0B1C24]">
+    <div className="flex w-52 flex-col bg-[#0B1C24]">
       {/* Product header */}
       <div className="px-4 pb-3 pt-4">
         <h2 className="text-sm font-bold text-white">{config.productName}</h2>

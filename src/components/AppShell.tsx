@@ -57,13 +57,17 @@ export function AppShell() {
   const subNavConfig = activeProduct !== "overview" ? SUB_NAV_CONFIGS[activeProduct] : null;
 
   return (
-    <div className="iadm-shell flex min-h-screen flex-col">
+    // h-screen (not min-h-screen) locks the shell to exactly 100vh so the nav row's
+    // flex-1 height is a definite number — otherwise IconRail/SubNav fall back to
+    // content height and the Settings gear sits mid-viewport with empty space below.
+    <div className="iadm-shell flex h-screen flex-col overflow-hidden">
       {/* Top header */}
-      <header className="iadm-header">
+      <header className="iadm-header shrink-0">
         <HeaderBar />
       </header>
 
-      {/* Main layout: icon rail + sub-nav + content */}
+      {/* Main layout: icon rail + sub-nav + content. Default align-items:stretch
+          on this flex row causes IconRail and SubNav to fill the full row height. */}
       <div className="flex flex-1 min-h-0">
         {/* Icon Rail — always visible */}
         <IconRail activeProduct={activeProduct} onSelect={handleProductSelect} />
