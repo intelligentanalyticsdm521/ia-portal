@@ -40,6 +40,8 @@ import { SeoOverview } from '../arion/pages/seo/SeoOverview';
 import { SeoRankings } from '../arion/pages/seo/SeoRankings';
 import { SeoSiteAudit } from '../arion/pages/seo/SeoSiteAudit';
 import { SeoCompetitors } from '../arion/pages/seo/SeoCompetitors';
+import { SeoAiSearch } from '../arion/pages/seo/SeoAiSearch';
+import { SeoMarketMonitor } from '../arion/pages/seo/SeoMarketMonitor';
 import { SeoOpportunities } from '../arion/pages/seo/SeoOpportunities';
 import { SeoReports } from '../arion/pages/seo/SeoReports';
 // Search pages
@@ -147,6 +149,8 @@ export function ServiceRouter() {
       case 'arion_seo_rankings': return <ArionPageWrapper><SeoRankings /></ArionPageWrapper>;
       case 'arion_seo_site_audit': return <ArionPageWrapper><SeoSiteAudit /></ArionPageWrapper>;
       case 'arion_seo_competitors': return <ArionPageWrapper><SeoCompetitors /></ArionPageWrapper>;
+      case 'arion_seo_ai_search': return <ArionPageWrapper><SeoAiSearch /></ArionPageWrapper>;
+      case 'arion_seo_market_monitor': return <ArionPageWrapper><SeoMarketMonitor /></ArionPageWrapper>;
       case 'arion_seo_opportunities': return <ArionPageWrapper><SeoOpportunities /></ArionPageWrapper>;
       case 'arion_seo_reports': return <ArionPageWrapper><SeoReports /></ArionPageWrapper>;
       case 'arion_search_performance': return <ArionPageWrapper><SearchPerformance /></ArionPageWrapper>;

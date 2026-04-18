@@ -146,6 +146,8 @@ const ARION_NAV: SubNavConfig = {
         { key: "arion_seo_rankings", label: "Rankings", route: "/app/services/arion_seo_rankings" },
         { key: "arion_seo_site_audit", label: "Site Audit", route: "/app/services/arion_seo_site_audit" },
         { key: "arion_seo_competitors", label: "Competitors", route: "/app/services/arion_seo_competitors" },
+        { key: "arion_seo_ai_search", label: "AI Search Results", route: "/app/services/arion_seo_ai_search" },
+        { key: "arion_seo_market_monitor", label: "Market Monitor", route: "/app/services/arion_seo_market_monitor" },
         { key: "arion_seo_opportunities", label: "Opportunities", route: "/app/services/arion_seo_opportunities" },
       ],
     },

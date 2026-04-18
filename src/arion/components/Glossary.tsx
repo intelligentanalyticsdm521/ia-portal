@@ -154,6 +154,31 @@ export const GLOSSARY_TERMS: Record<string, GlossaryTerm> = {
     context: 'AI search is growing fast. Being cited by AI as a source for answers is the new "ranking in the top 3" — it determines whether AI users discover your business.',
     category: 'SEO',
   },
+  // ───────── Market Monitor glossary ─────────
+  backlinks_new: {
+    title: 'New Backlinks',
+    description: 'Other websites that linked to your site for the first time during the selected date range.',
+    context: 'Backlinks are votes of trust. A new backlink from a well-regarded site can directly improve rankings for related pages.',
+    category: 'SEO',
+  },
+  backlinks_lost: {
+    title: 'Lost Backlinks',
+    description: 'Links that used to point to your site but have disappeared — the other site either removed them, redirected them, or went offline.',
+    context: 'Losing a few low-authority backlinks is normal. A sudden spike in lost backlinks, especially from trusted sites, is worth investigating.',
+    category: 'SEO',
+  },
+  page_changes: {
+    title: 'Page Changes',
+    description: 'Content edits detected on pages we watch on a schedule — typically competitor pages and your own high-value pages.',
+    context: 'When a competitor updates a page that already ranks well, they are usually defending or extending their lead. Change alerts let you respond in hours instead of weeks.',
+    category: 'SEO',
+  },
+  competitor_moves: {
+    title: 'Competitor Moves',
+    description: 'Significant ranking swings — gains or drops of five positions or more — by the competitors you track.',
+    context: 'Big jumps can signal a new piece of content, a redesign, or a SERP feature change. Big drops often create recoverable opportunities for you.',
+    category: 'SEO',
+  },
   ai_sources: {
     title: 'AI Sources',
     description: 'Specific pages on your site that AI assistants cite as answer sources when users ask questions.',
