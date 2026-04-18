@@ -116,9 +116,10 @@ export function SearchIndexing() {
   const [inspectUrl, setInspectUrl] = React.useState('');
   const [inspectResult, setInspectResult] = React.useState<any>(null);
   const [inspecting, setInspecting] = React.useState(false);
-  const [submitUrl, setSubmitUrl] = React.useState('');
-  const [submitResult, setSubmitResult] = React.useState<any>(null);
-  const [submitting, setSubmitting] = React.useState(false);
+  // Re-indexing action state — replaces the old standalone "Submit URL for Indexing" card.
+  // The action runs against the URL that was just inspected.
+  const [reindexResult, setReindexResult] = React.useState<any>(null);
+  const [reindexing, setReindexing] = React.useState(false);
   const [resubmitting, setResubmitting] = React.useState(false);
   const [resubmitResult, setResubmitResult] = React.useState<any>(null);
 
@@ -157,6 +158,7 @@ export function SearchIndexing() {
     if (!inspectUrl.trim() || !activeSiteId) return;
     setInspecting(true);
     setInspectResult(null);
+    setReindexResult(null); // clear any prior re-index result when inspecting a new URL
     try {
       const result = await arionApi.inspectUrl(activeSiteId, inspectUrl.trim());
       setInspectResult(result);
@@ -167,17 +169,21 @@ export function SearchIndexing() {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!submitUrl.trim() || !activeSiteId) return;
-    setSubmitting(true);
-    setSubmitResult(null);
+  // "Request re-indexing" — consolidated multi-engine action run on the URL that was
+  // just inspected. For Google this resubmits registered sitemaps (since Google's public
+  // API does not accept arbitrary URL submissions). For Bing and IndexNow it submits the
+  // URL directly.
+  const handleReindex = async () => {
+    if (!inspectUrl.trim() || !activeSiteId) return;
+    setReindexing(true);
+    setReindexResult(null);
     try {
-      const result = await arionApi.submitUrlForIndexing(activeSiteId, submitUrl.trim());
-      setSubmitResult(result);
+      const result = await arionApi.submitUrlForIndexing(activeSiteId, inspectUrl.trim());
+      setReindexResult(result);
     } catch (err: any) {
-      setSubmitResult({ error: err.message || 'Submission failed' });
+      setReindexResult({ error: err.message || 'Submission failed' });
     } finally {
-      setSubmitting(false);
+      setReindexing(false);
     }
   };
 
@@ -281,7 +287,7 @@ export function SearchIndexing() {
 
       <Card title="URL Inspection">
         <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>
-          Check how Google sees a specific page — crawl status, indexing status, and detected issues.
+          Check how Google sees a specific page — crawl status, indexing status, and detected issues. After inspecting, you can request re-indexing across all supported engines from here.
         </p>
         <div style={{ display: 'flex', gap: 8 }}>
           <input type="text" placeholder={domain ? `https://${domain}/page` : 'https://yoursite.com/page'} value={inspectUrl}
@@ -296,37 +302,46 @@ export function SearchIndexing() {
             {inspectResult.error ? (
               <div style={{ background: '#FEF2F2', borderLeft: '3px solid #D85A30', padding: '10px 14px', borderRadius: 4, fontSize: 12, color: '#5A7A8A' }}>{inspectResult.error}</div>
             ) : inspectionPayload ? (
-              <InspectionResultView result={inspectionPayload} openLink={inspectionLink} />
+              <>
+                <InspectionResultView result={inspectionPayload} openLink={inspectionLink} />
+
+                {/* Request re-indexing — contextual action on the inspected URL */}
+                <div style={{ marginTop: 20, padding: '14px 16px', background: '#F8FAFC', borderRadius: 8, border: '1px solid rgba(45,156,219,0.15)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 240 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24' }}>Request re-indexing for this URL</div>
+                      <div style={{ fontSize: 11, color: '#5A7A8A', marginTop: 2, lineHeight: 1.5 }}>
+                        Tells search engines to re-crawl this page. Google's public API doesn't accept arbitrary URL submissions, so for Google this resubmits your registered sitemaps — the legitimate path for Google to re-discover the URL. Bing and IndexNow accept direct submissions.
+                      </div>
+                    </div>
+                    <button className="abtn abtn-sky" onClick={handleReindex} disabled={reindexing} style={{ flexShrink: 0 }}>
+                      {reindexing ? 'Submitting...' : 'Request re-indexing'}
+                    </button>
+                  </div>
+
+                  {reindexResult && (
+                    <div style={{ marginTop: 12 }}>
+                      {reindexResult.error && typeof reindexResult.error === 'string' ? (
+                        <div style={{ background: '#FEF2F2', borderLeft: '3px solid #D85A30', padding: '10px 14px', borderRadius: 4, fontSize: 12, color: '#5A7A8A' }}>{reindexResult.error}</div>
+                      ) : (
+                        <div style={{ background: '#fff', borderRadius: 6, padding: '4px 14px', border: '1px solid #eee' }}>
+                          <SubmitResultRow engine="Google (sitemap resubmit)" result={reindexResult.google} />
+                          <SubmitResultRow engine="Bing Webmaster Tools" result={reindexResult.bing} />
+                          <SubmitResultRow engine="IndexNow (Bing, Yandex, Seznam, Naver)" result={reindexResult.indexNow} />
+                          {reindexResult.google?.message && (
+                            <div style={{ fontSize: 11, color: '#5A7A8A', padding: '6px 0 10px 20px', lineHeight: 1.5 }}>
+                              {reindexResult.google.message}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
             ) : (
               <div style={{ background: '#FFF8E1', borderLeft: '3px solid #D4A800', padding: '10px 14px', borderRadius: 4, fontSize: 12, color: '#5A7A8A' }}>
                 GSC returned no inspection data for this URL. Confirm the URL belongs to the verified GSC property for this site.
-              </div>
-            )}
-          </div>
-        )}
-      </Card>
-
-      <Card title="Submit URL for Indexing">
-        <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>
-          Request re-indexing of a single URL across supported engines. Google does not accept arbitrary URL submissions via public API — use URL Inspection to check crawl status, or resubmit the sitemap to trigger re-discovery.
-        </p>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input type="text" placeholder={domain ? `https://${domain}/new-page` : 'https://yoursite.com/new-page'} value={submitUrl}
-            onChange={e => setSubmitUrl(e.target.value)}
-            className="field-input" style={{ flex: 1 }} />
-          <button className="abtn abtn-sky" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? 'Submitting...' : 'Submit'}
-          </button>
-        </div>
-        {submitResult && (
-          <div style={{ marginTop: 12 }}>
-            {submitResult.error && typeof submitResult.error === 'string' ? (
-              <div style={{ background: '#FEF2F2', borderLeft: '3px solid #D85A30', padding: '10px 14px', borderRadius: 4, fontSize: 12, color: '#5A7A8A' }}>{submitResult.error}</div>
-            ) : (
-              <div style={{ background: '#F8FAFC', borderRadius: 6, padding: '4px 14px' }}>
-                <SubmitResultRow engine="Google Search Console" result={submitResult.google} />
-                <SubmitResultRow engine="Bing Webmaster Tools" result={submitResult.bing} />
-                <SubmitResultRow engine="IndexNow (Bing, Yandex, Seznam, Naver)" result={submitResult.indexNow} />
               </div>
             )}
           </div>
