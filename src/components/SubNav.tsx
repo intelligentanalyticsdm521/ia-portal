@@ -152,10 +152,9 @@ const ARION_NAV: SubNavConfig = {
     {
       label: "Search", icon: SearchIcon, collapsible: true, sectionId: "search",
       items: [
-        { key: "arion_search_performance", label: "Performance", route: "/app/services/arion_search_performance" },
-        { key: "arion_search_indexing", label: "Search & Indexing", route: "/app/services/arion_search_indexing" },
+        { key: "arion_search_performance", label: "Search Performance", route: "/app/services/arion_search_performance" },
+        { key: "arion_search_indexing", label: "Indexing", route: "/app/services/arion_search_indexing" },
         { key: "arion_search_bing_copilot", label: "Bing: Copilot AI", route: "/app/services/arion_search_bing_copilot" },
-        { key: "arion_search_bing_indexnow", label: "Bing: IndexNow", route: "/app/services/arion_search_bing_indexnow" },
       ],
     },
     {

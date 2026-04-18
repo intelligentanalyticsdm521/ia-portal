@@ -474,6 +474,10 @@ export async function generateSitemap(params: { baseUrl: string; bearerToken: st
   return requestJson<any>({ ...params, method: 'POST', path: '/arion/search/generate-sitemap', body: { siteId: params.siteId } });
 }
 
+export async function getBingIndexingStats(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...params, path: `/arion/search/bing/stats?siteId=${encodeURIComponent(params.siteId)}` });
+}
+
 // IndexNow key management
 export async function getIndexNowStatus(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<any>({ ...params, path: `/arion/search/indexnow?siteId=${encodeURIComponent(params.siteId)}` });

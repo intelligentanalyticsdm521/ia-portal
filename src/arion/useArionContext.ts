@@ -41,6 +41,7 @@ import {
   getBusinessServices as portalGetBusinessServices,
   getAnalyticsReport as portalGetAnalyticsReport,
   generateSitemap as portalGenerateSitemap,
+  getBingIndexingStats as portalGetBingIndexingStats,
   getIndexNowStatus as portalGetIndexNowStatus,
   generateIndexNowKey as portalGenerateIndexNowKey,
   verifyIndexNowKey as portalVerifyIndexNowKey,
@@ -314,6 +315,10 @@ export function useArionContext() {
         return portalGetCoreWebVitals({ ...b, siteId });
       },
 
+      async getBingIndexingStats(siteId: string) {
+        const b = await base();
+        return portalGetBingIndexingStats({ ...b, siteId });
+      },
       async getIndexNowStatus(siteId: string) {
         const b = await base();
         return portalGetIndexNowStatus({ ...b, siteId });
