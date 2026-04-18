@@ -594,14 +594,49 @@ function ConnectedAccountsTab() {
     setBingAutoResult(null);
     try {
       const token = await getToken();
-      const { autoConnectBing, getBingStatus } = await import('../../lib/arionApi');
-      const r = await autoConnectBing({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
-      setBingAutoResult(r);
-      if (r.connected) {
+      const { autoConnectBing, checkBingVerification, getBingStatus } = await import('../../lib/arionApi');
+      // Phase 1: kick off — fast, writes DNS, returns immediately
+      const kickoff = await autoConnectBing({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+      setBingAutoResult(kickoff);
+      // Short-circuit if already verified
+      if (kickoff.connected) {
         const s = await getBingStatus({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
         setBingStatus(s);
         setToast('Bing Webmaster Tools connected');
+        return;
       }
+      // Bail on non-pending failure
+      if (!kickoff.pending) return;
+
+      // Phase 2: poll check-verification every 8 s for up to 3 min. Each call is fast
+      // (one Bing API roundtrip) so the portal timeout is not an issue.
+      const deadline = Date.now() + 3 * 60 * 1000;
+      let pollAttempts = 0;
+      while (Date.now() < deadline) {
+        pollAttempts += 1;
+        await new Promise(r => setTimeout(r, 8000));
+        try {
+          const token2 = await getToken();
+          const check = await checkBingVerification({ baseUrl: apiBaseUrl, bearerToken: token2.accessToken, tenantId: activeTenantId, siteId });
+          if (check.connected) {
+            const s = await getBingStatus({ baseUrl: apiBaseUrl, bearerToken: token2.accessToken, tenantId: activeTenantId, siteId });
+            setBingStatus(s);
+            setBingAutoResult({ ...kickoff, connected: true, pending: false });
+            setToast('Bing Webmaster Tools connected');
+            return;
+          }
+        } catch (e: any) {
+          // One failed poll isn't fatal — keep trying until the deadline
+          console.warn('[bing:poll]', pollAttempts, e?.message);
+        }
+      }
+      // Hit the deadline without verification
+      setBingAutoResult({
+        ...kickoff,
+        connected: false,
+        stage: 'verify_timeout',
+        error: 'DNS record is in place but Bing has not verified yet. This sometimes takes up to 15 minutes. Check back soon and click Connect again — the key is already written, so it should complete quickly.',
+      });
     } catch (e: any) {
       setBingAutoResult({ connected: false, error: e.message || 'Auto-connect failed' });
     } finally {
@@ -734,7 +769,7 @@ function ConnectedAccountsTab() {
 
           {bingAutoConnecting && (
             <div className="mt-3 rounded border-l-2 border-blue-400 bg-blue-50 px-3 py-2 text-[11px] text-blue-800">
-              Adding your site to Bing · writing DNS verification · waiting for Bing to confirm. This typically takes 30-90 seconds.
+              Adding your site to Bing · writing DNS verification · checking every 8 seconds for Bing to confirm. This typically takes 30-90 seconds but can take up to 3 minutes.
             </div>
           )}
 
