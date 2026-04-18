@@ -454,9 +454,9 @@ export function useArionContext() {
         return portalGenerateSitemap({ ...b, siteId });
       },
 
-      async createDnsRecords(siteId: string, records: Array<{ type: string; name: string; content: string; ttl?: number }>) {
+      async createDnsRecords(siteId: string, records: Array<{ type: string; name: string; content: string; ttl?: number }>, overwrite?: boolean) {
         const b = await base();
-        return portalCreateDnsRecords({ ...b, siteId, records });
+        return portalCreateDnsRecords({ ...b, siteId, records, overwrite });
       },
 
       async deleteDnsRecords(siteId: string, records: Array<{ type: string; name: string; content: string }>) {

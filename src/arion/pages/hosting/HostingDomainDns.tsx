@@ -1,9 +1,82 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import {
   Card, HealthRow, InfoCard, EmptyPanel, Loading, meetsMinTier, ConsultingUpsell,
 } from '../../components/Ui';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
+
+// Session-scoped acknowledgement: "I understand DNS edits could break my site."
+// Persisted to sessionStorage so it survives page nav during a single login but
+// requires re-acknowledgement on next login.
+const DNS_ACK_KEY = 'arion.dns_edit_ack';
+function hasAckedDnsEdits(): boolean {
+  try { return sessionStorage.getItem(DNS_ACK_KEY) === '1'; } catch { return false; }
+}
+function ackDnsEdits() {
+  try { sessionStorage.setItem(DNS_ACK_KEY, '1'); } catch { /* noop */ }
+}
+
+function DnsWarningModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  const [checked, setChecked] = useState(false);
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }} onClick={onCancel}>
+      <div style={{ background: '#fff', borderRadius: 10, maxWidth: 480, width: '90vw', padding: 24 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#FFF3CD', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#B88A00', fontWeight: 700 }}>!</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: '#0B1C24' }}>DNS Record Updates Are Not Recommended</div>
+        </div>
+        <p style={{ fontSize: 13, color: '#5A7A8A', lineHeight: 1.6, marginTop: 4 }}>
+          DNS records control where your domain sends traffic and how your email is delivered. An incorrect change can take your website offline or stop email from being delivered.
+        </p>
+        <p style={{ fontSize: 13, color: '#5A7A8A', lineHeight: 1.6, marginTop: 10 }}>
+          <strong style={{ color: '#0B1C24' }}>We recommend reaching out to Intelligent Analytics to update DNS records.</strong> Our team will review the change, apply it safely, and roll back if anything breaks.
+        </p>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 16, padding: '10px 12px', background: '#F8FAFC', borderRadius: 6, cursor: 'pointer' }}>
+          <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} style={{ marginTop: 3 }} />
+          <span style={{ fontSize: 12, color: '#0B1C24', lineHeight: 1.5 }}>
+            I understand DNS record edits could cause configuration issues for my website.
+          </span>
+        </label>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+          <button className="abtn" onClick={onCancel}>Cancel</button>
+          <button
+            className="abtn abtn-sky"
+            disabled={!checked}
+            onClick={() => { ackDnsEdits(); onConfirm(); }}
+            style={{ opacity: checked ? 1 : 0.5, cursor: checked ? 'pointer' : 'not-allowed' }}
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Small inline editor for a single record — appears in place of the row when Edit clicked
+function EditRecordRow({ rec, onSave, onCancel, saving }: { rec: any; onSave: (r: any) => void; onCancel: () => void; saving: boolean }) {
+  const [content, setContent] = useState(rec.content || '');
+  const [ttl, setTtl] = useState(String(rec.ttl || 14400));
+  return (
+    <tr style={{ background: '#FFF8E1' }}>
+      <td>{rec.type}</td>
+      <td>{rec.name}</td>
+      <td>{rec.priority ?? '--'}</td>
+      <td>
+        <input value={content} onChange={e => setContent(e.target.value)} style={{ width: '100%', fontSize: 12 }} />
+      </td>
+      <td>
+        <input value={ttl} onChange={e => setTtl(e.target.value)} style={{ width: 70, fontSize: 12 }} />
+      </td>
+      <td>
+        <button className="text-btn primary" disabled={saving} onClick={() => onSave({ ...rec, content, ttl: parseInt(ttl, 10) || 14400 })}>
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+        <button className="text-btn" style={{ marginLeft: 8 }} onClick={onCancel}>Cancel</button>
+      </td>
+    </tr>
+  );
+}
 
 export function HostingDomainDns() {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
@@ -12,12 +85,20 @@ export function HostingDomainDns() {
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
+  const [mutating, setMutating] = useState(false);
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
-  /* DNS form state */
+  // Warning modal state
+  const [pendingAction, setPendingAction] = useState<null | (() => void)>(null);
+
+  // DNS form state
   const [newType, setNewType] = useState('A');
   const [newName, setNewName] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newTtl, setNewTtl] = useState('14400');
+
+  // Edit-in-place state (keyed by type|name|content to identify row uniquely)
+  const [editingKey, setEditingKey] = useState<string | null>(null);
 
   const { data: hosting, loading: hostingLoading } = useArionData(
     () => activeSiteId ? arionApi.getHosting(activeSiteId) : Promise.resolve(null),
@@ -31,7 +112,6 @@ export function HostingDomainDns() {
   const domainInfo = h.domain ?? {};
   const dnsRecords: any[] = Array.isArray(h.dns) ? h.dns : [];
 
-  /* Domain info fields */
   const domainName = domainInfo.name ?? '--';
   const registrar = domainInfo.registrar ?? '--';
   const domainExpiry = domainInfo.expiresAt ?? '--';
@@ -39,7 +119,6 @@ export function HostingDomainDns() {
   const whoisPrivacy = domainInfo.whoisPrivacy;
   const nameservers: string[] = Array.isArray(domainInfo.nameservers) ? domainInfo.nameservers : [];
 
-  /* Client-side filter */
   const term = searchTerm.toLowerCase();
   const filteredRecords = term
     ? dnsRecords.filter(r =>
@@ -49,9 +128,16 @@ export function HostingDomainDns() {
       )
     : dnsRecords;
 
-  /* Mutations */
-  const handleAddRecord = async () => {
+  // Gate any DNS mutation behind the session-scoped acknowledgement
+  const withDnsAck = (fn: () => void) => {
+    if (hasAckedDnsEdits()) { fn(); return; }
+    setPendingAction(() => fn);
+  };
+
+  const runAdd = async () => {
     if (!activeSiteId || !newName || !newContent) return;
+    setMutating(true);
+    setMutationError(null);
     try {
       await arionApi.createDnsRecords(activeSiteId, [{
         type: newType,
@@ -64,13 +150,17 @@ export function HostingDomainDns() {
       setNewContent('');
       setNewTtl('14400');
       setRefreshKey(k => k + 1);
-    } catch {
-      // error handled by API layer
+    } catch (e: any) {
+      setMutationError(e?.message || 'Add failed');
+    } finally {
+      setMutating(false);
     }
   };
 
-  const handleDeleteRecord = async (rec: any) => {
+  const runDelete = async (rec: any) => {
     if (!activeSiteId) return;
+    setMutating(true);
+    setMutationError(null);
     try {
       await arionApi.deleteDnsRecords(activeSiteId, [{
         type: rec.type,
@@ -78,20 +168,54 @@ export function HostingDomainDns() {
         content: rec.content,
       }]);
       setRefreshKey(k => k + 1);
-    } catch {
-      // error handled by API layer
+    } catch (e: any) {
+      setMutationError(e?.message || 'Delete failed');
+    } finally {
+      setMutating(false);
     }
   };
 
+  const runEdit = async (rec: any) => {
+    if (!activeSiteId) return;
+    setMutating(true);
+    setMutationError(null);
+    try {
+      // Edit: PUT with overwrite=true so Hostinger replaces the existing record
+      // at (name, type) with the new content/ttl. Without overwrite the API
+      // rejects with 4008 conflict.
+      await arionApi.createDnsRecords(activeSiteId, [{
+        type: rec.type,
+        name: rec.name,
+        content: rec.content,
+        ttl: rec.ttl,
+      }], true);
+      setEditingKey(null);
+      setRefreshKey(k => k + 1);
+    } catch (e: any) {
+      setMutationError(e?.message || 'Edit failed');
+    } finally {
+      setMutating(false);
+    }
+  };
+
+  const handleAddRecord = () => withDnsAck(runAdd);
+  const handleDeleteRecord = (rec: any) => withDnsAck(() => runDelete(rec));
+  const handleEditSave = (r: any) => withDnsAck(() => runEdit(r));
+
   return (
     <div>
-      {/* ── Section title ── */}
       <h2 className="section-title">Manage DNS Records</h2>
       <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
         These records define how your domain behaves &mdash; where traffic is routed, how email is delivered, and which services are verified.
       </p>
 
-      {/* ── Add Record Form (Pro+) ── */}
+      {mutationError && (
+        <div style={{ background: '#FEF2F2', borderLeft: '3px solid #D85A30', padding: '10px 14px', borderRadius: 4, fontSize: 12, color: '#5A7A8A', marginBottom: 12 }}>
+          <strong style={{ color: '#D85A30' }}>DNS change failed:</strong> {mutationError}
+        </div>
+      )}
+
+      {/* Add Record Form (Pro+) */}
       {isPro && (
         <div className="dns-form-row">
           <select value={newType} onChange={e => setNewType(e.target.value)}>
@@ -101,31 +225,17 @@ export function HostingDomainDns() {
             <option value="MX">MX</option>
             <option value="TXT">TXT</option>
           </select>
-          <input
-            placeholder="Name"
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-          />
-          <input
-            placeholder="Points to"
-            value={newContent}
-            onChange={e => setNewContent(e.target.value)}
-          />
-          <input
-            placeholder="14400"
-            value={newTtl}
-            onChange={e => setNewTtl(e.target.value)}
-            style={{ width: 90 }}
-          />
-          <button className="abtn abtn-sky" onClick={handleAddRecord}>
-            Add Record
+          <input placeholder="Name" value={newName} onChange={e => setNewName(e.target.value)} />
+          <input placeholder="Points to" value={newContent} onChange={e => setNewContent(e.target.value)} />
+          <input placeholder="14400" value={newTtl} onChange={e => setNewTtl(e.target.value)} style={{ width: 90 }} />
+          <button className="abtn abtn-sky" disabled={mutating} onClick={handleAddRecord}>
+            {mutating ? 'Saving...' : 'Add Record'}
           </button>
         </div>
       )}
 
-      {/* ── DNS Records Table ── */}
+      {/* DNS Records Table */}
       <Card>
-        {/* Search */}
         <div style={{ marginBottom: 12 }}>
           <input
             type="text"
@@ -149,28 +259,41 @@ export function HostingDomainDns() {
               </tr>
             </thead>
             <tbody>
-              {filteredRecords.map((rec: any, i: number) => (
-                <tr key={i}>
-                  <td>{rec.type ?? '--'}</td>
-                  <td>{rec.name ?? '--'}</td>
-                  <td>{rec.priority ?? '--'}</td>
-                  <td>{rec.content ?? '--'}</td>
-                  <td>{rec.ttl ?? '--'}</td>
-                  {isPro && (
-                    <td>
-                      <button
-                        className="text-btn danger"
-                        onClick={() => handleDeleteRecord(rec)}
-                      >
-                        Delete
-                      </button>
-                      <button className="text-btn primary" style={{ marginLeft: 8 }}>
-                        Edit
-                      </button>
-                    </td>
-                  )}
-                </tr>
-              ))}
+              {filteredRecords.map((rec: any, i: number) => {
+                const rowKey = `${rec.type}|${rec.name}|${rec.content}`;
+                if (editingKey === rowKey) {
+                  return (
+                    <EditRecordRow
+                      key={i}
+                      rec={rec}
+                      saving={mutating}
+                      onSave={(r) => handleEditSave(r)}
+                      onCancel={() => setEditingKey(null)}
+                    />
+                  );
+                }
+                return (
+                  <tr key={i}>
+                    <td>{rec.type ?? '--'}</td>
+                    <td>{rec.name ?? '--'}</td>
+                    <td>{rec.priority ?? '--'}</td>
+                    <td>{rec.content ?? '--'}</td>
+                    <td>{rec.ttl ?? '--'}</td>
+                    {isPro && (
+                      <td>
+                        <button className="text-btn danger" onClick={() => handleDeleteRecord(rec)}>Delete</button>
+                        <button
+                          className="text-btn primary"
+                          style={{ marginLeft: 8 }}
+                          onClick={() => withDnsAck(() => setEditingKey(rowKey))}
+                        >
+                          Edit
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         ) : (
@@ -184,7 +307,7 @@ export function HostingDomainDns() {
         )}
       </Card>
 
-      {/* ── Domain Info ── */}
+      {/* Domain Info */}
       <Card title="Domain Info">
         <HealthRow status={domainName !== '--' ? 'ok' : 'warn'} label="Domain" value={domainName} />
         <HealthRow status="ok" label="Registrar" value={registrar} />
@@ -214,6 +337,14 @@ export function HostingDomainDns() {
         serviceType="IT & Hosting Management"
         triggerPage="hosting-domain-dns"
       />
+
+      {/* Warning modal — session-scoped */}
+      {pendingAction && (
+        <DnsWarningModal
+          onConfirm={() => { const fn = pendingAction; setPendingAction(null); fn(); }}
+          onCancel={() => setPendingAction(null)}
+        />
+      )}
     </div>
   );
 }

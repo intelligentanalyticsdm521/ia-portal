@@ -560,8 +560,8 @@ export async function getIndexNowSubmissions(params: { baseUrl: string; bearerTo
   return requestJson<any>({ ...params, path: `/arion/search/indexnow/submissions${qs}` });
 }
 
-export async function createDnsRecords(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; records: any[] }) {
-  return requestJson<any>({ ...params, method: 'POST', path: `/arion/hosting/dns?siteId=${encodeURIComponent(params.siteId)}`, body: { records: params.records } });
+export async function createDnsRecords(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; records: any[]; overwrite?: boolean }) {
+  return requestJson<any>({ ...params, method: 'POST', path: `/arion/hosting/dns?siteId=${encodeURIComponent(params.siteId)}`, body: { records: params.records, overwrite: !!params.overwrite } });
 }
 
 export async function deleteDnsRecords(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; records: any[] }) {
