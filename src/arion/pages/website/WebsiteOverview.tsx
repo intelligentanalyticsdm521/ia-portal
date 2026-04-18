@@ -53,6 +53,12 @@ export function WebsiteOverview() {
             <HealthRow status={ov?.integrations?.googleBusinessProfile ? 'ok' : 'warn'} label="Google Business Profile" value={ov?.integrations?.googleBusinessProfile ? 'Connected' : 'Not connected'} />
             <HealthRow status={ov?.integrations?.seRankingProject ? 'ok' : 'warn'} label="SEO (SE Ranking)" value={ov?.integrations?.seRankingProject ? 'Connected' : 'Not connected'} />
             <HealthRow status={ov?.integrations?.googleAnalytics ? 'ok' : 'warn'} label="Google Analytics" value={ov?.integrations?.googleAnalytics ? 'Connected' : 'Not connected'} />
+            <HealthRow status={ov?.integrations?.bingWebmaster ? 'ok' : 'warn'} label="Bing Webmaster Tools" value={ov?.integrations?.bingWebmaster ? 'Connected' : 'Not connected'} />
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(45,156,219,0.12)', textAlign: 'right' }}>
+              <a href="/app/settings?tab=Connected%20Accounts" style={{ fontSize: 12, color: 'var(--arion-sky)', fontWeight: 500 }}>
+                Manage connected accounts →
+              </a>
+            </div>
           </Card>
         </div>
 

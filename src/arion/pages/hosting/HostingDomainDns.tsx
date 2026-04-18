@@ -53,28 +53,84 @@ function DnsWarningModal({ onConfirm, onCancel }: { onConfirm: () => void; onCan
   );
 }
 
+// Normalize + validate record content based on type. Returns { value, error? }.
+// CNAME/MX content must be a hostname (we append trailing dot if missing).
+// A requires IPv4, AAAA requires IPv6, TXT accepts anything.
+function normalizeContent(type: string, raw: string): { value: string; error?: string } {
+  const v = (raw || '').trim();
+  if (!v) return { value: v, error: 'Content is required' };
+  if (type === 'A') {
+    if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(v)) return { value: v, error: 'A record requires an IPv4 address (e.g. 93.184.216.34)' };
+    return { value: v };
+  }
+  if (type === 'AAAA') {
+    if (!/^[0-9a-fA-F:]+$/.test(v) || !v.includes(':')) return { value: v, error: 'AAAA record requires an IPv6 address' };
+    return { value: v };
+  }
+  if (type === 'CNAME' || type === 'MX' || type === 'NS' || type === 'ALIAS') {
+    // Must be a hostname (letters, digits, dashes, dots). Append trailing dot for canonical form.
+    const cleaned = v.replace(/\/+$/, ''); // strip trailing slashes users sometimes paste
+    if (!/^[a-zA-Z0-9.-]+\.[a-zA-Z0-9.-]+$/.test(cleaned.replace(/\.$/, ''))) {
+      return { value: cleaned, error: `${type} record needs a valid hostname like example.com — got "${v}"` };
+    }
+    const withDot = cleaned.endsWith('.') ? cleaned : cleaned + '.';
+    return { value: withDot };
+  }
+  if (type === 'TXT') {
+    return { value: v };
+  }
+  return { value: v };
+}
+
+function placeholderForType(type: string): string {
+  switch (type) {
+    case 'A':     return '93.184.216.34';
+    case 'AAAA':  return '2606:2800:220:1::1';
+    case 'CNAME': return 'target.example.com';
+    case 'MX':    return 'mail.example.com';
+    case 'TXT':   return 'v=spf1 include:_spf.example.com ~all';
+    default:      return '';
+  }
+}
+
 // Small inline editor for a single record — appears in place of the row when Edit clicked
-function EditRecordRow({ rec, onSave, onCancel, saving }: { rec: any; onSave: (r: any) => void; onCancel: () => void; saving: boolean }) {
+function EditRecordRow({ rec, onSave, onCancel, saving, errorMsg }: { rec: any; onSave: (r: any) => void; onCancel: () => void; saving: boolean; errorMsg: string | null }) {
   const [content, setContent] = useState(rec.content || '');
   const [ttl, setTtl] = useState(String(rec.ttl || 14400));
+  const norm = normalizeContent(rec.type, content);
+  const canSave = !saving && !norm.error;
   return (
-    <tr style={{ background: '#FFF8E1' }}>
-      <td>{rec.type}</td>
-      <td>{rec.name}</td>
-      <td>{rec.priority ?? '--'}</td>
-      <td>
-        <input value={content} onChange={e => setContent(e.target.value)} style={{ width: '100%', fontSize: 12 }} />
-      </td>
-      <td>
-        <input value={ttl} onChange={e => setTtl(e.target.value)} style={{ width: 70, fontSize: 12 }} />
-      </td>
-      <td>
-        <button className="text-btn primary" disabled={saving} onClick={() => onSave({ ...rec, content, ttl: parseInt(ttl, 10) || 14400 })}>
-          {saving ? 'Saving...' : 'Save'}
-        </button>
-        <button className="text-btn" style={{ marginLeft: 8 }} onClick={onCancel}>Cancel</button>
-      </td>
-    </tr>
+    <>
+      <tr style={{ background: '#FFF8E1' }}>
+        <td>{rec.type}</td>
+        <td>{rec.name}</td>
+        <td>{rec.priority ?? '--'}</td>
+        <td>
+          <input value={content} onChange={e => setContent(e.target.value)} style={{ width: '100%', fontSize: 12 }} />
+        </td>
+        <td>
+          <input value={ttl} onChange={e => setTtl(e.target.value)} style={{ width: 70, fontSize: 12 }} />
+        </td>
+        <td>
+          <button
+            className="text-btn primary"
+            disabled={!canSave}
+            style={{ opacity: canSave ? 1 : 0.5, cursor: canSave ? 'pointer' : 'not-allowed' }}
+            onClick={() => onSave({ ...rec, content: norm.value, ttl: parseInt(ttl, 10) || 14400 })}
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+          <button className="text-btn" style={{ marginLeft: 8 }} onClick={onCancel}>Cancel</button>
+        </td>
+      </tr>
+      {(norm.error || errorMsg) && (
+        <tr style={{ background: '#FFF8E1' }}>
+          <td colSpan={6} style={{ padding: '4px 8px 8px', fontSize: 11, color: '#D85A30' }}>
+            {norm.error || errorMsg}
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -134,15 +190,19 @@ export function HostingDomainDns() {
     setPendingAction(() => fn);
   };
 
+  const addValidation = normalizeContent(newType, newContent);
+
   const runAdd = async () => {
     if (!activeSiteId || !newName || !newContent) return;
+    const norm = normalizeContent(newType, newContent);
+    if (norm.error) { setMutationError(norm.error); return; }
     setMutating(true);
     setMutationError(null);
     try {
       await arionApi.createDnsRecords(activeSiteId, [{
         type: newType,
-        name: newName,
-        content: newContent,
+        name: newName.trim(),
+        content: norm.value,
         ttl: parseInt(newTtl, 10) || 14400,
       }]);
       setNewType('A');
@@ -217,21 +277,28 @@ export function HostingDomainDns() {
 
       {/* Add Record Form (Pro+) */}
       {isPro && (
-        <div className="dns-form-row">
-          <select value={newType} onChange={e => setNewType(e.target.value)}>
-            <option value="A">A</option>
-            <option value="AAAA">AAAA</option>
-            <option value="CNAME">CNAME</option>
-            <option value="MX">MX</option>
-            <option value="TXT">TXT</option>
-          </select>
-          <input placeholder="Name" value={newName} onChange={e => setNewName(e.target.value)} />
-          <input placeholder="Points to" value={newContent} onChange={e => setNewContent(e.target.value)} />
-          <input placeholder="14400" value={newTtl} onChange={e => setNewTtl(e.target.value)} style={{ width: 90 }} />
-          <button className="abtn abtn-sky" disabled={mutating} onClick={handleAddRecord}>
-            {mutating ? 'Saving...' : 'Add Record'}
-          </button>
-        </div>
+        <>
+          <div className="dns-form-row">
+            <select value={newType} onChange={e => setNewType(e.target.value)}>
+              <option value="A">A</option>
+              <option value="AAAA">AAAA</option>
+              <option value="CNAME">CNAME</option>
+              <option value="MX">MX</option>
+              <option value="TXT">TXT</option>
+            </select>
+            <input placeholder="Name (e.g. subdomain or @ for root)" value={newName} onChange={e => setNewName(e.target.value)} />
+            <input placeholder={placeholderForType(newType)} value={newContent} onChange={e => setNewContent(e.target.value)} />
+            <input placeholder="14400" value={newTtl} onChange={e => setNewTtl(e.target.value)} style={{ width: 90 }} />
+            <button className="abtn abtn-sky" disabled={mutating || !!addValidation.error} onClick={handleAddRecord}>
+              {mutating ? 'Saving...' : 'Add Record'}
+            </button>
+          </div>
+          {addValidation.error && newContent && (
+            <div style={{ fontSize: 11, color: '#D85A30', margin: '4px 0 10px', paddingLeft: 2 }}>
+              {addValidation.error}
+            </div>
+          )}
+        </>
       )}
 
       {/* DNS Records Table */}
@@ -267,8 +334,9 @@ export function HostingDomainDns() {
                       key={i}
                       rec={rec}
                       saving={mutating}
+                      errorMsg={mutationError}
                       onSave={(r) => handleEditSave(r)}
-                      onCancel={() => setEditingKey(null)}
+                      onCancel={() => { setEditingKey(null); setMutationError(null); }}
                     />
                   );
                 }

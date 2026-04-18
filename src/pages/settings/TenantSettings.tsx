@@ -1096,7 +1096,11 @@ function DataPrivacyTab() {
 /* ------------------------------------------------------------------ */
 
 export function TenantSettings() {
-  const [activeTab, setActiveTab] = useState<Tab>('Organization');
+  // Allow deep-linking to a specific tab via ?tab=Connected%20Accounts etc.
+  const [urlParams] = useSearchParams();
+  const tabFromUrl = urlParams.get('tab');
+  const isValidTab = (t: string | null): t is Tab => !!t && (TABS as readonly string[]).includes(t);
+  const [activeTab, setActiveTab] = useState<Tab>(isValidTab(tabFromUrl) ? tabFromUrl : 'Organization');
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
