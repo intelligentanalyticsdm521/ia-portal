@@ -482,6 +482,9 @@ export async function getBingIndexingStats(params: { baseUrl: string; bearerToke
 export async function verifyBingKey(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; apiKey: string; siteUrl?: string }) {
   return requestJson<any>({ ...p, method: 'POST', path: `/arion/bing/verify?siteId=${encodeURIComponent(p.siteId)}`, body: { apiKey: p.apiKey, siteUrl: p.siteUrl } });
 }
+export async function autoConnectBing(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...p, method: 'POST', path: `/arion/bing/auto-connect?siteId=${encodeURIComponent(p.siteId)}`, body: {} });
+}
 export async function getBingStatus(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<any>({ ...p, path: `/arion/bing/status?siteId=${encodeURIComponent(p.siteId)}` });
 }

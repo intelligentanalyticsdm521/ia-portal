@@ -565,9 +565,12 @@ function ConnectedAccountsTab() {
     }
   }, [siteId, activeTenantId, apiBaseUrl, getToken]);
 
-  // Bing Webmaster Tools — per-site API key. Phase 2.
+  // Bing Webmaster Tools — Phase 2: one-click auto-connect via master account.
   const [bingStatus, setBingStatus] = useState<any>(null);
-  const [bingPanelOpen, setBingPanelOpen] = useState(false);
+  const [bingAutoConnecting, setBingAutoConnecting] = useState(false);
+  const [bingAutoResult, setBingAutoResult] = useState<any>(null);
+  // Advanced path: client can still paste their own API key if they'd rather use their own account
+  const [bingAdvancedOpen, setBingAdvancedOpen] = useState(false);
   const [bingKeyInput, setBingKeyInput] = useState('');
   const [bingVerifying, setBingVerifying] = useState(false);
   const [bingResult, setBingResult] = useState<any>(null);
@@ -585,6 +588,27 @@ function ConnectedAccountsTab() {
     })();
   }, [siteId, activeTenantId, apiBaseUrl, getToken]);
 
+  const handleBingAutoConnect = useCallback(async () => {
+    if (!siteId || !activeTenantId || !apiBaseUrl) return;
+    setBingAutoConnecting(true);
+    setBingAutoResult(null);
+    try {
+      const token = await getToken();
+      const { autoConnectBing, getBingStatus } = await import('../../lib/arionApi');
+      const r = await autoConnectBing({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+      setBingAutoResult(r);
+      if (r.connected) {
+        const s = await getBingStatus({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+        setBingStatus(s);
+        setToast('Bing Webmaster Tools connected');
+      }
+    } catch (e: any) {
+      setBingAutoResult({ connected: false, error: e.message || 'Auto-connect failed' });
+    } finally {
+      setBingAutoConnecting(false);
+    }
+  }, [siteId, activeTenantId, apiBaseUrl, getToken]);
+
   const handleBingVerify = useCallback(async () => {
     if (!siteId || !activeTenantId || !apiBaseUrl) return;
     const trimmed = bingKeyInput.trim();
@@ -598,7 +622,7 @@ function ConnectedAccountsTab() {
       setBingResult(r);
       if (r.verified) {
         setBingKeyInput('');
-        setBingPanelOpen(false);
+        setBingAdvancedOpen(false);
         const s = await getBingStatus({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
         setBingStatus(s);
         setToast('Bing Webmaster Tools connected' + (r.warning ? ' — with warnings' : ''));
@@ -676,7 +700,10 @@ function ConnectedAccountsTab() {
           </div>
         </div>
 
-        {/* Bing Webmaster Tools — own connect flow */}
+        {/* Bing Webmaster Tools — one-click auto-connect via master Bing account.
+            Behind the scenes: adds the site under our master Bing account, writes a
+            verification CNAME via Hostinger DNS, polls Bing until verified. Client
+            sees only a Connect button. */}
         <div className="rounded-lg border bg-white p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -694,44 +721,76 @@ function ConnectedAccountsTab() {
                 Disconnect
               </button>
             ) : (
-              <button type="button" onClick={() => setBingPanelOpen(v => !v)} className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800">
-                {bingPanelOpen ? 'Close' : 'Connect Bing Webmaster'}
+              <button
+                type="button"
+                onClick={handleBingAutoConnect}
+                disabled={bingAutoConnecting || !siteId}
+                className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+              >
+                {bingAutoConnecting ? 'Connecting — verifying ownership...' : 'Connect'}
               </button>
             )}
           </div>
-          {bingPanelOpen && !bingConnected && (
-            <div className="mt-4 rounded border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs font-semibold text-gray-900">Paste your Bing Webmaster API key</div>
-              <ol className="mt-2 ml-4 list-decimal text-[11px] text-gray-600 space-y-0.5">
-                <li>Open <a href="https://www.bing.com/webmasters/" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">bing.com/webmasters</a> and sign in</li>
-                <li>Select your site, then go to Settings → API Access → API Key</li>
-                <li>Copy the key and paste it below</li>
-              </ol>
-              <div className="mt-3 flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Bing API key"
-                  value={bingKeyInput}
-                  onChange={e => setBingKeyInput(e.target.value)}
-                  className="flex-1 rounded border border-gray-300 px-2 py-1.5 text-xs font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={handleBingVerify}
-                  disabled={bingVerifying || !bingKeyInput.trim()}
-                  className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-                >
-                  {bingVerifying ? 'Verifying...' : 'Verify & Connect'}
-                </button>
-              </div>
-              {bingResult && !bingResult.verified && (
-                <div className="mt-2 rounded border-l-2 border-red-400 bg-red-50 px-3 py-2 text-[11px] text-red-700">
-                  {bingResult.error === 'invalid_key' ? 'Bing rejected this key as invalid.' : (bingResult.error || 'Verification failed')}
-                </div>
-              )}
-              {bingResult?.verified && bingResult.warning && (
-                <div className="mt-2 rounded border-l-2 border-amber-400 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-                  {bingResult.warning}
+
+          {bingAutoConnecting && (
+            <div className="mt-3 rounded border-l-2 border-blue-400 bg-blue-50 px-3 py-2 text-[11px] text-blue-800">
+              Adding your site to Bing · writing DNS verification · waiting for Bing to confirm. This typically takes 30-90 seconds.
+            </div>
+          )}
+
+          {bingAutoResult && !bingAutoResult.connected && !bingAutoConnecting && (
+            <div className="mt-3 rounded border-l-2 border-amber-400 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+              {bingAutoResult.stage === 'verify_timeout'
+                ? bingAutoResult.error
+                : bingAutoResult.stage === 'dns_write'
+                ? `Couldn't write the DNS record automatically (${bingAutoResult.error || 'unknown error'}). Click Connect again in a few minutes, or use the advanced option below to paste your own Bing API key.`
+                : (bingAutoResult.error || 'Auto-connect failed. Try again or use the advanced option below.')}
+            </div>
+          )}
+
+          {!bingConnected && (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => setBingAdvancedOpen(v => !v)}
+                className="text-[10px] text-gray-400 hover:text-gray-600"
+              >
+                {bingAdvancedOpen ? '▾ Hide advanced' : '▸ Advanced — use my own Bing account'}
+              </button>
+              {bingAdvancedOpen && (
+                <div className="mt-2 rounded border border-gray-200 bg-gray-50 p-3">
+                  <div className="text-xs font-semibold text-gray-900">Paste your Bing Webmaster API key</div>
+                  <ol className="mt-2 ml-4 list-decimal text-[11px] text-gray-600 space-y-0.5">
+                    <li>Open <a href="https://www.bing.com/webmasters/" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">bing.com/webmasters</a> and sign in</li>
+                    <li>Your site → Settings → API Access → API Key → Copy</li>
+                  </ol>
+                  <div className="mt-3 flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Bing API key"
+                      value={bingKeyInput}
+                      onChange={e => setBingKeyInput(e.target.value)}
+                      className="flex-1 rounded border border-gray-300 px-2 py-1.5 text-xs font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleBingVerify}
+                      disabled={bingVerifying || !bingKeyInput.trim()}
+                      className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+                    >
+                      {bingVerifying ? 'Verifying...' : 'Verify & Connect'}
+                    </button>
+                  </div>
+                  {bingResult && !bingResult.verified && (
+                    <div className="mt-2 rounded border-l-2 border-red-400 bg-red-50 px-3 py-2 text-[11px] text-red-700">
+                      {bingResult.error === 'invalid_key' ? 'Bing rejected this key as invalid.' : (bingResult.error || 'Verification failed')}
+                    </div>
+                  )}
+                  {bingResult?.verified && bingResult.warning && (
+                    <div className="mt-2 rounded border-l-2 border-amber-400 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                      {bingResult.warning}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
