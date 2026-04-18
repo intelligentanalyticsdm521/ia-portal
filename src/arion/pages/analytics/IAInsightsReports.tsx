@@ -57,7 +57,7 @@ function expectedCtrForPosition(pos: number): number {
 }
 
 /* ── ARGUS Insight Box (shared across all modals) ── */
-function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any }) {
+function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any; bingData?: any }) {
   const sessions = d?.summary?.totalSessions || 255;
   const engaged = d?.engagement?.engagedSessions || 64;
   const engRate = formatPct(d?.engagement?.engagementRate || 0.251);
@@ -99,6 +99,13 @@ function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, 
   // GSC for cross-source observations
   const gscImpressions = searchData?.summary?.impressions || 0;
   const formSubmissions = d?.summary?.formSubmissions || 0;
+
+  // Bing for Phase 2 visibility observation (gscCtr + gscAvgPos are declared just below)
+  const bingConnected = bingData?.connected === true && !bingData?.error;
+  const bingImpressions = bingData?.summary?.impressions || 0;
+  const bingClicks = bingData?.summary?.clicks || 0;
+  const bingCtr = Number(bingData?.summary?.ctr || 0);
+  const bingAvgPosition = bingData?.summary?.avgPosition != null ? Number(bingData.summary.avgPosition) : null;
 
   // Derive search-specific numbers from real GSC data when present
   const sd = searchData || {};
@@ -143,6 +150,10 @@ function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, 
         gbpConnected
           ? `Your Google Business Profile contributed ${formatNumber(gbpImpressions)} impressions to your total Google visibility this period. Combined with ${formatNumber(gscImpressions)} search impressions and ${sessions} website visits, your total Google touch points were approximately ${formatNumber(gbpImpressions + gscImpressions + sessions)}. GBP accounts for ${gbpImpressions + gscImpressions > 0 ? Math.round((gbpImpressions / (gbpImpressions + gscImpressions)) * 100) : 0}% of total Google surface area — ${gbpImpressions > gscImpressions ? 'your local listing is actually more visible than your search presence, which is common for service-area businesses' : 'your search presence outweighs your local listing, which suggests room to optimize GBP categories, photos, and posting cadence'}.`
           : 'Connect your Google Business Profile in Settings → Connected Accounts to surface local-listing impressions alongside search impressions for a complete Google visibility picture.',
+        // Phase 2 Step 3.7 append — Bing visibility
+        bingConnected
+          ? `Bing search delivered ${formatNumber(bingImpressions)} impressions and ${bingClicks} clicks this period${bingCtr > 0 ? ` (${bingCtr.toFixed(2)}% CTR)` : ''}. ${bingImpressions > 0 && bingCtr > gscCtr && gscCtr > 0 ? `Your Bing CTR (${bingCtr.toFixed(2)}%) outperforms your Google CTR (${gscCtr.toFixed(2)}%) — Bing searchers are finding your results more relevant. This often indicates an underserved audience on a less competitive platform.` : bingImpressions > 0 && bingAvgPosition != null && gscAvgPos != null && bingAvgPosition < gscAvgPos ? `You rank better on Bing (avg position ${bingAvgPosition.toFixed(1)}) than on Google (${gscAvgPos.toFixed(1)}) — Bing represents a lower-competition opportunity worth maintaining.` : bingImpressions === 0 ? 'Bing is connected but has not yet collected enough data to analyze — check back in 30 days.' : 'Bing and Google performance are comparable; continue optimizing both equally.'}`
+          : 'Connect Bing Webmaster Tools in Settings → Connected Accounts to see Bing impressions, CTR, and ranking alongside Google search.',
       ],
       actions: [
         `Rewrite the title tag on the homepage to include "Des Moines" — your top GSC query "intelligent analytics des moines" has 489 impressions but 0 clicks, likely because the title doesn't match the search intent.`,
@@ -305,7 +316,7 @@ function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, 
 }
 
 /* ── Modal content renderer ── */
-function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?: { gbp?: any; reviews?: any; posts?: any; qanda?: any }) {
+function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?: { gbp?: any; reviews?: any; posts?: any; qanda?: any }, bingData?: any) {
   switch (reportKey) {
     case 'visibility': {
   const sessions = d?.summary?.totalSessions || 255;
@@ -1303,7 +1314,9 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
             { channel: 'Website', status: 'Active', statusColor: '#1D9E75', metric: sessions + ' sessions', action: 'Reduce bounce rate' },
             { channel: 'Google Search', status: 'Active', statusColor: '#1D9E75', metric: '10,869 impressions', action: 'Improve CTR' },
             { channel: 'Google Business', status: 'Connected', statusColor: '#D4A800', metric: 'Limited data', action: 'Optimize listing' },
-            { channel: 'Bing', status: 'Not connected', statusColor: '#D85A30', metric: '--', action: 'Connect Bing' },
+            bingData?.connected && !bingData?.error
+              ? { channel: 'Bing', status: 'Active', statusColor: '#1D9E75', metric: (bingData.summary?.impressions ?? 0) + ' impressions', action: 'Review Bing tab' }
+              : { channel: 'Bing', status: 'Not connected', statusColor: '#D85A30', metric: '--', action: 'Connect Bing' },
             { channel: 'Content (RankMath)', status: 'Not connected', statusColor: '#D85A30', metric: '--', action: 'Install IA Plugin' },
           ].map((row, i) => (
             <tr key={i} style={{ borderBottom: '1px solid #f5f5f5' }}>
@@ -1353,7 +1366,7 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
 }
 
 /* ── Report Modal ── */
-function ReportModal({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, onClose }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any; onClose: () => void }) {
+function ReportModal({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, onClose }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any; bingData?: any; onClose: () => void }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
       <div style={{ background: '#fff', borderRadius: 12, maxWidth: 900, width: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
@@ -1368,10 +1381,10 @@ function ReportModal({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpP
 
         {/* Scrollable body */}
         <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-          {renderModalContent(reportKey, d, searchData, { gbp: gbpData, reviews: gbpReviews, posts: gbpPosts, qanda: gbpQanda })}
+          {renderModalContent(reportKey, d, searchData, { gbp: gbpData, reviews: gbpReviews, posts: gbpPosts, qanda: gbpQanda }, bingData)}
 
           {/* ARGUS Insight Box — always last */}
-          <ArgusInsightBox reportKey={reportKey} data={d} searchData={searchData} gbpData={gbpData} gbpReviews={gbpReviews} gbpPosts={gbpPosts} gbpQanda={gbpQanda} />
+          <ArgusInsightBox reportKey={reportKey} data={d} searchData={searchData} gbpData={gbpData} gbpReviews={gbpReviews} gbpPosts={gbpPosts} gbpQanda={gbpQanda} bingData={bingData} />
         </div>
 
         {/* Sticky footer */}
@@ -1394,6 +1407,7 @@ export function IAInsightsReports() {
   const [gbpReviews, setGbpReviews] = React.useState<any>(null);
   const [gbpPosts, setGbpPosts] = React.useState<any>(null);
   const [gbpQanda, setGbpQanda] = React.useState<any>(null);
+  const [bingData, setBingData] = React.useState<any>(null);
 
   // Fetch GSC performance (all dimensions) alongside GA4 data so the Search Intelligence modal
   // and ARGUS insight box can render real numbers.
@@ -1420,6 +1434,16 @@ export function IAInsightsReports() {
       if (cancelled) return;
       setGbpData(b); setGbpReviews(r); setGbpPosts(p); setGbpQanda(q);
     });
+    return () => { cancelled = true; };
+  }, [activeSiteId, arionApi]);
+
+  // Phase 2 Step 3.7: fetch Bing performance for the Visibility & Reach ARGUS observation
+  React.useEffect(() => {
+    if (!activeSiteId) { setBingData(null); return; }
+    let cancelled = false;
+    arionApi.getBingPerformance(activeSiteId, 90)
+      .then((res: any) => { if (!cancelled) setBingData(res); })
+      .catch(() => { if (!cancelled) setBingData(null); });
     return () => { cancelled = true; };
   }, [activeSiteId, arionApi]);
 
@@ -1550,7 +1574,7 @@ export function IAInsightsReports() {
       <ConsultingUpsell headline="Want IA to interpret your reports and build a growth plan?" subtext="Strategy sessions with your data." serviceType="Analytics Consulting" triggerPage="ia-insights" />
 
       {/* Modal */}
-      {activeModal && <ReportModal reportKey={activeModal} data={data} searchData={searchData} gbpData={gbpData} gbpReviews={gbpReviews} gbpPosts={gbpPosts} gbpQanda={gbpQanda} onClose={() => setActiveModal(null)} />}
+      {activeModal && <ReportModal reportKey={activeModal} data={data} searchData={searchData} gbpData={gbpData} gbpReviews={gbpReviews} gbpPosts={gbpPosts} gbpQanda={gbpQanda} bingData={bingData} onClose={() => setActiveModal(null)} />}
     </div>
   );
 }

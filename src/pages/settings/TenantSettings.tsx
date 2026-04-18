@@ -565,15 +565,76 @@ function ConnectedAccountsTab() {
     }
   }, [siteId, activeTenantId, apiBaseUrl, getToken]);
 
+  // Bing Webmaster Tools — per-site API key. Phase 2.
+  const [bingStatus, setBingStatus] = useState<any>(null);
+  const [bingPanelOpen, setBingPanelOpen] = useState(false);
+  const [bingKeyInput, setBingKeyInput] = useState('');
+  const [bingVerifying, setBingVerifying] = useState(false);
+  const [bingResult, setBingResult] = useState<any>(null);
+  const bingLoadedRef = useRef(false);
+  useEffect(() => {
+    if (bingLoadedRef.current || !siteId || !activeTenantId || !apiBaseUrl) return;
+    bingLoadedRef.current = true;
+    (async () => {
+      try {
+        const token = await getToken();
+        const { getBingStatus } = await import('../../lib/arionApi');
+        const s = await getBingStatus({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+        setBingStatus(s);
+      } catch { /* ignore */ }
+    })();
+  }, [siteId, activeTenantId, apiBaseUrl, getToken]);
+
+  const handleBingVerify = useCallback(async () => {
+    if (!siteId || !activeTenantId || !apiBaseUrl) return;
+    const trimmed = bingKeyInput.trim();
+    if (!trimmed) return;
+    setBingVerifying(true);
+    setBingResult(null);
+    try {
+      const token = await getToken();
+      const { verifyBingKey, getBingStatus } = await import('../../lib/arionApi');
+      const r = await verifyBingKey({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId, apiKey: trimmed });
+      setBingResult(r);
+      if (r.verified) {
+        setBingKeyInput('');
+        setBingPanelOpen(false);
+        const s = await getBingStatus({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+        setBingStatus(s);
+        setToast('Bing Webmaster Tools connected' + (r.warning ? ' — with warnings' : ''));
+      }
+    } catch (e: any) {
+      setBingResult({ verified: false, error: e.message || 'Verification failed' });
+    } finally {
+      setBingVerifying(false);
+    }
+  }, [siteId, activeTenantId, apiBaseUrl, getToken, bingKeyInput]);
+
+  const handleBingDisconnect = useCallback(async () => {
+    if (!siteId || !activeTenantId || !apiBaseUrl) return;
+    if (!confirm('Disconnect Bing Webmaster Tools? Your stored API key will be removed from ARION.')) return;
+    try {
+      const token = await getToken();
+      const { disconnectBing, getBingStatus } = await import('../../lib/arionApi');
+      await disconnectBing({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+      const s = await getBingStatus({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+      setBingStatus(s);
+      setToast('Bing disconnected');
+    } catch (e: any) {
+      setToast(e.message || 'Disconnect failed');
+    }
+  }, [siteId, activeTenantId, apiBaseUrl, getToken]);
+
+  const bingConnected = !!bingStatus?.connected;
+
   // GSC and GBP share the same Google OAuth token as Google Analytics, so their
   // connection state follows gaConnected and their Connect/Reconnect buttons trigger
   // the same Google OAuth flow (which now requests the expanded `webmasters` write scope).
-  // Bing Webmaster and Apple Business Connect have their own connection flows, still in progress.
+  // Bing Webmaster has its own per-site API-key flow (inline panel below).
   type Integration = { key: string; name: string; connected: boolean; sharesGoogleAuth: boolean; comingSoon: boolean };
   const OTHER_INTEGRATIONS: Integration[] = [
     { key: 'gsc', name: 'Google Search Console', connected: gaConnected, sharesGoogleAuth: true, comingSoon: false },
     { key: 'gbp', name: 'Google Business Profile', connected: gaConnected, sharesGoogleAuth: true, comingSoon: false },
-    { key: 'bwt', name: 'Bing Webmaster', connected: false, sharesGoogleAuth: false, comingSoon: true },
     { key: 'abc', name: 'Apple Business Connect', connected: false, sharesGoogleAuth: false, comingSoon: true },
   ];
 
@@ -613,6 +674,68 @@ function ConnectedAccountsTab() {
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Bing Webmaster Tools — own connect flow */}
+        <div className="rounded-lg border bg-white p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-gray-900">Bing Webmaster Tools</div>
+              <div className="mt-1 flex items-center gap-1.5">
+                <span className={`h-2 w-2 rounded-full ${bingConnected ? 'bg-green-500' : 'bg-gray-300'}`} />
+                <span className="text-xs text-gray-500">{bingConnected ? 'Connected' : 'Not connected'}</span>
+              </div>
+              {bingConnected && bingStatus?.siteUrl && (
+                <div className="mt-1 text-[10px] text-gray-400">{bingStatus.siteUrl}</div>
+              )}
+            </div>
+            {bingConnected ? (
+              <button type="button" onClick={handleBingDisconnect} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                Disconnect
+              </button>
+            ) : (
+              <button type="button" onClick={() => setBingPanelOpen(v => !v)} className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800">
+                {bingPanelOpen ? 'Close' : 'Connect Bing Webmaster'}
+              </button>
+            )}
+          </div>
+          {bingPanelOpen && !bingConnected && (
+            <div className="mt-4 rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs font-semibold text-gray-900">Paste your Bing Webmaster API key</div>
+              <ol className="mt-2 ml-4 list-decimal text-[11px] text-gray-600 space-y-0.5">
+                <li>Open <a href="https://www.bing.com/webmasters/" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">bing.com/webmasters</a> and sign in</li>
+                <li>Select your site, then go to Settings → API Access → API Key</li>
+                <li>Copy the key and paste it below</li>
+              </ol>
+              <div className="mt-3 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Bing API key"
+                  value={bingKeyInput}
+                  onChange={e => setBingKeyInput(e.target.value)}
+                  className="flex-1 rounded border border-gray-300 px-2 py-1.5 text-xs font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={handleBingVerify}
+                  disabled={bingVerifying || !bingKeyInput.trim()}
+                  className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+                >
+                  {bingVerifying ? 'Verifying...' : 'Verify & Connect'}
+                </button>
+              </div>
+              {bingResult && !bingResult.verified && (
+                <div className="mt-2 rounded border-l-2 border-red-400 bg-red-50 px-3 py-2 text-[11px] text-red-700">
+                  {bingResult.error === 'invalid_key' ? 'Bing rejected this key as invalid.' : (bingResult.error || 'Verification failed')}
+                </div>
+              )}
+              {bingResult?.verified && bingResult.warning && (
+                <div className="mt-2 rounded border-l-2 border-amber-400 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                  {bingResult.warning}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Other integration cards */}

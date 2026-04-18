@@ -478,6 +478,24 @@ export async function getBingIndexingStats(params: { baseUrl: string; bearerToke
   return requestJson<any>({ ...params, path: `/arion/search/bing/stats?siteId=${encodeURIComponent(params.siteId)}` });
 }
 
+// Bing Webmaster Tools — Phase 2
+export async function verifyBingKey(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; apiKey: string; siteUrl?: string }) {
+  return requestJson<any>({ ...p, method: 'POST', path: `/arion/bing/verify?siteId=${encodeURIComponent(p.siteId)}`, body: { apiKey: p.apiKey, siteUrl: p.siteUrl } });
+}
+export async function getBingStatus(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...p, path: `/arion/bing/status?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function disconnectBing(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...p, method: 'POST', path: `/arion/bing/disconnect?siteId=${encodeURIComponent(p.siteId)}`, body: {} });
+}
+export async function getBingPerformance(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; period?: number }) {
+  const qs = `?siteId=${encodeURIComponent(p.siteId)}&period=${p.period || 30}`;
+  return requestJson<any>({ ...p, path: `/arion/bing/performance${qs}` });
+}
+export async function getBingQueries(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...p, path: `/arion/bing/queries?siteId=${encodeURIComponent(p.siteId)}` });
+}
+
 // Google Business Profile — Phase 1 live routes
 export async function getGbpBusiness(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<any>({ ...p, path: `/arion/business?siteId=${encodeURIComponent(p.siteId)}` });

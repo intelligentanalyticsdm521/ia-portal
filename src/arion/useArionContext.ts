@@ -42,6 +42,11 @@ import {
   getAnalyticsReport as portalGetAnalyticsReport,
   generateSitemap as portalGenerateSitemap,
   getBingIndexingStats as portalGetBingIndexingStats,
+  verifyBingKey as portalVerifyBingKey,
+  getBingStatus as portalGetBingStatus,
+  disconnectBing as portalDisconnectBing,
+  getBingPerformance as portalGetBingPerformance,
+  getBingQueries as portalGetBingQueries,
   // GBP Phase 1 live routes
   getGbpBusiness as portalGetGbpBusiness,
   getGbpReviewsLive as portalGetGbpReviewsLive,
@@ -330,6 +335,27 @@ export function useArionContext() {
       async getBingIndexingStats(siteId: string) {
         const b = await base();
         return portalGetBingIndexingStats({ ...b, siteId });
+      },
+      // Bing Phase 2
+      async verifyBingKey(siteId: string, apiKey: string, siteUrl?: string) {
+        const b = await base();
+        return portalVerifyBingKey({ ...b, siteId, apiKey, siteUrl });
+      },
+      async getBingStatus(siteId: string) {
+        const b = await base();
+        return portalGetBingStatus({ ...b, siteId });
+      },
+      async disconnectBing(siteId: string) {
+        const b = await base();
+        return portalDisconnectBing({ ...b, siteId });
+      },
+      async getBingPerformance(siteId: string, period?: number) {
+        const b = await base();
+        return portalGetBingPerformance({ ...b, siteId, period });
+      },
+      async getBingQueries(siteId: string) {
+        const b = await base();
+        return portalGetBingQueries({ ...b, siteId });
       },
 
       // GBP Phase 1 live routes

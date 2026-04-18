@@ -33,6 +33,7 @@ export function SearchPerformance() {
   if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
 
   const d = data as Record<string, any> | null;
+  const bingNotConnected = provider === 'bing' && d?.error && /not connected|not configured/i.test(String(d.error));
   const summary = d?.summary ?? {};
   const breakdowns = d?.breakdowns ?? {};
   const queries = (breakdowns.queries as any[]) ?? [];
@@ -85,7 +86,12 @@ export function SearchPerformance() {
         ))}
       </div>
 
-      {!d ? (
+      {bingNotConnected ? (
+        <div style={{ background: '#FFF8E1', borderLeft: '3px solid #D4A800', borderRadius: 4, padding: '14px 18px', fontSize: 13, color: '#5A7A8A', lineHeight: 1.6 }}>
+          <strong style={{ color: '#0B1C24' }}>Bing Webmaster Tools — Not Connected</strong>
+          <p style={{ margin: '4px 0 0' }}>Connect Bing in Settings → Connected Accounts to see Bing search impressions, clicks, CTR, and ranking data alongside your Google results.</p>
+        </div>
+      ) : !d ? (
         <EmptyPanel message="No search performance data available." />
       ) : (
         <>
