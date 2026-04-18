@@ -279,9 +279,9 @@ export function useArionContext() {
         return portalGetSiteDetail({ ...b, siteId });
       },
 
-      async getSearchPerformance(provider: string, siteId: string, days?: number) {
+      async getSearchPerformance(provider: string, siteId: string, opts?: { period?: number; groupBy?: string; days?: number }) {
         const b = await base();
-        return portalGetSearchPerformance({ ...b, siteId, provider, days });
+        return portalGetSearchPerformance({ ...b, siteId, provider, period: opts?.period, groupBy: opts?.groupBy, days: opts?.days });
       },
 
       async inspectUrl(siteId: string, url: string) {

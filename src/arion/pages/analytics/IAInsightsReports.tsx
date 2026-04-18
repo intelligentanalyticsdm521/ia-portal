@@ -1,6 +1,15 @@
 import React from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip } from 'chart.js';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line as RLine,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip as RTooltip,
+} from 'recharts';
 import { useArionContext } from '../../useArionContext';
 import { useAnalyticsData } from '../../analytics/useAnalyticsData';
 import { ARION_COLORS, ARION_PALETTE, CHART_FILLS, formatNumber, formatPct, formatDuration, bounceColor } from '../../analytics/chartConfig';
@@ -18,14 +27,70 @@ const MODAL_TITLES: Record<string, string> = {
   presence: 'Business Presence Score',
 };
 
+// Industry CTR benchmark by search position — shared between ARGUS box and search modal
+const CTR_BENCHMARK_TABLE: Array<{ pos: number; ctr: number }> = [
+  { pos: 1, ctr: 28 }, { pos: 2, ctr: 15 }, { pos: 3, ctr: 10 }, { pos: 4, ctr: 7 },
+  { pos: 5, ctr: 5 }, { pos: 6, ctr: 3.5 }, { pos: 7, ctr: 3 }, { pos: 8, ctr: 2.7 },
+  { pos: 9, ctr: 2.5 }, { pos: 10, ctr: 2.4 }, { pos: 15, ctr: 1.5 }, { pos: 20, ctr: 0.7 },
+  { pos: 25, ctr: 0.4 }, { pos: 30, ctr: 0.3 }, { pos: 50, ctr: 0.1 }, { pos: 100, ctr: 0.05 },
+];
+
+function expectedCtrForPosition(pos: number): number {
+  if (pos == null || !isFinite(pos)) return 0;
+  if (pos <= 1) return CTR_BENCHMARK_TABLE[0].ctr;
+  if (pos >= 100) return 0.05;
+  // Linear interpolate between adjacent points
+  for (let i = 0; i < CTR_BENCHMARK_TABLE.length - 1; i++) {
+    const a = CTR_BENCHMARK_TABLE[i];
+    const b = CTR_BENCHMARK_TABLE[i + 1];
+    if (pos >= a.pos && pos <= b.pos) {
+      const t = (pos - a.pos) / (b.pos - a.pos);
+      return Number((a.ctr + (b.ctr - a.ctr) * t).toFixed(2));
+    }
+  }
+  return 0;
+}
+
 /* ── ARGUS Insight Box (shared across all modals) ── */
-function ArgusInsightBox({ reportKey, data: d }: { reportKey: string; data: any }) {
+function ArgusInsightBox({ reportKey, data: d, searchData }: { reportKey: string; data: any; searchData?: any }) {
   const sessions = d?.summary?.totalSessions || 255;
-  const impressions = 10869;
   const engaged = d?.engagement?.engagedSessions || 64;
   const engRate = formatPct(d?.engagement?.engagementRate || 0.251);
   const bounce = formatPct(d?.summary?.bounceRate || 0.749);
   const domain = 'intelligentanalyticsdm.com';
+
+  // Derive search-specific numbers from real GSC data when present
+  const sd = searchData || {};
+  const gscSummary = sd.summary || {};
+  const gscQueries: any[] = sd.breakdowns?.queries || [];
+  const gscDevices: any[] = sd.breakdowns?.devices || [];
+
+  const impressions = (typeof gscSummary.impressions === 'number' && gscSummary.impressions > 0) ? gscSummary.impressions : 10869;
+  const gscClicks = (typeof gscSummary.clicks === 'number') ? gscSummary.clicks : 66;
+  const gscCtr = (typeof gscSummary.ctr === 'number') ? gscSummary.ctr : 0.61; // percentage number
+  const gscAvgPos = (typeof gscSummary.avgPosition === 'number') ? gscSummary.avgPosition : 22.08;
+  const expCtr = expectedCtrForPosition(gscAvgPos);
+  const ctrGap = Number((expCtr - gscCtr).toFixed(2));
+  const missedClicks = Math.round(Math.max(0, (ctrGap / 100) * impressions));
+
+  // Top opportunity query = max(impressions × (expectedCtr - actualCtr))
+  const topOpp = [...gscQueries]
+    .map(q => {
+      const pos = Number(q.position ?? q.avgPosition ?? 0);
+      const ctr = Number(q.ctr ?? 0);
+      const imp = Number(q.impressions ?? 0);
+      const eCtr = expectedCtrForPosition(pos);
+      return { query: q.query, impressions: imp, clicks: Number(q.clicks ?? 0), ctr, position: pos, expectedCtr: eCtr, opportunity: imp * Math.max(0, eCtr - ctr) };
+    })
+    .filter(q => q.impressions > 0 && q.opportunity > 0)
+    .sort((a, b) => b.opportunity - a.opportunity)[0];
+
+  // Device CTR comparison
+  const desktop = gscDevices.find(d2 => (d2.device || '').toUpperCase() === 'DESKTOP');
+  const mobile = gscDevices.find(d2 => (d2.device || '').toUpperCase() === 'MOBILE');
+  const mobileCtrGap = (desktop && mobile && desktop.ctr > 0 && mobile.ctr < desktop.ctr)
+    ? Number((desktop.ctr - mobile.ctr).toFixed(2))
+    : 0;
 
   const insights: Record<string, { observations: string[]; actions: string[] }> = {
     visibility: {
@@ -66,14 +131,38 @@ function ArgusInsightBox({ reportKey, data: d }: { reportKey: string; data: any 
     },
     search: {
       observations: [
-        `With 10,869 impressions and only 66 clicks, the overall CTR is 0.21% — significantly below the 2.4% expected at position 22. This means approximately 192 clicks per month are being lost to poor title tags and meta descriptions.`,
-        `The query "intelligent analytics" generates 1,437 impressions at position 7.09 with 21 clicks (1.46% CTR). At position 7, the expected CTR is approximately 3.5% — meaning ~29 additional clicks per month are available just from optimizing this one query's snippet.`,
-        `5 of your top queries contain "des moines" or "analytics" — both service + location terms. This indicates strong local search intent that should be reinforced in page content.`,
+        // Observation 1: CTR gap at avg position, using real numbers
+        `At an average position of ${gscAvgPos.toFixed(1)}, industry benchmark CTR is ~${expCtr}%. Your actual CTR is ${gscCtr.toFixed(2)}% across ${formatNumber(impressions)} impressions (${gscClicks} clicks). ${
+          ctrGap > 0
+            ? `This ${ctrGap.toFixed(2)}-point gap represents approximately ${missedClicks} additional monthly clicks you're not getting — all recoverable by rewriting the title tags and meta descriptions on your top-impression pages.`
+            : `You are matching or exceeding expected CTR for your average position — maintain your current snippet strategy and focus optimization on moving positions up.`
+        }`,
+        // Observation 2: Mobile vs desktop (if data present)
+        mobileCtrGap > 0.3 && desktop && mobile
+          ? `Your mobile CTR (${Number(mobile.ctr).toFixed(2)}%) is ${mobileCtrGap.toFixed(2)} points lower than desktop (${Number(desktop.ctr).toFixed(2)}%) at similar positions. Mobile searchers are seeing your titles in results and choosing not to click — mobile truncates titles earlier, so shorter, benefit-forward titles tend to close this gap.`
+          : (gscDevices.length >= 2
+              ? `Device CTR is consistent across desktop, mobile, and tablet — your snippets are performing uniformly. Focus on raising overall CTR through title tag optimization on the highest-impression queries rather than device-specific tests.`
+              : `Device breakdown data will appear once GSC returns at least 28 days of device-dimension data for this property.`),
+        // Observation 3: Top opportunity query by name
+        topOpp
+          ? `Your highest-opportunity query is "${topOpp.query}" with ${formatNumber(topOpp.impressions)} impressions and only ${topOpp.clicks} clicks (${topOpp.ctr.toFixed(2)}% CTR) at position ${topOpp.position.toFixed(1)}. Expected CTR at that position is ~${topOpp.expectedCtr}% — a more compelling title tag targeting this query could generate an estimated ${Math.round(((topOpp.expectedCtr - topOpp.ctr) / 100) * topOpp.impressions)} additional monthly clicks.`
+          : `Query-level opportunity scoring will populate once GSC has 28+ days of query data. Currently ${gscQueries.length} queries are tracked.`,
       ],
       actions: [
-        `Rewrite the title tag for the homepage: change from "Home - Intelligent Analytics" to "Intelligent Analytics | Des Moines Digital Marketing & Analytics" — this directly targets your top 3 queries.`,
-        `Create a dedicated /analytics-services page targeting "analytics des moines" (489 impressions, 0 clicks) — currently this query lands on the homepage which doesn't match the intent.`,
-        `Add FAQ schema markup to the homepage covering "what is intelligent analytics" and "analytics consulting des moines" — this can capture featured snippet positions for your highest-impression queries.`,
+        // Action 1: specific page rewrite
+        topOpp
+          ? `Rewrite the title tag on the page ranking for "${topOpp.query}" to include that exact phrase. This is your single largest recoverable-clicks opportunity — ~${Math.round(((topOpp.expectedCtr - topOpp.ctr) / 100) * topOpp.impressions)} additional clicks per month at current impression volume.`
+          : `Once 28 days of GSC data has accumulated, ARGUS will identify the specific title tag to rewrite.`,
+        // Action 2: mobile title test if gap exists
+        mobileCtrGap > 0.3
+          ? `Test shorter title tags (under 55 characters) for your top 5 pages — mobile SERPs truncate titles earlier than desktop, and closing the ${mobileCtrGap.toFixed(2)}-point mobile CTR gap would recover real clicks.`
+          : `Keep current title lengths — device CTRs are balanced. Focus recovery on position movement via content and internal linking.`,
+        // Action 3: brand vs non-brand check
+        `${
+          gscQueries.filter(q => q.query && !/intelligent|analytics/i.test(q.query)).length === 0
+            ? `Your top queries are dominated by brand terms — build dedicated landing pages for your top 3 non-branded service queries so each one has a page optimized to rank.`
+            : `Add FAQ schema markup to your highest-impression pages to capture featured-snippet real estate for your top non-branded queries.`
+        }`,
       ],
     },
     content: {
@@ -130,7 +219,7 @@ function ArgusInsightBox({ reportKey, data: d }: { reportKey: string; data: any 
 }
 
 /* ── Modal content renderer ── */
-function renderModalContent(reportKey: string, d: any) {
+function renderModalContent(reportKey: string, d: any, searchData?: any) {
   switch (reportKey) {
     case 'visibility': {
   const sessions = d?.summary?.totalSessions || 255;
@@ -486,38 +575,71 @@ function renderModalContent(reportKey: string, d: any) {
 }
 
     case 'search': {
-  // CTR benchmark by position (industry averages)
-  const ctrBenchmark: Record<number, number> = { 1: 28, 3: 10, 5: 5, 10: 2.4, 15: 1.5, 20: 0.7, 25: 0.4, 30: 0.3 };
-  const avgPos = 22.08;
-  const actualCtr = 0.61; // 0.61% = 66/10869
-  const expectedCtr = 0.55; // interpolated for position ~22
-  const missedClicks = Math.round((expectedCtr / 100 - 66 / 10869) * 10869);
+  // Real GSC data flows in via searchData prop. Fall back to a minimal placeholder only when empty.
+  const sd = searchData || {};
+  const gscSummary = sd.summary || {};
+  const gscQueriesRaw: any[] = sd.breakdowns?.queries || [];
+  const gscDevices: any[] = sd.breakdowns?.devices || [];
+  const gscCountries: any[] = sd.breakdowns?.countries || [];
+  const gscPageQueries: any[] = sd.breakdowns?.pageQueries || [];
 
-  // Top queries with opportunity scoring
-  const topQueries = [
-    { query: 'intelligent analytics', impressions: 1437, clicks: 21, ctr: 1.46, position: 7.09, expectedCtr: 4.5 },
-    { query: 'analytics des moines', impressions: 531, clicks: 0, ctr: 0, position: 19.51, expectedCtr: 0.8 },
-    { query: 'des moines analytics', impressions: 489, clicks: 0, ctr: 0, position: 28.19, expectedCtr: 0.35 },
-    { query: 'intelligent analytics system', impressions: 255, clicks: 0, ctr: 0, position: 2.59, expectedCtr: 15 },
-    { query: 'intelligent analytics definition', impressions: 156, clicks: 0, ctr: 0, position: 51, expectedCtr: 0.1 },
-    { query: 'analytics smart', impressions: 87, clicks: 0, ctr: 0, position: 34.41, expectedCtr: 0.25 },
-    { query: 'forge pricing', impressions: 21, clicks: 0, ctr: 0, position: 12.71, expectedCtr: 2 },
-  ].map(q => ({
-    ...q,
-    ctrGap: q.expectedCtr - q.ctr,
-    missedClicks: Math.round((q.expectedCtr / 100 - q.ctr / 100) * q.impressions),
-    opportunityScore: Math.round(q.impressions * (q.expectedCtr - q.ctr)),
-  })).sort((a, b) => b.opportunityScore - a.opportunityScore);
+  const hasData = gscQueriesRaw.length > 0;
+
+  const impressions = (typeof gscSummary.impressions === 'number' && gscSummary.impressions > 0) ? gscSummary.impressions : 0;
+  const gscClicks = (typeof gscSummary.clicks === 'number') ? gscSummary.clicks : 0;
+  const actualCtr = (typeof gscSummary.ctr === 'number') ? gscSummary.ctr : 0; // percentage-number
+  const avgPos = (typeof gscSummary.avgPosition === 'number') ? gscSummary.avgPosition : 0;
+  const expectedCtr = expectedCtrForPosition(avgPos);
+  const ctrGap = Math.max(0, Number((expectedCtr - actualCtr).toFixed(2)));
+  const missedClicks = Math.round(Math.max(0, (ctrGap / 100) * impressions));
+
+  // Enrich queries with expected CTR + opportunity score
+  const topQueries = gscQueriesRaw.map((q: any) => {
+    const pos = Number(q.position ?? q.avgPosition ?? 0);
+    const ctr = Number(q.ctr ?? 0);
+    const imp = Number(q.impressions ?? 0);
+    const clicks = Number(q.clicks ?? 0);
+    const eCtr = expectedCtrForPosition(pos);
+    const gap = Math.max(0, Number((eCtr - ctr).toFixed(2)));
+    return {
+      query: q.query || '--',
+      impressions: imp,
+      clicks,
+      ctr,
+      position: pos,
+      expectedCtr: eCtr,
+      ctrGap: gap,
+      missedClicks: Math.round(Math.max(0, (gap / 100) * imp)),
+      opportunityScore: Math.round(imp * gap),
+    };
+  }).sort((a: any, b: any) => b.opportunityScore - a.opportunityScore);
+
+  const quickWins = topQueries.filter((q: any) => q.position >= 11 && q.position <= 20 && q.impressions > 50).length;
+
+  // CTR curve chart data: plot benchmark at each position, plus actual point at avgPos
+  const ctrCurveData = CTR_BENCHMARK_TABLE
+    .filter(b => b.pos <= 30)
+    .map(b => ({
+      position: b.pos,
+      benchmark: b.ctr,
+      // Only the point closest to avgPos carries the actual value so the "actual" line renders as a single marker
+      actual: (avgPos >= b.pos - 2 && avgPos <= b.pos + 2 ? actualCtr : null),
+    }));
+
+  // Brand vs non-brand split
+  const brandRegex = /intelligent|analytics/i;
+  const brandQueries = topQueries.filter((q: any) => brandRegex.test(q.query));
+  const nonBrandClicks = topQueries.filter((q: any) => !brandRegex.test(q.query)).reduce((s: number, q: any) => s + q.clicks, 0);
 
   return (
     <div>
       {/* Stat cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
         {[
-          { label: 'Expected CTR Gap', value: '~' + Math.abs(missedClicks) + ' clicks/mo', sub: 'You\'re missing vs expected CTR', accent: '#D85A30' },
-          { label: 'Search Impressions', value: formatNumber(10869), sub: 'People who saw you in search', accent: '#2D9CDB' },
-          { label: 'Quick Win Keywords', value: String(topQueries.filter(q => q.position >= 11 && q.position <= 20 && q.impressions > 50).length), sub: 'Position 11-20, >50 impressions', accent: '#1D9E75' },
-          { label: 'Avg Position', value: avgPos.toFixed(1), sub: 'Across all tracked queries', accent: '#EF6C33' },
+          { label: 'Expected CTR Gap', value: missedClicks > 0 ? '~' + missedClicks + ' clicks/mo' : '0', sub: 'Missed vs expected CTR', accent: '#D85A30' },
+          { label: 'Search Impressions', value: formatNumber(impressions), sub: formatNumber(gscClicks) + ' clicks · ' + actualCtr.toFixed(2) + '% CTR', accent: '#2D9CDB' },
+          { label: 'Quick Win Keywords', value: String(quickWins), sub: 'Position 11-20, >50 impressions', accent: '#1D9E75' },
+          { label: 'Avg Position', value: avgPos > 0 ? avgPos.toFixed(1) : '--', sub: 'Across all tracked queries', accent: '#EF6C33' },
         ].map(c => (
           <div key={c.label} style={{ background: '#F8FAFC', borderRadius: 6, padding: '10px 12px', borderLeft: '3px solid ' + c.accent }}>
             <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase' }}>{c.label}</div>
@@ -529,8 +651,35 @@ function renderModalContent(reportKey: string, d: any) {
 
       {/* CTR gap callout */}
       <div style={{ background: '#FFF8E1', borderLeft: '3px solid #D4A800', borderRadius: 4, padding: '12px 16px', marginBottom: 16, fontSize: 12, color: '#5A7A8A', lineHeight: 1.6 }}>
-        At position 22, industry benchmark CTR is ~0.55%. Your actual CTR is 0.61% — slightly above average. However, your top query "intelligent analytics" at position 7 has only 1.46% CTR vs the expected ~4.5%, meaning <strong style={{ color: '#0B1C24' }}>~44 clicks per month are being lost</strong> on that single query due to poor snippet optimization.
+        {hasData ? (
+          <>At position {avgPos.toFixed(1)}, industry benchmark CTR is ~{expectedCtr}%. Your actual CTR is {actualCtr.toFixed(2)}%. Gap = approximately <strong style={{ color: '#0B1C24' }}>{missedClicks} additional monthly clicks</strong> recoverable through title/meta optimization on the highest-impression queries below.</>
+        ) : (
+          <>Waiting for at least 28 days of GSC data for this site before a CTR curve can be drawn. Once available this callout will surface the click-gap between your actual CTR and the industry benchmark for your average ranking position.</>
+        )}
       </div>
+
+      {/* CTR curve chart */}
+      {hasData && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>CTR curve — benchmark vs actual</div>
+          <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 8 }}>
+            Dashed line = industry benchmark CTR at each position. Solid dot = your actual CTR at your average position.
+            Shaded area between them = clicks being lost.
+          </div>
+          <div style={{ height: 200, background: '#F8FAFC', borderRadius: 6, padding: 8 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={ctrCurveData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(45,156,219,0.12)" />
+                <XAxis dataKey="position" type="number" domain={[1, 30]} tick={{ fontSize: 10, fill: '#5A7A8A' }} tickLine={false} label={{ value: 'Position', position: 'insideBottomRight', offset: -4, fontSize: 10, fill: '#5A7A8A' }} />
+                <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} tickLine={false} label={{ value: 'CTR (%)', angle: -90, position: 'insideLeft', fontSize: 10, fill: '#5A7A8A' }} />
+                <RTooltip contentStyle={{ fontSize: 11, borderRadius: 6 }} formatter={(v: any, name: any) => [v == null ? '--' : `${v}%`, String(name) === 'benchmark' ? 'Benchmark' : 'Your CTR']} />
+                <RLine type="monotone" dataKey="benchmark" stroke="#EF6C33" strokeWidth={2} strokeDasharray="4 4" dot={false} name="Benchmark" />
+                <RLine type="monotone" dataKey="actual" stroke="#2D9CDB" strokeWidth={2} dot={{ r: 6, fill: '#2D9CDB' }} name="Your CTR" connectNulls={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Full query table with opportunity scoring */}
       <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>Query opportunity analysis</div>
@@ -542,18 +691,22 @@ function renderModalContent(reportKey: string, d: any) {
             <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Position</th>
             <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Your CTR</th>
             <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Expected</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>CTR Gap</th>
             <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Missed Clicks</th>
             <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Opportunity</th>
           </tr>
         </thead>
         <tbody>
-          {topQueries.map((q, i) => (
+          {topQueries.length === 0 ? (
+            <tr><td colSpan={8} style={{ textAlign: 'center', padding: '12px', color: '#5A7A8A' }}>No query data available yet.</td></tr>
+          ) : topQueries.map((q: any, i: number) => (
             <tr key={i} style={{ borderBottom: '1px solid #f5f5f5', background: q.opportunityScore > 30 ? '#FFF8F5' : 'transparent' }}>
               <td style={{ padding: '6px 8px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.query}</td>
               <td style={{ textAlign: 'right', padding: '6px 8px' }}>{formatNumber(q.impressions)}</td>
               <td style={{ textAlign: 'right', padding: '6px 8px' }}>{q.position.toFixed(1)}</td>
               <td style={{ textAlign: 'right', padding: '6px 8px', color: q.ctr < q.expectedCtr * 0.5 ? '#D85A30' : '#5A7A8A' }}>{q.ctr.toFixed(2)}%</td>
               <td style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A' }}>{q.expectedCtr}%</td>
+              <td style={{ textAlign: 'right', padding: '6px 8px', color: q.ctrGap > 0 ? '#D85A30' : '#5A7A8A' }}>{q.ctrGap.toFixed(2)}%</td>
               <td style={{ textAlign: 'right', padding: '6px 8px', color: '#D85A30', fontWeight: 600 }}>{q.missedClicks > 0 ? '+' + q.missedClicks : '0'}</td>
               <td style={{ textAlign: 'right', padding: '6px 8px' }}>
                 <span style={{ background: q.opportunityScore > 30 ? '#FEF2F2' : '#F0FDF4', color: q.opportunityScore > 30 ? '#D85A30' : '#1D9E75', fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3 }}>
@@ -564,6 +717,100 @@ function renderModalContent(reportKey: string, d: any) {
           ))}
         </tbody>
       </table>
+
+      {/* Device comparison + Country table side by side */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>Device performance</div>
+          {gscDevices.length > 0 ? (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <thead><tr style={{ borderBottom: '2px solid #eee' }}>
+                <th style={{ textAlign: 'left', padding: '5px 6px', color: '#5A7A8A', fontSize: 9, textTransform: 'uppercase' }}>Device</th>
+                <th style={{ textAlign: 'right', padding: '5px 6px', color: '#5A7A8A', fontSize: 9 }}>Clicks</th>
+                <th style={{ textAlign: 'right', padding: '5px 6px', color: '#5A7A8A', fontSize: 9 }}>Impr.</th>
+                <th style={{ textAlign: 'right', padding: '5px 6px', color: '#5A7A8A', fontSize: 9 }}>CTR</th>
+                <th style={{ textAlign: 'right', padding: '5px 6px', color: '#5A7A8A', fontSize: 9 }}>Pos</th>
+              </tr></thead>
+              <tbody>
+                {gscDevices.map((dv: any, i: number) => (
+                  <tr key={i} style={{ borderBottom: '1px solid #f5f5f5' }}>
+                    <td style={{ padding: '4px 6px' }}>{(dv.device || '').charAt(0) + (dv.device || '').slice(1).toLowerCase()}</td>
+                    <td style={{ textAlign: 'right', padding: '4px 6px' }}>{dv.clicks ?? '--'}</td>
+                    <td style={{ textAlign: 'right', padding: '4px 6px' }}>{formatNumber(dv.impressions || 0)}</td>
+                    <td style={{ textAlign: 'right', padding: '4px 6px' }}>{Number(dv.ctr || 0).toFixed(2)}%</td>
+                    <td style={{ textAlign: 'right', padding: '4px 6px' }}>{Number(dv.position || 0).toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div style={{ fontSize: 11, color: '#5A7A8A', padding: '8px 0' }}>Device breakdown not yet available.</div>
+          )}
+        </div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>Top countries</div>
+          {gscCountries.length > 0 ? (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <thead><tr style={{ borderBottom: '2px solid #eee' }}>
+                <th style={{ textAlign: 'left', padding: '5px 6px', color: '#5A7A8A', fontSize: 9, textTransform: 'uppercase' }}>Country</th>
+                <th style={{ textAlign: 'right', padding: '5px 6px', color: '#5A7A8A', fontSize: 9 }}>Clicks</th>
+                <th style={{ textAlign: 'right', padding: '5px 6px', color: '#5A7A8A', fontSize: 9 }}>Impr.</th>
+                <th style={{ textAlign: 'right', padding: '5px 6px', color: '#5A7A8A', fontSize: 9 }}>CTR</th>
+              </tr></thead>
+              <tbody>
+                {gscCountries.slice(0, 10).map((c: any, i: number) => (
+                  <tr key={i} style={{ borderBottom: '1px solid #f5f5f5' }}>
+                    <td style={{ padding: '4px 6px' }}>{c.country}</td>
+                    <td style={{ textAlign: 'right', padding: '4px 6px' }}>{c.clicks ?? '--'}</td>
+                    <td style={{ textAlign: 'right', padding: '4px 6px' }}>{formatNumber(c.impressions || 0)}</td>
+                    <td style={{ textAlign: 'right', padding: '4px 6px' }}>{Number(c.ctr || 0).toFixed(2)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div style={{ fontSize: 11, color: '#5A7A8A', padding: '8px 0' }}>Country breakdown not yet available.</div>
+          )}
+        </div>
+      </div>
+
+      {/* Page + Query intelligence */}
+      {gscPageQueries.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>Page × Query intelligence</div>
+          <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 8 }}>
+            Which queries drive impressions to which specific pages. A page ranking only for brand queries has a non-branded content gap.
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+            <thead><tr style={{ borderBottom: '2px solid #eee' }}>
+              <th style={{ textAlign: 'left', padding: '5px 8px', color: '#5A7A8A', fontSize: 9, textTransform: 'uppercase' }}>Page</th>
+              <th style={{ textAlign: 'left', padding: '5px 8px', color: '#5A7A8A', fontSize: 9, textTransform: 'uppercase' }}>Query</th>
+              <th style={{ textAlign: 'right', padding: '5px 8px', color: '#5A7A8A', fontSize: 9 }}>Impr.</th>
+              <th style={{ textAlign: 'right', padding: '5px 8px', color: '#5A7A8A', fontSize: 9 }}>Clicks</th>
+              <th style={{ textAlign: 'right', padding: '5px 8px', color: '#5A7A8A', fontSize: 9 }}>CTR</th>
+              <th style={{ textAlign: 'right', padding: '5px 8px', color: '#5A7A8A', fontSize: 9 }}>Pos</th>
+            </tr></thead>
+            <tbody>
+              {gscPageQueries.slice(0, 15).map((pq: any, i: number) => {
+                const isBrandOnly = brandRegex.test(pq.query || '');
+                return (
+                  <tr key={i} style={{ borderBottom: '1px solid #f5f5f5', background: isBrandOnly ? 'transparent' : '#F0FDF4' }}>
+                    <td style={{ padding: '4px 8px', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pq.page}</td>
+                    <td style={{ padding: '4px 8px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pq.query}</td>
+                    <td style={{ textAlign: 'right', padding: '4px 8px' }}>{formatNumber(pq.impressions || 0)}</td>
+                    <td style={{ textAlign: 'right', padding: '4px 8px' }}>{pq.clicks ?? 0}</td>
+                    <td style={{ textAlign: 'right', padding: '4px 8px' }}>{Number(pq.ctr || 0).toFixed(2)}%</td>
+                    <td style={{ textAlign: 'right', padding: '4px 8px' }}>{Number(pq.position || 0).toFixed(1)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 6 }}>
+            Rows highlighted green = non-brand queries. {brandQueries.length} of {topQueries.length} top queries are brand terms; non-brand queries generate {nonBrandClicks} clicks.
+          </div>
+        </div>
+      )}
 
       {/* SE Ranking locked section */}
       <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '20px', textAlign: 'center', border: '1px dashed rgba(45,156,219,0.3)' }}>
@@ -814,7 +1061,7 @@ function renderModalContent(reportKey: string, d: any) {
 }
 
 /* ── Report Modal ── */
-function ReportModal({ reportKey, data: d, onClose }: { reportKey: string; data: any; onClose: () => void }) {
+function ReportModal({ reportKey, data: d, searchData, onClose }: { reportKey: string; data: any; searchData?: any; onClose: () => void }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
       <div style={{ background: '#fff', borderRadius: 12, maxWidth: 900, width: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
@@ -829,10 +1076,10 @@ function ReportModal({ reportKey, data: d, onClose }: { reportKey: string; data:
 
         {/* Scrollable body */}
         <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-          {renderModalContent(reportKey, d)}
+          {renderModalContent(reportKey, d, searchData)}
 
           {/* ARGUS Insight Box — always last */}
-          <ArgusInsightBox reportKey={reportKey} data={d} />
+          <ArgusInsightBox reportKey={reportKey} data={d} searchData={searchData} />
         </div>
 
         {/* Sticky footer */}
@@ -847,9 +1094,21 @@ function ReportModal({ reportKey, data: d, onClose }: { reportKey: string; data:
 
 /* ── Main Page Component ── */
 export function IAInsightsReports() {
-  const { selectedSite, activeSiteId } = useArionContext();
+  const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const { data, loading } = useAnalyticsData(activeSiteId, 90);
   const [activeModal, setActiveModal] = React.useState<string | null>(null);
+  const [searchData, setSearchData] = React.useState<any>(null);
+
+  // Fetch GSC performance (all dimensions) alongside GA4 data so the Search Intelligence modal
+  // and ARGUS insight box can render real numbers.
+  React.useEffect(() => {
+    if (!activeSiteId) { setSearchData(null); return; }
+    let cancelled = false;
+    arionApi.getSearchPerformance('google', activeSiteId, { period: 90, groupBy: 'all' })
+      .then((res: any) => { if (!cancelled) setSearchData(res); })
+      .catch(() => { if (!cancelled) setSearchData(null); });
+    return () => { cancelled = true; };
+  }, [activeSiteId, arionApi]);
 
   if (!selectedSite) return <div style={{ padding: 24, color: '#5A7A8A' }}>No site selected.</div>;
   if (loading) return <div style={{ padding: 24, color: '#5A7A8A' }}>Loading...</div>;
@@ -930,7 +1189,7 @@ export function IAInsightsReports() {
       <ConsultingUpsell headline="Want IA to interpret your reports and build a growth plan?" subtext="Strategy sessions with your data." serviceType="Analytics Consulting" triggerPage="ia-insights" />
 
       {/* Modal */}
-      {activeModal && <ReportModal reportKey={activeModal} data={data} onClose={() => setActiveModal(null)} />}
+      {activeModal && <ReportModal reportKey={activeModal} data={data} searchData={searchData} onClose={() => setActiveModal(null)} />}
     </div>
   );
 }

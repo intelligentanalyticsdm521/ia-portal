@@ -413,8 +413,11 @@ export async function getSiteDetail(params: { baseUrl: string; bearerToken: stri
   return requestJson<any>({ ...params, path: `/arion/sites/${encodeURIComponent(params.siteId)}` });
 }
 
-export async function getSearchPerformance(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; provider: string; days?: number }) {
-  const qp = new URLSearchParams({ provider: params.provider, siteId: params.siteId, days: String(params.days || 28) });
+export async function getSearchPerformance(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; provider: string; period?: number; groupBy?: string; days?: number }) {
+  const qp = new URLSearchParams({ provider: params.provider, siteId: params.siteId });
+  if (params.period != null) qp.set('period', String(params.period));
+  else if (params.days != null) qp.set('days', String(params.days));
+  if (params.groupBy) qp.set('groupBy', params.groupBy);
   return requestJson<any>({ ...params, path: `/arion/search/performance?${qp.toString()}` });
 }
 
