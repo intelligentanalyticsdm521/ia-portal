@@ -8,8 +8,10 @@ export function SeoCompetitors() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [competitorDomain, setCompetitorDomain] = useState('');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
-  const { data: seo, loading: seoLoading } = useArionData(
+  const { data: seo, loading: seoLoading, refetch } = useArionData(
     () => activeSiteId ? arionApi.getSeo(activeSiteId) : Promise.resolve(null),
     [activeSiteId]
   );
@@ -33,12 +35,23 @@ export function SeoCompetitors() {
     );
   }
 
-  const handleAddCompetitor = () => {
-    if (!competitorDomain.trim()) return;
-    setShowAddModal(false);
-    setCompetitorDomain('');
-    setToastMsg('Competitor added');
-    setTimeout(() => setToastMsg(null), 3000);
+  const handleAddCompetitor = async () => {
+    const domain = competitorDomain.trim();
+    if (!domain || !activeSiteId) return;
+    setSubmitting(true);
+    setAddError(null);
+    try {
+      await arionApi.addSeoCompetitor(activeSiteId, domain);
+      setShowAddModal(false);
+      setCompetitorDomain('');
+      setToastMsg(`Competitor ${domain} added`);
+      setTimeout(() => setToastMsg(null), 3000);
+      refetch();
+    } catch (err: any) {
+      setAddError(err?.message || 'Could not add competitor. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -59,18 +72,31 @@ export function SeoCompetitors() {
       <Card title="Tracked Competitors">
         <table className="data-table">
           <thead>
-            <tr><th>Competitor</th><th>Visibility</th><th>Keywords</th><th>Overlap</th></tr>
+            <tr>
+              <th>Competitor</th>
+              <th>Visibility Score</th>
+              <th>Keywords</th>
+              <th>Keyword Overlap</th>
+              <th>Added</th>
+            </tr>
           </thead>
           <tbody>
-            {competitors.length > 0 ? competitors.map((c: any, i: number) => (
-              <tr key={i}>
-                <td>{c.competitor ?? c.domain ?? '--'}</td>
-                <td>{c.visibility ?? '--'}</td>
-                <td>{c.keywords ?? '--'}</td>
-                <td>{c.overlap ?? '--'}</td>
-              </tr>
-            )) : (
-              <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No competitor data available yet</td></tr>
+            {competitors.length > 0 ? competitors.map((c: any, i: number) => {
+              const vis = c.visibility ?? c.visibility_score ?? null;
+              const kwCount = c.keywords ?? c.keywords_count ?? c.total_keywords ?? null;
+              const overlap = c.overlap ?? c.overlap_percent ?? c.keyword_overlap ?? null;
+              const added = c.added_at ?? c.created_at ?? null;
+              return (
+                <tr key={c.id ?? i}>
+                  <td>{c.competitor ?? c.domain ?? '--'}</td>
+                  <td>{vis != null ? (typeof vis === 'number' ? `${Number(vis).toFixed(1)}%` : String(vis)) : '--'}</td>
+                  <td>{kwCount ?? '--'}</td>
+                  <td>{overlap != null ? (typeof overlap === 'number' ? `${Math.round(overlap)}%` : String(overlap)) : '--'}</td>
+                  <td>{added ? new Date(added).toLocaleDateString() : '--'}</td>
+                </tr>
+              );
+            }) : (
+              <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No competitors tracked yet. Click "Add Competitor" above to start.</td></tr>
             )}
           </tbody>
         </table>
@@ -98,28 +124,35 @@ export function SeoCompetitors() {
               placeholder="e.g. competitor.com"
               style={{
                 width: '100%', padding: '8px 12px', borderRadius: 6, fontSize: 13,
-                border: '1px solid var(--border, #d1d5db)', marginBottom: 16,
+                border: '1px solid var(--border, #d1d5db)', marginBottom: 12,
                 background: 'var(--input-bg, #fff)', color: 'var(--text, #111)',
                 boxSizing: 'border-box',
               }}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleAddCompetitor(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !submitting) handleAddCompetitor(); }}
               autoFocus
+              disabled={submitting}
             />
+            {addError && (
+              <div style={{ fontSize: 12, color: '#D85A30', marginBottom: 12, padding: '6px 10px', background: 'rgba(216,90,48,0.08)', borderRadius: 4 }}>
+                {addError}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button
                 className="btn btn-secondary"
-                onClick={() => { setShowAddModal(false); setCompetitorDomain(''); }}
+                onClick={() => { setShowAddModal(false); setCompetitorDomain(''); setAddError(null); }}
                 style={{ fontSize: 13, padding: '6px 16px' }}
+                disabled={submitting}
               >
                 Cancel
               </button>
               <button
                 className="btn"
                 onClick={handleAddCompetitor}
-                disabled={!competitorDomain.trim()}
+                disabled={!competitorDomain.trim() || submitting}
                 style={{ fontSize: 13, padding: '6px 16px' }}
               >
-                Add
+                {submitting ? 'Adding…' : 'Add'}
               </button>
             </div>
           </div>

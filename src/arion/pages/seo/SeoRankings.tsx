@@ -4,24 +4,25 @@ import { useArionData } from '../../useArionData';
 import { StatCard, Card, AddonUpsell, EmptyPanel, Loading, InfoCard, PlatformTabs, ConsultingUpsell } from '../../components/Ui';
 import { TrendChart } from '../../components/Charts';
 
+/**
+ * Phase 3 / Step 4.1 — uses the dedicated /arion/seo/rankings endpoint
+ * which joins /positions with /keywords so keyword NAMES always populate.
+ */
 export function SeoRankings() {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
-  const [engine, setEngine] = React.useState('all');
+  const [engine, setEngine] = React.useState<'all' | 'google' | 'bing'>('all');
 
-  const { data: seo, loading: seoLoading } = useArionData(
-    () => activeSiteId ? arionApi.getSeo(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
+  const { data: rankings, loading } = useArionData(
+    () => activeSiteId ? arionApi.getSeoRankings(activeSiteId, engine) : Promise.resolve(null),
+    [activeSiteId, engine]
   );
 
-  if (seoLoading) return <Loading />;
+  if (loading) return <Loading />;
   if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
 
-  const s = seo as Record<string, any> | null;
-  const connected = s?.connected === true;
+  const r = rankings as any;
+  const connected = r?.connected === true;
   const hasSeoAddon = selectedSite?.seoAddonTier != null;
-  const snapshot = s?.snapshot ?? {};
-  const pkg = s?.package ?? {};
-  const rankings = (s?.breakdowns?.rankings as any[]) ?? [];
 
   if (!connected && !hasSeoAddon) {
     return (
@@ -34,36 +35,34 @@ export function SeoRankings() {
     );
   }
 
-  const trackedKeywords = snapshot.trackedKeywords ?? snapshot.tracked_keywords ?? '--';
-  const trackedCompetitors = snapshot.trackedCompetitors ?? snapshot.tracked_competitors ?? '0';
+  const keywords: any[] = r?.keywords || [];
+  const visibility = r?.visibilityScore != null ? `${Number(r.visibilityScore).toFixed(1)}%` : '--';
+  const avgPos = r?.avgPosition != null ? Number(r.avgPosition).toFixed(1) : '--';
+  const top10 = r?.top10Count ?? keywords.filter(k => typeof k.currentPosition === 'number' && k.currentPosition <= 10).length;
 
-  // Filter rankings by engine
-  const filtered = engine === 'all' ? rankings :
-    rankings.filter((r: any) => r.engine_id === engine);
-
-  // Compute position trend data for chart
-  const trendData = filtered.slice(0, 20).map((r: any) => ({
-    label: (r.keyword || '').slice(0, 15),
-    value: r.position ?? 0,
-  }));
+  // Top 20 by best rank for trend chart
+  const trendData = [...keywords]
+    .filter(k => typeof k.currentPosition === 'number')
+    .sort((a, b) => a.currentPosition - b.currentPosition)
+    .slice(0, 20)
+    .map(k => ({ keyword: (k.keyword || '').slice(0, 15), position: k.currentPosition }));
 
   return (
     <div>
       {connected && (
         <InfoCard title="SE Ranking — Connected">
           <p style={{ margin: 0 }}>
-            Package: <strong>{pkg.code || 'authority'}</strong> | Tracked Keywords: <strong>{trackedKeywords}</strong> | Tracked Competitors: <strong>{trackedCompetitors}</strong>
+            Tracked Keywords: <strong>{keywords.length}</strong> | Avg Position: <strong>{avgPos}</strong> | Search Visibility: <strong>{visibility}</strong> | Top 10: <strong>{top10}</strong>
           </p>
         </InfoCard>
       )}
 
       <div className="grid3" style={{ marginTop: connected ? 12 : 0 }}>
-        <StatCard label="Tracked Keywords" value={String(trackedKeywords)} deltaType="neutral" />
-        <StatCard label="Tracked Competitors" value={String(trackedCompetitors)} deltaType="neutral" />
-        <StatCard label="Package" value={String(pkg.code || '--')} deltaType="neutral" />
+        <StatCard label="Tracked Keywords" value={String(keywords.length)} deltaType="neutral" />
+        <StatCard label="Avg Position" value={String(avgPos)} deltaType="neutral" />
+        <StatCard label="Search Visibility" value={String(visibility)} deltaType="neutral" />
       </div>
 
-      {/* Engine tabs */}
       <PlatformTabs
         tabs={[
           { key: 'all', label: 'All Engines' },
@@ -71,33 +70,46 @@ export function SeoRankings() {
           { key: 'bing', label: 'Bing' },
         ]}
         active={engine}
-        onChange={setEngine}
+        onChange={(k) => setEngine(k as any)}
       />
 
       <Card title="Keyword Rankings">
         <table className="data-table">
           <thead>
-            <tr><th>Keyword</th><th>Position</th><th>Change</th><th>Volume</th><th>SERP Features</th></tr>
+            <tr>
+              <th>Keyword</th>
+              <th>Position</th>
+              <th>Change</th>
+              <th>Volume</th>
+              <th>Difficulty</th>
+              <th>URL</th>
+            </tr>
           </thead>
           <tbody>
-            {filtered.length > 0 ? filtered.map((r: any, i: number) => (
-              <tr key={i}>
-                <td>{r.keyword ?? '--'}</td>
-                <td>{r.position ?? '--'}</td>
-                <td className={Number(r.change) > 0 ? 'pos' : Number(r.change) < 0 ? 'neg' : 'neu'}>{r.change ?? '--'}</td>
-                <td>{r.volume ?? '--'}</td>
-                <td>{Array.isArray(r.serp_features) && r.serp_features.length > 0 ? r.serp_features.join(', ') : '--'}</td>
-              </tr>
-            )) : (
-              <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Ranking data is being collected. Check back soon.</td></tr>
+            {keywords.length > 0 ? keywords.map((k: any, i: number) => {
+              const change = Number(k.positionChange || 0);
+              const changeColor = change > 0 ? '#1D9E75' : change < 0 ? '#D85A30' : 'var(--text-muted, #64748b)';
+              const changeText = change > 0 ? `+${change}` : change < 0 ? String(change) : '—';
+              return (
+                <tr key={k.keywordId ?? i}>
+                  <td>{k.keyword || '--'}</td>
+                  <td>{k.currentPosition ?? '--'}</td>
+                  <td style={{ color: changeColor, fontWeight: change !== 0 ? 600 : 400 }}>{changeText}</td>
+                  <td>{k.searchVolume ?? '--'}</td>
+                  <td>{k.difficulty ?? '--'}</td>
+                  <td style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{k.url ? <a href={k.url} target="_blank" rel="noopener noreferrer">{k.url}</a> : '--'}</td>
+                </tr>
+              );
+            }) : (
+              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Ranking data is being collected. Check back soon.</td></tr>
             )}
           </tbody>
         </table>
       </Card>
 
       {trendData.length > 0 && (
-        <Card title="Position Trend (Top 20 Keywords)" style={{ marginTop: 12 }}>
-          <TrendChart data={trendData.map(d => ({ keyword: d.label, position: d.value }))} dataKey="position" xKey="keyword" height={200} />
+        <Card title="Position Distribution (Top 20 Keywords)" style={{ marginTop: 12 }}>
+          <TrendChart data={trendData} dataKey="position" xKey="keyword" height={200} />
         </Card>
       )}
 

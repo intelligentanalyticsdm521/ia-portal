@@ -356,6 +356,77 @@ export async function linkSeoProject(params: { baseUrl: string; bearerToken: str
   });
 }
 
+/* Phase 3 — SE Ranking expanded endpoints */
+
+export interface SeoRankingsResponse {
+  connected: boolean;
+  projectId: string | number | null;
+  engine?: string;
+  visibilityScore: number | null;
+  avgPosition: number | null;
+  top10Count?: number;
+  keywords: Array<{
+    keywordId: number | null;
+    keyword: string;
+    currentPosition: number | null;
+    previousPosition: number | null;
+    positionChange: number;
+    searchVolume: number;
+    difficulty: number | null;
+    url: string | null;
+    serpFeatures: string[];
+    engines: string[];
+  }>;
+}
+
+export async function getSeoRankings(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; engine?: 'google' | 'bing' | 'all' }) {
+  const qp = new URLSearchParams({ siteId: params.siteId });
+  if (params.engine) qp.set('engine', params.engine);
+  return requestJson<SeoRankingsResponse>({ ...params, path: `/arion/seo/rankings?${qp.toString()}` });
+}
+
+export interface SeoAuditResponse {
+  connected: boolean;
+  status: 'not_connected' | 'running' | 'unavailable' | 'complete';
+  auditId?: string;
+  healthScore?: number;
+  pagesCrawled?: number;
+  lastAuditDate?: string | null;
+  message?: string;
+  issues?: { errors: number; warnings: number; notices: number; passed: number };
+  issuesByCategory?: Array<{ category: string; errors: number; warnings: number; notices: number }>;
+}
+
+export async function getSeoAudit(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<SeoAuditResponse>({ ...params, path: `/arion/seo/audit?siteId=${encodeURIComponent(params.siteId)}` });
+}
+
+export async function addSeoCompetitor(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; domain: string }) {
+  return requestJson<{ ok: true; competitor: { id: number | null; domain: string; visibility: number | null } }>({
+    ...params,
+    method: 'POST',
+    path: '/arion/seo/competitors/add',
+    body: { siteId: params.siteId, domain: params.domain },
+  });
+}
+
+export interface SeoDecayResponse {
+  connected: boolean;
+  decaying: Array<{
+    keywordId: number;
+    keyword: string;
+    url: string | null;
+    priorPosition: number;
+    currentPosition: number;
+    change: number;
+    searchVolume: number;
+  }>;
+}
+
+export async function getSeoDecay(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<SeoDecayResponse>({ ...params, path: `/arion/seo/decay?siteId=${encodeURIComponent(params.siteId)}` });
+}
+
 export async function createArionRequest(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; requestType: string; notes: string }) {
   return requestJson<{ request: { siteRequestId: string } }>({
     ...params,

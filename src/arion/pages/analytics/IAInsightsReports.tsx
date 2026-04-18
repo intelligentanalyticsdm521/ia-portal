@@ -12,6 +12,8 @@ import {
   PieChart,
   Pie,
   Cell,
+  BarChart,
+  Bar as RBar,
 } from 'recharts';
 import { useArionContext } from '../../useArionContext';
 import { useAnalyticsData } from '../../analytics/useAnalyticsData';
@@ -57,7 +59,7 @@ function expectedCtrForPosition(pos: number): number {
 }
 
 /* ── ARGUS Insight Box (shared across all modals) ── */
-function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any; bingData?: any }) {
+function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, seoData, seoDecayData }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any; bingData?: any; seoData?: any; seoDecayData?: any }) {
   const sessions = d?.summary?.totalSessions || 255;
   const engaged = d?.engagement?.engagedSessions || 64;
   const engRate = formatPct(d?.engagement?.engagementRate || 0.251);
@@ -99,6 +101,23 @@ function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, 
   // GSC for cross-source observations
   const gscImpressions = searchData?.summary?.impressions || 0;
   const formSubmissions = d?.summary?.formSubmissions || 0;
+
+  // Phase 3 — SE Ranking derived numbers for search + content observations
+  const seRankingConnected = seoData?.connected === true;
+  const seoKeywords: any[] = Array.isArray(seoData?.keywords) ? seoData.keywords : [];
+  const quickWinKeywords = seoKeywords
+    .filter((k: any) => typeof k.currentPosition === 'number' && k.currentPosition >= 11 && k.currentPosition <= 20)
+    .sort((a: any, b: any) => (b.searchVolume || 0) - (a.searchVolume || 0));
+  const topQuickWin = quickWinKeywords[0] || null;
+  const estimatedQuickWinClicks = topQuickWin ? Math.round((topQuickWin.searchVolume || 0) * 0.23) : 0; // ~CTR pos 10 vs 15
+  const decayingKeywords: any[] = Array.isArray(seoDecayData?.decaying) ? seoDecayData.decaying : [];
+  const biggestDecay = decayingKeywords[0] || null;
+  const seRankingScoreRaw = seRankingConnected
+    ? Math.min(100, Math.round(
+        (Number(seoData?.visibilityScore || 0) * 0.6)
+        + (Math.min((seoData?.top10Count || 0) / Math.max(1, seoKeywords.length), 1) * 40)
+      ))
+    : 0;
 
   // Bing for Phase 2 visibility observation (gscCtr + gscAvgPos are declared just below)
   const bingConnected = bingData?.connected === true && !bingData?.error;
@@ -207,6 +226,12 @@ function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, 
         topOpp
           ? `Your highest-opportunity query is "${topOpp.query}" with ${formatNumber(topOpp.impressions)} impressions and only ${topOpp.clicks} clicks (${topOpp.ctr.toFixed(2)}% CTR) at position ${topOpp.position.toFixed(1)}. Expected CTR at that position is ~${topOpp.expectedCtr}% — a more compelling title tag targeting this query could generate an estimated ${Math.round(((topOpp.expectedCtr - topOpp.ctr) / 100) * topOpp.impressions)} additional monthly clicks.`
           : `Query-level opportunity scoring will populate once GSC has 28+ days of query data. Currently ${gscQueries.length} queries are tracked.`,
+        // Phase 3 Step 4.5 append — SE Ranking quick-win keyword observation
+        seRankingConnected
+          ? (quickWinKeywords.length > 0 && topQuickWin
+              ? `Your ${quickWinKeywords.length} tracked keyword${quickWinKeywords.length === 1 ? '' : 's'} in position 11-20 represent your fastest path to page-1 rankings. "${topQuickWin.keyword}" has ${formatNumber(topQuickWin.searchVolume || 0)} monthly searches and currently ranks ${topQuickWin.currentPosition}. A focused content update and 2-3 internal links from your homepage and /services page could move it into the top 10, generating an estimated ${estimatedQuickWinClicks} additional monthly visits.`
+              : `All ${seoKeywords.length} tracked keywords are either already on page 1 or deeper than position 20. Expand your tracked keyword set to surface new page-2 opportunities that would benefit from focused optimization.`)
+          : 'Connect SE Ranking (SEO Tools add-on) to surface quick-win keywords — keywords ranking 11-20 that a focused content update can push onto page 1.',
       ],
       actions: [
         // Action 1: specific page rewrite
@@ -230,6 +255,12 @@ function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, 
         `The homepage receives 60% of all pageviews (188 of 345) but has a ${bounce} bounce rate — most visitors see only this one page. The homepage is functioning as a brochure, not a funnel.`,
         `Your /services page shows "Page not found" as its title in GA4 — this is a 404 error page that's receiving 16 views. Either the page was deleted or there's a broken link sending traffic to it.`,
         `The /contact page receives only 14 views from 255 sessions (5.5%) — meaning 94.5% of visitors never see your primary conversion page. Content is not guiding visitors toward contact.`,
+        // Phase 3 Step 4.5 append — SE Ranking content decay observation
+        seRankingConnected
+          ? (decayingKeywords.length > 0 && biggestDecay
+              ? `${decayingKeywords.length} page${decayingKeywords.length === 1 ? '' : 's'} dropped in rankings this period. ${biggestDecay.url ? biggestDecay.url : '"' + biggestDecay.keyword + '"'} fell from position ${biggestDecay.priorPosition} to ${biggestDecay.currentPosition} — a drop of ${biggestDecay.change} places. Content decay is typically caused by newer, fresher content from competitors outranking older posts. Updating this page with current statistics, new sections, and a publish date refresh is the fastest recovery action.`
+              : 'No content decay detected this period. Your tracked pages are holding or improving their positions — continue the current content refresh cadence.')
+          : 'Connect SE Ranking (SEO Tools add-on) to detect content decay — pages losing rankings month-over-month that need a refresh before the drop becomes permanent.',
       ],
       actions: [
         `Fix the /services URL immediately — it's returning a 404 error and receiving 16 views. Either restore the page or set up a 301 redirect to the correct services URL.`,
@@ -316,7 +347,7 @@ function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, 
 }
 
 /* ── Modal content renderer ── */
-function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?: { gbp?: any; reviews?: any; posts?: any; qanda?: any }, bingData?: any) {
+function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?: { gbp?: any; reviews?: any; posts?: any; qanda?: any }, bingData?: any, seoData?: any, seoDecayData?: any) {
   switch (reportKey) {
     case 'visibility': {
   const sessions = d?.summary?.totalSessions || 255;
@@ -909,12 +940,107 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
         </div>
       )}
 
-      {/* SE Ranking locked section */}
-      <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '20px', textAlign: 'center', border: '1px dashed rgba(45,156,219,0.3)' }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 4 }}>Keyword Rankings & Quick Wins</div>
-        <div style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 12 }}>Add SEO Tools to unlock keyword rankings, position tracking, and quick-win keyword identification</div>
-        <button style={{ padding: '8px 20px', background: '#EF6C33', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add SEO Tools</button>
-      </div>
+      {/* Phase 3 Step 4.5 — SE Ranking Quick Win matrix + Position Trend */}
+      {(() => {
+        const seoConnected = seoData?.connected === true;
+        if (!seoConnected) {
+          return (
+            <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '20px', textAlign: 'center', border: '1px dashed rgba(45,156,219,0.3)' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 4 }}>Keyword Rankings & Quick Wins</div>
+              <div style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 12 }}>Add SEO Tools to unlock keyword opportunity data, position tracking, and quick-win keyword identification.</div>
+              <button style={{ padding: '8px 20px', background: '#EF6C33', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add SEO Tools</button>
+            </div>
+          );
+        }
+
+        const seoKw: any[] = Array.isArray(seoData.keywords) ? seoData.keywords : [];
+        const quickWins = seoKw
+          .filter((k: any) => typeof k.currentPosition === 'number' && k.currentPosition >= 11 && k.currentPosition <= 20)
+          .map((k: any) => ({
+            keyword: k.keyword,
+            position: k.currentPosition,
+            volume: k.searchVolume || 0,
+            difficulty: k.difficulty,
+            // clicks-if-top-10 approximation: volume × (CTR pos 8 avg ~3.2%) minus current (CTR pos ~15 ~0.9%)
+            estClicks: Math.round((k.searchVolume || 0) * 0.023),
+          }))
+          .sort((a: any, b: any) => b.estClicks - a.estClicks);
+
+        // Position trend: top 5 tracked keywords by volume, current position
+        const topByVolume = [...seoKw]
+          .filter((k: any) => typeof k.currentPosition === 'number' && k.currentPosition > 0)
+          .sort((a: any, b: any) => (b.searchVolume || 0) - (a.searchVolume || 0))
+          .slice(0, 5);
+
+        const palette = ['#2D9CDB', '#EF6C33', 'rgba(12,74,96,0.8)', '#FEC82C', '#E64A28'];
+
+        return (
+          <>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 8, marginTop: 20 }}>Quick win keyword matrix</div>
+            <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10 }}>
+              Keywords ranking positions 11-20 today. A focused content refresh plus 2-3 internal links can typically move these to page 1, where CTR jumps 3-5×.
+            </div>
+            {quickWins.length === 0 ? (
+              <div style={{ background: '#F0FDF4', borderLeft: '3px solid #1D9E75', borderRadius: 4, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#1D9E75' }}>
+                No tracked keywords in position 11-20 right now — all tracked keywords are either already on page 1 or further back than position 20.
+              </div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginBottom: 16 }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #eee' }}>
+                    <th style={{ textAlign: 'left', padding: '6px 8px', color: '#5A7A8A', fontSize: 10, textTransform: 'uppercase' }}>Keyword</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Current Pos</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Monthly Volume</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Difficulty</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Est. Clicks if Top 10</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Opportunity</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {quickWins.slice(0, 15).map((k: any, i: number) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #f5f5f5', background: k.estClicks > 50 ? '#FFF8F5' : 'transparent' }}>
+                      <td style={{ padding: '6px 8px', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k.keyword}</td>
+                      <td style={{ textAlign: 'right', padding: '6px 8px' }}>{k.position}</td>
+                      <td style={{ textAlign: 'right', padding: '6px 8px' }}>{formatNumber(k.volume)}</td>
+                      <td style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A' }}>{k.difficulty ?? '--'}</td>
+                      <td style={{ textAlign: 'right', padding: '6px 8px', color: '#1D9E75', fontWeight: 600 }}>+{k.estClicks}</td>
+                      <td style={{ textAlign: 'right', padding: '6px 8px' }}>
+                        <span style={{ background: k.estClicks > 50 ? '#FEF2F2' : '#F0FDF4', color: k.estClicks > 50 ? '#D85A30' : '#1D9E75', fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3 }}>
+                          {k.estClicks > 50 ? 'High' : k.estClicks > 15 ? 'Medium' : 'Low'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {topByVolume.length > 0 && (
+              <>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>Keyword position snapshot — top 5 by volume</div>
+                <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10 }}>
+                  Inverted axis — lower numbers (closer to position 1) are better.
+                </div>
+                <div style={{ height: 200, background: '#F8FAFC', borderRadius: 6, padding: 8, marginBottom: 16 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={topByVolume.map((k: any) => ({ name: (k.keyword || '').slice(0, 20), position: k.currentPosition }))}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(45,156,219,0.12)" />
+                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#5A7A8A' }} tickLine={false} />
+                      <YAxis reversed domain={[1, 'dataMax + 2']} tick={{ fontSize: 10, fill: '#5A7A8A' }} tickLine={false} label={{ value: 'Position', angle: -90, position: 'insideLeft', fontSize: 10, fill: '#5A7A8A' }} />
+                      <RTooltip contentStyle={{ fontSize: 11, borderRadius: 6 }} />
+                      <RBar dataKey="position" radius={[4, 4, 0, 0]}>
+                        {topByVolume.map((_: any, i: number) => (
+                          <Cell key={i} fill={palette[i % palette.length]} />
+                        ))}
+                      </RBar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }
@@ -1032,12 +1158,62 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
         </div>
       )}
 
-      {/* Content decay — locked */}
-      <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '16px', textAlign: 'center', border: '1px dashed rgba(45,156,219,0.3)' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24', marginBottom: 4 }}>Content Decay Detection</div>
-        <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10 }}>Add SEO Tools to detect pages losing rankings over time</div>
-        <button style={{ padding: '6px 16px', background: '#EF6C33', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Add SEO Tools</button>
-      </div>
+      {/* Phase 3 Step 4.5 — Content decay detection (live SE Ranking data) */}
+      {(() => {
+        const seoConnected = seoData?.connected === true;
+        if (!seoConnected) {
+          return (
+            <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '16px', textAlign: 'center', border: '1px dashed rgba(45,156,219,0.3)' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24', marginBottom: 4 }}>Content Decay Detection</div>
+              <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10 }}>Add SEO Tools to detect pages losing rankings over time.</div>
+              <button style={{ padding: '6px 16px', background: '#EF6C33', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Add SEO Tools</button>
+            </div>
+          );
+        }
+        const decaying: any[] = Array.isArray(seoDecayData?.decaying) ? seoDecayData.decaying : [];
+        if (decaying.length === 0) {
+          return (
+            <div style={{ background: '#F0FDF4', borderLeft: '3px solid #1D9E75', borderRadius: 4, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#1D9E75' }}>
+              No content decay detected this period — tracked pages are holding or improving their rankings month over month.
+            </div>
+          );
+        }
+        return (
+          <>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24', marginBottom: 6 }}>Content decay detection</div>
+            <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10 }}>
+              Pages that dropped 3+ positions vs the prior 30 days. Decay is typically caused by newer competitor content — refreshing these pages with updated statistics, new sections, and an internal-link pass is the fastest recovery action.
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #eee' }}>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#5A7A8A', fontSize: 10, textTransform: 'uppercase' }}>Keyword / Page</th>
+                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Last Month</th>
+                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Now</th>
+                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Change</th>
+                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Volume</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {decaying.slice(0, 10).map((row: any, i: number) => (
+                  <tr key={i} style={{ borderBottom: '1px solid #f5f5f5' }}>
+                    <td style={{ padding: '6px 8px' }}>
+                      <div style={{ fontWeight: 600 }}>{row.keyword || '--'}</div>
+                      {row.url && <div style={{ fontSize: 10, color: '#5A7A8A' }}>{row.url}</div>}
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '6px 8px' }}>{row.priorPosition}</td>
+                    <td style={{ textAlign: 'right', padding: '6px 8px' }}>{row.currentPosition}</td>
+                    <td style={{ textAlign: 'right', padding: '6px 8px', color: '#D85A30', fontWeight: 600 }}>-{row.change}</td>
+                    <td style={{ textAlign: 'right', padding: '6px 8px' }}>{formatNumber(row.searchVolume || 0)}</td>
+                    <td style={{ padding: '6px 8px', fontSize: 10, color: '#0C4A60' }}>Refresh content + internal links</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        );
+      })()}
     </div>
   );
 }
@@ -1257,7 +1433,19 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
   // Component scores (0-100)
   const webScore = Math.round((1 - bounce) * 40 + engRate * 40 + Math.min(pps / 3, 1) * 20);
   const searchScore = Math.round(Math.min(10869 / 50000, 1) * 50 + Math.min(66 / 500, 1) * 30 + Math.max(0, (30 - 22.08) / 30) * 20);
-  const seRankingScore = 0; // not connected
+
+  // Phase 3 Step 4.5 — Search Rankings component now uses real SE Ranking data
+  const seConnected = seoData?.connected === true;
+  const seKw: any[] = Array.isArray(seoData?.keywords) ? seoData.keywords : [];
+  const seTop10 = seoData?.top10Count ?? seKw.filter((k: any) => typeof k.currentPosition === 'number' && k.currentPosition <= 10).length;
+  const seVisibility = Number(seoData?.visibilityScore || 0);
+  const seRankingScore = seConnected
+    ? Math.min(100, Math.round(
+        (seVisibility * 0.6) // visibility contributes up to 60 points
+        + (Math.min(seTop10 / Math.max(1, seKw.length || 1), 1) * 40) // top-10 ratio up to 40 points
+      ))
+    : 0;
+
   const gbpScore = 35; // connected but limited
   const contentScore = 0; // no RankMath data
 
@@ -1266,7 +1454,7 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
   const components = [
     { name: 'Website Performance', score: webScore, weight: '25%', source: 'GA4', connected: true, color: webScore > 70 ? '#1D9E75' : webScore > 40 ? '#D4A800' : '#D85A30' },
     { name: 'Search Visibility', score: searchScore, weight: '25%', source: 'GSC', connected: true, color: searchScore > 70 ? '#1D9E75' : searchScore > 40 ? '#D4A800' : '#D85A30' },
-    { name: 'Search Rankings', score: seRankingScore, weight: '20%', source: 'SE Ranking', connected: false, color: '#D85A30' },
+    { name: 'Search Rankings', score: seRankingScore, weight: '20%', source: 'SE Ranking', connected: seConnected, color: seRankingScore > 70 ? '#1D9E75' : seRankingScore > 40 ? '#D4A800' : '#D85A30' },
     { name: 'Local Presence', score: gbpScore, weight: '20%', source: 'GBP', connected: true, color: gbpScore > 70 ? '#1D9E75' : gbpScore > 40 ? '#D4A800' : '#D85A30' },
     { name: 'Content Quality', score: contentScore, weight: '10%', source: 'RankMath', connected: false, color: '#D85A30' },
   ];
@@ -1366,7 +1554,7 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
 }
 
 /* ── Report Modal ── */
-function ReportModal({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, onClose }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any; bingData?: any; onClose: () => void }) {
+function ReportModal({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, seoData, seoDecayData, onClose }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any; bingData?: any; seoData?: any; seoDecayData?: any; onClose: () => void }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
       <div style={{ background: '#fff', borderRadius: 12, maxWidth: 900, width: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
@@ -1381,10 +1569,10 @@ function ReportModal({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpP
 
         {/* Scrollable body */}
         <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-          {renderModalContent(reportKey, d, searchData, { gbp: gbpData, reviews: gbpReviews, posts: gbpPosts, qanda: gbpQanda }, bingData)}
+          {renderModalContent(reportKey, d, searchData, { gbp: gbpData, reviews: gbpReviews, posts: gbpPosts, qanda: gbpQanda }, bingData, seoData, seoDecayData)}
 
           {/* ARGUS Insight Box — always last */}
-          <ArgusInsightBox reportKey={reportKey} data={d} searchData={searchData} gbpData={gbpData} gbpReviews={gbpReviews} gbpPosts={gbpPosts} gbpQanda={gbpQanda} bingData={bingData} />
+          <ArgusInsightBox reportKey={reportKey} data={d} searchData={searchData} gbpData={gbpData} gbpReviews={gbpReviews} gbpPosts={gbpPosts} gbpQanda={gbpQanda} bingData={bingData} seoData={seoData} seoDecayData={seoDecayData} />
         </div>
 
         {/* Sticky footer */}
@@ -1408,6 +1596,8 @@ export function IAInsightsReports() {
   const [gbpPosts, setGbpPosts] = React.useState<any>(null);
   const [gbpQanda, setGbpQanda] = React.useState<any>(null);
   const [bingData, setBingData] = React.useState<any>(null);
+  const [seoData, setSeoData] = React.useState<any>(null);
+  const [seoDecayData, setSeoDecayData] = React.useState<any>(null);
 
   // Fetch GSC performance (all dimensions) alongside GA4 data so the Search Intelligence modal
   // and ARGUS insight box can render real numbers.
@@ -1444,6 +1634,21 @@ export function IAInsightsReports() {
     arionApi.getBingPerformance(activeSiteId, 90)
       .then((res: any) => { if (!cancelled) setBingData(res); })
       .catch(() => { if (!cancelled) setBingData(null); });
+    return () => { cancelled = true; };
+  }, [activeSiteId, arionApi]);
+
+  // Phase 3 Step 4.5: fetch SE Ranking rankings + decay data for Search Intelligence,
+  // Content Intelligence, and Business Presence Score modals.
+  React.useEffect(() => {
+    if (!activeSiteId) { setSeoData(null); setSeoDecayData(null); return; }
+    let cancelled = false;
+    Promise.all([
+      arionApi.getSeoRankings(activeSiteId, 'all').catch(() => null),
+      arionApi.getSeoDecay(activeSiteId).catch(() => null),
+    ]).then(([r, decay]) => {
+      if (cancelled) return;
+      setSeoData(r); setSeoDecayData(decay);
+    });
     return () => { cancelled = true; };
   }, [activeSiteId, arionApi]);
 
@@ -1574,7 +1779,7 @@ export function IAInsightsReports() {
       <ConsultingUpsell headline="Want IA to interpret your reports and build a growth plan?" subtext="Strategy sessions with your data." serviceType="Analytics Consulting" triggerPage="ia-insights" />
 
       {/* Modal */}
-      {activeModal && <ReportModal reportKey={activeModal} data={data} searchData={searchData} gbpData={gbpData} gbpReviews={gbpReviews} gbpPosts={gbpPosts} gbpQanda={gbpQanda} bingData={bingData} onClose={() => setActiveModal(null)} />}
+      {activeModal && <ReportModal reportKey={activeModal} data={data} searchData={searchData} gbpData={gbpData} gbpReviews={gbpReviews} gbpPosts={gbpPosts} gbpQanda={gbpQanda} bingData={bingData} seoData={seoData} seoDecayData={seoDecayData} onClose={() => setActiveModal(null)} />}
     </div>
   );
 }

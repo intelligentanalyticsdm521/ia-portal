@@ -72,6 +72,11 @@ import {
   getVulnerabilities as portalGetVulnerabilities,
   submitConsultingInquiry as portalSubmitConsultingInquiry,
   getPagespeedHistory as portalGetPagespeedHistory,
+  // Phase 3 — SE Ranking expanded
+  getSeoRankings as portalGetSeoRankings,
+  getSeoAudit as portalGetSeoAudit,
+  addSeoCompetitor as portalAddSeoCompetitor,
+  getSeoDecay as portalGetSeoDecay,
 } from '../lib/arionApi';
 
 /**
@@ -250,6 +255,27 @@ export function useArionContext() {
       async linkSeoProject(siteId: string, projectId: string) {
         const b = await base();
         return portalLinkSeoProject({ ...b, siteId, body: { projectId } });
+      },
+
+      /* Phase 3 — SE Ranking expanded endpoints */
+      async getSeoRankings(siteId: string, engine?: 'google' | 'bing' | 'all') {
+        const b = await base();
+        return portalGetSeoRankings({ ...b, siteId, engine });
+      },
+
+      async getSeoAudit(siteId: string) {
+        const b = await base();
+        return portalGetSeoAudit({ ...b, siteId });
+      },
+
+      async addSeoCompetitor(siteId: string, domain: string) {
+        const b = await base();
+        return portalAddSeoCompetitor({ ...b, siteId, domain });
+      },
+
+      async getSeoDecay(siteId: string) {
+        const b = await base();
+        return portalGetSeoDecay({ ...b, siteId });
       },
 
       async submitRequest(siteId: string, requestType: string, notes: string) {
