@@ -475,6 +475,27 @@ function ConnectedAccountsTab() {
     })();
   }, [activeTenantId, apiBaseUrl, getToken]);
 
+  // Once we have a siteId, probe Google connection state in the background. If the site
+  // already has an OAuth token, getGoogleProperties() returns a currentGa4PropertyId (or at
+  // least a non-error response), so we can reflect real "Connected" status in the UI
+  // rather than always showing "Not connected".
+  const probedRef = useRef(false);
+  useEffect(() => {
+    if (probedRef.current || !siteId || !activeTenantId || !apiBaseUrl) return;
+    probedRef.current = true;
+    (async () => {
+      try {
+        const token = await getToken();
+        const resp = await getGoogleProperties({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+        const hasProperty = !!resp?.data?.currentGa4PropertyId;
+        const hasGscSites = Array.isArray(resp?.data?.gscSites) && resp.data.gscSites.length > 0;
+        if (hasProperty || hasGscSites) setGaConnected(true);
+      } catch {
+        // Endpoint returns an error when Google isn't connected — that's the normal "not connected" path.
+      }
+    })();
+  }, [siteId, activeTenantId, apiBaseUrl, getToken]);
+
   // Detect OAuth return: if google_connected=1 is in the URL, show property selector
   useEffect(() => {
     if (searchParams.get('google_connected') === '1' && siteId) {
@@ -544,12 +565,17 @@ function ConnectedAccountsTab() {
     }
   }, [siteId, activeTenantId, apiBaseUrl, getToken]);
 
-  const OTHER_INTEGRATIONS = [
-    { key: 'gsc', name: 'Google Search Console', connected: false },
-    { key: 'gbp', name: 'Google Business Profile', connected: false },
-    { key: 'bwt', name: 'Bing Webmaster', connected: false },
-    { key: 'abc', name: 'Apple Business Connect', connected: false },
-  ] as const;
+  // GSC and GBP share the same Google OAuth token as Google Analytics, so their
+  // connection state follows gaConnected and their Connect/Reconnect buttons trigger
+  // the same Google OAuth flow (which now requests the expanded `webmasters` write scope).
+  // Bing Webmaster and Apple Business Connect have their own connection flows, still in progress.
+  type Integration = { key: string; name: string; connected: boolean; sharesGoogleAuth: boolean; comingSoon: boolean };
+  const OTHER_INTEGRATIONS: Integration[] = [
+    { key: 'gsc', name: 'Google Search Console', connected: gaConnected, sharesGoogleAuth: true, comingSoon: false },
+    { key: 'gbp', name: 'Google Business Profile', connected: gaConnected, sharesGoogleAuth: true, comingSoon: false },
+    { key: 'bwt', name: 'Bing Webmaster', connected: false, sharesGoogleAuth: false, comingSoon: true },
+    { key: 'abc', name: 'Apple Business Connect', connected: false, sharesGoogleAuth: false, comingSoon: true },
+  ];
 
   return (
     <div className="space-y-6">
@@ -566,28 +592,30 @@ function ConnectedAccountsTab() {
                 <span className="text-xs text-gray-500">{gaConnected ? 'Connected' : 'Not connected'}</span>
               </div>
             </div>
-            {gaConnected ? (
-              <button
-                type="button"
-                onClick={openPropertySelector}
-                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Change property
-              </button>
-            ) : (
+            <div className="flex gap-2">
+              {gaConnected && (
+                <button
+                  type="button"
+                  onClick={openPropertySelector}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Change property
+                </button>
+              )}
               <button
                 type="button"
                 disabled={gaConnecting || !siteId}
                 onClick={handleGoogleConnect}
+                title={gaConnected ? 'Run Google OAuth again to refresh scopes or switch accounts' : 'Start Google OAuth'}
                 className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
               >
-                {gaConnecting ? 'Connecting...' : 'Connect'}
+                {gaConnecting ? 'Connecting...' : gaConnected ? 'Reconnect' : 'Connect'}
               </button>
-            )}
+            </div>
           </div>
         </div>
 
-        {/* Other integration cards -- still coming soon */}
+        {/* Other integration cards */}
         {OTHER_INTEGRATIONS.map((int) => (
           <div key={int.key} className="rounded-lg border bg-white p-4">
             <div className="flex items-start justify-between gap-3">
@@ -595,20 +623,31 @@ function ConnectedAccountsTab() {
                 <div className="text-sm font-semibold text-gray-900">{int.name}</div>
                 <div className="mt-1 flex items-center gap-1.5">
                   <span className={`h-2 w-2 rounded-full ${int.connected ? 'bg-green-500' : 'bg-gray-300'}`} />
-                  <span className="text-xs text-gray-500">{int.connected ? 'Connected' : 'Not connected'}</span>
+                  <span className="text-xs text-gray-500">{int.connected ? 'Connected' : int.comingSoon ? 'Coming soon' : 'Not connected'}</span>
                 </div>
+                {int.sharesGoogleAuth && (
+                  <div className="mt-1 text-[10px] text-gray-400">Uses the same Google connection as Analytics</div>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => setToast('Coming soon')}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium ${
-                  int.connected
-                    ? 'border border-gray-300 text-gray-700 hover:bg-gray-50'
-                    : 'bg-black text-white hover:bg-gray-800'
-                }`}
-              >
-                {int.connected ? 'Disconnect' : 'Connect'}
-              </button>
+              {int.sharesGoogleAuth ? (
+                <button
+                  type="button"
+                  disabled={gaConnecting || !siteId}
+                  onClick={handleGoogleConnect}
+                  title={int.connected ? 'Re-run Google OAuth to refresh scopes' : 'Start Google OAuth'}
+                  className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+                >
+                  {gaConnecting ? 'Connecting...' : int.connected ? 'Reconnect' : 'Connect'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setToast('Coming soon')}
+                  className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
+                >
+                  Connect
+                </button>
+              )}
             </div>
           </div>
         ))}

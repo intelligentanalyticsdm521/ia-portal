@@ -16,7 +16,7 @@ export function HeaderBar() {
     <header className="iadm-header">
       <div className="iadm-header-inner">
         <Link to="/app/overview" className="flex items-center gap-3">
-          <img src="/iadm-logo.png" alt="IADM" className="h-8 w-auto" />
+          <img src="/ia-lockup-horiz-blue.svg" alt="Intelligent Analytics" className="h-8 w-auto" />
         </Link>
 
         <div className="flex items-center gap-3">

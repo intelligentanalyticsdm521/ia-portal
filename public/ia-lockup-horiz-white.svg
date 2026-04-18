@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="760" height="200" viewBox="0 0 760 200">
+  <defs>
+  <linearGradient id="eg-arion-l"  gradientUnits="userSpaceOnUse" x1="100" y1="24"  x2="100" y2="100"><stop offset="0%" stop-color="#2D9CDB"/><stop offset="100%" stop-color="#0C4A60"/></linearGradient>
+  <linearGradient id="eg-spark-l"  gradientUnits="userSpaceOnUse" x1="166" y1="62"  x2="100" y2="100"><stop offset="0%" stop-color="#E8472A"/><stop offset="100%" stop-color="#0C4A60"/></linearGradient>
+  <linearGradient id="eg-oliver-l" gradientUnits="userSpaceOnUse" x1="166" y1="138" x2="100" y2="100"><stop offset="0%" stop-color="#D4A620"/><stop offset="100%" stop-color="#0C4A60"/></linearGradient>
+  <linearGradient id="eg-stella-l" gradientUnits="userSpaceOnUse" x1="100" y1="176" x2="100" y2="100"><stop offset="0%" stop-color="#4C5BD4"/><stop offset="100%" stop-color="#0C4A60"/></linearGradient>
+  <linearGradient id="eg-forge-l"  gradientUnits="userSpaceOnUse" x1="34"  y1="138" x2="100" y2="100"><stop offset="0%" stop-color="#27AE7A"/><stop offset="100%" stop-color="#0C4A60"/></linearGradient>
+  <linearGradient id="eg-argus-l"  gradientUnits="userSpaceOnUse" x1="34"  y1="62"  x2="100" y2="100"><stop offset="0%" stop-color="#7AAA03"/><stop offset="100%" stop-color="#0C4A60"/></linearGradient>
+  <radialGradient id="rg-center-l" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#EF6C33"/>
+    <stop offset="100%" stop-color="#0C4A60"/>
+  </radialGradient>
+  <radialGradient id="rg-arion-l"  cx="35%" cy="35%" r="65%"><stop offset="0%" stop-color="#7DC8EE"/><stop offset="100%" stop-color="#2D9CDB"/></radialGradient>
+  <radialGradient id="rg-spark-l"  cx="35%" cy="35%" r="65%"><stop offset="0%" stop-color="#F08070"/><stop offset="100%" stop-color="#E8472A"/></radialGradient>
+  <radialGradient id="rg-oliver-l" cx="35%" cy="35%" r="65%"><stop offset="0%" stop-color="#FFE080"/><stop offset="100%" stop-color="#D4A620"/></radialGradient>
+  <radialGradient id="rg-stella-l" cx="35%" cy="35%" r="65%"><stop offset="0%" stop-color="#8A98E8"/><stop offset="100%" stop-color="#4C5BD4"/></radialGradient>
+  <radialGradient id="rg-forge-l"  cx="35%" cy="35%" r="65%"><stop offset="0%" stop-color="#70D4A8"/><stop offset="100%" stop-color="#27AE7A"/></radialGradient>
+  <radialGradient id="rg-argus-l"  cx="35%" cy="35%" r="65%"><stop offset="0%" stop-color="#B8D830"/><stop offset="100%" stop-color="#7AAA03"/></radialGradient>
+</defs>
+  <rect width="760" height="200" fill="#FFFFFF"/>
+  <!-- Mark -->
+  <g>
+  <line x1="100" y1="24"  x2="100" y2="100" stroke="url(#eg-arion-l)"  stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="166" y1="62"  x2="100" y2="100" stroke="url(#eg-spark-l)"  stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="166" y1="138" x2="100" y2="100" stroke="url(#eg-oliver-l)" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="100" y1="176" x2="100" y2="100" stroke="url(#eg-stella-l)" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="34"  y1="138" x2="100" y2="100" stroke="url(#eg-forge-l)"  stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="34"  y1="62"  x2="100" y2="100" stroke="url(#eg-argus-l)"  stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="100" cy="100" r="22" fill="none" stroke="#EF6C33" stroke-width="0.5" opacity="0.3"/>
+  <circle cx="100" cy="100" r="18" fill="url(#rg-center-l)"/>
+  <circle cx="100" cy="100" r="18" fill="none" stroke="rgba(0,0,0,0.08)" stroke-width="0.8"/>
+  <circle cx="100" cy="24"  r="9.5" fill="url(#rg-arion-l)"/>
+  <circle cx="100" cy="24"  r="9.5" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="0.6"/>
+  <circle cx="166" cy="62"  r="9.5" fill="url(#rg-spark-l)"/>
+  <circle cx="166" cy="62"  r="9.5" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="0.6"/>
+  <circle cx="166" cy="138" r="9.5" fill="url(#rg-oliver-l)"/>
+  <circle cx="166" cy="138" r="9.5" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="0.6"/>
+  <circle cx="100" cy="176" r="9.5" fill="url(#rg-stella-l)"/>
+  <circle cx="100" cy="176" r="9.5" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="0.6"/>
+  <circle cx="34"  cy="138" r="9.5" fill="url(#rg-forge-l)"/>
+  <circle cx="34"  cy="138" r="9.5" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="0.6"/>
+  <circle cx="34"  cy="62"  r="9.5" fill="url(#rg-argus-l)"/>
+  <circle cx="34"  cy="62"  r="9.5" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="0.6"/>
+</g>
+  <!-- Wordmark — vertically centered beside mark -->
+  <!-- Font: Sora 800 — install Sora or embed via @font-face for guaranteed rendering -->
+  <text x="232" y="92" font-family="Sora, 'Helvetica Neue', Arial, sans-serif"
+        font-weight="800" font-size="54" letter-spacing="-1.5"
+        fill="#0C4A60">Intelligent</text>
+  <text x="232" y="152" font-family="Sora, 'Helvetica Neue', Arial, sans-serif"
+        font-weight="800" font-size="54" letter-spacing="-1.5"
+        fill="#EF6C33">Analytics</text>
+</svg>
