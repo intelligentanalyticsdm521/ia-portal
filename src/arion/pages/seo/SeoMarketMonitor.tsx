@@ -20,6 +20,7 @@ import { useArionData } from '../../useArionData';
 import { AddonUpsell, EmptyPanel, InfoCard, ConsultingUpsell, Loading } from '../../components/Ui';
 import { SeoStatCard } from '../../components/SeoUi';
 import { GlossaryIcon, GlossaryPanel } from '../../components/Glossary';
+import { MarketMonitorWatchlistModal } from './MarketMonitorWatchlistModal';
 import type { SeoMarketMonitorMove, SeoMarketMonitorBacklink, SeoMarketMonitorPageChange, SeoMarketMonitorJobStatus } from '../../../lib/arionApi';
 
 type SubSection = 'backlinks' | 'page_changes' | 'competitor_moves';
@@ -27,10 +28,12 @@ type SubSection = 'backlinks' | 'page_changes' | 'competitor_moves';
 export function SeoMarketMonitor() {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const [openModal, setOpenModal] = React.useState<SubSection | null>(null);
+  const [showWatchlistModal, setShowWatchlistModal] = React.useState(false);
+  const [refreshKey, setRefreshKey] = React.useState(0);
 
   const { data: mm, loading } = useArionData(
     () => activeSiteId ? arionApi.getSeoMarketMonitor(activeSiteId, 30) : Promise.resolve(null),
-    [activeSiteId]
+    [activeSiteId, refreshKey]
   );
 
   if (loading) return <Loading />;
@@ -102,10 +105,18 @@ export function SeoMarketMonitor() {
   return (
     <div>
       <InfoCard title="Market Monitor — Authority">
-        <p style={{ margin: 0, fontSize: 12 }}>
-          Real-time market signals across your SEO project. Daily backlink checks, competitor page change detection, and large ranking movement alerts.
-          Backend jobs run automatically on the Authority tier.
-        </p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <p style={{ margin: 0, fontSize: 12, flex: 1, minWidth: 280 }}>
+            Real-time market signals across your SEO project. Daily backlink checks, competitor page change detection, and large ranking movement alerts.
+            Backend jobs run automatically on the Authority tier.
+          </p>
+          <button
+            onClick={() => setShowWatchlistModal(true)}
+            style={{ padding: '8px 16px', fontSize: 12, fontWeight: 600, background: '#0B1C24', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+          >
+            Manage Watchlist →
+          </button>
+        </div>
       </InfoCard>
 
       {/* Row 1: headline stat cards */}
@@ -171,6 +182,13 @@ export function SeoMarketMonitor() {
           lostBacklinks={lostBacklinks}
           pageChanges={pageChanges}
           onClose={() => setOpenModal(null)}
+        />
+      )}
+
+      {showWatchlistModal && (
+        <MarketMonitorWatchlistModal
+          onClose={() => setShowWatchlistModal(false)}
+          onSaved={() => { setShowWatchlistModal(false); setRefreshKey((k) => k + 1); }}
         />
       )}
     </div>

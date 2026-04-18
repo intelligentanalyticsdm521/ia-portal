@@ -637,6 +637,82 @@ export async function getSeoMarketMonitor(params: { baseUrl: string; bearerToken
   });
 }
 
+// ─── Market Monitor Watchlist ───────────────────────────────────
+export interface MmWatchRow {
+  watchId: string;
+  pageUrl: string;
+  pageType: 'own_site' | 'competitor';
+  competitorDomain: string | null;
+  lastTitle: string | null;
+  lastCheckedAt: string | null;
+  enabled: boolean;
+  createdAt: string;
+}
+
+export interface MmWatchlistResponse {
+  connected: boolean;
+  authorityGated: boolean;
+  tier: string;
+  ownPages: MmWatchRow[];
+  competitorPages: MmWatchRow[];
+  usage: { own: number; competitor: number; limits: { own: number; competitorPool: number } };
+}
+
+export interface MmSuggestion {
+  pageUrl: string;
+  pageType: 'own_site' | 'competitor';
+  competitorDomain?: string;
+  reason: string;
+  priority: number;
+  preChecked: boolean;
+}
+
+export interface MmSuggestionsResponse {
+  connected: boolean;
+  authorityGated: boolean;
+  tier: string;
+  limits?: { own: number; competitorPool: number };
+  ownPageSuggestions: MmSuggestion[];
+  competitorSuggestions: MmSuggestion[];
+}
+
+export interface MmSavePageInput {
+  pageUrl: string;
+  pageType: 'own_site' | 'competitor';
+  competitorDomain?: string;
+}
+
+export async function getMmWatchlist(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<MmWatchlistResponse>({
+    ...params,
+    path: `/arion/seo/market-monitor/watchlist?siteId=${encodeURIComponent(params.siteId)}`,
+  });
+}
+
+export async function saveMmWatchlist(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pages: MmSavePageInput[] }) {
+  return requestJson<{ ok: boolean; saved: number; usage: { own: number; competitor: number; limits: { own: number; competitorPool: number } } }>({
+    ...params,
+    method: 'POST',
+    path: `/arion/seo/market-monitor/watchlist`,
+    body: { siteId: params.siteId, pages: params.pages },
+  });
+}
+
+export async function deleteMmWatch(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; watchId: string }) {
+  return requestJson<{ ok: boolean; deleted: number }>({
+    ...params,
+    method: 'DELETE',
+    path: `/arion/seo/market-monitor/watchlist/${encodeURIComponent(params.watchId)}?siteId=${encodeURIComponent(params.siteId)}`,
+  });
+}
+
+export async function getMmSuggestions(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<MmSuggestionsResponse>({
+    ...params,
+    path: `/arion/seo/market-monitor/suggestions?siteId=${encodeURIComponent(params.siteId)}`,
+  });
+}
+
 export interface SeoDecayResponse {
   connected: boolean;
   decaying: Array<{

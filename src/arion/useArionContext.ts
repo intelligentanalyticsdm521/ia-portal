@@ -78,6 +78,11 @@ import {
   addSeoCompetitor as portalAddSeoCompetitor,
   getSeoCompetitors as portalGetSeoCompetitors,
   getSeoMarketMonitor as portalGetSeoMarketMonitor,
+  getMmWatchlist as portalGetMmWatchlist,
+  saveMmWatchlist as portalSaveMmWatchlist,
+  deleteMmWatch as portalDeleteMmWatch,
+  getMmSuggestions as portalGetMmSuggestions,
+  type MmSavePageInput,
   getSeoDecay as portalGetSeoDecay,
   getSeoDiagnostic as portalGetSeoDiagnostic,
   getSeoKeywordDetail as portalGetSeoKeywordDetail,
@@ -297,6 +302,26 @@ export function useArionContext() {
       async getSeoMarketMonitor(siteId: string, windowDays?: number) {
         const b = await base();
         return portalGetSeoMarketMonitor({ ...b, siteId, windowDays });
+      },
+
+      async getMmWatchlist(siteId: string) {
+        const b = await base();
+        return portalGetMmWatchlist({ ...b, siteId });
+      },
+
+      async saveMmWatchlist(siteId: string, pages: MmSavePageInput[]) {
+        const b = await base();
+        return portalSaveMmWatchlist({ ...b, siteId, pages });
+      },
+
+      async deleteMmWatch(siteId: string, watchId: string) {
+        const b = await base();
+        return portalDeleteMmWatch({ ...b, siteId, watchId });
+      },
+
+      async getMmSuggestions(siteId: string) {
+        const b = await base();
+        return portalGetMmSuggestions({ ...b, siteId });
       },
 
       async getSeoDecay(siteId: string) {
