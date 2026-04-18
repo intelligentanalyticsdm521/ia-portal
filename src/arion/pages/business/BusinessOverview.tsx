@@ -60,12 +60,21 @@ export function BusinessOverview() {
 
   if (!connected) {
     const err = d?.error;
+    const title = err === 'gbp_quota_exceeded' || err === 'gbp_api_disabled'
+      ? 'Google Business Profile — API Access Pending'
+      : 'Google Business Profile — Not Connected';
     return (
       <div>
-        <InfoCard title="Google Business Profile — Not Connected">
+        <InfoCard title={title}>
           <p style={{ margin: 0 }}>
-            {err === 'gbp_auth_expired' ? 'Your Google authentication has expired. Reconnect Google in Settings → Connected Accounts.'
-              : err === 'location_not_found' ? 'No Google Business Profile location found for this Google account.'
+            {err === 'gbp_quota_exceeded'
+              ? 'The Google Business Profile APIs are enabled for this project but have a zero-quota limit. Request quota in Google Cloud Console → APIs & Services → enable quota on My Business Account Management API, My Business Business Information API, and Business Profile Performance API. Google typically approves within minutes.'
+              : err === 'gbp_api_disabled'
+              ? 'The Google Business Profile APIs are not enabled for this Google Cloud project. Enable them in Google Cloud Console → APIs & Services.'
+              : err === 'gbp_auth_expired'
+              ? 'Your Google authentication has expired. Reconnect Google in Settings → Connected Accounts.'
+              : err === 'location_not_found'
+              ? 'No Google Business Profile location found for this Google account.'
               : 'Connect your Google Business Profile in Settings → Connected Accounts to see live reviews, insights, and manage your listing.'}
           </p>
         </InfoCard>
