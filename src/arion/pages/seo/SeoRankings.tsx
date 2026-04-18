@@ -232,7 +232,7 @@ export function SeoRankings() {
       {/* Row 4: Position-distribution share (visual of where your keywords live) */}
       {stats && (
         <Card title="Ranking health at a glance" style={{ marginBottom: 16 }}>
-          <div style={{ height: 100 }}>
+          <div style={{ height: 260, paddingTop: 4 }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={[
@@ -245,12 +245,13 @@ export function SeoRankings() {
                   { name: 'Not Ranking', value: stats.buckets.notRanking, color: POSITION_BUCKET_COLORS.notRanking },
                 ]}
                 layout="vertical"
-                margin={{ top: 0, right: 24, bottom: 0, left: 0 }}
+                margin={{ top: 4, right: 40, bottom: 4, left: 8 }}
+                barCategoryGap={6}
               >
                 <XAxis type="number" hide />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: '#5A7A8A' }} width={80} tickLine={false} axisLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: '#5A7A8A' }} width={110} tickLine={false} axisLine={false} />
                 <RTooltip contentStyle={{ fontSize: 11, borderRadius: 6 }} />
-                <RBar dataKey="value" radius={[0, 4, 4, 0]}>
+                <RBar dataKey="value" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 11, fill: '#0B1C24', fontWeight: 600 }}>
                   {(['top1', 'top2_3', 'top4_5', 'top6_10', 'top11_30', 'top31_100', 'notRanking'] as const).map((bk, i) => (
                     <Cell key={i} fill={POSITION_BUCKET_COLORS[bk]} />
                   ))}
