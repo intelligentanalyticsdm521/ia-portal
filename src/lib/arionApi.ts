@@ -259,7 +259,16 @@ async function requestJson<T>(params: {
   const body = text ? safeJsonParse(text) : null;
 
   if (!res.ok) {
-    const msg = typeof body === 'object' && body && 'error' in body ? String((body as any).error) : `Request failed (${res.status})`;
+    // Error bodies come in two shapes:
+    //   { error: "string" }
+    //   { error: { code, message, status } }
+    // Extract a human-readable message for either.
+    let msg = `Request failed (${res.status})`;
+    if (typeof body === 'object' && body && 'error' in body) {
+      const e = (body as any).error;
+      if (typeof e === 'string') msg = e;
+      else if (e && typeof e === 'object') msg = e.message || e.code || JSON.stringify(e);
+    }
     throw new ArionApiError(msg, res.status, body);
   }
 
