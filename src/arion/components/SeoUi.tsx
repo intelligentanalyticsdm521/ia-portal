@@ -7,6 +7,7 @@
 import React from 'react';
 import { ResponsiveContainer, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip as RTooltip, CartesianGrid } from 'recharts';
 import type { SeoRangeCode } from '../../lib/arionApi';
+import { GlossaryIcon } from './Glossary';
 
 export const SEO_RANGE_OPTIONS: Array<{ code: SeoRangeCode; label: string }> = [
   { code: '7d', label: 'Last 7 days' },
@@ -95,6 +96,7 @@ export function SeoStatCard({
   sparklineColor = '#2D9CDB',
   accent = '#2D9CDB',
   locked = false,
+  termKey,
 }: {
   label: string;
   value: string | number;
@@ -106,6 +108,8 @@ export function SeoStatCard({
   sparklineColor?: string;
   accent?: string;
   locked?: boolean;
+  /** Optional glossary term key — renders an info icon next to the label. */
+  termKey?: string;
 }) {
   const deltaText = delta == null
     ? null
@@ -132,7 +136,10 @@ export function SeoStatCard({
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <div style={{ fontSize: 9, color: 'var(--color-text-tertiary, #5A7A8A)', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>{label}</div>
+          <div style={{ fontSize: 9, color: 'var(--color-text-tertiary, #5A7A8A)', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center' }}>
+            {label}
+            {termKey && <GlossaryIcon termKey={termKey} size={11} />}
+          </div>
           <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text-primary, #0B1C24)', marginTop: 2 }}>{value}</div>
           {sub && <div style={{ fontSize: 10, color: 'var(--color-text-tertiary, #5A7A8A)', marginTop: 2 }}>{sub}</div>}
         </div>
