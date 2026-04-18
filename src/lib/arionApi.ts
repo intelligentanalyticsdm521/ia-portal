@@ -358,31 +358,159 @@ export async function linkSeoProject(params: { baseUrl: string; bearerToken: str
 
 /* Phase 3 — SE Ranking expanded endpoints */
 
-export interface SeoRankingsResponse {
-  connected: boolean;
-  projectId: string | number | null;
-  engine?: string;
-  visibilityScore: number | null;
-  avgPosition: number | null;
-  top10Count?: number;
-  keywords: Array<{
-    keywordId: number | null;
-    keyword: string;
+export interface SeoEngineMeta {
+  id: string;
+  name: string | null;
+  region: string | null;
+  city: string | null;
+  device: string | null;
+  lang: string | null;
+  label: string;
+}
+
+export interface SeoKeywordRecord {
+  keywordId: number;
+  keyword: string;
+  currentPosition: number | null;
+  previousPosition: number | null;
+  positionChange: number;
+  searchVolume: number;
+  difficulty: number | null;
+  cpc: number;
+  competition: number;
+  engineCount: number;
+  rankingEngineCount: number;
+  enginesNotRanking: Array<{ engineId: string; engineLabel: string }>;
+  perEngine: Array<{
+    engineId: string;
+    engineLabel: string;
+    engineName: string | null;
+    engineRegion: string | null;
+    engineDevice: string | null;
     currentPosition: number | null;
-    previousPosition: number | null;
+    rankingDays: number;
+    rangeDays: number;
+    rankingDaysPct: number;
     positionChange: number;
-    searchVolume: number;
-    difficulty: number | null;
-    url: string | null;
-    serpFeatures: string[];
-    engines: string[];
+    startOfRangePos: number | null;
+    endOfRangePos: number | null;
+    series: Array<{ date: string; pos: number; change: number }>;
   }>;
 }
 
-export async function getSeoRankings(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; engine?: 'google' | 'bing' | 'all' }) {
+export interface SeoAggregateStats {
+  totalKeywords: number;
+  rankingKeywords: number;
+  avgPosition: number | null;
+  visibilityScore: number;
+  top10Count: number;
+  buckets: {
+    top1: number;
+    top2_3: number;
+    top4_5: number;
+    top6_10: number;
+    top11_30: number;
+    top31_100: number;
+    notRanking: number;
+  };
+  movers: { jumped: number; dropped: number; unchanged: number };
+  trafficForecast: number;
+}
+
+export interface SeoRangeInfo {
+  code: string;
+  label: string;
+  current: { start: string; end: string };
+  prior: { start: string; end: string };
+  days: number;
+}
+
+export interface SeoRankingsResponse {
+  connected: boolean;
+  projectId: string | number | null;
+  range: SeoRangeInfo;
+  filters: { provider: string; device: string };
+  engines: {
+    metadata: SeoEngineMeta[];
+    availableIds: string[];
+    filteredIds: string[];
+  };
+  stats: {
+    current: SeoAggregateStats;
+    prior: SeoAggregateStats;
+    delta: Record<string, number | null>;
+  };
+  keywords: SeoKeywordRecord[];
+  upstreamError: any;
+}
+
+export type SeoRangeCode = '7d' | '30d' | '90d' | '365d' | 'current_month' | 'current_quarter' | 'current_year';
+
+export async function getSeoRankings(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; range?: SeoRangeCode; provider?: 'all' | 'google' | 'bing'; device?: 'all' | 'desktop' | 'mobile' }) {
   const qp = new URLSearchParams({ siteId: params.siteId });
-  if (params.engine) qp.set('engine', params.engine);
+  if (params.range) qp.set('range', params.range);
+  if (params.provider) qp.set('provider', params.provider);
+  if (params.device) qp.set('device', params.device);
   return requestJson<SeoRankingsResponse>({ ...params, path: `/arion/seo/rankings?${qp.toString()}` });
+}
+
+export interface SeoKeywordDetailResponse {
+  connected: boolean;
+  projectId: string | number | null;
+  range: Pick<SeoRangeInfo, 'code' | 'label' | 'current' | 'days'>;
+  keyword: SeoKeywordRecord;
+}
+
+export async function getSeoKeywordDetail(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; keywordId: string | number; range?: SeoRangeCode }) {
+  const qp = new URLSearchParams({ siteId: params.siteId });
+  if (params.range) qp.set('range', params.range);
+  return requestJson<SeoKeywordDetailResponse>({ ...params, path: `/arion/seo/keyword/${encodeURIComponent(String(params.keywordId))}?${qp.toString()}` });
+}
+
+export interface SeoOverviewResponse {
+  connected: boolean;
+  projectId: string | number | null;
+  range: SeoRangeInfo;
+  engines: { metadata: SeoEngineMeta[]; availableIds: string[] };
+  heroCards: {
+    providers: Array<{
+      name: string;
+      engineCount: number;
+      devices: string[];
+      current: SeoAggregateStats;
+      prior: SeoAggregateStats;
+      avgPositionDelta: number | null;
+      visibilityDelta: number;
+      top10Delta: number;
+    }>;
+    ai: Array<{
+      name: string;
+      engineCount: number;
+      devices: string[];
+      current: SeoAggregateStats;
+      prior: SeoAggregateStats;
+      avgPositionDelta: number | null;
+      visibilityDelta: number;
+      top10Delta: number;
+    }>;
+  };
+  stats: {
+    current: SeoAggregateStats;
+    prior: SeoAggregateStats;
+    delta: Record<string, number | null>;
+  };
+  movers: {
+    jumped: Array<{ keywordId: number; keyword: string; currentPosition: number | null; previousPosition: number | null; positionChange: number; searchVolume: number }>;
+    dropped: Array<{ keywordId: number; keyword: string; currentPosition: number | null; previousPosition: number | null; positionChange: number; searchVolume: number }>;
+    unchanged: number;
+  };
+  distributionSeries: Array<{ date: string; top1: number; top2_3: number; top4_5: number; top6_10: number; top11_30: number; top31_100: number; notRanking: number }>;
+}
+
+export async function getSeoOverview(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; range?: SeoRangeCode }) {
+  const qp = new URLSearchParams({ siteId: params.siteId });
+  if (params.range) qp.set('range', params.range);
+  return requestJson<SeoOverviewResponse>({ ...params, path: `/arion/seo/overview?${qp.toString()}` });
 }
 
 export interface SeoAuditResponse {

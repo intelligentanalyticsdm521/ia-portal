@@ -78,6 +78,9 @@ import {
   addSeoCompetitor as portalAddSeoCompetitor,
   getSeoDecay as portalGetSeoDecay,
   getSeoDiagnostic as portalGetSeoDiagnostic,
+  getSeoKeywordDetail as portalGetSeoKeywordDetail,
+  getSeoOverview as portalGetSeoOverview,
+  type SeoRangeCode,
 } from '../lib/arionApi';
 
 /**
@@ -259,9 +262,19 @@ export function useArionContext() {
       },
 
       /* Phase 3 — SE Ranking expanded endpoints */
-      async getSeoRankings(siteId: string, engine?: 'google' | 'bing' | 'all') {
+      async getSeoRankings(siteId: string, opts?: { range?: SeoRangeCode; provider?: 'all' | 'google' | 'bing'; device?: 'all' | 'desktop' | 'mobile' }) {
         const b = await base();
-        return portalGetSeoRankings({ ...b, siteId, engine });
+        return portalGetSeoRankings({ ...b, siteId, range: opts?.range, provider: opts?.provider, device: opts?.device });
+      },
+
+      async getSeoKeywordDetail(siteId: string, keywordId: string | number, range?: SeoRangeCode) {
+        const b = await base();
+        return portalGetSeoKeywordDetail({ ...b, siteId, keywordId, range });
+      },
+
+      async getSeoOverview(siteId: string, range?: SeoRangeCode) {
+        const b = await base();
+        return portalGetSeoOverview({ ...b, siteId, range });
       },
 
       async getSeoAudit(siteId: string) {

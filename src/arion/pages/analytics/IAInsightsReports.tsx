@@ -114,8 +114,8 @@ function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, 
   const biggestDecay = decayingKeywords[0] || null;
   const seRankingScoreRaw = seRankingConnected
     ? Math.min(100, Math.round(
-        (Number(seoData?.visibilityScore || 0) * 0.6)
-        + (Math.min((seoData?.top10Count || 0) / Math.max(1, seoKeywords.length), 1) * 40)
+        (Number(seoData?.stats?.current?.visibilityScore ?? seoData?.visibilityScore ?? 0) * 0.6)
+        + (Math.min((seoData?.stats?.current?.top10Count ?? seoData?.top10Count ?? 0) / Math.max(1, seoKeywords.length), 1) * 40)
       ))
     : 0;
 
@@ -1437,8 +1437,8 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
   // Phase 3 Step 4.5 — Search Rankings component now uses real SE Ranking data
   const seConnected = seoData?.connected === true;
   const seKw: any[] = Array.isArray(seoData?.keywords) ? seoData.keywords : [];
-  const seTop10 = seoData?.top10Count ?? seKw.filter((k: any) => typeof k.currentPosition === 'number' && k.currentPosition <= 10).length;
-  const seVisibility = Number(seoData?.visibilityScore || 0);
+  const seTop10 = seoData?.stats?.current?.top10Count ?? seoData?.top10Count ?? seKw.filter((k: any) => typeof k.currentPosition === 'number' && k.currentPosition <= 10).length;
+  const seVisibility = Number(seoData?.stats?.current?.visibilityScore ?? seoData?.visibilityScore ?? 0);
   const seRankingScore = seConnected
     ? Math.min(100, Math.round(
         (seVisibility * 0.6) // visibility contributes up to 60 points
@@ -1643,7 +1643,7 @@ export function IAInsightsReports() {
     if (!activeSiteId) { setSeoData(null); setSeoDecayData(null); return; }
     let cancelled = false;
     Promise.all([
-      arionApi.getSeoRankings(activeSiteId, 'all').catch(() => null),
+      arionApi.getSeoRankings(activeSiteId, { range: '30d' }).catch(() => null),
       arionApi.getSeoDecay(activeSiteId).catch(() => null),
     ]).then(([r, decay]) => {
       if (cancelled) return;
