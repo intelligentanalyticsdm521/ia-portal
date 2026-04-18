@@ -1,5 +1,5 @@
 import { useState, type ComponentType } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Monitor, Server, ShieldCheck, BarChart2, TrendingUp,
   Search as SearchIcon, MapPin, Star, ChevronDown, Settings,
@@ -20,6 +20,13 @@ export interface SubNavGroup {
   collapsible?: boolean;
   icon?: ComponentType<{ className?: string }>;
   sectionId?: string; // used for auto-collapse matching
+  /**
+   * Optional explicit "landing" route for this section. When a user clicks the
+   * collapsible section header, they navigate here AND the section expands.
+   * If omitted we fall back to the first item's route (which by convention is
+   * the section's Overview).
+   */
+  landingRoute?: string;
 }
 
 export interface SubNavConfig {
@@ -152,7 +159,7 @@ const ARION_NAV: SubNavConfig = {
       ],
     },
     {
-      label: "Search", icon: SearchIcon, collapsible: true, sectionId: "search",
+      label: "Search", icon: SearchIcon, collapsible: true, sectionId: "search", landingRoute: "/app/services/arion_search_performance",
       items: [
         { key: "arion_search_performance", label: "Search Performance", route: "/app/services/arion_search_performance" },
         { key: "arion_search_indexing", label: "Indexing", route: "/app/services/arion_search_indexing" },
@@ -316,6 +323,7 @@ function getDefaultSection(path: string): string | null {
 
 export function SubNav({ config }: SubNavProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const isArion = config.productName === "ARION";
 
   // Fix 3: single active section at a time (ARION only)
@@ -335,11 +343,30 @@ export function SubNav({ config }: SubNavProps) {
     return initial;
   });
 
-  const toggleSection = (sectionId: string) => {
+  /**
+   * Section-header click handler (global landing pattern).
+   *
+   * Rules:
+   *   - If we are NOT already on this section's landing route, navigate there
+   *     AND expand the section. This is the new "click section → Overview + expand" pattern.
+   *   - If we ARE already on the landing route, treat the click as a toggle
+   *     (collapse it, or re-expand).
+   */
+  const toggleSection = (sectionId: string, landingRoute?: string) => {
+    if (landingRoute && location.pathname !== landingRoute) {
+      setActiveSection(sectionId);
+      navigate(landingRoute);
+      return;
+    }
     setActiveSection(prev => prev === sectionId ? null : sectionId);
   };
 
-  const toggleGroup = (gi: number) => {
+  const toggleGroup = (gi: number, landingRoute?: string) => {
+    if (landingRoute && location.pathname !== landingRoute) {
+      navigate(landingRoute);
+      setExpanded(prev => new Set([gi]));
+      return;
+    }
     setExpanded(prev => {
       if (prev.has(gi)) { const n = new Set(prev); n.delete(gi); return n; }
       return new Set([gi]);
@@ -366,11 +393,16 @@ export function SubNav({ config }: SubNavProps) {
 
           return (
             <div key={gi} className={gi > 0 ? "mt-1" : ""}>
-              {/* Section header — collapsible with icon, or standalone link */}
+              {/* Section header — collapsible with icon, or standalone link.
+                  Clicking routes to the section's landing page (usually Overview) AND expands. */}
               {group.label && group.collapsible ? (
                 <button
                   type="button"
-                  onClick={() => sid ? toggleSection(sid) : toggleGroup(gi)}
+                  onClick={() => {
+                    const landingRoute = group.landingRoute ?? group.items[0]?.route;
+                    if (sid) toggleSection(sid, landingRoute);
+                    else toggleGroup(gi, landingRoute);
+                  }}
                   className={`mb-0.5 flex w-full items-center justify-between rounded px-2 py-1.5 text-[12px] font-semibold transition-colors ${
                     hasActiveItem || isExpanded ? "text-white" : "text-[#A8CDD8]/70 hover:text-[#A8CDD8]"
                   }`}

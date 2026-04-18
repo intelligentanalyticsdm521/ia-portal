@@ -940,6 +940,139 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
         </div>
       )}
 
+      {/* Whitespace analysis — non-brand visibility gaps */}
+      {(() => {
+        const nonBrandQueries = topQueries.filter((q: any) => !brandRegex.test(q.query));
+        const brandClicks = topQueries.filter((q: any) => brandRegex.test(q.query)).reduce((s: number, q: any) => s + q.clicks, 0);
+        const totalClicksAll = brandClicks + nonBrandClicks;
+        const brandSharePct = totalClicksAll > 0 ? Math.round((brandClicks / totalClicksAll) * 100) : 0;
+
+        // Whitespace queries: non-brand, ranking 11-30, impressions above floor, low CTR
+        const whitespaceQueries = nonBrandQueries
+          .filter((q: any) => q.position >= 11 && q.position <= 30 && q.impressions > 30)
+          .sort((a: any, b: any) => b.impressions - a.impressions)
+          .slice(0, 10);
+
+        // Brand-dependency callout tone
+        const dependencyTone = brandSharePct >= 75 ? 'bad' : brandSharePct >= 50 ? 'warn' : 'good';
+        const dependencyColor = dependencyTone === 'bad' ? '#D85A30' : dependencyTone === 'warn' ? '#C48C00' : '#1D9E75';
+        const dependencyBg = dependencyTone === 'bad' ? '#FEF2F2' : dependencyTone === 'warn' ? '#FFF8E1' : '#F0FDF4';
+
+        return (
+          <div style={{ marginBottom: 16, marginTop: 18 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 6 }}>Content whitespace analysis</div>
+            <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10 }}>
+              Where your brand presence ends and untapped demand begins. Whitespace = queries you rank for but don't own, plus topics you'd expect to cover but don't.
+            </div>
+            <div style={{ background: dependencyBg, borderLeft: `3px solid ${dependencyColor}`, borderRadius: 4, padding: '10px 14px', fontSize: 12, color: '#5A7A8A', marginBottom: 12 }}>
+              <strong style={{ color: dependencyColor }}>Brand dependency: {brandSharePct}%</strong> of your search clicks come from brand queries.{' '}
+              {dependencyTone === 'bad'
+                ? 'Very high — you\'re mostly being found by people who already know you. Non-brand content is a growth lever.'
+                : dependencyTone === 'warn'
+                  ? 'Moderate — there is non-brand visibility but room to expand topic coverage.'
+                  : 'Healthy balance — you\'re earning non-brand visibility alongside brand recognition.'}
+            </div>
+            {whitespaceQueries.length > 0 ? (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #eee' }}>
+                    <th style={{ textAlign: 'left', padding: '6px 8px', color: '#5A7A8A', fontSize: 10, textTransform: 'uppercase' }}>Whitespace Query</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Impressions</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Position</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Your CTR</th>
+                    <th style={{ textAlign: 'left', padding: '6px 8px', color: '#5A7A8A', fontSize: 10, textTransform: 'uppercase' }}>Opportunity</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {whitespaceQueries.map((q: any, i: number) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #f5f5f5' }}>
+                      <td style={{ padding: '6px 8px', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.query}</td>
+                      <td style={{ textAlign: 'right', padding: '6px 8px' }}>{formatNumber(q.impressions)}</td>
+                      <td style={{ textAlign: 'right', padding: '6px 8px' }}>{q.position.toFixed(1)}</td>
+                      <td style={{ textAlign: 'right', padding: '6px 8px', color: q.ctr < q.expectedCtr * 0.5 ? '#D85A30' : '#5A7A8A' }}>{q.ctr.toFixed(2)}%</td>
+                      <td style={{ padding: '6px 8px', color: '#5A7A8A' }}>
+                        {q.position <= 15
+                          ? 'Refresh + internal links — within striking distance of page 1'
+                          : 'New dedicated page or cluster — currently under-served'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div style={{ fontSize: 11, color: '#5A7A8A', fontStyle: 'italic' }}>
+                No whitespace queries detected yet at the current impression threshold. Let the site gather more 30-day search history.
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* SERP feature coverage gaps */}
+      {(() => {
+        const featureData: any = (sd.breakdowns as any)?.serpFeatures || (seoData as any)?.serpFeatures || null;
+        const hasFeatureData = Array.isArray(featureData) && featureData.length > 0;
+
+        const SERP_FEATURES = [
+          { key: 'paa', label: 'People Also Ask', desc: 'Expandable Q&A blocks — answering these can earn the slot.' },
+          { key: 'featured_snippet', label: 'Featured Snippet', desc: 'The "position zero" answer box above the blue links.' },
+          { key: 'local_pack', label: 'Local Pack (Maps)', desc: 'Map + 3 business results — owned via Google Business Profile signals.' },
+          { key: 'video', label: 'Video', desc: 'YouTube carousel or single video — owned by creating indexed video content.' },
+          { key: 'image', label: 'Image Pack', desc: 'Image carousel — earned with alt-tagged on-page imagery and structured data.' },
+          { key: 'news', label: 'Top Stories', desc: 'News carousel — only available to publishers with News-approved sitemaps.' },
+        ];
+
+        return (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 6 }}>SERP-feature coverage gaps</div>
+            <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10 }}>
+              Google's results pages include much more than 10 blue links. When your tracked keywords show SERP features (People Also Ask, featured snippets, local pack, video) but you don't own them, that's recoverable real estate.
+            </div>
+            {hasFeatureData ? (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #eee' }}>
+                    <th style={{ textAlign: 'left', padding: '6px 8px', color: '#5A7A8A', fontSize: 10, textTransform: 'uppercase' }}>Feature</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>Queries w/ Feature</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A', fontSize: 10 }}>You Own</th>
+                    <th style={{ textAlign: 'left', padding: '6px 8px', color: '#5A7A8A', fontSize: 10, textTransform: 'uppercase' }}>Gap Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {SERP_FEATURES.map((f) => {
+                    const row = featureData.find((r: any) => (r.key || r.feature || '').toLowerCase() === f.key) || {};
+                    const present = Number(row.queriesWithFeature || row.queries || 0);
+                    const owned = Number(row.owned || 0);
+                    const gap = Math.max(0, present - owned);
+                    return (
+                      <tr key={f.key} style={{ borderBottom: '1px solid #f5f5f5' }}>
+                        <td style={{ padding: '6px 8px' }}>{f.label}</td>
+                        <td style={{ textAlign: 'right', padding: '6px 8px' }}>{present}</td>
+                        <td style={{ textAlign: 'right', padding: '6px 8px', color: owned > 0 ? '#1D9E75' : '#5A7A8A', fontWeight: owned > 0 ? 600 : 400 }}>{owned}</td>
+                        <td style={{ padding: '6px 8px', color: gap > 0 ? '#D85A30' : '#1D9E75' }}>
+                          {gap > 0 ? f.desc : 'Covered or not applicable'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <div style={{ background: '#F8FAFC', borderRadius: 6, padding: '12px 14px', fontSize: 11, color: '#5A7A8A', lineHeight: 1.6, border: '1px dashed rgba(45,156,219,0.3)' }}>
+                SERP-feature tracking activates when SE Ranking returns feature metadata alongside keyword positions. The typical features we watch:
+                <ul style={{ margin: '8px 0 0 18px', padding: 0 }}>
+                  {SERP_FEATURES.map((f) => (
+                    <li key={f.key} style={{ marginBottom: 4 }}>
+                      <strong style={{ color: '#0B1C24' }}>{f.label}</strong> — {f.desc}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Phase 3 Step 4.5 — SE Ranking Quick Win matrix + Position Trend */}
       {(() => {
         const seoConnected = seoData?.connected === true;
