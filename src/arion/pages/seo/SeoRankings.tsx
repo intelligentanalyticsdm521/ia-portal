@@ -1,8 +1,9 @@
 import React from 'react';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
-import { StatCard, Card, AddonUpsell, EmptyPanel, Loading, InfoCard, PlatformTabs, ConsultingUpsell } from '../../components/Ui';
+import { StatCard, Card, AddonUpsell, EmptyPanel, Loading, InfoCard, PlatformTabs, ConsultingUpsell, ErrorBanner } from '../../components/Ui';
 import { TrendChart } from '../../components/Charts';
+import { SeoDiagnosticPanel } from '../../components/SeoDiagnosticPanel';
 
 /**
  * Phase 3 / Step 4.1 — uses the dedicated /arion/seo/rankings endpoint
@@ -39,6 +40,8 @@ export function SeoRankings() {
   const visibility = r?.visibilityScore != null ? `${Number(r.visibilityScore).toFixed(1)}%` : '--';
   const avgPos = r?.avgPosition != null ? Number(r.avgPosition).toFixed(1) : '--';
   const top10 = r?.top10Count ?? keywords.filter(k => typeof k.currentPosition === 'number' && k.currentPosition <= 10).length;
+  const upstreamError = r?.upstreamError as { positions?: string | null; keywords?: string | null; project?: string | null; keyConfigured?: boolean } | null;
+  const hasUpstreamFailure = upstreamError != null && (upstreamError.positions || upstreamError.keywords || upstreamError.project);
 
   // Top 20 by best rank for trend chart
   const trendData = [...keywords]
@@ -56,6 +59,20 @@ export function SeoRankings() {
           </p>
         </InfoCard>
       )}
+
+      {hasUpstreamFailure && upstreamError && (
+        <ErrorBanner
+          message={
+            `SE Ranking API returned errors for this project. ${upstreamError.keyConfigured === false ? 'The project API key is not configured on this server — add SERANKING_API_SYSTEM_KEY in App Settings. ' : ''}${[
+              upstreamError.positions && `positions: ${upstreamError.positions}`,
+              upstreamError.keywords && `keywords: ${upstreamError.keywords}`,
+              upstreamError.project && `project: ${upstreamError.project}`,
+            ].filter(Boolean).join(' · ')}`
+          }
+        />
+      )}
+
+      <SeoDiagnosticPanel siteId={activeSiteId ?? null} />
 
       <div className="grid3" style={{ marginTop: connected ? 12 : 0 }}>
         <StatCard label="Tracked Keywords" value={String(keywords.length)} deltaType="neutral" />

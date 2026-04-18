@@ -427,6 +427,10 @@ export async function getSeoDecay(params: { baseUrl: string; bearerToken: string
   return requestJson<SeoDecayResponse>({ ...params, path: `/arion/seo/decay?siteId=${encodeURIComponent(params.siteId)}` });
 }
 
+export async function getSeoDiagnostic(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...params, path: `/arion/seo/diagnostic?siteId=${encodeURIComponent(params.siteId)}` });
+}
+
 export async function createArionRequest(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; requestType: string; notes: string }) {
   return requestJson<{ request: { siteRequestId: string } }>({
     ...params,

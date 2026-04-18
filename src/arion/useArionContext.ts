@@ -77,6 +77,7 @@ import {
   getSeoAudit as portalGetSeoAudit,
   addSeoCompetitor as portalAddSeoCompetitor,
   getSeoDecay as portalGetSeoDecay,
+  getSeoDiagnostic as portalGetSeoDiagnostic,
 } from '../lib/arionApi';
 
 /**
@@ -276,6 +277,11 @@ export function useArionContext() {
       async getSeoDecay(siteId: string) {
         const b = await base();
         return portalGetSeoDecay({ ...b, siteId });
+      },
+
+      async getSeoDiagnostic(siteId: string) {
+        const b = await base();
+        return portalGetSeoDiagnostic({ ...b, siteId });
       },
 
       async submitRequest(siteId: string, requestType: string, notes: string) {
