@@ -224,7 +224,7 @@ function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, 
               : `Device breakdown data will appear once GSC returns at least 28 days of device-dimension data for this property.`),
         // Observation 3: Top opportunity query by name
         topOpp
-          ? `Your highest-opportunity query is "${topOpp.query}" with ${formatNumber(topOpp.impressions)} impressions and only ${topOpp.clicks} clicks (${topOpp.ctr.toFixed(2)}% CTR) at position ${topOpp.position.toFixed(1)}. Expected CTR at that position is ~${topOpp.expectedCtr}% — a more compelling title tag targeting this query could generate an estimated ${Math.round(((topOpp.expectedCtr - topOpp.ctr) / 100) * topOpp.impressions)} additional monthly clicks.`
+          ? `Your highest-opportunity query is "${topOpp.query}" with ${formatNumber(topOpp.impressions)} impressions and only ${topOpp.clicks} clicks (${topOpp.ctr.toFixed(2)}% CTR) at position ${Math.round(topOpp.position)}. Expected CTR at that position is ~${topOpp.expectedCtr}% — a more compelling title tag targeting this query could generate an estimated ${Math.round(((topOpp.expectedCtr - topOpp.ctr) / 100) * topOpp.impressions)} additional monthly clicks.`
           : `Query-level opportunity scoring will populate once GSC has 28+ days of query data. Currently ${gscQueries.length} queries are tracked.`,
         // Phase 3 Step 4.5 append — SE Ranking quick-win keyword observation
         seRankingConnected
@@ -767,7 +767,7 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
           { label: 'Expected CTR Gap', value: missedClicks > 0 ? '~' + missedClicks + ' clicks/mo' : '0', sub: 'Missed vs expected CTR', accent: '#D85A30' },
           { label: 'Search Impressions', value: formatNumber(impressions), sub: formatNumber(gscClicks) + ' clicks · ' + actualCtr.toFixed(2) + '% CTR', accent: '#2D9CDB' },
           { label: 'Quick Win Keywords', value: String(quickWins), sub: 'Position 11-20, >50 impressions', accent: '#1D9E75' },
-          { label: 'Avg Position', value: avgPos > 0 ? avgPos.toFixed(1) : '--', sub: 'Across all tracked queries', accent: '#EF6C33' },
+          { label: 'Avg Position', value: avgPos > 0 ? String(Math.round(avgPos)) : '--', sub: 'Across all tracked queries', accent: '#EF6C33' },
         ].map(c => (
           <div key={c.label} style={{ background: '#F8FAFC', borderRadius: 6, padding: '10px 12px', borderLeft: '3px solid ' + c.accent }}>
             <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase' }}>{c.label}</div>
@@ -780,7 +780,7 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
       {/* CTR gap callout */}
       <div style={{ background: '#FFF8E1', borderLeft: '3px solid #D4A800', borderRadius: 4, padding: '12px 16px', marginBottom: 16, fontSize: 12, color: '#5A7A8A', lineHeight: 1.6 }}>
         {hasData ? (
-          <>At position {avgPos.toFixed(1)}, industry benchmark CTR is ~{expectedCtr}%. Your actual CTR is {actualCtr.toFixed(2)}%. Gap = approximately <strong style={{ color: '#0B1C24' }}>{missedClicks} additional monthly clicks</strong> recoverable through title/meta optimization on the highest-impression queries below.</>
+          <>At position {Math.round(avgPos)}, industry benchmark CTR is ~{expectedCtr}%. Your actual CTR is {actualCtr.toFixed(2)}%. Gap = approximately <strong style={{ color: '#0B1C24' }}>{missedClicks} additional monthly clicks</strong> recoverable through title/meta optimization on the highest-impression queries below.</>
         ) : (
           <>Waiting for at least 28 days of GSC data for this site before a CTR curve can be drawn. Once available this callout will surface the click-gap between your actual CTR and the industry benchmark for your average ranking position.</>
         )}
@@ -831,7 +831,7 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
             <tr key={i} style={{ borderBottom: '1px solid #f5f5f5', background: q.opportunityScore > 30 ? '#FFF8F5' : 'transparent' }}>
               <td style={{ padding: '6px 8px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.query}</td>
               <td style={{ textAlign: 'right', padding: '6px 8px' }}>{formatNumber(q.impressions)}</td>
-              <td style={{ textAlign: 'right', padding: '6px 8px' }}>{q.position.toFixed(1)}</td>
+              <td style={{ textAlign: 'right', padding: '6px 8px' }}>{Math.round(q.position)}</td>
               <td style={{ textAlign: 'right', padding: '6px 8px', color: q.ctr < q.expectedCtr * 0.5 ? '#D85A30' : '#5A7A8A' }}>{q.ctr.toFixed(2)}%</td>
               <td style={{ textAlign: 'right', padding: '6px 8px', color: '#5A7A8A' }}>{q.expectedCtr}%</td>
               <td style={{ textAlign: 'right', padding: '6px 8px', color: q.ctrGap > 0 ? '#D85A30' : '#5A7A8A' }}>{q.ctrGap.toFixed(2)}%</td>
@@ -866,7 +866,7 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
                     <td style={{ textAlign: 'right', padding: '4px 6px' }}>{dv.clicks ?? '--'}</td>
                     <td style={{ textAlign: 'right', padding: '4px 6px' }}>{formatNumber(dv.impressions || 0)}</td>
                     <td style={{ textAlign: 'right', padding: '4px 6px' }}>{Number(dv.ctr || 0).toFixed(2)}%</td>
-                    <td style={{ textAlign: 'right', padding: '4px 6px' }}>{Number(dv.position || 0).toFixed(1)}</td>
+                    <td style={{ textAlign: 'right', padding: '4px 6px' }}>{Math.round(Number(dv.position || 0))}</td>
                   </tr>
                 ))}
               </tbody>
@@ -928,7 +928,7 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
                     <td style={{ textAlign: 'right', padding: '4px 8px' }}>{formatNumber(pq.impressions || 0)}</td>
                     <td style={{ textAlign: 'right', padding: '4px 8px' }}>{pq.clicks ?? 0}</td>
                     <td style={{ textAlign: 'right', padding: '4px 8px' }}>{Number(pq.ctr || 0).toFixed(2)}%</td>
-                    <td style={{ textAlign: 'right', padding: '4px 8px' }}>{Number(pq.position || 0).toFixed(1)}</td>
+                    <td style={{ textAlign: 'right', padding: '4px 8px' }}>{Math.round(Number(pq.position || 0))}</td>
                   </tr>
                 );
               })}
@@ -988,7 +988,7 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
                     <tr key={i} style={{ borderBottom: '1px solid #f5f5f5' }}>
                       <td style={{ padding: '6px 8px', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.query}</td>
                       <td style={{ textAlign: 'right', padding: '6px 8px' }}>{formatNumber(q.impressions)}</td>
-                      <td style={{ textAlign: 'right', padding: '6px 8px' }}>{q.position.toFixed(1)}</td>
+                      <td style={{ textAlign: 'right', padding: '6px 8px' }}>{Math.round(q.position)}</td>
                       <td style={{ textAlign: 'right', padding: '6px 8px', color: q.ctr < q.expectedCtr * 0.5 ? '#D85A30' : '#5A7A8A' }}>{q.ctr.toFixed(2)}%</td>
                       <td style={{ padding: '6px 8px', color: '#5A7A8A' }}>
                         {q.position <= 15

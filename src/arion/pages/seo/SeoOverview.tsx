@@ -104,7 +104,7 @@ export function SeoOverview() {
           <SeoStatCard
             key={p.name}
             label={p.name}
-            value={p.current.avgPosition != null ? `#${p.current.avgPosition.toFixed(1)}` : '—'}
+            value={p.current.avgPosition != null ? `#${Math.round(p.current.avgPosition)}` : '—'}
             sub={`${p.current.rankingKeywords} / ${p.current.totalKeywords} ranking · ${p.devices.join(' + ') || 'all devices'}`}
             delta={p.avgPositionDelta}
             deltaFormat="position"
@@ -179,7 +179,7 @@ export function SeoOverview() {
           primaryValue={`${stats.totalKeywords}`}
           primaryLabel="tracked"
           secondaryRows={[
-            { label: 'Avg Position', value: stats.avgPosition != null ? stats.avgPosition.toFixed(1) : '—' },
+            { label: 'Avg Position', value: stats.avgPosition != null ? String(Math.round(stats.avgPosition)) : '—' },
             { label: 'Top 10', value: String(stats.top10Count) },
             { label: 'Jumped / Dropped', value: `${movers.jumped.length} / ${movers.dropped.length}`, valueColor: movers.jumped.length >= movers.dropped.length ? '#1D9E75' : '#D85A30' },
           ]}
@@ -260,7 +260,7 @@ export function SeoOverview() {
       </Card>
 
       <ConsultingUpsell
-        headline={stats.avgPosition && stats.avgPosition > 15 ? `Average position is ${stats.avgPosition?.toFixed(1)} — IA can build a 90-day plan to reach page 1.` : "IA manages your SEO strategy end-to-end."}
+        headline={stats.avgPosition && stats.avgPosition > 15 ? `Average position is ${Math.round(stats.avgPosition)} — IA can build a 90-day plan to reach page 1.` : "IA manages your SEO strategy end-to-end."}
         subtext="Our SEO strategists analyze your full keyword landscape and execute a custom plan."
         serviceType="SEO Strategy"
         triggerPage="seo-overview"

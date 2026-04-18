@@ -146,7 +146,7 @@ export function SeoRankings() {
         <SeoStatCard
           termKey="avg_position"
           label="Avg Position"
-          value={stats?.avgPosition != null ? stats.avgPosition.toFixed(1) : '—'}
+          value={stats?.avgPosition != null ? String(Math.round(stats.avgPosition)) : '—'}
           sub={`of ${stats?.rankingKeywords || 0} ranking keywords`}
           delta={delta.avgPosition != null ? -Number(delta.avgPosition) : null}
           deltaIsGoodWhenPositive={true}
@@ -588,7 +588,7 @@ function SeoKeywordDetailModal({ siteId, keywordId, onClose }: { siteId: string;
           {record && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
-                <SeoStatCard label="Avg Position" value={record.currentPosition != null ? record.currentPosition.toFixed(1) : 'Not ranking'} accent="#2D9CDB" />
+                <SeoStatCard label="Avg Position" value={record.currentPosition != null ? String(Math.round(record.currentPosition)) : 'Not ranking'} accent="#2D9CDB" />
                 <SeoStatCard label="Ranking On" value={`${record.rankingEngineCount} / ${record.engineCount}`} sub="search engines" accent="#1D9E75" />
                 <SeoStatCard label="Search Volume" value={record.searchVolume ? formatNum(record.searchVolume) : '—'} sub="monthly searches" accent="#FEC82C" />
                 <SeoStatCard label="CPC" value={record.cpc ? `$${Number(record.cpc).toFixed(2)}` : '—'} sub="Google Ads benchmark" accent="#EF6C33" />

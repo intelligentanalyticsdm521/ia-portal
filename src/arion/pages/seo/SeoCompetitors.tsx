@@ -21,18 +21,27 @@ export function SeoCompetitors() {
   const [submitting, setSubmitting] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
-  const { data: seo, loading: seoLoading, refetch } = useArionData(
+  // Load the snapshot (for visibility, top-10 count) AND the dedicated
+  // competitors feed (iterates all engines and dedupes, matching SE Ranking's
+  // own "Added Competitors" view).
+  const { data: seo, loading: seoLoading } = useArionData(
     () => activeSiteId ? arionApi.getSeo(activeSiteId) : Promise.resolve(null),
     [activeSiteId]
   );
+  const { data: compData, loading: compLoading, refetch: refetchComps } = useArionData(
+    () => activeSiteId ? arionApi.getSeoCompetitors(activeSiteId) : Promise.resolve(null),
+    [activeSiteId]
+  );
+  const refetch = () => { refetchComps(); };
 
-  if (seoLoading) return <Loading />;
+  if (seoLoading || compLoading) return <Loading />;
   if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
 
   const s = seo as Record<string, any> | null;
-  const connected = s?.connected === true;
+  const connected = (compData as any)?.connected === true || s?.connected === true;
   const hasSeoAddon = selectedSite?.seoAddonTier != null;
-  const competitors: any[] = s?.breakdowns?.competitors ?? [];
+  const competitors: any[] = ((compData as any)?.competitors as any[]) ?? [];
+  const compUpstreamErrors: any[] = ((compData as any)?.upstreamErrors as any[]) ?? [];
 
   if (!connected && !hasSeoAddon) {
     return (
@@ -71,6 +80,12 @@ export function SeoCompetitors() {
 
   return (
     <div>
+      {compUpstreamErrors.length > 0 && (
+        <ErrorBanner
+          message={`SE Ranking returned errors for ${compUpstreamErrors.length} engine(s). The competitor list below may be incomplete until the upstream recovers.`}
+        />
+      )}
+
       <InfoCard title="Competitor Tracking">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <p style={{ margin: 0, fontSize: 12 }}>

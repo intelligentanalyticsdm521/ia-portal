@@ -538,6 +538,34 @@ export async function addSeoCompetitor(params: { baseUrl: string; bearerToken: s
   });
 }
 
+export interface SeoCompetitorRecord {
+  id: number | null;
+  domain: string;
+  competitor: string;
+  url: string | null;
+  engines: string[];
+  visibility: number | null;
+  visibility_score: number | null;
+  keywords: number | null;
+  overlap: number | null;
+  added_at: string | null;
+}
+
+export interface SeoCompetitorsResponse {
+  connected: boolean;
+  projectId?: string | number;
+  engineCount?: number;
+  competitors: SeoCompetitorRecord[];
+  upstreamErrors?: Array<{ seId: string; status: number; errorText: string | null }>;
+}
+
+export async function getSeoCompetitors(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<SeoCompetitorsResponse>({
+    ...params,
+    path: `/arion/seo/competitors?siteId=${encodeURIComponent(params.siteId)}`,
+  });
+}
+
 export interface SeoDecayResponse {
   connected: boolean;
   decaying: Array<{

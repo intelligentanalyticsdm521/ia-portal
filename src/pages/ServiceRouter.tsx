@@ -42,7 +42,6 @@ import { SeoSiteAudit } from '../arion/pages/seo/SeoSiteAudit';
 import { SeoCompetitors } from '../arion/pages/seo/SeoCompetitors';
 import { SeoAiSearch } from '../arion/pages/seo/SeoAiSearch';
 import { SeoMarketMonitor } from '../arion/pages/seo/SeoMarketMonitor';
-import { SeoOpportunities } from '../arion/pages/seo/SeoOpportunities';
 import { SeoReports } from '../arion/pages/seo/SeoReports';
 // Search pages
 import { SearchPerformance } from '../arion/pages/search/SearchPerformance';
@@ -151,7 +150,10 @@ export function ServiceRouter() {
       case 'arion_seo_competitors': return <ArionPageWrapper><SeoCompetitors /></ArionPageWrapper>;
       case 'arion_seo_ai_search': return <ArionPageWrapper><SeoAiSearch /></ArionPageWrapper>;
       case 'arion_seo_market_monitor': return <ArionPageWrapper><SeoMarketMonitor /></ArionPageWrapper>;
-      case 'arion_seo_opportunities': return <ArionPageWrapper><SeoOpportunities /></ArionPageWrapper>;
+      // Opportunities was folded into IA Insights Search Intelligence modal
+      // (whitespace + SERP-feature gap sections). Old links redirect to the
+      // IA Insights page rather than 404.
+      case 'arion_seo_opportunities': return <Navigate to="/app/services/arion_analytics_ia_reports" replace />;
       case 'arion_seo_reports': return <ArionPageWrapper><SeoReports /></ArionPageWrapper>;
       case 'arion_search_performance': return <ArionPageWrapper><SearchPerformance /></ArionPageWrapper>;
       case 'arion_search_indexing': return <ArionPageWrapper><SearchIndexing /></ArionPageWrapper>;
