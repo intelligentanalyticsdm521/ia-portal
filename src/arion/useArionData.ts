@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export function useArionData<T>(fetcher: () => Promise<T>, deps: any[]) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bumpKey, setBumpKey] = useState(0);
+
+  const refetch = useCallback(() => setBumpKey(k => k + 1), []);
 
   useEffect(() => {
     let alive = true;
@@ -22,7 +25,7 @@ export function useArionData<T>(fetcher: () => Promise<T>, deps: any[]) {
     run();
     return () => { alive = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [...deps, bumpKey]);
 
-  return { data, loading, error };
+  return { data, loading, error, refetch };
 }

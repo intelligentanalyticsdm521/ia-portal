@@ -42,6 +42,18 @@ import {
   getAnalyticsReport as portalGetAnalyticsReport,
   generateSitemap as portalGenerateSitemap,
   getBingIndexingStats as portalGetBingIndexingStats,
+  // GBP Phase 1 live routes
+  getGbpBusiness as portalGetGbpBusiness,
+  getGbpReviewsLive as portalGetGbpReviewsLive,
+  getGbpInsightsLive as portalGetGbpInsightsLive,
+  getGbpPostsLive as portalGetGbpPostsLive,
+  getGbpQanda as portalGetGbpQanda,
+  updateGbpBusiness as portalUpdateGbpBusiness,
+  createGbpPost as portalCreateGbpPost,
+  deleteGbpPost as portalDeleteGbpPost,
+  replyGbpReview as portalReplyGbpReview,
+  deleteGbpReviewReply as portalDeleteGbpReviewReply,
+  answerGbpQuestion as portalAnswerGbpQuestion,
   getIndexNowStatus as portalGetIndexNowStatus,
   generateIndexNowKey as portalGenerateIndexNowKey,
   verifyIndexNowKey as portalVerifyIndexNowKey,
@@ -318,6 +330,52 @@ export function useArionContext() {
       async getBingIndexingStats(siteId: string) {
         const b = await base();
         return portalGetBingIndexingStats({ ...b, siteId });
+      },
+
+      // GBP Phase 1 live routes
+      async getGbpBusiness(siteId: string) {
+        const b = await base();
+        return portalGetGbpBusiness({ ...b, siteId });
+      },
+      async getGbpReviewsLive(siteId: string) {
+        const b = await base();
+        return portalGetGbpReviewsLive({ ...b, siteId });
+      },
+      async getGbpInsightsLive(siteId: string, period?: number) {
+        const b = await base();
+        return portalGetGbpInsightsLive({ ...b, siteId, period });
+      },
+      async getGbpPostsLive(siteId: string) {
+        const b = await base();
+        return portalGetGbpPostsLive({ ...b, siteId });
+      },
+      async getGbpQanda(siteId: string) {
+        const b = await base();
+        return portalGetGbpQanda({ ...b, siteId });
+      },
+      async updateGbpBusiness(siteId: string, body: Record<string, any>) {
+        const b = await base();
+        return portalUpdateGbpBusiness({ ...b, siteId, body });
+      },
+      async createGbpPost(siteId: string, body: Record<string, any>) {
+        const b = await base();
+        return portalCreateGbpPost({ ...b, siteId, body });
+      },
+      async deleteGbpPost(siteId: string, postId: string) {
+        const b = await base();
+        return portalDeleteGbpPost({ ...b, siteId, postId });
+      },
+      async replyGbpReview(siteId: string, reviewId: string, comment: string) {
+        const b = await base();
+        return portalReplyGbpReview({ ...b, siteId, reviewId, comment });
+      },
+      async deleteGbpReviewReply(siteId: string, reviewId: string) {
+        const b = await base();
+        return portalDeleteGbpReviewReply({ ...b, siteId, reviewId });
+      },
+      async answerGbpQuestion(siteId: string, questionId: string, text: string) {
+        const b = await base();
+        return portalAnswerGbpQuestion({ ...b, siteId, questionId, text });
       },
       async getIndexNowStatus(siteId: string) {
         const b = await base();

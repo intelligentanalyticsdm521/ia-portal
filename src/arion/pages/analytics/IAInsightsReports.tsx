@@ -9,6 +9,9 @@ import {
   XAxis,
   YAxis,
   Tooltip as RTooltip,
+  PieChart,
+  Pie,
+  Cell,
 } from 'recharts';
 import { useArionContext } from '../../useArionContext';
 import { useAnalyticsData } from '../../analytics/useAnalyticsData';
@@ -24,6 +27,8 @@ const MODAL_TITLES: Record<string, string> = {
   conversion: 'Conversion Intelligence',
   search: 'Search Intelligence',
   content: 'Content Intelligence',
+  local: 'Local Presence & Reputation',
+  tech: 'Technical & Site Health',
   presence: 'Business Presence Score',
 };
 
@@ -52,12 +57,48 @@ function expectedCtrForPosition(pos: number): number {
 }
 
 /* ── ARGUS Insight Box (shared across all modals) ── */
-function ArgusInsightBox({ reportKey, data: d, searchData }: { reportKey: string; data: any; searchData?: any }) {
+function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any }) {
   const sessions = d?.summary?.totalSessions || 255;
   const engaged = d?.engagement?.engagedSessions || 64;
   const engRate = formatPct(d?.engagement?.engagementRate || 0.251);
   const bounce = formatPct(d?.summary?.bounceRate || 0.749);
   const domain = 'intelligentanalyticsdm.com';
+
+  // GBP-derived numbers (Phase 1 Step 2.7) — used in local/visibility/conversion/presence observations
+  const gbpConnected = gbpData?.connected === true && !gbpData?.error;
+  const gbpMetrics = gbpData?.metrics || {};
+  const gbpImpressions = gbpMetrics.impressions || 0;
+  const gbpWebsiteClicks = gbpMetrics.websiteClicks || 0;
+  const gbpCalls = gbpMetrics.calls || 0;
+  const gbpImpressionsDesktopMaps = gbpMetrics.impressionsDesktopMaps || 0;
+  const gbpImpressionsMobileMaps = gbpMetrics.impressionsMobileMaps || 0;
+  const gbpImpressionsMobileSearch = gbpMetrics.impressionsMobileSearch || 0;
+  const gbpMapsPct = gbpImpressions > 0 ? Math.round(((gbpImpressionsDesktopMaps + gbpImpressionsMobileMaps) / gbpImpressions) * 100) : 0;
+  const gbpMobileSearchPct = gbpImpressions > 0 ? Math.round((gbpImpressionsMobileSearch / gbpImpressions) * 100) : 0;
+  const gbpTotalReviews = gbpReviews?.totalReviewCount || 0;
+  const gbpAvgRating = Number(gbpReviews?.averageRating || 0);
+  const gbpReviewsArr: any[] = gbpReviews?.reviews || [];
+  const gbpUnanswered = gbpReviewsArr.filter((r: any) => !r.replyComment).length;
+  const gbpResponseRate = gbpReviewsArr.length > 0 ? Math.round(((gbpReviewsArr.length - gbpUnanswered) / gbpReviewsArr.length) * 100) : 0;
+  const gbpNewReviews = gbpReviewsArr.filter((r: any) => {
+    if (!r.createTime) return false;
+    const t = new Date(r.createTime); const now = new Date();
+    const days = (now.getTime() - t.getTime()) / (1000 * 60 * 60 * 24);
+    return days <= 30;
+  }).length;
+  const gbpPostsArr: any[] = gbpPosts?.posts || [];
+  const gbpPostsThisMonth = gbpPostsArr.filter((p: any) => {
+    if (!p.createTime) return false;
+    const t = new Date(p.createTime); const now = new Date();
+    const days = (now.getTime() - t.getTime()) / (1000 * 60 * 60 * 24);
+    return days <= 30;
+  }).length;
+  const gbpQuestionsArr: any[] = gbpQanda?.questions || [];
+  const gbpUnansweredQ = gbpQuestionsArr.filter((q: any) => q.needsReply).length;
+
+  // GSC for cross-source observations
+  const gscImpressions = searchData?.summary?.impressions || 0;
+  const formSubmissions = d?.summary?.formSubmissions || 0;
 
   // Derive search-specific numbers from real GSC data when present
   const sd = searchData || {};
@@ -98,6 +139,10 @@ function ArgusInsightBox({ reportKey, data: d, searchData }: { reportKey: string
         `${domain} received ${formatNumber(impressions)} search impressions this quarter but only ${sessions} website visits — a ${Math.round(impressions / sessions)}:1 impression-to-visit ratio. For every ${Math.round(impressions / sessions)} people who saw the business in search, only 1 visited the website.`,
         `Direct traffic accounts for 53% of all sessions (136), suggesting strong brand awareness in the local market. However, organic search only converts 0.6% of impressions to visits — well below the 2-3% industry average for position 22.`,
         `87% of traffic is desktop-only. With mobile search now exceeding 60% of all Google searches, the 13% mobile traffic share suggests either a mobile UX problem or missed mobile-first indexing opportunities.`,
+        // Phase 1 Step 2.7 append — GBP contribution to total Google visibility
+        gbpConnected
+          ? `Your Google Business Profile contributed ${formatNumber(gbpImpressions)} impressions to your total Google visibility this period. Combined with ${formatNumber(gscImpressions)} search impressions and ${sessions} website visits, your total Google touch points were approximately ${formatNumber(gbpImpressions + gscImpressions + sessions)}. GBP accounts for ${gbpImpressions + gscImpressions > 0 ? Math.round((gbpImpressions / (gbpImpressions + gscImpressions)) * 100) : 0}% of total Google surface area — ${gbpImpressions > gscImpressions ? 'your local listing is actually more visible than your search presence, which is common for service-area businesses' : 'your search presence outweighs your local listing, which suggests room to optimize GBP categories, photos, and posting cadence'}.`
+          : 'Connect your Google Business Profile in Settings → Connected Accounts to surface local-listing impressions alongside search impressions for a complete Google visibility picture.',
       ],
       actions: [
         `Rewrite the title tag on the homepage to include "Des Moines" — your top GSC query "intelligent analytics des moines" has 489 impressions but 0 clicks, likely because the title doesn't match the search intent.`,
@@ -122,6 +167,10 @@ function ArgusInsightBox({ reportKey, data: d, searchData }: { reportKey: string
         `Of ${sessions} monthly visitors, ${engaged} engaged meaningfully (${engRate} engagement rate) but 0 submitted a form. The engagement-to-conversion rate is 0%, meaning engaged visitors see value but find no path to act on it.`,
         `45 users scrolled past 90% of a page — these are the most interested visitors. Yet with 0 form submissions, there's either no form visible at the scroll point, or the form asks for too much.`,
         `The average session duration is 42 seconds with 1.35 pages per session. Visitors are reading one page and leaving — the site isn't guiding them to a next step.`,
+        // Phase 1 Step 2.7 append — GBP phone vs form channel
+        gbpConnected
+          ? `GBP generated ${gbpCalls} phone calls vs ${formSubmissions} website form submissions this period. ${gbpCalls > formSubmissions * 2 ? 'Phone is clearly your primary conversion channel — the website is driving awareness, but the actual buyer handoff happens on a call. Track phone calls in GA4 with a dedicated conversion event so you can measure the full funnel.' : formSubmissions > gbpCalls * 2 ? 'Forms are the primary conversion channel. Keep your website\'s phone number prominent anyway — click-to-call is the highest-intent mobile action.' : 'Phone and form volumes are comparable. Both deserve equal weight in lead-source reporting.'}`
+          : 'Connect Google Business Profile to compare GBP phone calls against website form submissions — local businesses typically get significant lead volume from the phone channel that isn\'t visible in GA4 alone.',
       ],
       actions: [
         `Add a short contact form (name + email + phone, 3 fields max) to the bottom of every service page — currently, 45 users scroll to the bottom and find nothing to do.`,
@@ -179,7 +228,7 @@ function ArgusInsightBox({ reportKey, data: d, searchData }: { reportKey: string
     },
     presence: {
       observations: [
-        `Your overall business presence score is estimated at 45/100. Website performance scores 55 (moderate engagement, high bounce), search visibility scores 40 (position 22 with 0.21% CTR), and local presence scores 35 (GBP connected but limited optimization).`,
+        `Your overall business presence score is estimated at 45/100. Website performance scores 55 (moderate engagement, high bounce), search visibility scores 40 (position 22 with 0.21% CTR), and local presence scores ${gbpConnected ? `${Math.round((gbpAvgRating / 5) * 40 + Math.min(gbpNewReviews / 4, 1) * 30 + (gbpResponseRate / 100) * 30)}` : '35'} (${gbpConnected ? 'derived from live GBP data — rating, review velocity, response rate' : 'GBP connected but limited optimization'}).`,
         `Google Search Console shows connected status with real impression data, but Google Analytics was only recently connected — historical trend data will improve the accuracy of this score over time.`,
         `Bing and Apple Maps are not connected, representing blind spots in your presence assessment. Bing accounts for approximately 6-8% of US search traffic.`,
       ],
@@ -188,6 +237,43 @@ function ArgusInsightBox({ reportKey, data: d, searchData }: { reportKey: string
         `Optimize your Google Business Profile — add business hours, services list, and 10+ photos to improve local search visibility and increase GBP impressions.`,
         `Run a PageSpeed test on your site — Core Web Vitals directly impact both search rankings and the website performance component of your presence score.`,
       ],
+    },
+
+    local: {
+      observations: [
+        // Observation 1 — local conversion channel
+        gbpConnected
+          ? `Your Google Business Profile received ${formatNumber(gbpImpressions)} impressions this period. ${gbpWebsiteClicks} (${gbpImpressions > 0 ? Math.round((gbpWebsiteClicks / gbpImpressions) * 100) : 0}%) visited the website while ${gbpCalls} (${gbpImpressions > 0 ? Math.round((gbpCalls / gbpImpressions) * 100) : 0}%) called directly. ${gbpCalls > gbpWebsiteClicks ? 'Phone is your primary local conversion channel — more people call you from Google Maps than visit your website. Your website should prominently feature your phone number and a click-to-call button for mobile visitors.' : 'Your website is the primary destination from local search — conversion rate on the website determines how many of these ' + gbpWebsiteClicks + ' clicks become paying customers.'}`
+          : 'Connect Google Business Profile in Settings → Connected Accounts to generate local-conversion observations.',
+        // Observation 2 — review health signal
+        gbpConnected && gbpReviewsArr.length > 0
+          ? (gbpResponseRate < 75
+              ? `You have replied to ${gbpResponseRate}% of your ${gbpTotalReviews} reviews. Google factors review response rate into local ranking. Businesses replying to 80%+ of reviews consistently outrank lower-response competitors in local results.`
+              : gbpNewReviews === 0
+                ? `No new reviews this period. Your ${gbpAvgRating.toFixed(1)}-star average needs consistent new reviews to maintain its ranking signal — 1-2 new reviews per month is the minimum to stay competitive in local search.`
+                : `You received ${gbpNewReviews} new reviews this period. Maintaining this momentum is worth more for local ranking than almost any other single action.`)
+          : gbpConnected
+            ? 'No reviews on your GBP listing yet. Request reviews from your best customers — even 3-5 reviews materially improves local ranking signals.'
+            : '',
+        // Observation 3 — impression surface
+        gbpConnected && gbpImpressions > 0
+          ? `Of your ${formatNumber(gbpImpressions)} impressions, ${gbpMobileSearchPct}% came from mobile search and ${gbpMapsPct}% from Google Maps directly. ${gbpMobileSearchPct > 60 ? 'The majority of local discovery happens on mobile. Your GBP photos, description, and hours are the first impression for most people who find you — these should be optimized and kept current.' : gbpMapsPct > 40 ? 'A large share of impressions come from Maps navigation — local signals like your address accuracy, category, and citation consistency across the web may be more impactful for your business than organic SEO.' : 'Your impressions are split fairly evenly across search and maps surfaces — both need attention.'}`
+          : '',
+      ].filter(Boolean),
+      actions: [
+        gbpUnanswered > 0
+          ? `Reply to your ${gbpUnanswered} unanswered reviews this week. Start with the most recent. Keep replies under 150 words: acknowledge the reviewer by name, thank them, and add one specific detail about your service.`
+          : `You're current on review replies — keep the weekly check-in cadence to catch new ones within 48 hours, which Google weights for response-time ranking.`,
+        gbpConnected && gbpResponseRate < 80 && gbpReviewsArr.length > 0
+          ? `Set a weekly calendar reminder to check and reply to new GBP reviews. Your ${gbpResponseRate}% response rate is below the 80% threshold that positively impacts local ranking.`
+          : null,
+        gbpPostsThisMonth === 0
+          ? `Publish a GBP Post this week. A simple "What's New" update about a recent project or offer takes 5 minutes and businesses that post weekly receive significantly more profile views.`
+          : `You've posted ${gbpPostsThisMonth} time(s) in the last 30 days — maintain this cadence.`,
+        gbpUnansweredQ > 0
+          ? `Answer the ${gbpUnansweredQ} unanswered question(s) on your GBP listing today — they are visible to every potential customer viewing your listing right now.`
+          : null,
+      ].filter(Boolean) as string[],
     },
   };
 
@@ -219,7 +305,7 @@ function ArgusInsightBox({ reportKey, data: d, searchData }: { reportKey: string
 }
 
 /* ── Modal content renderer ── */
-function renderModalContent(reportKey: string, d: any, searchData?: any) {
+function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?: { gbp?: any; reviews?: any; posts?: any; qanda?: any }) {
   switch (reportKey) {
     case 'visibility': {
   const sessions = d?.summary?.totalSessions || 255;
@@ -945,6 +1031,212 @@ function renderModalContent(reportKey: string, d: any, searchData?: any) {
   );
 }
 
+    case 'local': {
+  const gbp = gbpCtx?.gbp || null;
+  const reviews = gbpCtx?.reviews || null;
+  const posts = gbpCtx?.posts || null;
+  const qanda = gbpCtx?.qanda || null;
+
+  // If no live GBP connection, show the same locked state as Phase 0
+  const connected = gbp && gbp.connected === true && !gbp.error;
+  if (!connected) {
+    return (
+      <div>
+        <div style={{ background: '#FFF8E1', borderLeft: '3px solid #D4A800', borderRadius: 4, padding: '14px 18px', marginBottom: 18 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 4 }}>Report locked — connect Google Business Profile</div>
+          <p style={{ fontSize: 12, color: '#5A7A8A', lineHeight: 1.6, margin: 0 }}>
+            Connect Google in Settings → Connected Accounts to generate this report from live GBP data.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const metrics = gbp.metrics || {};
+  const impressions = metrics.impressions || 0;
+  const websiteClicks = metrics.websiteClicks || 0;
+  const calls = metrics.calls || 0;
+  const directions = metrics.directionsRequests || 0;
+  const sessions = d?.summary?.totalSessions || 0;
+  const formSubmissions = d?.summary?.formSubmissions || 0;
+  const mobileSearch = metrics.impressionsMobileSearch || 0;
+  const desktopSearch = metrics.impressionsDesktopSearch || 0;
+  const mobileMaps = metrics.impressionsMobileMaps || 0;
+  const desktopMaps = metrics.impressionsDesktopMaps || 0;
+  const mapsTotal = mobileMaps + desktopMaps;
+  const mobilePct = impressions > 0 ? Math.round(((mobileSearch + mobileMaps) / impressions) * 100) : 0;
+  const mapsPct = impressions > 0 ? Math.round((mapsTotal / impressions) * 100) : 0;
+
+  const totalReviews = reviews?.totalReviewCount || 0;
+  const avgRating = Number(reviews?.averageRating || 0);
+  const reviewsArr: any[] = reviews?.reviews || [];
+  const unanswered = reviewsArr.filter(r => !r.replyComment).length;
+  const responseRate = reviewsArr.length > 0 ? Math.round(((reviewsArr.length - unanswered) / reviewsArr.length) * 100) : 0;
+  const thisMonth = reviewsArr.filter(r => {
+    if (!r.createTime) return false;
+    const t = new Date(r.createTime); const now = new Date();
+    return t.getUTCFullYear() === now.getUTCFullYear() && t.getUTCMonth() === now.getUTCMonth();
+  }).length;
+
+  const postsArr: any[] = posts?.posts || [];
+  const questionsArr: any[] = qanda?.questions || [];
+  const unansweredQuestions = questionsArr.filter(q => q.needsReply).length;
+
+  const dist = [5, 4, 3, 2, 1].map(s => ({ name: s + '★', value: reviewsArr.filter(r => r.starRating === s).length }));
+  const distColors = ['#1D9E75', '#2D9CDB', '#EF6C33', '#D85A30', '#B71C1C'];
+
+  return (
+    <div>
+      {/* Stat cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
+        {[
+          { label: 'GBP Impressions', value: formatNumber(impressions), sub: 'People who saw your listing', accent: '#2D9CDB' },
+          { label: 'Website Clicks', value: formatNumber(websiteClicks), sub: 'Clicked through from GBP', accent: '#EF6C33' },
+          { label: 'Phone Calls', value: formatNumber(calls), sub: 'Called from Google', accent: 'rgba(12,74,96,0.8)' },
+          { label: 'Directions', value: formatNumber(directions), sub: 'Requested directions', accent: '#FEC82C' },
+        ].map(c => (
+          <div key={c.label} style={{ background: '#F8FAFC', borderRadius: 6, padding: '10px 12px', borderLeft: '3px solid ' + c.accent }}>
+            <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase' }}>{c.label}</div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: '#0B1C24', marginTop: 2 }}>{c.value}</div>
+            <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 2 }}>{c.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Section 1: Local discovery vs website traffic */}
+      <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>Local discovery vs website traffic</div>
+      <div style={{ background: '#F0F9FF', borderLeft: '3px solid #2D9CDB', borderRadius: 4, padding: '12px 16px', marginBottom: 16, fontSize: 12, color: '#0C4A60', lineHeight: 1.7 }}>
+        <strong>{formatNumber(impressions)}</strong> people saw your listing in Google · <strong>{websiteClicks}</strong> ({impressions > 0 ? Math.round((websiteClicks / impressions) * 100) : 0}%) clicked to the website · <strong>{calls}</strong> ({impressions > 0 ? Math.round((calls / impressions) * 100) : 0}%) called directly · <strong>{formatNumber(sessions)}</strong> total website sessions.
+        {calls > formSubmissions && formSubmissions >= 0 && (
+          <div style={{ marginTop: 8 }}>
+            <strong>{calls}</strong> people called from Google Maps while <strong>{formSubmissions}</strong> submitted a website form. Phone is your primary local conversion channel.
+          </div>
+        )}
+      </div>
+
+      {/* Section 2: Impression surfaces */}
+      <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>Where impressions come from</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
+        {[
+          { label: 'Desktop Search', value: desktopSearch, color: '#2D9CDB' },
+          { label: 'Mobile Search', value: mobileSearch, color: '#EF6C33' },
+          { label: 'Desktop Maps', value: desktopMaps, color: '#0C4A60' },
+          { label: 'Mobile Maps', value: mobileMaps, color: '#FEC82C' },
+        ].map(s => (
+          <div key={s.label} style={{ background: '#F8FAFC', borderRadius: 6, padding: 10 }}>
+            <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', marginBottom: 4 }}>{s.label}</div>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>{formatNumber(s.value)}</div>
+            <div style={{ marginTop: 6, height: 6, background: '#eee', borderRadius: 3 }}>
+              <div style={{ width: `${impressions > 0 ? (s.value / impressions) * 100 : 0}%`, height: '100%', background: s.color, borderRadius: 3 }} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Section 3: Review health */}
+      <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>Review health</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 40, fontWeight: 700, color: '#0B1C24' }}>{avgRating > 0 ? avgRating.toFixed(1) : '--'}</div>
+          <div style={{ fontSize: 11, color: '#5A7A8A' }}>Average rating · {totalReviews} reviews</div>
+          <div style={{ fontSize: 11, color: '#5A7A8A', marginTop: 8 }}>New this month: <strong>{thisMonth}</strong></div>
+          <div style={{ fontSize: 11, color: '#5A7A8A' }}>Response rate: <strong style={{ color: responseRate >= 75 ? '#1D9E75' : '#D85A30' }}>{reviewsArr.length > 0 ? responseRate + '%' : '--'}</strong> <span style={{ color: '#5A7A8A' }}>· industry benchmark 75%+</span></div>
+          {unanswered > 0 && (
+            <div style={{ marginTop: 8, padding: '8px 10px', background: '#FFF8E1', borderLeft: '3px solid #D4A800', borderRadius: 4, fontSize: 11, color: '#5A7A8A' }}>
+              <strong>{unanswered}</strong> unanswered reviews visible on your listing.
+            </div>
+          )}
+        </div>
+        {dist.some(d => d.value > 0) && (
+          <div>
+            <ResponsiveContainer width="100%" height={160}>
+              <PieChart>
+                <Pie data={dist} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} innerRadius={30} paddingAngle={2}>
+                  {dist.map((_, i) => <Cell key={i} fill={distColors[i]} />)}
+                </Pie>
+                <RTooltip contentStyle={{ fontSize: 11 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      {/* Section 4: Post engagement */}
+      {postsArr.length > 0 && (
+        <>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>Posts published ({postsArr.length})</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginBottom: 16 }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #eee' }}>
+                <th style={{ textAlign: 'left', padding: '5px 8px', color: '#5A7A8A', fontSize: 10 }}>Type</th>
+                <th style={{ textAlign: 'left', padding: '5px 8px', color: '#5A7A8A', fontSize: 10 }}>Summary</th>
+                <th style={{ textAlign: 'right', padding: '5px 8px', color: '#5A7A8A', fontSize: 10 }}>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {postsArr.slice(0, 10).map((p: any, i: number) => (
+                <tr key={i} style={{ borderBottom: '1px solid #f5f5f5' }}>
+                  <td style={{ padding: '5px 8px' }}>{p.topicType || '--'}</td>
+                  <td style={{ padding: '5px 8px', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.summary}</td>
+                  <td style={{ padding: '5px 8px', textAlign: 'right' }}>{p.createTime ? new Date(p.createTime).toLocaleDateString() : '--'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {/* Section 5: Q&A monitoring */}
+      <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>Q&amp;A monitoring</div>
+      <div style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 8 }}>
+        <strong>{questionsArr.length}</strong> total questions · <strong style={{ color: unansweredQuestions > 0 ? '#D85A30' : '#1D9E75' }}>{unansweredQuestions}</strong> unanswered
+      </div>
+      {unansweredQuestions > 0 && (
+        <div style={{ background: '#FFF8E1', borderLeft: '3px solid #D4A800', borderRadius: 4, padding: '10px 14px', fontSize: 11, color: '#5A7A8A', marginBottom: 16 }}>
+          Unanswered questions are visible to potential customers on your Google listing.
+        </div>
+      )}
+    </div>
+  );
+}
+
+    case 'tech': {
+  // Phase 0 stub — partial-locked state. Real PageSpeed + SE Ranking audit data wires in Phase 4.
+  return (
+    <div>
+      <div style={{ background: '#F0F9FF', borderLeft: '3px solid #2D9CDB', borderRadius: 4, padding: '14px 18px', marginBottom: 18 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 4 }}>Report coming soon — additional data sources unlock more</div>
+        <p style={{ fontSize: 12, color: '#5A7A8A', lineHeight: 1.6, margin: 0 }}>
+          This report aggregates every technical health signal across your site — PageSpeed scores, Core Web Vitals, SEO audit findings, GSC coverage, WordPress plugin status, security scans, and uptime.
+        </p>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, color: '#1D9E75', marginBottom: 8 }}>Available now</div>
+          <ul style={{ fontSize: 11, color: '#5A7A8A', lineHeight: 1.7, paddingLeft: 18, marginTop: 0 }}>
+            <li>PageSpeed Insights — mobile and desktop scores + Core Web Vitals</li>
+            <li>SE Ranking site audit — health score, errors, warnings (when SEO Tools connected)</li>
+            <li>Google Search Console — indexed pages, coverage errors, mobile usability</li>
+            <li>Bing crawl errors (when Bing Webmaster connected)</li>
+          </ul>
+        </div>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, color: '#D4A800', marginBottom: 8 }}>Unlocks with IA Plugin</div>
+          <ul style={{ fontSize: 11, color: '#5A7A8A', lineHeight: 1.7, paddingLeft: 18, marginTop: 0 }}>
+            <li>WordPress &amp; PHP version status</li>
+            <li>Plugin security scan (Wordfence)</li>
+            <li>SSL certificate expiry countdown</li>
+            <li>Backup status and last successful backup</li>
+            <li>Uptime monitoring</li>
+            <li>RankMath site-wide SEO health</li>
+            <li>LiteSpeed Cache status</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
     case 'presence': {
   const sessions = d?.summary?.totalSessions || 255;
   const bounce = d?.summary?.bounceRate || 0.749;
@@ -1061,7 +1353,7 @@ function renderModalContent(reportKey: string, d: any, searchData?: any) {
 }
 
 /* ── Report Modal ── */
-function ReportModal({ reportKey, data: d, searchData, onClose }: { reportKey: string; data: any; searchData?: any; onClose: () => void }) {
+function ReportModal({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, onClose }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any; onClose: () => void }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
       <div style={{ background: '#fff', borderRadius: 12, maxWidth: 900, width: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
@@ -1076,10 +1368,10 @@ function ReportModal({ reportKey, data: d, searchData, onClose }: { reportKey: s
 
         {/* Scrollable body */}
         <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-          {renderModalContent(reportKey, d, searchData)}
+          {renderModalContent(reportKey, d, searchData, { gbp: gbpData, reviews: gbpReviews, posts: gbpPosts, qanda: gbpQanda })}
 
           {/* ARGUS Insight Box — always last */}
-          <ArgusInsightBox reportKey={reportKey} data={d} searchData={searchData} />
+          <ArgusInsightBox reportKey={reportKey} data={d} searchData={searchData} gbpData={gbpData} gbpReviews={gbpReviews} gbpPosts={gbpPosts} gbpQanda={gbpQanda} />
         </div>
 
         {/* Sticky footer */}
@@ -1098,6 +1390,10 @@ export function IAInsightsReports() {
   const { data, loading } = useAnalyticsData(activeSiteId, 90);
   const [activeModal, setActiveModal] = React.useState<string | null>(null);
   const [searchData, setSearchData] = React.useState<any>(null);
+  const [gbpData, setGbpData] = React.useState<any>(null);
+  const [gbpReviews, setGbpReviews] = React.useState<any>(null);
+  const [gbpPosts, setGbpPosts] = React.useState<any>(null);
+  const [gbpQanda, setGbpQanda] = React.useState<any>(null);
 
   // Fetch GSC performance (all dimensions) alongside GA4 data so the Search Intelligence modal
   // and ARGUS insight box can render real numbers.
@@ -1110,15 +1406,39 @@ export function IAInsightsReports() {
     return () => { cancelled = true; };
   }, [activeSiteId, arionApi]);
 
+  // Phase 1 Step 2.7: fetch GBP data so the Local Presence modal + ARGUS observations
+  // have real numbers to render.
+  React.useEffect(() => {
+    if (!activeSiteId) { setGbpData(null); setGbpReviews(null); setGbpPosts(null); setGbpQanda(null); return; }
+    let cancelled = false;
+    Promise.all([
+      arionApi.getGbpBusiness(activeSiteId).catch(() => null),
+      arionApi.getGbpReviewsLive(activeSiteId).catch(() => null),
+      arionApi.getGbpPostsLive(activeSiteId).catch(() => null),
+      arionApi.getGbpQanda(activeSiteId).catch(() => null),
+    ]).then(([b, r, p, q]) => {
+      if (cancelled) return;
+      setGbpData(b); setGbpReviews(r); setGbpPosts(p); setGbpQanda(q);
+    });
+    return () => { cancelled = true; };
+  }, [activeSiteId, arionApi]);
+
   if (!selectedSite) return <div style={{ padding: 24, color: '#5A7A8A' }}>No site selected.</div>;
   if (loading) return <div style={{ padding: 24, color: '#5A7A8A' }}>Loading...</div>;
 
+  // Phase 0: 8 reports in a 4×2 grid. Row 1: Visibility, Audience, Conversion, Search.
+  // Row 2: Content, Local Presence, Technical & Site Health, Business Presence Score.
+  const gbpConnectedLive = gbpData?.connected === true && !gbpData?.error;
   const reports = [
+    // Row 1
     { key: 'visibility', title: 'Visibility & Reach', desc: 'How findable you are across every channel — and who you\'re invisible to', color: '#2D9CDB', hasData: true },
     { key: 'audience', title: 'Audience Intelligence', desc: 'Who\'s visiting, whether they\'re the right people, and when to reach them', color: '#EF6C33', hasData: true },
     { key: 'conversion', title: 'Conversion Intelligence', desc: 'The complete path from visit to action — and exactly where it breaks', color: 'rgba(12,74,96,0.8)', hasData: true },
     { key: 'search', title: 'Search Intelligence', desc: 'Your full search presence, quick wins, and the clicks you should be getting', color: '#2D9CDB', hasData: true },
+    // Row 2
     { key: 'content', title: 'Content Intelligence', desc: 'Which content earns its place and which is wasted effort', color: 'rgba(12,74,96,0.8)', hasData: true },
+    { key: 'local', title: 'Local Presence & Reputation', desc: 'How your business appears in Google Maps, local search, and review platforms — and whether that presence is building or losing trust', color: '#2D9CDB', hasData: gbpConnectedLive, statusText: gbpConnectedLive ? undefined : 'Requires Google Business Profile connection' },
+    { key: 'tech', title: 'Technical & Site Health', desc: 'PageSpeed, Core Web Vitals, security, uptime, and SEO health across your website infrastructure', color: '#EF6C33', hasData: false, statusText: 'Partial — more data available with IA Plugin' },
     { key: 'presence', title: 'Business Presence Score', desc: 'Your holistic online health across search, maps, website, and reviews', color: '#999', hasData: false },
   ];
 
@@ -1144,24 +1464,63 @@ export function IAInsightsReports() {
         </div>
       </div>
 
-      {/* Report cards grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
+      {/* Report cards grid — Phase 0: 4 columns × 2 rows. Responsive: stacks to 2 cols under 960px.
+          All cards are flex columns so the footer button sits at the same y-position regardless
+          of description length, keeping card heights visually consistent. */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+        gap: '1rem',
+        marginBottom: 16,
+      }} className="ia-reports-grid">
         {reports.map(r => (
-          <div key={r.key} style={{ background: '#fff', border: '1px solid rgba(45,156,219,0.12)', borderRadius: 10, padding: 16 }}>
+          <div key={r.key} style={{
+            background: '#fff',
+            border: '1px solid rgba(45,156,219,0.12)',
+            borderRadius: 10,
+            padding: 16,
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 220,
+          }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24' }}>{r.title}</div>
             <div style={{ fontSize: 11, color: '#5A7A8A', marginTop: 2, lineHeight: 1.4 }}>{r.desc}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: r.hasData ? '#1D9E75' : '#ccc' }} />
-              <span style={{ fontSize: 10, color: r.hasData ? '#1D9E75' : '#999' }}>{r.hasData ? 'Q1 2026 · Ready' : 'Requires additional data sources'}</span>
+              <span style={{ fontSize: 10, color: r.hasData ? '#1D9E75' : '#999' }}>{r.hasData ? 'Q1 2026 · Ready' : ((r as any).statusText || 'Requires additional data sources')}</span>
             </div>
 
-            {/* Mini sparkline */}
+            {/* Mini visual — sparkline for data reports, channel dots for presence/local/tech */}
             <div style={{ height: 48, marginTop: 10, background: '#F8FAFC', borderRadius: 4, overflow: 'hidden', display: 'flex', alignItems: 'flex-end' }}>
               {r.key === 'presence' ? (
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
                   {[{ label: 'Web', color: '#1D9E75' }, { label: 'Search', color: '#1D9E75' }, { label: 'GBP', color: '#D4A800' }, { label: 'Bing', color: '#D85A30' }, { label: 'Content', color: '#D4A800' }].map(dot => (
                     <div key={dot.label} style={{ textAlign: 'center' }}>
-                      <div style={{ width: 10, height: 10, borderRadius: '50%', background: dot.color, margin: '0 auto 2px' }} />
+                      <div style={{ width: 9, height: 9, borderRadius: '50%', background: dot.color, margin: '0 auto 2px' }} />
+                      <div style={{ fontSize: 8, color: '#5A7A8A' }}>{dot.label}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : r.key === 'local' ? (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
+                  {[
+                    { label: 'Maps', color: gbpConnectedLive ? '#1D9E75' : '#ccc' },
+                    { label: 'Reviews', color: gbpConnectedLive && (gbpReviews?.totalReviewCount || 0) > 0 ? '#1D9E75' : gbpConnectedLive ? '#D4A800' : '#ccc' },
+                    { label: 'Bing', color: '#ccc' },
+                    { label: 'Apple', color: '#ccc' },
+                    { label: 'Posts', color: gbpConnectedLive && (gbpPosts?.posts?.length || 0) > 0 ? '#1D9E75' : '#ccc' },
+                  ].map(dot => (
+                    <div key={dot.label} style={{ textAlign: 'center' }}>
+                      <div style={{ width: 9, height: 9, borderRadius: '50%', background: dot.color, margin: '0 auto 2px' }} />
+                      <div style={{ fontSize: 8, color: '#5A7A8A' }}>{dot.label}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : r.key === 'tech' ? (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
+                  {[{ label: 'Speed', color: '#ccc' }, { label: 'Audit', color: '#ccc' }, { label: 'Index', color: '#ccc' }, { label: 'Plugin', color: '#ccc' }].map(dot => (
+                    <div key={dot.label} style={{ textAlign: 'center' }}>
+                      <div style={{ width: 9, height: 9, borderRadius: '50%', background: dot.color, margin: '0 auto 2px' }} />
                       <div style={{ fontSize: 8, color: '#5A7A8A' }}>{dot.label}</div>
                     </div>
                   ))}
@@ -1174,9 +1533,11 @@ export function IAInsightsReports() {
             </div>
             <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 6 }}>Jan 1 – Mar 31, 2026</div>
 
-            <button onClick={() => setActiveModal(r.key)} style={{ marginTop: 8, padding: '6px 12px', fontSize: 11, fontWeight: 500, background: '#0B1C24', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', width: '100%' }}>
-              View full report
-            </button>
+            <div style={{ marginTop: 'auto', paddingTop: 8 }}>
+              <button onClick={() => setActiveModal(r.key)} style={{ padding: '6px 12px', fontSize: 11, fontWeight: 500, background: '#0B1C24', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', width: '100%' }}>
+                View report
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -1189,7 +1550,7 @@ export function IAInsightsReports() {
       <ConsultingUpsell headline="Want IA to interpret your reports and build a growth plan?" subtext="Strategy sessions with your data." serviceType="Analytics Consulting" triggerPage="ia-insights" />
 
       {/* Modal */}
-      {activeModal && <ReportModal reportKey={activeModal} data={data} searchData={searchData} onClose={() => setActiveModal(null)} />}
+      {activeModal && <ReportModal reportKey={activeModal} data={data} searchData={searchData} gbpData={gbpData} gbpReviews={gbpReviews} gbpPosts={gbpPosts} gbpQanda={gbpQanda} onClose={() => setActiveModal(null)} />}
     </div>
   );
 }

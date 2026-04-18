@@ -1,58 +1,151 @@
+import React from 'react';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
-import { Card, TierGate, InfoCard, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
+import { Card, InfoCard, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
+
+type PostType = 'STANDARD' | 'EVENT' | 'OFFER';
 
 export function BusinessPosts() {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
-  const tier = selectedSite?.arionTier || 'standard';
 
-  const { data, loading } = useArionData(
-    () => activeSiteId ? arionApi.getBusinessPosts(activeSiteId).catch(() => null) : Promise.resolve(null),
+  const { data, loading, refetch } = useArionData(
+    () => activeSiteId ? arionApi.getGbpPostsLive(activeSiteId).catch((e: any) => ({ error: e.message })) : Promise.resolve(null),
     [activeSiteId]
   );
 
-  if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
-  if (loading) return <Loading />;
+  const [composing, setComposing] = React.useState(false);
+  const [postType, setPostType] = React.useState<PostType>('STANDARD');
+  const [summary, setSummary] = React.useState('');
+  const [ctaUrl, setCtaUrl] = React.useState('');
+  const [ctaType, setCtaType] = React.useState('LEARN_MORE');
+  const [saving, setSaving] = React.useState(false);
+  const [toast, setToast] = React.useState<string | null>(null);
 
-  const d = data as Record<string, any> | null;
-  const posts = (d?.data as any[]) ?? [];
+  if (loading) return <Loading />;
+  if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
+
+  const d = data as any;
+  if (!d || d.error || d.connected === false) {
+    return <InfoCard title="Google Business Profile — Not Connected"><p style={{ margin: 0 }}>Connect Google in Settings → Connected Accounts to create and view posts.</p></InfoCard>;
+  }
+
+  const posts: any[] = d.posts || [];
+
+  const resetCompose = () => {
+    setSummary('');
+    setCtaUrl('');
+    setCtaType('LEARN_MORE');
+    setPostType('STANDARD');
+  };
+
+  const submitPost = async () => {
+    if (!activeSiteId || !summary.trim()) return;
+    setSaving(true);
+    setToast(null);
+    try {
+      const body: any = { topicType: postType, summary: summary.trim(), languageCode: 'en' };
+      if (ctaUrl.trim()) body.callToAction = { actionType: ctaType, url: ctaUrl.trim() };
+      await arionApi.createGbpPost(activeSiteId, body);
+      setToast('Post published to Google Business Profile.');
+      resetCompose();
+      setComposing(false);
+      refetch?.();
+    } catch (e: any) {
+      setToast(e.message || 'Failed to publish post');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deletePost = async (postId: string) => {
+    if (!activeSiteId) return;
+    if (!confirm('Delete this post?')) return;
+    try {
+      await arionApi.deleteGbpPost(activeSiteId, postId);
+      refetch?.();
+    } catch (e: any) {
+      setToast(e.message || 'Failed to delete');
+    }
+  };
 
   return (
     <div>
-      <TierGate currentTier={tier} requiredTier="pro" featureName="GBP post management">
-        <Card title="Google Business Posts"
-          action={
-            <button className="abtn abtn-sky" onClick={() => {
-              if (activeSiteId) arionApi.createBusinessPost(activeSiteId, { type: 'update', title: 'New Post' });
-            }}>Create Post</button>
-          }>
-          {posts.length > 0 ? (
-            <table className="data-table">
-              <thead>
-                <tr><th>Title</th><th>Type</th><th>Status</th><th>Date</th></tr>
-              </thead>
-              <tbody>
-                {posts.map((p: any, i: number) => (
-                  <tr key={i}>
-                    <td>{p.title ?? p.summary ?? '--'}</td>
-                    <td>{p.type ?? p.topicType ?? '--'}</td>
-                    <td>{p.status ?? 'Published'}</td>
-                    <td>{p.created_at ?? p.createTime ?? '--'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>No posts yet. Create your first Google Business post.</p>
-          )}
-        </Card>
-      </TierGate>
+      {!composing && (
+        <div style={{ marginBottom: 16 }}>
+          <button className="abtn abtn-sky" onClick={() => setComposing(true)}>Create Post</button>
+        </div>
+      )}
 
-      <InfoCard title="Info">Google Business Posts let you share updates, offers, events, and products directly on your Google Business Profile.</InfoCard>
+      {composing && (
+        <Card title="Create a new post">
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            {(['STANDARD', 'EVENT', 'OFFER'] as PostType[]).map(t => (
+              <button key={t} className={postType === t ? 'abtn abtn-sky' : 'abtn'} onClick={() => setPostType(t)} style={{ fontSize: 11 }}>
+                {t === 'STANDARD' ? "What's new" : t === 'EVENT' ? 'Event' : 'Offer'}
+              </button>
+            ))}
+          </div>
+          <textarea
+            className="field-input"
+            rows={4}
+            maxLength={1500}
+            placeholder="Write your post... (max 1500 characters)"
+            value={summary}
+            onChange={e => setSummary(e.target.value)}
+          />
+          <div style={{ fontSize: 10, color: '#5A7A8A', textAlign: 'right', marginTop: 4 }}>{summary.length}/1500</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', rowGap: 8, columnGap: 12, fontSize: 12, alignItems: 'center', marginTop: 10 }}>
+            <div style={{ color: '#5A7A8A' }}>CTA type</div>
+            <select className="field-input" value={ctaType} onChange={e => setCtaType(e.target.value)}>
+              <option value="LEARN_MORE">Learn more</option>
+              <option value="BOOK">Book</option>
+              <option value="ORDER">Order</option>
+              <option value="SHOP">Shop</option>
+              <option value="SIGN_UP">Sign up</option>
+              <option value="CALL">Call</option>
+            </select>
+            <div style={{ color: '#5A7A8A' }}>CTA link</div>
+            <input className="field-input" placeholder="https://..." value={ctaUrl} onChange={e => setCtaUrl(e.target.value)} />
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button className="abtn abtn-sky" onClick={submitPost} disabled={saving || !summary.trim()}>{saving ? 'Publishing...' : 'Publish'}</button>
+            <button className="abtn" onClick={() => { setComposing(false); resetCompose(); }}>Cancel</button>
+          </div>
+          {toast && <div style={{ marginTop: 10, fontSize: 12, color: '#5A7A8A' }}>{toast}</div>}
+        </Card>
+      )}
+
+      <Card title="Published posts">
+        {posts.length === 0 ? (
+          <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No posts yet</div>
+        ) : (
+          <div>
+            {posts.map((p: any) => (
+              <div key={p.postId} style={{ padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase' }}>{p.topicType || 'Post'}</div>
+                    <div style={{ fontSize: 13, marginTop: 2, whiteSpace: 'pre-wrap' }}>{p.summary}</div>
+                    {p.callToAction?.url && (
+                      <a href={p.callToAction.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: 'var(--arion-sky)' }}>
+                        {p.callToAction.actionType || 'Link'} ↗
+                      </a>
+                    )}
+                    <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 4 }}>
+                      {p.createTime ? new Date(p.createTime).toLocaleDateString() : ''} · {p.state || ''}
+                    </div>
+                  </div>
+                  <button className="abtn" style={{ color: '#D85A30', fontSize: 11 }} onClick={() => deletePost(p.postId)}>Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       <ConsultingUpsell
-        headline="Regular GBP posts increase your search visibility."
-        subtext="IA's content team creates and schedules posts for your business."
+        headline="Posting weekly to GBP drives significantly more profile views."
+        subtext="IA handles your posting cadence so you never miss a week."
         serviceType="Local SEO"
         triggerPage="business-posts"
       />

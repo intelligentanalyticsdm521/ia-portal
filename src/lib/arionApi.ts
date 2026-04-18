@@ -478,6 +478,42 @@ export async function getBingIndexingStats(params: { baseUrl: string; bearerToke
   return requestJson<any>({ ...params, path: `/arion/search/bing/stats?siteId=${encodeURIComponent(params.siteId)}` });
 }
 
+// Google Business Profile — Phase 1 live routes
+export async function getGbpBusiness(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...p, path: `/arion/business?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function getGbpReviewsLive(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...p, path: `/arion/business/reviews?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function getGbpInsightsLive(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; period?: number }) {
+  const qs = `?siteId=${encodeURIComponent(p.siteId)}&period=${p.period || 30}`;
+  return requestJson<any>({ ...p, path: `/arion/business/insights${qs}` });
+}
+export async function getGbpPostsLive(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...p, path: `/arion/business/posts?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function getGbpQanda(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...p, path: `/arion/business/qanda?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function updateGbpBusiness(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; body: Record<string, any> }) {
+  return requestJson<any>({ ...p, method: 'PATCH', path: `/arion/business/update?siteId=${encodeURIComponent(p.siteId)}`, body: p.body });
+}
+export async function createGbpPost(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; body: Record<string, any> }) {
+  return requestJson<any>({ ...p, method: 'POST', path: `/arion/business/posts/create?siteId=${encodeURIComponent(p.siteId)}`, body: p.body });
+}
+export async function deleteGbpPost(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; postId: string }) {
+  return requestJson<any>({ ...p, method: 'DELETE', path: `/arion/business/posts/${encodeURIComponent(p.postId)}?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function replyGbpReview(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; reviewId: string; comment: string }) {
+  return requestJson<any>({ ...p, method: 'POST', path: `/arion/business/reviews/${encodeURIComponent(p.reviewId)}/reply?siteId=${encodeURIComponent(p.siteId)}`, body: { comment: p.comment } });
+}
+export async function deleteGbpReviewReply(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; reviewId: string }) {
+  return requestJson<any>({ ...p, method: 'DELETE', path: `/arion/business/reviews/${encodeURIComponent(p.reviewId)}/reply?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function answerGbpQuestion(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; questionId: string; text: string }) {
+  return requestJson<any>({ ...p, method: 'POST', path: `/arion/business/qanda/${encodeURIComponent(p.questionId)}/answer?siteId=${encodeURIComponent(p.siteId)}`, body: { text: p.text } });
+}
+
 // IndexNow key management
 export async function getIndexNowStatus(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<any>({ ...params, path: `/arion/search/indexnow?siteId=${encodeURIComponent(params.siteId)}` });
