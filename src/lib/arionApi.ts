@@ -534,6 +534,42 @@ export interface SeoAuditTopIssue {
   severity: 'error' | 'warning' | 'notice' | string;
   count: number;
   slug: string | null;
+  category?: string;
+  categoryName?: string;
+}
+
+export interface SeoAuditPage {
+  id: string | number;
+  url: string;
+  status: number;
+  depth: number;
+  loadMs: number;
+  size: number;
+  title: string | null;
+  titleLen: number;
+  description: string | null;
+  descriptionLen: number;
+  h1: string | null;
+  wordsCount: number;
+  indexable: boolean;
+  noindex: boolean;
+  blockedRobots: boolean;
+  canonical: string | null;
+  errors: number;
+  warnings: number;
+  notices: number;
+  imgCount: number;
+  cssSize: number;
+  jsSize: number;
+  imgSize: number;
+  totalLinks: number;
+  outlinksInternal: number;
+  outlinksExternal: number;
+  inlinks: number;
+  inlinksFollow: number;
+  inlinksNofollow: number;
+  redirectCount: number;
+  redirectUrl: string | null;
 }
 
 export interface SeoAuditResponse {
@@ -564,6 +600,8 @@ export interface SeoAuditResponse {
     quarterly?: SeoAuditHistorySnapshot;
   };
   topIssues?: SeoAuditTopIssue[];
+  allIssues?: SeoAuditTopIssue[];
+  pages?: SeoAuditPage[];
   indexability?: {
     indexable: number;
     nonIndexable: number;

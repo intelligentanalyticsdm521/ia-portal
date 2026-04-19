@@ -764,9 +764,9 @@ function SeoSiteAuditDetailsModal({
 
         <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
           {activeTab === 'issue-report' && <IssueReportTab audit={audit} />}
-          {activeTab === 'crawled-pages' && <TabPlaceholder label="Crawled Pages" body="Full list of crawled pages with status, size, depth, and per-page issue counts. Feeds from /audit/{id}/pages." />}
-          {activeTab === 'found-resources' && <TabPlaceholder label="Found Resources" body="Images, CSS, and JS files discovered during the audit crawl — with HTTP status, size, and alt-text/compression issues. Feeds from /audit/{id}/links filtered to resource-type URLs." />}
-          {activeTab === 'found-links' && <TabPlaceholder label="Found Links" body="Internal + outbound links found during the crawl. Broken internal links, redirect chains, external link authority. Feeds from /audit/{id}/links." />}
+          {activeTab === 'crawled-pages' && <CrawledPagesTab audit={audit} />}
+          {activeTab === 'found-resources' && <FoundResourcesTab audit={audit} />}
+          {activeTab === 'found-links' && <FoundLinksTab audit={audit} />}
           {activeTab === 'audit-comparison' && <AuditComparisonTab audit={audit} />}
         </div>
       </div>
@@ -775,14 +775,341 @@ function SeoSiteAuditDetailsModal({
 }
 
 function IssueReportTab({ audit }: { audit: SeoAuditResponse }) {
-  const topIssues = audit.topIssues ?? [];
+  const all = audit.allIssues ?? audit.topIssues ?? [];
+  const [severityFilter, setSeverityFilter] = React.useState<'all' | 'error' | 'warning' | 'notice'>('all');
+  const [categoryFilter, setCategoryFilter] = React.useState<string>('all');
+  const [search, setSearch] = React.useState('');
+
+  const categories = Array.from(new Set(all.map((i) => i.categoryName || 'Other'))).sort();
+
+  const filtered = all.filter((i) => {
+    if (severityFilter !== 'all' && i.severity !== severityFilter) return false;
+    if (categoryFilter !== 'all' && (i.categoryName || 'Other') !== categoryFilter) return false;
+    if (search && !i.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  const totalErrors = all.filter((i) => i.severity === 'error').reduce((s, i) => s + i.count, 0);
+  const totalWarnings = all.filter((i) => i.severity === 'warning').reduce((s, i) => s + i.count, 0);
+  const totalNotices = all.filter((i) => i.severity === 'notice').reduce((s, i) => s + i.count, 0);
+
   return (
     <div>
-      <div style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 12 }}>
-        Full issue list coming in V2. Top issues below; connect to the SE Ranking project for detail-level filtering.
+      {/* Summary bar */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+        <SummaryChip color="#D85A30" label="Errors" count={totalErrors} />
+        <SummaryChip color="#EF6C33" label="Warnings" count={totalWarnings} />
+        <SummaryChip color="#4285F4" label="Notices" count={totalNotices} />
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: '#5A7A8A', alignSelf: 'center' }}>
+          {filtered.length} of {all.length} issue types
+        </div>
       </div>
-      <TopIssuesTable issues={topIssues} onIssueClick={() => {}} />
+
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <input
+          type="text"
+          placeholder="Search issues…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ padding: '6px 10px', fontSize: 12, border: '1px solid #d5e0e8', borderRadius: 4, width: 200 }}
+        />
+        <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value as any)} style={{ padding: '6px 10px', fontSize: 12, border: '1px solid #d5e0e8', borderRadius: 4 }}>
+          <option value="all">All severities</option>
+          <option value="error">Errors only</option>
+          <option value="warning">Warnings only</option>
+          <option value="notice">Notices only</option>
+        </select>
+        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} style={{ padding: '6px 10px', fontSize: 12, border: '1px solid #d5e0e8', borderRadius: 4 }}>
+          <option value="all">All categories</option>
+          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+
+      <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#F8FAFC' }}>
+            <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Issue</th>
+            <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Category</th>
+            <th style={{ textAlign: 'center', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Severity</th>
+            <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Count</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.length === 0 ? (
+            <tr><td colSpan={4} style={{ textAlign: 'center', padding: 24, color: '#94A3B8', fontSize: 12 }}>No issues match these filters.</td></tr>
+          ) : filtered.map((i, idx) => (
+            <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <td style={{ padding: '8px 6px', color: '#0B1C24' }}>{i.name}</td>
+              <td style={{ padding: '8px 6px', color: '#5A7A8A', fontSize: 11 }}>{i.categoryName || '—'}</td>
+              <td style={{ textAlign: 'center', padding: '8px 6px' }}>
+                <SeverityBadge severity={i.severity} />
+              </td>
+              <td style={{ textAlign: 'right', padding: '8px 6px', fontWeight: 600 }}>{i.count}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
+  );
+}
+
+function CrawledPagesTab({ audit }: { audit: SeoAuditResponse }) {
+  const pages = audit.pages ?? [];
+  const [search, setSearch] = React.useState('');
+  const [statusFilter, setStatusFilter] = React.useState<'all' | '2xx' | '3xx' | '4xx' | '5xx'>('all');
+  const [indexableFilter, setIndexableFilter] = React.useState<'all' | 'indexable' | 'not-indexable'>('all');
+  const [sortKey, setSortKey] = React.useState<'url' | 'status' | 'depth' | 'loadMs' | 'errors' | 'warnings'>('depth');
+  const [sortDir, setSortDir] = React.useState<'asc' | 'desc'>('asc');
+
+  const filtered = pages.filter((p) => {
+    if (search && !p.url.toLowerCase().includes(search.toLowerCase())) return false;
+    if (statusFilter !== 'all') {
+      const bucket = p.status >= 500 ? '5xx' : p.status >= 400 ? '4xx' : p.status >= 300 ? '3xx' : p.status >= 200 ? '2xx' : '1xx';
+      if (bucket !== statusFilter) return false;
+    }
+    if (indexableFilter === 'indexable' && !p.indexable) return false;
+    if (indexableFilter === 'not-indexable' && p.indexable) return false;
+    return true;
+  });
+  const sorted = [...filtered].sort((a, b) => {
+    let av: any = (a as any)[sortKey];
+    let bv: any = (b as any)[sortKey];
+    if (av == null) av = '';
+    if (bv == null) bv = '';
+    if (av < bv) return sortDir === 'asc' ? -1 : 1;
+    if (av > bv) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <input
+          type="text"
+          placeholder="Search URL…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ padding: '6px 10px', fontSize: 12, border: '1px solid #d5e0e8', borderRadius: 4, width: 280 }}
+        />
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} style={{ padding: '6px 10px', fontSize: 12, border: '1px solid #d5e0e8', borderRadius: 4 }}>
+          <option value="all">All status codes</option>
+          <option value="2xx">2XX only</option>
+          <option value="3xx">3XX only</option>
+          <option value="4xx">4XX only</option>
+          <option value="5xx">5XX only</option>
+        </select>
+        <select value={indexableFilter} onChange={(e) => setIndexableFilter(e.target.value as any)} style={{ padding: '6px 10px', fontSize: 12, border: '1px solid #d5e0e8', borderRadius: 4 }}>
+          <option value="all">Any indexability</option>
+          <option value="indexable">Indexable only</option>
+          <option value="not-indexable">Non-indexable only</option>
+        </select>
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: '#5A7A8A', alignSelf: 'center' }}>
+          {sorted.length} of {pages.length} pages
+        </div>
+      </div>
+
+      <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#F8FAFC' }}>
+            <Th label="URL" k="url" sortKey={sortKey} sortDir={sortDir} onClick={(k) => { setSortKey(k as any); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }} />
+            <Th label="Status" k="status" sortKey={sortKey} sortDir={sortDir} onClick={(k) => { setSortKey(k as any); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }} align="right" />
+            <Th label="Depth" k="depth" sortKey={sortKey} sortDir={sortDir} onClick={(k) => { setSortKey(k as any); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }} align="right" />
+            <Th label="Load (ms)" k="loadMs" sortKey={sortKey} sortDir={sortDir} onClick={(k) => { setSortKey(k as any); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }} align="right" />
+            <Th label="Errors" k="errors" sortKey={sortKey} sortDir={sortDir} onClick={(k) => { setSortKey(k as any); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }} align="right" />
+            <Th label="Warnings" k="warnings" sortKey={sortKey} sortDir={sortDir} onClick={(k) => { setSortKey(k as any); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }} align="right" />
+            <th style={{ textAlign: 'center', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Indexable</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.slice(0, 200).map((p) => (
+            <tr key={String(p.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <td style={{ padding: '6px 6px', maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <a href={p.url} target="_blank" rel="noreferrer" style={{ color: '#2D9CDB', textDecoration: 'none' }}>{p.url}</a>
+              </td>
+              <td style={{ textAlign: 'right', padding: '6px 6px', color: p.status >= 400 ? '#D85A30' : p.status >= 300 ? '#EF6C33' : '#0B1C24', fontWeight: 500 }}>{p.status}</td>
+              <td style={{ textAlign: 'right', padding: '6px 6px' }}>{p.depth}</td>
+              <td style={{ textAlign: 'right', padding: '6px 6px', color: p.loadMs > 1000 ? '#EF6C33' : '#5A7A8A' }}>{p.loadMs}</td>
+              <td style={{ textAlign: 'right', padding: '6px 6px', color: p.errors > 0 ? '#D85A30' : '#94A3B8', fontWeight: p.errors > 0 ? 600 : 400 }}>{p.errors}</td>
+              <td style={{ textAlign: 'right', padding: '6px 6px', color: p.warnings > 0 ? '#EF6C33' : '#94A3B8', fontWeight: p.warnings > 0 ? 600 : 400 }}>{p.warnings}</td>
+              <td style={{ textAlign: 'center', padding: '6px 6px' }}>
+                {p.indexable ? (
+                  <span style={{ fontSize: 10, color: '#1D9E75', fontWeight: 600 }}>✓</span>
+                ) : (
+                  <span style={{ fontSize: 10, color: '#D85A30', fontWeight: 600 }}>✗</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {sorted.length > 200 && (
+        <div style={{ fontSize: 11, color: '#94A3B8', textAlign: 'center', marginTop: 10, fontStyle: 'italic' }}>
+          Showing first 200 of {sorted.length} filtered pages. Refine filters to narrow.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FoundResourcesTab({ audit }: { audit: SeoAuditResponse }) {
+  const pages = audit.pages ?? [];
+  const totals = audit.foundResources ?? { images: 0, cssSizeBytes: 0, jsSizeBytes: 0, total: 0 };
+
+  // Top pages by resource weight (CSS+JS+img size)
+  const byWeight = [...pages]
+    .filter((p) => p.cssSize + p.jsSize + p.imgSize > 0)
+    .sort((a, b) => (b.cssSize + b.jsSize + b.imgSize) - (a.cssSize + a.jsSize + a.imgSize))
+    .slice(0, 50);
+  const byImgCount = [...pages].filter((p) => p.imgCount > 0).sort((a, b) => b.imgCount - a.imgCount).slice(0, 50);
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
+        <SummaryStat label="Total Images" value={totals.images.toLocaleString()} sub="across all pages" color="#7B61FF" />
+        <SummaryStat label="CSS Total" value={`${Math.round(totals.cssSizeBytes / 1024).toLocaleString()} KB`} sub="combined CSS weight" color="#EF6C33" />
+        <SummaryStat label="JS Total" value={`${Math.round(totals.jsSizeBytes / 1024).toLocaleString()} KB`} sub="combined JS weight" color="#FEC82C" />
+      </div>
+
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>Top pages by resource weight</div>
+      <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#F8FAFC' }}>
+            <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Page</th>
+            <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>Images</th>
+            <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>Img KB</th>
+            <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>CSS KB</th>
+            <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>JS KB</th>
+            <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>Total KB</th>
+          </tr>
+        </thead>
+        <tbody>
+          {byWeight.map((p) => {
+            const totalKB = Math.round((p.cssSize + p.jsSize + p.imgSize) / 1024);
+            return (
+              <tr key={String(p.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                <td style={{ padding: '6px 6px', maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <a href={p.url} target="_blank" rel="noreferrer" style={{ color: '#2D9CDB', textDecoration: 'none' }}>{p.url}</a>
+                </td>
+                <td style={{ textAlign: 'right', padding: '6px 6px' }}>{p.imgCount}</td>
+                <td style={{ textAlign: 'right', padding: '6px 6px' }}>{Math.round(p.imgSize / 1024)}</td>
+                <td style={{ textAlign: 'right', padding: '6px 6px' }}>{Math.round(p.cssSize / 1024)}</td>
+                <td style={{ textAlign: 'right', padding: '6px 6px' }}>{Math.round(p.jsSize / 1024)}</td>
+                <td style={{ textAlign: 'right', padding: '6px 6px', fontWeight: 600, color: totalKB > 2000 ? '#D85A30' : totalKB > 1000 ? '#EF6C33' : '#0B1C24' }}>{totalKB}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 14, fontStyle: 'italic' }}>
+        Pages over 1,000 KB of combined resources are optimization candidates — large images and uncompressed CSS/JS slow page load.
+      </div>
+    </div>
+  );
+}
+
+function FoundLinksTab({ audit }: { audit: SeoAuditResponse }) {
+  const pages = audit.pages ?? [];
+  const totals = audit.foundLinks ?? { total: 0, internal: 0, external: 0, nofollow: 0 };
+
+  const topByLinks = [...pages].filter((p) => p.totalLinks > 0).sort((a, b) => b.totalLinks - a.totalLinks).slice(0, 50);
+  const topByInbound = [...pages].filter((p) => p.inlinks > 0).sort((a, b) => b.inlinks - a.inlinks).slice(0, 20);
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+        <SummaryStat label="Total Links" value={totals.total.toLocaleString()} sub="across all pages" color="#2D9CDB" />
+        <SummaryStat label="Internal" value={totals.internal.toLocaleString()} sub="on-site links" color="#1D9E75" />
+        <SummaryStat label="External" value={totals.external.toLocaleString()} sub="outbound links" color="#EF6C33" />
+        <SummaryStat label="Nofollow" value={totals.nofollow.toLocaleString()} sub="rel='nofollow'" color="#5A7A8A" />
+      </div>
+
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>Pages with most outbound links</div>
+      <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse', marginBottom: 20 }}>
+        <thead>
+          <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#F8FAFC' }}>
+            <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Page</th>
+            <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>Total</th>
+            <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>Internal</th>
+            <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>External</th>
+          </tr>
+        </thead>
+        <tbody>
+          {topByLinks.map((p) => (
+            <tr key={String(p.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <td style={{ padding: '6px 6px', maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <a href={p.url} target="_blank" rel="noreferrer" style={{ color: '#2D9CDB', textDecoration: 'none' }}>{p.url}</a>
+              </td>
+              <td style={{ textAlign: 'right', padding: '6px 6px', fontWeight: 600 }}>{p.totalLinks}</td>
+              <td style={{ textAlign: 'right', padding: '6px 6px' }}>{p.outlinksInternal}</td>
+              <td style={{ textAlign: 'right', padding: '6px 6px' }}>{p.outlinksExternal}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>Top pages by inbound links (authority pages)</div>
+      <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#F8FAFC' }}>
+            <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Page</th>
+            <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>Inbound</th>
+            <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>Follow</th>
+            <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>Nofollow</th>
+          </tr>
+        </thead>
+        <tbody>
+          {topByInbound.map((p) => (
+            <tr key={String(p.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <td style={{ padding: '6px 6px', maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <a href={p.url} target="_blank" rel="noreferrer" style={{ color: '#2D9CDB', textDecoration: 'none' }}>{p.url}</a>
+              </td>
+              <td style={{ textAlign: 'right', padding: '6px 6px', fontWeight: 600 }}>{p.inlinks}</td>
+              <td style={{ textAlign: 'right', padding: '6px 6px', color: '#1D9E75' }}>{p.inlinksFollow}</td>
+              <td style={{ textAlign: 'right', padding: '6px 6px', color: '#5A7A8A' }}>{p.inlinksNofollow}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Helper components for the modal tabs
+function SummaryChip({ color, label, count }: { color: string; label: string; count: number }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F8FAFC', padding: '6px 12px', borderRadius: 4, borderLeft: `3px solid ${color}` }}>
+      <span style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', fontWeight: 600 }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 700, color }}>{count}</span>
+    </div>
+  );
+}
+
+function SummaryStat({ label, value, sub, color }: { label: string; value: string | number; sub: string; color: string }) {
+  return (
+    <div style={{ background: '#F8FAFC', borderLeft: `3px solid ${color}`, borderRadius: 6, padding: '10px 12px' }}>
+      <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: '#0B1C24', marginTop: 4 }}>{value}</div>
+      <div style={{ fontSize: 9, color: '#94A3B8', marginTop: 2 }}>{sub}</div>
+    </div>
+  );
+}
+
+function SeverityBadge({ severity }: { severity: string }) {
+  const color = severity === 'error' ? '#D85A30' : severity === 'warning' ? '#EF6C33' : '#4285F4';
+  return (
+    <span style={{ fontSize: 9, fontWeight: 600, background: color, color: '#fff', padding: '2px 8px', borderRadius: 3, textTransform: 'uppercase' }}>
+      {severity}
+    </span>
+  );
+}
+
+function Th({ label, k, sortKey, sortDir, onClick, align = 'left' }: { label: string; k: string; sortKey: string; sortDir: 'asc' | 'desc'; onClick: (k: string) => void; align?: 'left' | 'right' | 'center' }) {
+  const active = sortKey === k;
+  return (
+    <th style={{ textAlign: align, padding: '8px 6px', fontSize: 10, color: active ? '#0B1C24' : '#5A7A8A', fontWeight: 600, textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none' }} onClick={() => onClick(k)}>
+      {label}{active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+    </th>
   );
 }
 
