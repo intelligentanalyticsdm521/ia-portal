@@ -362,19 +362,9 @@ export function SeoRankings() {
         </Card>
       )}
 
-      {/* Pages — coming soon (fast-follower enhancement) */}
+      {/* Pages — URL × keyword aggregation */}
       <div style={{ marginTop: 22 }}>
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#0B1C24', marginBottom: 12 }}>
-            Pages <span style={{ fontSize: 10, fontWeight: 600, color: '#EF6C33', marginLeft: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Coming Soon</span>
-          </div>
-          <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10, lineHeight: 1.5 }}>
-            Which URLs on your site are ranking for which keywords, with traffic forecast and avg position per page. Filter by Top / Jumped / Dropped performance.
-          </div>
-          <div style={{ padding: 16, background: '#F8FAFC', borderRadius: 6, textAlign: 'center', color: '#94A3B8', fontSize: 11 }}>
-            Per-page URL aggregation is in our next content release. Today you can see per-keyword rankings — the Pages view adds the URL × keyword intelligence on top.
-          </div>
-        </div>
+        <PagesWidget keywords={r!.keywords} onSelectKeyword={(id) => setSelectedKeywordId(id)} />
       </div>
 
       {/* Diagnostic panel */}
@@ -404,6 +394,235 @@ export function SeoRankings() {
           onSelectKeyword={(id) => setSelectedKeywordId(id)}
         />
       )}
+    </div>
+  );
+}
+
+/* ───────── Pages Widget — URL × keyword aggregation ───────── */
+
+type PageRow = {
+  url: string;
+  keywordCount: number;
+  top10Count: number;
+  avgPosition: number | null;
+  trafficForecast: number;
+  jumped: number;
+  dropped: number;
+  keywords: SeoKeywordRecord[];
+};
+
+function ctrForPosition(p: number | null): number {
+  if (!p || p <= 0) return 0;
+  const table = [0.27, 0.15, 0.11, 0.08, 0.07, 0.05, 0.04, 0.03, 0.025, 0.02];
+  if (p <= 10) return table[p - 1];
+  if (p <= 30) return Math.max(0.005, 0.02 - (p - 10) * 0.001);
+  return 0.005;
+}
+
+function PagesWidget({ keywords, onSelectKeyword }: { keywords: SeoKeywordRecord[]; onSelectKeyword: (id: number) => void }) {
+  const [search, setSearch] = React.useState('');
+  const [filter, setFilter] = React.useState<'all' | 'jumped' | 'dropped' | 'top'>('all');
+  const [sortKey, setSortKey] = React.useState<'traffic' | 'keywords' | 'position' | 'top10'>('traffic');
+  const [selectedUrl, setSelectedUrl] = React.useState<string | null>(null);
+
+  const pages: PageRow[] = React.useMemo(() => {
+    const byUrl = new Map<string, PageRow>();
+    for (const k of keywords) {
+      const url = k.url || '(unranked or unknown URL)';
+      const ex: PageRow = byUrl.get(url) || { url, keywordCount: 0, top10Count: 0, avgPosition: null, trafficForecast: 0, jumped: 0, dropped: 0, keywords: [] };
+      ex.keywordCount++;
+      ex.keywords.push(k);
+      if (k.currentPosition != null && k.currentPosition > 0 && k.currentPosition <= 10) ex.top10Count++;
+      if (k.positionChange > 0) ex.jumped++;
+      else if (k.positionChange < 0) ex.dropped++;
+      ex.trafficForecast += (k.searchVolume || 0) * ctrForPosition(k.currentPosition);
+      byUrl.set(url, ex);
+    }
+    // compute avg position per page from ranking keywords only
+    for (const p of byUrl.values()) {
+      const ranked = p.keywords.filter((k) => k.currentPosition != null && k.currentPosition > 0);
+      p.avgPosition = ranked.length
+        ? Math.round(ranked.reduce((s, k) => s + (k.currentPosition || 0), 0) / ranked.length)
+        : null;
+      p.trafficForecast = Math.round(p.trafficForecast);
+    }
+    return Array.from(byUrl.values());
+  }, [keywords]);
+
+  const filtered = pages.filter((p) => {
+    if (search && !p.url.toLowerCase().includes(search.toLowerCase())) return false;
+    if (filter === 'top' && p.top10Count === 0) return false;
+    if (filter === 'jumped' && p.jumped === 0) return false;
+    if (filter === 'dropped' && p.dropped === 0) return false;
+    return true;
+  });
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortKey === 'keywords') return b.keywordCount - a.keywordCount;
+    if (sortKey === 'position') return (a.avgPosition ?? 999) - (b.avgPosition ?? 999);
+    if (sortKey === 'top10') return b.top10Count - a.top10Count;
+    return b.trafficForecast - a.trafficForecast;
+  });
+
+  const topPages = sorted.slice(0, 30);
+  const selected = selectedUrl ? pages.find((p) => p.url === selectedUrl) : null;
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 8, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#0B1C24' }}>Pages</div>
+          <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 2 }}>
+            Your landing URLs by ranking performance — avg position, top-10 count, and traffic forecast per page
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: '#5A7A8A' }}>{pages.length} unique page{pages.length === 1 ? '' : 's'} tracked</div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+        <input
+          type="text"
+          placeholder="Search URL…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ padding: '6px 10px', fontSize: 12, border: '1px solid #d5e0e8', borderRadius: 4, width: 260 }}
+        />
+        <select value={filter} onChange={(e) => setFilter(e.target.value as any)} style={{ padding: '6px 10px', fontSize: 12, border: '1px solid #d5e0e8', borderRadius: 4 }}>
+          <option value="all">All pages</option>
+          <option value="top">Top 10 (has page-1 keywords)</option>
+          <option value="jumped">Jumped (gained ground)</option>
+          <option value="dropped">Dropped (lost ground)</option>
+        </select>
+        <select value={sortKey} onChange={(e) => setSortKey(e.target.value as any)} style={{ padding: '6px 10px', fontSize: 12, border: '1px solid #d5e0e8', borderRadius: 4 }}>
+          <option value="traffic">Sort: Traffic forecast</option>
+          <option value="keywords">Sort: Keyword count</option>
+          <option value="top10">Sort: Top-10 count</option>
+          <option value="position">Sort: Avg position</option>
+        </select>
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: '#5A7A8A', alignSelf: 'center' }}>
+          Showing top {topPages.length} of {sorted.length}
+        </div>
+      </div>
+
+      {pages.length === 0 ? (
+        <div style={{ padding: 16, background: '#F8FAFC', borderRadius: 6, textAlign: 'center', color: '#94A3B8', fontSize: 11 }}>
+          Landing URL data appears once SE Ranking records positions with URL attribution. Fresh projects typically populate within 24 hours.
+        </div>
+      ) : (
+        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#F8FAFC' }}>
+              <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>URL</th>
+              <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>Keywords</th>
+              <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>Top 10</th>
+              <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>Avg Pos</th>
+              <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>Traffic Forecast</th>
+              <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>↑ / ↓</th>
+              <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {topPages.map((p) => (
+              <tr key={p.url} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                <td style={{ padding: '8px 6px', maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {p.url.startsWith('http') ? (
+                    <a href={p.url} target="_blank" rel="noreferrer" style={{ color: '#2D9CDB', textDecoration: 'none' }}>{p.url}</a>
+                  ) : (
+                    <span style={{ color: '#94A3B8', fontStyle: 'italic' }}>{p.url}</span>
+                  )}
+                </td>
+                <td style={{ textAlign: 'right', padding: '8px 6px', fontWeight: 600 }}>{p.keywordCount}</td>
+                <td style={{ textAlign: 'right', padding: '8px 6px', fontWeight: 600, color: p.top10Count > 0 ? '#1D9E75' : '#94A3B8' }}>{p.top10Count}</td>
+                <td style={{ textAlign: 'right', padding: '8px 6px' }}>{p.avgPosition ?? '—'}</td>
+                <td style={{ textAlign: 'right', padding: '8px 6px', fontWeight: 600 }}>{p.trafficForecast.toLocaleString()}</td>
+                <td style={{ textAlign: 'right', padding: '8px 6px', fontSize: 11 }}>
+                  <span style={{ color: '#1D9E75' }}>↑{p.jumped}</span> <span style={{ color: '#D85A30', marginLeft: 6 }}>↓{p.dropped}</span>
+                </td>
+                <td style={{ textAlign: 'right', padding: '8px 6px' }}>
+                  <button onClick={() => setSelectedUrl(p.url)} style={{ fontSize: 10, fontWeight: 600, background: 'transparent', color: '#2D9CDB', border: '1px solid #2D9CDB', borderRadius: 4, padding: '3px 8px', cursor: 'pointer' }}>
+                    View →
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {selected && (
+        <PageDetailModal page={selected} onClose={() => setSelectedUrl(null)} onSelectKeyword={(id) => { setSelectedUrl(null); onSelectKeyword(id); }} />
+      )}
+    </div>
+  );
+}
+
+function PageDetailModal({ page, onClose, onSelectKeyword }: { page: PageRow; onClose: () => void; onSelectKeyword: (id: number) => void }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
+      <div style={{ background: '#fff', borderRadius: 12, width: '94vw', maxWidth: 1000, maxHeight: '88vh', display: 'flex', flexDirection: 'column', minHeight: 0 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 11, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5 }}>Page Detail</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#0B1C24', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {page.url.startsWith('http') ? <a href={page.url} target="_blank" rel="noreferrer" style={{ color: '#2D9CDB', textDecoration: 'none' }}>{page.url}</a> : page.url}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#999', padding: '0 6px', marginLeft: 12 }}>&times;</button>
+        </div>
+
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 16 }}>
+            <PageMetric label="Keywords" value={page.keywordCount} accent="#2D9CDB" />
+            <PageMetric label="Top 10" value={page.top10Count} accent="#1D9E75" />
+            <PageMetric label="Avg Position" value={page.avgPosition ?? '—'} accent="#EF6C33" />
+            <PageMetric label="Traffic Forecast" value={page.trafficForecast.toLocaleString()} accent="#7B61FF" />
+            <PageMetric label="Movement" value={`↑${page.jumped} ↓${page.dropped}`} accent="#5A7A8A" />
+          </div>
+
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>All keywords ranking to this page</div>
+          <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#F8FAFC' }}>
+                <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Keyword</th>
+                <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>Position</th>
+                <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>Change</th>
+                <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}>Volume</th>
+                <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...page.keywords].sort((a, b) => (a.currentPosition ?? 999) - (b.currentPosition ?? 999)).map((k) => {
+                const chColor = k.positionChange > 0 ? '#1D9E75' : k.positionChange < 0 ? '#D85A30' : '#5A7A8A';
+                return (
+                  <tr key={k.keywordId} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '8px 6px', fontWeight: 500 }}>{k.keyword}</td>
+                    <td style={{ textAlign: 'right', padding: '8px 6px', fontWeight: 600, color: k.currentPosition && k.currentPosition <= 10 ? '#1D9E75' : '#0B1C24' }}>
+                      {k.currentPosition != null && k.currentPosition > 0 ? `#${k.currentPosition}` : 'Not ranking'}
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '8px 6px', fontWeight: 600, color: chColor }}>
+                      {k.positionChange > 0 ? `+${k.positionChange}` : k.positionChange < 0 ? k.positionChange : '—'}
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '8px 6px' }}>{k.searchVolume > 0 ? k.searchVolume.toLocaleString() : '—'}</td>
+                    <td style={{ textAlign: 'right', padding: '8px 6px' }}>
+                      <button onClick={() => onSelectKeyword(k.keywordId)} style={{ fontSize: 10, fontWeight: 600, background: 'transparent', color: '#2D9CDB', border: '1px solid #2D9CDB', borderRadius: 4, padding: '3px 8px', cursor: 'pointer' }}>
+                        Detail →
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PageMetric({ label, value, accent }: { label: string; value: React.ReactNode; accent: string }) {
+  return (
+    <div style={{ background: '#F8FAFC', borderLeft: `3px solid ${accent}`, borderRadius: 6, padding: '10px 12px' }}>
+      <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: '#0B1C24', marginTop: 4 }}>{value}</div>
     </div>
   );
 }

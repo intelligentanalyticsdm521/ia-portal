@@ -136,13 +136,47 @@ export function SeoOverview() {
     value: Math.round((d.top1 || 0) * 0.27 + (d.top2_3 || 0) * 0.13 + (d.top4_5 || 0) * 0.075),
   }));
 
-  // Tier gating for AI cards
+  // Tier gating for AI cards (locked per product matrix 2026-04-20)
+  // - Google AI Mode: Growth and above
+  // - ChatGPT / Gemini: Authority
+  // - Perplexity: IA Consulting only (never self-serve)
   const tier = (selectedSite?.seoAddonTier || '').toLowerCase();
-  const aiUnlocked = (type: string | null) => {
-    if (!type) return tier === 'authority';
-    if (type === 'chatgpt' || type === 'gemini') return tier === 'growth' || tier === 'authority';
-    return tier === 'authority';
+  type AiGateReason = 'available' | 'upgrade_growth' | 'upgrade_authority' | 'consulting_only';
+  const aiGateFor = (type: string | null): AiGateReason => {
+    const t = (type || '').toLowerCase();
+    if (t === 'ai_mode' || t === 'aimode' || t === 'google_ai_mode') {
+      return (tier === 'growth' || tier === 'authority') ? 'available' : 'upgrade_growth';
+    }
+    if (t === 'chatgpt') return tier === 'authority' ? 'available' : 'upgrade_authority';
+    if (t === 'gemini') return tier === 'authority' ? 'available' : 'upgrade_authority';
+    if (t === 'perplexity') return 'consulting_only';
+    // Legacy AI overview — treat like Authority
+    return tier === 'authority' ? 'available' : 'upgrade_authority';
   };
+
+  // Canonical AI engine list — always render all 4 in this order regardless of
+  // whether SE Ranking has them configured on the project.
+  const AI_CANONICAL: Array<{ type: string; label: string }> = [
+    { type: 'ai_mode', label: 'Google AI Mode' },
+    { type: 'chatgpt', label: 'ChatGPT' },
+    { type: 'gemini', label: 'Gemini' },
+    { type: 'perplexity', label: 'Perplexity' },
+  ];
+  const aiCanonicalCards = AI_CANONICAL.map((can) => {
+    const found = aiCards.find((c) => String(c.type || '').toLowerCase() === can.type);
+    return { canonical: can, card: found ?? null };
+  });
+
+  // Canonical standard-engine list — always render all 3 regardless of config.
+  const STANDARD_CANONICAL: Array<{ id: string; label: string; match: (c: SeoHeroEngineCard) => boolean }> = [
+    { id: 'google_desktop', label: 'Google', match: (c) => /google/i.test(c.label || '') && !/mobile/i.test(c.label || '') && !/bing/i.test(c.label || '') },
+    { id: 'google_mobile', label: 'Google Mobile', match: (c) => /mobile/i.test(c.label || '') },
+    { id: 'bing', label: 'Bing', match: (c) => /bing/i.test(c.label || '') },
+  ];
+  const standardCanonicalCards = STANDARD_CANONICAL.map((can) => {
+    const found = standardCards.find(can.match);
+    return { canonical: can, card: found ?? null };
+  });
 
   // Audit data
   const auditConnected = a?.status === 'complete';
@@ -187,34 +221,32 @@ export function SeoOverview() {
           <SeoFilterPills label="Provider" options={toggleOptions.map((o) => ({ value: String(o.value), label: o.label }))} value={String(engineFilter)} onChange={(v) => setEngineFilter(v as EngineFilter)} />
         </span>
       </div>
-      {standardCards.length === 0 ? (
-        <div style={{ color: '#5A7A8A', fontSize: 12, padding: 20, textAlign: 'center', background: '#F8FAFC', borderRadius: 6 }}>
-          No standard search engines configured. Check your SE Ranking project setup.
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${standardCards.length}, 1fr)`, gap: 12 }}>
-          {standardCards.map((c) => (
-            <EngineHeroCard key={c.engineId} card={c} accent="#2D9CDB" />
-          ))}
-        </div>
-      )}
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${standardCanonicalCards.length}, 1fr)`, gap: 12 }}>
+        {standardCanonicalCards.map(({ canonical, card }) => (
+          card ? (
+            <EngineHeroCard key={canonical.id} card={card} accent="#2D9CDB" />
+          ) : (
+            <StandardEngineLockedCard key={canonical.id} label={canonical.label} />
+          )
+        ))}
+      </div>
 
-      {/* AI Search Engines — always visible, not affected by toggle */}
+      {/* AI Search Engines — always visible, always 4 cards in canonical order */}
       <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary, #0B1C24)', marginTop: 24, marginBottom: 10, display: 'inline-flex', alignItems: 'center' }}>
         AI Search Engines
         <GlossaryIcon termKey="ai_mentions" size={12} />
       </div>
-      {aiCards.length === 0 ? (
-        <div style={{ color: '#5A7A8A', fontSize: 12, padding: 20, textAlign: 'center', background: '#F8FAFC', borderRadius: 6 }}>
-          No AI engines configured in SE Ranking yet.
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${aiCards.length}, 1fr)`, gap: 12 }}>
-          {aiCards.map((c) => (
-            <AiHeroCard key={c.engineId} card={c} unlocked={aiUnlocked(c.type)} />
-          ))}
-        </div>
-      )}
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${aiCanonicalCards.length}, 1fr)`, gap: 12 }}>
+        {aiCanonicalCards.map(({ canonical, card }) => (
+          <AiHeroCard
+            key={canonical.type}
+            card={card}
+            canonicalLabel={canonical.label}
+            canonicalType={canonical.type}
+            gate={aiGateFor(canonical.type)}
+          />
+        ))}
+      </div>
 
       {/* Key Metrics row — 4 cards with visuals */}
       <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary, #0B1C24)', marginTop: 24, marginBottom: 10 }}>
@@ -446,18 +478,59 @@ function EngineHeroCard({ card, accent }: { card: SeoHeroEngineCard; accent: str
   );
 }
 
-function AiHeroCard({ card, unlocked }: { card: SeoHeroEngineCard; unlocked: boolean }) {
+function StandardEngineLockedCard({ label }: { label: string }) {
+  const accent = '#2D9CDB';
   return (
-    <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '14px 18px', borderLeft: '3px solid #0C4A60', minHeight: 110, position: 'relative' }}>
-      {!unlocked && (
-        <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8 }}>
-          <div style={{ fontSize: 11, color: '#5A7A8A', textAlign: 'center', padding: '0 16px' }}>🔒 Upgrade to unlock</div>
-        </div>
-      )}
-      <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>
-        {card.label}
+    <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '14px 18px', borderLeft: `3px solid ${accent}`, minHeight: 110, position: 'relative', opacity: 0.92 }}>
+      <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: '#5A7A8A', marginTop: 8 }}>Not tracked</div>
+      <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 6, lineHeight: 1.5 }}>
+        Upgrade to unlock {label} insights — or enable this engine in SE Ranking project setup.
       </div>
-      <div style={{ fontSize: 28, fontWeight: 700, color: '#0C4A60', lineHeight: 1, marginTop: 6 }}>
+    </div>
+  );
+}
+
+function AiHeroCard({ card, canonicalLabel, canonicalType, gate }: {
+  card: SeoHeroEngineCard | null;
+  canonicalLabel: string;
+  canonicalType: string;
+  gate: 'available' | 'upgrade_growth' | 'upgrade_authority' | 'consulting_only';
+}) {
+  const isPerplexity = canonicalType === 'perplexity';
+  const accent = isPerplexity ? '#20808D' : '#0C4A60';
+
+  // When gated OR no card data, show a compact gated-state card.
+  if (gate !== 'available' || !card) {
+    const messageTop = gate === 'consulting_only'
+      ? 'IA Consulting'
+      : gate === 'upgrade_growth'
+        ? 'Upgrade to Growth'
+        : gate === 'upgrade_authority'
+          ? 'Upgrade to Authority'
+          : 'Not configured';
+    const messageBody = gate === 'consulting_only'
+      ? 'Perplexity tracking is handled through IA\u2019s consulting engagements — ask your strategist to enable it.'
+      : gate === 'upgrade_growth'
+        ? `Upgrade to unlock ${canonicalLabel} insights — AI Mode is included with Growth and Authority tiers.`
+        : gate === 'upgrade_authority'
+          ? `Upgrade to unlock ${canonicalLabel} insights — included with the Authority tier.`
+          : `Enable ${canonicalLabel} tracking in your SE Ranking project to see insights.`;
+
+    return (
+      <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '14px 18px', borderLeft: `3px solid ${accent}`, minHeight: 110, position: 'relative', opacity: 0.92 }}>
+        <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>{canonicalLabel}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: accent, marginTop: 8 }}>{messageTop}</div>
+        <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 6, lineHeight: 1.5 }}>{messageBody}</div>
+      </div>
+    );
+  }
+
+  // Available + data present
+  return (
+    <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '14px 18px', borderLeft: `3px solid ${accent}`, minHeight: 110, position: 'relative' }}>
+      <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>{canonicalLabel}</div>
+      <div style={{ fontSize: 28, fontWeight: 700, color: accent, lineHeight: 1, marginTop: 6 }}>
         {card.placeholder ? '—' : (card.current.top10Count ?? 0)}
       </div>
       <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 6 }}>

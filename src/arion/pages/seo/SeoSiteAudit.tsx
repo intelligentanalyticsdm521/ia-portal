@@ -856,8 +856,8 @@ function SeoSiteAuditDetailsModal({
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: 12, width: '94vw', maxWidth: 1100, maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ padding: '14px 20px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ background: '#fff', borderRadius: 12, width: '94vw', maxWidth: 1100, maxHeight: '88vh', display: 'flex', flexDirection: 'column', minHeight: 0 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', flexShrink: 0, position: 'relative', zIndex: 3 }}>
           <div>
             <div style={{ fontSize: 11, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5 }}>Site Audit</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: '#0B1C24', marginTop: 2 }}>Full Report</div>
@@ -865,7 +865,7 @@ function SeoSiteAuditDetailsModal({
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#999', padding: '0 6px' }}>&times;</button>
         </div>
 
-        <div style={{ display: 'flex', padding: '0 16px', borderBottom: '1px solid #eee', overflowX: 'auto' }}>
+        <div style={{ display: 'flex', padding: '0 16px', borderBottom: '1px solid #eee', overflowX: 'auto', background: '#fff', flexShrink: 0, position: 'relative', zIndex: 2 }}>
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -884,7 +884,7 @@ function SeoSiteAuditDetailsModal({
           ))}
         </div>
 
-        <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 20 }}>
           {activeTab === 'issue-report' && <IssueReportTab audit={audit} initialCategory={initialCategory} />}
           {activeTab === 'crawled-pages' && <CrawledPagesTab audit={audit} onPageDetail={onPageDetail} />}
           {activeTab === 'found-resources' && <FoundResourcesTab audit={audit} />}
@@ -1017,7 +1017,7 @@ function CrawledPagesTab({ audit, onPageDetail }: { audit: SeoAuditResponse; onP
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', position: 'sticky', top: -20, background: '#fff', zIndex: 1, paddingTop: 20, paddingBottom: 10, marginTop: -20 }}>
         <input
           type="text"
           placeholder="Search URL…"

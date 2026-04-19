@@ -371,6 +371,7 @@ export interface SeoEngineMeta {
 export interface SeoKeywordRecord {
   keywordId: number;
   keyword: string;
+  url: string | null;
   currentPosition: number | null;
   previousPosition: number | null;
   positionChange: number;
