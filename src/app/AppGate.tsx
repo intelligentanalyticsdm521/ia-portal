@@ -114,8 +114,15 @@ export function AppGate({ children }: { children: React.ReactNode }) {
           }
           console.error('platform-api error body:', err.body);
         } else {
-          setError('Unexpected error during login verification. See console for details.');
-          console.error(err);
+          // Surface the actual error message so we can diagnose without needing the user
+          // to open DevTools. TypeErrors (network failure), AbortError (timeout), MSAL errors, etc.
+          const msg = err instanceof Error ? err.message : String(err);
+          const name = err instanceof Error ? err.name : 'Error';
+          setError(
+            `Unexpected error during login verification: [${name}] ${msg}\n\n` +
+            `If this keeps happening, hard-refresh (Ctrl+Shift+R). Otherwise, please share this message with support.`
+          );
+          console.error('[AppGate bootstrap error]', err);
         }
 
         appState.setBootstrap(null);
