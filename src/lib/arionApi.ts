@@ -564,11 +564,53 @@ export interface SeoAuditResponse {
     quarterly?: SeoAuditHistorySnapshot;
   };
   topIssues?: SeoAuditTopIssue[];
-  indexability?: any;
-  httpStatus?: any;
-  domain?: any;
-  coreWebVitals?: any;
-  useCases?: any;
+  indexability?: {
+    indexable: number;
+    nonIndexable: number;
+    blockedBy: {
+      robotsTxt: number;
+      metaTag: number;
+      xRobots: number;
+      nonCanonical: number;
+      non200Status: number;
+    };
+  } | null;
+  httpStatus?: {
+    total: number;
+    buckets: { '1xx': number; '2xx': number; '3xx': number; '4xx': number; '5xx': number };
+  } | null;
+  domain?: {
+    domainName: string | null;
+    domainTrust: number | null;
+    referringDomains: number | null;
+    backlinks: number | null;
+    pagesInGoogle: number | null;
+    expirationDate: string | null;
+    lastUpdated: string | null;
+  } | null;
+  coreWebVitals?: {
+    realWorld: { lcp: number | null; inp: number | null; cls: number | null; fcp: number | null };
+    lab: { lcp: number | null; cls: number | null; fcp: number | null; speedIndex: number | null; tti: number | null; tbt: number | null };
+    hasData: boolean;
+  } | null;
+  useCases?: Array<{ slug: string; name: string; count: number }> | null;
+  pageDistribution?: {
+    depth: Record<string, number>;
+    responseTime: Record<string, number>;
+    redirects: Record<string, number>;
+  } | null;
+  foundResources?: {
+    images: number;
+    cssSizeBytes: number;
+    jsSizeBytes: number;
+    total: number;
+  } | null;
+  foundLinks?: {
+    total: number;
+    internal: number;
+    external: number;
+    nofollow: number;
+  } | null;
   issuesByCategory?: Array<{ category: string; errors: number; warnings: number; notices: number }>;
 }
 

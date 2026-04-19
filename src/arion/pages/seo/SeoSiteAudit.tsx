@@ -14,7 +14,7 @@
  *        Issue Report · Crawled Pages · Found Resources · Found Links · Audit Comparison
  */
 import React from 'react';
-import { ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip as RTooltip } from 'recharts';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { AddonUpsell, EmptyPanel, Loading, ConsultingUpsell, ErrorBanner, InfoCard } from '../../components/Ui';
@@ -107,8 +107,8 @@ export function SeoSiteAudit() {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 12 }}>
         <PageHealthCard healthy={pagesHealthy} withIssues={pagesWithIssues} total={pagesCrawled} onClick={() => setActiveTab('crawled-pages')} />
-        <FoundResourcesCard onClick={() => setActiveTab('found-resources')} />
-        <FoundLinksCard onClick={() => setActiveTab('found-links')} />
+        <FoundResourcesCard resources={a.foundResources} onClick={() => setActiveTab('found-resources')} />
+        <FoundLinksCard links={a.foundLinks} onClick={() => setActiveTab('found-links')} />
       </div>
 
       {/* Health Comparison widget (tier-gated) */}
@@ -132,27 +132,57 @@ export function SeoSiteAudit() {
         </WidgetContainer>
       </div>
 
-      {/* V2 placeholder grid */}
-      <div style={{ marginTop: 22 }}>
-        <WidgetContainer title="Deeper analysis coming soon" subtitle="Indexability · HTTP Status · Core Web Vitals · Domain Metrics · Use Cases · Page Distribution" action={null}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-            {[
-              { title: 'Page Indexability', desc: 'Indexable vs blocked-by breakdown' },
-              { title: 'HTTP Status Codes', desc: '2XX / 3XX / 4XX / 5XX distribution' },
-              { title: 'Core Web Vitals', desc: 'LCP · FID · CLS · INP (desktop + mobile)' },
-              { title: 'Domain Metrics', desc: 'Backlinks, referring domains, trust, indexed pages' },
-              { title: 'Most Popular Use Cases', desc: 'Quick filters (uncrawled, non-indexable, redirects)' },
-              { title: 'Page Distribution', desc: 'Depth, response time, redirect counts' },
-            ].map((w) => (
-              <div key={w.title} style={{ background: '#F8FAFC', borderRadius: 8, padding: '14px 16px', border: '1px dashed #CBD5E1' }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#0B1C24' }}>{w.title}</div>
-                <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 4, lineHeight: 1.4 }}>{w.desc}</div>
-                <div style={{ fontSize: 9, fontWeight: 600, color: '#EF6C33', marginTop: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Coming Soon</div>
-              </div>
-            ))}
-          </div>
-        </WidgetContainer>
-      </div>
+      {/* Most Popular Use Cases */}
+      {a.useCases && a.useCases.length > 0 && (
+        <div style={{ marginTop: 22 }}>
+          <WidgetContainer title="Most Popular Use Cases" subtitle="Quick-filtered reports for common SEO fixes" action={null}>
+            <UseCasesTable useCases={a.useCases} onClick={() => setActiveTab('issue-report')} />
+          </WidgetContainer>
+        </div>
+      )}
+
+      {/* Indexability + HTTP Status — side-by-side row */}
+      {(a.indexability || a.httpStatus) && (
+        <div style={{ marginTop: 22, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+          {a.indexability && (
+            <WidgetContainer title="Page Indexability" subtitle="How Google sees your pages" action={null}>
+              <IndexabilityWidget data={a.indexability} totalPages={pagesCrawled} />
+            </WidgetContainer>
+          )}
+          {a.httpStatus && (
+            <WidgetContainer title="HTTP Status Codes" subtitle="Distribution across crawled pages" action={null}>
+              <HttpStatusWidget data={a.httpStatus} />
+            </WidgetContainer>
+          )}
+        </div>
+      )}
+
+      {/* Core Web Vitals */}
+      {a.coreWebVitals && (
+        <div style={{ marginTop: 22 }}>
+          <WidgetContainer title="Core Web Vitals" subtitle="Google's page experience signals (real-world + lab)" action={null}>
+            <CoreWebVitalsWidget data={a.coreWebVitals} />
+          </WidgetContainer>
+        </div>
+      )}
+
+      {/* Domain Metrics */}
+      {a.domain && (
+        <div style={{ marginTop: 22 }}>
+          <WidgetContainer title="Domain Metrics" subtitle="Domain-level authority and backlink signals" action={null}>
+            <DomainMetricsWidget data={a.domain} />
+          </WidgetContainer>
+        </div>
+      )}
+
+      {/* Page Distribution */}
+      {a.pageDistribution && (
+        <div style={{ marginTop: 22 }}>
+          <WidgetContainer title="Page Distribution" subtitle="How your crawled pages distribute across depth, response time, and redirects" action={null}>
+            <PageDistributionWidget data={a.pageDistribution} />
+          </WidgetContainer>
+        </div>
+      )}
 
       <ConsultingUpsell
         headline="Your site audit is a roadmap. IA executes the fixes and reports back."
@@ -311,24 +341,34 @@ function PageHealthCard({ healthy, withIssues, total, onClick }: { healthy: numb
   );
 }
 
-function FoundResourcesCard({ onClick }: { onClick: () => void }) {
+function FoundResourcesCard({ resources, onClick }: { resources: SeoAuditResponse['foundResources']; onClick: () => void }) {
+  const imgCount = resources?.images ?? 0;
+  const cssKB = Math.round((resources?.cssSizeBytes || 0) / 1024);
+  const jsKB = Math.round((resources?.jsSizeBytes || 0) / 1024);
   return (
     <button onClick={onClick} style={{ background: '#F8FAFC', borderLeft: '3px solid #7B61FF', borderRadius: 8, padding: '14px 16px', cursor: 'pointer', textAlign: 'left', border: 'none', minHeight: 160 }}>
       <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>Found Resources</div>
-      <div style={{ fontSize: 32, fontWeight: 700, color: '#7B61FF', marginTop: 4 }}>—</div>
-      <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 2 }}>Images, CSS, JS files discovered</div>
-      <div style={{ fontSize: 9, fontWeight: 600, color: '#EF6C33', marginTop: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>Coming Soon</div>
+      <div style={{ fontSize: 32, fontWeight: 700, color: '#7B61FF', marginTop: 4 }}>{imgCount}</div>
+      <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 2 }}>images</div>
+      <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 8 }}>
+        CSS: {cssKB.toLocaleString()}KB · JS: {jsKB.toLocaleString()}KB
+      </div>
     </button>
   );
 }
 
-function FoundLinksCard({ onClick }: { onClick: () => void }) {
+function FoundLinksCard({ links, onClick }: { links: SeoAuditResponse['foundLinks']; onClick: () => void }) {
+  const total = links?.total ?? 0;
+  const internal = links?.internal ?? 0;
+  const external = links?.external ?? 0;
   return (
     <button onClick={onClick} style={{ background: '#F8FAFC', borderLeft: '3px solid #2D9CDB', borderRadius: 8, padding: '14px 16px', cursor: 'pointer', textAlign: 'left', border: 'none', minHeight: 160 }}>
       <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>Found Links</div>
-      <div style={{ fontSize: 32, fontWeight: 700, color: '#2D9CDB', marginTop: 4 }}>—</div>
-      <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 2 }}>Internal + outbound link analysis</div>
-      <div style={{ fontSize: 9, fontWeight: 600, color: '#EF6C33', marginTop: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>Coming Soon</div>
+      <div style={{ fontSize: 32, fontWeight: 700, color: '#2D9CDB', marginTop: 4 }}>{total.toLocaleString()}</div>
+      <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 2 }}>total</div>
+      <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 8 }}>
+        Internal: {internal.toLocaleString()} · External: {external.toLocaleString()}
+      </div>
     </button>
   );
 }
@@ -424,6 +464,215 @@ function HistoryComparisonBody({ history, current, activeTab, healthScore }: { h
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function UseCasesTable({ useCases, onClick }: { useCases: Array<{ slug: string; name: string; count: number }>; onClick: () => void }) {
+  return (
+    <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+      <thead>
+        <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+          <th style={{ textAlign: 'left', padding: '6px 4px', fontSize: 9, color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase' }}>Use Case</th>
+          <th style={{ textAlign: 'right', padding: '6px 4px', fontSize: 9, color: '#94A3B8', fontWeight: 600 }}>Count</th>
+          <th style={{ textAlign: 'right', padding: '6px 4px', fontSize: 9, color: '#94A3B8', fontWeight: 600 }}>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {useCases.map((uc) => (
+          <tr key={uc.slug} style={{ borderBottom: '1px solid #f5f5f5', cursor: uc.count > 0 ? 'pointer' : 'default' }} onClick={() => uc.count > 0 && onClick()}>
+            <td style={{ padding: '8px 4px', color: '#0B1C24' }}>{uc.name}</td>
+            <td style={{ textAlign: 'right', padding: '8px 4px', fontWeight: 600, color: uc.count > 0 ? '#0B1C24' : '#94A3B8' }}>{uc.count}</td>
+            <td style={{ textAlign: 'right', padding: '8px 4px' }}>
+              {uc.count > 0 ? (
+                <span style={{ fontSize: 10, fontWeight: 600, color: '#2D9CDB' }}>View →</span>
+              ) : (
+                <span style={{ fontSize: 10, color: '#94A3B8' }}>—</span>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function IndexabilityWidget({ data, totalPages }: { data: NonNullable<SeoAuditResponse['indexability']>; totalPages: number }) {
+  const indexablePct = totalPages > 0 ? Math.round((data.indexable / totalPages) * 100) : 0;
+  const pieData = [
+    { name: 'Indexable', value: data.indexable },
+    { name: 'Non-indexable', value: data.nonIndexable },
+  ];
+  const maxBlock = Math.max(1, ...Object.values(data.blockedBy));
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 16, alignItems: 'center' }}>
+      <div style={{ height: 160, position: 'relative' }}>
+        <ResponsiveContainer>
+          <PieChart>
+            <Pie data={pieData} dataKey="value" innerRadius={45} outerRadius={68} stroke="none">
+              <Cell fill="#1D9E75" />
+              <Cell fill="#D85A30" />
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#0B1C24' }}>{indexablePct}%</div>
+          <div style={{ fontSize: 9, color: '#5A7A8A' }}>indexable</div>
+        </div>
+      </div>
+      <div>
+        <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>Blocked by</div>
+        {[
+          { label: 'Robots.txt', value: data.blockedBy.robotsTxt },
+          { label: 'Meta tag', value: data.blockedBy.metaTag },
+          { label: 'X-Robots header', value: data.blockedBy.xRobots },
+          { label: 'Non-canonical', value: data.blockedBy.nonCanonical },
+          { label: 'Non-200 status', value: data.blockedBy.non200Status },
+        ].map((b) => (
+          <div key={b.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, marginBottom: 4 }}>
+            <span style={{ flex: '0 0 90px', color: '#5A7A8A' }}>{b.label}</span>
+            <div style={{ flex: 1, height: 6, background: '#e2e8f0', borderRadius: 99 }}>
+              <div style={{ width: `${(b.value / maxBlock) * 100}%`, height: '100%', background: '#D85A30', borderRadius: 99 }} />
+            </div>
+            <span style={{ width: 30, textAlign: 'right', fontWeight: 600, color: '#0B1C24' }}>{b.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HttpStatusWidget({ data }: { data: NonNullable<SeoAuditResponse['httpStatus']> }) {
+  const buckets = data.buckets;
+  const total = data.total || 1;
+  const rows = [
+    { label: '1XX', key: '1xx' as const, color: '#94A3B8' },
+    { label: '2XX', key: '2xx' as const, color: '#1D9E75' },
+    { label: '3XX', key: '3xx' as const, color: '#4285F4' },
+    { label: '4XX', key: '4xx' as const, color: '#EF6C33' },
+    { label: '5XX', key: '5xx' as const, color: '#D85A30' },
+  ];
+  const pieData = rows.map((r) => ({ name: r.label, value: buckets[r.key], color: r.color }));
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'center' }}>
+      <div style={{ height: 160 }}>
+        <ResponsiveContainer>
+          <PieChart>
+            <Pie data={pieData} dataKey="value" innerRadius={40} outerRadius={66} stroke="none">
+              {pieData.map((d, i) => <Cell key={i} fill={d.color} />)}
+            </Pie>
+            <RTooltip contentStyle={{ fontSize: 11 }} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <div>
+        {rows.map((r) => {
+          const count = buckets[r.key];
+          const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0';
+          return (
+            <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, marginBottom: 4 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: r.color }} />
+              <span style={{ flex: '0 0 30px', color: '#5A7A8A' }}>{r.label}</span>
+              <span style={{ flex: 1, fontWeight: 600, color: '#0B1C24' }}>{count}</span>
+              <span style={{ fontSize: 10, color: '#5A7A8A' }}>{pct}%</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CoreWebVitalsWidget({ data }: { data: NonNullable<SeoAuditResponse['coreWebVitals']> }) {
+  if (!data.hasData) {
+    return (
+      <div style={{ padding: 20, background: '#F8FAFC', borderRadius: 6, textAlign: 'center', color: '#5A7A8A', fontSize: 12 }}>
+        <div style={{ fontWeight: 600, color: '#0B1C24', marginBottom: 4 }}>Core Web Vitals data pending</div>
+        <p style={{ margin: 0, fontSize: 11, lineHeight: 1.6, maxWidth: 480, marginInline: 'auto' }}>
+          Your project is on the v1 audit engine — v2.0 audits include Chrome UX Report + Lighthouse lab metrics.
+          The next audit cycle will populate these.
+        </p>
+      </div>
+    );
+  }
+  const metrics = [
+    { label: 'LCP', realWorld: data.realWorld.lcp, lab: data.lab.lcp, unit: 'ms', desc: 'Largest Contentful Paint' },
+    { label: 'INP', realWorld: data.realWorld.inp, lab: null, unit: 'ms', desc: 'Interaction to Next Paint' },
+    { label: 'CLS', realWorld: data.realWorld.cls, lab: data.lab.cls, unit: '', desc: 'Cumulative Layout Shift' },
+    { label: 'FCP', realWorld: data.realWorld.fcp, lab: data.lab.fcp, unit: 'ms', desc: 'First Contentful Paint' },
+  ];
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+      {metrics.map((m) => (
+        <div key={m.label} style={{ background: '#F8FAFC', borderRadius: 6, padding: '12px 14px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#0B1C24' }}>{m.label}</div>
+          <div style={{ fontSize: 9, color: '#5A7A8A', marginBottom: 8 }}>{m.desc}</div>
+          <div style={{ display: 'flex', gap: 12, fontSize: 11 }}>
+            <div>
+              <div style={{ fontSize: 9, color: '#94A3B8' }}>Real-world</div>
+              <div style={{ fontWeight: 600, color: '#0B1C24' }}>{m.realWorld != null ? `${m.realWorld}${m.unit}` : '—'}</div>
+            </div>
+            {m.lab != null && (
+              <div>
+                <div style={{ fontSize: 9, color: '#94A3B8' }}>Lab</div>
+                <div style={{ fontWeight: 600, color: '#5A7A8A' }}>{m.lab}{m.unit}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DomainMetricsWidget({ data }: { data: NonNullable<SeoAuditResponse['domain']> }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>
+      <DomainMetricCell label="Domain Trust" value={data.domainTrust ?? '—'} sub="0–100 scale" color="#2D9CDB" />
+      <DomainMetricCell label="Backlinks" value={data.backlinks != null ? data.backlinks.toLocaleString() : '—'} sub="total inbound" color="#1D9E75" />
+      <DomainMetricCell label="Referring Domains" value={data.referringDomains ?? '—'} sub="unique sources" color="#EF6C33" />
+      <DomainMetricCell label="Indexed Pages" value={data.pagesInGoogle ?? '—'} sub="in Google" color="#7B61FF" />
+      <DomainMetricCell label="Domain Expires" value={data.expirationDate ? new Date(data.expirationDate).toLocaleDateString() : '—'} sub="renewal date" color="#5A7A8A" />
+    </div>
+  );
+}
+
+function DomainMetricCell({ label, value, sub, color }: { label: string; value: React.ReactNode; sub: string; color: string }) {
+  return (
+    <div style={{ background: '#F8FAFC', borderLeft: `3px solid ${color}`, borderRadius: 6, padding: '10px 12px' }}>
+      <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: '#0B1C24', marginTop: 4 }}>{value}</div>
+      <div style={{ fontSize: 9, color: '#94A3B8', marginTop: 2 }}>{sub}</div>
+    </div>
+  );
+}
+
+function PageDistributionWidget({ data }: { data: NonNullable<SeoAuditResponse['pageDistribution']> }) {
+  const depthData = Object.entries(data.depth).sort((a, b) => Number(a[0]) - Number(b[0])).map(([k, v]) => ({ name: `Depth ${k}`, value: v }));
+  const responseData = Object.entries(data.responseTime).map(([k, v]) => ({ name: k, value: v }));
+  const redirectData = Object.entries(data.redirects).map(([k, v]) => ({ name: `${k}`, value: v }));
+  const panels = [
+    { title: 'Page Depth (clicks from home)', data: depthData, color: '#2D9CDB' },
+    { title: 'Server Response Time', data: responseData, color: '#EF6C33' },
+    { title: 'Redirects per Page', data: redirectData, color: '#7B61FF' },
+  ];
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+      {panels.map((p) => (
+        <div key={p.title} style={{ background: '#F8FAFC', borderRadius: 6, padding: '12px 14px' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>{p.title}</div>
+          <div style={{ height: 130 }}>
+            <ResponsiveContainer>
+              <BarChart data={p.data} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+                <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#5A7A8A' }} tickLine={false} />
+                <YAxis tick={{ fontSize: 9, fill: '#5A7A8A' }} tickLine={false} width={24} />
+                <RTooltip contentStyle={{ fontSize: 10, borderRadius: 4 }} />
+                <Bar dataKey="value" fill={p.color} radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
