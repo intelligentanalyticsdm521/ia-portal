@@ -441,6 +441,7 @@ export interface SeoRankingsResponse {
     delta: Record<string, number | null>;
   };
   keywords: SeoKeywordRecord[];
+  distributionSeries?: Array<{ date: string; top1: number; top2_3: number; top4_5: number; top6_10: number; top11_30: number; top31_100: number; notRanking: number }>;
   upstreamError: any;
 }
 

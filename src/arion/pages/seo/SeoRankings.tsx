@@ -27,14 +27,25 @@ import type { SeoRangeCode, SeoKeywordRecord, SeoRankingsResponse } from '../../
 
 type SortKey = 'keyword' | 'currentPosition' | 'positionChange' | 'searchVolume' | 'cpc' | 'competition';
 
+// Maps a consolidated engine-toggle value ('all' | 'google-desktop' |
+// 'google-mobile' | 'bing') to the legacy (provider, device) pair the
+// /arion/seo/rankings endpoint expects.
+function engineFilterToParams(f: string): { provider: 'all' | 'google' | 'bing'; device: 'all' | 'desktop' | 'mobile' } {
+  if (f === 'google-desktop') return { provider: 'google', device: 'desktop' };
+  if (f === 'google-mobile')  return { provider: 'google', device: 'mobile' };
+  if (f === 'bing')           return { provider: 'bing',   device: 'all' };
+  return { provider: 'all', device: 'all' };
+}
+
 export function SeoRankings() {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const [range, setRange] = React.useState<SeoRangeCode>('30d');
-  const [provider, setProvider] = React.useState<'all' | 'google' | 'bing'>('all');
-  const [device, setDevice] = React.useState<'all' | 'desktop' | 'mobile'>('all');
+  const [engineFilter, setEngineFilter] = React.useState<string>('all');
   const [selectedKeywordId, setSelectedKeywordId] = React.useState<number | null>(null);
   const [showFullDetails, setShowFullDetails] = React.useState(false);
+  const [moversTab, setMoversTab] = React.useState<'jumped' | 'dropped' | 'unchanged'>('jumped');
 
+  const { provider, device } = engineFilterToParams(engineFilter);
   const { data, loading } = useArionData(
     () => activeSiteId ? arionApi.getSeoRankings(activeSiteId, { range, provider, device }) : Promise.resolve(null),
     [activeSiteId, range, provider, device]
@@ -65,23 +76,26 @@ export function SeoRankings() {
   const engineMeta = r?.engines?.metadata || [];
   const upstreamError = r?.upstreamError;
 
-  // Provider/device pills — auto-disable based on discovered engines.
-  const providersFound = new Set<string>();
-  const devicesFound = new Set<string>();
-  for (const e of engineMeta) {
-    if (e.name) providersFound.add(e.name.toLowerCase());
-    if (e.device) devicesFound.add(e.device.toLowerCase());
-  }
-  const providerOptions = [
+  // Consolidated engine toggle — build one option per engine from metadata.
+  // Filters to standard-search engines (AI engines are tracked on AI Search page).
+  const standardEngines = (engineMeta as any[]).filter((e) => !e.isAi);
+  const engineToggleOptions = [
     { value: 'all', label: 'All' },
-    { value: 'google', label: 'Google', disabled: providersFound.size > 0 && !providersFound.has('google') },
-    { value: 'bing', label: 'Bing', disabled: providersFound.size > 0 && !providersFound.has('bing') },
+    ...standardEngines.map((e: any) => {
+      // Derive a stable filter-value from the label: "Google Desktop" → "google-desktop"
+      const filterValue = (e.name || '').toLowerCase() === 'google'
+        ? (e.device === 'mobile' ? 'google-mobile' : 'google-desktop')
+        : (e.name || '').toLowerCase() === 'bing' ? 'bing' : e.id;
+      return { value: filterValue, label: e.label || `Engine ${e.id}` };
+    }),
   ];
-  const deviceOptions = [
-    { value: 'all', label: 'All' },
-    { value: 'desktop', label: 'Desktop', disabled: devicesFound.size > 0 && !devicesFound.has('desktop') },
-    { value: 'mobile', label: 'Mobile', disabled: devicesFound.size > 0 && !devicesFound.has('mobile') },
-  ];
+  // Dedupe (in case multiple engine IDs map to same short label)
+  const seenLabels = new Set<string>();
+  const uniqueToggle = engineToggleOptions.filter((o) => {
+    if (seenLabels.has(o.value)) return false;
+    seenLabels.add(o.value);
+    return true;
+  });
 
   // Top movers — sort by positionChange
   const sortedByChange = [...keywords].sort((a, b) => Number(b.positionChange || 0) - Number(a.positionChange || 0));
@@ -93,6 +107,32 @@ export function SeoRankings() {
   const droppedCount = keywords.filter((k) => Number(k.positionChange || 0) < 0).length;
   const unchangedCount = keywords.length - jumpedCount - droppedCount;
 
+  // Bucket-level origin of jumped/dropped keywords (where they live NOW).
+  // Tells the "of the 9 keywords that jumped, 1 is in Top 11-30 and 8 in Top 31-100" story.
+  const bucketOfKeyword = (pos: number | null): keyof typeof POSITION_BUCKET_LABELS => {
+    if (pos == null || pos <= 0) return 'notRanking';
+    if (pos === 1) return 'top1';
+    if (pos <= 3) return 'top2_3';
+    if (pos <= 5) return 'top4_5';
+    if (pos <= 10) return 'top6_10';
+    if (pos <= 30) return 'top11_30';
+    if (pos <= 100) return 'top31_100';
+    return 'notRanking';
+  };
+  const moversByBucket = { jumped: {}, dropped: {}, unchanged: {} } as Record<'jumped' | 'dropped' | 'unchanged', Record<string, number>>;
+  for (const k of keywords) {
+    const bucket = bucketOfKeyword(k.currentPosition as any);
+    const lane: 'jumped' | 'dropped' | 'unchanged' = Number(k.positionChange || 0) > 0 ? 'jumped' : Number(k.positionChange || 0) < 0 ? 'dropped' : 'unchanged';
+    moversByBucket[lane][bucket] = (moversByBucket[lane][bucket] || 0) + 1;
+  }
+
+  // Sparklines for hero cards derived from distributionSeries (per-engine when toggled)
+  const distribution = (r?.distributionSeries || []) as Array<any>;
+  const topKeywordsList = [...keywords]
+    .filter((k) => typeof k.currentPosition === 'number' && (k.currentPosition as number) > 0)
+    .sort((a, b) => (a.currentPosition as number) - (b.currentPosition as number))
+    .slice(0, 5);
+
   const rangeLabel = r?.range?.label || SEO_RANGE_OPTIONS.find((o) => o.code === range)?.label || 'Last 30 days';
 
   // Canonical-engine caveat — flag in UI if labels are falling back
@@ -100,11 +140,10 @@ export function SeoRankings() {
 
   return (
     <div>
-      {/* Filter + See Full Details bar */}
+      {/* Filter + See Full Details bar — consolidated engine picker (matches Overview) */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
         <SeoRangePicker value={range} onChange={setRange} />
-        <SeoFilterPills label="Provider" options={providerOptions} value={provider} onChange={(v) => setProvider(v as any)} />
-        <SeoFilterPills label="Device" options={deviceOptions} value={device} onChange={(v) => setDevice(v as any)} />
+        <SeoFilterPills label="Provider" options={uniqueToggle} value={engineFilter} onChange={setEngineFilter} />
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
             onClick={() => setShowFullDetails(true)}
@@ -141,7 +180,7 @@ export function SeoRankings() {
         </InfoCard>
       )}
 
-      {/* Row 1: 4 Hero stat cards */}
+      {/* Row 1: 4 Hero stat cards with sparklines */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 12 }}>
         <SeoStatCard
           termKey="avg_position"
@@ -152,6 +191,8 @@ export function SeoRankings() {
           deltaIsGoodWhenPositive={true}
           deltaFormat="position"
           accent="#2D9CDB"
+          sparklineData={distribution.map((d: any) => ({ date: d.date, value: weightedAvgPosForDay(d) })).filter((p) => p.value != null) as any}
+          sparklineColor="#2D9CDB"
         />
         <SeoStatCard
           termKey="search_visibility"
@@ -162,6 +203,11 @@ export function SeoRankings() {
           deltaIsGoodWhenPositive={true}
           deltaFormat="percentage"
           accent="#1D9E75"
+          sparklineData={distribution.map((d: any) => ({
+            date: d.date,
+            value: Math.round(((d.top1 || 0) * 0.27 + (d.top2_3 || 0) * 0.13 + (d.top4_5 || 0) * 0.075 + (d.top6_10 || 0) * 0.03) * 100) / 100,
+          }))}
+          sparklineColor="#1D9E75"
         />
         <SeoStatCard
           termKey="top10_keywords"
@@ -171,6 +217,8 @@ export function SeoRankings() {
           delta={delta.top10Count != null ? Number(delta.top10Count) : null}
           deltaIsGoodWhenPositive={true}
           accent="#EF6C33"
+          sparklineData={distribution.map((d: any) => ({ date: d.date, value: (d.top1 || 0) + (d.top2_3 || 0) + (d.top4_5 || 0) + (d.top6_10 || 0) }))}
+          sparklineColor="#EF6C33"
         />
         <SeoStatCard
           termKey="traffic_forecast"
@@ -180,53 +228,90 @@ export function SeoRankings() {
           delta={delta.trafficForecast != null ? Number(delta.trafficForecast) : null}
           deltaIsGoodWhenPositive={true}
           accent="#FEC82C"
+          sparklineData={distribution.map((d: any) => ({
+            date: d.date,
+            value: Math.round((d.top1 || 0) * 0.27 + (d.top2_3 || 0) * 0.13 + (d.top4_5 || 0) * 0.075),
+          }))}
+          sparklineColor="#FEC82C"
         />
       </div>
 
-      {/* Row 2: Position distribution — cards + stacked area chart side by side */}
-      <div style={{ marginTop: 20, marginBottom: 10, fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary, #0B1C24)' }}>
+      {/* Row 2: Distribution of top positions — mini cards + big stacked area chart */}
+      <div style={{ marginTop: 22, marginBottom: 10, fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary, #0B1C24)', display: 'inline-flex', alignItems: 'center' }}>
         Distribution of top positions
+        <GlossaryIcon termKey="position" size={12} />
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8, marginBottom: 16 }}>
-        {(['top1', 'top2_3', 'top4_5', 'top6_10', 'top11_30', 'top31_100', 'notRanking'] as const).map((bk) => {
-          const curCount = stats?.buckets?.[bk] || 0;
-          const priorCount = priorStats?.buckets?.[bk] || 0;
-          return (
-            <SeoBucketCard
-              key={bk}
-              label={POSITION_BUCKET_LABELS[bk]}
-              count={curCount}
-              delta={curCount - priorCount}
-              color={POSITION_BUCKET_COLORS[bk]}
-            />
-          );
-        })}
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 18 }}>
+          {/* Left column: 2x3 grid of tiny bucket cards with mini trend lines */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+            {(['top1', 'top2_3', 'top4_5', 'top6_10', 'top11_30', 'top31_100'] as const).map((bk) => {
+              const curCount = stats?.buckets?.[bk] || 0;
+              const priorCount = priorStats?.buckets?.[bk] || 0;
+              const trend = distribution.map((d: any) => ({ date: d.date, value: d[bk] || 0 }));
+              return (
+                <SeoStatCard
+                  key={bk}
+                  label={POSITION_BUCKET_LABELS[bk]}
+                  value={curCount}
+                  delta={curCount - priorCount}
+                  deltaFormat="signed"
+                  deltaIsGoodWhenPositive={true}
+                  sparklineData={trend}
+                  sparklineColor={POSITION_BUCKET_COLORS[bk]}
+                  accent={POSITION_BUCKET_COLORS[bk]}
+                />
+              );
+            })}
+          </div>
+          {/* Right column: big stacked area chart */}
+          <div style={{ height: 280 }}>
+            {distribution.length > 1 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={distribution} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(45,156,219,0.08)" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#5A7A8A' }} tickLine={false} tickFormatter={shortDate} />
+                  <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} tickLine={false} width={32} />
+                  <RTooltip contentStyle={{ fontSize: 11, borderRadius: 6 }} />
+                  <Legend wrapperStyle={{ fontSize: 10 }} iconSize={8} />
+                  {(['top1', 'top2_3', 'top4_5', 'top6_10', 'top11_30', 'top31_100'] as const).map((bk) => (
+                    <Area key={bk} type="monotone" dataKey={bk} stackId="pos" stroke={POSITION_BUCKET_COLORS[bk]} fill={POSITION_BUCKET_COLORS[bk]} fillOpacity={0.55} name={POSITION_BUCKET_LABELS[bk]} />
+                  ))}
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontSize: 12 }}>
+                Not enough daily data to draw the trend yet.
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Row 3: Movers visual — big side-by-side cards */}
-      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary, #0B1C24)', marginTop: 20, marginBottom: 10 }}>
+      {/* Row 3: Keyword movement — tabs + horizontal share bar + bucket-level breakdown */}
+      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary, #0B1C24)', marginTop: 22, marginBottom: 10 }}>
         Keyword movement this period
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
-        <MoverCard
-          title="Jumped"
-          count={jumpedCount}
-          total={keywords.length}
-          color="#1D9E75"
-          bg="rgba(29,158,117,0.06)"
-          movers={topJumped}
-          direction="up"
-        />
-        <MoverCard
-          title="Dropped"
-          count={droppedCount}
-          total={keywords.length}
-          color="#D85A30"
-          bg="rgba(216,90,48,0.06)"
-          movers={topDropped}
-          direction="down"
-        />
-        <UnchangedCard count={unchangedCount} total={keywords.length} />
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 16px' }}>
+        {/* Stacked share bar */}
+        <MovementShareBar jumped={jumpedCount} dropped={droppedCount} unchanged={unchangedCount} total={keywords.length} />
+
+        {/* Three columns — bucket origin of each lane */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginTop: 14 }}>
+          <MoverLane title="Jumped" lane="jumped" count={jumpedCount} buckets={moversByBucket.jumped} total={keywords.length} color="#1D9E75" topList={topJumped} onSelect={(id) => setSelectedKeywordId(id)} />
+          <MoverLane title="Dropped" lane="dropped" count={droppedCount} buckets={moversByBucket.dropped} total={keywords.length} color="#D85A30" topList={topDropped} onSelect={(id) => setSelectedKeywordId(id)} />
+          <MoverLane title="Unchanged" lane="unchanged" count={unchangedCount} buckets={moversByBucket.unchanged} total={keywords.length} color="#5A7A8A" topList={topKeywordsList} onSelect={(id) => setSelectedKeywordId(id)} />
+        </div>
+      </div>
+
+      {/* Row 4: Keyword overview — 3-column Top / Jumped / Dropped */}
+      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary, #0B1C24)', marginTop: 22, marginBottom: 10 }}>
+        Keyword overview
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        <KeywordOverviewColumn title="Top Keywords" count={topKeywordsList.length} list={topKeywordsList} tone="neutral" onSelect={(id) => setSelectedKeywordId(id)} />
+        <KeywordOverviewColumn title="Jumped" count={jumpedCount} list={topJumped} tone="up" onSelect={(id) => setSelectedKeywordId(id)} />
+        <KeywordOverviewColumn title="Dropped" count={droppedCount} list={topDropped} tone="down" onSelect={(id) => setSelectedKeywordId(id)} />
       </div>
 
       {/* Row 4: Position-distribution share (visual of where your keywords live) */}
@@ -289,6 +374,168 @@ export function SeoRankings() {
           onSelectKeyword={(id) => setSelectedKeywordId(id)}
         />
       )}
+    </div>
+  );
+}
+
+/* ───────── Helpers for new sections (2026-04-19 enhancements) ───────── */
+
+function shortDate(dateStr: string): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function weightedAvgPosForDay(d: { top1: number; top2_3: number; top4_5: number; top6_10: number; top11_30: number; top31_100: number }): number | null {
+  const weights = [
+    { n: d.top1 || 0, mid: 1 },
+    { n: d.top2_3 || 0, mid: 2.5 },
+    { n: d.top4_5 || 0, mid: 4.5 },
+    { n: d.top6_10 || 0, mid: 8 },
+    { n: d.top11_30 || 0, mid: 20 },
+    { n: d.top31_100 || 0, mid: 65 },
+  ];
+  const total = weights.reduce((s, w) => s + w.n, 0);
+  if (total === 0) return null;
+  return Math.round((weights.reduce((s, w) => s + w.n * w.mid, 0) / total) * 10) / 10;
+}
+
+function MovementShareBar({ jumped, dropped, unchanged, total }: { jumped: number; dropped: number; unchanged: number; total: number }) {
+  const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>
+        Keywords in SERP — {total} tracked
+      </div>
+      <div style={{ display: 'flex', height: 12, borderRadius: 4, overflow: 'hidden', background: '#e2e8f0', marginBottom: 8 }}>
+        <div style={{ width: `${pct(jumped)}%`, background: '#1D9E75' }} />
+        <div style={{ width: `${pct(dropped)}%`, background: '#D85A30' }} />
+        <div style={{ width: `${pct(unchanged)}%`, background: '#94A3B8' }} />
+      </div>
+      <div style={{ display: 'flex', gap: 18, fontSize: 11, color: '#5A7A8A' }}>
+        <LegendDot color="#1D9E75" label={`Jumped ${jumped} (${pct(jumped).toFixed(1)}%)`} />
+        <LegendDot color="#D85A30" label={`Dropped ${dropped} (${pct(dropped).toFixed(1)}%)`} />
+        <LegendDot color="#94A3B8" label={`Unchanged ${unchanged} (${pct(unchanged).toFixed(1)}%)`} />
+      </div>
+    </div>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ width: 8, height: 8, borderRadius: 99, background: color }} />
+      {label}
+    </span>
+  );
+}
+
+function MoverLane({
+  title, lane, count, buckets, total, color, topList, onSelect,
+}: {
+  title: string;
+  lane: 'jumped' | 'dropped' | 'unchanged';
+  count: number;
+  buckets: Record<string, number>;
+  total: number;
+  color: string;
+  topList: SeoKeywordRecord[];
+  onSelect: (id: number) => void;
+}) {
+  const bucketOrder = ['top1', 'top2_3', 'top4_5', 'top6_10', 'top11_30', 'top31_100', 'notRanking'] as const;
+  const maxBucket = Math.max(1, ...Object.values(buckets));
+
+  return (
+    <div style={{ background: '#F8FAFC', borderLeft: `3px solid ${color}`, borderRadius: 8, padding: '12px 14px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#0B1C24', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          {title} ({count})
+        </div>
+      </div>
+      {/* Bucket breakdown */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
+        {bucketOrder.map((bk) => {
+          const n = buckets[bk] || 0;
+          if (n === 0 && lane !== 'unchanged') return null; // hide zero rows on jumped/dropped
+          const pct = count > 0 ? (n / count) * 100 : 0;
+          return (
+            <div key={bk} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
+              <span style={{ width: 56, color: '#5A7A8A' }}>{POSITION_BUCKET_LABELS[bk]}</span>
+              <div style={{ flex: 1, height: 6, background: '#e2e8f0', borderRadius: 99, overflow: 'hidden' }}>
+                <div style={{ width: `${(n / maxBucket) * 100}%`, height: '100%', background: color }} />
+              </div>
+              <span style={{ width: 54, textAlign: 'right', color: '#0B1C24', fontWeight: 600 }}>{n} ({pct.toFixed(0)}%)</span>
+            </div>
+          );
+        })}
+      </div>
+      {/* Top 3 in this lane */}
+      {topList.length > 0 && (
+        <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 8 }}>
+          <div style={{ fontSize: 9, fontWeight: 600, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4 }}>
+            Top {lane === 'unchanged' ? 'stable' : lane === 'jumped' ? 'gains' : 'drops'}
+          </div>
+          {topList.slice(0, 3).map((m) => (
+            <button
+              key={m.keywordId}
+              onClick={() => onSelect(m.keywordId)}
+              style={{ display: 'flex', justifyContent: 'space-between', width: '100%', padding: '3px 0', fontSize: 11, background: 'transparent', border: 'none', cursor: 'pointer', color: '#0B1C24' }}
+            >
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160, textAlign: 'left' }}>{m.keyword}</span>
+              <span style={{ color, fontWeight: 600, flexShrink: 0 }}>
+                {m.positionChange > 0 ? `▲ ${m.positionChange}` : m.positionChange < 0 ? `▼ ${Math.abs(m.positionChange)}` : `#${m.currentPosition ?? '—'}`}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KeywordOverviewColumn({
+  title, count, list, tone, onSelect,
+}: {
+  title: string;
+  count: number;
+  list: SeoKeywordRecord[];
+  tone: 'up' | 'down' | 'neutral';
+  onSelect: (id: number) => void;
+}) {
+  const color = tone === 'up' ? '#1D9E75' : tone === 'down' ? '#D85A30' : '#2D9CDB';
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#0B1C24', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+        {title} ({count})
+      </div>
+      <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+            <th style={{ textAlign: 'left', padding: '4px 2px', fontSize: 9, color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase' }}>Keyword</th>
+            <th style={{ textAlign: 'right', padding: '4px 2px', fontSize: 9, color: '#94A3B8', fontWeight: 600 }}>Pos</th>
+            <th style={{ textAlign: 'right', padding: '4px 2px', fontSize: 9, color: '#94A3B8', fontWeight: 600 }}>Vol</th>
+          </tr>
+        </thead>
+        <tbody>
+          {list.length === 0 ? (
+            <tr><td colSpan={3} style={{ textAlign: 'center', padding: 8, color: '#94A3B8', fontSize: 11 }}>None in this period.</td></tr>
+          ) : list.slice(0, 5).map((k) => (
+            <tr key={k.keywordId} style={{ borderBottom: '1px solid #f5f5f5', cursor: 'pointer' }} onClick={() => onSelect(k.keywordId)}>
+              <td style={{ padding: '5px 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{k.keyword}</td>
+              <td style={{ textAlign: 'right', padding: '5px 2px' }}>
+                {k.currentPosition ?? '—'}
+                {k.positionChange !== 0 && (
+                  <span style={{ color, fontSize: 9, marginLeft: 3 }}>
+                    {k.positionChange > 0 ? `▲${k.positionChange}` : `▼${Math.abs(k.positionChange)}`}
+                  </span>
+                )}
+              </td>
+              <td style={{ textAlign: 'right', padding: '5px 2px', color: '#5A7A8A' }}>{k.searchVolume ?? '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
