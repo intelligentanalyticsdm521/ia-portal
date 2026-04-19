@@ -143,7 +143,9 @@ export function SeoRankings() {
       {/* Filter + See Full Details bar — consolidated engine picker (matches Overview) */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
         <SeoRangePicker value={range} onChange={setRange} />
-        <SeoFilterPills label="Provider" options={uniqueToggle} value={engineFilter} onChange={setEngineFilter} />
+        <span title="Provider = Google, Bing, or Mobile (Google Mobile search results tracked separately from Desktop)" style={{ display: 'inline-flex', alignItems: 'center' }}>
+          <SeoFilterPills label="Provider" options={uniqueToggle} value={engineFilter} onChange={setEngineFilter} />
+        </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
             onClick={() => setShowFullDetails(true)}
@@ -359,6 +361,21 @@ export function SeoRankings() {
           </div>
         </Card>
       )}
+
+      {/* Pages — coming soon (fast-follower enhancement) */}
+      <div style={{ marginTop: 22 }}>
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#0B1C24', marginBottom: 12 }}>
+            Pages <span style={{ fontSize: 10, fontWeight: 600, color: '#EF6C33', marginLeft: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Coming Soon</span>
+          </div>
+          <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10, lineHeight: 1.5 }}>
+            Which URLs on your site are ranking for which keywords, with traffic forecast and avg position per page. Filter by Top / Jumped / Dropped performance.
+          </div>
+          <div style={{ padding: 16, background: '#F8FAFC', borderRadius: 6, textAlign: 'center', color: '#94A3B8', fontSize: 11 }}>
+            Per-page URL aggregation is in our next content release. Today you can see per-keyword rankings — the Pages view adds the URL × keyword intelligence on top.
+          </div>
+        </div>
+      </div>
 
       {/* Diagnostic panel */}
       <SeoDiagnosticPanel siteId={activeSiteId ?? null} />

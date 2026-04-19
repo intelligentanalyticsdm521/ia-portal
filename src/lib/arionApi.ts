@@ -518,15 +518,57 @@ export async function getSeoOverview(params: { baseUrl: string; bearerToken: str
   return requestJson<SeoOverviewResponse>({ ...params, path: `/arion/seo/overview?${qp.toString()}` });
 }
 
+export interface SeoAuditHistorySnapshot {
+  date: string;
+  auditTime: string | null;
+  pagesCrawled: number | null;
+  errors: number | null;
+  warnings: number | null;
+  notices: number | null;
+  passed: number | null;
+  issueCounts: Record<string, number> | null;
+}
+
+export interface SeoAuditTopIssue {
+  name: string;
+  severity: 'error' | 'warning' | 'notice' | string;
+  count: number;
+  slug: string | null;
+}
+
 export interface SeoAuditResponse {
   connected: boolean;
   status: 'not_connected' | 'running' | 'unavailable' | 'complete';
-  auditId?: string;
+  auditId?: string | null;
+  projectId?: string | number | null;
   healthScore?: number;
+  healthScoreSource?: 'se_ranking_official' | 'ia_weighted_fallback' | string;
   pagesCrawled?: number;
+  pagesWithIssues?: number;
+  pagesHealthy?: number;
   lastAuditDate?: string | null;
+  nextScheduledDate?: string | null;
   message?: string;
-  issues?: { errors: number; warnings: number; notices: number; passed: number };
+  issues?: { errors: number; warnings: number; notices: number; passed: number; total?: number };
+  deltas?: {
+    healthScore: number;
+    errors: number;
+    warnings: number;
+    notices: number;
+    crawled: number;
+  } | null;
+  history?: {
+    current?: SeoAuditHistorySnapshot;
+    weekly?: SeoAuditHistorySnapshot;
+    monthly?: SeoAuditHistorySnapshot;
+    quarterly?: SeoAuditHistorySnapshot;
+  };
+  topIssues?: SeoAuditTopIssue[];
+  indexability?: any;
+  httpStatus?: any;
+  domain?: any;
+  coreWebVitals?: any;
+  useCases?: any;
   issuesByCategory?: Array<{ category: string; errors: number; warnings: number; notices: number }>;
 }
 

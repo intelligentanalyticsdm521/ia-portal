@@ -183,7 +183,9 @@ export function SeoOverview() {
         <GlossaryIcon termKey="position" size={12} />
       </div>
       <div style={{ marginBottom: 10 }}>
-        <SeoFilterPills label="Provider" options={toggleOptions.map((o) => ({ value: String(o.value), label: o.label }))} value={String(engineFilter)} onChange={(v) => setEngineFilter(v as EngineFilter)} />
+        <span title="Provider = Google, Bing, or Mobile (Google Mobile search results tracked separately from Desktop)" style={{ display: 'inline-flex', alignItems: 'center' }}>
+          <SeoFilterPills label="Provider" options={toggleOptions.map((o) => ({ value: String(o.value), label: o.label }))} value={String(engineFilter)} onChange={(v) => setEngineFilter(v as EngineFilter)} />
+        </span>
       </div>
       {standardCards.length === 0 ? (
         <div style={{ color: '#5A7A8A', fontSize: 12, padding: 20, textAlign: 'center', background: '#F8FAFC', borderRadius: 6 }}>
