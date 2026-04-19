@@ -364,7 +364,7 @@ export function SeoRankings() {
 
       {/* Pages — URL × keyword aggregation */}
       <div style={{ marginTop: 22 }}>
-        <PagesWidget keywords={r!.keywords} onSelectKeyword={(id) => setSelectedKeywordId(id)} />
+        <PagesWidget keywords={keywords} onSelectKeyword={(id) => setSelectedKeywordId(id)} />
       </div>
 
       {/* Diagnostic panel */}

@@ -167,16 +167,60 @@ export function SeoOverview() {
     return { canonical: can, card: found ?? null };
   });
 
-  // Canonical standard-engine list — always render all 3 regardless of config.
-  const STANDARD_CANONICAL: Array<{ id: string; label: string; match: (c: SeoHeroEngineCard) => boolean }> = [
-    { id: 'google_desktop', label: 'Google', match: (c) => /google/i.test(c.label || '') && !/mobile/i.test(c.label || '') && !/bing/i.test(c.label || '') },
-    { id: 'google_mobile', label: 'Google Mobile', match: (c) => /mobile/i.test(c.label || '') },
-    { id: 'bing', label: 'Bing', match: (c) => /bing/i.test(c.label || '') },
+  // Canonical standard-engine list — Google / Google Mobile / Bing. Try to
+  // match each engine by name/device/label. If ALL matchers fail (e.g.
+  // because SE Ranking returned generic "Engine {id}" labels), fall back to
+  // heuristic assignment by device: first desktop → Google, first mobile →
+  // Google Mobile, rest in order for Bing.
+  const nameOf = (c: SeoHeroEngineCard) => String(c.name || c.type || '').toLowerCase();
+  const deviceOf = (c: SeoHeroEngineCard) => String(c.device || '').toLowerCase();
+  const labelOf = (c: SeoHeroEngineCard) => `${c.label || ''} ${c.longLabel || ''}`.toLowerCase();
+  const looksGeneric = (c: SeoHeroEngineCard) => /^engine\s*\d+/i.test(c.label || '') && !c.name && !c.type;
+
+  const consumed = new Set<string>();
+  const pickCard = (matcher: (c: SeoHeroEngineCard) => boolean): SeoHeroEngineCard | null => {
+    const found = standardCards.find((c) => !consumed.has(c.engineId) && matcher(c));
+    if (found) consumed.add(found.engineId);
+    return found ?? null;
+  };
+  const isGoogle = (c: SeoHeroEngineCard) => /google/.test(nameOf(c)) || /google/.test(labelOf(c)) || c.type === 'google' || c.type === 'google_mobile';
+  const isBing = (c: SeoHeroEngineCard) => /bing/.test(nameOf(c)) || /bing/.test(labelOf(c)) || c.type === 'bing';
+  const isMobile = (c: SeoHeroEngineCard) => deviceOf(c) === 'mobile' || /mobile/.test(labelOf(c)) || c.type === 'google_mobile';
+
+  let googleDesktopCard = pickCard((c) => isGoogle(c) && !isMobile(c));
+  let googleMobileCard = pickCard((c) => isGoogle(c) && isMobile(c));
+  let bingCard = pickCard(isBing);
+
+  // Fallback: if NOTHING matched and we DO have standard cards (generic
+  // labels), assign by device first, then by order.
+  if (!googleDesktopCard && !googleMobileCard && !bingCard && standardCards.length > 0) {
+    const unconsumed = standardCards.filter((c) => !consumed.has(c.engineId));
+    // If any engine has device info, use it
+    googleDesktopCard = unconsumed.find((c) => deviceOf(c) === 'desktop') || null;
+    if (googleDesktopCard) consumed.add(googleDesktopCard.engineId);
+    googleMobileCard = unconsumed.find((c) => deviceOf(c) === 'mobile' && !consumed.has(c.engineId)) || null;
+    if (googleMobileCard) consumed.add(googleMobileCard.engineId);
+    // If still no matches, fall back to order: 1st = Google, 2nd = Mobile, 3rd = Bing
+    if (!googleDesktopCard && !googleMobileCard) {
+      const rest = unconsumed.filter((c) => !consumed.has(c.engineId));
+      if (rest[0]) { googleDesktopCard = rest[0]; consumed.add(rest[0].engineId); }
+      if (rest[1]) { googleMobileCard = rest[1]; consumed.add(rest[1].engineId); }
+      if (rest[2]) { bingCard = rest[2]; consumed.add(rest[2].engineId); }
+    } else if (!bingCard) {
+      // Only Google variants picked — leave Bing locked
+      const rest = unconsumed.filter((c) => !consumed.has(c.engineId));
+      if (rest[0] && looksGeneric(rest[0])) { bingCard = rest[0]; consumed.add(rest[0].engineId); }
+    }
+  }
+
+  const standardCanonicalCards = [
+    { canonical: { id: 'google_desktop', label: 'Google' }, card: googleDesktopCard },
+    { canonical: { id: 'google_mobile', label: 'Google Mobile' }, card: googleMobileCard },
+    { canonical: { id: 'bing', label: 'Bing' }, card: bingCard },
   ];
-  const standardCanonicalCards = STANDARD_CANONICAL.map((can) => {
-    const found = standardCards.find(can.match);
-    return { canonical: can, card: found ?? null };
-  });
+
+  // Any remaining engines (e.g. Yandex, DuckDuckGo) — append as-is.
+  const extraStandard = standardCards.filter((c) => !consumed.has(c.engineId));
 
   // Audit data
   const auditConnected = a?.status === 'complete';
@@ -221,13 +265,16 @@ export function SeoOverview() {
           <SeoFilterPills label="Provider" options={toggleOptions.map((o) => ({ value: String(o.value), label: o.label }))} value={String(engineFilter)} onChange={(v) => setEngineFilter(v as EngineFilter)} />
         </span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${standardCanonicalCards.length}, 1fr)`, gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${standardCanonicalCards.length + extraStandard.length}, 1fr)`, gap: 12 }}>
         {standardCanonicalCards.map(({ canonical, card }) => (
           card ? (
-            <EngineHeroCard key={canonical.id} card={card} accent="#2D9CDB" />
+            <EngineHeroCard key={canonical.id} card={card} accent="#2D9CDB" labelOverride={canonical.label} />
           ) : (
             <StandardEngineLockedCard key={canonical.id} label={canonical.label} />
           )
+        ))}
+        {extraStandard.map((c) => (
+          <EngineHeroCard key={c.engineId} card={c} accent="#2D9CDB" />
         ))}
       </div>
 
@@ -441,7 +488,7 @@ export function SeoOverview() {
  * Top-row hero card for standard engines. No sparkline — just brand, big
  * number, delta (absolute + percentage).
  */
-function EngineHeroCard({ card, accent }: { card: SeoHeroEngineCard; accent: string }) {
+function EngineHeroCard({ card, accent, labelOverride }: { card: SeoHeroEngineCard; accent: string; labelOverride?: string }) {
   const avg = card.current.avgPosition != null ? Math.round(card.current.avgPosition) : null;
   const prior = card.prior.avgPosition != null ? Math.round(card.prior.avgPosition) : null;
   const delta = card.avgPositionDelta != null ? Math.round(card.avgPositionDelta) : null;
@@ -453,11 +500,14 @@ function EngineHeroCard({ card, accent }: { card: SeoHeroEngineCard; accent: str
   const worsened = delta != null && delta < 0;
   const tone = improved ? '#1D9E75' : worsened ? '#D85A30' : '#5A7A8A';
   const arrow = improved ? '▲' : worsened ? '▼' : '';
+  const displayLabel = labelOverride || card.label;
+  const looksGeneric = /^Engine\s*\d+/i.test(card.label || '');
+  const subLabel = looksGeneric ? null : card.longLabel;
 
   return (
     <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '14px 18px', borderLeft: `3px solid ${accent}`, minHeight: 110 }}>
       <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>
-        {card.label}
+        {displayLabel}
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 6 }}>
         <div style={{ fontSize: 34, fontWeight: 700, color: '#0B1C24', lineHeight: 1 }}>{avg ?? '—'}</div>
@@ -472,7 +522,7 @@ function EngineHeroCard({ card, accent }: { card: SeoHeroEngineCard; accent: str
         )}
       </div>
       <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 8 }}>
-        {card.current.rankingKeywords}/{card.current.totalKeywords} ranking · {card.longLabel}
+        {card.current.rankingKeywords}/{card.current.totalKeywords} ranking{subLabel ? ` · ${subLabel}` : ''}
       </div>
     </div>
   );
