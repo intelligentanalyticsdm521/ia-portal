@@ -7,7 +7,7 @@
  * Per-keyword detail modal opens from either view.
  */
 import React from 'react';
-import { ResponsiveContainer, AreaChart, Area, BarChart, Bar as RBar, XAxis, YAxis, Tooltip as RTooltip, CartesianGrid, Legend, Cell } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, BarChart, Bar as RBar, LineChart, Line, XAxis, YAxis, Tooltip as RTooltip, CartesianGrid, Legend, Cell } from 'recharts';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { Card, AddonUpsell, EmptyPanel, Loading, InfoCard, ConsultingUpsell, ErrorBanner } from '../../components/Ui';
@@ -243,9 +243,9 @@ export function SeoRankings() {
       </div>
       <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 16px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 18 }}>
-          {/* Left column: 2x3 grid of tiny bucket cards with mini trend lines */}
+          {/* Left column: 7 bucket cards (incl. Not Ranking) with mini trend lines */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-            {(['top1', 'top2_3', 'top4_5', 'top6_10', 'top11_30', 'top31_100'] as const).map((bk) => {
+            {(['top1', 'top2_3', 'top4_5', 'top6_10', 'top11_30', 'top31_100', 'notRanking'] as const).map((bk) => {
               const curCount = stats?.buckets?.[bk] || 0;
               const priorCount = priorStats?.buckets?.[bk] || 0;
               const trend = distribution.map((d: any) => ({ date: d.date, value: d[bk] || 0 }));
@@ -256,7 +256,7 @@ export function SeoRankings() {
                   value={curCount}
                   delta={curCount - priorCount}
                   deltaFormat="signed"
-                  deltaIsGoodWhenPositive={true}
+                  deltaIsGoodWhenPositive={bk !== 'notRanking'}
                   sparklineData={trend}
                   sparklineColor={POSITION_BUCKET_COLORS[bk]}
                   accent={POSITION_BUCKET_COLORS[bk]}
@@ -264,20 +264,21 @@ export function SeoRankings() {
               );
             })}
           </div>
-          {/* Right column: big stacked area chart */}
+          {/* Right column: line chart — 6 ranking buckets (Not Ranking excluded —
+              dominates the scale and masks bucket movement). */}
           <div style={{ height: 280 }}>
             {distribution.length > 1 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={distribution} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+                <LineChart data={distribution} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(45,156,219,0.08)" />
                   <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#5A7A8A' }} tickLine={false} tickFormatter={shortDate} />
                   <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} tickLine={false} width={32} />
                   <RTooltip contentStyle={{ fontSize: 11, borderRadius: 6 }} />
                   <Legend wrapperStyle={{ fontSize: 10 }} iconSize={8} />
                   {(['top1', 'top2_3', 'top4_5', 'top6_10', 'top11_30', 'top31_100'] as const).map((bk) => (
-                    <Area key={bk} type="monotone" dataKey={bk} stackId="pos" stroke={POSITION_BUCKET_COLORS[bk]} fill={POSITION_BUCKET_COLORS[bk]} fillOpacity={0.55} name={POSITION_BUCKET_LABELS[bk]} />
+                    <Line key={bk} type="monotone" dataKey={bk} stroke={POSITION_BUCKET_COLORS[bk]} strokeWidth={1.75} dot={false} name={POSITION_BUCKET_LABELS[bk]} />
                   ))}
-                </AreaChart>
+                </LineChart>
               </ResponsiveContainer>
             ) : (
               <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontSize: 12 }}>
@@ -293,14 +294,26 @@ export function SeoRankings() {
         Keyword movement this period
       </div>
       <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 16px' }}>
-        {/* Stacked share bar */}
-        <MovementShareBar jumped={jumpedCount} dropped={droppedCount} unchanged={unchangedCount} total={keywords.length} />
+        {/* Stacked share bar — constrained to 40% max width so it doesn't dominate */}
+        <div style={{ maxWidth: '40%', minWidth: 320 }}>
+          <MovementShareBar jumped={jumpedCount} dropped={droppedCount} unchanged={unchangedCount} total={keywords.length} />
+        </div>
 
         {/* Three columns — bucket origin of each lane */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginTop: 14 }}>
           <MoverLane title="Jumped" lane="jumped" count={jumpedCount} buckets={moversByBucket.jumped} total={keywords.length} color="#1D9E75" topList={topJumped} onSelect={(id) => setSelectedKeywordId(id)} />
           <MoverLane title="Dropped" lane="dropped" count={droppedCount} buckets={moversByBucket.dropped} total={keywords.length} color="#D85A30" topList={topDropped} onSelect={(id) => setSelectedKeywordId(id)} />
-          <MoverLane title="Unchanged" lane="unchanged" count={unchangedCount} buckets={moversByBucket.unchanged} total={keywords.length} color="#5A7A8A" topList={topKeywordsList} onSelect={(id) => setSelectedKeywordId(id)} />
+          <MoverLane
+            title="Unchanged"
+            lane="unchanged"
+            count={unchangedCount}
+            buckets={moversByBucket.unchanged}
+            total={keywords.length}
+            color="#5A7A8A"
+            topList={topKeywordsList}
+            onSelect={(id) => setSelectedKeywordId(id)}
+            narrative="These keywords held their position this period. Stable rankings are a signal your baseline SEO is working. Focus the next content cycle on movers."
+          />
         </div>
       </div>
 
@@ -432,7 +445,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 }
 
 function MoverLane({
-  title, lane, count, buckets, total, color, topList, onSelect,
+  title, lane, count, buckets, total, color, topList, onSelect, narrative,
 }: {
   title: string;
   lane: 'jumped' | 'dropped' | 'unchanged';
@@ -442,17 +455,24 @@ function MoverLane({
   color: string;
   topList: SeoKeywordRecord[];
   onSelect: (id: number) => void;
+  narrative?: string;
 }) {
   const bucketOrder = ['top1', 'top2_3', 'top4_5', 'top6_10', 'top11_30', 'top31_100', 'notRanking'] as const;
   const maxBucket = Math.max(1, ...Object.values(buckets));
+  const pctOfTotal = total > 0 ? Math.round((count / total) * 100) : 0;
 
   return (
     <div style={{ background: '#F8FAFC', borderLeft: `3px solid ${color}`, borderRadius: 8, padding: '12px 14px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
         <div style={{ fontSize: 10, fontWeight: 700, color: '#0B1C24', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-          {title} ({count})
+          {title} ({count}) <span style={{ color: '#94A3B8', fontWeight: 400 }}>· {pctOfTotal}% of tracked</span>
         </div>
       </div>
+      {narrative && (
+        <div style={{ fontSize: 11, color: '#5A7A8A', lineHeight: 1.5, marginBottom: 10, fontStyle: 'italic' }}>
+          {narrative}
+        </div>
+      )}
       {/* Bucket breakdown */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
         {bucketOrder.map((bk) => {
