@@ -132,57 +132,68 @@ export function SeoSiteAudit() {
         </WidgetContainer>
       </div>
 
-      {/* Most Popular Use Cases */}
-      {a.useCases && a.useCases.length > 0 && (
-        <div style={{ marginTop: 22 }}>
-          <WidgetContainer title="Most Popular Use Cases" subtitle="Quick-filtered reports for common SEO fixes" action={null}>
-            <UseCasesTable useCases={a.useCases} onClick={() => setActiveTab('issue-report')} />
-          </WidgetContainer>
-        </div>
-      )}
+      {/* Issue Breakdown + Use Cases row */}
+      <div style={{ marginTop: 22, display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 12 }}>
+        <WidgetContainer title="Issue Breakdown" subtitle="By severity across the full audit" action={
+          <button onClick={() => setActiveTab('issue-report')} style={{ fontSize: 11, fontWeight: 600, background: 'transparent', color: '#2D9CDB', border: 'none', cursor: 'pointer' }}>See all →</button>
+        }>
+          <IssueBreakdownWidget issues={issues} />
+        </WidgetContainer>
+        <WidgetContainer title="Most Popular Use Cases" subtitle="Quick-filtered reports for common SEO fixes" action={null}>
+          <UseCasesTable useCases={a.useCases ?? []} onClick={() => setActiveTab('issue-report')} />
+        </WidgetContainer>
+      </div>
 
-      {/* Indexability + HTTP Status — side-by-side row */}
-      {(a.indexability || a.httpStatus) && (
-        <div style={{ marginTop: 22, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-          {a.indexability && (
-            <WidgetContainer title="Page Indexability" subtitle="How Google sees your pages" action={null}>
-              <IndexabilityWidget data={a.indexability} totalPages={pagesCrawled} />
-            </WidgetContainer>
+      {/* Indexability + HTTP Status — side-by-side row (always render with empty-state) */}
+      <div style={{ marginTop: 22, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+        <WidgetContainer title="Page Indexability" subtitle="How Google sees your pages" action={null}>
+          {a.indexability ? (
+            <IndexabilityWidget data={a.indexability} totalPages={pagesCrawled} />
+          ) : (
+            <AwaitingData message="Indexability breakdown populates once SE Ranking's next full audit completes. Typically within 24 hours of your audit schedule." />
           )}
-          {a.httpStatus && (
-            <WidgetContainer title="HTTP Status Codes" subtitle="Distribution across crawled pages" action={null}>
-              <HttpStatusWidget data={a.httpStatus} />
-            </WidgetContainer>
+        </WidgetContainer>
+        <WidgetContainer title="HTTP Status Codes" subtitle="Distribution across crawled pages" action={null}>
+          {a.httpStatus ? (
+            <HttpStatusWidget data={a.httpStatus} />
+          ) : (
+            <AwaitingData message="Status-code distribution appears after the next page-level crawl. All 200 responses are normal — this chart highlights redirects and broken pages." />
           )}
-        </div>
-      )}
+        </WidgetContainer>
+      </div>
 
-      {/* Core Web Vitals */}
-      {a.coreWebVitals && (
-        <div style={{ marginTop: 22 }}>
-          <WidgetContainer title="Core Web Vitals" subtitle="Google's page experience signals (real-world + lab)" action={null}>
+      {/* Core Web Vitals — always render, show pending state when absent */}
+      <div style={{ marginTop: 22 }}>
+        <WidgetContainer title="Core Web Vitals" subtitle="Google's page experience signals (real-world + lab)" action={null}>
+          {a.coreWebVitals ? (
             <CoreWebVitalsWidget data={a.coreWebVitals} />
-          </WidgetContainer>
-        </div>
-      )}
+          ) : (
+            <AwaitingData message="Core Web Vitals require the v2 audit engine with Chrome UX Report + Lighthouse telemetry. Your next audit cycle will populate these." />
+          )}
+        </WidgetContainer>
+      </div>
 
       {/* Domain Metrics */}
-      {a.domain && (
-        <div style={{ marginTop: 22 }}>
-          <WidgetContainer title="Domain Metrics" subtitle="Domain-level authority and backlink signals" action={null}>
+      <div style={{ marginTop: 22 }}>
+        <WidgetContainer title="Domain Metrics" subtitle="Domain-level authority and backlink signals" action={null}>
+          {a.domain ? (
             <DomainMetricsWidget data={a.domain} />
-          </WidgetContainer>
-        </div>
-      )}
+          ) : (
+            <AwaitingData message="Domain Trust, backlinks, and referring domains populate on the next audit. These are sourced from SE Ranking's Backlink Checker database." />
+          )}
+        </WidgetContainer>
+      </div>
 
       {/* Page Distribution */}
-      {a.pageDistribution && (
-        <div style={{ marginTop: 22 }}>
-          <WidgetContainer title="Page Distribution" subtitle="How your crawled pages distribute across depth, response time, and redirects" action={null}>
+      <div style={{ marginTop: 22 }}>
+        <WidgetContainer title="Page Distribution" subtitle="Depth, response time, and redirects across your crawled pages" action={null}>
+          {a.pageDistribution ? (
             <PageDistributionWidget data={a.pageDistribution} />
-          </WidgetContainer>
-        </div>
-      )}
+          ) : (
+            <AwaitingData message="Per-page metrics populate after the next /pages fetch completes. Shallow page depth and sub-1s response times are SEO ideals." />
+          )}
+        </WidgetContainer>
+      </div>
 
       <ConsultingUpsell
         headline="Your site audit is a roadmap. IA executes the fixes and reports back."
@@ -235,15 +246,23 @@ function WidgetContainer({ title, subtitle, action, children }: { title: string;
   );
 }
 
+function CardSeeDetailsButton({ color, onClick }: { color: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{ marginTop: 10, padding: '6px 12px', fontSize: 11, fontWeight: 600, background: 'transparent', color, border: `1px solid ${color}`, borderRadius: 4, cursor: 'pointer', alignSelf: 'flex-start' }}
+    >
+      See Details →
+    </button>
+  );
+}
+
 function HealthScoreGaugeCard({ score, source, delta, onClick }: { score: number; source?: string; delta: number | null; onClick: () => void }) {
   const color = score >= 80 ? '#1D9E75' : score >= 50 ? '#EF6C33' : '#D85A30';
   const label = score >= 80 ? 'Strong' : score >= 50 ? 'Needs Attention' : 'At Risk';
   const pieData = [{ name: 'Score', value: score }, { name: 'Rest', value: 100 - score }];
   return (
-    <button
-      onClick={onClick}
-      style={{ background: '#F8FAFC', borderLeft: `3px solid ${color}`, borderRadius: 8, padding: '14px 16px', cursor: 'pointer', textAlign: 'left', border: 'none', minHeight: 160 }}
-    >
+    <div style={{ background: '#F8FAFC', borderLeft: `3px solid ${color}`, borderRadius: 8, padding: '14px 16px', minHeight: 160, display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center' }}>
         Health Score <GlossaryIcon termKey="health_score" size={11} />
       </div>
@@ -271,14 +290,15 @@ function HealthScoreGaugeCard({ score, source, delta, onClick }: { score: number
       <div style={{ fontSize: 9, color: '#94A3B8', marginTop: 6, fontStyle: 'italic' }}>
         {source === 'se_ranking_official' ? 'SE Ranking score' : 'Computed (awaiting next audit for official score)'}
       </div>
-    </button>
+      <CardSeeDetailsButton color={color} onClick={onClick} />
+    </div>
   );
 }
 
 function IssuesCard({ issues, delta, onClick }: { issues: { errors: number; warnings: number; notices: number; total?: number }; delta: any; onClick: () => void }) {
   const total = issues.total ?? (issues.errors + issues.warnings + issues.notices);
   return (
-    <button onClick={onClick} style={{ background: '#F8FAFC', borderLeft: '3px solid #D85A30', borderRadius: 8, padding: '14px 16px', cursor: 'pointer', textAlign: 'left', border: 'none', minHeight: 160 }}>
+    <div style={{ background: '#F8FAFC', borderLeft: '3px solid #D85A30', borderRadius: 8, padding: '14px 16px', minHeight: 160, display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>Total Issues</div>
       <div style={{ fontSize: 32, fontWeight: 700, color: '#0B1C24', marginTop: 4 }}>{total}</div>
       <div style={{ display: 'flex', height: 8, marginTop: 10, borderRadius: 4, overflow: 'hidden' }}>
@@ -291,7 +311,8 @@ function IssuesCard({ issues, delta, onClick }: { issues: { errors: number; warn
         <IssueBadge color="#EF6C33" count={issues.warnings} delta={delta?.warnings} label="Warnings" />
         <IssueBadge color="#4285F4" count={issues.notices} delta={delta?.notices} label="Notices" />
       </div>
-    </button>
+      <CardSeeDetailsButton color="#D85A30" onClick={onClick} />
+    </div>
   );
 }
 
@@ -313,7 +334,7 @@ function IssueBadge({ color, count, delta, label }: { color: string; count: numb
 
 function CrawledPagesCard({ count, delta, onClick }: { count: number; delta: number | null; onClick: () => void }) {
   return (
-    <button onClick={onClick} style={{ background: '#F8FAFC', borderLeft: '3px solid #4285F4', borderRadius: 8, padding: '14px 16px', cursor: 'pointer', textAlign: 'left', border: 'none', minHeight: 160 }}>
+    <div style={{ background: '#F8FAFC', borderLeft: '3px solid #4285F4', borderRadius: 8, padding: '14px 16px', minHeight: 160, display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>Crawled Pages</div>
       <div style={{ fontSize: 32, fontWeight: 700, color: '#0B1C24', marginTop: 4 }}>{count}</div>
       {delta != null && delta !== 0 && (
@@ -321,8 +342,9 @@ function CrawledPagesCard({ count, delta, onClick }: { count: number; delta: num
           {delta > 0 ? '▲' : '▼'} {Math.abs(delta)} vs prior
         </div>
       )}
-      <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 10 }}>Click to see all crawled pages</div>
-    </button>
+      <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 10 }}>URLs crawled in this audit</div>
+      <CardSeeDetailsButton color="#4285F4" onClick={onClick} />
+    </div>
   );
 }
 
@@ -330,14 +352,15 @@ function PageHealthCard({ healthy, withIssues, total, onClick }: { healthy: numb
   const healthyPct = total > 0 ? Math.round((healthy / total) * 100) : 0;
   const color = healthyPct >= 80 ? '#1D9E75' : healthyPct >= 50 ? '#EF6C33' : '#D85A30';
   return (
-    <button onClick={onClick} style={{ background: '#F8FAFC', borderLeft: `3px solid ${color}`, borderRadius: 8, padding: '14px 16px', cursor: 'pointer', textAlign: 'left', border: 'none', minHeight: 160 }}>
+    <div style={{ background: '#F8FAFC', borderLeft: `3px solid ${color}`, borderRadius: 8, padding: '14px 16px', minHeight: 160, display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>Page Health</div>
       <div style={{ fontSize: 32, fontWeight: 700, color: '#0B1C24', marginTop: 4 }}>{healthy}</div>
       <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 2 }}>healthy of {total} pages · {healthyPct}%</div>
       <div style={{ fontSize: 10, marginTop: 10, color: '#D85A30' }}>
         <strong>{withIssues}</strong> page(s) have issues
       </div>
-    </button>
+      <CardSeeDetailsButton color={color} onClick={onClick} />
+    </div>
   );
 }
 
@@ -346,14 +369,15 @@ function FoundResourcesCard({ resources, onClick }: { resources: SeoAuditRespons
   const cssKB = Math.round((resources?.cssSizeBytes || 0) / 1024);
   const jsKB = Math.round((resources?.jsSizeBytes || 0) / 1024);
   return (
-    <button onClick={onClick} style={{ background: '#F8FAFC', borderLeft: '3px solid #7B61FF', borderRadius: 8, padding: '14px 16px', cursor: 'pointer', textAlign: 'left', border: 'none', minHeight: 160 }}>
+    <div style={{ background: '#F8FAFC', borderLeft: '3px solid #7B61FF', borderRadius: 8, padding: '14px 16px', minHeight: 160, display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>Found Resources</div>
       <div style={{ fontSize: 32, fontWeight: 700, color: '#7B61FF', marginTop: 4 }}>{imgCount}</div>
       <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 2 }}>images</div>
       <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 8 }}>
         CSS: {cssKB.toLocaleString()}KB · JS: {jsKB.toLocaleString()}KB
       </div>
-    </button>
+      <CardSeeDetailsButton color="#7B61FF" onClick={onClick} />
+    </div>
   );
 }
 
@@ -362,14 +386,15 @@ function FoundLinksCard({ links, onClick }: { links: SeoAuditResponse['foundLink
   const internal = links?.internal ?? 0;
   const external = links?.external ?? 0;
   return (
-    <button onClick={onClick} style={{ background: '#F8FAFC', borderLeft: '3px solid #2D9CDB', borderRadius: 8, padding: '14px 16px', cursor: 'pointer', textAlign: 'left', border: 'none', minHeight: 160 }}>
+    <div style={{ background: '#F8FAFC', borderLeft: '3px solid #2D9CDB', borderRadius: 8, padding: '14px 16px', minHeight: 160, display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>Found Links</div>
       <div style={{ fontSize: 32, fontWeight: 700, color: '#2D9CDB', marginTop: 4 }}>{total.toLocaleString()}</div>
       <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 2 }}>total</div>
       <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 8 }}>
         Internal: {internal.toLocaleString()} · External: {external.toLocaleString()}
       </div>
-    </button>
+      <CardSeeDetailsButton color="#2D9CDB" onClick={onClick} />
+    </div>
   );
 }
 
@@ -468,7 +493,63 @@ function HistoryComparisonBody({ history, current, activeTab, healthScore }: { h
   );
 }
 
+function AwaitingData({ message }: { message: string }) {
+  return (
+    <div style={{ padding: 20, background: '#F8FAFC', borderRadius: 6, textAlign: 'center', color: '#5A7A8A', fontSize: 12 }}>
+      <div style={{ fontWeight: 600, color: '#0B1C24', marginBottom: 6 }}>Data pending</div>
+      <p style={{ margin: 0, fontSize: 11, lineHeight: 1.6, maxWidth: 520, marginInline: 'auto' }}>{message}</p>
+    </div>
+  );
+}
+
+function IssueBreakdownWidget({ issues }: { issues: { errors: number; warnings: number; notices: number; passed: number; total?: number } }) {
+  const data = [
+    { name: 'Errors', value: issues.errors, color: '#D85A30' },
+    { name: 'Warnings', value: issues.warnings, color: '#EF6C33' },
+    { name: 'Notices', value: issues.notices, color: '#4285F4' },
+    { name: 'Passed', value: issues.passed, color: '#1D9E75' },
+  ];
+  const totalChecks = data.reduce((s, d) => s + d.value, 0);
+  if (totalChecks === 0) {
+    return <AwaitingData message="Issue counts populate after the first audit completes." />;
+  }
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'center' }}>
+      <div style={{ height: 160, position: 'relative' }}>
+        <ResponsiveContainer>
+          <PieChart>
+            <Pie data={data} dataKey="value" innerRadius={45} outerRadius={68} stroke="none">
+              {data.map((d) => <Cell key={d.name} fill={d.color} />)}
+            </Pie>
+            <RTooltip contentStyle={{ fontSize: 11 }} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#0B1C24' }}>{totalChecks}</div>
+          <div style={{ fontSize: 9, color: '#5A7A8A' }}>total checks</div>
+        </div>
+      </div>
+      <div>
+        {data.map((d) => {
+          const pct = totalChecks > 0 ? ((d.value / totalChecks) * 100).toFixed(1) : '0';
+          return (
+            <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, marginBottom: 6 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: d.color }} />
+              <span style={{ flex: '0 0 72px', color: '#5A7A8A' }}>{d.name}</span>
+              <span style={{ flex: 1, fontWeight: 600, color: '#0B1C24' }}>{d.value.toLocaleString()}</span>
+              <span style={{ fontSize: 10, color: '#5A7A8A' }}>{pct}%</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function UseCasesTable({ useCases, onClick }: { useCases: Array<{ slug: string; name: string; count: number }>; onClick: () => void }) {
+  if (!useCases || useCases.length === 0) {
+    return <AwaitingData message="Use cases surface after your next full audit — quick-filter shortcuts to non-indexable pages, metadata issues, redirect chains, and more." />;
+  }
   return (
     <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
       <thead>

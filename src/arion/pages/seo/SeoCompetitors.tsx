@@ -179,7 +179,7 @@ export function SeoCompetitors() {
       {/* Per-competitor card grid */}
       {competitors.length > 0 && (
         <div style={{ marginTop: 22 }}>
-          <WidgetContainer title="Tracked Competitors" subtitle="Click any competitor to drill into their detail" action={null}>
+          <WidgetContainer title="Tracked Competitors" subtitle="Domain trust and keyword counts per competitor" action={null}>
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(competitors.length, 3)}, 1fr)`, gap: 12 }}>
               {sortedByDT.slice(0, 6).map((c, i) => (
                 <CompetitorCard
@@ -304,9 +304,8 @@ function CompetitorCard({ competitor, rank, maxKeywords, onClick }: { competitor
   const dtColor = dt >= 70 ? '#1D9E75' : dt >= 40 ? '#EF6C33' : '#D85A30';
   const kwPct = maxKeywords > 0 ? (kw / maxKeywords) * 100 : 0;
   return (
-    <button
-      onClick={onClick}
-      style={{ background: '#F8FAFC', borderLeft: `3px solid ${dtColor}`, borderRadius: 8, padding: '14px 16px', cursor: 'pointer', textAlign: 'left', border: 'none' }}
+    <div
+      style={{ background: '#F8FAFC', borderLeft: `3px solid ${dtColor}`, borderRadius: 8, padding: '14px 16px', display: 'flex', flexDirection: 'column' }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: '#0B1C24', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
@@ -326,8 +325,13 @@ function CompetitorCard({ competitor, rank, maxKeywords, onClick }: { competitor
           <div style={{ width: `${kwPct}%`, height: '100%', background: dtColor, borderRadius: 99 }} />
         </div>
       )}
-      <div style={{ fontSize: 10, color: '#2D9CDB', fontWeight: 600, marginTop: 6 }}>View comparison →</div>
-    </button>
+      <button
+        onClick={onClick}
+        style={{ marginTop: 6, padding: '6px 12px', fontSize: 11, fontWeight: 600, background: 'transparent', color: dtColor, border: `1px solid ${dtColor}`, borderRadius: 4, cursor: 'pointer', alignSelf: 'flex-start' }}
+      >
+        See Details →
+      </button>
+    </div>
   );
 }
 
