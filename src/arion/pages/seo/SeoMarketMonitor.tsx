@@ -15,6 +15,7 @@
  * timestamp (or "never") so the user knows the feature is live.
  */
 import React from 'react';
+import { ResponsiveContainer, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip as RTooltip, Legend } from 'recharts';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { AddonUpsell, EmptyPanel, InfoCard, ConsultingUpsell, Loading } from '../../components/Ui';
@@ -162,6 +163,35 @@ export function SeoMarketMonitor() {
         />
       </div>
 
+      {/* Market Pulse visuals row */}
+      <div style={{ marginTop: 22, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <WidgetContainer title="Backlinks Trend" subtitle="New vs lost referring domains by day">
+          <BacklinksTrendChart newBacklinks={newBacklinks} lostBacklinks={lostBacklinks} />
+        </WidgetContainer>
+        <WidgetContainer title="Competitor Moves Distribution" subtitle="Direction of large ranking swings">
+          <MovesDistributionChart moves={moves} />
+        </WidgetContainer>
+      </div>
+
+      {/* Page Changes Overview row */}
+      <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <WidgetContainer title="Change Magnitude Distribution" subtitle="How much content changed per detection">
+          <ChangeMagnitudeChart pageChanges={pageChanges} />
+        </WidgetContainer>
+        <WidgetContainer title="Changes by Type" subtitle="Your pages vs competitor pages">
+          <ChangesByTypeChart pageChanges={pageChanges} />
+        </WidgetContainer>
+      </div>
+
+      {/* Top competitors by move activity */}
+      {moves.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <WidgetContainer title="Top Competitors by Move Activity" subtitle="Tracked domains with the most large ranking swings">
+            <TopCompetitorsByMovesChart moves={moves} />
+          </WidgetContainer>
+        </div>
+      )}
+
       <GlossaryPanel
         termKeys={['backlinks_new', 'backlinks_lost', 'page_changes', 'competitor_moves']}
         title="What do these market signals mean?"
@@ -268,6 +298,27 @@ function MarketSubsectionModal({
     competitor_moves: 'Competitor Moves — Full Details',
   };
 
+  const tabs: Record<SubSection, Array<{ id: string; label: string }>> = {
+    backlinks: [
+      { id: 'new', label: `New (${newBacklinks.length})` },
+      { id: 'lost', label: `Lost (${lostBacklinks.length})` },
+      { id: 'referrers', label: 'Top Referring Domains' },
+    ],
+    page_changes: [
+      { id: 'all', label: `All Changes (${pageChanges.length})` },
+      { id: 'own', label: `Your Pages (${pageChanges.filter((p) => p.pageType === 'own_site').length})` },
+      { id: 'competitor', label: `Competitor Pages (${pageChanges.filter((p) => p.pageType !== 'own_site').length})` },
+    ],
+    competitor_moves: [
+      { id: 'largest', label: `Largest Moves (${moves.length})` },
+      { id: 'by_competitor', label: 'By Competitor' },
+      { id: 'by_keyword', label: 'By Keyword' },
+    ],
+  };
+
+  const [activeTab, setActiveTab] = React.useState<string>(tabs[section][0].id);
+  React.useEffect(() => { setActiveTab(tabs[section][0].id); }, [section]);
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
       <div style={{ background: '#fff', borderRadius: 12, maxWidth: 1100, width: '94vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
@@ -278,12 +329,401 @@ function MarketSubsectionModal({
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#999', padding: '0 4px' }}>&times;</button>
         </div>
+
+        <div style={{ display: 'flex', padding: '0 16px', borderBottom: '1px solid #eee', overflowX: 'auto' }}>
+          {tabs[section].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              style={{
+                padding: '10px 16px', fontSize: 12, fontWeight: 600,
+                background: 'transparent',
+                color: activeTab === t.id ? '#0B1C24' : '#94A3B8',
+                border: 'none',
+                borderBottom: activeTab === t.id ? '2px solid #0B1C24' : '2px solid transparent',
+                cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
         <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-          {section === 'competitor_moves' && <MovesTable moves={moves} />}
-          {section === 'backlinks' && <BacklinksTable newBacklinks={newBacklinks} lostBacklinks={lostBacklinks} />}
-          {section === 'page_changes' && <PageChangesTable pageChanges={pageChanges} />}
+          {section === 'backlinks' && activeTab === 'new' && <BacklinksList rows={newBacklinks} kind="new" />}
+          {section === 'backlinks' && activeTab === 'lost' && <BacklinksList rows={lostBacklinks} kind="lost" />}
+          {section === 'backlinks' && activeTab === 'referrers' && <ReferrersAggregate newBacklinks={newBacklinks} lostBacklinks={lostBacklinks} />}
+
+          {section === 'page_changes' && activeTab === 'all' && <PageChangesTable pageChanges={pageChanges} />}
+          {section === 'page_changes' && activeTab === 'own' && <PageChangesTable pageChanges={pageChanges.filter((p) => p.pageType === 'own_site')} />}
+          {section === 'page_changes' && activeTab === 'competitor' && <PageChangesByCompetitor pageChanges={pageChanges.filter((p) => p.pageType !== 'own_site')} />}
+
+          {section === 'competitor_moves' && activeTab === 'largest' && <MovesTable moves={[...moves].sort((a, b) => Math.abs(b.positionChange) - Math.abs(a.positionChange))} />}
+          {section === 'competitor_moves' && activeTab === 'by_competitor' && <MovesByCompetitor moves={moves} />}
+          {section === 'competitor_moves' && activeTab === 'by_keyword' && <MovesByKeyword moves={moves} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+function BacklinksList({ rows, kind }: { rows: SeoMarketMonitorBacklink[]; kind: 'new' | 'lost' }) {
+  if (rows.length === 0) {
+    return <EmptyState title={kind === 'new' ? 'No new backlinks in this window' : 'No lost backlinks in this window'} body={kind === 'new' ? 'Backlink Watch runs weekly. New acquisitions appear here within 7 days.' : 'Nothing lost — good sign.'} />;
+  }
+  return (
+    <table className="data-table" style={{ fontSize: 12, width: '100%' }}>
+      <thead>
+        <tr>
+          <th>Referring Domain</th>
+          <th>Target URL</th>
+          <th>Anchor</th>
+          <th style={{ textAlign: 'right' }}>DA</th>
+          <th style={{ textAlign: 'right' }}>{kind === 'new' ? 'First Seen' : 'Last Seen'}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((b, i) => (
+          <tr key={i}>
+            <td style={{ fontWeight: 500 }}>{b.referringDomain}</td>
+            <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.targetUrl || '—'}</td>
+            <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.anchorText || '—'}</td>
+            <td style={{ textAlign: 'right' }}>{b.domainAuthority ?? '—'}</td>
+            <td style={{ textAlign: 'right' }}>{(kind === 'new' ? b.firstSeen : b.lastSeen) ? new Date((kind === 'new' ? b.firstSeen : b.lastSeen) as string).toLocaleDateString() : '—'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function ReferrersAggregate({ newBacklinks, lostBacklinks }: { newBacklinks: SeoMarketMonitorBacklink[]; lostBacklinks: SeoMarketMonitorBacklink[] }) {
+  const byDomain = new Map<string, { domain: string; new: number; lost: number; da: number | null }>();
+  for (const b of newBacklinks) {
+    const ex = byDomain.get(b.referringDomain) || { domain: b.referringDomain, new: 0, lost: 0, da: b.domainAuthority };
+    ex.new++;
+    if (b.domainAuthority != null) ex.da = b.domainAuthority;
+    byDomain.set(b.referringDomain, ex);
+  }
+  for (const b of lostBacklinks) {
+    const ex = byDomain.get(b.referringDomain) || { domain: b.referringDomain, new: 0, lost: 0, da: b.domainAuthority };
+    ex.lost++;
+    if (ex.da == null && b.domainAuthority != null) ex.da = b.domainAuthority;
+    byDomain.set(b.referringDomain, ex);
+  }
+  const rows = Array.from(byDomain.values()).sort((a, b) => (b.da ?? 0) - (a.da ?? 0));
+  if (rows.length === 0) return <EmptyState title="No referring domains yet" body="Once backlink data starts landing, unique referring domains will be aggregated here." />;
+  return (
+    <table className="data-table" style={{ fontSize: 12, width: '100%' }}>
+      <thead>
+        <tr>
+          <th>Referring Domain</th>
+          <th style={{ textAlign: 'right' }}>Domain Authority</th>
+          <th style={{ textAlign: 'right' }}>New</th>
+          <th style={{ textAlign: 'right' }}>Lost</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={i}>
+            <td style={{ fontWeight: 500 }}>{r.domain}</td>
+            <td style={{ textAlign: 'right', fontWeight: 600 }}>{r.da ?? '—'}</td>
+            <td style={{ textAlign: 'right', color: '#1D9E75', fontWeight: r.new > 0 ? 600 : 400 }}>{r.new || '—'}</td>
+            <td style={{ textAlign: 'right', color: '#D85A30', fontWeight: r.lost > 0 ? 600 : 400 }}>{r.lost || '—'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function PageChangesByCompetitor({ pageChanges }: { pageChanges: SeoMarketMonitorPageChange[] }) {
+  const byComp = new Map<string, SeoMarketMonitorPageChange[]>();
+  for (const pc of pageChanges) {
+    const key = pc.competitorDomain || 'Unknown';
+    if (!byComp.has(key)) byComp.set(key, []);
+    byComp.get(key)!.push(pc);
+  }
+  const entries = Array.from(byComp.entries()).sort((a, b) => b[1].length - a[1].length);
+  if (entries.length === 0) return <EmptyState title="No competitor page changes" body="Competitor page-watcher will surface content edits once SE Ranking has tracked at least 2 days of each watched URL." />;
+  return (
+    <div>
+      {entries.map(([domain, changes]) => (
+        <div key={domain} style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>{domain} <span style={{ color: '#94A3B8', fontWeight: 400 }}>({changes.length} change{changes.length === 1 ? '' : 's'})</span></div>
+          <PageChangesTable pageChanges={changes} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MovesByCompetitor({ moves }: { moves: SeoMarketMonitorMove[] }) {
+  const byComp = new Map<string, { competitor: string; up: number; down: number; net: number; bestKeyword: string; bestChange: number }>();
+  for (const m of moves) {
+    const ex = byComp.get(m.competitorDomain) || { competitor: m.competitorDomain, up: 0, down: 0, net: 0, bestKeyword: '', bestChange: 0 };
+    if (m.direction === 'up') ex.up++; else ex.down++;
+    ex.net += m.positionChange;
+    if (Math.abs(m.positionChange) > Math.abs(ex.bestChange)) {
+      ex.bestChange = m.positionChange;
+      ex.bestKeyword = m.keyword;
+    }
+    byComp.set(m.competitorDomain, ex);
+  }
+  const rows = Array.from(byComp.values()).sort((a, b) => (b.up + b.down) - (a.up + a.down));
+  if (rows.length === 0) return <EmptyState title="No competitor moves yet" body="Only swings of 5+ positions qualify. More data accumulates daily." />;
+  return (
+    <table className="data-table" style={{ fontSize: 12, width: '100%' }}>
+      <thead>
+        <tr>
+          <th>Competitor</th>
+          <th style={{ textAlign: 'right' }}>Gains (↑)</th>
+          <th style={{ textAlign: 'right' }}>Losses (↓)</th>
+          <th style={{ textAlign: 'right' }}>Net</th>
+          <th>Biggest Move</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={i}>
+            <td style={{ fontWeight: 500 }}>{r.competitor}</td>
+            <td style={{ textAlign: 'right', color: '#1D9E75', fontWeight: 600 }}>{r.up}</td>
+            <td style={{ textAlign: 'right', color: '#D85A30', fontWeight: 600 }}>{r.down}</td>
+            <td style={{ textAlign: 'right', fontWeight: 600, color: r.net > 0 ? '#1D9E75' : r.net < 0 ? '#D85A30' : '#5A7A8A' }}>{r.net > 0 ? '+' : ''}{r.net}</td>
+            <td style={{ fontSize: 11, color: '#5A7A8A' }}>
+              {r.bestKeyword ? (<><strong style={{ color: '#0B1C24' }}>{r.bestKeyword}</strong> ({r.bestChange > 0 ? '+' : ''}{r.bestChange})</>) : '—'}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function MovesByKeyword({ moves }: { moves: SeoMarketMonitorMove[] }) {
+  const byKw = new Map<string, { keyword: string; competitors: Set<string>; up: number; down: number }>();
+  for (const m of moves) {
+    const ex = byKw.get(m.keyword) || { keyword: m.keyword, competitors: new Set(), up: 0, down: 0 };
+    ex.competitors.add(m.competitorDomain);
+    if (m.direction === 'up') ex.up++; else ex.down++;
+    byKw.set(m.keyword, ex);
+  }
+  const rows = Array.from(byKw.values()).sort((a, b) => b.competitors.size - a.competitors.size);
+  if (rows.length === 0) return <EmptyState title="No keywords with movement yet" body="Once 7+ days of position history accumulate, contested keywords surface here." />;
+  return (
+    <table className="data-table" style={{ fontSize: 12, width: '100%' }}>
+      <thead>
+        <tr>
+          <th>Keyword</th>
+          <th style={{ textAlign: 'right' }}>Competitors Moved</th>
+          <th style={{ textAlign: 'right' }}>Gains</th>
+          <th style={{ textAlign: 'right' }}>Losses</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.slice(0, 100).map((r, i) => (
+          <tr key={i}>
+            <td style={{ fontWeight: 500 }}>{r.keyword}</td>
+            <td style={{ textAlign: 'right', fontWeight: 600 }}>{r.competitors.size}</td>
+            <td style={{ textAlign: 'right', color: '#1D9E75' }}>{r.up}</td>
+            <td style={{ textAlign: 'right', color: '#D85A30' }}>{r.down}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ── Visuals ──────────────────────────────────────────────────────
+
+function WidgetContainer({ title, subtitle, action, children }: { title: string; subtitle?: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 8, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#0B1C24' }}>{title}</div>
+          {subtitle && <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 2 }}>{subtitle}</div>}
+        </div>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function AwaitingVisual({ message }: { message: string }) {
+  return (
+    <div style={{ padding: 20, background: '#F8FAFC', borderRadius: 6, textAlign: 'center', color: '#5A7A8A', fontSize: 11, lineHeight: 1.6 }}>
+      {message}
+    </div>
+  );
+}
+
+function BacklinksTrendChart({ newBacklinks, lostBacklinks }: { newBacklinks: SeoMarketMonitorBacklink[]; lostBacklinks: SeoMarketMonitorBacklink[] }) {
+  if (newBacklinks.length === 0 && lostBacklinks.length === 0) {
+    return <AwaitingVisual message="Trend chart populates once the weekly backlink sync lands — typically Sunday mornings." />;
+  }
+  const byDate = new Map<string, { date: string; new: number; lost: number }>();
+  for (const b of newBacklinks) {
+    const d = b.firstSeen ? String(b.firstSeen).slice(0, 10) : b.snapshotDate ? String(b.snapshotDate).slice(0, 10) : null;
+    if (!d) continue;
+    const ex = byDate.get(d) || { date: d, new: 0, lost: 0 };
+    ex.new++;
+    byDate.set(d, ex);
+  }
+  for (const b of lostBacklinks) {
+    const d = b.lastSeen ? String(b.lastSeen).slice(0, 10) : b.snapshotDate ? String(b.snapshotDate).slice(0, 10) : null;
+    if (!d) continue;
+    const ex = byDate.get(d) || { date: d, new: 0, lost: 0 };
+    ex.lost++;
+    byDate.set(d, ex);
+  }
+  const data = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+  return (
+    <div style={{ height: 220 }}>
+      <ResponsiveContainer>
+        <BarChart data={data} margin={{ top: 5, right: 15, left: 0, bottom: 5 }}>
+          <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#5A7A8A' }} />
+          <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} width={30} />
+          <RTooltip contentStyle={{ fontSize: 11, borderRadius: 6 }} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Bar dataKey="new" name="New" fill="#1D9E75" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="lost" name="Lost" fill="#D85A30" radius={[3, 3, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function MovesDistributionChart({ moves }: { moves: SeoMarketMonitorMove[] }) {
+  if (moves.length === 0) {
+    return <AwaitingVisual message="Once 7+ days of position history accumulate, swings of 5+ positions appear in this distribution." />;
+  }
+  const up = moves.filter((m) => m.direction === 'up').length;
+  const down = moves.filter((m) => m.direction === 'down').length;
+  const buckets = [
+    { name: '5-10', up: 0, down: 0 },
+    { name: '10-20', up: 0, down: 0 },
+    { name: '20-50', up: 0, down: 0 },
+    { name: '50+', up: 0, down: 0 },
+  ];
+  for (const m of moves) {
+    const abs = Math.abs(m.positionChange);
+    const bucket = abs < 10 ? 0 : abs < 20 ? 1 : abs < 50 ? 2 : 3;
+    if (m.direction === 'up') buckets[bucket].up++; else buckets[bucket].down++;
+  }
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 20, marginBottom: 8, fontSize: 11, color: '#5A7A8A' }}>
+        <span><strong style={{ color: '#1D9E75' }}>{up}</strong> gained ground</span>
+        <span><strong style={{ color: '#D85A30' }}>{down}</strong> lost ground</span>
+      </div>
+      <div style={{ height: 190 }}>
+        <ResponsiveContainer>
+          <BarChart data={buckets} margin={{ top: 5, right: 15, left: 0, bottom: 5 }}>
+            <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#5A7A8A' }} />
+            <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} width={30} />
+            <RTooltip contentStyle={{ fontSize: 11, borderRadius: 6 }} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar dataKey="up" name="Gained" stackId="a" fill="#1D9E75" />
+            <Bar dataKey="down" name="Lost" stackId="a" fill="#D85A30" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function ChangeMagnitudeChart({ pageChanges }: { pageChanges: SeoMarketMonitorPageChange[] }) {
+  if (pageChanges.length === 0) {
+    return <AwaitingVisual message="Change magnitude chart populates once watched pages get edited." />;
+  }
+  const buckets = [
+    { range: '0-10%', count: 0 },
+    { range: '10-25%', count: 0 },
+    { range: '25-50%', count: 0 },
+    { range: '50-75%', count: 0 },
+    { range: '75-100%', count: 0 },
+  ];
+  for (const pc of pageChanges) {
+    const pct = pc.changeMagnitude * 100;
+    const b = pct < 10 ? 0 : pct < 25 ? 1 : pct < 50 ? 2 : pct < 75 ? 3 : 4;
+    buckets[b].count++;
+  }
+  return (
+    <div style={{ height: 220 }}>
+      <ResponsiveContainer>
+        <BarChart data={buckets} margin={{ top: 5, right: 15, left: 0, bottom: 5 }}>
+          <XAxis dataKey="range" tick={{ fontSize: 10, fill: '#5A7A8A' }} />
+          <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} width={30} />
+          <RTooltip contentStyle={{ fontSize: 11, borderRadius: 6 }} />
+          <Bar dataKey="count" fill="#4285F4" radius={[3, 3, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function ChangesByTypeChart({ pageChanges }: { pageChanges: SeoMarketMonitorPageChange[] }) {
+  if (pageChanges.length === 0) {
+    return <AwaitingVisual message="Once page changes are detected, a breakdown by type lands here." />;
+  }
+  const own = pageChanges.filter((p) => p.pageType === 'own_site').length;
+  const compRaw = pageChanges.filter((p) => p.pageType !== 'own_site');
+  const byComp = new Map<string, number>();
+  for (const pc of compRaw) {
+    const key = pc.competitorDomain || 'Other';
+    byComp.set(key, (byComp.get(key) || 0) + 1);
+  }
+  const pieData = [
+    { name: 'Your site', value: own, color: '#1D9E75' },
+    ...Array.from(byComp.entries()).map(([name, value], i) => ({ name, value, color: ['#EF6C33', '#2D9CDB', '#7B61FF', '#D85A30', '#FEC82C', '#94A3B8'][i % 6] })),
+  ].filter((d) => d.value > 0);
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'center' }}>
+      <div style={{ height: 180 }}>
+        <ResponsiveContainer>
+          <PieChart>
+            <Pie data={pieData} dataKey="value" innerRadius={40} outerRadius={68} stroke="none">
+              {pieData.map((d, i) => <Cell key={i} fill={d.color} />)}
+            </Pie>
+            <RTooltip contentStyle={{ fontSize: 11, borderRadius: 6 }} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <div>
+        {pieData.map((d) => (
+          <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, marginBottom: 4 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: d.color }} />
+            <span style={{ flex: 1, color: '#0B1C24', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
+            <span style={{ fontWeight: 600, color: '#0B1C24' }}>{d.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TopCompetitorsByMovesChart({ moves }: { moves: SeoMarketMonitorMove[] }) {
+  const byComp = new Map<string, { name: string; up: number; down: number }>();
+  for (const m of moves) {
+    const ex = byComp.get(m.competitorDomain) || { name: m.competitorDomain, up: 0, down: 0 };
+    if (m.direction === 'up') ex.up++; else ex.down++;
+    byComp.set(m.competitorDomain, ex);
+  }
+  const data = Array.from(byComp.values()).sort((a, b) => (b.up + b.down) - (a.up + a.down)).slice(0, 10);
+  return (
+    <div style={{ height: Math.max(200, 32 * data.length) }}>
+      <ResponsiveContainer>
+        <BarChart data={data} layout="vertical" margin={{ top: 5, right: 15, left: 10, bottom: 5 }}>
+          <XAxis type="number" tick={{ fontSize: 10, fill: '#5A7A8A' }} />
+          <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#0B1C24' }} width={160} />
+          <RTooltip contentStyle={{ fontSize: 11, borderRadius: 6 }} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Bar dataKey="up" name="Gained" stackId="a" fill="#1D9E75" />
+          <Bar dataKey="down" name="Lost" stackId="a" fill="#D85A30" />
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }
