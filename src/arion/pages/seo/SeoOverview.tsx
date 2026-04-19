@@ -98,9 +98,28 @@ export function SeoOverview() {
   // Top hero cards are ALWAYS full (ignore toggle).
   const activeCard = engineFilter === 'all' ? null : standardCards.find((c) => c.engineId === engineFilter);
   const activeStats = activeCard?.current ?? o!.stats.current;
+  const activePriorStats = activeCard?.prior ?? o!.stats.prior;
   const activeDelta = activeCard
     ? { avgPosition: activeCard.avgPositionDelta, visibilityScore: activeCard.visibilityDelta, top10Count: activeCard.top10Delta }
     : o!.stats.delta;
+
+  // Top-N keyword counts derived from activeStats.buckets so the main numbers
+  // on the Rankings widget match the Key Metrics row (unique-keyword counting,
+  // not per-engine entry counting). Also compute prior + delta for each bucket.
+  const buckets = activeStats.buckets || { top1: 0, top2_3: 0, top4_5: 0, top6_10: 0, top11_30: 0, top31_100: 0, notRanking: 0 };
+  const priorBuckets = activePriorStats.buckets || { top1: 0, top2_3: 0, top4_5: 0, top6_10: 0, top11_30: 0, top31_100: 0, notRanking: 0 };
+  const top3Count = (buckets.top1 || 0) + (buckets.top2_3 || 0);
+  const top10Count = top3Count + (buckets.top4_5 || 0) + (buckets.top6_10 || 0);
+  const top30Count = top10Count + (buckets.top11_30 || 0);
+  const top100Count = top30Count + (buckets.top31_100 || 0);
+  const priorTop3 = (priorBuckets.top1 || 0) + (priorBuckets.top2_3 || 0);
+  const priorTop10 = priorTop3 + (priorBuckets.top4_5 || 0) + (priorBuckets.top6_10 || 0);
+  const priorTop30 = priorTop10 + (priorBuckets.top11_30 || 0);
+  const priorTop100 = priorTop30 + (priorBuckets.top31_100 || 0);
+  const top3Delta = top3Count - priorTop3;
+  const top10DeltaAccurate = top10Count - priorTop10;
+  const top30Delta = top30Count - priorTop30;
+  const top100Delta = top100Count - priorTop100;
 
   // Sparklines derived from distribution series
   const avgPosSparkline = distribution.map((d) => ({ date: d.date, value: weightedAvgPositionForDay(d) })).filter((p) => p.value != null) as Array<{ date: string; value: number }>;
@@ -254,8 +273,8 @@ export function SeoOverview() {
               accent="#2D9CDB"
               termKey="avg_position"
             />
-            <SeoStatCard label="Top 3" value={top3Sparkline[top3Sparkline.length - 1]?.value ?? 0} sparklineData={top3Sparkline} sparklineColor="#1D9E75" accent="#1D9E75" />
-            <SeoStatCard label="Top 10" value={top10Sparkline[top10Sparkline.length - 1]?.value ?? 0} sparklineData={top10Sparkline} sparklineColor="#1D9E75" accent="#1D9E75" />
+            <SeoStatCard label="Top 3" value={top3Count} delta={top3Delta} deltaFormat="signed" deltaIsGoodWhenPositive={true} sparklineData={top3Sparkline} sparklineColor="#1D9E75" accent="#1D9E75" />
+            <SeoStatCard label="Top 10" value={top10Count} delta={top10DeltaAccurate} deltaFormat="signed" deltaIsGoodWhenPositive={true} sparklineData={top10Sparkline} sparklineColor="#1D9E75" accent="#1D9E75" termKey="top10_keywords" />
             <SeoStatCard
               label="Search Visibility"
               value={activeStats.visibilityScore != null ? `${activeStats.visibilityScore.toFixed(1)}%` : '—'}
@@ -266,8 +285,8 @@ export function SeoOverview() {
               sparklineColor="#EF6C33"
               accent="#EF6C33"
             />
-            <SeoStatCard label="Top 30" value={top30Sparkline[top30Sparkline.length - 1]?.value ?? 0} sparklineData={top30Sparkline} sparklineColor="#4285F4" accent="#4285F4" />
-            <SeoStatCard label="Top 100" value={top100Sparkline[top100Sparkline.length - 1]?.value ?? 0} sparklineData={top100Sparkline} sparklineColor="#7B61FF" accent="#7B61FF" />
+            <SeoStatCard label="Top 30" value={top30Count} delta={top30Delta} deltaFormat="signed" deltaIsGoodWhenPositive={true} sparklineData={top30Sparkline} sparklineColor="#4285F4" accent="#4285F4" />
+            <SeoStatCard label="Top 100" value={top100Count} delta={top100Delta} deltaFormat="signed" deltaIsGoodWhenPositive={true} sparklineData={top100Sparkline} sparklineColor="#7B61FF" accent="#7B61FF" />
           </div>
           <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px' }}>
             <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
