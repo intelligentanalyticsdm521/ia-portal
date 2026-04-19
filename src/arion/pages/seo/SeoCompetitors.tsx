@@ -30,6 +30,7 @@ export function SeoCompetitors() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [selectedCompetitor, setSelectedCompetitor] = useState<any | null>(null);
 
   const { data: seo, loading: seoLoading } = useArionData(
     () => activeSiteId ? arionApi.getSeo(activeSiteId) : Promise.resolve(null),
@@ -49,7 +50,6 @@ export function SeoCompetitors() {
   const competitors: any[] = ((compData as any)?.competitors as any[]) ?? [];
   const contentGap: SeoCompetitorContentGapRow[] = ((compData as any)?.contentGap as SeoCompetitorContentGapRow[]) ?? [];
   const compUpstreamErrors: any[] = ((compData as any)?.upstreamErrors as any[]) ?? [];
-  const [selectedCompetitor, setSelectedCompetitor] = useState<any | null>(null);
 
   if (!connected && !hasSeoAddon) {
     return (
