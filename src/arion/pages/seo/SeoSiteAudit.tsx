@@ -863,6 +863,10 @@ function IssueReportTab({ audit }: { audit: SeoAuditResponse }) {
 
   const categories = Array.from(new Set(all.map((i) => i.categoryName || 'Other'))).sort();
 
+  if (all.length === 0) {
+    return <AwaitingData message="Issue-level data comes from SE Ranking's /audit/{id}/report endpoint. If this is blank and your audit shows as complete above, the report payload is still propagating on SE Ranking's side — typically catches up within an hour of audit completion." />;
+  }
+
   const filtered = all.filter((i) => {
     if (severityFilter !== 'all' && i.severity !== severityFilter) return false;
     if (categoryFilter !== 'all' && (i.categoryName || 'Other') !== categoryFilter) return false;
@@ -942,6 +946,10 @@ function CrawledPagesTab({ audit }: { audit: SeoAuditResponse }) {
   const [indexableFilter, setIndexableFilter] = React.useState<'all' | 'indexable' | 'not-indexable'>('all');
   const [sortKey, setSortKey] = React.useState<'url' | 'status' | 'depth' | 'loadMs' | 'errors' | 'warnings'>('depth');
   const [sortDir, setSortDir] = React.useState<'asc' | 'desc'>('asc');
+
+  if (pages.length === 0) {
+    return <AwaitingData message="Per-page crawl data comes from /audit/{id}/pages. This is the heaviest payload SE Ranking serves and takes the longest to populate after a fresh audit — expect 10-30 minutes on first run, near-instant on subsequent runs." />;
+  }
 
   const filtered = pages.filter((p) => {
     if (search && !p.url.toLowerCase().includes(search.toLowerCase())) return false;
@@ -1036,6 +1044,9 @@ function CrawledPagesTab({ audit }: { audit: SeoAuditResponse }) {
 function FoundResourcesTab({ audit }: { audit: SeoAuditResponse }) {
   const pages = audit.pages ?? [];
   const totals = audit.foundResources ?? { images: 0, cssSizeBytes: 0, jsSizeBytes: 0, total: 0 };
+  if (pages.length === 0) {
+    return <AwaitingData message="Resource weights per page (images, CSS, JS bytes) come from /audit/{id}/pages. Populates once the per-page crawl payload is ready — see Crawled Pages tab for timing." />;
+  }
 
   // Top pages by resource weight (CSS+JS+img size)
   const byWeight = [...pages]
@@ -1092,6 +1103,9 @@ function FoundResourcesTab({ audit }: { audit: SeoAuditResponse }) {
 function FoundLinksTab({ audit }: { audit: SeoAuditResponse }) {
   const pages = audit.pages ?? [];
   const totals = audit.foundLinks ?? { total: 0, internal: 0, external: 0, nofollow: 0 };
+  if (pages.length === 0) {
+    return <AwaitingData message="Link inventories (outbound + inbound per page) come from /audit/{id}/pages. Populates once the per-page crawl payload is ready." />;
+  }
 
   const topByLinks = [...pages].filter((p) => p.totalLinks > 0).sort((a, b) => b.totalLinks - a.totalLinks).slice(0, 50);
   const topByInbound = [...pages].filter((p) => p.inlinks > 0).sort((a, b) => b.inlinks - a.inlinks).slice(0, 20);
