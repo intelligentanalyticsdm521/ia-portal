@@ -19,7 +19,7 @@ import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { AddonUpsell, EmptyPanel, Loading, ConsultingUpsell, ErrorBanner, InfoCard } from '../../components/Ui';
 import { GlossaryIcon } from '../../components/Glossary';
-import type { SeoAuditResponse, SeoAuditHistorySnapshot, SeoAuditTopIssue } from '../../../lib/arionApi';
+import type { SeoAuditResponse, SeoAuditHistorySnapshot, SeoAuditTopIssue, SeoAuditPageDetail } from '../../../lib/arionApi';
 
 type DetailTab = 'issue-report' | 'crawled-pages' | 'found-resources' | 'found-links' | 'audit-comparison';
 type HistoryTab = 'weekly' | 'monthly' | 'quarterly';
@@ -27,7 +27,17 @@ type HistoryTab = 'weekly' | 'monthly' | 'quarterly';
 export function SeoSiteAudit() {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const [activeTab, setActiveTab] = React.useState<DetailTab | null>(null);
+  const [initialCategory, setInitialCategory] = React.useState<string | null>(null);
+  const [pageDetailId, setPageDetailId] = React.useState<string | null>(null);
   const [historyTab, setHistoryTab] = React.useState<HistoryTab>('weekly');
+
+  const openIssueReport = React.useCallback((category?: string | null) => {
+    setInitialCategory(category ?? null);
+    setActiveTab('issue-report');
+  }, []);
+  const openPageDetail = React.useCallback((id: string | number) => {
+    setPageDetailId(String(id));
+  }, []);
 
   const { data, loading } = useArionData(
     () => activeSiteId ? arionApi.getSeoAudit(activeSiteId) : Promise.resolve(null),
@@ -126,21 +136,35 @@ export function SeoSiteAudit() {
       {/* Top Issues */}
       <div style={{ marginTop: 22 }}>
         <WidgetContainer title="Top Issues" subtitle="Your 5 most-frequent issues by occurrence" action={
-          <button onClick={() => setActiveTab('issue-report')} style={{ fontSize: 11, fontWeight: 600, background: 'transparent', color: '#2D9CDB', border: 'none', cursor: 'pointer' }}>View all {issues.total ?? 0} →</button>
+          <button onClick={() => openIssueReport(null)} style={{ fontSize: 11, fontWeight: 600, background: 'transparent', color: '#2D9CDB', border: 'none', cursor: 'pointer' }}>View all {issues.total ?? 0} →</button>
         }>
-          <TopIssuesTable issues={topIssues} onIssueClick={() => setActiveTab('issue-report')} />
+          <TopIssuesTable issues={topIssues} onIssueClick={() => openIssueReport(null)} />
         </WidgetContainer>
       </div>
 
-      {/* Issue Breakdown + Use Cases row */}
+      {/* Top Pages by Issues */}
+      <div style={{ marginTop: 22 }}>
+        <WidgetContainer title="Top Pages by Issues" subtitle="Pages with the most errors, warnings, and notices" action={null}>
+          <TopPagesByIssuesTable rows={a.topPagesByIssues ?? []} onView={openPageDetail} />
+        </WidgetContainer>
+      </div>
+
+      {/* Issue Breakdown + Issues by Category row */}
       <div style={{ marginTop: 22, display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 12 }}>
         <WidgetContainer title="Issue Breakdown" subtitle="By severity across the full audit" action={
-          <button onClick={() => setActiveTab('issue-report')} style={{ fontSize: 11, fontWeight: 600, background: 'transparent', color: '#2D9CDB', border: 'none', cursor: 'pointer' }}>See all →</button>
+          <button onClick={() => openIssueReport(null)} style={{ fontSize: 11, fontWeight: 600, background: 'transparent', color: '#2D9CDB', border: 'none', cursor: 'pointer' }}>See all →</button>
         }>
           <IssueBreakdownWidget issues={issues} />
         </WidgetContainer>
+        <WidgetContainer title="Issues by Category" subtitle="Error / warning / notice counts by category" action={null}>
+          <IssueCategoriesWidget categories={a.issueCategories ?? []} onCategoryClick={(c) => openIssueReport(c)} />
+        </WidgetContainer>
+      </div>
+
+      {/* Use Cases row */}
+      <div style={{ marginTop: 22 }}>
         <WidgetContainer title="Most Popular Use Cases" subtitle="Quick-filtered reports for common SEO fixes" action={null}>
-          <UseCasesTable useCases={a.useCases ?? []} onClick={() => setActiveTab('issue-report')} />
+          <UseCasesTable useCases={a.useCases ?? []} onClick={() => openIssueReport(null)} />
         </WidgetContainer>
       </div>
 
@@ -203,7 +227,22 @@ export function SeoSiteAudit() {
       />
 
       {activeTab && (
-        <SeoSiteAuditDetailsModal activeTab={activeTab} setActiveTab={setActiveTab} onClose={() => setActiveTab(null)} audit={a} />
+        <SeoSiteAuditDetailsModal
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onClose={() => { setActiveTab(null); setInitialCategory(null); }}
+          audit={a}
+          initialCategory={initialCategory}
+          onPageDetail={openPageDetail}
+        />
+      )}
+      {pageDetailId && activeSiteId && (
+        <SeoPageDetailModal
+          siteId={activeSiteId}
+          pageId={pageDetailId}
+          arionApi={arionApi}
+          onClose={() => setPageDetailId(null)}
+        />
       )}
     </div>
   );
@@ -798,12 +837,14 @@ function TopIssuesTable({ issues, onIssueClick }: { issues: SeoAuditTopIssue[]; 
 // ────────────────────────────────────────────────────────────────
 
 function SeoSiteAuditDetailsModal({
-  activeTab, setActiveTab, onClose, audit,
+  activeTab, setActiveTab, onClose, audit, initialCategory, onPageDetail,
 }: {
   activeTab: DetailTab;
   setActiveTab: (t: DetailTab) => void;
   onClose: () => void;
   audit: SeoAuditResponse;
+  initialCategory?: string | null;
+  onPageDetail?: (id: string | number) => void;
 }) {
   const tabs: Array<{ id: DetailTab; label: string }> = [
     { id: 'issue-report', label: 'Issue Report' },
@@ -844,8 +885,8 @@ function SeoSiteAuditDetailsModal({
         </div>
 
         <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
-          {activeTab === 'issue-report' && <IssueReportTab audit={audit} />}
-          {activeTab === 'crawled-pages' && <CrawledPagesTab audit={audit} />}
+          {activeTab === 'issue-report' && <IssueReportTab audit={audit} initialCategory={initialCategory} />}
+          {activeTab === 'crawled-pages' && <CrawledPagesTab audit={audit} onPageDetail={onPageDetail} />}
           {activeTab === 'found-resources' && <FoundResourcesTab audit={audit} />}
           {activeTab === 'found-links' && <FoundLinksTab audit={audit} />}
           {activeTab === 'audit-comparison' && <AuditComparisonTab audit={audit} />}
@@ -855,11 +896,14 @@ function SeoSiteAuditDetailsModal({
   );
 }
 
-function IssueReportTab({ audit }: { audit: SeoAuditResponse }) {
+function IssueReportTab({ audit, initialCategory }: { audit: SeoAuditResponse; initialCategory?: string | null }) {
   const all = audit.allIssues ?? audit.topIssues ?? [];
   const [severityFilter, setSeverityFilter] = React.useState<'all' | 'error' | 'warning' | 'notice'>('all');
-  const [categoryFilter, setCategoryFilter] = React.useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = React.useState<string>(initialCategory || 'all');
   const [search, setSearch] = React.useState('');
+  React.useEffect(() => {
+    if (initialCategory) setCategoryFilter(initialCategory);
+  }, [initialCategory]);
 
   const categories = Array.from(new Set(all.map((i) => i.categoryName || 'Other'))).sort();
 
@@ -939,7 +983,7 @@ function IssueReportTab({ audit }: { audit: SeoAuditResponse }) {
   );
 }
 
-function CrawledPagesTab({ audit }: { audit: SeoAuditResponse }) {
+function CrawledPagesTab({ audit, onPageDetail }: { audit: SeoAuditResponse; onPageDetail?: (id: string | number) => void }) {
   const pages = audit.pages ?? [];
   const [search, setSearch] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<'all' | '2xx' | '3xx' | '4xx' | '5xx'>('all');
@@ -1008,6 +1052,7 @@ function CrawledPagesTab({ audit }: { audit: SeoAuditResponse }) {
             <Th label="Errors" k="errors" sortKey={sortKey} sortDir={sortDir} onClick={(k) => { setSortKey(k as any); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }} align="right" />
             <Th label="Warnings" k="warnings" sortKey={sortKey} sortDir={sortDir} onClick={(k) => { setSortKey(k as any); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }} align="right" />
             <th style={{ textAlign: 'center', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Indexable</th>
+            <th style={{ textAlign: 'center', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Detail</th>
           </tr>
         </thead>
         <tbody>
@@ -1027,6 +1072,16 @@ function CrawledPagesTab({ audit }: { audit: SeoAuditResponse }) {
                 ) : (
                   <span style={{ fontSize: 10, color: '#D85A30', fontWeight: 600 }}>✗</span>
                 )}
+              </td>
+              <td style={{ textAlign: 'center', padding: '6px 6px' }}>
+                {onPageDetail ? (
+                  <button
+                    onClick={() => onPageDetail(p.id)}
+                    style={{ fontSize: 10, fontWeight: 600, color: '#2D9CDB', background: 'transparent', border: '1px solid #2D9CDB', borderRadius: 3, padding: '2px 8px', cursor: 'pointer' }}
+                  >
+                    View →
+                  </button>
+                ) : <span style={{ fontSize: 10, color: '#94A3B8' }}>—</span>}
               </td>
             </tr>
           ))}
@@ -1230,6 +1285,658 @@ function TabPlaceholder({ label, body }: { label: string; body: string }) {
     <div style={{ padding: 32, background: '#F8FAFC', borderRadius: 8, textAlign: 'center' }}>
       <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24' }}>{label} — Coming Soon</div>
       <p style={{ fontSize: 12, color: '#5A7A8A', maxWidth: 520, margin: '8px auto 0', lineHeight: 1.6 }}>{body}</p>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Top Pages by Issues (dashboard widget)
+// ────────────────────────────────────────────────────────────────
+
+function TopPagesByIssuesTable({
+  rows, onView,
+}: {
+  rows: Array<{ id: string | number; url: string; errors: number; warnings: number; notices: number }>;
+  onView: (id: string | number) => void;
+}) {
+  if (!rows || rows.length === 0) {
+    return <AwaitingData message="Per-page issue aggregates populate with /audit/{id}/pages. Once crawl data is available, the pages with the most errors, warnings, and notices appear here." />;
+  }
+  return (
+    <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+      <thead>
+        <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+          <th style={{ textAlign: 'left', padding: '6px 4px', fontSize: 9, color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase' }}>URL</th>
+          <th style={{ textAlign: 'right', padding: '6px 4px', fontSize: 9, color: '#94A3B8', fontWeight: 600 }}>Errors</th>
+          <th style={{ textAlign: 'right', padding: '6px 4px', fontSize: 9, color: '#94A3B8', fontWeight: 600 }}>Warnings</th>
+          <th style={{ textAlign: 'right', padding: '6px 4px', fontSize: 9, color: '#94A3B8', fontWeight: 600 }}>Notices</th>
+          <th style={{ textAlign: 'right', padding: '6px 4px', fontSize: 9, color: '#94A3B8', fontWeight: 600 }}>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.slice(0, 20).map((p) => (
+          <tr key={String(p.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
+            <td style={{ padding: '7px 4px', maxWidth: 480, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <a href={p.url} target="_blank" rel="noreferrer" style={{ color: '#2D9CDB', textDecoration: 'none' }}>{p.url}</a>
+            </td>
+            <td style={{ textAlign: 'right', padding: '7px 4px', fontWeight: p.errors > 0 ? 600 : 400, color: p.errors > 0 ? '#D85A30' : '#94A3B8' }}>{p.errors}</td>
+            <td style={{ textAlign: 'right', padding: '7px 4px', fontWeight: p.warnings > 0 ? 600 : 400, color: p.warnings > 0 ? '#EF6C33' : '#94A3B8' }}>{p.warnings}</td>
+            <td style={{ textAlign: 'right', padding: '7px 4px', fontWeight: p.notices > 0 ? 600 : 400, color: p.notices > 0 ? '#4285F4' : '#94A3B8' }}>{p.notices}</td>
+            <td style={{ textAlign: 'right', padding: '7px 4px' }}>
+              <button
+                onClick={() => onView(p.id)}
+                style={{ fontSize: 10, fontWeight: 600, color: '#2D9CDB', background: 'transparent', border: '1px solid #2D9CDB', borderRadius: 3, padding: '2px 8px', cursor: 'pointer' }}
+              >
+                View Detail →
+              </button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Issues by Category (dashboard widget)
+// ────────────────────────────────────────────────────────────────
+
+function IssueCategoriesWidget({
+  categories, onCategoryClick,
+}: {
+  categories: Array<{ uid: string; name: string; errorsCount: number; warningsCount: number; noticesCount: number }>;
+  onCategoryClick: (name: string) => void;
+}) {
+  if (!categories || categories.length === 0) {
+    return <AwaitingData message="Issue category rollups populate after the next full audit. Each row breaks down the error / warning / notice count per SE Ranking category." />;
+  }
+  const chartData = categories.map((c) => ({
+    name: c.name.length > 18 ? c.name.slice(0, 17) + '…' : c.name,
+    fullName: c.name,
+    Errors: c.errorsCount,
+    Warnings: c.warningsCount,
+    Notices: c.noticesCount,
+  }));
+  return (
+    <div>
+      <div style={{ height: 180, marginBottom: 10 }}>
+        <ResponsiveContainer>
+          <BarChart data={chartData} margin={{ top: 5, right: 8, left: 0, bottom: 5 }}>
+            <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#5A7A8A' }} tickLine={false} interval={0} angle={-15} textAnchor="end" height={42} />
+            <YAxis tick={{ fontSize: 9, fill: '#5A7A8A' }} tickLine={false} width={28} />
+            <RTooltip contentStyle={{ fontSize: 10, borderRadius: 4 }} />
+            <Bar dataKey="Errors" stackId="a" fill="#D85A30" />
+            <Bar dataKey="Warnings" stackId="a" fill="#EF6C33" />
+            <Bar dataKey="Notices" stackId="a" fill="#4285F4" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <div style={{ maxHeight: 140, overflow: 'auto' }}>
+        <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+              <th style={{ textAlign: 'left', padding: '5px 4px', fontSize: 9, color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase' }}>Category</th>
+              <th style={{ textAlign: 'right', padding: '5px 4px', fontSize: 9, color: '#D85A30', fontWeight: 600 }}>Err</th>
+              <th style={{ textAlign: 'right', padding: '5px 4px', fontSize: 9, color: '#EF6C33', fontWeight: 600 }}>Warn</th>
+              <th style={{ textAlign: 'right', padding: '5px 4px', fontSize: 9, color: '#4285F4', fontWeight: 600 }}>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {categories.map((c) => (
+              <tr
+                key={c.uid}
+                style={{ borderBottom: '1px solid #f5f5f5', cursor: 'pointer' }}
+                onClick={() => onCategoryClick(c.name)}
+              >
+                <td style={{ padding: '6px 4px', color: '#0B1C24' }}>{c.name}</td>
+                <td style={{ textAlign: 'right', padding: '6px 4px', fontWeight: c.errorsCount > 0 ? 600 : 400, color: c.errorsCount > 0 ? '#D85A30' : '#94A3B8' }}>{c.errorsCount}</td>
+                <td style={{ textAlign: 'right', padding: '6px 4px', fontWeight: c.warningsCount > 0 ? 600 : 400, color: c.warningsCount > 0 ? '#EF6C33' : '#94A3B8' }}>{c.warningsCount}</td>
+                <td style={{ textAlign: 'right', padding: '6px 4px', fontWeight: c.noticesCount > 0 ? 600 : 400, color: c.noticesCount > 0 ? '#4285F4' : '#94A3B8' }}>{c.noticesCount}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Per-Page Detail Modal
+// ────────────────────────────────────────────────────────────────
+
+type PageDetailTab = 'overview' | 'issues' | 'metadata' | 'resources' | 'links';
+
+function SeoPageDetailModal({
+  siteId, pageId, arionApi, onClose,
+}: {
+  siteId: string;
+  pageId: string;
+  arionApi: { getSeoAuditPage: (siteId: string, pageId: string) => Promise<SeoAuditPageDetail> };
+  onClose: () => void;
+}) {
+  const [detail, setDetail] = React.useState<SeoAuditPageDetail | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [err, setErr] = React.useState<string | null>(null);
+  const [tab, setTab] = React.useState<PageDetailTab>('overview');
+
+  React.useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setErr(null);
+    arionApi.getSeoAuditPage(siteId, pageId)
+      .then((r) => { if (alive) setDetail(r); })
+      .catch((e) => { if (alive) setErr(e?.message || 'Failed to load page detail'); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [siteId, pageId, arionApi]);
+
+  const tabs: Array<{ id: PageDetailTab; label: string }> = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'issues', label: 'Issues' },
+    { id: 'metadata', label: 'Metadata & Content' },
+    { id: 'resources', label: 'Resources' },
+    { id: 'links', label: 'Links' },
+  ];
+
+  const page = detail?.page || null;
+  const pageUrl: string = (page && (page.url || page.full_url)) || '';
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background: '#fff', borderRadius: 12, width: '94vw', maxWidth: 1100, maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 11, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5 }}>Page Detail</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#0B1C24', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {pageUrl || `Page #${pageId}`}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#999', padding: '0 6px', marginLeft: 12 }}>&times;</button>
+        </div>
+
+        <div style={{ display: 'flex', padding: '0 16px', borderBottom: '1px solid #eee', overflowX: 'auto' }}>
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              style={{
+                padding: '10px 16px', fontSize: 12, fontWeight: 600,
+                background: 'transparent',
+                color: tab === t.id ? '#0B1C24' : '#94A3B8',
+                border: 'none',
+                borderBottom: tab === t.id ? '2px solid #0B1C24' : '2px solid transparent',
+                cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
+          {loading && <div style={{ padding: 30, textAlign: 'center', color: '#5A7A8A', fontSize: 12 }}>Loading page detail…</div>}
+          {!loading && err && <AwaitingData message={`Could not load page detail: ${err}`} />}
+          {!loading && !err && (!detail || !detail.page) && (
+            <AwaitingData message="Page-level detail comes from SE Ranking's /audit/{id}/page endpoint. If this is blank, the per-page payload is still propagating — typically catches up within an hour of audit completion." />
+          )}
+          {!loading && !err && detail && detail.page && (
+            <>
+              {tab === 'overview' && <PageOverviewTab page={detail.page} issues={detail.issues} />}
+              {tab === 'issues' && <PageIssuesTab issues={detail.issues} />}
+              {tab === 'metadata' && <PageMetadataTab page={detail.page} />}
+              {tab === 'resources' && <PageResourcesTab page={detail.page} />}
+              {tab === 'links' && <PageLinksTab page={detail.page} />}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function pickNum(obj: Record<string, any>, keys: string[]): number | null {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === 'number' && !Number.isNaN(v)) return v;
+    if (typeof v === 'string' && v !== '' && !Number.isNaN(Number(v))) return Number(v);
+  }
+  return null;
+}
+
+function pickStr(obj: Record<string, any>, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === 'string' && v.length > 0) return v;
+  }
+  return null;
+}
+
+function PageOverviewTab({ page, issues }: { page: Record<string, any>; issues: SeoAuditPageDetail['issues'] }) {
+  const url = pickStr(page, ['url', 'full_url']) || '';
+  const status = pickNum(page, ['status', 'http_code', 'status_code']);
+  const title = pickStr(page, ['title']);
+  const titleLen = pickNum(page, ['title_len', 'title_length']);
+  const description = pickStr(page, ['description', 'meta_description']);
+  const descLen = pickNum(page, ['description_len', 'description_length']);
+  const canonical = pickStr(page, ['canonical_url', 'canonical']);
+  const size = pickNum(page, ['size', 'page_size', 'html_size']);
+  const loadMs = pickNum(page, ['load_ms', 'load_time', 'response_time']);
+  const wordCount = pickNum(page, ['word_count', 'words']);
+  const redirectCount = pickNum(page, ['redirect_count', 'redirects']);
+  const indexable = page.indexable === true || page.indexable === 1;
+  const noindex = page.noindex === true || page.noindex === 1;
+  const blockedRobots = page.blocked_robots === true || page.blocked_robots === 1;
+
+  const errorCount = issues.filter((i) => i.severity === 'error').reduce((s, i) => s + (i.count || 1), 0);
+  const warningCount = issues.filter((i) => i.severity === 'warning').reduce((s, i) => s + (i.count || 1), 0);
+  const noticeCount = issues.filter((i) => i.severity === 'notice').reduce((s, i) => s + (i.count || 1), 0);
+
+  const overallColor = errorCount > 0 ? '#D85A30' : warningCount > 0 ? '#EF6C33' : '#1D9E75';
+  const overallLabel = errorCount > 0 ? 'Errors Present' : warningCount > 0 ? 'Warnings Present' : 'Healthy';
+
+  const titleWarn = titleLen != null && (titleLen < 30 || titleLen > 60);
+  const descWarn = descLen != null && (descLen < 70 || descLen > 160);
+
+  const statusColor = status != null && status >= 400 ? '#D85A30' : status != null && status >= 300 ? '#EF6C33' : '#1D9E75';
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, padding: '10px 14px', background: '#F8FAFC', borderLeft: `4px solid ${overallColor}`, borderRadius: 6 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: overallColor }}>{overallLabel}</div>
+        {url && (
+          <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: '#2D9CDB', marginLeft: 'auto' }}>
+            Open page in new tab ↗
+          </a>
+        )}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+        <SummaryStat label="Errors" value={errorCount} sub="issues found" color="#D85A30" />
+        <SummaryStat label="Warnings" value={warningCount} sub="issues found" color="#EF6C33" />
+        <SummaryStat label="Notices" value={noticeCount} sub="issues found" color="#4285F4" />
+        <SummaryStat label="Load Time" value={loadMs != null ? `${loadMs} ms` : '—'} sub="server response" color="#2D9CDB" />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <FactCard label="URL" value={url || '—'} mono />
+        <FactCard label="HTTP Status" value={status != null ? String(status) : '—'} valueColor={statusColor} />
+        <FactCard
+          label="Indexability"
+          value={indexable ? 'Indexable' : 'Not indexable'}
+          valueColor={indexable ? '#1D9E75' : '#D85A30'}
+          sub={[noindex ? 'noindex meta' : null, blockedRobots ? 'blocked by robots.txt' : null].filter(Boolean).join(' · ') || null}
+        />
+        <FactCard label="Canonical URL" value={canonical || '—'} mono />
+        <FactCard
+          label="Title"
+          value={title || '—'}
+          sub={titleLen != null ? `${titleLen} chars${titleWarn ? ' — outside 30–60 range' : ''}` : null}
+          valueColor={titleWarn ? '#EF6C33' : undefined}
+        />
+        <FactCard
+          label="Meta Description"
+          value={description || '—'}
+          sub={descLen != null ? `${descLen} chars${descWarn ? ' — outside 70–160 range' : ''}` : null}
+          valueColor={descWarn ? '#EF6C33' : undefined}
+        />
+        <FactCard label="Page Size" value={size != null ? `${Math.round(size / 1024).toLocaleString()} KB` : '—'} />
+        <FactCard label="Word Count" value={wordCount != null ? wordCount.toLocaleString() : '—'} />
+        <FactCard label="Redirects" value={redirectCount != null ? String(redirectCount) : '—'} sub={pickStr(page, ['redirect_url']) || null} />
+      </div>
+    </div>
+  );
+}
+
+function FactCard({ label, value, sub, valueColor, mono }: { label: string; value: string; sub?: string | null; valueColor?: string; mono?: boolean }) {
+  return (
+    <div style={{ background: '#F8FAFC', borderRadius: 6, padding: '10px 12px', border: '1px solid #e2e8f0' }}>
+      <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>{label}</div>
+      <div
+        style={{
+          fontSize: 12, fontWeight: 600, color: valueColor || '#0B1C24', marginTop: 4,
+          wordBreak: 'break-word', fontFamily: mono ? 'ui-monospace, SFMono-Regular, Menlo, monospace' : undefined,
+        }}
+      >
+        {value}
+      </div>
+      {sub && <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 3 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function PageIssuesTab({ issues }: { issues: SeoAuditPageDetail['issues'] }) {
+  const [sev, setSev] = React.useState<'all' | 'error' | 'warning' | 'notice'>('all');
+  if (!issues || issues.length === 0) {
+    return <AwaitingData message="No issues recorded for this page in the current audit." />;
+  }
+  const filtered = issues.filter((i) => sev === 'all' || i.severity === sev);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <select value={sev} onChange={(e) => setSev(e.target.value as any)} style={{ padding: '6px 10px', fontSize: 12, border: '1px solid #d5e0e8', borderRadius: 4 }}>
+          <option value="all">All severities</option>
+          <option value="error">Errors only</option>
+          <option value="warning">Warnings only</option>
+          <option value="notice">Notices only</option>
+        </select>
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: '#5A7A8A', alignSelf: 'center' }}>
+          {filtered.length} of {issues.length} issues
+        </div>
+      </div>
+      <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#F8FAFC' }}>
+            <th style={{ textAlign: 'center', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase', width: 90 }}>Severity</th>
+            <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Issue</th>
+            <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase', width: 70 }}>Count</th>
+            <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.length === 0 ? (
+            <tr><td colSpan={4} style={{ textAlign: 'center', padding: 24, color: '#94A3B8', fontSize: 12 }}>No issues match this filter.</td></tr>
+          ) : filtered.map((i, idx) => (
+            <tr key={`${i.slug || 'iss'}-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <td style={{ textAlign: 'center', padding: '8px 6px' }}><SeverityBadge severity={i.severity} /></td>
+              <td style={{ padding: '8px 6px', color: '#0B1C24', fontWeight: 500 }}>{i.name}</td>
+              <td style={{ textAlign: 'right', padding: '8px 6px', fontWeight: 600 }}>{i.count}</td>
+              <td style={{ padding: '8px 6px', color: '#5A7A8A', fontSize: 11 }}>{i.description || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PageMetadataTab({ page }: { page: Record<string, any> }) {
+  const title = pickStr(page, ['title']);
+  const titleLen = pickNum(page, ['title_len', 'title_length']);
+  const description = pickStr(page, ['description', 'meta_description']);
+  const descLen = pickNum(page, ['description_len', 'description_length']);
+  const canonical = pickStr(page, ['canonical_url', 'canonical']);
+  const xrobots = pickStr(page, ['xrobots', 'x_robots', 'x_robots_tag']);
+  const wordCount = pickNum(page, ['word_count', 'words']);
+  const duplicate = page.duplicate_content ?? page.duplicate ?? null;
+
+  const headingLevels: Array<{ key: string; label: string }> = [
+    { key: 'h1', label: 'H1' },
+    { key: 'h2', label: 'H2' },
+    { key: 'h3', label: 'H3' },
+    { key: 'h4', label: 'H4' },
+    { key: 'h5', label: 'H5' },
+    { key: 'h6', label: 'H6' },
+  ];
+
+  const schema = page.schema || page.structured_data || null;
+  const schemaTypes: string[] = Array.isArray(schema)
+    ? schema.map((s: any) => (typeof s === 'string' ? s : (s?.type || s?.['@type'] || ''))).filter(Boolean)
+    : schema && typeof schema === 'object'
+      ? Object.keys(schema)
+      : [];
+
+  const titleWarn = titleLen != null && (titleLen < 30 || titleLen > 60);
+  const descWarn = descLen != null && (descLen < 70 || descLen > 160);
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+        <div style={{ background: '#F8FAFC', borderRadius: 6, padding: 12, border: '1px solid #e2e8f0' }}>
+          <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>Title</div>
+          <div style={{ fontSize: 12, color: '#0B1C24', wordBreak: 'break-word' }}>{title || <span style={{ color: '#D85A30' }}>No title set</span>}</div>
+          <div style={{ fontSize: 10, color: titleWarn ? '#EF6C33' : '#94A3B8', marginTop: 6 }}>
+            {titleLen != null ? `${titleLen} characters` : 'Length unknown'}{titleWarn ? ' · Outside recommended 30–60 range' : ''}
+          </div>
+        </div>
+        <div style={{ background: '#F8FAFC', borderRadius: 6, padding: 12, border: '1px solid #e2e8f0' }}>
+          <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>Meta Description</div>
+          <div style={{ fontSize: 12, color: '#0B1C24', wordBreak: 'break-word' }}>{description || <span style={{ color: '#D85A30' }}>No description set</span>}</div>
+          <div style={{ fontSize: 10, color: descWarn ? '#EF6C33' : '#94A3B8', marginTop: 6 }}>
+            {descLen != null ? `${descLen} characters` : 'Length unknown'}{descWarn ? ' · Outside recommended 70–160 range' : ''}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#0B1C24', marginBottom: 8 }}>Heading Structure</div>
+        <div style={{ background: '#F8FAFC', borderRadius: 6, padding: 12, border: '1px solid #e2e8f0' }}>
+          {headingLevels.map((h) => {
+            const raw = page[h.key];
+            const list: string[] = Array.isArray(raw)
+              ? raw.map((x) => (typeof x === 'string' ? x : x?.text || x?.value || '')).filter(Boolean)
+              : typeof raw === 'string' && raw.length > 0
+                ? [raw]
+                : [];
+            if (list.length === 0) {
+              return (
+                <div key={h.key} style={{ display: 'flex', gap: 10, fontSize: 11, padding: '4px 0', color: '#94A3B8' }}>
+                  <span style={{ fontWeight: 700, width: 30 }}>{h.label}</span>
+                  <span>—</span>
+                </div>
+              );
+            }
+            return (
+              <div key={h.key} style={{ padding: '4px 0', borderBottom: '1px solid #eef2f6' }}>
+                <div style={{ display: 'flex', gap: 10, fontSize: 11 }}>
+                  <span style={{ fontWeight: 700, color: '#0B1C24', width: 30 }}>{h.label}</span>
+                  <span style={{ color: '#5A7A8A' }}>({list.length})</span>
+                </div>
+                <ul style={{ margin: '4px 0 0 40px', padding: 0, fontSize: 11, color: '#0B1C24' }}>
+                  {list.slice(0, 8).map((txt, i) => (
+                    <li key={i} style={{ margin: '2px 0', listStyle: 'disc' }}>{txt}</li>
+                  ))}
+                  {list.length > 8 && <li style={{ color: '#94A3B8', fontStyle: 'italic' }}>+{list.length - 8} more</li>}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+        <FactCard label="Word Count" value={wordCount != null ? wordCount.toLocaleString() : '—'} />
+        <FactCard label="Canonical URL" value={canonical || '—'} mono />
+        <FactCard label="X-Robots Header" value={xrobots || '—'} />
+        <FactCard
+          label="Duplicate Content"
+          value={duplicate == null ? '—' : typeof duplicate === 'boolean' ? (duplicate ? 'Yes' : 'No') : String(duplicate)}
+          valueColor={duplicate === true ? '#D85A30' : undefined}
+        />
+      </div>
+
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#0B1C24', marginBottom: 8 }}>Structured Data</div>
+        <div style={{ background: '#F8FAFC', borderRadius: 6, padding: 12, border: '1px solid #e2e8f0' }}>
+          {schemaTypes.length === 0 ? (
+            <div style={{ fontSize: 11, color: '#94A3B8' }}>No structured data detected on this page.</div>
+          ) : (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {schemaTypes.map((t, i) => (
+                <span key={i} style={{ fontSize: 10, fontWeight: 600, background: '#2D9CDB', color: '#fff', padding: '3px 8px', borderRadius: 3 }}>
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PageResourcesTab({ page }: { page: Record<string, any> }) {
+  const imgRaw = page.img;
+  const imgArr: any[] = Array.isArray(imgRaw) ? imgRaw : [];
+  const imgCount = typeof imgRaw === 'number' ? imgRaw : (pickNum(page, ['img_count', 'images_count']) ?? imgArr.length);
+  const brokenAlt = pickNum(page, ['img_no_alt', 'images_without_alt', 'missing_alt']) ?? imgArr.filter((x: any) => x && !(x.alt || x.alt_text)).length;
+  const imgKB = Math.round((pickNum(page, ['img_size', 'images_size']) ?? 0) / 1024);
+
+  const cssArr: any[] = Array.isArray(page.css) ? page.css : [];
+  const cssCount = pickNum(page, ['css_count']) ?? cssArr.length;
+  const cssKB = Math.round((pickNum(page, ['css_size']) ?? 0) / 1024);
+
+  const jsArr: any[] = Array.isArray(page.js) ? page.js : [];
+  const jsCount = pickNum(page, ['js_count']) ?? jsArr.length;
+  const jsKB = Math.round((pickNum(page, ['js_size']) ?? 0) / 1024);
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
+        <SummaryStat label="Images" value={imgCount != null ? imgCount : '—'} sub={`${imgKB.toLocaleString()} KB${brokenAlt ? ` · ${brokenAlt} missing alt` : ''}`} color="#7B61FF" />
+        <SummaryStat label="CSS Files" value={cssCount != null ? cssCount : '—'} sub={`${cssKB.toLocaleString()} KB`} color="#EF6C33" />
+        <SummaryStat label="JS Files" value={jsCount != null ? jsCount : '—'} sub={`${jsKB.toLocaleString()} KB`} color="#FEC82C" />
+      </div>
+
+      {imgArr.length > 0 && (
+        <ResourceList title="Images" items={imgArr} kind="img" />
+      )}
+      {cssArr.length > 0 && (
+        <ResourceList title="CSS Files" items={cssArr} kind="css" />
+      )}
+      {jsArr.length > 0 && (
+        <ResourceList title="JS Files" items={jsArr} kind="js" />
+      )}
+
+      {imgArr.length === 0 && cssArr.length === 0 && jsArr.length === 0 && (
+        <AwaitingData message="Resource-level arrays are not included in this audit payload. The summary counts above are sourced from SE Ranking's aggregated page metrics." />
+      )}
+    </div>
+  );
+}
+
+function ResourceList({ title, items, kind }: { title: string; items: any[]; kind: 'img' | 'css' | 'js' }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#0B1C24', marginBottom: 8 }}>{title} ({items.length})</div>
+      <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#F8FAFC' }}>
+            <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>URL</th>
+            {kind === 'img' && <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Alt</th>}
+            <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Size</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.slice(0, 50).map((it, i) => {
+            const url = typeof it === 'string' ? it : (it?.url || it?.src || it?.href || '—');
+            const alt = typeof it === 'object' && it ? (it.alt ?? it.alt_text ?? '') : '';
+            const size = typeof it === 'object' && it ? (it.size ?? it.bytes ?? null) : null;
+            const sizeKB = size != null ? Math.round(size / 1024) : null;
+            return (
+              <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                <td style={{ padding: '6px 6px', maxWidth: 520, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {typeof url === 'string' && url.startsWith('http')
+                    ? <a href={url} target="_blank" rel="noreferrer" style={{ color: '#2D9CDB', textDecoration: 'none' }}>{url}</a>
+                    : <span>{url}</span>}
+                </td>
+                {kind === 'img' && (
+                  <td style={{ padding: '6px 6px', color: alt ? '#0B1C24' : '#D85A30', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {alt || 'missing'}
+                  </td>
+                )}
+                <td style={{ textAlign: 'right', padding: '6px 6px', color: '#5A7A8A' }}>{sizeKB != null ? `${sizeKB} KB` : '—'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {items.length > 50 && (
+        <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 6, fontStyle: 'italic' }}>
+          Showing first 50 of {items.length} entries.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PageLinksTab({ page }: { page: Record<string, any> }) {
+  const totalLinks = pickNum(page, ['total_links']);
+  const outInternal = pickNum(page, ['outlinks_internal']);
+  const outExternal = pickNum(page, ['outlinks_external']);
+  const inlinks = pickNum(page, ['inlinks']);
+  const inlinksFollow = pickNum(page, ['inlinks_follow']);
+  const inlinksNofollow = pickNum(page, ['inlinks_nofollow']);
+  const nofollowOut = pickNum(page, ['outlinks_nofollow', 'nofollow_outlinks']);
+
+  const outlinksRaw: any[] = Array.isArray(page.outlinks) ? page.outlinks : [];
+  const inlinksRaw: any[] = Array.isArray(page.inlinks_list) ? page.inlinks_list : Array.isArray(page.inlinks) && typeof page.inlinks !== 'number' ? page.inlinks : [];
+  const brokenLinks: any[] = Array.isArray(page.broken_links) ? page.broken_links : [];
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+        <SummaryStat label="Total Links" value={totalLinks != null ? totalLinks.toLocaleString() : '—'} sub="outbound + inbound" color="#2D9CDB" />
+        <SummaryStat label="Internal Out" value={outInternal != null ? outInternal.toLocaleString() : '—'} sub="on-site outbound" color="#1D9E75" />
+        <SummaryStat label="External Out" value={outExternal != null ? outExternal.toLocaleString() : '—'} sub="off-site outbound" color="#EF6C33" />
+        <SummaryStat label="Nofollow Out" value={nofollowOut != null ? nofollowOut.toLocaleString() : '—'} sub="rel='nofollow'" color="#5A7A8A" />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
+        <SummaryStat label="Inbound Links" value={inlinks != null ? inlinks.toLocaleString() : '—'} sub="from other pages on-site" color="#2D9CDB" />
+        <SummaryStat label="Inbound Follow" value={inlinksFollow != null ? inlinksFollow.toLocaleString() : '—'} sub="authority-passing" color="#1D9E75" />
+        <SummaryStat label="Inbound Nofollow" value={inlinksNofollow != null ? inlinksNofollow.toLocaleString() : '—'} sub="no authority passed" color="#5A7A8A" />
+      </div>
+
+      {outlinksRaw.length > 0 && <LinkList title="Outbound Links" items={outlinksRaw} />}
+      {inlinksRaw.length > 0 && typeof inlinksRaw[0] !== 'number' && <LinkList title="Inbound Links" items={inlinksRaw} />}
+      {brokenLinks.length > 0 && <LinkList title="Broken Links" items={brokenLinks} highlight />}
+
+      {outlinksRaw.length === 0 && (typeof inlinksRaw[0] === 'number' || inlinksRaw.length === 0) && brokenLinks.length === 0 && (
+        <AwaitingData message="Full link inventory per page is not included in this payload. The counts above come from SE Ranking's aggregated page metrics." />
+      )}
+    </div>
+  );
+}
+
+function LinkList({ title, items, highlight }: { title: string; items: any[]; highlight?: boolean }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: highlight ? '#D85A30' : '#0B1C24', marginBottom: 8 }}>{title} ({items.length})</div>
+      <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ borderBottom: '2px solid #e2e8f0', background: '#F8FAFC' }}>
+            <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>URL</th>
+            <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Anchor</th>
+            <th style={{ textAlign: 'center', padding: '8px 6px', fontSize: 10, color: '#5A7A8A', fontWeight: 600, textTransform: 'uppercase' }}>Type</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.slice(0, 50).map((it, i) => {
+            const url = typeof it === 'string' ? it : (it?.url || it?.href || '—');
+            const anchor = typeof it === 'object' && it ? (it.anchor ?? it.text ?? '') : '';
+            const nofollow = typeof it === 'object' && it ? (it.nofollow === true || it.rel === 'nofollow') : false;
+            const external = typeof it === 'object' && it ? it.external === true : false;
+            return (
+              <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                <td style={{ padding: '6px 6px', maxWidth: 520, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {typeof url === 'string' && url.startsWith('http')
+                    ? <a href={url} target="_blank" rel="noreferrer" style={{ color: '#2D9CDB', textDecoration: 'none' }}>{url}</a>
+                    : <span>{url}</span>}
+                </td>
+                <td style={{ padding: '6px 6px', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#5A7A8A' }}>{anchor || '—'}</td>
+                <td style={{ textAlign: 'center', padding: '6px 6px', fontSize: 10 }}>
+                  {nofollow && <span style={{ color: '#5A7A8A', marginRight: 4 }}>nofollow</span>}
+                  {external && <span style={{ color: '#EF6C33' }}>external</span>}
+                  {!nofollow && !external && <span style={{ color: '#1D9E75' }}>follow</span>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {items.length > 50 && (
+        <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 6, fontStyle: 'italic' }}>
+          Showing first 50 of {items.length} entries.
+        </div>
+      )}
     </div>
   );
 }
