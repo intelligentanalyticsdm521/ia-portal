@@ -1,30 +1,53 @@
 /**
- * Phase 3.5 SEO Overview — HOLISTIC cross-section dashboard.
+ * Phase 3.5 — SEO Overview (rebuild 2026-04-19).
  *
- * Not a rankings dashboard (that's Keyword Rankings). This is the one page
- * a client can open monthly to get a complete view across every SEO surface:
- *   - Hero engine cards for standard + AI search
- *   - Key metrics row (visibility, top 10, traffic forecast, audit score)
- *   - Cross-section widget grid — each links into its own dedicated page
- *   - ARGUS alert feed at the bottom
+ * Structure (top → bottom):
+ *   1. Filter bar:  range picker + range summary
+ *   2. Engine toggle:  All · Google Desktop · Google Mobile · Bing
+ *      (controls the Standard Search hero cards + the Rankings widget below;
+ *       AI Search cards + other widgets are NOT affected)
+ *   3. Standard Search Engines hero cards — 1 card per engine, with embedded
+ *      sparkline. Hidden when user narrows the toggle below "All".
+ *   4. AI Search Engines hero cards — 1 card per AI engine, tier-gated.
+ *   5. Rankings widget:  2×3 stat grid with sparklines + jumped/dropped
+ *      panel + "See Full Rankings Summary →"
+ *   6. Site Audit widget:  health-score + issue-counts + "See Full Audit →"
+ *   7. Competitors widget:  top competitor + visibility + "See Full →"
+ *   8. AI Search Results widget:  per-LLM mention counts
+ *   9. Market Monitor widget:  new backlinks / page changes / moves
+ *  10. Content widget:  links to IA Content Intelligence (placeholder)
+ *  11. Consulting upsell
  */
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip as RTooltip,
+  PieChart, Pie, Cell, Legend,
+} from 'recharts';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
-import { Card, AddonUpsell, EmptyPanel, Loading, ConsultingUpsell, ErrorBanner } from '../../components/Ui';
-import { SeoRangePicker, SeoStatCard, POSITION_BUCKET_COLORS, POSITION_BUCKET_LABELS } from '../../components/SeoUi';
+import { AddonUpsell, EmptyPanel, Loading, ConsultingUpsell, ErrorBanner, InfoCard } from '../../components/Ui';
+import { SeoRangePicker, SeoStatCard } from '../../components/SeoUi';
 import { GlossaryIcon } from '../../components/Glossary';
-import type { SeoRangeCode, SeoOverviewResponse, SeoAuditResponse } from '../../../lib/arionApi';
+import type {
+  SeoRangeCode,
+  SeoOverviewResponse,
+  SeoHeroEngineCard,
+  SeoAuditResponse,
+  SeoMarketMonitorResponse,
+  SeoCompetitorsResponse,
+} from '../../../lib/arionApi';
 
-const AI_ENGINE_LABELS = ['AI Overview', 'ChatGPT', 'Gemini', 'Perplexity'];
+type EngineFilter = 'all' | string;
 
 export function SeoOverview() {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const navigate = useNavigate();
   const [range, setRange] = React.useState<SeoRangeCode>('30d');
+  const [engineFilter, setEngineFilter] = React.useState<EngineFilter>('all');
+  const [moversTab, setMoversTab] = React.useState<'jumped' | 'dropped'>('jumped');
 
-  const { data: overviewData, loading: overviewLoading } = useArionData(
+  const { data: overviewData, loading } = useArionData(
     () => activeSiteId ? arionApi.getSeoOverview(activeSiteId, range) : Promise.resolve(null),
     [activeSiteId, range]
   );
@@ -32,12 +55,22 @@ export function SeoOverview() {
     () => activeSiteId ? arionApi.getSeoAudit(activeSiteId).catch(() => null) : Promise.resolve(null),
     [activeSiteId]
   );
+  const { data: compData } = useArionData(
+    () => activeSiteId ? arionApi.getSeoCompetitors(activeSiteId).catch(() => null) : Promise.resolve(null),
+    [activeSiteId]
+  );
+  const { data: mmData } = useArionData(
+    () => activeSiteId ? arionApi.getSeoMarketMonitor(activeSiteId, 30).catch(() => null) : Promise.resolve(null),
+    [activeSiteId]
+  );
 
-  if (overviewLoading) return <Loading />;
+  if (loading) return <Loading />;
   if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
 
   const o = overviewData as SeoOverviewResponse | null;
   const a = auditData as SeoAuditResponse | null;
+  const comp = compData as SeoCompetitorsResponse | null;
+  const mm = mmData as SeoMarketMonitorResponse | null;
   const connected = o?.connected === true;
   const hasSeoAddon = selectedSite?.seoAddonTier != null;
 
@@ -51,217 +84,283 @@ export function SeoOverview() {
       />
     );
   }
-
   if (!connected) {
     return <ErrorBanner message="SE Ranking is not connected for this site yet. Check the Keyword Rankings page to run diagnostics." />;
   }
 
-  const stats = o!.stats.current;
-  const delta = o!.stats.delta;
-  const providers = o!.heroCards?.providers || [];
-  const ai = o!.heroCards?.ai || [];
-  const movers = o!.movers || { jumped: [], dropped: [], unchanged: 0 };
+  const standardCards: SeoHeroEngineCard[] = o!.heroCards.standard || o!.heroCards.providers || [];
+  const aiCards: SeoHeroEngineCard[] = o!.heroCards.ai || [];
+  const distribution = o!.distributionSeries || [];
 
-  // Tier gating — lower tiers see AI cards as locked previews.
+  // Pick stats based on toggle
+  const activeCard = engineFilter === 'all' ? null : standardCards.find((c) => c.engineId === engineFilter);
+  const activeStats = activeCard?.current ?? o!.stats.current;
+  const activeDelta = activeCard
+    ? {
+        avgPosition: activeCard.avgPositionDelta,
+        visibilityScore: activeCard.visibilityDelta,
+        top10Count: activeCard.top10Delta,
+      }
+    : o!.stats.delta;
+
+  // Derive sparklines from distribution series (positions per bucket over time)
+  const avgPosSparkline = distribution.map((d) => ({
+    date: d.date,
+    value: weightedAvgPositionForDay(d),
+  })).filter((p) => p.value != null) as Array<{ date: string; value: number }>;
+  const top3Sparkline = distribution.map((d) => ({ date: d.date, value: (d.top1 || 0) + (d.top2_3 || 0) }));
+  const top10Sparkline = distribution.map((d) => ({ date: d.date, value: (d.top1 || 0) + (d.top2_3 || 0) + (d.top4_5 || 0) + (d.top6_10 || 0) }));
+  const top30Sparkline = distribution.map((d) => ({ date: d.date, value: top10Sparkline[distribution.indexOf(d)].value + (d.top11_30 || 0) }));
+  const top100Sparkline = distribution.map((d, i) => ({ date: d.date, value: top30Sparkline[i].value + (d.top31_100 || 0) }));
+  const visibilitySparkline = distribution.map((d) => ({ date: d.date, value: weightedAvgPositionForDay(d) != null ? Math.round(((d.top1 || 0) * 0.27 + (d.top2_3 || 0) * 0.13 + (d.top4_5 || 0) * 0.075 + (d.top6_10 || 0) * 0.03) * 100) / 100 : 0 }));
+
+  // Tier gating for AI cards
   const tier = (selectedSite?.seoAddonTier || '').toLowerCase();
-  const aiEnginesUnlocked: Record<string, boolean> = {
-    'chatgpt': tier === 'growth' || tier === 'authority',
-    'gemini': tier === 'growth' || tier === 'authority',
-    'ai overview': tier === 'authority',
-    'perplexity': tier === 'authority',
+  const aiUnlocked = (type: string | null) => {
+    if (!type) return tier === 'authority';
+    if (type === 'chatgpt' || type === 'gemini') return tier === 'growth' || tier === 'authority';
+    return tier === 'authority';
   };
 
-  const aiCardsByName: Record<string, typeof ai[0] | null> = {};
-  for (const x of ai) aiCardsByName[x.name.toLowerCase()] = x;
-  const aiDisplay = AI_ENGINE_LABELS.map((label) => {
-    const key = label.toLowerCase();
-    const card = aiCardsByName[key] || Object.entries(aiCardsByName).find(([k]) => k.includes(key.split(' ')[0]))?.[1] || null;
-    return { label, key, card, unlocked: aiEnginesUnlocked[key] ?? false };
-  });
-
-  const auditHealth = a?.status === 'complete' ? (a.healthScore ?? 0) : null;
+  // Audit data
+  const auditConnected = a?.status === 'complete';
+  const auditHealthScore = auditConnected ? (a!.healthScore ?? 0) : null;
   const auditErrors = a?.issues?.errors ?? 0;
   const auditWarnings = a?.issues?.warnings ?? 0;
+  const auditNotices = a?.issues?.notices ?? 0;
+  const auditPassed = a?.issues?.passed ?? 0;
+  const auditPages = a?.pagesCrawled ?? 0;
+
+  // Competitors data
+  const competitors = (comp?.competitors ?? []).slice(0, 5);
+  const topComp = competitors[0] ?? null;
+
+  // Market Monitor data
+  const mmMoves = mm?.moves?.length ?? 0;
+  const mmNewBacklinks = mm?.backlinks?.new?.length ?? 0;
+  const mmLostBacklinks = mm?.backlinks?.lost?.length ?? 0;
+  const mmPageChanges = mm?.pageChanges?.length ?? 0;
+
+  // Engine toggle options (always include "All")
+  const toggleOptions: Array<{ id: EngineFilter; label: string }> = [
+    { id: 'all', label: 'All' },
+    ...standardCards.map((c) => ({ id: c.engineId, label: c.label })),
+  ];
 
   return (
     <div>
       {/* Filter bar */}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
         <SeoRangePicker value={range} onChange={setRange} />
         <div style={{ fontSize: 11, color: 'var(--color-text-tertiary, #5A7A8A)', marginLeft: 'auto' }}>
           {o!.range.label} · vs {o!.range.prior.start} to {o!.range.prior.end}
         </div>
       </div>
 
-      {/* Row 1: Standard Search hero cards */}
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary, #0B1C24)', marginBottom: 8 }}>Standard Search</div>
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(providers.length, 1)}, 1fr)`, gap: 12, marginBottom: 18 }}>
-        {providers.length === 0 ? (
-          <div style={{ color: '#5A7A8A', fontSize: 12, padding: 20, textAlign: 'center', background: '#F8FAFC', borderRadius: 6 }}>
-            No search engines configured. Check your SE Ranking project setup.
+      {/* Engine toggle */}
+      <EngineToggle value={engineFilter} onChange={setEngineFilter} options={toggleOptions} />
+
+      {/* Section: Standard Search Engines */}
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary, #0B1C24)', marginTop: 18, marginBottom: 8, display: 'inline-flex', alignItems: 'center' }}>
+        Standard Search Engines
+        <GlossaryIcon termKey="position" size={12} />
+        <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--color-text-tertiary, #5A7A8A)', marginLeft: 8 }}>
+          Google &amp; Bing — where your buyers primarily search
+        </span>
+      </div>
+      {standardCards.length === 0 ? (
+        <div style={{ color: '#5A7A8A', fontSize: 12, padding: 20, textAlign: 'center', background: '#F8FAFC', borderRadius: 6 }}>
+          No standard search engines configured. Check your SE Ranking project setup.
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${standardCards.length}, 1fr)`, gap: 12 }}>
+          {standardCards
+            .filter((c) => engineFilter === 'all' || c.engineId === engineFilter)
+            .map((c) => (
+              <SeoStatCard
+                key={c.engineId}
+                label={c.label}
+                value={c.current.avgPosition != null ? String(Math.round(c.current.avgPosition)) : '—'}
+                sub={`${c.current.rankingKeywords}/${c.current.totalKeywords} ranking · ${c.longLabel}`}
+                delta={c.avgPositionDelta}
+                deltaFormat="position"
+                deltaIsGoodWhenPositive={true}
+                accent="#2D9CDB"
+                sparklineData={avgPosSparkline}
+                sparklineColor="#2D9CDB"
+              />
+            ))}
+        </div>
+      )}
+
+      {/* Section: AI Search Engines (NOT affected by toggle) */}
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary, #0B1C24)', marginTop: 22, marginBottom: 8, display: 'inline-flex', alignItems: 'center' }}>
+        AI Search Engines
+        <GlossaryIcon termKey="ai_mentions" size={12} />
+        <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--color-text-tertiary, #5A7A8A)', marginLeft: 8 }}>
+          ChatGPT, Gemini, AI Mode, Perplexity — mention tracking
+        </span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(aiCards.length, 4)}, 1fr)`, gap: 12 }}>
+        {aiCards.length === 0 ? (
+          <div style={{ color: '#5A7A8A', fontSize: 12, padding: 20, textAlign: 'center', background: '#F8FAFC', borderRadius: 6, gridColumn: '1 / -1' }}>
+            No AI engines configured in SE Ranking. Add ChatGPT, Gemini, AI Mode, or Perplexity to start tracking.
           </div>
-        ) : providers.map((p) => (
-          <SeoStatCard
-            key={p.name}
-            label={p.name}
-            value={p.current.avgPosition != null ? `#${Math.round(p.current.avgPosition)}` : '—'}
-            sub={`${p.current.rankingKeywords} / ${p.current.totalKeywords} ranking · ${p.devices.join(' + ') || 'all devices'}`}
-            delta={p.avgPositionDelta}
-            deltaFormat="position"
-            deltaIsGoodWhenPositive={true}
-            accent="#2D9CDB"
-          />
-        ))}
+        ) : (
+          aiCards.map((c) => (
+            <SeoStatCard
+              key={c.engineId}
+              label={c.label}
+              value={c.current.top10Count ?? '—'}
+              sub={aiUnlocked(c.type) ? c.longLabel : 'Upgrade to unlock'}
+              delta={c.visibilityDelta}
+              deltaFormat="signed"
+              deltaIsGoodWhenPositive={true}
+              accent="#0C4A60"
+              locked={!aiUnlocked(c.type)}
+            />
+          ))
+        )}
       </div>
 
-      {/* Row 2: AI Search hero cards */}
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary, #0B1C24)', marginBottom: 8, display: 'flex', alignItems: 'center' }}>
-        AI Search Engines <GlossaryIcon termKey="ai_mentions" />
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 22 }}>
-        {aiDisplay.map((ae) => (
-          <SeoStatCard
-            key={ae.label}
-            label={ae.label}
-            value={ae.card?.current?.top10Count != null ? ae.card.current.top10Count : '—'}
-            sub={ae.unlocked ? 'mentions in AI responses' : 'Upgrade to Growth / Authority'}
-            delta={ae.card?.visibilityDelta ?? null}
-            deltaFormat="signed"
-            deltaIsGoodWhenPositive={true}
-            accent="#0C4A60"
-            locked={!ae.unlocked}
-          />
-        ))}
-      </div>
+      {/* Widget: Rankings */}
+      <WidgetContainer
+        title="Keyword Rankings"
+        subtitle={engineFilter === 'all' ? 'Averaged across all engines' : `Filtered: ${activeCard?.label ?? ''}`}
+        onSeeFull={() => navigate('/app/services/arion_seo_rankings')}
+        seeFullLabel="See Full Rankings Summary"
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+          {/* Left: 2×3 grid of stat cards with sparklines */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            <SeoStatCard
+              label="Avg Position"
+              value={activeStats.avgPosition != null ? String(Math.round(activeStats.avgPosition)) : '—'}
+              delta={activeDelta.avgPosition}
+              deltaFormat="position"
+              deltaIsGoodWhenPositive={true}
+              sparklineData={avgPosSparkline}
+              sparklineColor="#2D9CDB"
+              accent="#2D9CDB"
+              termKey="avg_position"
+            />
+            <SeoStatCard label="Top 3" value={top3Sparkline[top3Sparkline.length - 1]?.value ?? 0} sparklineData={top3Sparkline} sparklineColor="#1D9E75" accent="#1D9E75" />
+            <SeoStatCard label="Top 10" value={top10Sparkline[top10Sparkline.length - 1]?.value ?? 0} sparklineData={top10Sparkline} sparklineColor="#1D9E75" accent="#1D9E75" termKey="top10_keywords" />
+            <SeoStatCard
+              label="Search Visibility"
+              value={activeStats.visibilityScore != null ? `${activeStats.visibilityScore.toFixed(1)}%` : '—'}
+              delta={activeDelta.visibilityScore}
+              deltaFormat="percentage"
+              deltaIsGoodWhenPositive={true}
+              sparklineData={visibilitySparkline}
+              sparklineColor="#EF6C33"
+              accent="#EF6C33"
+              termKey="search_visibility"
+            />
+            <SeoStatCard label="Top 30" value={top30Sparkline[top30Sparkline.length - 1]?.value ?? 0} sparklineData={top30Sparkline} sparklineColor="#4285F4" accent="#4285F4" />
+            <SeoStatCard label="Top 100" value={top100Sparkline[top100Sparkline.length - 1]?.value ?? 0} sparklineData={top100Sparkline} sparklineColor="#7B61FF" accent="#7B61FF" />
+          </div>
+          {/* Right: Jumped/Dropped panel */}
+          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px' }}>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+              <MoverTabButton active={moversTab === 'jumped'} onClick={() => setMoversTab('jumped')} label="Jumped" count={o!.movers.jumped.length} tone="up" />
+              <MoverTabButton active={moversTab === 'dropped'} onClick={() => setMoversTab('dropped')} label="Dropped" count={o!.movers.dropped.length} tone="down" />
+            </div>
+            <MoversTable movers={moversTab === 'jumped' ? o!.movers.jumped : o!.movers.dropped} />
+          </div>
+        </div>
+      </WidgetContainer>
 
-      {/* Row 3: Key metrics */}
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary, #0B1C24)', marginBottom: 8 }}>Key metrics</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 22 }}>
-        <SeoStatCard
-          termKey="search_visibility"
-          label="Search Visibility"
-          value={`${stats.visibilityScore}%`}
-          delta={delta.visibilityScore != null ? Number(delta.visibilityScore) : null}
-          deltaFormat="percentage"
-          accent="#1D9E75"
-        />
-        <SeoStatCard
-          termKey="top10_keywords"
-          label="Top 10 Keywords"
-          value={stats.top10Count || 0}
-          sub={`of ${stats.totalKeywords || 0} total`}
-          delta={delta.top10Count != null ? Number(delta.top10Count) : null}
-          deltaIsGoodWhenPositive={true}
-          accent="#EF6C33"
-        />
-        <SeoStatCard
-          termKey="traffic_forecast"
-          label="Traffic Forecast"
-          value={`~${stats.trafficForecast}`}
-          sub="est. monthly clicks"
-          delta={delta.trafficForecast != null ? Number(delta.trafficForecast) : null}
-          accent="#FEC82C"
-        />
-        <SeoStatCard
-          termKey="health_score"
-          label="Audit Health Score"
-          value={auditHealth != null ? auditHealth : '—'}
-          sub={auditHealth != null ? (auditHealth >= 80 ? 'Strong' : auditHealth >= 50 ? 'Needs attention' : 'At risk') : 'Run audit'}
-          accent={auditHealth == null ? '#94A3B8' : auditHealth >= 80 ? '#1D9E75' : auditHealth >= 50 ? '#EF6C33' : '#D85A30'}
-        />
-      </div>
+      {/* Widget: Site Audit */}
+      <WidgetContainer
+        title="Site Audit"
+        subtitle={auditConnected ? `Last audit ${new Date(a!.lastAuditDate || '').toLocaleDateString()}` : 'No audit data yet'}
+        onSeeFull={() => navigate('/app/services/arion_seo_site_audit')}
+        seeFullLabel="See Full Site Audit Summary"
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+          <HealthScoreDonut score={auditHealthScore} />
+          <IssuesBarChart errors={auditErrors} warnings={auditWarnings} notices={auditNotices} />
+          <div style={{ display: 'grid', gap: 8, alignContent: 'start' }}>
+            <SeoStatCard label="Crawled Pages" value={auditPages} accent="#4285F4" />
+            <SeoStatCard label="Passed Checks" value={auditPassed} accent="#1D9E75" />
+          </div>
+        </div>
+      </WidgetContainer>
 
-      {/* Row 4: Cross-section widget grid */}
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary, #0B1C24)', marginBottom: 8 }}>Across your SEO</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 22 }}>
-        <SectionWidget
-          title="Keyword Rankings"
-          primaryValue={`${stats.totalKeywords}`}
-          primaryLabel="tracked"
-          secondaryRows={[
-            { label: 'Avg Position', value: stats.avgPosition != null ? String(Math.round(stats.avgPosition)) : '—' },
-            { label: 'Top 10', value: String(stats.top10Count) },
-            { label: 'Jumped / Dropped', value: `${movers.jumped.length} / ${movers.dropped.length}`, valueColor: movers.jumped.length >= movers.dropped.length ? '#1D9E75' : '#D85A30' },
-          ]}
-          onClick={() => navigate('/app/services/arion_seo_rankings')}
-          accent="#2D9CDB"
-        />
-        <SectionWidget
-          title="Site Audit"
-          primaryValue={auditHealth != null ? String(auditHealth) : '—'}
-          primaryLabel="health score"
-          primaryColor={auditHealth == null ? '#94A3B8' : auditHealth >= 80 ? '#1D9E75' : auditHealth >= 50 ? '#EF6C33' : '#D85A30'}
-          secondaryRows={[
-            { label: 'Errors', value: String(auditErrors), valueColor: auditErrors > 0 ? '#D85A30' : '#5A7A8A' },
-            { label: 'Warnings', value: String(auditWarnings), valueColor: auditWarnings > 10 ? '#EF6C33' : '#5A7A8A' },
-            { label: 'Pages crawled', value: a?.pagesCrawled != null ? String(a.pagesCrawled) : '—' },
-          ]}
-          onClick={() => navigate('/app/services/arion_seo_site_audit')}
-          accent="#EF6C33"
-        />
-        <SectionWidget
-          title="Competitors"
-          primaryValue={'—'}
-          primaryLabel="tracked"
-          secondaryRows={[
-            { label: 'Visibility vs avg', value: '—' },
-            { label: 'Keyword gap', value: '—' },
-            { label: 'Content opportunities', value: '—' },
-          ]}
-          onClick={() => navigate('/app/services/arion_seo_competitors')}
-          accent="#FEC82C"
-          comingSoon="Add competitors to populate"
-        />
-        <SectionWidget
-          title="AI Search Results"
-          primaryValue={tier === 'authority' ? `${ai.length}` : tier === 'growth' ? '2' : '—'}
-          primaryLabel="AI engines tracked"
-          secondaryRows={[
-            { label: 'ChatGPT mentions', value: aiEnginesUnlocked['chatgpt'] ? '—' : '🔒' },
-            { label: 'Gemini mentions', value: aiEnginesUnlocked['gemini'] ? '—' : '🔒' },
-            { label: 'Your pages cited', value: tier === 'authority' ? '—' : '🔒' },
-          ]}
-          onClick={() => navigate('/app/services/arion_seo_ai_search')}
-          accent="#0C4A60"
-          locked={tier === 'starter' || tier === 'essentials'}
-          lockedLabel="Included in Growth and Authority"
-        />
-        <SectionWidget
-          title="Market Monitor"
-          primaryValue={'—'}
-          primaryLabel="new backlinks"
-          secondaryRows={[
-            { label: 'Lost backlinks', value: '—' },
-            { label: 'Competitor page edits', value: '—' },
-            { label: 'New keyword rankings', value: '—' },
-          ]}
-          onClick={() => navigate('/app/services/arion_seo_market_monitor')}
-          accent="#E64A28"
-          locked={tier !== 'authority'}
-          lockedLabel="Authority tier only"
-        />
-        <SectionWidget
-          title="IA Insights"
-          primaryValue={String(movers.jumped.length + movers.dropped.length)}
-          primaryLabel="movers this period"
-          secondaryRows={[
-            { label: 'Quick wins', value: '—' },
-            { label: 'Content decay', value: '—' },
-            { label: 'Whitespace', value: '—' },
-          ]}
-          onClick={() => navigate('/app/services/arion_analytics_ia_reports')}
-          accent="#1D9E75"
-        />
-      </div>
+      {/* Widget: Competitors */}
+      <WidgetContainer
+        title="Competitors"
+        subtitle={competitors.length > 0 ? `${competitors.length} tracked` : 'No competitors configured'}
+        onSeeFull={() => navigate('/app/services/arion_seo_competitors')}
+        seeFullLabel="See Full Competitors Summary"
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 16 }}>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <SeoStatCard label="Tracked" value={competitors.length} sub="of 10 slots" accent="#EF6C33" />
+            {topComp && (
+              <SeoStatCard label="Top Competitor" value={(topComp as any).domain ?? '—'} sub={`Domain Trust ${(topComp as any).domainTrust ?? '—'}`} accent="#0C4A60" />
+            )}
+          </div>
+          <CompetitorsMiniTable competitors={competitors as any[]} />
+        </div>
+      </WidgetContainer>
 
-      {/* Row 5: ARGUS alert feed (compact) */}
-      <Card title="Recent activity">
-        <AlertFeed overview={o!} audit={a || null} />
-      </Card>
+      {/* Widget: AI Search Results */}
+      <WidgetContainer
+        title="AI Search Results"
+        subtitle={aiCards.length > 0 ? `${aiCards.length} AI engines tracked` : 'Not configured'}
+        onSeeFull={() => navigate('/app/services/arion_seo_ai_search')}
+        seeFullLabel="See Full AI Search Summary"
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(aiCards.length, 1)}, 1fr)`, gap: 12 }}>
+          {aiCards.length === 0 ? (
+            <div style={{ color: '#5A7A8A', fontSize: 12, padding: 20, textAlign: 'center', background: '#F8FAFC', borderRadius: 6 }}>
+              Configure AI engines in SE Ranking to see mention tracking data.
+            </div>
+          ) : (
+            aiCards.map((c) => (
+              <div key={c.engineId} style={{ background: '#F8FAFC', borderRadius: 6, padding: '12px 14px', borderLeft: '3px solid #0C4A60' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#0B1C24' }}>{c.label}</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#0C4A60', marginTop: 4 }}>{c.current.top10Count ?? 0}</div>
+                <div style={{ fontSize: 9, color: '#5A7A8A', marginTop: 2 }}>mentions</div>
+              </div>
+            ))
+          )}
+        </div>
+      </WidgetContainer>
+
+      {/* Widget: Market Monitor */}
+      <WidgetContainer
+        title="Market Monitor"
+        subtitle={mm?.authorityGated ? 'Authority tier required' : 'Last 30 days'}
+        onSeeFull={() => navigate('/app/services/arion_seo_market_monitor')}
+        seeFullLabel="See Full Market Monitor Summary"
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+          <SeoStatCard label="New Backlinks" value={mmNewBacklinks} sub="past 30 days" accent="#1D9E75" termKey="backlinks_new" />
+          <SeoStatCard label="Lost Backlinks" value={mmLostBacklinks} sub="past 30 days" accent="#D85A30" termKey="backlinks_lost" />
+          <SeoStatCard label="Page Changes" value={mmPageChanges} sub="on watched pages" accent="#4285F4" termKey="page_changes" />
+          <SeoStatCard label="Competitor Moves" value={mmMoves} sub="≥5 position swings" accent="#EF6C33" termKey="competitor_moves" />
+        </div>
+      </WidgetContainer>
+
+      {/* Widget: Content — placeholder, links to IA Content Intelligence */}
+      <WidgetContainer
+        title="Content"
+        subtitle="Content-quality scoring and improvement opportunities"
+        onSeeFull={() => navigate('/app/services/arion_analytics_ia_cross_channel')}
+        seeFullLabel="See Full Content Intelligence"
+      >
+        <div style={{ padding: 16, background: '#F8FAFC', borderRadius: 6, textAlign: 'center', color: '#5A7A8A', fontSize: 12, lineHeight: 1.6 }}>
+          Content scoring across your site's top pages powers the Content Intelligence view.
+          Flagged pages (Content Score &lt; 50) surface as refresh opportunities.
+        </div>
+      </WidgetContainer>
 
       <ConsultingUpsell
-        headline={stats.avgPosition && stats.avgPosition > 15 ? `Average position is ${Math.round(stats.avgPosition)} — IA can build a 90-day plan to reach page 1.` : "IA manages your SEO strategy end-to-end."}
-        subtext="Our SEO strategists analyze your full keyword landscape and execute a custom plan."
+        headline="Want IA to run your SEO strategy end-to-end?"
+        subtext="Our SEO strategists read these signals weekly, execute content + outreach plans, and report monthly."
         serviceType="SEO Strategy"
         triggerPage="seo-overview"
       />
@@ -269,129 +368,211 @@ export function SeoOverview() {
   );
 }
 
-/* ───────── Cross-section widget ───────── */
+// ────────────────────────────────────────────────────────────────
+// Sub-components
+// ────────────────────────────────────────────────────────────────
 
-function SectionWidget({
-  title,
-  primaryValue,
-  primaryLabel,
-  primaryColor,
-  secondaryRows,
-  onClick,
-  accent,
-  locked = false,
-  lockedLabel,
-  comingSoon,
-}: {
-  title: string;
-  primaryValue: string;
-  primaryLabel: string;
-  primaryColor?: string;
-  secondaryRows: Array<{ label: string; value: string; valueColor?: string }>;
-  onClick: () => void;
-  accent: string;
-  locked?: boolean;
-  lockedLabel?: string;
-  comingSoon?: string;
-}) {
+function EngineToggle({ value, onChange, options }: { value: EngineFilter; onChange: (v: EngineFilter) => void; options: Array<{ id: EngineFilter; label: string }> }) {
   return (
-    <div
+    <div style={{ display: 'inline-flex', gap: 0, background: '#F1F5F9', borderRadius: 6, padding: 3 }}>
+      {options.map((o) => (
+        <button
+          key={o.id}
+          onClick={() => onChange(o.id)}
+          style={{
+            padding: '6px 14px',
+            fontSize: 12,
+            fontWeight: 600,
+            background: value === o.id ? '#fff' : 'transparent',
+            color: value === o.id ? '#0B1C24' : '#5A7A8A',
+            border: 'none',
+            borderRadius: 4,
+            cursor: 'pointer',
+            boxShadow: value === o.id ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+          }}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function WidgetContainer({ title, subtitle, onSeeFull, seeFullLabel, children }: { title: string; subtitle?: string; onSeeFull: () => void; seeFullLabel: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginTop: 22, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#0B1C24' }}>{title}</div>
+          {subtitle && <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 2 }}>{subtitle}</div>}
+        </div>
+        <button
+          onClick={onSeeFull}
+          style={{ padding: '6px 14px', fontSize: 11, fontWeight: 600, background: '#0B1C24', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer' }}
+        >
+          {seeFullLabel} →
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function MoverTabButton({ active, onClick, label, count, tone }: { active: boolean; onClick: () => void; label: string; count: number; tone: 'up' | 'down' }) {
+  const color = tone === 'up' ? '#1D9E75' : '#D85A30';
+  return (
+    <button
       onClick={onClick}
       style={{
-        background: '#fff',
-        borderLeft: `3px solid ${accent}`,
-        borderRadius: 8,
-        padding: '14px 16px',
+        flex: 1,
+        padding: '6px 10px',
+        fontSize: 11,
+        fontWeight: 600,
+        background: active ? color : '#F8FAFC',
+        color: active ? '#fff' : color,
+        border: `1px solid ${active ? color : '#e2e8f0'}`,
+        borderRadius: 4,
         cursor: 'pointer',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-        transition: 'transform 0.15s, box-shadow 0.15s',
-        position: 'relative',
-        minHeight: 170,
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 4px 14px rgba(0,0,0,0.1)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.06)'; e.currentTarget.style.transform = 'none'; }}
     >
-      {locked && (
-        <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(214,168,0,0.15)', color: '#C48C00', fontSize: 9, fontWeight: 700, padding: '3px 8px', borderRadius: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-          🔒 Upgrade
-        </div>
-      )}
-      <div style={{ fontSize: 11, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 4 }}>{title}</div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 10 }}>
-        <span style={{ fontSize: 28, fontWeight: 700, color: primaryColor || '#0B1C24', lineHeight: 1 }}>{primaryValue}</span>
-        <span style={{ fontSize: 11, color: '#5A7A8A' }}>{primaryLabel}</span>
+      {label} ({count})
+    </button>
+  );
+}
+
+function MoversTable({ movers }: { movers: Array<{ keyword: string; currentPosition: number | null; positionChange: number; searchVolume: number }> }) {
+  const rows = movers.slice(0, 5);
+  if (rows.length === 0) {
+    return <div style={{ fontSize: 11, color: '#94A3B8', textAlign: 'center', padding: 14 }}>No movers in this period.</div>;
+  }
+  return (
+    <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+      <thead>
+        <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+          <th style={{ textAlign: 'left', padding: '4px 2px', fontSize: 9, color: '#94A3B8', textTransform: 'uppercase', fontWeight: 600 }}>Keyword</th>
+          <th style={{ textAlign: 'right', padding: '4px 2px', fontSize: 9, color: '#94A3B8' }}>Pos</th>
+          <th style={{ textAlign: 'right', padding: '4px 2px', fontSize: 9, color: '#94A3B8' }}>Δ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((m, i) => {
+          const tone = m.positionChange > 0 ? '#1D9E75' : '#D85A30';
+          return (
+            <tr key={i} style={{ borderBottom: '1px solid #f5f5f5' }}>
+              <td style={{ padding: '5px 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{m.keyword}</td>
+              <td style={{ textAlign: 'right', padding: '5px 2px' }}>{m.currentPosition ?? '—'}</td>
+              <td style={{ textAlign: 'right', padding: '5px 2px', fontWeight: 600, color: tone }}>
+                {m.positionChange > 0 ? '+' : ''}{m.positionChange}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function HealthScoreDonut({ score }: { score: number | null }) {
+  const value = score ?? 0;
+  const remainder = 100 - value;
+  const color = value >= 80 ? '#1D9E75' : value >= 50 ? '#EF6C33' : '#D85A30';
+  const label = value >= 80 ? 'Strong' : value >= 50 ? 'Needs Attention' : 'At Risk';
+  return (
+    <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '14px 16px', textAlign: 'center' }}>
+      <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 4 }}>
+        Health Score <GlossaryIcon termKey="health_score" size={11} />
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
-        {secondaryRows.map((r, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-            <span style={{ color: '#5A7A8A' }}>{r.label}</span>
-            <span style={{ color: r.valueColor || '#0B1C24', fontWeight: 500 }}>{r.value}</span>
-          </div>
-        ))}
-      </div>
-      {(lockedLabel || comingSoon) && (
-        <div style={{ fontSize: 10, color: '#94A3B8', fontStyle: 'italic', marginTop: 8, paddingTop: 8, borderTop: '1px dashed #eef2f5' }}>
-          {locked ? lockedLabel : comingSoon}
+      <div style={{ width: '100%', height: 140, position: 'relative' }}>
+        <ResponsiveContainer>
+          <PieChart>
+            <Pie data={[{ name: 'Score', value }, { name: 'Rest', value: remainder }]} dataKey="value" innerRadius={40} outerRadius={60} startAngle={90} endAngle={-270} stroke="none">
+              <Cell fill={color} />
+              <Cell fill="#E2E8F0" />
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ fontSize: 24, fontWeight: 700, color }}>{score ?? '—'}</div>
+          <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 2 }}>{label}</div>
         </div>
-      )}
-      <div style={{ position: 'absolute', bottom: 10, right: 14, fontSize: 11, fontWeight: 600, color: accent }}>
-        View →
       </div>
     </div>
   );
 }
 
-/* ───────── Alert feed ───────── */
-
-function AlertFeed({ overview, audit }: { overview: SeoOverviewResponse; audit: SeoAuditResponse | null }) {
-  const alerts: Array<{ tone: 'good' | 'warn' | 'bad' | 'info'; text: React.ReactNode }> = [];
-
-  const topJump = overview.movers.jumped[0];
-  const topDrop = overview.movers.dropped[0];
-  if (topJump) {
-    alerts.push({
-      tone: 'good',
-      text: <><strong>{topJump.keyword}</strong> jumped {topJump.positionChange} positions to #{topJump.currentPosition}.</>,
-    });
-  }
-  if (topDrop) {
-    alerts.push({
-      tone: 'bad',
-      text: <><strong>{topDrop.keyword}</strong> dropped {Math.abs(topDrop.positionChange)} positions to #{topDrop.currentPosition ?? '—'}.</>,
-    });
-  }
-  const newTop10 = overview.stats.current.top10Count - overview.stats.prior.top10Count;
-  if (newTop10 > 0) {
-    alerts.push({ tone: 'good', text: <>{newTop10} new keyword{newTop10 === 1 ? '' : 's'} entered the top 10 this period.</> });
-  } else if (newTop10 < 0) {
-    alerts.push({ tone: 'warn', text: <>{Math.abs(newTop10)} keyword{Math.abs(newTop10) === 1 ? '' : 's'} fell out of the top 10 this period.</> });
-  }
-  if (audit?.status === 'complete' && (audit.issues?.errors ?? 0) > 0) {
-    alerts.push({
-      tone: 'bad',
-      text: <>Site audit found <strong>{audit.issues!.errors} critical errors</strong>. Fixing these is the fastest SEO win.</>,
-    });
-  }
-  if (audit?.status === 'complete' && (audit.healthScore ?? 0) >= 80) {
-    alerts.push({ tone: 'good', text: <>Site audit health is strong at <strong>{audit.healthScore}/100</strong>.</> });
-  }
-
-  if (alerts.length === 0) {
-    return <div style={{ fontSize: 12, color: '#5A7A8A', padding: '10px 0' }}>No significant changes this period.</div>;
-  }
-
+function IssuesBarChart({ errors, warnings, notices }: { errors: number; warnings: number; notices: number }) {
+  const data = [
+    { name: 'Errors', value: errors, fill: '#D85A30' },
+    { name: 'Warnings', value: warnings, fill: '#EF6C33' },
+    { name: 'Notices', value: notices, fill: '#4285F4' },
+  ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {alerts.map((alert, i) => {
-        const color = alert.tone === 'good' ? '#1D9E75' : alert.tone === 'warn' ? '#EF6C33' : alert.tone === 'bad' ? '#D85A30' : '#2D9CDB';
-        const icon = alert.tone === 'good' ? '▲' : alert.tone === 'warn' ? '⚠' : alert.tone === 'bad' ? '▼' : 'ⓘ';
-        return (
-          <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 12, padding: '6px 0', borderBottom: i < alerts.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
-            <span style={{ color, fontWeight: 700, flexShrink: 0, width: 16, textAlign: 'center' }}>{icon}</span>
-            <span style={{ color: '#0B1C24', lineHeight: 1.55 }}>{alert.text}</span>
-          </div>
-        );
-      })}
+    <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '14px 16px' }}>
+      <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>
+        Issues Breakdown
+      </div>
+      <div style={{ width: '100%', height: 140 }}>
+        <ResponsiveContainer>
+          <BarChart data={data} margin={{ top: 6, right: 6, left: 0, bottom: 6 }}>
+            <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#5A7A8A' }} tickLine={false} />
+            <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} tickLine={false} width={30} />
+            <RTooltip contentStyle={{ fontSize: 11, borderRadius: 6 }} />
+            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+              {data.map((d, i) => <Cell key={i} fill={d.fill} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
+}
+
+function CompetitorsMiniTable({ competitors }: { competitors: any[] }) {
+  if (competitors.length === 0) {
+    return <div style={{ background: '#F8FAFC', borderRadius: 8, padding: 16, textAlign: 'center', color: '#94A3B8', fontSize: 12 }}>No competitors tracked.</div>;
+  }
+  return (
+    <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '10px 12px' }}>
+      <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+            <th style={{ textAlign: 'left', padding: '4px 2px', fontSize: 9, color: '#94A3B8', textTransform: 'uppercase', fontWeight: 600 }}>Competitor</th>
+            <th style={{ textAlign: 'right', padding: '4px 2px', fontSize: 9, color: '#94A3B8' }}>Domain Trust</th>
+          </tr>
+        </thead>
+        <tbody>
+          {competitors.map((c, i) => (
+            <tr key={i} style={{ borderBottom: '1px solid #f5f5f5' }}>
+              <td style={{ padding: '5px 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{c.domain ?? '—'}</td>
+              <td style={{ textAlign: 'right', padding: '5px 2px', fontWeight: 600 }}>{c.domainTrust ?? '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Helpers
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Weighted average position for a distribution-series day.
+ * Approximates avg position by treating each bucket's count as a weight and
+ * using the midpoint of the bucket range as the position.
+ */
+function weightedAvgPositionForDay(d: { top1: number; top2_3: number; top4_5: number; top6_10: number; top11_30: number; top31_100: number; notRanking: number }): number | null {
+  const weights = [
+    { n: d.top1 || 0, mid: 1 },
+    { n: d.top2_3 || 0, mid: 2.5 },
+    { n: d.top4_5 || 0, mid: 4.5 },
+    { n: d.top6_10 || 0, mid: 8 },
+    { n: d.top11_30 || 0, mid: 20 },
+    { n: d.top31_100 || 0, mid: 65 },
+  ];
+  const total = weights.reduce((s, w) => s + w.n, 0);
+  if (total === 0) return null;
+  const weighted = weights.reduce((s, w) => s + w.n * w.mid, 0) / total;
+  return Math.round(weighted * 10) / 10;
 }

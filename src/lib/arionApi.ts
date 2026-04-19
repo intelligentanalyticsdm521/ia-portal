@@ -467,32 +467,34 @@ export async function getSeoKeywordDetail(params: { baseUrl: string; bearerToken
   return requestJson<SeoKeywordDetailResponse>({ ...params, path: `/arion/seo/keyword/${encodeURIComponent(String(params.keywordId))}?${qp.toString()}` });
 }
 
+export interface SeoHeroEngineCard {
+  engineId: string;
+  name: string;
+  label: string;          // short: "Google Desktop", "ChatGPT"
+  longLabel: string;      // long: "Google USA · Des Moines, Iowa · EN"
+  type: string | null;    // catalog type: google, google_mobile, bing, chatgpt, ...
+  device: 'desktop' | 'mobile' | 'ai' | null;
+  region: string | null;
+  lang: string | null;
+  current: SeoAggregateStats;
+  prior: SeoAggregateStats;
+  avgPositionDelta: number | null;
+  visibilityDelta: number;
+  top10Delta: number;
+}
+
 export interface SeoOverviewResponse {
   connected: boolean;
   projectId: string | number | null;
   range: SeoRangeInfo;
   engines: { metadata: SeoEngineMeta[]; availableIds: string[] };
   heroCards: {
-    providers: Array<{
-      name: string;
-      engineCount: number;
-      devices: string[];
-      current: SeoAggregateStats;
-      prior: SeoAggregateStats;
-      avgPositionDelta: number | null;
-      visibilityDelta: number;
-      top10Delta: number;
-    }>;
-    ai: Array<{
-      name: string;
-      engineCount: number;
-      devices: string[];
-      current: SeoAggregateStats;
-      prior: SeoAggregateStats;
-      avgPositionDelta: number | null;
-      visibilityDelta: number;
-      top10Delta: number;
-    }>;
+    /** @deprecated — legacy brand-grouped field kept for backwards compat. Use `standard`. */
+    providers: SeoHeroEngineCard[];
+    /** Per-engine standard-search cards (Google Desktop, Google Mobile, Bing...). */
+    standard: SeoHeroEngineCard[];
+    /** Per-engine AI-search cards (ChatGPT, Gemini, AI Mode, Perplexity, AI Overview). */
+    ai: SeoHeroEngineCard[];
   };
   stats: {
     current: SeoAggregateStats;
