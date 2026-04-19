@@ -75,6 +75,8 @@ import {
   // Phase 3 — SE Ranking expanded
   getSeoRankings as portalGetSeoRankings,
   getSeoAudit as portalGetSeoAudit,
+  getSeoAuditPage as portalGetSeoAuditPage,
+  getSeoAiSearch as portalGetSeoAiSearch,
   addSeoCompetitor as portalAddSeoCompetitor,
   getSeoCompetitors as portalGetSeoCompetitors,
   getSeoMarketMonitor as portalGetSeoMarketMonitor,
@@ -287,6 +289,16 @@ export function useArionContext() {
       async getSeoAudit(siteId: string) {
         const b = await base();
         return portalGetSeoAudit({ ...b, siteId });
+      },
+
+      async getSeoAuditPage(siteId: string, pageId: string) {
+        const b = await base();
+        return portalGetSeoAuditPage({ ...b, siteId, pageId });
+      },
+
+      async getSeoAiSearch(siteId: string, range?: string) {
+        const b = await base();
+        return portalGetSeoAiSearch({ ...b, siteId, range });
       },
 
       async addSeoCompetitor(siteId: string, domain: string) {

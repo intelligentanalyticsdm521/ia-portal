@@ -650,10 +650,37 @@ export interface SeoAuditResponse {
     nofollow: number;
   } | null;
   issuesByCategory?: Array<{ category: string; errors: number; warnings: number; notices: number }>;
+  topPagesByIssues?: Array<{ id: string | number; url: string; errors: number; warnings: number; notices: number }>;
+  issueCategories?: Array<{ uid: string; name: string; errorsCount: number; warningsCount: number; noticesCount: number }>;
 }
 
 export async function getSeoAudit(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<SeoAuditResponse>({ ...params, path: `/arion/seo/audit?siteId=${encodeURIComponent(params.siteId)}` });
+}
+
+/** Full per-page detail from /audit/{id}/page/{pageId}. `page` is raw passthrough. */
+export interface SeoAuditPageDetail {
+  connected: boolean;
+  status: 'complete' | 'unavailable' | 'not_connected';
+  projectId?: string | number | null;
+  auditId?: string | null;
+  pageId?: string;
+  page: Record<string, any> | null;
+  issues: Array<{
+    slug: string | null;
+    name: string;
+    severity: string;
+    count: number;
+    description?: string | null;
+  }>;
+  errors?: string[];
+}
+
+export async function getSeoAuditPage(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: string }) {
+  return requestJson<SeoAuditPageDetail>({
+    ...params,
+    path: `/arion/seo/audit/page?siteId=${encodeURIComponent(params.siteId)}&pageId=${encodeURIComponent(params.pageId)}`,
+  });
 }
 
 export async function addSeoCompetitor(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; domain: string }) {
@@ -674,8 +701,18 @@ export interface SeoCompetitorRecord {
   visibility: number | null;
   visibility_score: number | null;
   keywords: number | null;
+  traffic?: number | null;
   overlap: number | null;
+  domainTrust?: number | null;
   added_at: string | null;
+}
+
+export interface SeoCompetitorContentGapRow {
+  keywordId: string;
+  keyword: string;
+  searchVolume: number | null;
+  ourPosition: number | null;
+  competitorPositions: Array<{ domain: string; position: number }>;
 }
 
 export interface SeoCompetitorsResponse {
@@ -683,13 +720,102 @@ export interface SeoCompetitorsResponse {
   projectId?: string | number;
   engineCount?: number;
   competitors: SeoCompetitorRecord[];
-  upstreamErrors?: Array<{ seId: string; status: number; errorText: string | null }>;
+  contentGap?: SeoCompetitorContentGapRow[];
+  upstreamErrors?: Array<{ seId?: string; endpoint?: string; status: number; errorText: string | null }>;
 }
 
 export async function getSeoCompetitors(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<SeoCompetitorsResponse>({
     ...params,
     path: `/arion/seo/competitors?siteId=${encodeURIComponent(params.siteId)}`,
+  });
+}
+
+// ────────────────────────────────────────────────────────────────
+// AI Search (AIRT — AI Result Tracker)
+// ────────────────────────────────────────────────────────────────
+
+export interface SeoAiPromptRanking {
+  promptId: string;
+  prompt: string;
+  position: number | null;
+  mentioned: boolean;
+  citationUrls: string[];
+  competitors: string[];
+  date: string;
+}
+
+export interface SeoAiEngine {
+  engineId: string;
+  baseName: string;
+  label: string;
+  region: string | null;
+  lang: string | null;
+  unlocked: boolean;
+  tierRequired: 'growth' | 'authority' | 'consulting' | string;
+  current: {
+    mentions: number;
+    avgPosition: number | null;
+    visibilityScore: number;
+    promptsCount: number;
+    linkedCount: number;
+  };
+  prior: {
+    mentions: number;
+    avgPosition: number | null;
+    visibilityScore: number;
+    promptsCount: number;
+    linkedCount: number;
+  };
+  delta: {
+    mentions: number;
+    visibilityScore: number;
+    avgPosition: number | null;
+  };
+  recentPrompts: SeoAiPromptRanking[];
+  upstreamErrors?: string[];
+}
+
+export interface SeoAiSourcePage {
+  url: string;
+  citationCount: number;
+  engines: string[];
+}
+
+export interface SeoAiCompetitorMention {
+  competitor: string;
+  count: number;
+  engines: string[];
+}
+
+export interface SeoAiSearchResponse {
+  connected: boolean;
+  tier?: string;
+  tierGated?: boolean;
+  message?: string;
+  range?: {
+    code: string;
+    current: { start: string; end: string };
+    prior: { start: string; end: string };
+    days: number;
+  };
+  engines: SeoAiEngine[];
+  aggregate: {
+    totalMentions: number;
+    uniquePromptsMentioned: number;
+    totalPromptsTracked: number;
+    visibilityScore: number;
+    topSourcePages: SeoAiSourcePage[];
+    competitorMentions: SeoAiCompetitorMention[];
+  } | null;
+}
+
+export async function getSeoAiSearch(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; range?: string }) {
+  const q = new URLSearchParams({ siteId: params.siteId });
+  if (params.range) q.set('range', params.range);
+  return requestJson<SeoAiSearchResponse>({
+    ...params,
+    path: `/arion/seo/ai-search?${q.toString()}`,
   });
 }
 
