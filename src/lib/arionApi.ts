@@ -481,6 +481,8 @@ export interface SeoHeroEngineCard {
   avgPositionDelta: number | null;
   visibilityDelta: number;
   top10Delta: number;
+  /** True when this card is sourced from AI Result Tracker and stats haven't been wired yet. */
+  placeholder?: boolean;
 }
 
 export interface SeoOverviewResponse {

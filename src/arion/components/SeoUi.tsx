@@ -151,11 +151,25 @@ export function SeoStatCard({
         )}
       </div>
       {sparklineData && sparklineData.length > 1 && (
-        <div style={{ height: 32, marginTop: 6 }}>
+        <div style={{ height: 36, marginTop: 6 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={sparklineData}>
-              <Line type="monotone" dataKey="value" stroke={sparklineColor} strokeWidth={1.5} dot={false} />
-            </LineChart>
+            <AreaChart data={sparklineData} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id={`spark-grad-${sparklineColor.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={sparklineColor} stopOpacity={0.35} />
+                  <stop offset="100%" stopColor={sparklineColor} stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke={sparklineColor}
+                strokeWidth={1.5}
+                fill={`url(#spark-grad-${sparklineColor.replace('#', '')})`}
+                dot={false}
+                isAnimationActive={false}
+              />
+            </AreaChart>
           </ResponsiveContainer>
         </div>
       )}

@@ -1,33 +1,35 @@
 /**
- * Phase 3.5 — SEO Overview (rebuild 2026-04-19).
+ * Phase 3.5 — SEO Overview (rebuild 2026-04-19 v2, post-feedback).
  *
- * Structure (top → bottom):
- *   1. Filter bar:  range picker + range summary
- *   2. Engine toggle:  All · Google Desktop · Google Mobile · Bing
- *      (controls the Standard Search hero cards + the Rankings widget below;
- *       AI Search cards + other widgets are NOT affected)
- *   3. Standard Search Engines hero cards — 1 card per engine, with embedded
- *      sparkline. Hidden when user narrows the toggle below "All".
- *   4. AI Search Engines hero cards — 1 card per AI engine, tier-gated.
- *   5. Rankings widget:  2×3 stat grid with sparklines + jumped/dropped
- *      panel + "See Full Rankings Summary →"
- *   6. Site Audit widget:  health-score + issue-counts + "See Full Audit →"
- *   7. Competitors widget:  top competitor + visibility + "See Full →"
- *   8. AI Search Results widget:  per-LLM mention counts
- *   9. Market Monitor widget:  new backlinks / page changes / moves
- *  10. Content widget:  links to IA Content Intelligence (placeholder)
- *  11. Consulting upsell
+ * Layout (top → bottom):
+ *   1. Filter bar: range picker + range summary
+ *   2. Standard Search Engines label (tooltip) + toggle BELOW the label
+ *      using SeoFilterPills — All · Google Desktop · Google Mobile · Bing
+ *   3. Standard Search Engines hero cards — always visible regardless of
+ *      toggle. Big brand name, ranking number, delta (count + %).
+ *      No sparklines in these cards per feedback.
+ *   4. AI Search Engines cards — fed from /airt/llm. Placeholder stats for
+ *      now until /airt/llm/{id}/statistics is wired.
+ *   5. Key Metrics row — Search Visibility · Top 10 · Traffic Forecast ·
+ *      Audit Health Score. Each card has an appropriate visual
+ *      (donut for health score, sparklines for others).
+ *   6. Rankings widget — 2×3 stat grid with area-chart sparklines + tiny
+ *      Jumped/Dropped tabs (left side, small, green/red) + top 5 movers.
+ *      Affected by the engine toggle above.
+ *   7. Site Audit / Competitors / AI Search / Market Monitor / Content
+ *      widgets — each with `See Full [X] Summary →` button
+ *   8. Consulting upsell
  */
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip as RTooltip,
-  PieChart, Pie, Cell, Legend,
+  ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip as RTooltip,
+  PieChart, Pie, Cell,
 } from 'recharts';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
-import { AddonUpsell, EmptyPanel, Loading, ConsultingUpsell, ErrorBanner, InfoCard } from '../../components/Ui';
-import { SeoRangePicker, SeoStatCard } from '../../components/SeoUi';
+import { AddonUpsell, EmptyPanel, Loading, ConsultingUpsell, ErrorBanner } from '../../components/Ui';
+import { SeoRangePicker, SeoStatCard, SeoFilterPills } from '../../components/SeoUi';
 import { GlossaryIcon } from '../../components/Glossary';
 import type {
   SeoRangeCode,
@@ -92,27 +94,28 @@ export function SeoOverview() {
   const aiCards: SeoHeroEngineCard[] = o!.heroCards.ai || [];
   const distribution = o!.distributionSeries || [];
 
-  // Pick stats based on toggle
+  // Active stats for the Rankings widget — filtered by engine toggle.
+  // Top hero cards are ALWAYS full (ignore toggle).
   const activeCard = engineFilter === 'all' ? null : standardCards.find((c) => c.engineId === engineFilter);
   const activeStats = activeCard?.current ?? o!.stats.current;
   const activeDelta = activeCard
-    ? {
-        avgPosition: activeCard.avgPositionDelta,
-        visibilityScore: activeCard.visibilityDelta,
-        top10Count: activeCard.top10Delta,
-      }
+    ? { avgPosition: activeCard.avgPositionDelta, visibilityScore: activeCard.visibilityDelta, top10Count: activeCard.top10Delta }
     : o!.stats.delta;
 
-  // Derive sparklines from distribution series (positions per bucket over time)
-  const avgPosSparkline = distribution.map((d) => ({
-    date: d.date,
-    value: weightedAvgPositionForDay(d),
-  })).filter((p) => p.value != null) as Array<{ date: string; value: number }>;
+  // Sparklines derived from distribution series
+  const avgPosSparkline = distribution.map((d) => ({ date: d.date, value: weightedAvgPositionForDay(d) })).filter((p) => p.value != null) as Array<{ date: string; value: number }>;
   const top3Sparkline = distribution.map((d) => ({ date: d.date, value: (d.top1 || 0) + (d.top2_3 || 0) }));
   const top10Sparkline = distribution.map((d) => ({ date: d.date, value: (d.top1 || 0) + (d.top2_3 || 0) + (d.top4_5 || 0) + (d.top6_10 || 0) }));
-  const top30Sparkline = distribution.map((d) => ({ date: d.date, value: top10Sparkline[distribution.indexOf(d)].value + (d.top11_30 || 0) }));
+  const top30Sparkline = distribution.map((d, i) => ({ date: d.date, value: top10Sparkline[i].value + (d.top11_30 || 0) }));
   const top100Sparkline = distribution.map((d, i) => ({ date: d.date, value: top30Sparkline[i].value + (d.top31_100 || 0) }));
-  const visibilitySparkline = distribution.map((d) => ({ date: d.date, value: weightedAvgPositionForDay(d) != null ? Math.round(((d.top1 || 0) * 0.27 + (d.top2_3 || 0) * 0.13 + (d.top4_5 || 0) * 0.075 + (d.top6_10 || 0) * 0.03) * 100) / 100 : 0 }));
+  const visibilitySparkline = distribution.map((d) => ({
+    date: d.date,
+    value: Math.round(((d.top1 || 0) * 0.27 + (d.top2_3 || 0) * 0.13 + (d.top4_5 || 0) * 0.075 + (d.top6_10 || 0) * 0.03) * 100) / 100,
+  }));
+  const trafficForecastSparkline = distribution.map((d) => ({
+    date: d.date,
+    value: Math.round((d.top1 || 0) * 0.27 + (d.top2_3 || 0) * 0.13 + (d.top4_5 || 0) * 0.075),
+  }));
 
   // Tier gating for AI cards
   const tier = (selectedSite?.seoAddonTier || '').toLowerCase();
@@ -131,20 +134,18 @@ export function SeoOverview() {
   const auditPassed = a?.issues?.passed ?? 0;
   const auditPages = a?.pagesCrawled ?? 0;
 
-  // Competitors data
+  // Competitors + Market Monitor data
   const competitors = (comp?.competitors ?? []).slice(0, 5);
   const topComp = competitors[0] ?? null;
-
-  // Market Monitor data
   const mmMoves = mm?.moves?.length ?? 0;
   const mmNewBacklinks = mm?.backlinks?.new?.length ?? 0;
   const mmLostBacklinks = mm?.backlinks?.lost?.length ?? 0;
   const mmPageChanges = mm?.pageChanges?.length ?? 0;
 
-  // Engine toggle options (always include "All")
-  const toggleOptions: Array<{ id: EngineFilter; label: string }> = [
-    { id: 'all', label: 'All' },
-    ...standardCards.map((c) => ({ id: c.engineId, label: c.label })),
+  // Engine toggle options (All + one per standard engine)
+  const toggleOptions = [
+    { value: 'all' as const, label: 'All' },
+    ...standardCards.map((c) => ({ value: c.engineId, label: c.label })),
   ];
 
   return (
@@ -157,16 +158,13 @@ export function SeoOverview() {
         </div>
       </div>
 
-      {/* Engine toggle */}
-      <EngineToggle value={engineFilter} onChange={setEngineFilter} options={toggleOptions} />
-
-      {/* Section: Standard Search Engines */}
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary, #0B1C24)', marginTop: 18, marginBottom: 8, display: 'inline-flex', alignItems: 'center' }}>
+      {/* Standard Search Engines — label + toggle below + always-visible cards */}
+      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary, #0B1C24)', marginBottom: 6, display: 'inline-flex', alignItems: 'center' }}>
         Standard Search Engines
         <GlossaryIcon termKey="position" size={12} />
-        <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--color-text-tertiary, #5A7A8A)', marginLeft: 8 }}>
-          Google &amp; Bing — where your buyers primarily search
-        </span>
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <SeoFilterPills label="Filter charts" options={toggleOptions.map((o) => ({ value: String(o.value), label: o.label }))} value={String(engineFilter)} onChange={(v) => setEngineFilter(v as EngineFilter)} />
       </div>
       {standardCards.length === 0 ? (
         <div style={{ color: '#5A7A8A', fontSize: 12, padding: 20, textAlign: 'center', background: '#F8FAFC', borderRadius: 6 }}>
@@ -174,64 +172,76 @@ export function SeoOverview() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${standardCards.length}, 1fr)`, gap: 12 }}>
-          {standardCards
-            .filter((c) => engineFilter === 'all' || c.engineId === engineFilter)
-            .map((c) => (
-              <SeoStatCard
-                key={c.engineId}
-                label={c.label}
-                value={c.current.avgPosition != null ? String(Math.round(c.current.avgPosition)) : '—'}
-                sub={`${c.current.rankingKeywords}/${c.current.totalKeywords} ranking · ${c.longLabel}`}
-                delta={c.avgPositionDelta}
-                deltaFormat="position"
-                deltaIsGoodWhenPositive={true}
-                accent="#2D9CDB"
-                sparklineData={avgPosSparkline}
-                sparklineColor="#2D9CDB"
-              />
-            ))}
+          {standardCards.map((c) => (
+            <EngineHeroCard key={c.engineId} card={c} accent="#2D9CDB" />
+          ))}
         </div>
       )}
 
-      {/* Section: AI Search Engines (NOT affected by toggle) */}
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary, #0B1C24)', marginTop: 22, marginBottom: 8, display: 'inline-flex', alignItems: 'center' }}>
+      {/* AI Search Engines — always visible, not affected by toggle */}
+      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary, #0B1C24)', marginTop: 24, marginBottom: 10, display: 'inline-flex', alignItems: 'center' }}>
         AI Search Engines
         <GlossaryIcon termKey="ai_mentions" size={12} />
-        <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--color-text-tertiary, #5A7A8A)', marginLeft: 8 }}>
-          ChatGPT, Gemini, AI Mode, Perplexity — mention tracking
-        </span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(aiCards.length, 4)}, 1fr)`, gap: 12 }}>
-        {aiCards.length === 0 ? (
-          <div style={{ color: '#5A7A8A', fontSize: 12, padding: 20, textAlign: 'center', background: '#F8FAFC', borderRadius: 6, gridColumn: '1 / -1' }}>
-            No AI engines configured in SE Ranking. Add ChatGPT, Gemini, AI Mode, or Perplexity to start tracking.
-          </div>
-        ) : (
-          aiCards.map((c) => (
-            <SeoStatCard
-              key={c.engineId}
-              label={c.label}
-              value={c.current.top10Count ?? '—'}
-              sub={aiUnlocked(c.type) ? c.longLabel : 'Upgrade to unlock'}
-              delta={c.visibilityDelta}
-              deltaFormat="signed"
-              deltaIsGoodWhenPositive={true}
-              accent="#0C4A60"
-              locked={!aiUnlocked(c.type)}
-            />
-          ))
-        )}
+      {aiCards.length === 0 ? (
+        <div style={{ color: '#5A7A8A', fontSize: 12, padding: 20, textAlign: 'center', background: '#F8FAFC', borderRadius: 6 }}>
+          No AI engines configured in SE Ranking yet.
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${aiCards.length}, 1fr)`, gap: 12 }}>
+          {aiCards.map((c) => (
+            <AiHeroCard key={c.engineId} card={c} unlocked={aiUnlocked(c.type)} />
+          ))}
+        </div>
+      )}
+
+      {/* Key Metrics row — 4 cards with visuals */}
+      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary, #0B1C24)', marginTop: 24, marginBottom: 10 }}>
+        Key Metrics
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+        <SeoStatCard
+          label="Search Visibility"
+          value={activeStats.visibilityScore != null ? `${activeStats.visibilityScore.toFixed(1)}%` : '—'}
+          delta={activeDelta.visibilityScore}
+          deltaFormat="percentage"
+          deltaIsGoodWhenPositive={true}
+          sparklineData={visibilitySparkline}
+          sparklineColor="#EF6C33"
+          accent="#EF6C33"
+          termKey="search_visibility"
+        />
+        <SeoStatCard
+          label="Top 10 Keywords"
+          value={activeStats.top10Count ?? '—'}
+          delta={activeDelta.top10Count}
+          deltaFormat="signed"
+          deltaIsGoodWhenPositive={true}
+          sparklineData={top10Sparkline}
+          sparklineColor="#1D9E75"
+          accent="#1D9E75"
+          termKey="top10_keywords"
+        />
+        <SeoStatCard
+          label="Traffic Forecast"
+          value={activeStats.trafficForecast ?? '—'}
+          sub="CTR-weighted estimate"
+          sparklineData={trafficForecastSparkline}
+          sparklineColor="#2D9CDB"
+          accent="#2D9CDB"
+          termKey="traffic_forecast"
+        />
+        <HealthScoreStatCard score={auditHealthScore} />
       </div>
 
-      {/* Widget: Rankings */}
+      {/* Rankings widget */}
       <WidgetContainer
         title="Keyword Rankings"
-        subtitle={engineFilter === 'all' ? 'Averaged across all engines' : `Filtered: ${activeCard?.label ?? ''}`}
+        subtitle={engineFilter === 'all' ? 'Averaged across all standard engines' : `Filtered: ${activeCard?.label ?? ''}`}
         onSeeFull={() => navigate('/app/services/arion_seo_rankings')}
         seeFullLabel="See Full Rankings Summary"
       >
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
-          {/* Left: 2×3 grid of stat cards with sparklines */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
             <SeoStatCard
               label="Avg Position"
@@ -245,7 +255,7 @@ export function SeoOverview() {
               termKey="avg_position"
             />
             <SeoStatCard label="Top 3" value={top3Sparkline[top3Sparkline.length - 1]?.value ?? 0} sparklineData={top3Sparkline} sparklineColor="#1D9E75" accent="#1D9E75" />
-            <SeoStatCard label="Top 10" value={top10Sparkline[top10Sparkline.length - 1]?.value ?? 0} sparklineData={top10Sparkline} sparklineColor="#1D9E75" accent="#1D9E75" termKey="top10_keywords" />
+            <SeoStatCard label="Top 10" value={top10Sparkline[top10Sparkline.length - 1]?.value ?? 0} sparklineData={top10Sparkline} sparklineColor="#1D9E75" accent="#1D9E75" />
             <SeoStatCard
               label="Search Visibility"
               value={activeStats.visibilityScore != null ? `${activeStats.visibilityScore.toFixed(1)}%` : '—'}
@@ -255,23 +265,21 @@ export function SeoOverview() {
               sparklineData={visibilitySparkline}
               sparklineColor="#EF6C33"
               accent="#EF6C33"
-              termKey="search_visibility"
             />
             <SeoStatCard label="Top 30" value={top30Sparkline[top30Sparkline.length - 1]?.value ?? 0} sparklineData={top30Sparkline} sparklineColor="#4285F4" accent="#4285F4" />
             <SeoStatCard label="Top 100" value={top100Sparkline[top100Sparkline.length - 1]?.value ?? 0} sparklineData={top100Sparkline} sparklineColor="#7B61FF" accent="#7B61FF" />
           </div>
-          {/* Right: Jumped/Dropped panel */}
-          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px' }}>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-              <MoverTabButton active={moversTab === 'jumped'} onClick={() => setMoversTab('jumped')} label="Jumped" count={o!.movers.jumped.length} tone="up" />
-              <MoverTabButton active={moversTab === 'dropped'} onClick={() => setMoversTab('dropped')} label="Dropped" count={o!.movers.dropped.length} tone="down" />
+          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px' }}>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+              <SmallMoverTab active={moversTab === 'jumped'} onClick={() => setMoversTab('jumped')} label="Jumped" count={o!.movers.jumped.length} tone="up" />
+              <SmallMoverTab active={moversTab === 'dropped'} onClick={() => setMoversTab('dropped')} label="Dropped" count={o!.movers.dropped.length} tone="down" />
             </div>
             <MoversTable movers={moversTab === 'jumped' ? o!.movers.jumped : o!.movers.dropped} />
           </div>
         </div>
       </WidgetContainer>
 
-      {/* Widget: Site Audit */}
+      {/* Site Audit widget */}
       <WidgetContainer
         title="Site Audit"
         subtitle={auditConnected ? `Last audit ${new Date(a!.lastAuditDate || '').toLocaleDateString()}` : 'No audit data yet'}
@@ -288,7 +296,7 @@ export function SeoOverview() {
         </div>
       </WidgetContainer>
 
-      {/* Widget: Competitors */}
+      {/* Competitors widget */}
       <WidgetContainer
         title="Competitors"
         subtitle={competitors.length > 0 ? `${competitors.length} tracked` : 'No competitors configured'}
@@ -297,7 +305,7 @@ export function SeoOverview() {
       >
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 16 }}>
           <div style={{ display: 'grid', gap: 8 }}>
-            <SeoStatCard label="Tracked" value={competitors.length} sub="of 10 slots" accent="#EF6C33" />
+            <SeoStatCard label="Tracked" value={competitors.length} sub="competitors" accent="#EF6C33" />
             {topComp && (
               <SeoStatCard label="Top Competitor" value={(topComp as any).domain ?? '—'} sub={`Domain Trust ${(topComp as any).domainTrust ?? '—'}`} accent="#0C4A60" />
             )}
@@ -306,7 +314,7 @@ export function SeoOverview() {
         </div>
       </WidgetContainer>
 
-      {/* Widget: AI Search Results */}
+      {/* AI Search Results widget */}
       <WidgetContainer
         title="AI Search Results"
         subtitle={aiCards.length > 0 ? `${aiCards.length} AI engines tracked` : 'Not configured'}
@@ -322,15 +330,19 @@ export function SeoOverview() {
             aiCards.map((c) => (
               <div key={c.engineId} style={{ background: '#F8FAFC', borderRadius: 6, padding: '12px 14px', borderLeft: '3px solid #0C4A60' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: '#0B1C24' }}>{c.label}</div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: '#0C4A60', marginTop: 4 }}>{c.current.top10Count ?? 0}</div>
-                <div style={{ fontSize: 9, color: '#5A7A8A', marginTop: 2 }}>mentions</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#0C4A60', marginTop: 4 }}>
+                  {c.placeholder ? '—' : (c.current.top10Count ?? 0)}
+                </div>
+                <div style={{ fontSize: 9, color: '#5A7A8A', marginTop: 2 }}>
+                  {c.placeholder ? 'stats coming soon' : 'mentions'}
+                </div>
               </div>
             ))
           )}
         </div>
       </WidgetContainer>
 
-      {/* Widget: Market Monitor */}
+      {/* Market Monitor widget */}
       <WidgetContainer
         title="Market Monitor"
         subtitle={mm?.authorityGated ? 'Authority tier required' : 'Last 30 days'}
@@ -345,7 +357,7 @@ export function SeoOverview() {
         </div>
       </WidgetContainer>
 
-      {/* Widget: Content — placeholder, links to IA Content Intelligence */}
+      {/* Content widget — routes to IA Content Intelligence */}
       <WidgetContainer
         title="Content"
         subtitle="Content-quality scoring and improvement opportunities"
@@ -372,28 +384,92 @@ export function SeoOverview() {
 // Sub-components
 // ────────────────────────────────────────────────────────────────
 
-function EngineToggle({ value, onChange, options }: { value: EngineFilter; onChange: (v: EngineFilter) => void; options: Array<{ id: EngineFilter; label: string }> }) {
+/**
+ * Top-row hero card for standard engines. No sparkline — just brand, big
+ * number, delta (absolute + percentage).
+ */
+function EngineHeroCard({ card, accent }: { card: SeoHeroEngineCard; accent: string }) {
+  const avg = card.current.avgPosition != null ? Math.round(card.current.avgPosition) : null;
+  const prior = card.prior.avgPosition != null ? Math.round(card.prior.avgPosition) : null;
+  const delta = card.avgPositionDelta != null ? Math.round(card.avgPositionDelta) : null;
+  // Percentage improvement: (prior - current) / prior * 100
+  const deltaPct = avg != null && prior != null && prior > 0
+    ? Math.round(((prior - avg) / prior) * 100)
+    : null;
+  const improved = delta != null && delta > 0;
+  const worsened = delta != null && delta < 0;
+  const tone = improved ? '#1D9E75' : worsened ? '#D85A30' : '#5A7A8A';
+  const arrow = improved ? '▲' : worsened ? '▼' : '';
+
   return (
-    <div style={{ display: 'inline-flex', gap: 0, background: '#F1F5F9', borderRadius: 6, padding: 3 }}>
-      {options.map((o) => (
-        <button
-          key={o.id}
-          onClick={() => onChange(o.id)}
-          style={{
-            padding: '6px 14px',
-            fontSize: 12,
-            fontWeight: 600,
-            background: value === o.id ? '#fff' : 'transparent',
-            color: value === o.id ? '#0B1C24' : '#5A7A8A',
-            border: 'none',
-            borderRadius: 4,
-            cursor: 'pointer',
-            boxShadow: value === o.id ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-          }}
-        >
-          {o.label}
-        </button>
-      ))}
+    <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '14px 18px', borderLeft: `3px solid ${accent}`, minHeight: 110 }}>
+      <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>
+        {card.label}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 6 }}>
+        <div style={{ fontSize: 34, fontWeight: 700, color: '#0B1C24', lineHeight: 1 }}>{avg ?? '—'}</div>
+        {delta != null && delta !== 0 && (
+          <div style={{ fontSize: 12, fontWeight: 600, color: tone, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span>{arrow}</span>
+            <span>{Math.abs(delta)}</span>
+            {deltaPct != null && deltaPct !== 0 && (
+              <span style={{ opacity: 0.85 }}>({deltaPct > 0 ? '+' : ''}{deltaPct}%)</span>
+            )}
+          </div>
+        )}
+      </div>
+      <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 8 }}>
+        {card.current.rankingKeywords}/{card.current.totalKeywords} ranking · {card.longLabel}
+      </div>
+    </div>
+  );
+}
+
+function AiHeroCard({ card, unlocked }: { card: SeoHeroEngineCard; unlocked: boolean }) {
+  return (
+    <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '14px 18px', borderLeft: '3px solid #0C4A60', minHeight: 110, position: 'relative' }}>
+      {!unlocked && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8 }}>
+          <div style={{ fontSize: 11, color: '#5A7A8A', textAlign: 'center', padding: '0 16px' }}>🔒 Upgrade to unlock</div>
+        </div>
+      )}
+      <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>
+        {card.label}
+      </div>
+      <div style={{ fontSize: 28, fontWeight: 700, color: '#0C4A60', lineHeight: 1, marginTop: 6 }}>
+        {card.placeholder ? '—' : (card.current.top10Count ?? 0)}
+      </div>
+      <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 6 }}>
+        {card.placeholder ? 'Mention tracking — stats syncing' : 'mentions'}
+        {card.region && <><br />{card.region}</>}
+      </div>
+    </div>
+  );
+}
+
+function HealthScoreStatCard({ score }: { score: number | null }) {
+  const value = score ?? 0;
+  const color = value >= 80 ? '#1D9E75' : value >= 50 ? '#EF6C33' : '#D85A30';
+  const label = value >= 80 ? 'Strong' : value >= 50 ? 'Needs Attention' : 'At Risk';
+  return (
+    <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '14px 16px', borderLeft: `3px solid ${color}`, minHeight: 110, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div>
+        <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center' }}>
+          Audit Health <GlossaryIcon termKey="health_score" size={11} />
+        </div>
+        <div style={{ fontSize: 28, fontWeight: 700, color: '#0B1C24', marginTop: 4 }}>{score ?? '—'}</div>
+        <div style={{ fontSize: 10, color, marginTop: 2, fontWeight: 600 }}>{label}</div>
+      </div>
+      <div style={{ width: 60, height: 60 }}>
+        <ResponsiveContainer>
+          <PieChart>
+            <Pie data={[{ name: 'Score', value }, { name: 'Rest', value: 100 - value }]} dataKey="value" innerRadius={18} outerRadius={28} startAngle={90} endAngle={-270} stroke="none">
+              <Cell fill={color} />
+              <Cell fill="#E2E8F0" />
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
@@ -418,20 +494,20 @@ function WidgetContainer({ title, subtitle, onSeeFull, seeFullLabel, children }:
   );
 }
 
-function MoverTabButton({ active, onClick, label, count, tone }: { active: boolean; onClick: () => void; label: string; count: number; tone: 'up' | 'down' }) {
+/** Tiny Jumped/Dropped tabs — small, left-aligned, green/red colored. */
+function SmallMoverTab({ active, onClick, label, count, tone }: { active: boolean; onClick: () => void; label: string; count: number; tone: 'up' | 'down' }) {
   const color = tone === 'up' ? '#1D9E75' : '#D85A30';
   return (
     <button
       onClick={onClick}
       style={{
-        flex: 1,
-        padding: '6px 10px',
-        fontSize: 11,
+        padding: '3px 8px',
+        fontSize: 10,
         fontWeight: 600,
-        background: active ? color : '#F8FAFC',
+        background: active ? color : 'transparent',
         color: active ? '#fff' : color,
-        border: `1px solid ${active ? color : '#e2e8f0'}`,
-        borderRadius: 4,
+        border: `1px solid ${color}`,
+        borderRadius: 3,
         cursor: 'pointer',
       }}
     >
@@ -479,7 +555,7 @@ function HealthScoreDonut({ score }: { score: number | null }) {
   const label = value >= 80 ? 'Strong' : value >= 50 ? 'Needs Attention' : 'At Risk';
   return (
     <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '14px 16px', textAlign: 'center' }}>
-      <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 4 }}>
+      <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 4, display: 'inline-flex', alignItems: 'center' }}>
         Health Score <GlossaryIcon termKey="health_score" size={11} />
       </div>
       <div style={{ width: '100%', height: 140, position: 'relative' }}>
@@ -508,9 +584,7 @@ function IssuesBarChart({ errors, warnings, notices }: { errors: number; warning
   ];
   return (
     <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '14px 16px' }}>
-      <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>
-        Issues Breakdown
-      </div>
+      <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>Issues Breakdown</div>
       <div style={{ width: '100%', height: 140 }}>
         <ResponsiveContainer>
           <BarChart data={data} margin={{ top: 6, right: 6, left: 0, bottom: 6 }}>
@@ -553,15 +627,7 @@ function CompetitorsMiniTable({ competitors }: { competitors: any[] }) {
   );
 }
 
-// ────────────────────────────────────────────────────────────────
-// Helpers
-// ────────────────────────────────────────────────────────────────
-
-/**
- * Weighted average position for a distribution-series day.
- * Approximates avg position by treating each bucket's count as a weight and
- * using the midpoint of the bucket range as the position.
- */
+/** Weighted avg position using bucket midpoints. */
 function weightedAvgPositionForDay(d: { top1: number; top2_3: number; top4_5: number; top6_10: number; top11_30: number; top31_100: number; notRanking: number }): number | null {
   const weights = [
     { n: d.top1 || 0, mid: 1 },
@@ -573,6 +639,5 @@ function weightedAvgPositionForDay(d: { top1: number; top2_3: number; top4_5: nu
   ];
   const total = weights.reduce((s, w) => s + w.n, 0);
   if (total === 0) return null;
-  const weighted = weights.reduce((s, w) => s + w.n * w.mid, 0) / total;
-  return Math.round(weighted * 10) / 10;
+  return Math.round((weights.reduce((s, w) => s + w.n * w.mid, 0) / total) * 10) / 10;
 }
