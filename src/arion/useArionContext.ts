@@ -90,6 +90,21 @@ import {
   getSeoKeywordDetail as portalGetSeoKeywordDetail,
   getSeoOverview as portalGetSeoOverview,
   type SeoRangeCode,
+  // IA Plugin data proxy
+  getPluginStatus as portalGetPluginStatus,
+  getPluginHealth as portalGetPluginHealth,
+  getPluginSecurity as portalGetPluginSecurity,
+  getPluginPerformance as portalGetPluginPerformance,
+  getPluginContentAggregate as portalGetPluginContentAggregate,
+  getPluginTheme as portalGetPluginTheme,
+  getPluginFormsSummary as portalGetPluginFormsSummary,
+  getPluginUpdates as portalGetPluginUpdates,
+  getPluginPlugins as portalGetPluginPlugins,
+  updatePluginByFile as portalUpdatePluginByFile,
+  updateThemeByStylesheet as portalUpdateThemeByStylesheet,
+  updateWpCore as portalUpdateWpCore,
+  getPluginSecurityEvents as portalGetPluginSecurityEvents,
+  getPluginUpdatesLog as portalGetPluginUpdatesLog,
 } from '../lib/arionApi';
 
 /**
@@ -345,6 +360,22 @@ export function useArionContext() {
         const b = await base();
         return portalGetSeoDiagnostic({ ...b, siteId });
       },
+
+      // ── IA Plugin data proxy ──
+      async getPluginStatus(siteId: string) { const b = await base(); return portalGetPluginStatus({ ...b, siteId }); },
+      async getPluginHealth(siteId: string) { const b = await base(); return portalGetPluginHealth({ ...b, siteId }); },
+      async getPluginSecurity(siteId: string) { const b = await base(); return portalGetPluginSecurity({ ...b, siteId }); },
+      async getPluginPerformance(siteId: string) { const b = await base(); return portalGetPluginPerformance({ ...b, siteId }); },
+      async getPluginContentAggregate(siteId: string) { const b = await base(); return portalGetPluginContentAggregate({ ...b, siteId }); },
+      async getPluginTheme(siteId: string) { const b = await base(); return portalGetPluginTheme({ ...b, siteId }); },
+      async getPluginFormsSummary(siteId: string) { const b = await base(); return portalGetPluginFormsSummary({ ...b, siteId }); },
+      async getPluginUpdates(siteId: string) { const b = await base(); return portalGetPluginUpdates({ ...b, siteId }); },
+      async getPluginPlugins(siteId: string) { const b = await base(); return portalGetPluginPlugins({ ...b, siteId }); },
+      async updatePluginByFile(siteId: string, pluginFile: string) { const b = await base(); return portalUpdatePluginByFile({ ...b, siteId, plugin: pluginFile }); },
+      async updateThemeByStylesheet(siteId: string, stylesheet: string) { const b = await base(); return portalUpdateThemeByStylesheet({ ...b, siteId, stylesheet }); },
+      async updateWpCore(siteId: string) { const b = await base(); return portalUpdateWpCore({ ...b, siteId }); },
+      async getPluginSecurityEvents(siteId: string, limit?: number) { const b = await base(); return portalGetPluginSecurityEvents({ ...b, siteId, limit }); },
+      async getPluginUpdatesLog(siteId: string) { const b = await base(); return portalGetPluginUpdatesLog({ ...b, siteId }); },
 
       async submitRequest(siteId: string, requestType: string, notes: string) {
         const b = await base();

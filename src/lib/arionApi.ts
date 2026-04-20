@@ -1236,3 +1236,267 @@ export async function getGscData(params: { baseUrl: string; bearerToken: string;
 export async function getSeoSummary(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<any>({ ...params, path: `/arion/sites/${encodeURIComponent(params.siteId)}/seo-summary` });
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// IA Plugin — data proxy endpoints (2026-04-20)
+// ════════════════════════════════════════════════════════════════════════
+
+export type PluginStatus = 'connected' | 'disconnected' | 'token_invalid' | 'unreachable' | 'timeout' | 'not_installed' | 'error' | string;
+
+export interface PluginEnvelope<T> {
+  data: T | null;
+  plugin_status: PluginStatus;
+  errors?: string[];
+  fallback?: boolean;
+  meta?: { tenant_id?: string; timestamp?: string };
+}
+
+export interface PluginStatusData {
+  plugin_version: string;
+  site_configured: boolean;
+  tenant_configured: boolean;
+  token_configured: boolean;
+  api_url_configured: boolean;
+  tier: string;
+  seo_addon: string | null;
+  last_health_check: any;
+}
+
+export interface PluginHealthData {
+  plugin_version: string;
+  wp_version: string;
+  php_version: string;
+  active_plugins: Array<{ name: string; version: string; active: boolean }>;
+  litespeed_active: boolean;
+  wordfence_active: boolean;
+  rank_math_active: boolean;
+  site_url: string;
+  admin_email: string;
+}
+
+export interface PluginSecurityWordfence {
+  installed: boolean;
+  firewall_enabled: boolean | null;
+  last_scan_at: string | null;
+  scan_status: string | null;
+  brute_force_on: boolean | null;
+  blocked_attacks_24h: number | null;
+  malware_findings: number | null;
+  outdated_plugins: number | null;
+}
+
+export interface PluginSecurityCoreHealth {
+  critical_count: number;
+  recommended_count: number;
+  good_count: number;
+  critical: Array<{ test: string; label: string; badge: string | null }>;
+  recommended: Array<{ test: string; label: string; badge: string | null }>;
+  good: Array<{ test: string; label: string; badge: string | null }>;
+}
+
+export interface PluginSecurityUsers {
+  total_users: number;
+  admin_count: number;
+  by_role: Record<string, any>;
+  inactive_admins: Array<{ user_id: number; login: string; email: string; last_login_at: string }>;
+}
+
+export interface PluginSecurityResponse {
+  wordfence: PluginSecurityWordfence | null;
+  core_health: PluginSecurityCoreHealth | null;
+  users: PluginSecurityUsers | null;
+}
+
+export interface PluginLitespeed {
+  installed: boolean;
+  cache_enabled?: boolean;
+  object_cache?: boolean;
+  css_minify?: boolean;
+  js_minify?: boolean;
+  css_combine?: boolean;
+  js_combine?: boolean;
+  lazy_load_images?: boolean;
+  lazy_load_iframes?: boolean;
+  image_optimization?: boolean;
+  webp_replace?: boolean;
+  browser_cache?: boolean;
+  mobile_cache?: boolean;
+  images_optimized?: number | null;
+  images_pulled?: number | null;
+  optimization_score?: number;
+}
+
+export interface PluginShortpixel {
+  installed: boolean;
+  credits_remaining?: number | null;
+  images_optimized?: number | null;
+  bytes_saved?: number | null;
+  quota_exceeded?: boolean;
+}
+
+export interface PluginServerInfo {
+  php_version: string;
+  wp_version: string;
+  mysql_version: string | null;
+  max_execution_time: number;
+  memory_limit: string;
+  upload_max_size: string;
+  post_max_size: string;
+  opcache_enabled: boolean;
+  ssl_enabled: boolean;
+  wp_debug: boolean;
+  wp_multisite: boolean;
+  disk_free_bytes: number | null;
+  disk_total_bytes: number | null;
+}
+
+export interface PluginCron {
+  queued_events: number;
+  overdue_events: number;
+  disabled: boolean;
+}
+
+export interface PluginPerformanceResponse {
+  litespeed: PluginLitespeed | null;
+  shortpixel: PluginShortpixel | null;
+  server: PluginServerInfo | null;
+  cron: PluginCron | null;
+}
+
+export interface PluginContentSummary {
+  posts_published: number;
+  posts_draft: number;
+  posts_pending: number;
+  posts_scheduled: number;
+  pages_published: number;
+  pages_draft: number;
+  media_count: number;
+  last_published: string | null;
+  posts_missing_featured_image?: number;
+  avg_word_count?: number;
+}
+
+export interface PluginContentSeoAgg {
+  installed: boolean;
+  total_published?: number;
+  posts_with_seo_score?: number;
+  avg_seo_score?: number | null;
+  posts_score_below_50?: number;
+  posts_missing_meta_desc?: number;
+  posts_missing_focus_kw?: number;
+  posts_noindex?: number;
+}
+
+export interface PluginContentAggregateResponse {
+  summary: PluginContentSummary | null;
+  seo: PluginContentSeoAgg | null;
+}
+
+export interface PluginThemeData {
+  name: string;
+  version: string;
+  stylesheet: string;
+  template: string;
+  is_child_theme: boolean;
+  parent_name: string | null;
+  parent_version: string | null;
+  update_available: boolean;
+  new_version: string | null;
+}
+
+export interface PluginFormsSummary {
+  detected_form_plugins: string[];
+  has_any_form_plugin: boolean;
+  forms_count_gf: number;
+}
+
+export interface PluginAvailableUpdates {
+  plugins: Array<{ file: string; name: string; current_version: string; new_version: string; slug: string | null; active: boolean }>;
+  plugin_update_count: number;
+  themes: Array<{ stylesheet: string; name: string; current_version: string; new_version: string }>;
+  theme_update_count: number;
+  core_update: { current_version: string; new_version: string } | null;
+}
+
+export interface PluginSecurityEvent {
+  event_id: string;
+  event_type: string;
+  severity: 'info' | 'warning' | 'critical' | string;
+  title: string | null;
+  detail_json: string | null;
+  source_ip: string | null;
+  occurred_at: string;
+  ack_at: string | null;
+}
+
+export interface PluginUpdateLogEntry {
+  log_id: string;
+  update_type: 'plugin' | 'theme' | 'core' | string;
+  target: string;
+  previous_version: string | null;
+  new_version: string | null;
+  status: 'pending' | 'success' | 'failure' | string;
+  error_message: string | null;
+  triggered_by: string | null;
+  triggered_at: string;
+  completed_at: string | null;
+}
+
+export async function getPluginStatus(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<PluginStatusData>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/status` });
+}
+export async function getPluginHealth(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<PluginHealthData>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/health` });
+}
+export async function getPluginSecurity(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<PluginSecurityResponse>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/security` });
+}
+export async function getPluginPerformance(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<PluginPerformanceResponse>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/performance` });
+}
+export async function getPluginContentAggregate(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<PluginContentAggregateResponse>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/content-aggregate` });
+}
+export async function getPluginTheme(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<PluginThemeData>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/theme` });
+}
+export async function getPluginFormsSummary(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<PluginFormsSummary>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/forms-summary` });
+}
+export async function getPluginUpdates(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<PluginAvailableUpdates>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/updates` });
+}
+export async function getPluginPlugins(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<Array<{ file: string; name: string; version: string; active: boolean; update_available: boolean; description?: string; author?: string }>>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/plugins` });
+}
+export async function updatePluginByFile(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; plugin: string }) {
+  return requestJson<PluginEnvelope<{ success: boolean; plugin: string; log_id: string; detail: any }>>({
+    ...p,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/updates/plugin`,
+    body: { plugin: p.plugin },
+  });
+}
+export async function updateThemeByStylesheet(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; stylesheet: string }) {
+  return requestJson<PluginEnvelope<{ success: boolean; stylesheet: string; log_id: string }>>({
+    ...p,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/updates/theme`,
+    body: { stylesheet: p.stylesheet },
+  });
+}
+export async function updateWpCore(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<{ success: boolean; log_id: string; detail: any }>>({
+    ...p,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/updates/core`,
+    body: {},
+  });
+}
+export async function getPluginSecurityEvents(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; limit?: number }) {
+  const qp = p.limit ? `?limit=${p.limit}` : '';
+  return requestJson<{ data: { events: PluginSecurityEvent[] } }>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/security-events${qp}` });
+}
+export async function getPluginUpdatesLog(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<{ data: { entries: PluginUpdateLogEntry[] } }>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/updates-log` });
+}
