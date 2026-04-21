@@ -115,6 +115,8 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         appState.setActive(selected);
         appState.setActiveTenantId(tenantToSelect);
         bootstrapDoneRef.current = true;
+        // Clear any leftover auto-recovery flag from a prior broken session
+        try { sessionStorage.removeItem('iadm.portal.auth_auto_recovery'); } catch {}
       } catch (err) {
         if (err instanceof PlatformApiError) {
           if (err.status === 401) {
@@ -135,8 +137,15 @@ export function AppGate({ children }: { children: React.ReactNode }) {
           console.error('platform-api error body:', err.body);
         } else if (err instanceof BrowserAuthError) {
           // Transient MSAL state (hash_empty_error, no_cached_authority_error,
-          // interaction_in_progress) — clear stale interaction flags and
-          // surface a retry-friendly message without the stack trace.
+          // interaction_in_progress, monitor_window_timeout) — the fix is to
+          // clear the stale interaction flags AND force a full page reload so
+          // MSAL reinitializes with clean in-memory state. Just clearing flags
+          // isn't enough because the current MSAL instance still thinks an
+          // interaction is running.
+          //
+          // We guard against reload-loops with a sessionStorage flag — if we
+          // already auto-recovered once and the error still fires, show the
+          // UI error instead of looping.
           const recoverableCodes = new Set([
             'hash_empty_error',
             'no_cached_authority_error',
@@ -144,11 +153,26 @@ export function AppGate({ children }: { children: React.ReactNode }) {
             'monitor_window_timeout',
           ]);
           if (recoverableCodes.has(err.errorCode)) {
-            console.warn('[AppGate] recoverable MSAL error, clearing stale flags:', err.errorCode);
+            const RECOVERY_FLAG = 'iadm.portal.auth_auto_recovery';
+            const alreadyRecovered = sessionStorage.getItem(RECOVERY_FLAG) === '1';
+            console.warn('[AppGate] recoverable MSAL error:', err.errorCode, 'alreadyRecovered=', alreadyRecovered);
+
             clearMsalInteractionFlags();
+
+            if (!alreadyRecovered) {
+              // First encounter — auto-recover silently. Set the flag so we
+              // don't loop, then reload the page to reinitialize MSAL clean.
+              sessionStorage.setItem(RECOVERY_FLAG, '1');
+              setTimeout(() => window.location.reload(), 50);
+              return;   // Leave loading state true while reload completes
+            }
+
+            // Second encounter in this tab — stop auto-recovery and surface
+            // an actionable message so the user can decide.
             setError(
-              'Sign-in state was out of sync. This usually resolves by retrying. ' +
-              'If it keeps happening, click Switch Tenant to fully reset.'
+              'Sign-in state appears to be stuck. Click "Clear & Retry" to fully reset ' +
+              'your session storage and reload the page. Your browser tab may have kept ' +
+              'a stale authentication handshake from a prior attempt.'
             );
           } else {
             console.error('[AppGate MSAL error]', err);
@@ -240,11 +264,30 @@ export function AppGate({ children }: { children: React.ReactNode }) {
   }
 
   if (error) {
+    const handleClearAndReload = () => {
+      // Full MSAL reset: remove every msal.* key from both storages, clear
+      // recovery flag, then reload so MSAL reinitializes from scratch.
+      try {
+        clearMsalInteractionFlags();
+        const stores: Storage[] = [sessionStorage, localStorage];
+        for (const store of stores) {
+          const toRemove: string[] = [];
+          for (let i = 0; i < store.length; i++) {
+            const k = store.key(i);
+            if (k && /^msal\./i.test(k)) toRemove.push(k);
+          }
+          for (const k of toRemove) store.removeItem(k);
+        }
+        sessionStorage.removeItem('iadm.portal.auth_auto_recovery');
+      } catch { /* storage denied */ }
+      window.location.reload();
+    };
+
     return (
       <div className="mx-auto max-w-xl px-6 py-16">
         <h1 className="text-lg font-semibold">Access error</h1>
-        <p className="mt-2 text-sm text-red-600">{error}</p>
-        <div className="mt-4 flex gap-3">
+        <p className="mt-2 text-sm text-red-600" style={{ whiteSpace: 'pre-wrap' }}>{error}</p>
+        <div className="mt-4 flex flex-wrap gap-3">
           <button
             type="button"
             className="inline-flex items-center rounded-md bg-black px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-gray-900"
@@ -255,6 +298,13 @@ export function AppGate({ children }: { children: React.ReactNode }) {
             }}
           >
             Retry
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700"
+            onClick={handleClearAndReload}
+          >
+            Clear &amp; Retry
           </button>
           <button
             type="button"
