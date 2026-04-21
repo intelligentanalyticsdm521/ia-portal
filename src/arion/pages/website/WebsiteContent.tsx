@@ -19,14 +19,10 @@ export function WebsiteContent() {
     () => activeSiteId ? arionApi.getAnalytics('google', activeSiteId).catch(() => null) : Promise.resolve(null),
     [activeSiteId]
   );
-  // Plugin content aggregate — live from IA plugin
+  // Plugin content aggregate — live from IA plugin (publishing state only;
+  // SEO metadata lives on the Content SEO page)
   const { data: contentAgg } = useArionData(
     () => activeSiteId ? arionApi.getPluginContentAggregate(activeSiteId).catch(() => null) : Promise.resolve(null),
-    [activeSiteId]
-  );
-  // Recent content changes from push webhooks
-  const { data: changesLog } = useArionData(
-    () => activeSiteId ? arionApi.getPluginUpdatesLog(activeSiteId).catch(() => null) : Promise.resolve(null),
     [activeSiteId]
   );
 
@@ -69,12 +65,11 @@ export function WebsiteContent() {
     return typeof item.title === 'string' ? item.title : item.title.rendered || '--';
   };
 
-  // Plugin content aggregate data
+  // Plugin content aggregate data — publishing state only (SEO on its own page)
   const caEnv = (contentAgg as any) || {};
   const caConnected = caEnv.plugin_status === 'connected';
   const caData = caEnv.data || {};
   const caSummary = caData.summary || null;
-  const caSeo = caData.seo || null;
 
   return (
     <div>
@@ -85,36 +80,26 @@ export function WebsiteContent() {
         <StatCard label="Forms" value={String(formCount)} />
       </div>
 
-      {/* Content Health (plugin-sourced) */}
+      {/* Content publishing state (plugin-sourced) — SEO metadata lives on Content SEO page */}
       {caConnected && caSummary && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-          <Card title="Content publishing state">
-            <HealthRow status="ok" label="Published posts" value={caSummary.posts_published ?? 0} />
-            <HealthRow status={caSummary.posts_draft > 10 ? 'warn' : 'ok'} label="Drafts" value={caSummary.posts_draft ?? 0} />
-            <HealthRow status={caSummary.posts_scheduled > 0 ? 'ok' : 'warn'} label="Scheduled" value={caSummary.posts_scheduled ?? 0} />
-            <HealthRow status="ok" label="Pending review" value={caSummary.posts_pending ?? 0} />
-            <HealthRow status="ok" label="Last published" value={caSummary.last_published ? new Date(caSummary.last_published).toLocaleDateString() : '—'} />
-            <HealthRow status={caSummary.avg_word_count != null && caSummary.avg_word_count < 300 ? 'warn' : 'ok'} label="Avg word count (last 20)" value={caSummary.avg_word_count ?? '—'} />
-            <HealthRow status={caSummary.posts_missing_featured_image > 0 ? 'warn' : 'ok'} label="Posts missing featured image" value={caSummary.posts_missing_featured_image ?? 0} />
-          </Card>
-
-          <Card title="SEO metadata (Rank Math)">
-            {!caSeo?.installed ? (
-              <div style={{ padding: 12, color: '#5A7A8A', fontSize: 12, background: '#F8FAFC', borderRadius: 4 }}>
-                Rank Math is not installed. Install it to track SEO scores, focus keywords, and meta description completeness per post.
-              </div>
-            ) : (
-              <div>
-                <HealthRow status={caSeo.avg_seo_score != null && caSeo.avg_seo_score >= 70 ? 'ok' : 'warn'} label="Avg SEO score" value={caSeo.avg_seo_score != null ? `${caSeo.avg_seo_score}/100` : '—'} />
-                <HealthRow status={caSeo.posts_with_seo_score > 0 ? 'ok' : 'warn'} label="Posts with SEO score" value={`${caSeo.posts_with_seo_score ?? 0} of ${caSeo.total_published ?? 0}`} />
-                <HealthRow status={caSeo.posts_score_below_50 > 0 ? 'warn' : 'ok'} label="Low-score posts (< 50)" value={caSeo.posts_score_below_50 ?? 0} />
-                <HealthRow status={caSeo.posts_missing_meta_desc > 0 ? 'warn' : 'ok'} label="Missing meta description" value={caSeo.posts_missing_meta_desc ?? 0} />
-                <HealthRow status={caSeo.posts_missing_focus_kw > 0 ? 'warn' : 'ok'} label="Missing focus keyword" value={caSeo.posts_missing_focus_kw ?? 0} />
-                <HealthRow status={caSeo.posts_noindex > 0 ? 'warn' : 'ok'} label="Marked noindex" value={caSeo.posts_noindex ?? 0} />
-              </div>
-            )}
-          </Card>
-        </div>
+        <Card title="Content publishing state">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div>
+              <HealthRow status="ok" label="Published posts" value={caSummary.posts_published ?? 0} />
+              <HealthRow status={caSummary.posts_draft > 10 ? 'warn' : 'ok'} label="Drafts" value={caSummary.posts_draft ?? 0} />
+              <HealthRow status={caSummary.posts_scheduled > 0 ? 'ok' : 'warn'} label="Scheduled" value={caSummary.posts_scheduled ?? 0} />
+              <HealthRow status="ok" label="Pending review" value={caSummary.posts_pending ?? 0} />
+            </div>
+            <div>
+              <HealthRow status="ok" label="Last published" value={caSummary.last_published ? new Date(caSummary.last_published).toLocaleDateString() : '—'} />
+              <HealthRow status={caSummary.avg_word_count != null && caSummary.avg_word_count < 300 ? 'warn' : 'ok'} label="Avg word count (last 20)" value={caSummary.avg_word_count ?? '—'} />
+              <HealthRow status={caSummary.posts_missing_featured_image > 0 ? 'warn' : 'ok'} label="Missing featured image" value={caSummary.posts_missing_featured_image ?? 0} />
+            </div>
+          </div>
+          <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #eef2f5', textAlign: 'right', fontSize: 12 }}>
+            <a href="/app/services/arion_website_content_seo_overview" style={{ color: 'var(--arion-sky)' }}>View Content SEO →</a>
+          </div>
+        </Card>
       )}
 
       {!gaConnected && (

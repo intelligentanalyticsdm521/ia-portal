@@ -67,23 +67,18 @@ export function WebsiteOverview() {
 
   return (
     <div>
-      {/* Top banner — plugin connection status */}
-      <div style={{
-        background: pluginConnected ? '#F0FDF4' : '#FEF3C7',
-        borderLeft: `4px solid ${pluginConnected ? '#1D9E75' : '#D97706'}`,
-        padding: '10px 14px', marginBottom: 14, borderRadius: 4, fontSize: 13,
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      }}>
-        <div>
-          <strong style={{ color: pluginConnected ? '#065F46' : '#78350F' }}>
-            {pluginConnected ? '✓ IA Plugin connected' : '⚠ IA Plugin not reachable'}
-          </strong>
+      {/* Plugin-not-reachable banner — shown only when we have a problem */}
+      {!pluginConnected && (
+        <div style={{
+          background: '#FEF3C7', borderLeft: '4px solid #D97706',
+          padding: '10px 14px', marginBottom: 14, borderRadius: 4, fontSize: 13,
+        }}>
+          <strong style={{ color: '#78350F' }}>⚠ IA Plugin not reachable</strong>
           <span style={{ marginLeft: 10, color: '#0B1C24', fontSize: 12 }}>
-            {pluginConnected && pluginData.plugin_version && <>v{pluginData.plugin_version} · </>}
-            Tier: {pluginData?.tier || '—'}{pluginData?.seo_addon ? ` · SEO: ${pluginData.seo_addon}` : ''}
+            ARION can't currently reach the plugin on this site. Some live data will fall back to the most recent snapshot.
           </span>
         </div>
-      </div>
+      )}
 
       {/* Top stats row — big numbers clients care about */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14 }}>
@@ -91,21 +86,21 @@ export function WebsiteOverview() {
           label="Pending updates"
           value={upL ? '…' : totalUpdates}
           tone={totalUpdates > 0 ? 'warn' : 'ok'}
-          href="/website/updates"
+          href="/app/services/arion_website_updates"
           linkLabel="Review updates →"
         />
         <StatTile
           label="Critical site-health issues"
           value={secL ? '…' : (core?.critical_count ?? '—')}
           tone={core?.critical_count > 0 ? 'err' : 'ok'}
-          href="/website/security/overview"
+          href="/app/services/arion_website_security_overview"
           linkLabel="Open security →"
         />
         <StatTile
           label="Blocked attacks (24h)"
           value={secL ? '…' : (wf?.installed ? wf.blocked_attacks_24h ?? 0 : '—')}
           tone={wf?.blocked_attacks_24h > 100 ? 'warn' : 'ok'}
-          href="/website/security/overview"
+          href="/app/services/arion_website_security_overview"
           linkLabel="Security events →"
         />
         <StatTile
@@ -132,7 +127,7 @@ export function WebsiteOverview() {
                   <HealthRow status={core?.critical_count === 0 ? 'ok' : 'err'} label="WP Site Health critical" value={core?.critical_count ?? '—'} />
                   <HealthRow status={core?.recommended_count === 0 ? 'ok' : 'warn'} label="WP Site Health recommended" value={core?.recommended_count ?? '—'} />
                   <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #eef2f5', textAlign: 'right' }}>
-                    <a href="/website/security/overview" style={{ fontSize: 12, color: 'var(--arion-sky)' }}>View full security →</a>
+                    <a href="/app/services/arion_website_security_overview" style={{ fontSize: 12, color: 'var(--arion-sky)' }}>View full security →</a>
                   </div>
                 </div>
               )}
@@ -174,7 +169,7 @@ export function WebsiteOverview() {
                   </div>
                 ))}
                 <div style={{ marginTop: 10, textAlign: 'right' }}>
-                  <a href="/website/security/overview" style={{ fontSize: 12, color: 'var(--arion-sky)' }}>View all events →</a>
+                  <a href="/app/services/arion_website_security_overview" style={{ fontSize: 12, color: 'var(--arion-sky)' }}>View all events →</a>
                 </div>
               </div>
             )}

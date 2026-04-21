@@ -39,6 +39,11 @@ export function WebsiteUpdates() {
     [activeSiteId, version]
   );
 
+  const { data: allPluginsEnv, loading: allPluginsLoading } = useArionData(
+    () => activeSiteId ? arionApi.getPluginPlugins(activeSiteId) : Promise.resolve(null),
+    [activeSiteId, version]
+  );
+
   const { data: logData, loading: logLoading } = useArionData(
     () => activeSiteId ? arionApi.getPluginUpdatesLog(activeSiteId) : Promise.resolve(null),
     [activeSiteId, version]
@@ -223,75 +228,71 @@ export function WebsiteUpdates() {
         </div>
       </Card>
 
-      {/* Updates available table */}
-      <Card title={`Available updates${allItems.length > 0 ? ` (${allItems.length})` : ''}`}>
-        {allItems.length === 0 ? (
-          <div style={{ padding: 20, color: '#5A7A8A', fontSize: 13, textAlign: 'center', background: '#F8FAFC', borderRadius: 6 }}>
-            {pluginConnected ? 'Everything is up to date.' : 'Connect the plugin to see available updates.'}
-          </div>
-        ) : (
-          <table className="tbl" style={{ width: '100%', fontSize: 12 }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left' }}>Component</th>
-                <th style={{ textAlign: 'left' }}>Type</th>
-                <th style={{ textAlign: 'left' }}>Current</th>
-                <th style={{ textAlign: 'left' }}>New</th>
-                <th style={{ textAlign: 'center' }}>Auto</th>
-                <th style={{ textAlign: 'right' }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {allItems.map((it, i) => {
-                const key = `${it.kind}:${it.file || it.stylesheet || 'core'}`;
-                const isBusy = Boolean(busy[key]);
-                return (
-                  <tr key={key + i}>
-                    <td>
-                      <div style={{ fontWeight: 500 }}>{it.name}</div>
-                      {it.active && <span style={{ fontSize: 10, color: '#1D9E75', marginLeft: 0 }}>• active</span>}
-                    </td>
-                    <td style={{ textTransform: 'capitalize', color: '#5A7A8A' }}>{it.kind}</td>
-                    <td><code style={{ fontSize: 11 }}>{it.current_version}</code></td>
-                    <td><code style={{ fontSize: 11, color: '#EF6C33' }}>{it.new_version}</code></td>
-                    <td style={{ textAlign: 'center' }}>
-                      {it.kind === 'core' ? (
-                        <span style={{ fontSize: 10, color: '#94A3B8' }}>—</span>
-                      ) : (
-                        <InlineToggle
-                          checked={Boolean(it.auto_update)}
-                          disabled={!pluginConnected || Boolean(busy[`auto:${it.file || it.stylesheet}`])}
-                          onChange={(v) => handleToggleAutoUpdate(
-                            it.kind === 'plugin' ? { plugin: it.file!, enabled: v } : { theme: it.stylesheet!, enabled: v },
-                            String(it.file || it.stylesheet)
-                          )}
-                        />
-                      )}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <button
-                        disabled={!pluginConnected || isBusy}
-                        onClick={() => it.kind === 'plugin' ? handleUpdatePlugin(it.file!)
-                          : it.kind === 'theme' ? handleUpdateTheme(it.stylesheet!)
-                          : handleUpdateCore()}
-                        style={{
-                          padding: '5px 12px', fontSize: 11, fontWeight: 600,
-                          background: '#0B1C24', color: '#fff',
-                          border: 'none', borderRadius: 5,
-                          cursor: !pluginConnected || isBusy ? 'not-allowed' : 'pointer',
-                          opacity: !pluginConnected || isBusy ? 0.5 : 1,
-                        }}
-                      >
-                        {isBusy ? 'Updating…' : 'Update now'}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </Card>
+      {/* All plugins/themes/core — shows current state + actions per row */}
+      {(() => {
+        const allPluginsList: any[] = (allPluginsEnv as any)?.data || [];
+        const allAutoCfg: any = cfg || null;
+        const pluginUpdateMap = new Map<string, any>();
+        if (updates?.plugins) for (const p of updates.plugins) pluginUpdateMap.set(p.file, p);
+
+        // Merge live plugin inventory with update info + auto-update config
+        const pluginRows = allPluginsList.map((p: any) => {
+          const upd = pluginUpdateMap.get(p.file);
+          const autoEntry = allAutoCfg?.plugins?.find((x: any) => x.file === p.file);
+          return {
+            kind: 'plugin' as const,
+            file: p.file,
+            name: p.name,
+            current_version: p.version,
+            new_version: upd?.new_version || null,
+            active: p.active,
+            update_available: Boolean(upd),
+            auto_update: Boolean(autoEntry?.auto_update),
+          };
+        });
+
+        // Merge theme updates with theme list from auto-update config (which contains ALL themes)
+        const themeRows = (allAutoCfg?.themes || []).map((t: any) => {
+          const updList = updates?.themes || [];
+          const upd = updList.find((x: any) => x.stylesheet === t.stylesheet);
+          return {
+            kind: 'theme' as const,
+            stylesheet: t.stylesheet,
+            name: t.name,
+            current_version: t.version,
+            new_version: upd?.new_version || null,
+            active: t.active,
+            update_available: Boolean(upd),
+            auto_update: Boolean(t.auto_update),
+          };
+        });
+
+        const coreRow = updates?.core_update ? [{
+          kind: 'core' as const,
+          name: 'WordPress Core',
+          current_version: updates.core_update.current_version,
+          new_version: updates.core_update.new_version,
+          active: true,
+          update_available: true,
+          auto_update: false,
+        }] : [];
+
+        const [filter, setFilter] = ['all', () => {}] as const; // placeholder — actual state below via hook
+        return (
+          <PluginInventoryTable
+            plugins={pluginRows}
+            themes={themeRows}
+            coreRow={coreRow}
+            pluginConnected={pluginConnected}
+            busy={busy}
+            onUpdatePlugin={handleUpdatePlugin}
+            onUpdateTheme={handleUpdateTheme}
+            onUpdateCore={handleUpdateCore}
+            onToggleAutoUpdate={handleToggleAutoUpdate}
+            loading={allPluginsLoading || updatesLoading}
+          />
+        );
+      })()}
 
       {/* Update history */}
       <Card title="Update history">
@@ -365,6 +366,165 @@ function ToggleRow({ label, sub, checked, disabled, onChange }: { label: string;
       </div>
       <InlineToggle checked={checked} disabled={disabled} onChange={onChange} />
     </div>
+  );
+}
+
+type InventoryRow = {
+  kind: 'plugin' | 'theme' | 'core';
+  file?: string;
+  stylesheet?: string;
+  name: string;
+  current_version: string;
+  new_version: string | null;
+  active: boolean;
+  update_available: boolean;
+  auto_update: boolean;
+};
+
+function PluginInventoryTable({
+  plugins, themes, coreRow, pluginConnected, busy,
+  onUpdatePlugin, onUpdateTheme, onUpdateCore, onToggleAutoUpdate, loading,
+}: {
+  plugins: InventoryRow[];
+  themes: InventoryRow[];
+  coreRow: InventoryRow[];
+  pluginConnected: boolean;
+  busy: Record<string, boolean>;
+  onUpdatePlugin: (f: string) => void;
+  onUpdateTheme: (s: string) => void;
+  onUpdateCore: () => void;
+  onToggleAutoUpdate: (body: PluginAutoUpdateToggleBody, key: string) => void;
+  loading: boolean;
+}) {
+  const [filter, setFilter] = React.useState<'all' | 'plugins' | 'themes' | 'needs_update' | 'active'>('all');
+
+  let rows: InventoryRow[] = [];
+  if (filter === 'all' || filter === 'plugins') rows = rows.concat(plugins);
+  if (filter === 'all' || filter === 'themes') rows = rows.concat(themes);
+  if (filter === 'all') rows = rows.concat(coreRow);
+  if (filter === 'needs_update') rows = [...plugins, ...themes, ...coreRow].filter((r) => r.update_available);
+  if (filter === 'active') rows = [...plugins, ...themes].filter((r) => r.active);
+
+  // Sort: updates first (update_available=true), then by name
+  rows.sort((a, b) => {
+    if (a.update_available !== b.update_available) return a.update_available ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  const totalPluginsNeedingUpdate = plugins.filter((p) => p.update_available).length;
+  const totalThemesNeedingUpdate = themes.filter((t) => t.update_available).length;
+
+  return (
+    <Card title={`Plugins, Themes & Core${rows.length ? ` (${rows.length})` : ''}`}>
+      {/* Filter pills */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+        {[
+          { k: 'all', label: `All (${plugins.length + themes.length + coreRow.length})` },
+          { k: 'plugins', label: `Plugins (${plugins.length})` },
+          { k: 'themes', label: `Themes (${themes.length})` },
+          { k: 'active', label: `Active only` },
+          { k: 'needs_update', label: `Needs update (${totalPluginsNeedingUpdate + totalThemesNeedingUpdate + coreRow.length})` },
+        ].map((p) => (
+          <button
+            key={p.k}
+            onClick={() => setFilter(p.k as any)}
+            style={{
+              padding: '4px 12px', fontSize: 11, fontWeight: 600,
+              background: filter === p.k ? '#0B1C24' : '#F1F5F9',
+              color: filter === p.k ? '#fff' : '#5A7A8A',
+              border: 'none', borderRadius: 4, cursor: 'pointer',
+            }}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{ padding: 20, color: '#5A7A8A', fontSize: 12, textAlign: 'center' }}>Loading plugin inventory…</div>
+      ) : rows.length === 0 ? (
+        <div style={{ padding: 20, color: '#5A7A8A', fontSize: 13, textAlign: 'center', background: '#F8FAFC', borderRadius: 6 }}>
+          {pluginConnected ? 'No plugins match this filter.' : 'Connect the plugin to see inventory.'}
+        </div>
+      ) : (
+        <table className="tbl" style={{ width: '100%', fontSize: 12 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left', width: '32%' }}>Component</th>
+              <th style={{ textAlign: 'left' }}>Type</th>
+              <th style={{ textAlign: 'left' }}>Current</th>
+              <th style={{ textAlign: 'left' }}>Status</th>
+              <th style={{ textAlign: 'center' }}>Auto-update</th>
+              <th style={{ textAlign: 'right' }}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((it) => {
+              const key = `${it.kind}:${it.file || it.stylesheet || 'core'}`;
+              const isBusy = Boolean(busy[key]);
+              const autoKey = `auto:${it.file || it.stylesheet}`;
+              return (
+                <tr key={key}>
+                  <td>
+                    <div style={{ fontWeight: 500 }}>{it.name}</div>
+                    {it.active && <span style={{ fontSize: 10, color: '#1D9E75' }}>● active</span>}
+                    {!it.active && it.kind !== 'core' && <span style={{ fontSize: 10, color: '#94A3B8' }}>○ inactive</span>}
+                  </td>
+                  <td style={{ textTransform: 'capitalize', color: '#5A7A8A' }}>{it.kind}</td>
+                  <td><code style={{ fontSize: 11 }}>{it.current_version}</code></td>
+                  <td>
+                    {it.update_available ? (
+                      <span style={{ fontSize: 10, fontWeight: 600, background: '#FEF3C7', color: '#78350F', padding: '2px 8px', borderRadius: 3 }}>
+                        Update to {it.new_version}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 10, fontWeight: 600, background: '#F0FDF4', color: '#065F46', padding: '2px 8px', borderRadius: 3 }}>
+                        Up to date
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    {it.kind === 'core' ? (
+                      <span style={{ fontSize: 10, color: '#94A3B8' }}>—</span>
+                    ) : (
+                      <InlineToggle
+                        checked={it.auto_update}
+                        disabled={!pluginConnected || Boolean(busy[autoKey])}
+                        onChange={(v) => onToggleAutoUpdate(
+                          it.kind === 'plugin' ? { plugin: it.file!, enabled: v } : { theme: it.stylesheet!, enabled: v },
+                          String(it.file || it.stylesheet)
+                        )}
+                      />
+                    )}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    {it.update_available ? (
+                      <button
+                        disabled={!pluginConnected || isBusy}
+                        onClick={() => it.kind === 'plugin' ? onUpdatePlugin(it.file!)
+                          : it.kind === 'theme' ? onUpdateTheme(it.stylesheet!)
+                          : onUpdateCore()}
+                        style={{
+                          padding: '5px 12px', fontSize: 11, fontWeight: 600,
+                          background: '#EF6C33', color: '#fff',
+                          border: 'none', borderRadius: 5,
+                          cursor: !pluginConnected || isBusy ? 'not-allowed' : 'pointer',
+                          opacity: !pluginConnected || isBusy ? 0.5 : 1,
+                        }}
+                      >
+                        {isBusy ? 'Updating…' : 'Update now'}
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: 10, color: '#94A3B8' }}>—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </Card>
   );
 }
 
