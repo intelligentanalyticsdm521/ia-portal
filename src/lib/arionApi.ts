@@ -1510,6 +1510,14 @@ export async function setPluginWordfenceConfig(p: { baseUrl: string; bearerToken
     body: p.body,
   });
 }
+export async function purgePluginCache(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<{ purged: boolean }>>({
+    ...p,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/cache/purge`,
+    body: {},
+  });
+}
 export async function getPluginContentPace(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<PluginEnvelope<{ months: Array<{ month: string; posts: number; pages: number }> }>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/content/publishing-pace` });
 }
