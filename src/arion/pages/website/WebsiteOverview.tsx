@@ -1,16 +1,21 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import {
   Card, HealthRow, Loading, EmptyPanel,
-  ScoreCircle, SidebarCard, ConsultingUpsell,
+  SidebarCard, ConsultingUpsell,
 } from '../../components/Ui';
+import {
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+} from 'recharts';
 
 /**
  * Website overview — the "home" page for the Website section. Snapshots
  * everything a client (or IA staff) needs at a glance: plugin connection,
  * core versions, pending updates, security posture summary, integration
- * status, recent events. Deep-dive links go to dedicated subpages.
+ * status, recent events, server environment, plugin inventory breakdown.
+ * Deep-dive links go to dedicated subpages.
  */
 export function WebsiteOverview() {
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
@@ -39,6 +44,24 @@ export function WebsiteOverview() {
     () => activeSiteId ? arionApi.getPluginSecurityEvents(activeSiteId, 10) : Promise.resolve(null),
     [activeSiteId]
   );
+  const { data: perfEnv, loading: perfL } = useArionData(
+    () => activeSiteId ? arionApi.getPluginPerformance(activeSiteId) : Promise.resolve(null),
+    [activeSiteId]
+  );
+  const { data: pluginInv, loading: pluginInvL } = useArionData(
+    () => activeSiteId ? arionApi.getPluginPlugins(activeSiteId) : Promise.resolve(null),
+    [activeSiteId]
+  );
+
+  const plugins: any[] = useMemo(() => (pluginInv as any)?.data || [], [pluginInv]);
+  const pluginBreakdown = useMemo(() => {
+    const total = plugins.length;
+    const active = plugins.filter((p) => p.active).length;
+    const outdated = plugins.filter((p) => p.update_available).length;
+    const outdatedActive = plugins.filter((p) => p.active && p.update_available).length;
+    const inactive = total - active;
+    return { total, active, inactive, outdated, outdatedActive };
+  }, [plugins]);
 
   if (loading || ovL || hL) return <Loading />;
   if (!selectedSite) return <EmptyPanel message="No site selected." />;
@@ -59,11 +82,23 @@ export function WebsiteOverview() {
   const wf = secData.wordfence || null;
   const core = secData.core_health || null;
 
+  const perfData = (perfEnv as any)?.data || {};
+  const srv = perfData.server || null;
+  const cron = perfData.cron || null;
+  const ls = perfData.litespeed || null;
+
   const recentEvents = (eventsEnv as any)?.data?.events || [];
 
   // Derive phpVersion / wpVersion from plugin data if available, else fall back to hosting
-  const wpVersion = pluginData?.last_health_check?.wp_version || health.wordpressVersion || h.wordpress?.version || '—';
-  const phpVersion = pluginData?.last_health_check?.php_version || health.phpVersion || '—';
+  const wpVersion = srv?.wp_version || pluginData?.last_health_check?.wp_version || health.wordpressVersion || h.wordpress?.version || '—';
+  const phpVersion = srv?.php_version || pluginData?.last_health_check?.php_version || health.phpVersion || '—';
+
+  // Pie chart data for plugin inventory
+  const pieData = [
+    { name: 'Up to date', value: Math.max(0, pluginBreakdown.active - pluginBreakdown.outdatedActive), color: '#1D9E75' },
+    { name: 'Needs update', value: pluginBreakdown.outdatedActive, color: '#D97706' },
+    { name: 'Inactive', value: pluginBreakdown.inactive, color: '#94A3B8' },
+  ].filter((d) => d.value > 0);
 
   return (
     <div>
@@ -111,6 +146,75 @@ export function WebsiteOverview() {
         />
       </div>
 
+      {/* NEW: Plugin inventory breakdown + pending updates bar */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+        <Card title="Plugin inventory">
+          {pluginInvL ? (
+            <div style={{ padding: 20, color: '#5A7A8A', fontSize: 12 }}>Loading plugin list…</div>
+          ) : plugins.length === 0 ? (
+            <Empty message="No plugin inventory available." />
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+              <div style={{ width: 140, height: 140 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={35} outerRadius={60} paddingAngle={2}>
+                      {pieData.map((d, i) => <Cell key={i} fill={d.color} />)}
+                    </Pie>
+                    <Tooltip contentStyle={{ fontSize: 11 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ flex: 1, fontSize: 12 }}>
+                <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 8 }}>
+                  {pluginBreakdown.total} plugins installed
+                </div>
+                {pieData.map((d) => (
+                  <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
+                    <span style={{ width: 10, height: 10, background: d.color, borderRadius: 2, flexShrink: 0 }} />
+                    <span style={{ flex: 1 }}>{d.name}</span>
+                    <strong>{d.value}</strong>
+                  </div>
+                ))}
+                <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid #eef2f5' }}>
+                  <a href="/app/services/arion_website_updates" style={{ fontSize: 11, color: 'var(--arion-sky)' }}>Manage plugins →</a>
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card title="Update backlog">
+          {upL ? (
+            <div style={{ padding: 20, color: '#5A7A8A', fontSize: 12 }}>Loading…</div>
+          ) : (
+            <>
+              <div style={{ height: 140 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={[
+                      { name: 'Plugins', count: updates?.plugin_update_count || 0 },
+                      { name: 'Themes', count: updates?.theme_update_count || 0 },
+                      { name: 'Core', count: updates?.core_update ? 1 : 0 },
+                    ]}
+                    margin={{ top: 5, right: 15, left: 0, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E5EEF2" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#5A7A8A' }} />
+                    <YAxis tick={{ fontSize: 11, fill: '#5A7A8A' }} allowDecimals={false} />
+                    <Tooltip contentStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="count" fill="#0284c7" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 11, color: '#5A7A8A', textAlign: 'right' }}>
+                <a href="/app/services/arion_website_updates" style={{ color: 'var(--arion-sky)' }}>Review all updates →</a>
+              </div>
+            </>
+          )}
+        </Card>
+      </div>
+
       <div className="dash-layout">
         <div>
           {/* Security posture + Integrations */}
@@ -142,6 +246,53 @@ export function WebsiteOverview() {
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #eef2f5', textAlign: 'right' }}>
                 <a href="/app/settings?tab=Connected%20Accounts" style={{ fontSize: 12, color: 'var(--arion-sky)' }}>Manage connected accounts →</a>
               </div>
+            </Card>
+          </div>
+
+          {/* Server environment + WP cron (moved here from CWV page) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <Card title="Server environment">
+              {perfL ? (
+                <div style={{ padding: 10, color: '#5A7A8A', fontSize: 12 }}>Loading…</div>
+              ) : !srv ? (
+                <Empty message="Server info unavailable — plugin not reachable." />
+              ) : (
+                <div>
+                  <HealthRow status="ok" label="PHP version" value={srv.php_version} />
+                  <HealthRow status="ok" label="MySQL version" value={srv.mysql_version || '—'} />
+                  <HealthRow status="ok" label="WordPress version" value={srv.wp_version} />
+                  <HealthRow status={srv.ssl_enabled ? 'ok' : 'err'} label="SSL" value={srv.ssl_enabled ? 'Enabled' : 'Disabled'} />
+                  <HealthRow status={srv.opcache_enabled ? 'ok' : 'warn'} label="OPcache" value={srv.opcache_enabled ? 'Enabled' : 'Disabled'} />
+                  <HealthRow status="ok" label="Memory limit" value={srv.memory_limit} />
+                  <HealthRow status="ok" label="Upload max" value={srv.upload_max_size} />
+                  {srv.wp_debug && <HealthRow status="warn" label="WP_DEBUG" value="Enabled (disable in production)" />}
+                </div>
+              )}
+            </Card>
+
+            <Card title="Background tasks (WP cron)">
+              {perfL ? (
+                <div style={{ padding: 10, color: '#5A7A8A', fontSize: 12 }}>Loading…</div>
+              ) : !cron ? (
+                <Empty message="Cron info unavailable." />
+              ) : (
+                <div>
+                  <HealthRow status="ok" label="Queued events" value={cron.queued_events?.toLocaleString() ?? '0'} />
+                  <HealthRow status={cron.overdue_events > 0 ? 'warn' : 'ok'} label="Overdue events (>1h)" value={cron.overdue_events ?? 0} />
+                  <HealthRow status={cron.disabled ? 'warn' : 'ok'} label="WP_CRON disabled" value={cron.disabled ? 'Yes' : 'No'} />
+                  {ls?.installed && (
+                    <>
+                      <HealthRow status={ls.cache_enabled ? 'ok' : 'warn'} label="Page cache" value={ls.cache_enabled ? 'Enabled' : 'Disabled'} />
+                      <HealthRow status={ls.object_cache ? 'ok' : 'warn'} label="Object cache" value={ls.object_cache ? 'Enabled' : 'Disabled'} />
+                    </>
+                  )}
+                  {cron.overdue_events > 0 && (
+                    <div style={{ marginTop: 10, padding: 10, background: '#FEF3C7', fontSize: 11, color: '#78350F', borderRadius: 4 }}>
+                      {cron.overdue_events} stuck events — may indicate cron is not firing.
+                    </div>
+                  )}
+                </div>
+              )}
             </Card>
           </div>
 
