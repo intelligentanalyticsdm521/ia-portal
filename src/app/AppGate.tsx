@@ -1,8 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useIsAuthenticated } from '@azure/msal-react';
+import { BrowserAuthError } from '@azure/msal-browser';
 import { useAccessToken } from '../auth/useAccessToken';
 import { useAppState } from './AppState';
 import { PlatformApiError, selectTenant, sessionVerify } from '../lib/platformApi';
+
+/**
+ * Clear stale MSAL interaction-tracking flags from session/local storage.
+ * Used when we catch hash_empty_error or similar transient states so the
+ * user can retry without having to hard-refresh + clear cookies manually.
+ */
+function clearMsalInteractionFlags() {
+  try {
+    const stores: Storage[] = [sessionStorage, localStorage];
+    for (const store of stores) {
+      const toRemove: string[] = [];
+      for (let i = 0; i < store.length; i++) {
+        const k = store.key(i);
+        if (k && /\.interaction\.status$/i.test(k)) toRemove.push(k);
+      }
+      for (const k of toRemove) store.removeItem(k);
+    }
+  } catch { /* storage denied — ignore */ }
+}
 
 export function AppGate({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useIsAuthenticated();
@@ -113,9 +133,32 @@ export function AppGate({ children }: { children: React.ReactNode }) {
             setError(`platform-api error (${err.status}).`);
           }
           console.error('platform-api error body:', err.body);
+        } else if (err instanceof BrowserAuthError) {
+          // Transient MSAL state (hash_empty_error, no_cached_authority_error,
+          // interaction_in_progress) — clear stale interaction flags and
+          // surface a retry-friendly message without the stack trace.
+          const recoverableCodes = new Set([
+            'hash_empty_error',
+            'no_cached_authority_error',
+            'interaction_in_progress',
+            'monitor_window_timeout',
+          ]);
+          if (recoverableCodes.has(err.errorCode)) {
+            console.warn('[AppGate] recoverable MSAL error, clearing stale flags:', err.errorCode);
+            clearMsalInteractionFlags();
+            setError(
+              'Sign-in state was out of sync. This usually resolves by retrying. ' +
+              'If it keeps happening, click Switch Tenant to fully reset.'
+            );
+          } else {
+            console.error('[AppGate MSAL error]', err);
+            setError(
+              `Authentication error: [${err.errorCode}] ${err.errorMessage || err.message}.\n\n` +
+              `Click Retry or Switch Tenant to reset. If this persists, contact support.`
+            );
+          }
         } else {
-          // Surface the actual error message so we can diagnose without needing the user
-          // to open DevTools. TypeErrors (network failure), AbortError (timeout), MSAL errors, etc.
+          // Non-MSAL, non-platform errors (network, timeout, unexpected)
           const msg = err instanceof Error ? err.message : String(err);
           const name = err instanceof Error ? err.name : 'Error';
           setError(

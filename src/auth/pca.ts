@@ -1,5 +1,6 @@
 import {
   PublicClientApplication,
+  BrowserAuthError,
   type Configuration,
   type IPublicClientApplication,
   type AuthenticationResult,
@@ -71,6 +72,34 @@ async function ensureActiveAccount(msal: IPublicClientApplication, result?: Auth
 }
 
 /**
+ * Clear any stale MSAL interaction-in-progress flags from session/local storage.
+ * These get orphaned when a login redirect is interrupted (hard-refresh,
+ * back button before callback finishes) and cause `hash_empty_error` on the
+ * next load because MSAL thinks a redirect is in progress but the hash is gone.
+ *
+ * Only clears the interaction-tracking keys; real token cache is untouched.
+ */
+function clearStaleInteractionFlags(): void {
+  try {
+    // MSAL tracks interaction state under keys like
+    // `msal.<clientId>.interaction.status` and `msal.interaction.status`.
+    const keysToCheck: Array<{ storage: Storage; keys: string[] }> = [
+      { storage: sessionStorage, keys: [] },
+      { storage: localStorage, keys: [] },
+    ];
+    for (const entry of keysToCheck) {
+      for (let i = 0; i < entry.storage.length; i++) {
+        const k = entry.storage.key(i);
+        if (k && /\.interaction\.status$/i.test(k)) entry.keys.push(k);
+      }
+    }
+    for (const { storage, keys } of keysToCheck) {
+      for (const k of keys) storage.removeItem(k);
+    }
+  } catch { /* storage access denied — ignore */ }
+}
+
+/**
  * Initialize MSAL once (safe to call multiple times).
  * ALSO processes redirect responses globally so login works even if the app lands back on "/".
  */
@@ -88,8 +117,25 @@ export async function initMsal(): Promise<void> {
     // If the browser returns to "/" after auth, this is where the code gets processed and stored.
     if (!redirectHandled) {
       redirectHandled = true;
-      const result = await pca.handleRedirectPromise();
-      await ensureActiveAccount(pca, result);
+      try {
+        const result = await pca.handleRedirectPromise();
+        await ensureActiveAccount(pca, result);
+      } catch (err) {
+        // `hash_empty_error` means MSAL thought a redirect was in progress
+        // (sessionStorage has an interaction-in-progress flag) but the URL
+        // hash is empty — usually because the user refreshed mid-login, hit
+        // the back button after callback, or navigated directly to /. The
+        // correct recovery is to wipe the stale flag and continue. This is
+        // NOT a real auth failure.
+        const isHashEmpty = err instanceof BrowserAuthError && err.errorCode === 'hash_empty_error';
+        const isNoCachedAuth = err instanceof BrowserAuthError && err.errorCode === 'no_cached_authority_error';
+        if (isHashEmpty || isNoCachedAuth) {
+          clearStaleInteractionFlags();
+          await ensureActiveAccount(pca, null);
+        } else {
+          throw err;
+        }
+      }
     } else {
       // Ensure we still have an active account if cache is populated.
       await ensureActiveAccount(pca, null);
