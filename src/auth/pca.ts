@@ -13,6 +13,27 @@ let initPromise: Promise<void> | null = null;
 // Ensures we only try to process the redirect once per page load.
 let redirectHandled = false;
 
+// Hard cap on how long we'll wait for MSAL's handleRedirectPromise. If it
+// exceeds this the network is likely wedged; throw so the init promise
+// resolves into an error UI instead of spinning forever.
+const REDIRECT_PROCESS_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Timeout after ${ms}ms: ${label}`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+// Simple telemetry — writes structured events to console so we can see
+// recovery activity in production logs without extra infrastructure.
+function logAuthEvent(event: string, detail: Record<string, unknown> = {}) {
+  const line = { ts: new Date().toISOString(), event, ...detail };
+  // Use console.info so browser logs capture it at the default level
+  console.info('[auth]', line);
+}
+
 function parseCsv(value: string | undefined): string[] {
   if (!value) return [];
   return value
@@ -118,8 +139,13 @@ export async function initMsal(): Promise<void> {
     if (!redirectHandled) {
       redirectHandled = true;
       try {
-        const result = await pca.handleRedirectPromise();
+        const result = await withTimeout(
+          pca.handleRedirectPromise(),
+          REDIRECT_PROCESS_TIMEOUT_MS,
+          'handleRedirectPromise'
+        );
         await ensureActiveAccount(pca, result);
+        logAuthEvent('init.redirect_processed', { has_account: !!result?.account });
       } catch (err) {
         // `hash_empty_error` means MSAL thought a redirect was in progress
         // (sessionStorage has an interaction-in-progress flag) but the URL
@@ -129,10 +155,19 @@ export async function initMsal(): Promise<void> {
         // NOT a real auth failure.
         const isHashEmpty = err instanceof BrowserAuthError && err.errorCode === 'hash_empty_error';
         const isNoCachedAuth = err instanceof BrowserAuthError && err.errorCode === 'no_cached_authority_error';
+        const isTimeout = err instanceof Error && err.message.startsWith('Timeout');
         if (isHashEmpty || isNoCachedAuth) {
+          logAuthEvent('init.recovered', { code: (err as BrowserAuthError).errorCode });
           clearStaleInteractionFlags();
           await ensureActiveAccount(pca, null);
+        } else if (isTimeout) {
+          logAuthEvent('init.redirect_timeout', { ms: REDIRECT_PROCESS_TIMEOUT_MS });
+          clearStaleInteractionFlags();
+          // Fall through to cache-only — don't throw, so the app can still
+          // show a sign-in prompt instead of a blank failure screen.
+          await ensureActiveAccount(pca, null);
         } else {
+          logAuthEvent('init.redirect_failed', { error: err instanceof Error ? err.message : String(err) });
           throw err;
         }
       }

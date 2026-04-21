@@ -24,6 +24,37 @@ function clearMsalInteractionFlags() {
   } catch { /* storage denied — ignore */ }
 }
 
+/** Wrap a promise with a hard timeout; preserves original error if it wins. */
+function withAuthTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const e: Error & { isAuthTimeout?: boolean } = new Error(`Timeout after ${ms}ms: ${label}`);
+      e.isAuthTimeout = true;
+      reject(e);
+    }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** Retry a promise-returning fn once on network-shape errors. */
+async function retryOnce<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    const isRetryable =
+      (err instanceof TypeError && /fetch|network|load failed/i.test(err.message)) ||
+      (err instanceof Error && (err.name === 'AbortError' || (err as any).isAuthTimeout));
+    if (!isRetryable) throw err;
+    console.info('[auth]', { ts: new Date().toISOString(), event: 'bootstrap.retry', step: label, first_error: err instanceof Error ? err.message : String(err) });
+    // Small backoff before retry (jittered)
+    await new Promise((r) => setTimeout(r, 400 + Math.random() * 400));
+    return await fn();
+  }
+}
+
+const BOOTSTRAP_STEP_TIMEOUT_MS = 12_000;
+
 export function AppGate({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useIsAuthenticated();
   const { activeAccount, login, getToken } = useAccessToken();
@@ -61,14 +92,19 @@ export function AppGate({ children }: { children: React.ReactNode }) {
       setLoading(true);
 
       try {
-        const tokenResult = await getToken();
+        const tokenResult = await withAuthTimeout(getToken(), BOOTSTRAP_STEP_TIMEOUT_MS, 'getToken');
         const accessToken = tokenResult.accessToken;
 
-        // 1) Verify session and fetch tenant memberships (no tenant header)
-        const v = await sessionVerify({
-          baseUrl: import.meta.env.VITE_PLATFORM_API_BASE_URL,
-          bearerToken: accessToken
-        });
+        // 1) Verify session and fetch tenant memberships (no tenant header).
+        // Retry once on network-shape errors to ride out transient Azure hiccups.
+        const v = await retryOnce(() => withAuthTimeout(
+          sessionVerify({
+            baseUrl: import.meta.env.VITE_PLATFORM_API_BASE_URL,
+            bearerToken: accessToken
+          }),
+          BOOTSTRAP_STEP_TIMEOUT_MS,
+          'sessionVerify'
+        ), 'sessionVerify');
 
         appState.setBootstrap(v);
 
@@ -106,11 +142,15 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         }
 
         // 3) Select tenant to load service entitlements
-        const selected = await selectTenant({
-          baseUrl: import.meta.env.VITE_PLATFORM_API_BASE_URL,
-          bearerToken: accessToken,
-          tenantId: tenantToSelect
-        });
+        const selected = await retryOnce(() => withAuthTimeout(
+          selectTenant({
+            baseUrl: import.meta.env.VITE_PLATFORM_API_BASE_URL,
+            bearerToken: accessToken,
+            tenantId: tenantToSelect
+          }),
+          BOOTSTRAP_STEP_TIMEOUT_MS,
+          'selectTenant'
+        ), 'selectTenant');
 
         appState.setActive(selected);
         appState.setActiveTenantId(tenantToSelect);
@@ -182,14 +222,26 @@ export function AppGate({ children }: { children: React.ReactNode }) {
             );
           }
         } else {
-          // Non-MSAL, non-platform errors (network, timeout, unexpected)
+          // Non-MSAL, non-platform errors: network, timeout, unexpected
+          const isTimeout = err instanceof Error && (err as any).isAuthTimeout;
+          const isNetwork = err instanceof TypeError && /fetch|network|load failed/i.test(err.message);
           const msg = err instanceof Error ? err.message : String(err);
           const name = err instanceof Error ? err.name : 'Error';
-          setError(
-            `Unexpected error during login verification: [${name}] ${msg}\n\n` +
-            `If this keeps happening, hard-refresh (Ctrl+Shift+R). Otherwise, please share this message with support.`
-          );
-          console.error('[AppGate bootstrap error]', err);
+
+          if (isTimeout || isNetwork) {
+            setError(
+              'Network timeout while verifying your session. This usually means the API is ' +
+              'starting up or your connection dropped briefly. Click Retry in a few seconds. ' +
+              'If this keeps happening, check your internet or contact support.'
+            );
+            console.warn('[AppGate bootstrap network]', { name, msg });
+          } else {
+            setError(
+              `Unexpected error during login verification: [${name}] ${msg}\n\n` +
+              `If this keeps happening, hard-refresh (Ctrl+Shift+R). Otherwise, please share this message with support.`
+            );
+            console.error('[AppGate bootstrap error]', err);
+          }
         }
 
         appState.setBootstrap(null);
