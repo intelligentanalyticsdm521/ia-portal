@@ -213,12 +213,10 @@ export function PerformanceCache() {
         </div>
         <button
           onClick={() => setModalOpen(true)}
-          disabled={snapshots.length === 0}
           style={{
             padding: '10px 18px', fontSize: 12, fontWeight: 600,
-            background: snapshots.length === 0 ? '#E5EEF2' : '#0B1C24',
-            color: snapshots.length === 0 ? '#94A3B8' : '#fff',
-            border: 'none', borderRadius: 6, cursor: snapshots.length === 0 ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
+            background: '#0B1C24', color: '#fff',
+            border: 'none', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
           }}
         >
           See Full Details →

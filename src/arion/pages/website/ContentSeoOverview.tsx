@@ -21,6 +21,7 @@ import { Card, Loading, ConsultingUpsell, InfoCard } from '../../components/Ui';
 export function ContentSeoOverview() {
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
   const [modalOpen, setModalOpen] = useState(false);
+  const [drillDownType, setDrillDownType] = useState<'pages' | 'posts' | 'issues' | 'readability' | 'all'>('all');
 
   // Live Rank Math aggregate from the IA Plugin
   const { data: aggEnv, loading: aggLoading } = useArionData(
@@ -185,17 +186,44 @@ export function ContentSeoOverview() {
   ].filter((d) => d.value > 0);
   const problemTotal = problemData.reduce((s, d) => s + d.value, 0);
 
+  // Per-type counts for the Pages / Posts cards
+  const pagesOnly = items.filter((it) => (it.type || '').toLowerCase() === 'page');
+  const postsOnly = items.filter((it) => (it.type || '').toLowerCase() === 'post');
+  const pagesWithScoreArr = pagesOnly.filter((it) => it.seo_score != null);
+  const postsWithScoreArr = postsOnly.filter((it) => it.seo_score != null);
+  const pagesAvg = pagesWithScoreArr.length ? Math.round(pagesWithScoreArr.reduce((s, it) => s + Number(it.seo_score || 0), 0) / pagesWithScoreArr.length) : null;
+  const postsAvg = postsWithScoreArr.length ? Math.round(postsWithScoreArr.reduce((s, it) => s + Number(it.seo_score || 0), 0) / postsWithScoreArr.length) : null;
+  const pagesMissing = pagesOnly.filter((it) => !it.meta_desc || !it.focus_keyword).length;
+  const postsMissing = postsOnly.filter((it) => !it.meta_desc || !it.focus_keyword).length;
+
+  // Top 5 problem items per type (worst scores first, then missing meta/FK)
+  const scoreRank = (it: any) => (it.seo_score != null ? Number(it.seo_score) : 100) + (it.meta_desc ? 0 : -10) + (it.focus_keyword ? 0 : -10);
+  const pagesTop5 = [...pagesOnly].sort((a, b) => scoreRank(a) - scoreRank(b)).slice(0, 5);
+  const postsTop5 = [...postsOnly].sort((a, b) => scoreRank(a) - scoreRank(b)).slice(0, 5);
+
+  // Composite Content SEO Health Score — weighted blend
+  //   Coverage   30% | Avg Score  40% | Missing meta/FK (inverse) 20% | Low-score (inverse) 10%
+  const healthScore = (() => {
+    const parts: Array<{ value: number | null; weight: number }> = [];
+    parts.push({ value: coveragePct, weight: 30 });
+    parts.push({ value: avgScore, weight: 40 });
+    const missingRatio = totalPublished > 0 ? ((missingMeta + missingFK) / (totalPublished * 2)) : 0;
+    parts.push({ value: Math.max(0, 100 - missingRatio * 100), weight: 20 });
+    const lowRatio = totalPublished > 0 ? (lowScoreCount / totalPublished) : 0;
+    parts.push({ value: Math.max(0, 100 - lowRatio * 100), weight: 10 });
+    const usable = parts.filter((p) => p.value != null);
+    if (usable.length === 0) return null;
+    const total = usable.reduce((s, p) => s + p.weight, 0);
+    return Math.round(usable.reduce((s, p) => s + (p.value as number) * p.weight, 0) / total);
+  })();
+
+  // Readability problem flag
+  const hardToReadCount = detailRows.filter((r: any) => r.readability != null && r.readability < 40).length;
+
   return (
     <div>
-      {/* Hero narrative */}
-      <InfoCard title="Content SEO">
-        <p style={{ margin: 0, fontSize: 13 }}>
-          Live SEO health for every page and post on your site. Scores come from Rank Math's on-page analysis — content readability, keyword usage, meta completeness, schema markup, and more. Higher scores correlate with better search rankings.
-        </p>
-      </InfoCard>
-
-      {/* Hero stat tiles */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginTop: 14 }}>
+      {/* Hero stat tiles — compact summary numbers */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14 }}>
         <HeroTile
           label="Average SEO Score"
           value={avgScore != null ? String(Math.round(avgScore)) : '—'}
@@ -220,207 +248,188 @@ export function ContentSeoOverview() {
           sub={missingFK > 0 ? 'Priority fix' : 'Clean'}
           tone={missingFK > 0 ? 'warn' : 'ok'}
         />
-        <HeroTile
-          label="Low-score posts"
-          value={String(lowScoreCount)}
-          sub={lowScoreCount > 0 ? 'Score below 50' : 'None'}
-          tone={lowScoreCount > 0 ? 'err' : 'ok'}
-        />
       </div>
 
-      {/* Charts row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, marginTop: 14 }}>
-        <Card title="SEO Score Distribution">
-          <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10, lineHeight: 1.5 }}>
-            How your {items.length} published pages + posts spread across score bands. The goal is to shift everything into the green "Good" / "Excellent" ranges.
+      {/* Coverage narrative banner — moved under hero tiles with embedded See Full Details link */}
+      <div style={{
+        padding: '14px 16px', marginBottom: 14, borderRadius: 4,
+        background: coveragePct >= 80 ? '#F0FDF4' : '#FEF3C7',
+        borderLeft: `3px solid ${coveragePct >= 80 ? '#1D9E75' : '#D97706'}`,
+        display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24', marginBottom: 4 }}>
+            {coveragePct >= 80 ? 'Strong content SEO coverage' : coveragePct >= 50 ? 'Content SEO coverage needs expansion' : 'Most content lacks SEO analysis'}
           </div>
-          {detailLoading ? (
-            <div style={{ padding: 20, color: '#5A7A8A', fontSize: 12, textAlign: 'center' }}>Loading per-page scores…</div>
-          ) : scoreBuckets.every((b) => b.count === 0) ? (
-            <div style={{ padding: 20, color: '#5A7A8A', fontSize: 12, textAlign: 'center', background: '#F8FAFC', borderRadius: 6 }}>
-              No individual SEO scores captured yet. Rank Math auto-scores content on save/publish.
-            </div>
-          ) : (
-            <div style={{ height: 220 }}>
-              <ResponsiveContainer>
-                <BarChart data={scoreBuckets} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
-                  <XAxis dataKey="range" tick={{ fontSize: 11, fill: '#5A7A8A' }} />
-                  <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} width={30} />
-                  <RTooltip contentStyle={{ fontSize: 11, borderRadius: 6 }} formatter={(v: any, _n: any, p: any) => [`${v} content pieces`, p.payload.label]} />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                    {scoreBuckets.map((b, i) => <Cell key={i} fill={b.color} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </Card>
-
-        <Card title="Problem Breakdown">
-          {problemTotal === 0 ? (
-            <div style={{ padding: 16, color: '#065F46', fontSize: 12, textAlign: 'center', background: '#F0FDF4', borderRadius: 6 }}>
-              ✓ No critical SEO problems on any published content.
-            </div>
-          ) : (
-            <div>
-              <div style={{ height: 180 }}>
-                <ResponsiveContainer>
-                  <PieChart>
-                    <Pie data={problemData} dataKey="value" innerRadius={40} outerRadius={70} paddingAngle={2} stroke="none">
-                      {problemData.map((d, i) => <Cell key={i} fill={d.color} />)}
-                    </Pie>
-                    <RTooltip contentStyle={{ fontSize: 11, borderRadius: 6 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div style={{ fontSize: 11, marginTop: 4 }}>
-                {problemData.map((d) => (
-                  <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0' }}>
-                    <span style={{ width: 8, height: 8, background: d.color, borderRadius: 2, flexShrink: 0 }} />
-                    <span style={{ flex: 1, color: '#0B1C24' }}>{d.name}</span>
-                    <span style={{ fontWeight: 600, color: d.color }}>{d.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* v2.0.7 — Schema + Readability + Pages vs Posts */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginTop: 14 }}>
-        <Card title="Schema markup coverage">
-          {schemaEntries.length === 0 ? (
-            <div style={{ padding: 14, color: '#5A7A8A', fontSize: 12 }}>Loading schema data…</div>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 130, height: 130 }}>
-                <ResponsiveContainer>
-                  <PieChart>
-                    <Pie data={schemaEntries} dataKey="value" innerRadius={35} outerRadius={60} paddingAngle={2}>
-                      {schemaEntries.map((d, i) => <Cell key={i} fill={d.color} />)}
-                    </Pie>
-                    <RTooltip contentStyle={{ fontSize: 11 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div style={{ flex: 1, fontSize: 11 }}>
-                {schemaEntries.slice(0, 6).map((d) => (
-                  <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' }}>
-                    <span style={{ width: 8, height: 8, background: d.color, borderRadius: 2 }} />
-                    <span style={{ flex: 1, textTransform: 'capitalize' }}>{d.name}</span>
-                    <strong>{d.value}</strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </Card>
-
-        <Card title={`Readability ${avgReadability != null ? `(avg ${avgReadability})` : ''}`}>
-          {readabilityBuckets.every((b) => b.count === 0) ? (
-            <div style={{ padding: 14, color: '#5A7A8A', fontSize: 12 }}>No readability scores yet.</div>
-          ) : (
-            <div style={{ height: 160 }}>
-              <ResponsiveContainer>
-                <BarChart data={readabilityBuckets} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
-                  <XAxis dataKey="range" tick={{ fontSize: 10, fill: '#5A7A8A' }} />
-                  <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} allowDecimals={false} width={30} />
-                  <RTooltip contentStyle={{ fontSize: 11 }} formatter={(v: any, _n: any, p: any) => [`${v} posts`, p.payload.label]} />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                    {readabilityBuckets.map((b, i) => <Cell key={i} fill={b.color} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </Card>
-
-        <Card title="Pages vs Posts">
-          <div style={{ height: 160 }}>
-            <ResponsiveContainer>
-              <BarChart data={typeComparison} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
-                <XAxis dataKey="metric" tick={{ fontSize: 10, fill: '#5A7A8A' }} />
-                <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} allowDecimals={false} width={30} />
-                <RTooltip contentStyle={{ fontSize: 11 }} />
-                <Bar dataKey="Pages" fill="#7c3aed" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Posts" fill="#0284c7" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div style={{ fontSize: 12, color: '#0B1C24', lineHeight: 1.6 }}>
+            {coveragePct >= 80 ? (
+              <>You're analyzing <strong>{postsWithScore}</strong> of <strong>{totalPublished}</strong> published pieces. Focus on lifting scores on the remaining low-score posts.</>
+            ) : (
+              <>Only <strong>{postsWithScore}</strong> of <strong>{totalPublished}</strong> published pieces have Rank Math scores. Adding focus keywords + meta descriptions to the uncovered posts is the fastest way to improve overall SEO health.</>
+            )}
           </div>
-        </Card>
-      </div>
-
-      {/* Coverage narrative */}
-      <div style={{ marginTop: 14, padding: '14px 16px', background: coveragePct >= 80 ? '#F0FDF4' : '#FEF3C7', borderLeft: `3px solid ${coveragePct >= 80 ? '#1D9E75' : '#D97706'}`, borderRadius: 4 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24', marginBottom: 4 }}>
-          {coveragePct >= 80 ? 'Strong content SEO coverage' : coveragePct >= 50 ? 'Content SEO coverage needs expansion' : 'Most content lacks SEO analysis'}
         </div>
-        <div style={{ fontSize: 12, color: '#0B1C24', lineHeight: 1.6 }}>
-          {coveragePct >= 80 ? (
-            <>You're analyzing <strong>{postsWithScore}</strong> of <strong>{totalPublished}</strong> published pieces. Focus on lifting scores on the remaining low-score posts — see Top Opportunities below.</>
-          ) : (
-            <>Only <strong>{postsWithScore}</strong> of <strong>{totalPublished}</strong> published pieces have Rank Math scores. Adding focus keywords + meta descriptions to the uncovered posts is the fastest way to improve overall SEO health. Rank Math will auto-score once you fill in the required fields.</>
-          )}
-        </div>
+        <button
+          onClick={() => { setDrillDownType('all'); setModalOpen(true); }}
+          style={{ padding: '8px 16px', fontSize: 12, fontWeight: 600, background: '#0B1C24', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+        >
+          See Full Details →
+        </button>
       </div>
 
-      {/* Top opportunities table */}
-      <div style={{ marginTop: 14 }}>
-        <Card title="Top SEO Opportunities">
-          <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10 }}>
-            The lowest-scoring content on your site. Fixing these first gives you the biggest overall score lift with the least effort.
-          </div>
-          {detailLoading ? (
-            <div style={{ padding: 14, color: '#5A7A8A', fontSize: 12 }}>Loading…</div>
-          ) : topOpportunities.length === 0 ? (
-            <div style={{ padding: 16, color: '#065F46', fontSize: 12, textAlign: 'center', background: '#F0FDF4', borderRadius: 6 }}>
-              No scored content to prioritize. Run Rank Math analysis on your content.
+      {/* Pages + Posts cards with top 5 items each */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+        <Card title={`Pages (${pagesOnly.length})`}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, alignItems: 'baseline' }}>
+            <div style={{ fontSize: 11, color: '#5A7A8A' }}>
+              Avg score <strong style={{ color: pagesAvg == null ? '#94A3B8' : pagesAvg >= 70 ? '#1D9E75' : pagesAvg >= 50 ? '#D97706' : '#D85A30', fontSize: 14 }}>{pagesAvg ?? '—'}</strong>
+              {pagesMissing > 0 && <> · <strong style={{ color: '#D85A30' }}>{pagesMissing}</strong> need attention</>}
             </div>
+          </div>
+          {pagesTop5.length === 0 ? (
+            <div style={{ padding: 14, color: '#5A7A8A', fontSize: 12, textAlign: 'center', background: '#F8FAFC', borderRadius: 4 }}>No pages found.</div>
           ) : (
-            <table className="tbl" style={{ width: '100%', fontSize: 12 }}>
-              <thead><tr><th>Title</th><th>Type</th><th style={{ textAlign: 'right' }}>Score</th><th>Meta desc</th><th>Focus KW</th></tr></thead>
+            <table className="tbl" style={{ width: '100%', fontSize: 11 }}>
               <tbody>
-                {topOpportunities.map((it, i) => (
+                {pagesTop5.map((it, i) => (
                   <tr key={it.id || i}>
-                    <td style={{ maxWidth: 340, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       <a href={it.url} target="_blank" rel="noreferrer" style={{ color: '#2D9CDB', textDecoration: 'none' }}>{it.title || '—'}</a>
                     </td>
-                    <td style={{ textTransform: 'capitalize', color: '#5A7A8A' }}>{it.type || '—'}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      <span style={{
-                        fontSize: 11, fontWeight: 700,
-                        color: it.seo_score >= 70 ? '#1D9E75' : it.seo_score >= 50 ? '#D4A800' : '#D85A30',
-                      }}>{it.seo_score ?? '—'}</span>
-                    </td>
-                    <td style={{ fontSize: 10 }}>
-                      {it.meta_desc ? (
-                        <span style={{ color: '#065F46' }}>✓ {it.meta_desc_length}ch</span>
-                      ) : (
-                        <span style={{ color: '#991B1B' }}>Missing</span>
-                      )}
-                    </td>
-                    <td style={{ fontSize: 10 }}>
-                      {it.focus_keyword ? (
-                        <span style={{ color: '#065F46' }}>✓ {it.focus_keyword}</span>
-                      ) : (
-                        <span style={{ color: '#991B1B' }}>Missing</span>
-                      )}
+                    <td style={{ textAlign: 'right', fontSize: 11, fontWeight: 700, color: it.seo_score == null ? '#94A3B8' : it.seo_score >= 70 ? '#1D9E75' : it.seo_score >= 50 ? '#D4A800' : '#D85A30' }}>{it.seo_score ?? '—'}</td>
+                    <td style={{ fontSize: 9, width: 60 }}>
+                      {!it.meta_desc && <span style={{ color: '#991B1B' }}>no meta</span>}
+                      {!it.focus_keyword && <span style={{ color: '#991B1B', marginLeft: 4 }}>no kw</span>}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
+          <button
+            onClick={() => { setDrillDownType('pages'); setModalOpen(true); }}
+            style={{ marginTop: 10, padding: '6px 12px', fontSize: 11, fontWeight: 600, background: '#0B1C24', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', width: '100%' }}
+          >
+            See Page details →
+          </button>
+        </Card>
 
-          <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
-            <button
-              onClick={() => setModalOpen(true)}
-              style={{ padding: '7px 16px', fontSize: 12, fontWeight: 600, background: '#0B1C24', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
-            >
-              See Full Details — all pages + posts →
-            </button>
+        <Card title={`Posts (${postsOnly.length})`}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, alignItems: 'baseline' }}>
+            <div style={{ fontSize: 11, color: '#5A7A8A' }}>
+              Avg score <strong style={{ color: postsAvg == null ? '#94A3B8' : postsAvg >= 70 ? '#1D9E75' : postsAvg >= 50 ? '#D97706' : '#D85A30', fontSize: 14 }}>{postsAvg ?? '—'}</strong>
+              {postsMissing > 0 && <> · <strong style={{ color: '#D85A30' }}>{postsMissing}</strong> need attention</>}
+            </div>
           </div>
+          {postsTop5.length === 0 ? (
+            <div style={{ padding: 14, color: '#5A7A8A', fontSize: 12, textAlign: 'center', background: '#F8FAFC', borderRadius: 4 }}>No posts found.</div>
+          ) : (
+            <table className="tbl" style={{ width: '100%', fontSize: 11 }}>
+              <tbody>
+                {postsTop5.map((it, i) => (
+                  <tr key={it.id || i}>
+                    <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <a href={it.url} target="_blank" rel="noreferrer" style={{ color: '#2D9CDB', textDecoration: 'none' }}>{it.title || '—'}</a>
+                    </td>
+                    <td style={{ textAlign: 'right', fontSize: 11, fontWeight: 700, color: it.seo_score == null ? '#94A3B8' : it.seo_score >= 70 ? '#1D9E75' : it.seo_score >= 50 ? '#D4A800' : '#D85A30' }}>{it.seo_score ?? '—'}</td>
+                    <td style={{ fontSize: 9, width: 60 }}>
+                      {!it.meta_desc && <span style={{ color: '#991B1B' }}>no meta</span>}
+                      {!it.focus_keyword && <span style={{ color: '#991B1B', marginLeft: 4 }}>no kw</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <button
+            onClick={() => { setDrillDownType('posts'); setModalOpen(true); }}
+            style={{ marginTop: 10, padding: '6px 12px', fontSize: 11, fontWeight: 600, background: '#0B1C24', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', width: '100%' }}
+          >
+            See Post details →
+          </button>
+        </Card>
+      </div>
+
+      {/* Health Score + Problem Breakdown horizontal bars */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12, marginBottom: 14 }}>
+        <Card title="Content SEO Health">
+          {healthScore == null ? (
+            <div style={{ padding: 14, color: '#5A7A8A', fontSize: 12 }}>Computing…</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0' }}>
+              <div style={{
+                fontSize: 56, fontWeight: 700, lineHeight: 1,
+                color: healthScore >= 80 ? '#1D9E75' : healthScore >= 50 ? '#D97706' : '#D85A30',
+              }}>
+                {healthScore}
+              </div>
+              <div style={{ fontSize: 11, color: '#5A7A8A', marginTop: 4 }}>out of 100</div>
+              <div style={{ fontSize: 11, color: '#0B1C24', marginTop: 12, textAlign: 'center', lineHeight: 1.5 }}>
+                {healthScore >= 80 && 'Content SEO is in great shape.'}
+                {healthScore >= 50 && healthScore < 80 && 'Good foundation, with room to improve.'}
+                {healthScore < 50 && 'Needs attention — start with the missing meta + focus keywords.'}
+              </div>
+              <div style={{ fontSize: 9, color: '#94A3B8', marginTop: 8, textAlign: 'center' }}>
+                Coverage 30% · Avg score 40% · Completeness 20% · Low-score 10%
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card title="Problem breakdown">
+          {problemTotal === 0 ? (
+            <div style={{ padding: 16, color: '#065F46', fontSize: 12, textAlign: 'center', background: '#F0FDF4', borderRadius: 6 }}>
+              ✓ No critical SEO problems on any published content.
+            </div>
+          ) : (
+            <>
+              <div style={{ height: 140 }}>
+                <ResponsiveContainer>
+                  <BarChart data={problemData} layout="vertical" margin={{ top: 5, right: 20, left: 80, bottom: 5 }}>
+                    <XAxis type="number" tick={{ fontSize: 10, fill: '#5A7A8A' }} allowDecimals={false} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#5A7A8A' }} width={160} />
+                    <RTooltip contentStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                      {problemData.map((d, i) => <Cell key={i} fill={d.color} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                <button
+                  onClick={() => { setDrillDownType('issues'); setModalOpen(true); }}
+                  style={{ padding: '6px 12px', fontSize: 11, fontWeight: 600, background: '#0B1C24', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer' }}
+                >
+                  See Full Details → Issues
+                </button>
+              </div>
+            </>
+          )}
+        </Card>
+      </div>
+
+      {/* Readability flag card */}
+      <div style={{ marginBottom: 14 }}>
+        <Card title={`Readability ${avgReadability != null ? `(avg ${avgReadability})` : ''}`}>
+          {hardToReadCount > 0 ? (
+            <div style={{ padding: '12px 14px', background: '#FEF3C7', borderLeft: '3px solid #D97706', borderRadius: 4, fontSize: 12, color: '#0B1C24', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <strong style={{ color: '#78350F' }}>{hardToReadCount} post{hardToReadCount === 1 ? '' : 's'} hard to read</strong> — Rank Math readability score below 40. Hard-to-read content loses engagement + rankings faster than thin content.
+              </div>
+              <button
+                onClick={() => { setDrillDownType('readability'); setModalOpen(true); }}
+                style={{ padding: '6px 12px', fontSize: 11, fontWeight: 600, background: '#0B1C24', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: 12, flexShrink: 0 }}
+              >
+                See Full Details → Readability
+              </button>
+            </div>
+          ) : avgReadability != null ? (
+            <div style={{ padding: '12px 14px', background: '#F0FDF4', borderLeft: '3px solid #1D9E75', borderRadius: 4, fontSize: 12, color: '#065F46' }}>
+              ✓ Readability looks good across your content. Average score {avgReadability}.
+            </div>
+          ) : (
+            <div style={{ padding: 14, color: '#5A7A8A', fontSize: 12 }}>No readability scores yet.</div>
+          )}
         </Card>
       </div>
 
@@ -435,6 +444,8 @@ export function ContentSeoOverview() {
         <ContentSeoDetailsModal
           pages={pages}
           posts={posts}
+          detailRows={detailRows}
+          initialTab={drillDownType === 'all' ? 'pages' : drillDownType}
           onClose={() => setModalOpen(false)}
         />
       )}
@@ -458,8 +469,8 @@ function HeroTile({ label, value, sub, tone }: { label: string; value: string; s
   );
 }
 
-function ContentSeoDetailsModal({ pages, posts, onClose }: { pages: any[]; posts: any[]; onClose: () => void }) {
-  const [activeTab, setActiveTab] = useState<'pages' | 'posts' | 'issues'>('pages');
+function ContentSeoDetailsModal({ pages, posts, detailRows, initialTab, onClose }: { pages: any[]; posts: any[]; detailRows: any[]; initialTab: 'pages' | 'posts' | 'issues' | 'readability'; onClose: () => void }) {
+  const [activeTab, setActiveTab] = useState<'pages' | 'posts' | 'issues' | 'readability'>(initialTab);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'low_score' | 'missing_meta' | 'missing_fk' | 'noindex'>('all');
 
@@ -516,6 +527,7 @@ function ContentSeoDetailsModal({ pages, posts, onClose }: { pages: any[]; posts
             { id: 'pages', label: `Pages (${pages.length})` },
             { id: 'posts', label: `Posts (${posts.length})` },
             { id: 'issues', label: `Issues (${issueItems.length})` },
+            { id: 'readability', label: 'Readability' },
           ].map((t) => (
             <button
               key={t.id}
@@ -536,6 +548,10 @@ function ContentSeoDetailsModal({ pages, posts, onClose }: { pages: any[]; posts
 
         {/* Body */}
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 20 }}>
+          {activeTab === 'readability' ? (
+            <ReadabilityTab detailRows={detailRows} />
+          ) : (
+          <>
           {activeTab !== 'issues' && (
             <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
               <input
@@ -618,6 +634,81 @@ function ContentSeoDetailsModal({ pages, posts, onClose }: { pages: any[]; posts
                         ))}
                       </td>
                     )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReadabilityTab({ detailRows }: { detailRows: any[] }) {
+  const scored = detailRows.filter((r: any) => r.readability != null && r.readability > 0);
+  const buckets = { '<40': 0, '40-60': 0, '60-80': 0, '80-100': 0 };
+  for (const r of scored) {
+    const s = r.readability;
+    if (s < 40) buckets['<40']++;
+    else if (s < 60) buckets['40-60']++;
+    else if (s < 80) buckets['60-80']++;
+    else buckets['80-100']++;
+  }
+  const histData = [
+    { range: '<40',    count: buckets['<40'],    color: '#D85A30', label: 'Difficult' },
+    { range: '40-60',  count: buckets['40-60'],  color: '#F59E0B', label: 'Fair' },
+    { range: '60-80',  count: buckets['60-80'],  color: '#1D9E75', label: 'Good' },
+    { range: '80-100', count: buckets['80-100'], color: '#065F46', label: 'Excellent' },
+  ];
+  const hardRows = scored.filter((r: any) => r.readability < 40).sort((a, b) => a.readability - b.readability);
+
+  if (scored.length === 0) {
+    return <div style={{ padding: 30, color: '#5A7A8A', textAlign: 'center', fontSize: 13 }}>No readability scores yet. Rank Math generates readability scores when posts are saved or analyzed.</div>;
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 12, lineHeight: 1.5 }}>
+        Rank Math readability measures how easy your content is to read based on sentence length, word complexity, and structure. Higher scores = more accessible content. Aim for 60+ on all published pieces.
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 16, marginBottom: 16 }}>
+        <div style={{ background: '#F8FAFC', padding: 16, borderRadius: 6 }}>
+          <div style={{ fontSize: 11, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Distribution</div>
+          <div style={{ height: 160 }}>
+            <ResponsiveContainer>
+              <BarChart data={histData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                <XAxis dataKey="range" tick={{ fontSize: 10, fill: '#5A7A8A' }} />
+                <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} allowDecimals={false} width={30} />
+                <RTooltip contentStyle={{ fontSize: 11 }} formatter={(v: any, _n: any, p: any) => [`${v} posts`, p.payload.label]} />
+                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                  {histData.map((b, i) => <Cell key={i} fill={b.color} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+            Hardest-to-read content ({hardRows.length})
+          </div>
+          {hardRows.length === 0 ? (
+            <div style={{ padding: 16, color: '#065F46', fontSize: 12, background: '#F0FDF4', borderRadius: 4 }}>
+              ✓ No posts scored as Difficult. Good readability across your content.
+            </div>
+          ) : (
+            <table className="tbl" style={{ width: '100%', fontSize: 11 }}>
+              <thead><tr><th>Title</th><th style={{ textAlign: 'right' }}>Score</th><th>Type</th></tr></thead>
+              <tbody>
+                {hardRows.slice(0, 15).map((r: any) => (
+                  <tr key={r.post_id}>
+                    <td style={{ maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <a href={r.permalink} target="_blank" rel="noreferrer" style={{ color: '#2D9CDB', textDecoration: 'none' }}>{r.title || '—'}</a>
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#D85A30' }}>{r.readability}</td>
+                    <td style={{ textTransform: 'capitalize', color: '#5A7A8A' }}>{r.type || '—'}</td>
                   </tr>
                 ))}
               </tbody>

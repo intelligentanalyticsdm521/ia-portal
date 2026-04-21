@@ -246,7 +246,7 @@ function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, 
         `${
           gscQueries.filter(q => q.query && !/intelligent|analytics/i.test(q.query)).length === 0
             ? `Your top queries are dominated by brand terms — build dedicated landing pages for your top 3 non-branded service queries so each one has a page optimized to rank.`
-            : `Add FAQ schema markup to your highest-impression pages to capture featured-snippet real estate for your top non-branded queries.`
+            : `Build dedicated landing pages for your top 3 non-branded service queries — each page gets its own focus keyword, meta description, and content tailored to searcher intent.`
         }`,
       ],
     },
@@ -1864,7 +1864,7 @@ export function IAInsightsReports() {
 
   // v2.0.7 — fetch IA Plugin analytics bundle so every IA Insights report has
   // cross-source visibility into security, performance, content freshness,
-  // schema coverage, and plugin inventory.
+  // readability coverage, and plugin inventory.
   React.useEffect(() => {
     if (!activeSiteId) { setPluginData(null); return; }
     let cancelled = false;
