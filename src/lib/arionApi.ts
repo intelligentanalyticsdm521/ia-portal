@@ -1326,14 +1326,6 @@ export interface PluginLitespeed {
   optimization_score?: number;
 }
 
-export interface PluginShortpixel {
-  installed: boolean;
-  credits_remaining?: number | null;
-  images_optimized?: number | null;
-  bytes_saved?: number | null;
-  quota_exceeded?: boolean;
-}
-
 export interface PluginServerInfo {
   php_version: string;
   wp_version: string;
@@ -1358,7 +1350,6 @@ export interface PluginCron {
 
 export interface PluginPerformanceResponse {
   litespeed: PluginLitespeed | null;
-  shortpixel: PluginShortpixel | null;
   server: PluginServerInfo | null;
   cron: PluginCron | null;
 }
@@ -1490,6 +1481,14 @@ export async function updateWpCore(p: { baseUrl: string; bearerToken: string; te
     ...p,
     method: 'POST',
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/updates/core`,
+    body: {},
+  });
+}
+export async function triggerImageOptimize(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<{ success: boolean; method?: string; detail?: any }>>({
+    ...p,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/performance/image-optimize`,
     body: {},
   });
 }
