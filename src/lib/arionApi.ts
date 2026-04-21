@@ -1500,3 +1500,33 @@ export async function getPluginSecurityEvents(p: { baseUrl: string; bearerToken:
 export async function getPluginUpdatesLog(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<{ data: { entries: PluginUpdateLogEntry[] } }>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/updates-log` });
 }
+
+export interface PluginAutoUpdateConfig {
+  plugins: Array<{ file: string; name: string; version: string; active: boolean; auto_update: boolean }>;
+  themes: Array<{ stylesheet: string; name: string; version: string; active: boolean; auto_update: boolean }>;
+  auto_update_all_plugins: boolean;
+  auto_update_all_themes: boolean;
+  core_minor_enabled: boolean;
+  core_major_enabled: boolean;
+}
+
+export interface PluginAutoUpdateToggleBody {
+  plugin?: string;
+  theme?: string;
+  enabled?: boolean;
+  all_plugins?: boolean;
+  all_themes?: boolean;
+}
+
+export async function getPluginAutoUpdateConfig(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<PluginAutoUpdateConfig>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/auto-update-config` });
+}
+
+export async function setPluginAutoUpdateConfig(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; body: PluginAutoUpdateToggleBody }) {
+  return requestJson<PluginEnvelope<{ changes: string[] }>>({
+    ...p,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/auto-update-config`,
+    body: p.body,
+  });
+}

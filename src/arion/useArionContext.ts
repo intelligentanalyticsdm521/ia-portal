@@ -105,6 +105,9 @@ import {
   updateWpCore as portalUpdateWpCore,
   getPluginSecurityEvents as portalGetPluginSecurityEvents,
   getPluginUpdatesLog as portalGetPluginUpdatesLog,
+  getPluginAutoUpdateConfig as portalGetPluginAutoUpdateConfig,
+  setPluginAutoUpdateConfig as portalSetPluginAutoUpdateConfig,
+  type PluginAutoUpdateToggleBody,
 } from '../lib/arionApi';
 
 /**
@@ -376,6 +379,8 @@ export function useArionContext() {
       async updateWpCore(siteId: string) { const b = await base(); return portalUpdateWpCore({ ...b, siteId }); },
       async getPluginSecurityEvents(siteId: string, limit?: number) { const b = await base(); return portalGetPluginSecurityEvents({ ...b, siteId, limit }); },
       async getPluginUpdatesLog(siteId: string) { const b = await base(); return portalGetPluginUpdatesLog({ ...b, siteId }); },
+      async getPluginAutoUpdateConfig(siteId: string) { const b = await base(); return portalGetPluginAutoUpdateConfig({ ...b, siteId }); },
+      async setPluginAutoUpdateConfig(siteId: string, body: PluginAutoUpdateToggleBody) { const b = await base(); return portalSetPluginAutoUpdateConfig({ ...b, siteId, body }); },
 
       async submitRequest(siteId: string, requestType: string, notes: string) {
         const b = await base();
