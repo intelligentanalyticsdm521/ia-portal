@@ -1,7 +1,8 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
-import { StatCard, Card, Loading, ErrorBanner, ConsultingUpsell } from '../../components/Ui';
+import { StatCard, Card, Loading, ErrorBanner, ConsultingUpsell, DetailsModal } from '../../components/Ui';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ZAxis, Cell } from 'recharts';
 
 /**
  * Security Vulnerabilities — cross-references installed plugins against the
@@ -24,6 +25,18 @@ export function SecurityVulnerabilities() {
     () => activeSiteId ? arionApi.getPluginPlugins(activeSiteId) : Promise.resolve(null),
     [activeSiteId, version]
   );
+
+  // v2.0.7 — plugin risk analysis + Wordfence scan findings
+  const { data: riskEnv } = useArionData(
+    () => activeSiteId ? arionApi.getPluginRiskAnalysis(activeSiteId) : Promise.resolve(null),
+    [activeSiteId, version]
+  );
+  const { data: scanEnv } = useArionData(
+    () => activeSiteId ? arionApi.getPluginScanIssues(activeSiteId) : Promise.resolve(null),
+    [activeSiteId, version]
+  );
+
+  const [riskModalOpen, setRiskModalOpen] = useState(false);
 
   const flashNotice = useCallback((type: 'success' | 'error', msg: string) => {
     setNotice({ type, msg });
@@ -257,6 +270,160 @@ export function SecurityVulnerabilities() {
           </Card>
         </div>
       )}
+
+      {/* Plugin risk matrix — scatter of age × risk */}
+      {(() => {
+        const riskPlugins: any[] = (riskEnv as any)?.data?.plugins || [];
+        const scatterData = riskPlugins
+          .filter((p: any) => p.active && p.days_since_last_update != null)
+          .map((p: any) => ({
+            name: p.name,
+            x: p.days_since_last_update,
+            y: p.risk_score,
+            z: p.update_available ? 100 : 50,
+            band: p.risk_band,
+          }));
+        if (scatterData.length === 0) return null;
+        return (
+          <div style={{ marginTop: 16 }}>
+            <Card title="Plugin risk matrix">
+              <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10, lineHeight: 1.5 }}>
+                Each dot is an active plugin. X-axis = days since its last upstream release. Y-axis = risk score (update pending + staleness + active status). Plugins in the top-right quadrant deserve attention first.
+              </div>
+              <div style={{ height: 280 }}>
+                <ResponsiveContainer>
+                  <ScatterChart margin={{ top: 10, right: 20, left: 0, bottom: 30 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E5EEF2" />
+                    <XAxis type="number" dataKey="x" name="Days since update" tick={{ fontSize: 10, fill: '#5A7A8A' }} label={{ value: 'Days since last upstream update', position: 'insideBottom', offset: -15, fontSize: 11, fill: '#5A7A8A' }} />
+                    <YAxis type="number" dataKey="y" name="Risk score" tick={{ fontSize: 10, fill: '#5A7A8A' }} domain={[0, 100]} label={{ value: 'Risk score', angle: -90, position: 'insideLeft', fontSize: 11, fill: '#5A7A8A' }} />
+                    <ZAxis type="number" dataKey="z" range={[60, 300]} />
+                    <Tooltip
+                      contentStyle={{ fontSize: 11 }}
+                      cursor={{ strokeDasharray: '3 3' }}
+                      formatter={(value: any, name: any, props: any) => {
+                        if (name === 'Days since update') return [`${value} days`, name];
+                        if (name === 'Risk score') return [`${value} / 100`, name];
+                        return [value, name];
+                      }}
+                      labelFormatter={(_label: any, payload: any) => payload?.[0]?.payload?.name || ''}
+                    />
+                    <Scatter data={scatterData} fill="#D85A30">
+                      {scatterData.map((d, i) => (
+                        <Cell key={i} fill={d.band === 'high' ? '#D85A30' : d.band === 'medium' ? '#D97706' : '#1D9E75'} />
+                      ))}
+                    </Scatter>
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setRiskModalOpen(true)}
+                  style={{ padding: '6px 14px', fontSize: 11, fontWeight: 600, background: '#0B1C24', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer' }}
+                >
+                  See Full Risk Breakdown →
+                </button>
+              </div>
+            </Card>
+          </div>
+        );
+      })()}
+
+      {/* Wordfence scan findings summary */}
+      {(() => {
+        const scan = (scanEnv as any)?.data;
+        if (!scan || !scan.installed) return null;
+        const issues: any[] = scan.issues || [];
+        if (issues.length === 0) return null;
+        return (
+          <div style={{ marginTop: 16 }}>
+            <Card title={`Wordfence scan findings (${issues.length})`}>
+              <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10, lineHeight: 1.5 }}>
+                Findings from Wordfence's file-integrity + malware scanner. These are different from CVE matches — they catch actual file modifications, suspicious patterns, and known-bad signatures on your server.
+              </div>
+              <table className="tbl" style={{ width: '100%', fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    <th>Severity</th>
+                    <th>Type</th>
+                    <th>Finding</th>
+                    <th>File</th>
+                    <th>Detected</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {issues.slice(0, 10).map((iss: any, i: number) => (
+                    <tr key={iss.id || i}>
+                      <td>
+                        <span style={{
+                          fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 3,
+                          background: iss.severity === 'critical' ? '#FEF2F2' : iss.severity === 'high' ? '#FEF3C7' : iss.severity === 'medium' ? '#EFF6FF' : '#F1F5F9',
+                          color: iss.severity === 'critical' ? '#991B1B' : iss.severity === 'high' ? '#78350F' : iss.severity === 'medium' ? '#1E40AF' : '#64748B',
+                          textTransform: 'uppercase',
+                        }}>
+                          {iss.severity}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: 11, color: '#5A7A8A' }}>{iss.type || '—'}</td>
+                      <td style={{ fontSize: 11, maxWidth: 340 }}>{iss.short_msg || '—'}</td>
+                      <td style={{ fontSize: 10, fontFamily: 'monospace', color: '#5A7A8A' }}>{iss.file || '—'}</td>
+                      <td style={{ fontSize: 10, color: '#94A3B8' }}>{iss.detected_at ? new Date(iss.detected_at).toLocaleString() : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          </div>
+        );
+      })()}
+
+      {/* Risk detail modal */}
+      <DetailsModal
+        open={riskModalOpen}
+        onClose={() => setRiskModalOpen(false)}
+        eyebrow="Plugin Risk"
+        title="Full plugin risk breakdown"
+      >
+        {(() => {
+          const riskPlugins: any[] = (riskEnv as any)?.data?.plugins || [];
+          if (riskPlugins.length === 0) return <div>No risk data yet.</div>;
+          return (
+            <table className="tbl" style={{ width: '100%', fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th>Plugin</th>
+                  <th>Current</th>
+                  <th>Latest</th>
+                  <th>Active</th>
+                  <th>Days since update</th>
+                  <th>Risk score</th>
+                  <th>Band</th>
+                </tr>
+              </thead>
+              <tbody>
+                {riskPlugins.map((p: any) => (
+                  <tr key={p.file}>
+                    <td style={{ fontWeight: 600 }}>{p.name}</td>
+                    <td><code style={{ fontSize: 10 }}>{p.current_version}</code></td>
+                    <td><code style={{ fontSize: 10, color: p.update_available ? '#1D9E75' : '#5A7A8A' }}>{p.latest_version}</code></td>
+                    <td>{p.active ? 'Yes' : 'No'}</td>
+                    <td style={{ textAlign: 'right' }}>{p.days_since_last_update ?? '—'}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 600 }}>{p.risk_score}</td>
+                    <td>
+                      <span style={{
+                        fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 3, textTransform: 'uppercase',
+                        background: p.risk_band === 'high' ? '#FEF2F2' : p.risk_band === 'medium' ? '#FEF3C7' : '#F0FDF4',
+                        color: p.risk_band === 'high' ? '#991B1B' : p.risk_band === 'medium' ? '#78350F' : '#065F46',
+                      }}>
+                        {p.risk_band}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          );
+        })()}
+      </DetailsModal>
 
       {/* Diagnostics footer — shows exactly what was checked */}
       <div style={{ marginTop: 16 }}>

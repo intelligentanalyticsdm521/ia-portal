@@ -1492,6 +1492,38 @@ export async function triggerImageOptimize(p: { baseUrl: string; bearerToken: st
     body: {},
   });
 }
+
+// ── v2.0.7 analytics-first plugin data ──────────────────────────────────
+export async function getPluginWordfenceFull(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<any>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/security/wordfence-full` });
+}
+export async function getPluginScanIssues(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<{ installed: boolean; issues: any[]; total?: number }>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/security/scan-issues` });
+}
+export async function getPluginContentPace(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<{ months: Array<{ month: string; posts: number; pages: number }> }>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/content/publishing-pace` });
+}
+export async function getPluginContentAgeDist(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<any>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/content/age-distribution` });
+}
+export async function getPluginContentAuthors(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<{ authors: Array<{ user_id: number; display_name: string; posts: number; pages: number }> }>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/content/authors` });
+}
+export async function getPluginContentCategories(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<{ categories: Array<{ term_id: number; name: string; count: number }> }>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/content/categories` });
+}
+export async function getPluginContentWordCountDist(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<any>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/content/word-count-distribution` });
+}
+export async function getPluginContentActivityCalendar(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<{ days: Array<{ day: string; count: number }> }>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/content/activity-calendar` });
+}
+export async function getPluginContentSeoDetail(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<any>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/content/seo-detail` });
+}
+export async function getPluginRiskAnalysis(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<{ plugins: any[] }>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/plugins/risk-analysis` });
+}
 export async function getPluginSecurityEvents(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; limit?: number }) {
   const qp = p.limit ? `?limit=${p.limit}` : '';
   return requestJson<{ data: { events: PluginSecurityEvent[] } }>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/security-events${qp}` });

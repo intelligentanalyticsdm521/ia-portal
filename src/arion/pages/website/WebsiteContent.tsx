@@ -1,203 +1,292 @@
-import React from 'react';
-import { StatCard, Card, Loading, EmptyPanel, ConsultingUpsell, InfoCard, HealthRow } from '../../components/Ui';
+import React, { useMemo } from 'react';
+import { StatCard, Card, Loading, EmptyPanel, ConsultingUpsell } from '../../components/Ui';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
+import {
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+} from 'recharts';
 
+/**
+ * Website Content — analytics-first story of your content library.
+ * Visualizes publishing momentum, content freshness, author output,
+ * depth (word count), category mix, and activity heatmap.
+ * SEO metadata lives on the Content SEO page.
+ */
 export function WebsiteContent() {
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
 
-  const { data: hosting, loading: hL } = useArionData(
-    () => activeSiteId ? arionApi.getHosting(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
-  );
-  const { data: overview, loading: oL } = useArionData(
-    () => activeSiteId ? arionApi.getOverview(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
-  );
-  // Fetch GA4 analytics for page view data
-  const { data: analytics } = useArionData(
-    () => activeSiteId ? arionApi.getAnalytics('google', activeSiteId).catch(() => null) : Promise.resolve(null),
-    [activeSiteId]
-  );
-  // Plugin content aggregate — live from IA plugin (publishing state only;
-  // SEO metadata lives on the Content SEO page)
-  const { data: contentAgg } = useArionData(
-    () => activeSiteId ? arionApi.getPluginContentAggregate(activeSiteId).catch(() => null) : Promise.resolve(null),
-    [activeSiteId]
-  );
+  const fetchIfId = <T,>(fn: (s: string) => Promise<T>) =>
+    activeSiteId ? fn(activeSiteId) : Promise.resolve(null);
 
-  if (loading || hL || oL) return <Loading />;
+  const { data: hosting, loading: hL } = useArionData(() => fetchIfId(arionApi.getHosting), [activeSiteId]);
+  const { data: paceEnv } = useArionData(() => fetchIfId(arionApi.getPluginContentPace), [activeSiteId]);
+  const { data: ageEnv } = useArionData(() => fetchIfId(arionApi.getPluginContentAgeDist), [activeSiteId]);
+  const { data: authorEnv } = useArionData(() => fetchIfId(arionApi.getPluginContentAuthors), [activeSiteId]);
+  const { data: catEnv } = useArionData(() => fetchIfId(arionApi.getPluginContentCategories), [activeSiteId]);
+  const { data: wcEnv } = useArionData(() => fetchIfId(arionApi.getPluginContentWordCountDist), [activeSiteId]);
+  const { data: activityEnv } = useArionData(() => fetchIfId(arionApi.getPluginContentActivityCalendar), [activeSiteId]);
+  const { data: contentAgg } = useArionData(() => fetchIfId(arionApi.getPluginContentAggregate), [activeSiteId]);
+
+  const paceData = useMemo(() => (paceEnv as any)?.data?.months || [], [paceEnv]);
+  const ageData = useMemo(() => (ageEnv as any)?.data || {}, [ageEnv]);
+  const authors = useMemo(() => (authorEnv as any)?.data?.authors || [], [authorEnv]);
+  const categories = useMemo(() => (catEnv as any)?.data?.categories || [], [catEnv]);
+  const wcData = useMemo(() => (wcEnv as any)?.data || {}, [wcEnv]);
+  const activityDays = useMemo(() => (activityEnv as any)?.data?.days || [], [activityEnv]);
+
+  const contentData = (contentAgg as any)?.data || {};
+  const summary = contentData.summary || {};
+
+  if (loading || hL) return <Loading />;
   if (!selectedSite) return <EmptyPanel message="No site selected." />;
 
   const h = (hosting as Record<string, any>) ?? {};
-  const ov = (overview as Record<string, any>) ?? {};
   const content = h.content ?? {};
-  const pages = content.pages ?? '--';
-  const posts = content.posts ?? '--';
-  const formCount = ov?.overview?.formSubmissions30d ?? '--';
-  const recentPages = Array.isArray(content.recentPages) ? content.recentPages : [];
-  const recentPosts = Array.isArray(content.recentPosts) ? content.recentPosts : [];
+  const pages = summary.pages_published ?? content.pages ?? 0;
+  const posts = summary.posts_published ?? content.posts ?? 0;
 
-  // Check GA4 connection status from overview
-  const gaConnected = ov?.integrations?.googleAnalytics === true;
+  // Age buckets for pie
+  const agePie = [
+    { name: 'Fresh (<30d)', value: ageData.fresh?.count ?? 0, color: '#1D9E75' },
+    { name: 'Current (30-90d)', value: ageData.current?.count ?? 0, color: '#0284c7' },
+    { name: 'Aging (90d-1y)', value: ageData.aging?.count ?? 0, color: '#D97706' },
+    { name: 'Stale (>1y)', value: ageData.stale?.count ?? 0, color: '#D85A30' },
+  ].filter((d) => d.value > 0);
 
-  // Build a lookup of page path -> view counts from GA4 page data
-  const gaData = analytics as Record<string, any> | null;
-  const pageRows = (gaData?.data?.pages ?? gaData?.breakdowns?.pages ?? []) as any[];
-  const viewLookup: Record<string, { views7d: number; views30d: number }> = {};
-  for (const row of pageRows) {
-    const path = row.page_path || row.pagePath || row.path || '';
-    viewLookup[path] = {
-      views7d: row.views_7d ?? row.views7d ?? row.screenPageViews7d ?? 0,
-      views30d: row.views_30d ?? row.views30d ?? row.screenPageViews ?? row.screenPageViews30d ?? 0,
-    };
-  }
+  // Word count histogram data
+  const wcBuckets = wcData.buckets || {};
+  const wcHistogram = [
+    { name: 'Thin', count: wcBuckets.thin?.count ?? 0, fill: '#D85A30' },
+    { name: 'Standard', count: wcBuckets.standard?.count ?? 0, fill: '#0284c7' },
+    { name: 'Long-form', count: wcBuckets.long?.count ?? 0, fill: '#1D9E75' },
+    { name: 'Pillar', count: wcBuckets.pillar?.count ?? 0, fill: '#7c3aed' },
+  ];
 
-  const getViews = (item: any) => {
-    const slug = item.slug || '';
-    const path = `/${slug}` === '/' ? '/' : `/${slug}/`;
-    const match = viewLookup[path] || viewLookup[`/${slug}`] || viewLookup[slug] || null;
-    return { views7d: match?.views7d ?? '--', views30d: match?.views30d ?? '--' };
+  const totalPaceLast12 = paceData.reduce((s: number, m: any) => s + (m.posts || 0) + (m.pages || 0), 0);
+  const activeAuthorCount = authors.filter((a: any) => a.posts + a.pages > 0).length;
+
+  // Storytelling header
+  const totalContent = (ageData.fresh?.count || 0) + (ageData.current?.count || 0) + (ageData.aging?.count || 0) + (ageData.stale?.count || 0);
+  const freshRatio = totalContent > 0 ? (((ageData.fresh?.count || 0) + (ageData.current?.count || 0)) / totalContent) : 0;
+  const storyBand = (() => {
+    if (totalContent === 0) return { tone: 'warn' as const, text: 'No published content detected yet.' };
+    if (freshRatio >= 0.5) return { tone: 'ok' as const, text: `Your library is fresh — ${Math.round(freshRatio * 100)}% of content is under 90 days old.` };
+    if (freshRatio >= 0.25) return { tone: 'warn' as const, text: `About ${Math.round(freshRatio * 100)}% of your content is fresh. Consider updating aging articles to keep rankings strong.` };
+    return { tone: 'err' as const, text: `Only ${Math.round(freshRatio * 100)}% of content is under 90 days old. Stale content hurts rankings — prioritize updates.` };
+  })();
+
+  const toneColors: Record<string, { bg: string; border: string }> = {
+    ok: { bg: '#F0FDF4', border: '#1D9E75' },
+    warn: { bg: '#FFFBEB', border: '#D97706' },
+    err: { bg: '#FEF2F2', border: '#D85A30' },
   };
-
-  const renderTitle = (item: any) => {
-    if (!item.title) return '--';
-    return typeof item.title === 'string' ? item.title : item.title.rendered || '--';
-  };
-
-  // Plugin content aggregate data — publishing state only (SEO on its own page)
-  const caEnv = (contentAgg as any) || {};
-  const caConnected = caEnv.plugin_status === 'connected';
-  const caData = caEnv.data || {};
-  const caSummary = caData.summary || null;
 
   return (
     <div>
-      <div className="stat-row" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
-        <StatCard label="Pages" value={String(caSummary?.pages_published ?? pages)} />
-        <StatCard label="Blog Posts" value={String(caSummary?.posts_published ?? posts)} />
-        <StatCard label="Media Library" value={caSummary?.media_count != null ? caSummary.media_count.toLocaleString() : '—'} />
-        <StatCard label="Forms" value={String(formCount)} />
+      {/* Storytelling band */}
+      <div style={{ ...toneColors[storyBand.tone], padding: '14px 18px', marginBottom: 16, borderRadius: 6, borderLeft: `4px solid ${toneColors[storyBand.tone].border}` }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24' }}>{storyBand.text}</div>
       </div>
 
-      {/* Content publishing state (plugin-sourced) — SEO metadata lives on Content SEO page */}
-      {caConnected && caSummary && (
-        <Card title="Content publishing state">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <div>
-              <HealthRow status="ok" label="Published posts" value={caSummary.posts_published ?? 0} />
-              <HealthRow status={caSummary.posts_draft > 10 ? 'warn' : 'ok'} label="Drafts" value={caSummary.posts_draft ?? 0} />
-              <HealthRow status={caSummary.posts_scheduled > 0 ? 'ok' : 'warn'} label="Scheduled" value={caSummary.posts_scheduled ?? 0} />
-              <HealthRow status="ok" label="Pending review" value={caSummary.posts_pending ?? 0} />
-            </div>
-            <div>
-              <HealthRow status="ok" label="Last published" value={caSummary.last_published ? new Date(caSummary.last_published).toLocaleDateString() : '—'} />
-              <HealthRow status={caSummary.avg_word_count != null && caSummary.avg_word_count < 300 ? 'warn' : 'ok'} label="Avg word count (last 20)" value={caSummary.avg_word_count ?? '—'} />
-              <HealthRow status={caSummary.posts_missing_featured_image > 0 ? 'warn' : 'ok'} label="Missing featured image" value={caSummary.posts_missing_featured_image ?? 0} />
-            </div>
+      {/* Top stats row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 14 }}>
+        <StatCard label="Posts published" value={String(posts)} />
+        <StatCard label="Pages published" value={String(pages)} />
+        <StatCard label="Published in 12 mo" value={String(totalPaceLast12)} deltaType="positive" />
+        <StatCard label="Active authors" value={String(activeAuthorCount)} />
+        <StatCard label="Avg words / post" value={wcData.avg_words != null ? String(wcData.avg_words) : '—'} />
+      </div>
+
+      {/* Publishing pace chart */}
+      <Card title="Publishing pace (last 12 months)">
+        {paceData.length === 0 ? (
+          <Empty message="No publishing history yet." />
+        ) : (
+          <div style={{ height: 240 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={paceData} margin={{ top: 5, right: 15, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5EEF2" />
+                <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#5A7A8A' }} />
+                <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} allowDecimals={false} />
+                <Tooltip contentStyle={{ fontSize: 11 }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Area type="monotone" dataKey="posts" name="Posts" stackId="1" stroke="#0284c7" fill="#0284c7" fillOpacity={0.6} />
+                <Area type="monotone" dataKey="pages" name="Pages" stackId="1" stroke="#7c3aed" fill="#7c3aed" fillOpacity={0.6} />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
-          <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #eef2f5', textAlign: 'right', fontSize: 12 }}>
-            <a href="/app/services/arion_website_content_seo_overview" style={{ color: 'var(--arion-sky)' }}>View Content SEO →</a>
+        )}
+      </Card>
+
+      {/* Age distribution pie + Word count histogram */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
+        <Card title="Content freshness">
+          {agePie.length === 0 ? (
+            <Empty message="No content yet." />
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div style={{ width: 180, height: 180 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={agePie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={80} paddingAngle={2}>
+                      {agePie.map((d, i) => <Cell key={i} fill={d.color} />)}
+                    </Pie>
+                    <Tooltip contentStyle={{ fontSize: 11 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ flex: 1, fontSize: 12 }}>
+                {agePie.map((d) => (
+                  <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                    <span style={{ width: 10, height: 10, background: d.color, borderRadius: 2, flexShrink: 0 }} />
+                    <span style={{ flex: 1 }}>{d.name}</span>
+                    <strong>{d.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card title="Content depth (word count)">
+          <div style={{ height: 200 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={wcHistogram} margin={{ top: 5, right: 15, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5EEF2" />
+                <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#5A7A8A' }} />
+                <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} allowDecimals={false} />
+                <Tooltip contentStyle={{ fontSize: 11 }} />
+                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                  {wcHistogram.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{ fontSize: 11, color: '#5A7A8A', marginTop: 8 }}>
+            {wcData.posts_counted || 0} posts analyzed · {wcData.total_words != null ? `${wcData.total_words.toLocaleString()} total words` : ''}
           </div>
         </Card>
-      )}
+      </div>
 
-      {!gaConnected && (
-        <InfoCard title="Google Analytics Not Connected">
-          <p style={{ margin: 0 }}>Connect Google Analytics to see 7-day and 30-day page view data. View counts will show '--' until GA4 is linked.</p>
-        </InfoCard>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Card title="Top Pages">
-          {recentPages.length > 0 ? (
-            <table className="tbl">
-              <thead><tr><th>Title</th><th>Last Modified</th><th>7d Views</th><th>30d Views</th></tr></thead>
-              <tbody>
-                {recentPages.map((p: any) => {
-                  const v = getViews(p);
-                  return (
-                    <tr key={p.id}>
-                      <td><a href={p.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--arion-sky)', fontSize: 12 }}>{renderTitle(p)}</a></td>
-                      <td>{p.modified ? new Date(p.modified).toLocaleDateString() : '--'}</td>
-                      <td>{String(v.views7d)}</td>
-                      <td>{String(v.views30d)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+      {/* Authors + Categories */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
+        <Card title="Author output">
+          {authors.length === 0 ? (
+            <Empty message="No author data." />
           ) : (
-            <EmptyPanel message="No page data available." />
+            <div style={{ height: Math.max(160, Math.min(authors.length, 8) * 30) }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={authors.slice(0, 8)} layout="vertical" margin={{ top: 5, right: 15, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5EEF2" />
+                  <XAxis type="number" tick={{ fontSize: 10, fill: '#5A7A8A' }} allowDecimals={false} />
+                  <YAxis type="category" dataKey="display_name" tick={{ fontSize: 10, fill: '#5A7A8A' }} width={120} />
+                  <Tooltip contentStyle={{ fontSize: 11 }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="posts" name="Posts" stackId="a" fill="#0284c7" />
+                  <Bar dataKey="pages" name="Pages" stackId="a" fill="#7c3aed" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           )}
         </Card>
 
-        <Card title="Top Posts">
-          {recentPosts.filter((p: any) => { const title = typeof p.title === 'string' ? p.title : p.title?.rendered || ''; return title.toLowerCase() !== 'test'; }).length > 0 ? (
-            <table className="tbl">
-              <thead><tr><th>Title</th><th>Last Modified</th><th>7d Views</th><th>30d Views</th></tr></thead>
-              <tbody>
-                {recentPosts.filter((p: any) => { const title = typeof p.title === 'string' ? p.title : p.title?.rendered || ''; return title.toLowerCase() !== 'test'; }).map((p: any) => {
-                  const v = getViews(p);
-                  return (
-                    <tr key={p.id}>
-                      <td><a href={p.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--arion-sky)', fontSize: 12 }}>{renderTitle(p)}</a></td>
-                      <td>{p.modified ? new Date(p.modified).toLocaleDateString() : '--'}</td>
-                      <td>{String(v.views7d)}</td>
-                      <td>{String(v.views30d)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        <Card title="Category mix">
+          {categories.length === 0 ? (
+            <Empty message="No categorized content yet." />
           ) : (
-            <EmptyPanel message="No post data available." />
+            <div>
+              {categories.slice(0, 8).map((c: any) => {
+                const max = categories[0].count || 1;
+                const pct = (c.count / max) * 100;
+                return (
+                  <div key={c.term_id} style={{ marginBottom: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 2 }}>
+                      <span style={{ fontWeight: 500 }}>{c.name}</span>
+                      <span style={{ color: '#5A7A8A' }}>{c.count}</span>
+                    </div>
+                    <div style={{ background: '#E5EEF2', height: 8, borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: '#0284c7', borderRadius: 4 }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </Card>
+      </div>
 
-        <Card title="Most Recent Pages">
-          {recentPages.length > 0 ? (
-            <table className="tbl">
-              <thead><tr><th>Title</th><th>Last Modified</th></tr></thead>
-              <tbody>
-                {[...recentPages].sort((a: any, b: any) => new Date(b.modified || 0).getTime() - new Date(a.modified || 0).getTime()).map((p: any) => (
-                  <tr key={p.id}>
-                    <td style={{ fontSize: 12 }}>{renderTitle(p)}</td>
-                    <td>{p.modified ? new Date(p.modified).toLocaleDateString() : '--'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* Activity calendar */}
+      <div style={{ marginTop: 14 }}>
+        <Card title="90-day activity">
+          {activityDays.length === 0 ? (
+            <Empty message="No recent edits or publishes." />
           ) : (
-            <EmptyPanel message="No page data available." />
-          )}
-        </Card>
-
-        <Card title="Most Recent Posts">
-          {recentPosts.filter((p: any) => { const title = typeof p.title === 'string' ? p.title : p.title?.rendered || ''; return title.toLowerCase() !== 'test'; }).length > 0 ? (
-            <table className="tbl">
-              <thead><tr><th>Title</th><th>Last Modified</th></tr></thead>
-              <tbody>
-                {[...recentPosts].filter((p: any) => { const title = typeof p.title === 'string' ? p.title : p.title?.rendered || ''; return title.toLowerCase() !== 'test'; }).sort((a: any, b: any) => new Date(b.modified || 0).getTime() - new Date(a.modified || 0).getTime()).map((p: any) => (
-                  <tr key={p.id}>
-                    <td style={{ fontSize: 12 }}>{renderTitle(p)}</td>
-                    <td>{p.modified ? new Date(p.modified).toLocaleDateString() : '--'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <EmptyPanel message="No post data available." />
+            <ActivityHeatmap days={activityDays} />
           )}
         </Card>
       </div>
 
       <ConsultingUpsell
-        headline="Need professional content? IA writes and optimizes pages for your audience and search engines."
-        subtext="Professional content writing and optimization services."
-        serviceType="Content Writing"
+        headline="Content that doesn't get updated stops ranking"
+        subtext="IA's content team runs quarterly refresh sprints — updating aging articles, rebuilding thin content, and adding schema + internal links to your pillar pages."
+        serviceType="Content Strategy & Refresh"
         triggerPage="website-content"
       />
+    </div>
+  );
+}
+
+function Empty({ message }: { message: string }) {
+  return <div style={{ padding: 10, color: '#5A7A8A', fontSize: 12, background: '#F8FAFC', borderRadius: 4 }}>{message}</div>;
+}
+
+function ActivityHeatmap({ days }: { days: Array<{ day: string; count: number }> }) {
+  // Build a 90-day grid (13 weeks × 7 days)
+  const byDay = new Map<string, number>();
+  for (const d of days) byDay.set(d.day, d.count);
+  const cells: Array<{ date: string; count: number }> = [];
+  for (let i = 89; i >= 0; i--) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    const iso = date.toISOString().slice(0, 10);
+    cells.push({ date: iso, count: byDay.get(iso) || 0 });
+  }
+  const max = Math.max(1, ...cells.map((c) => c.count));
+  const colorFor = (n: number) => {
+    if (n === 0) return '#E5EEF2';
+    const intensity = Math.min(1, n / max);
+    const alpha = 0.25 + intensity * 0.75;
+    return `rgba(2, 132, 199, ${alpha})`;
+  };
+  // Render as horizontal scrollable grid of columns
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(13, 1fr)', gap: 3, maxWidth: 520 }}>
+        {Array.from({ length: 13 }).map((_, week) => (
+          <div key={week} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {Array.from({ length: 7 }).map((__, dayInWeek) => {
+              const idx = week * 7 + dayInWeek;
+              if (idx >= cells.length) return <div key={dayInWeek} style={{ width: 14, height: 14 }} />;
+              const c = cells[idx];
+              return (
+                <div
+                  key={dayInWeek}
+                  title={`${c.date}: ${c.count} edit${c.count === 1 ? '' : 's'}`}
+                  style={{ width: 14, height: 14, borderRadius: 2, background: colorFor(c.count) }}
+                />
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, fontSize: 10, color: '#5A7A8A' }}>
+        Less
+        {[0, 1, 3, 6, 10].map((n) => (
+          <div key={n} style={{ width: 12, height: 12, borderRadius: 2, background: colorFor(n) }} />
+        ))}
+        More
+      </div>
     </div>
   );
 }

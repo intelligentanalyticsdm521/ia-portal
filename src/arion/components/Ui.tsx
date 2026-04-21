@@ -320,3 +320,130 @@ export function ConsultingUpsell({ headline, subtext, serviceType, triggerPage }
     </div>
   );
 }
+
+/**
+ * DetailsModal — reusable full-details overlay matching the SEO Rankings
+ * modal pattern. Use for "See Full Details →" drill-downs across pages.
+ *
+ * <DetailsModal
+ *   open={show}
+ *   onClose={() => setShow(false)}
+ *   eyebrow="Content SEO"
+ *   title="42 pages and posts tracked"
+ * >
+ *   ...table / tabs / whatever...
+ * </DetailsModal>
+ */
+export function DetailsModal({
+  open, onClose, eyebrow, title, children, width = 1200,
+}: {
+  open: boolean;
+  onClose: () => void;
+  eyebrow?: string;
+  title: string;
+  children: React.ReactNode;
+  width?: number;
+}) {
+  if (!open) return null;
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background: '#fff', borderRadius: 12, maxWidth: width, width: '94vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            {eyebrow && <div style={{ fontSize: 11, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5 }}>{eyebrow}</div>}
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#0B1C24', marginTop: 2 }}>{title}</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#999', padding: '0 4px' }}>&times;</button>
+        </div>
+        <div style={{ flex: 1, overflow: 'auto', padding: '16px 24px 24px' }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * HealthScoreRing — composite 0-100 ring gauge, color-banded by score.
+ * Shows big number centered plus an inline 3-sentence context paragraph
+ * to the right of the ring. Used on Website Overview.
+ */
+export function HealthScoreRing({
+  score, label, size = 160, children,
+}: {
+  score: number | null;
+  label: string;
+  size?: number;
+  children?: React.ReactNode;
+}) {
+  const s = typeof score === 'number' ? Math.max(0, Math.min(100, score)) : null;
+  const color = s == null ? '#94A3B8' : s >= 80 ? '#1D9E75' : s >= 50 ? '#D97706' : '#D85A30';
+  const C = 2 * Math.PI * (size / 2 - 10);
+  const offset = s == null ? C : C - (s / 100) * C;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+      <div style={{ width: size, height: size, position: 'relative', flexShrink: 0 }}>
+        <svg width={size} height={size}>
+          <circle cx={size / 2} cy={size / 2} r={size / 2 - 10} stroke="#E5EEF2" strokeWidth={10} fill="none" />
+          <circle
+            cx={size / 2} cy={size / 2} r={size / 2 - 10}
+            stroke={color} strokeWidth={10} fill="none"
+            strokeDasharray={C}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+            style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+          />
+        </svg>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ fontSize: size / 3.5, fontWeight: 700, color, lineHeight: 1 }}>{s == null ? '—' : s}</div>
+          <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
+        </div>
+      </div>
+      {children && <div style={{ flex: 1, fontSize: 12, lineHeight: 1.6, color: '#0B1C24' }}>{children}</div>}
+    </div>
+  );
+}
+
+/**
+ * MiniGauge — small radial percentage for Wordfence-style dual scores.
+ */
+export function MiniGauge({
+  score, label, size = 100,
+}: {
+  score: number | null;
+  label: string;
+  size?: number;
+}) {
+  const s = typeof score === 'number' ? Math.max(0, Math.min(100, score)) : null;
+  const color = s == null ? '#94A3B8' : s >= 80 ? '#1D9E75' : s >= 50 ? '#D97706' : '#D85A30';
+  const C = 2 * Math.PI * (size / 2 - 8);
+  const offset = s == null ? C : C - (s / 100) * C;
+  return (
+    <div style={{ textAlign: 'center' }}>
+      <div style={{ width: size, height: size, position: 'relative', margin: '0 auto' }}>
+        <svg width={size} height={size}>
+          <circle cx={size / 2} cy={size / 2} r={size / 2 - 8} stroke="#E5EEF2" strokeWidth={8} fill="none" />
+          <circle
+            cx={size / 2} cy={size / 2} r={size / 2 - 8}
+            stroke={color} strokeWidth={8} fill="none"
+            strokeDasharray={C}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          />
+        </svg>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size / 4, fontWeight: 700, color }}>
+          {s == null ? '—' : `${s}%`}
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: '#5A7A8A', marginTop: 4 }}>{label}</div>
+    </div>
+  );
+}

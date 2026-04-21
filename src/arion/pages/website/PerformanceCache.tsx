@@ -51,6 +51,7 @@ export function PerformanceCache() {
 
   const latest = chartData.length > 0 ? chartData[chartData.length - 1] : null;
   const previous = chartData.length > 1 ? chartData[chartData.length - 2] : null;
+  const latestSnapshot = snapshots.length > 0 ? snapshots[snapshots.length - 1] : null;
 
   if (loading || psLoading) return <Loading />;
   if (!selectedSite) return <div style={{ padding: 24, color: 'var(--text-muted)' }}>No site selected.</div>;
@@ -296,12 +297,91 @@ export function PerformanceCache() {
         </Card>
       </div>
 
+      {/* CrUX field data (real-user metrics) */}
+      {latestSnapshot?.mobile?.crux_origin && (
+        <div style={{ marginTop: 16 }}>
+          <Card title="Real-user experience (CrUX 28-day)">
+            <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 12, lineHeight: 1.5 }}>
+              Field data from real Chrome users visiting your site over the last 28 days. This is what Google actually uses for ranking — lab scores above are a proxy; this is the real signal.
+            </div>
+            <CruxPanel crux={latestSnapshot.mobile.crux_origin} label="Mobile (origin-wide)" />
+          </Card>
+        </div>
+      )}
+
+      {/* Lighthouse opportunities */}
+      {Array.isArray(latestSnapshot?.mobile?.opportunities) && latestSnapshot.mobile.opportunities.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <Card title="Top opportunities (estimated savings)">
+            <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10 }}>
+              Lighthouse's top-impact suggestions, sorted by estimated savings. Fix these to move the biggest needles fastest.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
+              {latestSnapshot.mobile.opportunities.slice(0, 8).map((op: any) => (
+                <div key={op.id} style={{ background: '#F8FAFC', borderRadius: 6, padding: 12, borderLeft: `3px solid ${op.score == null ? '#94A3B8' : op.score < 0.5 ? '#D85A30' : op.score < 0.9 ? '#D97706' : '#1D9E75'}` }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#0B1C24' }}>{op.title}</div>
+                  {op.display_value && (
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#D85A30', marginTop: 4 }}>{op.display_value}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
+
       <ConsultingUpsell
         headline="Core Web Vitals impact rankings — let IA's performance team optimize"
         subtext="Google uses CWV as a ranking signal. If any metric is red, we can identify + fix the root cause — render-blocking scripts, oversized hero images, lazy-loading gaps, or layout shifts."
         serviceType="Performance Optimization"
         triggerPage="performance-cache"
       />
+    </div>
+  );
+}
+
+function CruxPanel({ crux, label }: { crux: any; label: string }) {
+  if (!crux) return null;
+  const metrics = [
+    { key: 'lcp', label: 'LCP', full: 'Largest Contentful Paint', data: crux.lcp, format: (v: number) => `${(v / 1000).toFixed(2)}s` },
+    { key: 'inp', label: 'INP', full: 'Interaction to Next Paint', data: crux.inp, format: (v: number) => `${Math.round(v)}ms` },
+    { key: 'cls', label: 'CLS', full: 'Cumulative Layout Shift', data: crux.cls, format: (v: number) => (v / 100).toFixed(3) },
+  ].filter((m) => m.data && m.data.distributions);
+
+  if (metrics.length === 0) return <div style={{ fontSize: 12, color: '#5A7A8A', padding: 12 }}>Not enough real-user traffic for CrUX data yet.</div>;
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        {metrics.map((m) => {
+          const dist = m.data.distributions || [];
+          const good = dist[0]?.proportion ?? 0;
+          const avg = dist[1]?.proportion ?? 0;
+          const poor = dist[2]?.proportion ?? 0;
+          return (
+            <div key={m.key} style={{ background: '#fff', border: '1px solid #E5EEF2', borderRadius: 8, padding: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#0B1C24' }}>{m.label}</div>
+              <div style={{ fontSize: 10, color: '#5A7A8A', marginBottom: 10 }}>{m.full}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: m.data.category === 'FAST' ? '#1D9E75' : m.data.category === 'AVERAGE' ? '#D97706' : '#D85A30' }}>
+                {m.data.percentile != null ? m.format(m.data.percentile) : '—'}
+              </div>
+              <div style={{ fontSize: 9, color: '#5A7A8A', marginTop: 2 }}>75th percentile · {m.data.category}</div>
+              {/* Distribution bar */}
+              <div style={{ display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden', marginTop: 10 }}>
+                <div style={{ width: `${good * 100}%`, background: '#22c55e' }} title={`Good: ${Math.round(good * 100)}%`} />
+                <div style={{ width: `${avg * 100}%`, background: '#f59e0b' }} title={`Avg: ${Math.round(avg * 100)}%`} />
+                <div style={{ width: `${poor * 100}%`, background: '#dc2626' }} title={`Poor: ${Math.round(poor * 100)}%`} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: '#5A7A8A', marginTop: 4 }}>
+                <span>{Math.round(good * 100)}% good</span>
+                <span>{Math.round(avg * 100)}% avg</span>
+                <span>{Math.round(poor * 100)}% poor</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

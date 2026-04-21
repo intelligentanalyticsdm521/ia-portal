@@ -2,56 +2,40 @@ import React, { useMemo } from 'react';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import {
-  Card, HealthRow, Loading, EmptyPanel,
-  SidebarCard, ConsultingUpsell,
+  Card, HealthRow, Loading, EmptyPanel, SidebarCard, ConsultingUpsell,
+  HealthScoreRing,
 } from '../../components/Ui';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  AreaChart, Area, Legend,
 } from 'recharts';
 
 /**
- * Website overview — the "home" page for the Website section. Snapshots
- * everything a client (or IA staff) needs at a glance: plugin connection,
- * core versions, pending updates, security posture summary, integration
- * status, recent events, server environment, plugin inventory breakdown.
- * Deep-dive links go to dedicated subpages.
+ * Website Overview — visual-first "home" for the Website section.
+ * Tells the digital-presence story in one pane: composite health score,
+ * publishing momentum, plugin inventory, security posture, server/cron
+ * environment, integrations, recent activity.
  */
 export function WebsiteOverview() {
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
 
-  const { data: overview, loading: ovL } = useArionData(
-    () => activeSiteId ? arionApi.getOverview(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
-  );
-  const { data: hosting, loading: hL } = useArionData(
-    () => activeSiteId ? arionApi.getHosting(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
-  );
-  const { data: pluginStatusEnv, loading: psL } = useArionData(
-    () => activeSiteId ? arionApi.getPluginStatus(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
-  );
-  const { data: updatesEnv, loading: upL } = useArionData(
-    () => activeSiteId ? arionApi.getPluginUpdates(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
-  );
-  const { data: secEnv, loading: secL } = useArionData(
-    () => activeSiteId ? arionApi.getPluginSecurity(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
-  );
-  const { data: eventsEnv, loading: evL } = useArionData(
-    () => activeSiteId ? arionApi.getPluginSecurityEvents(activeSiteId, 10) : Promise.resolve(null),
-    [activeSiteId]
-  );
-  const { data: perfEnv, loading: perfL } = useArionData(
-    () => activeSiteId ? arionApi.getPluginPerformance(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
-  );
-  const { data: pluginInv, loading: pluginInvL } = useArionData(
-    () => activeSiteId ? arionApi.getPluginPlugins(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
-  );
+  const siteId = activeSiteId;
+  const fetchIfId = <T,>(fn: (s: string) => Promise<T>) =>
+    siteId ? fn(siteId) : Promise.resolve(null);
+
+  const { data: overview, loading: ovL } = useArionData(() => fetchIfId(arionApi.getOverview), [siteId]);
+  const { data: hosting, loading: hL } = useArionData(() => fetchIfId(arionApi.getHosting), [siteId]);
+  const { data: pluginStatusEnv, loading: psL } = useArionData(() => fetchIfId(arionApi.getPluginStatus), [siteId]);
+  const { data: updatesEnv, loading: upL } = useArionData(() => fetchIfId(arionApi.getPluginUpdates), [siteId]);
+  const { data: secEnv, loading: secL } = useArionData(() => fetchIfId(arionApi.getPluginSecurity), [siteId]);
+  const { data: wfFullEnv } = useArionData(() => fetchIfId(arionApi.getPluginWordfenceFull), [siteId]);
+  const { data: eventsEnv, loading: evL } = useArionData(() => siteId ? arionApi.getPluginSecurityEvents(siteId, 10) : Promise.resolve(null), [siteId]);
+  const { data: perfEnv, loading: perfL } = useArionData(() => fetchIfId(arionApi.getPluginPerformance), [siteId]);
+  const { data: pluginInv, loading: pluginInvL } = useArionData(() => fetchIfId(arionApi.getPluginPlugins), [siteId]);
+  const { data: paceEnv } = useArionData(() => fetchIfId(arionApi.getPluginContentPace), [siteId]);
+  const { data: seoAgg } = useArionData(() => fetchIfId(arionApi.getPluginContentAggregate), [siteId]);
+  const { data: pagespeed } = useArionData(() => fetchIfId(arionApi.getPagespeedHistory), [siteId]);
 
   const plugins: any[] = useMemo(() => (pluginInv as any)?.data || [], [pluginInv]);
   const pluginBreakdown = useMemo(() => {
@@ -63,8 +47,7 @@ export function WebsiteOverview() {
     return { total, active, inactive, outdated, outdatedActive };
   }, [plugins]);
 
-  if (loading || ovL || hL) return <Loading />;
-  if (!selectedSite) return <EmptyPanel message="No site selected." />;
+  const paceData = useMemo(() => (paceEnv as any)?.data?.months || [], [paceEnv]);
 
   const ov = overview as Record<string, any> | null;
   const h = (hosting as Record<string, any>) ?? {};
@@ -82,6 +65,10 @@ export function WebsiteOverview() {
   const wf = secData.wordfence || null;
   const core = secData.core_health || null;
 
+  const wfFull = (wfFullEnv as any)?.data || null;
+  const firewallScore = wfFull?.firewall_score ?? null;
+  const scanScore = wfFull?.scan_score ?? null;
+
   const perfData = (perfEnv as any)?.data || {};
   const srv = perfData.server || null;
   const cron = perfData.cron || null;
@@ -89,68 +76,133 @@ export function WebsiteOverview() {
 
   const recentEvents = (eventsEnv as any)?.data?.events || [];
 
-  // Derive phpVersion / wpVersion from plugin data if available, else fall back to hosting
+  const seoData = (seoAgg as any)?.data || null;
+
+  // Latest PSI run for health score
+  const latestPsi = useMemo(() => {
+    const snapshots: any[] = (pagespeed as any)?.data?.snapshots || [];
+    return snapshots.length > 0 ? snapshots[snapshots.length - 1] : null;
+  }, [pagespeed]);
+  const mobilePerf = latestPsi?.mobileScore ?? latestPsi?.mobile?.performance ?? null;
+
+  // ── Composite Site Health Score ──────────────────────────────────────
+  // Weighted blend: Security 25% · Performance 25% · SEO 20% · Content 15% · Updates 15%
+  const healthScore = useMemo(() => {
+    const scores: Array<{ weight: number; value: number | null; label: string }> = [];
+    // Security
+    const wfOverall = wfFull?.overall_score ?? (firewallScore != null && scanScore != null ? Math.round((firewallScore + scanScore) / 2) : null);
+    scores.push({ weight: 25, value: wfOverall, label: 'security' });
+    // Performance
+    scores.push({ weight: 25, value: typeof mobilePerf === 'number' ? mobilePerf : null, label: 'performance' });
+    // SEO
+    scores.push({ weight: 20, value: seoData?.avg_seo_score ?? null, label: 'seo' });
+    // Content — score based on recency (paceData last month has posts?)
+    const contentScore = (() => {
+      if (!paceData || paceData.length === 0) return null;
+      const last3 = paceData.slice(-3);
+      const recent = last3.reduce((s: number, m: any) => s + (m.posts || 0) + (m.pages || 0), 0);
+      if (recent >= 3) return 90;
+      if (recent >= 1) return 65;
+      return 30;
+    })();
+    scores.push({ weight: 15, value: contentScore, label: 'content' });
+    // Updates — inverse of pending updates count
+    const updateScore = totalUpdates === 0 ? 100 : totalUpdates <= 2 ? 80 : totalUpdates <= 5 ? 55 : 30;
+    scores.push({ weight: 15, value: updateScore, label: 'updates' });
+
+    const usable = scores.filter((s) => s.value != null);
+    if (usable.length === 0) return { score: null, breakdown: scores };
+    const totalWeight = usable.reduce((s, i) => s + i.weight, 0);
+    const weighted = usable.reduce((s, i) => s + (i.value as number) * i.weight, 0);
+    return { score: Math.round(weighted / totalWeight), breakdown: scores };
+  }, [wfFull, firewallScore, scanScore, mobilePerf, seoData, paceData, totalUpdates]);
+
+  if (loading || ovL || hL) return <Loading />;
+  if (!selectedSite) return <EmptyPanel message="No site selected." />;
+
   const wpVersion = srv?.wp_version || pluginData?.last_health_check?.wp_version || health.wordpressVersion || h.wordpress?.version || '—';
   const phpVersion = srv?.php_version || pluginData?.last_health_check?.php_version || health.phpVersion || '—';
 
-  // Pie chart data for plugin inventory
   const pieData = [
     { name: 'Up to date', value: Math.max(0, pluginBreakdown.active - pluginBreakdown.outdatedActive), color: '#1D9E75' },
     { name: 'Needs update', value: pluginBreakdown.outdatedActive, color: '#D97706' },
     { name: 'Inactive', value: pluginBreakdown.inactive, color: '#94A3B8' },
   ].filter((d) => d.value > 0);
 
+  const healthStory = (() => {
+    const s = healthScore.score;
+    if (s == null) return 'Plugin data is still loading — health score will appear shortly.';
+    if (s >= 85) return 'Your website is in excellent shape across security, performance, SEO, and content freshness. Keep doing what you\'re doing.';
+    if (s >= 70) return 'Your website is healthy overall with a few opportunities to improve — check the breakdown below for specifics.';
+    if (s >= 50) return 'Your website has some attention-worthy issues. Focus on the lowest-scoring areas first.';
+    return 'Your website needs immediate attention. Security, performance, or content gaps are compounding — address the lowest-scoring areas now.';
+  })();
+
   return (
     <div>
-      {/* Plugin-not-reachable banner — shown only when we have a problem */}
       {!pluginConnected && (
-        <div style={{
-          background: '#FEF3C7', borderLeft: '4px solid #D97706',
-          padding: '10px 14px', marginBottom: 14, borderRadius: 4, fontSize: 13,
-        }}>
+        <div style={{ background: '#FEF3C7', borderLeft: '4px solid #D97706', padding: '10px 14px', marginBottom: 14, borderRadius: 4, fontSize: 13 }}>
           <strong style={{ color: '#78350F' }}>⚠ IA Plugin not reachable</strong>
           <span style={{ marginLeft: 10, color: '#0B1C24', fontSize: 12 }}>
-            ARION can't currently reach the plugin on this site. Some live data will fall back to the most recent snapshot.
+            Some live data will fall back to the most recent snapshot.
           </span>
         </div>
       )}
 
-      {/* Top stats row — big numbers clients care about */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14 }}>
-        <StatTile
-          label="Pending updates"
-          value={upL ? '…' : totalUpdates}
-          tone={totalUpdates > 0 ? 'warn' : 'ok'}
-          href="/app/services/arion_website_updates"
-          linkLabel="Review updates →"
-        />
-        <StatTile
-          label="Critical site-health issues"
-          value={secL ? '…' : (core?.critical_count ?? '—')}
-          tone={core?.critical_count > 0 ? 'err' : 'ok'}
-          href="/app/services/arion_website_security_overview"
-          linkLabel="Open security →"
-        />
-        <StatTile
-          label="Blocked attacks (24h)"
-          value={secL ? '…' : (wf?.installed ? wf.blocked_attacks_24h ?? 0 : '—')}
-          tone={wf?.blocked_attacks_24h > 100 ? 'warn' : 'ok'}
-          href="/app/services/arion_website_security_overview"
-          linkLabel="Security events →"
-        />
-        <StatTile
-          label="Published content"
-          value={String(content.posts ?? 0)}
-          tone="ok"
-          sub={`${content.pages ?? 0} pages`}
-        />
+      {/* ─── Composite Health Score hero ─── */}
+      <Card title="Overall website health">
+        <HealthScoreRing score={healthScore.score} label="Health" size={180}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{healthStory}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginTop: 10 }}>
+            {healthScore.breakdown.map((b) => (
+              <div key={b.label} style={{ background: '#F8FAFC', padding: 10, borderRadius: 6 }}>
+                <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5 }}>{b.label}</div>
+                <div style={{
+                  fontSize: 18, fontWeight: 700, marginTop: 4,
+                  color: b.value == null ? '#94A3B8' : b.value >= 80 ? '#1D9E75' : b.value >= 50 ? '#D97706' : '#D85A30',
+                }}>
+                  {b.value == null ? '—' : b.value}
+                </div>
+                <div style={{ fontSize: 9, color: '#94A3B8', marginTop: 2 }}>weight {b.weight}%</div>
+              </div>
+            ))}
+          </div>
+        </HealthScoreRing>
+      </Card>
+
+      {/* Top stats row — big numbers */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 14, marginBottom: 14 }}>
+        <StatTile label="Pending updates" value={upL ? '…' : totalUpdates} tone={totalUpdates > 0 ? 'warn' : 'ok'} href="/app/services/arion_website_updates" linkLabel="Review updates →" />
+        <StatTile label="Critical health issues" value={secL ? '…' : (core?.critical_count ?? '—')} tone={core?.critical_count > 0 ? 'err' : 'ok'} href="/app/services/arion_website_security_overview" linkLabel="Open security →" />
+        <StatTile label="Blocked attacks (24h)" value={secL ? '…' : (wf?.installed ? (wf.blocked_attacks_24h ?? 0).toLocaleString() : '—')} tone={wf?.blocked_attacks_24h > 100 ? 'warn' : 'ok'} href="/app/services/arion_website_security_overview" linkLabel="Security events →" />
+        <StatTile label="Published content" value={String(content.posts ?? 0)} tone="ok" sub={`${content.pages ?? 0} pages`} href="/app/services/arion_website_content" linkLabel="Content →" />
       </div>
 
-      {/* NEW: Plugin inventory breakdown + pending updates bar */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+      {/* Publishing pace + plugin inventory */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 12, marginBottom: 14 }}>
+        <Card title="Publishing momentum (last 12 months)">
+          {paceData.length === 0 ? (
+            <Empty message="No publishing history yet." />
+          ) : (
+            <div style={{ height: 200 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={paceData} margin={{ top: 5, right: 15, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5EEF2" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#5A7A8A' }} />
+                  <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} allowDecimals={false} />
+                  <Tooltip contentStyle={{ fontSize: 11 }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Area type="monotone" dataKey="posts" name="Posts" stackId="1" stroke="#0284c7" fill="#0284c7" fillOpacity={0.6} />
+                  <Area type="monotone" dataKey="pages" name="Pages" stackId="1" stroke="#7c3aed" fill="#7c3aed" fillOpacity={0.6} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </Card>
+
         <Card title="Plugin inventory">
           {pluginInvL ? (
-            <div style={{ padding: 20, color: '#5A7A8A', fontSize: 12 }}>Loading plugin list…</div>
+            <div style={{ padding: 20, color: '#5A7A8A', fontSize: 12 }}>Loading…</div>
           ) : plugins.length === 0 ? (
             <Empty message="No plugin inventory available." />
           ) : (
@@ -183,36 +235,6 @@ export function WebsiteOverview() {
             </div>
           )}
         </Card>
-
-        <Card title="Update backlog">
-          {upL ? (
-            <div style={{ padding: 20, color: '#5A7A8A', fontSize: 12 }}>Loading…</div>
-          ) : (
-            <>
-              <div style={{ height: 140 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={[
-                      { name: 'Plugins', count: updates?.plugin_update_count || 0 },
-                      { name: 'Themes', count: updates?.theme_update_count || 0 },
-                      { name: 'Core', count: updates?.core_update ? 1 : 0 },
-                    ]}
-                    margin={{ top: 5, right: 15, left: 0, bottom: 5 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E5EEF2" />
-                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#5A7A8A' }} />
-                    <YAxis tick={{ fontSize: 11, fill: '#5A7A8A' }} allowDecimals={false} />
-                    <Tooltip contentStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="count" fill="#0284c7" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div style={{ marginTop: 8, fontSize: 11, color: '#5A7A8A', textAlign: 'right' }}>
-                <a href="/app/services/arion_website_updates" style={{ color: 'var(--arion-sky)' }}>Review all updates →</a>
-              </div>
-            </>
-          )}
-        </Card>
       </div>
 
       <div className="dash-layout">
@@ -227,9 +249,10 @@ export function WebsiteOverview() {
               ) : (
                 <div>
                   <HealthRow status={wf?.firewall_enabled ? 'ok' : wf?.installed ? 'err' : 'warn'} label="Wordfence firewall" value={wf?.installed ? (wf.firewall_enabled ? 'Active' : 'Disabled') : 'Not installed'} />
-                  <HealthRow status={wf?.scan_status === 'completed' ? 'ok' : 'warn'} label="Latest malware scan" value={wf?.last_scan_at ? new Date(wf.last_scan_at).toLocaleDateString() : 'Never'} />
+                  <HealthRow status={firewallScore != null && firewallScore >= 70 ? 'ok' : firewallScore != null ? 'warn' : 'warn'} label="Firewall score" value={firewallScore != null ? `${firewallScore}%` : '—'} />
+                  <HealthRow status={scanScore != null && scanScore >= 70 ? 'ok' : scanScore != null ? 'warn' : 'warn'} label="Scan score" value={scanScore != null ? `${scanScore}%` : '—'} />
                   <HealthRow status={core?.critical_count === 0 ? 'ok' : 'err'} label="WP Site Health critical" value={core?.critical_count ?? '—'} />
-                  <HealthRow status={core?.recommended_count === 0 ? 'ok' : 'warn'} label="WP Site Health recommended" value={core?.recommended_count ?? '—'} />
+                  <HealthRow status={wf?.blocked_attacks_24h == null ? 'warn' : 'ok'} label="Blocked attacks (24h)" value={wf?.blocked_attacks_24h != null ? wf.blocked_attacks_24h.toLocaleString() : '—'} />
                   <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #eef2f5', textAlign: 'right' }}>
                     <a href="/app/services/arion_website_security_overview" style={{ fontSize: 12, color: 'var(--arion-sky)' }}>View full security →</a>
                   </div>
@@ -249,7 +272,40 @@ export function WebsiteOverview() {
             </Card>
           </div>
 
-          {/* Server environment + WP cron (moved here from CWV page) */}
+          {/* Update backlog bars */}
+          <div style={{ marginBottom: 12 }}>
+            <Card title="Update backlog">
+              {upL ? (
+                <div style={{ padding: 20, color: '#5A7A8A', fontSize: 12 }}>Loading…</div>
+              ) : (
+                <>
+                  <div style={{ height: 140 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={[
+                          { name: 'Plugins', count: updates?.plugin_update_count || 0 },
+                          { name: 'Themes', count: updates?.theme_update_count || 0 },
+                          { name: 'Core', count: updates?.core_update ? 1 : 0 },
+                        ]}
+                        margin={{ top: 5, right: 15, left: 0, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E5EEF2" />
+                        <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#5A7A8A' }} />
+                        <YAxis tick={{ fontSize: 11, fill: '#5A7A8A' }} allowDecimals={false} />
+                        <Tooltip contentStyle={{ fontSize: 11 }} />
+                        <Bar dataKey="count" fill="#0284c7" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div style={{ marginTop: 8, fontSize: 11, color: '#5A7A8A', textAlign: 'right' }}>
+                    <a href="/app/services/arion_website_updates" style={{ color: 'var(--arion-sky)' }}>Review all updates →</a>
+                  </div>
+                </>
+              )}
+            </Card>
+          </div>
+
+          {/* Server + cron */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
             <Card title="Server environment">
               {perfL ? (
@@ -264,13 +320,12 @@ export function WebsiteOverview() {
                   <HealthRow status={srv.ssl_enabled ? 'ok' : 'err'} label="SSL" value={srv.ssl_enabled ? 'Enabled' : 'Disabled'} />
                   <HealthRow status={srv.opcache_enabled ? 'ok' : 'warn'} label="OPcache" value={srv.opcache_enabled ? 'Enabled' : 'Disabled'} />
                   <HealthRow status="ok" label="Memory limit" value={srv.memory_limit} />
-                  <HealthRow status="ok" label="Upload max" value={srv.upload_max_size} />
                   {srv.wp_debug && <HealthRow status="warn" label="WP_DEBUG" value="Enabled (disable in production)" />}
                 </div>
               )}
             </Card>
 
-            <Card title="Background tasks (WP cron)">
+            <Card title="Background tasks">
               {perfL ? (
                 <div style={{ padding: 10, color: '#5A7A8A', fontSize: 12 }}>Loading…</div>
               ) : !cron ? (
@@ -286,17 +341,12 @@ export function WebsiteOverview() {
                       <HealthRow status={ls.object_cache ? 'ok' : 'warn'} label="Object cache" value={ls.object_cache ? 'Enabled' : 'Disabled'} />
                     </>
                   )}
-                  {cron.overdue_events > 0 && (
-                    <div style={{ marginTop: 10, padding: 10, background: '#FEF3C7', fontSize: 11, color: '#78350F', borderRadius: 4 }}>
-                      {cron.overdue_events} stuck events — may indicate cron is not firing.
-                    </div>
-                  )}
                 </div>
               )}
             </Card>
           </div>
 
-          {/* Recent security events timeline (compact) */}
+          {/* Recent activity timeline */}
           <Card title="Recent activity">
             {evL ? (
               <div style={{ padding: 8, color: '#5A7A8A', fontSize: 12 }}>Loading…</div>
@@ -307,12 +357,7 @@ export function WebsiteOverview() {
                 {recentEvents.slice(0, 8).map((e: any) => (
                   <div key={e.event_id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '6px 0', borderBottom: '1px solid #f5f5f5' }}>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <span style={{
-                        fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 3,
-                        background: e.severity === 'critical' ? '#FEF2F2' : e.severity === 'warning' ? '#FEF3C7' : '#F1F5F9',
-                        color: e.severity === 'critical' ? '#991B1B' : e.severity === 'warning' ? '#78350F' : '#64748B',
-                        textTransform: 'uppercase',
-                      }}>{e.severity}</span>
+                      <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 3, background: e.severity === 'critical' ? '#FEF2F2' : e.severity === 'warning' ? '#FEF3C7' : '#F1F5F9', color: e.severity === 'critical' ? '#991B1B' : e.severity === 'warning' ? '#78350F' : '#64748B', textTransform: 'uppercase' }}>{e.severity}</span>
                       <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{e.event_type}</span>
                       <span style={{ color: '#5A7A8A' }}>{e.title || ''}</span>
                     </div>

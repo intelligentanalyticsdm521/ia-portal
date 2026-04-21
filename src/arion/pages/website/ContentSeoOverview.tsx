@@ -34,6 +34,12 @@ export function ContentSeoOverview() {
     [activeSiteId]
   );
 
+  // v2.0.7 — comprehensive per-post SEO with schema + readability
+  const { data: seoFullDetail } = useArionData(
+    () => activeSiteId ? arionApi.getPluginContentSeoDetail(activeSiteId) : Promise.resolve(null),
+    [activeSiteId]
+  );
+
   // ALL derivations happen above any early return so the hook order stays
   // stable across renders (React Rules of Hooks).
   const env = (aggEnv as any) || {};
@@ -73,6 +79,59 @@ export function ContentSeoOverview() {
       .sort((a, b) => (Number(a.seo_score) || 0) - (Number(b.seo_score) || 0))
       .slice(0, 10);
   }, [items]);
+
+  // v2.0.7 — schema + readability from per-post detail
+  const detailFull = useMemo(() => (seoFullDetail as any)?.data || {}, [seoFullDetail]);
+  const schemaEntries = useMemo(() => {
+    const sc = detailFull.schema_counts || {};
+    const palette = ['#0284c7', '#7c3aed', '#1D9E75', '#D97706', '#D85A30', '#64748B', '#EC4899', '#14B8A6'];
+    return Object.entries(sc)
+      .sort((a: any, b: any) => b[1] - a[1])
+      .map(([name, count], i) => ({
+        name: name === 'none' ? 'No schema' : name,
+        value: count as number,
+        color: name === 'none' ? '#94A3B8' : palette[i % palette.length],
+      }));
+  }, [detailFull]);
+  const avgReadability = detailFull.avg_readability ?? null;
+  const detailRows: any[] = useMemo(() => detailFull.rows || [], [detailFull]);
+
+  // Pages vs Posts comparison (grouped bars)
+  const typeComparison = useMemo(() => {
+    const stats = { pages: { count: 0, withScore: 0, scoreSum: 0, missingMeta: 0, missingFk: 0 }, posts: { count: 0, withScore: 0, scoreSum: 0, missingMeta: 0, missingFk: 0 } };
+    for (const r of detailRows) {
+      const t = r.type === 'page' ? 'pages' : 'posts';
+      stats[t].count++;
+      if (r.seo_score > 0) { stats[t].withScore++; stats[t].scoreSum += r.seo_score; }
+      if (!r.has_meta_desc) stats[t].missingMeta++;
+      if (!r.focus_keyword) stats[t].missingFk++;
+    }
+    return [
+      { metric: 'Count',        Pages: stats.pages.count,       Posts: stats.posts.count },
+      { metric: 'Avg score',    Pages: stats.pages.withScore ? Math.round(stats.pages.scoreSum / stats.pages.withScore) : 0, Posts: stats.posts.withScore ? Math.round(stats.posts.scoreSum / stats.posts.withScore) : 0 },
+      { metric: 'Missing meta', Pages: stats.pages.missingMeta, Posts: stats.posts.missingMeta },
+      { metric: 'Missing FK',   Pages: stats.pages.missingFk,   Posts: stats.posts.missingFk },
+    ];
+  }, [detailRows]);
+
+  // Readability histogram (buckets of 10)
+  const readabilityBuckets = useMemo(() => {
+    const buckets = { '<40': 0, '40-60': 0, '60-80': 0, '80-100': 0 };
+    for (const r of detailRows) {
+      const s = r.readability;
+      if (!s || s <= 0) continue;
+      if (s < 40) buckets['<40']++;
+      else if (s < 60) buckets['40-60']++;
+      else if (s < 80) buckets['60-80']++;
+      else buckets['80-100']++;
+    }
+    return [
+      { range: '<40',   count: buckets['<40'],    color: '#D85A30', label: 'Difficult' },
+      { range: '40-60', count: buckets['40-60'],  color: '#F59E0B', label: 'Fair' },
+      { range: '60-80', count: buckets['60-80'],  color: '#1D9E75', label: 'Good' },
+      { range: '80-100',count: buckets['80-100'], color: '#065F46', label: 'Excellent' },
+    ];
+  }, [detailRows]);
 
   // NOW the early returns are safe — all hooks already ran
   if (loading || aggLoading) return <Loading />;
@@ -216,6 +275,70 @@ export function ContentSeoOverview() {
               </div>
             </div>
           )}
+        </Card>
+      </div>
+
+      {/* v2.0.7 — Schema + Readability + Pages vs Posts */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginTop: 14 }}>
+        <Card title="Schema markup coverage">
+          {schemaEntries.length === 0 ? (
+            <div style={{ padding: 14, color: '#5A7A8A', fontSize: 12 }}>Loading schema data…</div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 130, height: 130 }}>
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie data={schemaEntries} dataKey="value" innerRadius={35} outerRadius={60} paddingAngle={2}>
+                      {schemaEntries.map((d, i) => <Cell key={i} fill={d.color} />)}
+                    </Pie>
+                    <RTooltip contentStyle={{ fontSize: 11 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ flex: 1, fontSize: 11 }}>
+                {schemaEntries.slice(0, 6).map((d) => (
+                  <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' }}>
+                    <span style={{ width: 8, height: 8, background: d.color, borderRadius: 2 }} />
+                    <span style={{ flex: 1, textTransform: 'capitalize' }}>{d.name}</span>
+                    <strong>{d.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card title={`Readability ${avgReadability != null ? `(avg ${avgReadability})` : ''}`}>
+          {readabilityBuckets.every((b) => b.count === 0) ? (
+            <div style={{ padding: 14, color: '#5A7A8A', fontSize: 12 }}>No readability scores yet.</div>
+          ) : (
+            <div style={{ height: 160 }}>
+              <ResponsiveContainer>
+                <BarChart data={readabilityBuckets} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                  <XAxis dataKey="range" tick={{ fontSize: 10, fill: '#5A7A8A' }} />
+                  <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} allowDecimals={false} width={30} />
+                  <RTooltip contentStyle={{ fontSize: 11 }} formatter={(v: any, _n: any, p: any) => [`${v} posts`, p.payload.label]} />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                    {readabilityBuckets.map((b, i) => <Cell key={i} fill={b.color} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </Card>
+
+        <Card title="Pages vs Posts">
+          <div style={{ height: 160 }}>
+            <ResponsiveContainer>
+              <BarChart data={typeComparison} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                <XAxis dataKey="metric" tick={{ fontSize: 10, fill: '#5A7A8A' }} />
+                <YAxis tick={{ fontSize: 10, fill: '#5A7A8A' }} allowDecimals={false} width={30} />
+                <RTooltip contentStyle={{ fontSize: 11 }} />
+                <Bar dataKey="Pages" fill="#7c3aed" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Posts" fill="#0284c7" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </Card>
       </div>
 

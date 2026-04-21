@@ -49,6 +49,12 @@ export function WebsiteUpdates() {
     [activeSiteId, version]
   );
 
+  // v2.0.7 — plugin risk/age distribution
+  const { data: riskEnv } = useArionData(
+    () => activeSiteId ? arionApi.getPluginRiskAnalysis(activeSiteId) : Promise.resolve(null),
+    [activeSiteId, version]
+  );
+
   const refetchAll = useCallback(() => setVersion((v) => v + 1), []);
 
   const flashNotice = useCallback((type: 'success' | 'error', msg: string) => {
@@ -227,6 +233,85 @@ export function WebsiteUpdates() {
           )}
         </div>
       </Card>
+
+      {/* Plugin freshness + update history visuals */}
+      {(() => {
+        const riskPlugins: any[] = (riskEnv as any)?.data?.plugins || [];
+        if (riskPlugins.length === 0) return null;
+        const buckets = { fresh: 0, current: 0, aging: 0, stale: 0 };
+        for (const p of riskPlugins) {
+          const d = p.days_since_last_update;
+          if (d == null) continue;
+          if (d < 90) buckets.fresh++;
+          else if (d < 365) buckets.current++;
+          else if (d < 730) buckets.aging++;
+          else buckets.stale++;
+        }
+        const total = buckets.fresh + buckets.current + buckets.aging + buckets.stale;
+        if (total === 0) return null;
+        const ageItems = [
+          { label: 'Fresh (<90d)', count: buckets.fresh, color: '#1D9E75' },
+          { label: 'Current (<1y)', count: buckets.current, color: '#0284c7' },
+          { label: 'Aging (1-2y)', count: buckets.aging, color: '#D97706' },
+          { label: 'Stale (>2y)', count: buckets.stale, color: '#D85A30' },
+        ];
+        const logs: any[] = (logData as any)?.data?.logs || [];
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+            <Card title="Plugin freshness (upstream)">
+              <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 12, lineHeight: 1.5 }}>
+                How recently the plugin developers shipped a release. Stale plugins (no upstream update in 1+ year) are higher-risk because unpatched vulns compound over time.
+              </div>
+              <div style={{ display: 'flex', height: 24, borderRadius: 4, overflow: 'hidden', marginBottom: 10 }}>
+                {ageItems.map((b) => b.count > 0 && (
+                  <div key={b.label} style={{ width: `${(b.count / total) * 100}%`, background: b.color }} title={`${b.label}: ${b.count}`} />
+                ))}
+              </div>
+              {ageItems.map((b) => (
+                <div key={b.label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: 12 }}>
+                  <span style={{ width: 10, height: 10, background: b.color, borderRadius: 2 }} />
+                  <span style={{ flex: 1 }}>{b.label}</span>
+                  <strong>{b.count}</strong>
+                </div>
+              ))}
+            </Card>
+
+            <Card title="Recent update history">
+              {logs.length === 0 ? (
+                <div style={{ padding: 12, fontSize: 12, color: '#5A7A8A' }}>No updates applied via ARION yet.</div>
+              ) : (
+                <table className="tbl" style={{ width: '100%', fontSize: 11 }}>
+                  <thead>
+                    <tr>
+                      <th>Type</th>
+                      <th>Target</th>
+                      <th>Status</th>
+                      <th>When</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.slice(0, 8).map((row: any) => (
+                      <tr key={row.log_id}>
+                        <td style={{ textTransform: 'capitalize', color: '#5A7A8A' }}>{row.update_type}</td>
+                        <td style={{ fontFamily: 'monospace', fontSize: 10, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.target}</td>
+                        <td>
+                          <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 3,
+                            background: row.status === 'success' ? '#F0FDF4' : row.status === 'pending' ? '#EFF6FF' : '#FEF2F2',
+                            color: row.status === 'success' ? '#065F46' : row.status === 'pending' ? '#1E40AF' : '#991B1B',
+                            textTransform: 'uppercase' }}>
+                            {row.status}
+                          </span>
+                        </td>
+                        <td style={{ color: '#94A3B8', fontSize: 10 }}>{row.started_at ? new Date(row.started_at).toLocaleString() : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+          </div>
+        );
+      })()}
 
       {/* All plugins/themes/core — shows current state + actions per row */}
       {(() => {
@@ -514,8 +599,10 @@ function PluginInventoryTable({
                       >
                         {isBusy ? 'Updating…' : 'Update now'}
                       </button>
+                    ) : isBusy ? (
+                      <span style={{ fontSize: 10, color: '#D97706' }}>Refreshing…</span>
                     ) : (
-                      <span style={{ fontSize: 10, color: '#94A3B8' }}>—</span>
+                      <span style={{ fontSize: 10, color: '#1D9E75', fontWeight: 600 }}>✓ Current</span>
                     )}
                   </td>
                 </tr>
