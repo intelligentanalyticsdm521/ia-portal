@@ -146,11 +146,20 @@ export function ContentSeoOverview() {
           </p>
         </InfoCard>
         <div style={{ marginTop: 14, padding: 40, background: '#F8FAFC', borderRadius: 10, textAlign: 'center', border: '1px dashed #d5e0e8' }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#0B1C24', marginBottom: 8 }}>Awaiting plugin + Rank Math connection</div>
-          <div style={{ fontSize: 13, color: '#5A7A8A', maxWidth: 500, margin: '0 auto', lineHeight: 1.6 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#0B1C24', marginBottom: 8 }}>
+            {!pluginConnected ? 'Waiting on the IA Plugin' : 'Rank Math not detected'}
+          </div>
+          <div style={{ fontSize: 13, color: '#5A7A8A', maxWidth: 550, margin: '0 auto', lineHeight: 1.6 }}>
             {!pluginConnected
               ? 'The IA Plugin is not currently reachable. Visit Website → Overview for connection status.'
-              : 'Rank Math SEO is not active on this site. Install it via WP Admin → Plugins → Add New → search "Rank Math".'}
+              : (
+                <>
+                  We checked for Rank Math (free + Pro) and the global <code>RANK_MATH_VERSION</code> constant — none are present on this site. Install it via WP Admin → Plugins → Add New → search "Rank Math SEO", activate it, then refresh this page.
+                  <div style={{ marginTop: 12, fontSize: 11, color: '#94A3B8' }}>
+                    If Rank Math is installed but you're still seeing this message, the plugin folder might be renamed. Reinstall from the WP Plugins directory and it should auto-detect.
+                  </div>
+                </>
+              )}
           </div>
         </div>
       </div>

@@ -131,11 +131,15 @@ export function WebsiteOverview() {
 
   const healthStory = (() => {
     const s = healthScore.score;
-    if (s == null) return 'Plugin data is still loading — health score will appear shortly.';
-    if (s >= 85) return 'Your website is in excellent shape across security, performance, SEO, and content freshness. Keep doing what you\'re doing.';
-    if (s >= 70) return 'Your website is healthy overall with a few opportunities to improve — check the breakdown below for specifics.';
-    if (s >= 50) return 'Your website has some attention-worthy issues. Focus on the lowest-scoring areas first.';
-    return 'Your website needs immediate attention. Security, performance, or content gaps are compounding — address the lowest-scoring areas now.';
+    const missing = healthScore.breakdown.filter((b) => b.value == null).map((b) => b.label);
+    const missingNote = missing.length > 0
+      ? ` Note: ${missing.join(' + ')} ${missing.length === 1 ? 'score is' : 'scores are'} not yet available — they\'ll populate once data flows in.`
+      : '';
+    if (s == null) return `Health score is initializing. ${missing.length > 0 ? 'Waiting on: ' + missing.join(', ') + '.' : 'Plugin data still loading.'}`;
+    if (s >= 85) return `Your website is in excellent shape across the ${healthScore.breakdown.filter((b) => b.value != null).length} axes we can measure.${missingNote}`;
+    if (s >= 70) return `Your website is healthy overall with a few opportunities to improve — check the breakdown below.${missingNote}`;
+    if (s >= 50) return `Your website has some attention-worthy issues. Focus on the lowest-scoring areas first.${missingNote}`;
+    return `Your website needs immediate attention. Address the lowest-scoring areas now.${missingNote}`;
   })();
 
   return (
@@ -154,18 +158,44 @@ export function WebsiteOverview() {
         <HealthScoreRing score={healthScore.score} label="Health" size={180}>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{healthStory}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginTop: 10 }}>
-            {healthScore.breakdown.map((b) => (
-              <div key={b.label} style={{ background: '#F8FAFC', padding: 10, borderRadius: 6 }}>
-                <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5 }}>{b.label}</div>
-                <div style={{
-                  fontSize: 18, fontWeight: 700, marginTop: 4,
-                  color: b.value == null ? '#94A3B8' : b.value >= 80 ? '#1D9E75' : b.value >= 50 ? '#D97706' : '#D85A30',
-                }}>
-                  {b.value == null ? '—' : b.value}
-                </div>
-                <div style={{ fontSize: 9, color: '#94A3B8', marginTop: 2 }}>weight {b.weight}%</div>
-              </div>
-            ))}
+            {healthScore.breakdown.map((b) => {
+              const missing = b.value == null;
+              return (
+                <a
+                  key={b.label}
+                  href={
+                    b.label === 'performance' ? '/app/services/arion_website_performance_cache' :
+                    b.label === 'security' ? '/app/services/arion_website_security_overview' :
+                    b.label === 'seo' ? '/app/services/arion_website_content_seo_overview' :
+                    b.label === 'content' ? '/app/services/arion_website_content' :
+                    b.label === 'updates' ? '/app/services/arion_website_updates' : '#'
+                  }
+                  style={{ textDecoration: 'none' }}
+                >
+                  <div style={{
+                    background: missing ? '#FFFBEB' : '#F8FAFC',
+                    padding: 10, borderRadius: 6,
+                    border: missing ? '1px dashed #D97706' : '1px solid transparent',
+                    transition: 'transform 0.1s',
+                    cursor: 'pointer',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-1px)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.transform = '')}
+                  >
+                    <div style={{ fontSize: 9, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5 }}>{b.label}</div>
+                    <div style={{
+                      fontSize: 18, fontWeight: 700, marginTop: 4,
+                      color: missing ? '#D97706' : (b.value as number) >= 80 ? '#1D9E75' : (b.value as number) >= 50 ? '#D97706' : '#D85A30',
+                    }}>
+                      {missing ? 'No data' : b.value}
+                    </div>
+                    <div style={{ fontSize: 9, color: missing ? '#D97706' : '#94A3B8', marginTop: 2 }}>
+                      {missing ? 'Click to fix →' : `weight ${b.weight}%`}
+                    </div>
+                  </div>
+                </a>
+              );
+            })}
           </div>
         </HealthScoreRing>
       </Card>

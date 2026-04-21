@@ -16,10 +16,12 @@ import {
  */
 export function PerformanceCache() {
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
+  const [runStatus, setRunStatus] = React.useState<null | { running: boolean; msg: string; startedAt: number }>(null);
+  const [historyVersion, setHistoryVersion] = React.useState(0);
 
-  const { data: pagespeed, loading: psLoading } = useArionData(
+  const { data: pagespeed, loading: psLoading, refetch } = useArionData(
     () => activeSiteId ? arionApi.getPagespeedHistory(activeSiteId) : Promise.resolve(null),
-    [activeSiteId]
+    [activeSiteId, historyVersion]
   );
 
   const snapshots: any[] = useMemo(() => {
@@ -105,18 +107,60 @@ export function PerformanceCache() {
   const goodCount = metricsSummary.filter(m => cwvBand(m.key, m.value) === 'Good').length;
   const overallState = goodCount === 3 ? 'passing' : goodCount >= 2 ? 'mixed' : 'failing';
 
-  const handleRunPagespeed = async (strategy: 'mobile' | 'desktop') => {
+  // Fire-and-forget PSI runs. Server responds immediately with { queued: true }
+  // and runs mobile+desktop in the background. We poll pagespeed-history every
+  // 8s for up to 3 minutes to pick up the new rows as they land.
+  const handleRunPagespeed = async (strategy?: 'mobile' | 'desktop' | 'both') => {
     if (!activeSiteId) return;
+    const started = Date.now();
+    setRunStatus({ running: true, msg: strategy === 'both' || !strategy ? 'Running mobile + desktop PageSpeed tests…' : `Running ${strategy} PageSpeed test…`, startedAt: started });
     try {
-      await arionApi.runPageSpeed(activeSiteId, strategy);
-      alert(`${strategy === 'mobile' ? 'Mobile' : 'Desktop'} PageSpeed run queued. Refresh in 1-2 minutes.`);
-    } catch {
-      alert('Failed to queue PageSpeed run.');
+      // Omit strategy to run BOTH — matches the server default
+      await arionApi.runPageSpeed(activeSiteId, strategy === 'both' ? undefined : strategy);
+
+      // Poll history for new snapshots for up to 3 minutes
+      const deadline = Date.now() + 180_000;
+      const poll = async () => {
+        if (Date.now() > deadline) {
+          setRunStatus({ running: false, msg: 'Tests finished — results should appear shortly.', startedAt: started });
+          setHistoryVersion((v) => v + 1);
+          return;
+        }
+        try {
+          const res: any = await arionApi.getPagespeedHistory(activeSiteId);
+          const snaps: any[] = res?.data?.snapshots || [];
+          const latestTs = snaps.length > 0 ? new Date(snaps[snaps.length - 1]?.timestamp || 0).getTime() : 0;
+          // If the latest snapshot is newer than when we started, we have new data
+          if (latestTs >= started - 5000) {
+            setHistoryVersion((v) => v + 1);
+            setRunStatus({ running: false, msg: '✓ New PageSpeed snapshot captured.', startedAt: started });
+            setTimeout(() => setRunStatus(null), 6000);
+            return;
+          }
+        } catch { /* keep polling */ }
+        setTimeout(poll, 8000);
+      };
+      setTimeout(poll, 30_000); // first poll after 30s (typical PSI time)
+    } catch (err: any) {
+      setRunStatus({ running: false, msg: `Failed to queue PageSpeed run: ${err?.message || 'unknown'}`, startedAt: started });
+      setTimeout(() => setRunStatus(null), 6000);
     }
   };
 
   return (
     <div>
+      {/* Live run status banner */}
+      {runStatus && (
+        <div style={{
+          background: runStatus.running ? '#EFF6FF' : '#F0FDF4',
+          borderLeft: `4px solid ${runStatus.running ? '#0284c7' : '#1D9E75'}`,
+          padding: '10px 14px', marginBottom: 12, borderRadius: 4, fontSize: 13, color: '#0B1C24',
+        }}>
+          <strong>{runStatus.running ? '⏱ ' : ''}{runStatus.msg}</strong>
+          {runStatus.running && <span style={{ marginLeft: 10, fontSize: 11, color: '#5A7A8A' }}>PageSpeed Insights typically takes 30-60 seconds per strategy. Results will appear automatically.</span>}
+        </div>
+      )}
+
       {/* Story band */}
       <div style={{
         background: overallState === 'passing' ? '#F0FDF4' : overallState === 'mixed' ? '#FFFBEB' : '#FEF2F2',
@@ -288,11 +332,12 @@ export function PerformanceCache() {
       <div style={{ marginTop: 16 }}>
         <Card title="Run PageSpeed now">
           <div style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 12 }}>
-            On-demand PageSpeed Insights run. Results append to the history above and usually take 1-2 minutes.
+            On-demand PageSpeed Insights run. "Run mobile + desktop" kicks off both tests in parallel (~60-90 seconds total). Results auto-append to the history above and are saved for trend analysis.
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className="abtn abtn-sky" onClick={() => handleRunPagespeed('mobile')}>Run mobile test</button>
-            <button className="abtn abtn-outline" onClick={() => handleRunPagespeed('desktop')}>Run desktop test</button>
+            <button className="abtn abtn-sky" onClick={() => handleRunPagespeed('both')} disabled={runStatus?.running}>Run mobile + desktop</button>
+            <button className="abtn abtn-outline" onClick={() => handleRunPagespeed('mobile')} disabled={runStatus?.running}>Mobile only</button>
+            <button className="abtn abtn-outline" onClick={() => handleRunPagespeed('desktop')} disabled={runStatus?.running}>Desktop only</button>
           </div>
         </Card>
       </div>

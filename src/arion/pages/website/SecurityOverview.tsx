@@ -20,6 +20,10 @@ import {
 export function SecurityOverview() {
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
   const [modalOpen, setModalOpen] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [configBusy, setConfigBusy] = useState<Record<string, boolean>>({});
+  const [configState, setConfigState] = useState<Record<string, boolean>>({});
+  const [configNotice, setConfigNotice] = useState<string | null>(null);
 
   const fetchIfId = <T,>(fn: (s: string) => Promise<T>) =>
     activeSiteId ? fn(activeSiteId) : Promise.resolve(null);
@@ -53,6 +57,34 @@ export function SecurityOverview() {
 
   const recentEvents: any[] = (events as any)?.data?.events || [];
 
+  // Seed config toggle state from full wordfence data when it loads
+  React.useEffect(() => {
+    if (full && full.installed !== false) {
+      setConfigState({
+        firewall_enabled: !!full.firewall_enabled,
+        brute_force: !!full.brute_force_on,
+        // Most other flags aren't surfaced on full — infer from score
+      });
+    }
+  }, [full]);
+
+  const handleToggleConfig = async (key: string) => {
+    if (!activeSiteId || configState[key]) return; // only ON direction allowed
+    setConfigBusy((prev) => ({ ...prev, [key]: true }));
+    setConfigNotice(null);
+    try {
+      const res: any = await arionApi.setPluginWordfenceConfig(activeSiteId, { [key]: true });
+      const newState = res?.data?.state || {};
+      setConfigState((prev) => ({ ...prev, ...newState }));
+      setConfigNotice(`✓ ${key.replace(/_/g, ' ')} enabled`);
+      setTimeout(() => setConfigNotice(null), 4000);
+    } catch (err: any) {
+      setConfigNotice(`Failed to enable: ${err?.message || 'unknown error'}`);
+    } finally {
+      setConfigBusy((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
   if (loading || secLoading) return <Loading />;
   if (!selectedSite) return <div style={{ padding: 24, color: 'var(--text-muted)' }}>No site selected.</div>;
 
@@ -77,9 +109,25 @@ export function SecurityOverview() {
 
   return (
     <div>
-      {/* Storytelling band */}
-      <div style={{ ...toneStyle[storyBand.tone], padding: '14px 18px', marginBottom: 16, borderRadius: 6 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#0B1C24', marginBottom: 4 }}>{storyBand.text}</div>
+      {/* Storytelling band + action buttons at top (matches SEO page pattern) */}
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16 }}>
+        <div style={{ ...toneStyle[storyBand.tone], flex: 1, padding: '14px 18px', borderRadius: 6 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#0B1C24', marginBottom: 4 }}>{storyBand.text}</div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button
+            onClick={() => setConfigOpen(true)}
+            style={{ padding: '8px 16px', fontSize: 12, fontWeight: 600, background: '#fff', color: '#0B1C24', border: '1px solid #CBD5E1', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}
+          >
+            ⚙ Safe Configuration
+          </button>
+          <button
+            onClick={() => setModalOpen(true)}
+            style={{ padding: '8px 16px', fontSize: 12, fontWeight: 600, background: '#0B1C24', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}
+          >
+            See Full Details →
+          </button>
+        </div>
       </div>
 
       {/* Wordfence dual gauge */}
@@ -205,21 +253,11 @@ export function SecurityOverview() {
         </Card>
       </div>
 
-      {/* Full report modal trigger */}
-      <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
-        <button
-          onClick={() => setModalOpen(true)}
-          style={{ padding: '8px 18px', fontSize: 12, fontWeight: 600, background: '#0B1C24', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
-        >
-          See Full Wordfence Report →
-        </button>
-      </div>
-
       <DetailsModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         eyebrow="Security"
-        title={`Wordfence full report — ${issues.length} scan findings`}
+        title={`Full Details — ${issues.length} scan findings`}
       >
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 8 }}>
@@ -289,6 +327,69 @@ export function SecurityOverview() {
             </table>
           </div>
         )}
+      </DetailsModal>
+
+      {/* Safe Configuration modal — toggle-ON-only settings */}
+      <DetailsModal
+        open={configOpen}
+        onClose={() => setConfigOpen(false)}
+        eyebrow="Security configuration"
+        title="Safe Wordfence settings"
+        width={700}
+      >
+        <div style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 14, lineHeight: 1.5 }}>
+          These settings tighten your site's security. ARION only allows you to <strong>enable</strong> protections here — to disable any of them you must go to the Wordfence admin directly. This keeps your site safe from accidental misconfigurations.
+        </div>
+        {configNotice && (
+          <div style={{ padding: '8px 12px', marginBottom: 12, background: '#F0FDF4', borderLeft: '3px solid #1D9E75', borderRadius: 4, fontSize: 12, color: '#065F46' }}>
+            {configNotice}
+          </div>
+        )}
+        <div style={{ display: 'grid', gap: 10 }}>
+          {[
+            { key: 'firewall_enabled', label: 'Wordfence firewall', desc: 'Blocks known attack patterns. Wordfence starts in learning mode (monitor only) for the first week, then auto-enforces.' },
+            { key: 'brute_force', label: 'Brute-force login protection', desc: 'Locks out IPs after repeated failed logins. Huge protection against credential-stuffing attacks.' },
+            { key: 'require_admin_2fa', label: 'Require 2FA for admins', desc: 'Forces every administrator account to enroll in 2FA before they can log in. Blocks 99%+ of account takeovers.' },
+            { key: 'block_fake_bots', label: 'Block fake search bots', desc: 'Real Googlebot traffic is allowed; fake bots claiming to be Google are blocked.' },
+            { key: 'block_bad_post', label: 'Block suspicious POST requests', desc: 'Filters out known malicious POST payloads before they reach your site.' },
+            { key: 'hide_wp_version', label: 'Hide WordPress version', desc: 'Removes the WP version number from HTML + scripts so attackers can\'t target version-specific exploits.' },
+            { key: 'scan_enabled_core', label: 'Scan WordPress core files', desc: 'Detects tampered or modified core files (sign of an attack in progress).' },
+            { key: 'scan_enabled_plugins', label: 'Scan plugin files', desc: 'Detects modified plugin files that may indicate compromise.' },
+            { key: 'scan_enabled_themes', label: 'Scan theme files', desc: 'Same as plugin scan but for themes.' },
+            { key: 'scan_enabled_malware', label: 'Scan for malware signatures', desc: 'Runs known-malware pattern matching on your site files.' },
+            { key: 'scan_suspicious_admins', label: 'Flag suspicious admin users', desc: 'Alerts you if a new admin account appears without your knowledge.' },
+          ].map((opt) => {
+            const enabled = configState[opt.key] === true;
+            const busy = !!configBusy[opt.key];
+            return (
+              <div key={opt.key} style={{ padding: 12, background: enabled ? '#F0FDF4' : '#F8FAFC', borderRadius: 6, border: `1px solid ${enabled ? '#bbf7d0' : '#e5eef2'}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24' }}>
+                      {opt.label} {enabled && <span style={{ fontSize: 10, color: '#1D9E75', marginLeft: 6 }}>✓ Enabled</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#5A7A8A', marginTop: 4, lineHeight: 1.5 }}>{opt.desc}</div>
+                  </div>
+                  <button
+                    disabled={enabled || busy}
+                    onClick={() => handleToggleConfig(opt.key)}
+                    style={{
+                      padding: '6px 14px', fontSize: 11, fontWeight: 600,
+                      background: enabled ? '#E5EEF2' : '#0B1C24', color: enabled ? '#5A7A8A' : '#fff',
+                      border: 'none', borderRadius: 4,
+                      cursor: enabled || busy ? 'default' : 'pointer', flexShrink: 0, minWidth: 90,
+                    }}
+                  >
+                    {busy ? 'Enabling…' : enabled ? 'Already on' : 'Enable'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ marginTop: 16, padding: 12, background: '#FFFBEB', borderLeft: '3px solid #D97706', borderRadius: 4, fontSize: 11, color: '#78350F', lineHeight: 1.5 }}>
+          <strong>Need to disable a setting?</strong> Open your WordPress admin → Wordfence → All Options. ARION intentionally doesn't let you disable security protections remotely.
+        </div>
       </DetailsModal>
 
       <ConsultingUpsell

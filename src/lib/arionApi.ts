@@ -1201,7 +1201,9 @@ export async function deleteDnsRecords(params: { baseUrl: string; bearerToken: s
 }
 
 export async function runPageSpeed(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; strategy?: string }) {
-  return requestJson<any>({ ...params, method: 'POST', path: `/arion/hosting/pagespeed?siteId=${encodeURIComponent(params.siteId)}`, body: { strategy: params.strategy } });
+  // Omit strategy to run BOTH mobile + desktop on the server
+  const body = params.strategy ? { strategy: params.strategy } : {};
+  return requestJson<any>({ ...params, method: 'POST', path: `/arion/hosting/pagespeed?siteId=${encodeURIComponent(params.siteId)}`, body });
 }
 
 export async function updateContentSeo(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; postId: string; fields: Record<string, string> }) {
@@ -1499,6 +1501,14 @@ export async function getPluginWordfenceFull(p: { baseUrl: string; bearerToken: 
 }
 export async function getPluginScanIssues(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<PluginEnvelope<{ installed: boolean; issues: any[]; total?: number }>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/security/scan-issues` });
+}
+export async function setPluginWordfenceConfig(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; body: Record<string, boolean> }) {
+  return requestJson<PluginEnvelope<{ installed: boolean; applied: Record<string, boolean>; state: Record<string, boolean> }>>({
+    ...p,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/security/wordfence-config`,
+    body: p.body,
+  });
 }
 export async function getPluginContentPace(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<PluginEnvelope<{ months: Array<{ month: string; posts: number; pages: number }> }>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/content/publishing-pace` });

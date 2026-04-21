@@ -106,6 +106,7 @@ import {
   triggerImageOptimize as portalTriggerImageOptimize,
   getPluginWordfenceFull as portalGetPluginWordfenceFull,
   getPluginScanIssues as portalGetPluginScanIssues,
+  setPluginWordfenceConfig as portalSetPluginWordfenceConfig,
   getPluginContentPace as portalGetPluginContentPace,
   getPluginContentAgeDist as portalGetPluginContentAgeDist,
   getPluginContentAuthors as portalGetPluginContentAuthors,
@@ -393,6 +394,7 @@ export function useArionContext() {
       // v2.0.7 analytics-first plugin data
       async getPluginWordfenceFull(siteId: string) { const b = await base(); return portalGetPluginWordfenceFull({ ...b, siteId }); },
       async getPluginScanIssues(siteId: string) { const b = await base(); return portalGetPluginScanIssues({ ...b, siteId }); },
+      async setPluginWordfenceConfig(siteId: string, body: Record<string, boolean>) { const b = await base(); return portalSetPluginWordfenceConfig({ ...b, siteId, body }); },
       async getPluginContentPace(siteId: string) { const b = await base(); return portalGetPluginContentPace({ ...b, siteId }); },
       async getPluginContentAgeDist(siteId: string) { const b = await base(); return portalGetPluginContentAgeDist({ ...b, siteId }); },
       async getPluginContentAuthors(siteId: string) { const b = await base(); return portalGetPluginContentAuthors({ ...b, siteId }); },
