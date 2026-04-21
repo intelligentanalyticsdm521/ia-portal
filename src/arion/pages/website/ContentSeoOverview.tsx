@@ -34,49 +34,17 @@ export function ContentSeoOverview() {
     [activeSiteId]
   );
 
-  if (loading || aggLoading) return <Loading />;
-  if (!selectedSite) return <div style={{ padding: 24, color: 'var(--text-muted)' }}>No site selected.</div>;
-
+  // ALL derivations happen above any early return so the hook order stays
+  // stable across renders (React Rules of Hooks).
   const env = (aggEnv as any) || {};
   const pluginConnected = env.plugin_status === 'connected';
   const seo = env.data?.seo || null;
-  const summary = env.data?.summary || null;
   const d = (detailData as any)?.data || {};
   const pages: any[] = Array.isArray(d.pages) ? d.pages : [];
   const posts: any[] = Array.isArray(d.posts) ? d.posts : [];
-  const items: any[] = [...pages, ...posts];
+  const items: any[] = useMemo(() => [...pages, ...posts], [pages, posts]);
 
-  if (!pluginConnected || !seo?.installed) {
-    return (
-      <div>
-        <InfoCard title="Content SEO">
-          <p style={{ margin: 0, fontSize: 13 }}>
-            Content SEO intelligence is powered by Rank Math SEO inside the IA Plugin. Make sure the IA Plugin is connected and Rank Math is active on your WordPress site to see per-page SEO scores, focus keywords, and meta-completeness tracking.
-          </p>
-        </InfoCard>
-        <div style={{ marginTop: 14, padding: 40, background: '#F8FAFC', borderRadius: 10, textAlign: 'center', border: '1px dashed #d5e0e8' }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#0B1C24', marginBottom: 8 }}>Awaiting plugin + Rank Math connection</div>
-          <div style={{ fontSize: 13, color: '#5A7A8A', maxWidth: 500, margin: '0 auto', lineHeight: 1.6 }}>
-            {!pluginConnected
-              ? 'The IA Plugin is not currently reachable. Visit Website → Overview for connection status.'
-              : 'Rank Math SEO is not active on this site. Install it via WP Admin → Plugins → Add New → search "Rank Math".'}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Derived narrative numbers
-  const totalPublished = seo.total_published || 0;
-  const postsWithScore = seo.posts_with_seo_score || 0;
-  const coveragePct = totalPublished > 0 ? Math.round((postsWithScore / totalPublished) * 100) : 0;
-  const avgScore = seo.avg_seo_score != null ? Number(seo.avg_seo_score) : null;
-  const lowScoreCount = seo.posts_score_below_50 || 0;
-  const missingMeta = seo.posts_missing_meta_desc || 0;
-  const missingFK = seo.posts_missing_focus_kw || 0;
-  const noindexCount = seo.posts_noindex || 0;
-
-  // Build score-bucket distribution from live detail data (if available)
+  // Build score-bucket distribution from live detail data
   const scoreBuckets = useMemo(() => {
     const buckets = { '0-30': 0, '30-50': 0, '50-70': 0, '70-90': 0, '90-100': 0 };
     for (const it of items) {
@@ -98,15 +66,6 @@ export function ContentSeoOverview() {
     ];
   }, [items]);
 
-  // Problem donut
-  const problemData = [
-    { name: 'Missing meta desc', value: missingMeta, color: '#D85A30' },
-    { name: 'Missing focus keyword', value: missingFK, color: '#EF6C33' },
-    { name: 'Low score (<50)', value: lowScoreCount, color: '#F59E0B' },
-    { name: 'Marked noindex', value: noindexCount, color: '#5A7A8A' },
-  ].filter((d) => d.value > 0);
-  const problemTotal = problemData.reduce((s, d) => s + d.value, 0);
-
   // Top opportunity table: lowest-score items + pages missing meta
   const topOpportunities = useMemo(() => {
     const scored = items.filter((it) => it.seo_score != null);
@@ -114,6 +73,49 @@ export function ContentSeoOverview() {
       .sort((a, b) => (Number(a.seo_score) || 0) - (Number(b.seo_score) || 0))
       .slice(0, 10);
   }, [items]);
+
+  // NOW the early returns are safe — all hooks already ran
+  if (loading || aggLoading) return <Loading />;
+  if (!selectedSite) return <div style={{ padding: 24, color: 'var(--text-muted)' }}>No site selected.</div>;
+
+  if (!pluginConnected || !seo?.installed) {
+    return (
+      <div>
+        <InfoCard title="Content SEO">
+          <p style={{ margin: 0, fontSize: 13 }}>
+            Content SEO intelligence is powered by Rank Math SEO inside the IA Plugin. Make sure the IA Plugin is connected and Rank Math is active on your WordPress site to see per-page SEO scores, focus keywords, and meta-completeness tracking.
+          </p>
+        </InfoCard>
+        <div style={{ marginTop: 14, padding: 40, background: '#F8FAFC', borderRadius: 10, textAlign: 'center', border: '1px dashed #d5e0e8' }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#0B1C24', marginBottom: 8 }}>Awaiting plugin + Rank Math connection</div>
+          <div style={{ fontSize: 13, color: '#5A7A8A', maxWidth: 500, margin: '0 auto', lineHeight: 1.6 }}>
+            {!pluginConnected
+              ? 'The IA Plugin is not currently reachable. Visit Website → Overview for connection status.'
+              : 'Rank Math SEO is not active on this site. Install it via WP Admin → Plugins → Add New → search "Rank Math".'}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Derived narrative numbers (post-guard — these can safely use seo.* now)
+  const totalPublished = seo.total_published || 0;
+  const postsWithScore = seo.posts_with_seo_score || 0;
+  const coveragePct = totalPublished > 0 ? Math.round((postsWithScore / totalPublished) * 100) : 0;
+  const avgScore = seo.avg_seo_score != null ? Number(seo.avg_seo_score) : null;
+  const lowScoreCount = seo.posts_score_below_50 || 0;
+  const missingMeta = seo.posts_missing_meta_desc || 0;
+  const missingFK = seo.posts_missing_focus_kw || 0;
+  const noindexCount = seo.posts_noindex || 0;
+
+  // Problem donut (computed after guard — no hook needed)
+  const problemData = [
+    { name: 'Missing meta desc', value: missingMeta, color: '#D85A30' },
+    { name: 'Missing focus keyword', value: missingFK, color: '#EF6C33' },
+    { name: 'Low score (<50)', value: lowScoreCount, color: '#F59E0B' },
+    { name: 'Marked noindex', value: noindexCount, color: '#5A7A8A' },
+  ].filter((d) => d.value > 0);
+  const problemTotal = problemData.reduce((s, d) => s + d.value, 0);
 
   return (
     <div>

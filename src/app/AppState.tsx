@@ -46,9 +46,6 @@ function buildEnabledServices(active: SelectTenantResponse | null): Set<string> 
     keys.add('arion_website_overview');
     keys.add('arion_website_content');
     keys.add('arion_website_content_seo_overview');
-    keys.add('arion_website_content_seo_pages');
-    keys.add('arion_website_content_seo_posts');
-    keys.add('arion_website_content_seo_schema');
     keys.add('arion_website_security_overview');
     keys.add('arion_website_security_vulnerabilities');
     keys.add('arion_website_security_firewall');
