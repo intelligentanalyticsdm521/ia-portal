@@ -8,9 +8,9 @@ import { ArionPageWrapper } from '../arion/ArionPageWrapper';
 import { WebsiteOverview } from '../arion/pages/website/WebsiteOverview';
 import { WebsiteContent } from '../arion/pages/website/WebsiteContent';
 import { ContentSeoOverview } from '../arion/pages/website/ContentSeoOverview';
-import { ContentSeoPages } from '../arion/pages/website/ContentSeoPages';
-import { ContentSeoPosts } from '../arion/pages/website/ContentSeoPosts';
-import { ContentSeoSchema } from '../arion/pages/website/ContentSeoSchema';
+// ContentSeoPages / ContentSeoPosts / ContentSeoSchema removed 2026-04-21 —
+// consolidated into the single Content SEO Overview storytelling page with
+// an internal "See Full Details" modal (tabs for Pages, Posts, Issues).
 import { SecurityOverview } from '../arion/pages/website/SecurityOverview';
 import { SecurityVulnerabilities } from '../arion/pages/website/SecurityVulnerabilities';
 import { SecurityFirewall } from '../arion/pages/website/SecurityFirewall';
@@ -119,9 +119,11 @@ export function ServiceRouter() {
       case 'arion_website_overview': return <ArionPageWrapper><WebsiteOverview /></ArionPageWrapper>;
       case 'arion_website_content': return <ArionPageWrapper><WebsiteContent /></ArionPageWrapper>;
       case 'arion_website_content_seo_overview': return <ArionPageWrapper><ContentSeoOverview /></ArionPageWrapper>;
-      case 'arion_website_content_seo_pages': return <ArionPageWrapper><ContentSeoPages /></ArionPageWrapper>;
-      case 'arion_website_content_seo_posts': return <ArionPageWrapper><ContentSeoPosts /></ArionPageWrapper>;
-      case 'arion_website_content_seo_schema': return <ArionPageWrapper><ContentSeoSchema /></ArionPageWrapper>;
+      // Legacy sub-routes — redirect to the consolidated Content SEO Overview
+      case 'arion_website_content_seo_pages':
+      case 'arion_website_content_seo_posts':
+      case 'arion_website_content_seo_schema':
+        return <Navigate to="/app/services/arion_website_content_seo_overview" replace />;
       case 'arion_website_security_overview': return <ArionPageWrapper><SecurityOverview /></ArionPageWrapper>;
       case 'arion_website_security_vulnerabilities': return <ArionPageWrapper><SecurityVulnerabilities /></ArionPageWrapper>;
       case 'arion_website_security_firewall': return <Navigate to="/app/services/arion_website_security_overview" replace />;
