@@ -69,8 +69,20 @@ export function WebsiteUpdates() {
     setBusyFor(`plugin:${pluginFile}`, true);
     try {
       const r: any = await arionApi.updatePluginByFile(activeSiteId, pluginFile);
-      if (r.data?.success) flashNotice('success', `Updated ${pluginFile}`);
-      else flashNotice('error', r.errors?.[0] || 'Update failed');
+      const d = r.data?.detail?.data || r.data;
+      if (r.data?.success) {
+        // v2.0.11 — Surface plugin activation state honestly. If plugin was
+        // active before update but isn't now, the upgrade deactivated it.
+        if (d?.was_active && !d?.is_active) {
+          flashNotice('error', `Updated ${pluginFile} BUT plugin is now deactivated. Reactivation error: ${d?.reactivate_error || 'unknown'}. Go to WP Admin → Plugins to reactivate.`);
+        } else if (d?.was_active && d?.reactivated) {
+          flashNotice('success', `Updated ${pluginFile} — reactivated automatically.`);
+        } else {
+          flashNotice('success', `Updated ${pluginFile}`);
+        }
+      } else {
+        flashNotice('error', r.errors?.[0] || 'Update failed');
+      }
       refetchAll();
     } catch (err: any) {
       flashNotice('error', err?.message || 'Update request failed');

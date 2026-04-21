@@ -130,15 +130,33 @@ export function SecurityOverview() {
         </div>
       </div>
 
-      {/* Wordfence dual gauge */}
-      <Card title="Wordfence Optimization Score">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20, alignItems: 'center' }}>
-          <MiniGauge score={firewallScore} label="Firewall" size={130} />
-          <MiniGauge score={scanScore} label="Scan" size={130} />
-          <MiniGauge score={overallScore} label="Overall" size={130} />
+      {/* Wordfence real-state panel (v2.0.11 — replaced made-up composite with actual state) */}
+      <Card title="Wordfence protection status">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+          <StateTile
+            label="Firewall"
+            value={wf?.firewall_enabled ? 'ON' : wf?.installed ? 'OFF' : 'N/A'}
+            ok={!!wf?.firewall_enabled}
+          />
+          <StateTile
+            label="Brute-force protection"
+            value={wf?.brute_force_on ? 'ON' : wf?.installed ? 'OFF' : 'N/A'}
+            ok={!!wf?.brute_force_on}
+          />
+          <StateTile
+            label="Admin 2FA"
+            value={admin2fa ? `${admin2fa.with_2fa}/${admin2fa.total_admins}` : '—'}
+            ok={admin2fa && admin2fa.coverage_pct === 100}
+            warn={admin2fa && admin2fa.coverage_pct > 0 && admin2fa.coverage_pct < 100}
+          />
+          <StateTile
+            label="Last scan"
+            value={wf?.last_scan_at ? new Date(wf.last_scan_at).toLocaleDateString() : 'Never'}
+            ok={!!wf?.last_scan_at}
+          />
         </div>
-        <div style={{ fontSize: 11, color: '#5A7A8A', marginTop: 12, lineHeight: 1.5, textAlign: 'center' }}>
-          Scores reflect how many Wordfence protection settings are enabled. Match or beat what Wordfence's own dashboard recommends.
+        <div style={{ fontSize: 11, color: '#5A7A8A', marginTop: 12, lineHeight: 1.5 }}>
+          Each item reflects actual Wordfence state on your site. Use the "Safe Configuration" button above to enable anything showing OFF.
         </div>
       </Card>
 
@@ -409,6 +427,17 @@ export function SecurityOverview() {
         serviceType="Security Remediation"
         triggerPage="security-overview"
       />
+    </div>
+  );
+}
+
+function StateTile({ label, value, ok, warn }: { label: string; value: string; ok?: boolean | null; warn?: boolean | null }) {
+  const color = ok ? '#1D9E75' : warn ? '#D97706' : '#D85A30';
+  const bg = ok ? '#F0FDF4' : warn ? '#FEF3C7' : '#FEF2F2';
+  return (
+    <div style={{ background: bg, borderLeft: `3px solid ${color}`, borderRadius: 6, padding: '10px 14px' }}>
+      <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color, marginTop: 4 }}>{value}</div>
     </div>
   );
 }

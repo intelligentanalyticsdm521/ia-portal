@@ -218,7 +218,8 @@ export function ContentSeoOverview() {
   })();
 
   // Readability problem flag
-  const hardToReadCount = detailRows.filter((r: any) => r.readability != null && r.readability < 40).length;
+  const hardToReadCount = detailRows.filter((r: any) => r.readability != null && r.readability > 0 && r.readability < 40).length;
+  const noReadabilityCount = detailRows.filter((r: any) => !r.readability || r.readability === 0).length;
 
   return (
     <div>
@@ -427,8 +428,15 @@ export function ContentSeoOverview() {
             <div style={{ padding: '12px 14px', background: '#F0FDF4', borderLeft: '3px solid #1D9E75', borderRadius: 4, fontSize: 12, color: '#065F46' }}>
               ✓ Readability looks good across your content. Average score {avgReadability}.
             </div>
+          ) : noReadabilityCount > 0 ? (
+            <div style={{ padding: '12px 14px', background: '#EFF6FF', borderLeft: '3px solid #0284c7', borderRadius: 4, fontSize: 12, color: '#0B1C24', lineHeight: 1.6 }}>
+              <strong style={{ color: '#0C4A60' }}>Readability scores not yet generated.</strong> Rank Math only creates readability scores when posts are opened + saved in the WordPress editor. Your {noReadabilityCount} existing posts haven't been re-saved since Rank Math was installed, so they don't have scores yet.
+              <div style={{ marginTop: 6, fontSize: 11, color: '#5A7A8A' }}>
+                Fix: open each post in WP admin and click Update (no content changes needed) — Rank Math analyzes and stores the score. OR use bulk regeneration via Rank Math → Status &amp; Tools → Database Tools → Update Keywords/Scores.
+              </div>
+            </div>
           ) : (
-            <div style={{ padding: 14, color: '#5A7A8A', fontSize: 12 }}>No readability scores yet.</div>
+            <div style={{ padding: 14, color: '#5A7A8A', fontSize: 12 }}>No posts to analyze.</div>
           )}
         </Card>
       </div>

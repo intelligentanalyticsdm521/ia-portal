@@ -69,10 +69,11 @@ export function SecurityVulnerabilities() {
   const high = v.high ?? 0;
   const medium = v.medium ?? 0;
   const wordfenceStatus = v.wordfence_status || 'unknown';
-  const feedEntries = v.wordfence_feed_entries || 0;
-  const wordfenceError = v.wordfence_error;
+  const scanFindingsTotal = v.wordfence_scan_findings_total ?? 0;
   const pluginSource = v.plugin_source;
   const pluginListError = v.plugin_list_error;
+  const dataSource = v.data_source;
+  const dataSourceNote = v.data_source_note;
   const checkedAt = v.checked_at ? new Date(v.checked_at) : null;
 
   const hasCriticalOrHigh = critical > 0 || high > 0;
@@ -118,7 +119,7 @@ export function SecurityVulnerabilities() {
       return {
         tone: 'ok' as const,
         headline: 'Your site has no known vulnerabilities and every plugin is current.',
-        body: `We checked ${pluginsChecked} installed plugins against the Wordfence vulnerability database (${feedEntries.toLocaleString()} total entries in the feed). Nothing to address right now — keep an eye on this page after future updates.`,
+        body: `We checked ${pluginsChecked} installed plugins. Wordfence ran ${scanFindingsTotal} scan finding${scanFindingsTotal === 1 ? '' : 's'} locally on the site and none matched known plugin CVEs. Nothing to address right now — keep an eye on this page after future updates.`,
       };
     }
     return {
@@ -434,18 +435,15 @@ export function SecurityVulnerabilities() {
               {pluginSource && <span style={{ marginLeft: 6, fontSize: 10, color: '#94A3B8' }}>(source: {pluginSource})</span>}
             </div>
             <div>
-              <strong>Wordfence feed:</strong>{' '}
-              <span style={{
-                color: wordfenceStatus === 'reachable' ? '#1D9E75' : wordfenceStatus === 'cached' ? '#D97706' : '#D85A30',
-                fontWeight: 600,
-              }}>
+              <strong>Wordfence on site:</strong>{' '}
+              <span style={{ color: wordfenceStatus === 'installed' ? '#1D9E75' : '#D97706', fontWeight: 600 }}>
                 {wordfenceStatus}
               </span>{' '}
-              · {feedEntries.toLocaleString()} total vulnerability entries
+              · {scanFindingsTotal} scan finding{scanFindingsTotal === 1 ? '' : 's'}
             </div>
-            {wordfenceError && (
-              <div style={{ color: '#D85A30' }}>
-                <strong>Wordfence error:</strong> <code style={{ fontSize: 11 }}>{wordfenceError}</code>
+            {dataSourceNote && (
+              <div style={{ fontSize: 10, color: '#94A3B8', lineHeight: 1.5, marginTop: 4 }}>
+                {dataSourceNote}
               </div>
             )}
             {pluginListError && (
