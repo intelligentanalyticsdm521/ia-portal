@@ -59,7 +59,7 @@ function expectedCtrForPosition(pos: number): number {
 }
 
 /* ── ARGUS Insight Box (shared across all modals) ── */
-function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, seoData, seoDecayData }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any; bingData?: any; seoData?: any; seoDecayData?: any }) {
+function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, seoData, seoDecayData, pluginData }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any; bingData?: any; seoData?: any; seoDecayData?: any; pluginData?: any }) {
   const sessions = d?.summary?.totalSessions || 255;
   const engaged = d?.engagement?.engagedSessions || 64;
   const engRate = formatPct(d?.engagement?.engagementRate || 0.251);
@@ -255,6 +255,24 @@ function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, 
         `The homepage receives 60% of all pageviews (188 of 345) but has a ${bounce} bounce rate — most visitors see only this one page. The homepage is functioning as a brochure, not a funnel.`,
         `Your /services page shows "Page not found" as its title in GA4 — this is a 404 error page that's receiving 16 views. Either the page was deleted or there's a broken link sending traffic to it.`,
         `The /contact page receives only 14 views from 255 sessions (5.5%) — meaning 94.5% of visitors never see your primary conversion page. Content is not guiding visitors toward contact.`,
+        // v2.0.7 — plugin-driven content observations
+        (() => {
+          const age = pluginData?.age;
+          if (!age) return '';
+          const total = (age.fresh?.count || 0) + (age.current?.count || 0) + (age.aging?.count || 0) + (age.stale?.count || 0);
+          if (total === 0) return '';
+          const staleRatio = (age.stale?.count || 0) / total;
+          const freshRatio = ((age.fresh?.count || 0) + (age.current?.count || 0)) / total;
+          return `Content freshness: ${age.fresh?.count || 0} pieces are under 30 days old, ${age.current?.count || 0} are 30-90 days, ${age.aging?.count || 0} are 90d-1y, and ${age.stale?.count || 0} are over a year old. ${staleRatio > 0.5 ? `More than half your library (${Math.round(staleRatio * 100)}%) is older than a year — stale content loses rankings to fresher competitors regardless of how good the original was.` : freshRatio > 0.6 ? `${Math.round(freshRatio * 100)}% of your library is under 90 days old — this is an above-average content-freshness signal to Google.` : `${Math.round(staleRatio * 100)}% of your content is over a year old. Refresh the top-traffic aging pages first — a date bump + new section often recovers lost rankings.`}`;
+        })(),
+        (() => {
+          const wc = pluginData?.wordCount;
+          const detail = pluginData?.seoDetail;
+          if (!wc?.buckets) return '';
+          const thinRatio = (wc.buckets.thin?.count || 0) / Math.max(1, wc.posts_counted || 1);
+          const avgSeoScore = pluginData?.seoAgg?.seo?.avg_seo_score || detail?.avg_readability || null;
+          return `Avg post depth is ${wc.avg_words || 0} words across ${wc.posts_counted || 0} posts. ${thinRatio > 0.3 ? `${Math.round(thinRatio * 100)}% of posts are under 500 words (thin content) — thin articles rarely rank for competitive terms.` : thinRatio < 0.1 ? 'Depth is strong — very few thin posts in the library.' : 'Post depth is balanced.'}${avgSeoScore ? ` Rank Math average SEO score across the library is ${Math.round(Number(avgSeoScore))}/100.` : ''}`;
+        })(),
         // Phase 3 Step 4.5 append — SE Ranking content decay observation
         seRankingConnected
           ? (decayingKeywords.length > 0 && biggestDecay
@@ -267,10 +285,32 @@ function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, 
         `Add a prominent CTA section above the fold on the homepage linking to /contact — currently only 5.5% of visitors reach the contact page.`,
         `Create 2-3 blog posts per month targeting your top GSC queries — this will create new entry points beyond the homepage and distribute traffic across more pages.`,
       ],
-    },
+    }, // close content
     presence: {
       observations: [
-        `Your overall business presence score is estimated at 45/100. Website performance scores 55 (moderate engagement, high bounce), search visibility scores 40 (position 22 with 0.21% CTR), and local presence scores ${gbpConnected ? `${Math.round((gbpAvgRating / 5) * 40 + Math.min(gbpNewReviews / 4, 1) * 30 + (gbpResponseRate / 100) * 30)}` : '35'} (${gbpConnected ? 'derived from live GBP data — rating, review velocity, response rate' : 'GBP connected but limited optimization'}).`,
+        (() => {
+          // v2.0.7 — recompute presence score blending plugin data + GBP + search
+          const wfOverall = pluginData?.wfFull?.overall_score ?? null;
+          const psi = pluginData?.psi || [];
+          const latestPsi = psi.length > 0 ? psi[psi.length - 1] : null;
+          const mobilePerf = latestPsi?.mobileScore ?? latestPsi?.mobile?.performance ?? null;
+          const avgSeoScore = pluginData?.seoAgg?.seo?.avg_seo_score ?? null;
+          const localScore = gbpConnected ? Math.round((gbpAvgRating / 5) * 40 + Math.min(gbpNewReviews / 4, 1) * 30 + (gbpResponseRate / 100) * 30) : 35;
+
+          // Weighted composite
+          const parts: Array<{ label: string; score: number | null; weight: number }> = [
+            { label: 'Performance', score: mobilePerf, weight: 20 },
+            { label: 'Security', score: wfOverall, weight: 20 },
+            { label: 'SEO content', score: avgSeoScore, weight: 20 },
+            { label: 'Search visibility', score: null /* TODO: compute from GSC */, weight: 20 },
+            { label: 'Local presence', score: localScore, weight: 20 },
+          ];
+          const usable = parts.filter((p) => p.score != null);
+          const total = usable.reduce((s, p) => s + p.weight, 0);
+          const composite = total > 0 ? Math.round(usable.reduce((s, p) => s + (p.score as number) * p.weight, 0) / total) : null;
+
+          return `Your overall business presence score is ${composite != null ? `${composite}/100` : 'still computing'}. ${usable.map((p) => `${p.label} ${p.score}`).join(' · ')}${!gbpConnected ? '. Connect GBP to fill in the local-presence component.' : ''}`;
+        })(),
         `Google Search Console shows connected status with real impression data, but Google Analytics was only recently connected — historical trend data will improve the accuracy of this score over time.`,
         `Bing and Apple Maps are not connected, representing blind spots in your presence assessment. Bing accounts for approximately 6-8% of US search traffic.`,
       ],
@@ -280,6 +320,56 @@ function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, 
         `Run a PageSpeed test on your site — Core Web Vitals directly impact both search rankings and the website performance component of your presence score.`,
       ],
     },
+
+    // v2.0.7 — Technical & Site Health, fully plugin-driven
+    tech: (() => {
+      const wfFull = pluginData?.wfFull || null;
+      const scanIssues = pluginData?.scanIssues || null;
+      const risk = pluginData?.risk?.plugins || [];
+      const psiSnapshots = pluginData?.psi || [];
+      const latestPsi = psiSnapshots.length > 0 ? psiSnapshots[psiSnapshots.length - 1] : null;
+      const mobilePerf = latestPsi?.mobileScore ?? latestPsi?.mobile?.performance ?? null;
+      const desktopPerf = latestPsi?.desktopScore ?? latestPsi?.desktop?.performance ?? null;
+      const crux = latestPsi?.mobile?.crux_origin || null;
+      const highRisk = risk.filter((p: any) => p.risk_band === 'high');
+      const stalePlugins = risk.filter((p: any) => p.days_since_last_update != null && p.days_since_last_update > 365);
+      const criticalFindings = (scanIssues?.issues || []).filter((i: any) => i.severity === 'critical' || i.severity === 'high').length;
+
+      return {
+        observations: [
+          // Performance observation
+          mobilePerf != null
+            ? `Mobile PageSpeed score is ${mobilePerf}${desktopPerf != null ? ` (desktop ${desktopPerf})` : ''}. ${mobilePerf >= 90 ? 'Excellent — your site is faster than 90% of the web on mobile.' : mobilePerf >= 75 ? 'Good, but there\'s meaningful room to improve before you\'re in the top tier.' : mobilePerf >= 50 ? 'Needs work — Google uses mobile speed as a ranking signal, and you\'re currently in the middle of the pack.' : 'Critical — your mobile speed is actively hurting rankings. Most users abandon a page that takes >3s to load.'}${crux?.lcp ? ` Real-user LCP sits at ${(crux.lcp.percentile / 1000).toFixed(2)}s at the 75th percentile (${crux.lcp.category}) — this is what Google actually uses to rank you.` : ''}`
+            : 'PageSpeed data is not available yet. The monthly PSI timer will capture your first snapshot on the 1st of next month, or click "Run test" on the Core Web Vitals page to trigger one now.',
+
+          // Security posture observation
+          wfFull?.installed
+            ? `Wordfence protection is at ${wfFull.overall_score ?? '—'}%. Firewall coverage is ${wfFull.firewall_score}% and scan coverage is ${wfFull.scan_score}%. Wordfence blocked ${(wfFull.blocked_attacks_30d_total || 0).toLocaleString()} attacks in the last 30 days${wfFull.top_countries?.[0] ? `, most from ${wfFull.top_countries[0].country}` : ''}. ${(wfFull.admin_2fa?.coverage_pct ?? 0) >= 100 ? 'All admin accounts have 2FA enabled.' : `${wfFull.admin_2fa?.with_2fa || 0} of ${wfFull.admin_2fa?.total_admins || 0} admin accounts have 2FA enabled — this is the single highest-impact security upgrade available.`}`
+            : 'Wordfence is not installed. Install it for firewall protection, malware scanning, and attack telemetry — this is standard practice for production WordPress sites.',
+
+          // Plugin freshness / risk observation
+          risk.length > 0
+            ? `${risk.length} plugins are installed. ${highRisk.length > 0 ? `${highRisk.length} are in the high-risk band (active, outdated, and/or not maintained upstream).` : 'No plugins are in the high-risk band.'} ${stalePlugins.length > 0 ? `${stalePlugins.length} plugins haven't had an upstream release in over a year — stale plugins are the #1 vector for future vulnerabilities.` : 'All plugins have recent upstream releases — good sign for future patch availability.'}`
+            : 'Plugin inventory is still loading.',
+
+          // Cross-source: scan findings + CrUX alignment
+          criticalFindings > 0
+            ? `Wordfence has detected ${criticalFindings} critical-or-high scan finding${criticalFindings === 1 ? '' : 's'} on your site. These are file-integrity, malware-signature, or suspicious-pattern matches — different from CVE matches on outdated plugins. Review the Security Overview page modal and remediate immediately.`
+            : (scanIssues?.installed ? 'No critical scan findings. Your file integrity, malware signatures, and suspicious-pattern checks are all clean.' : ''),
+        ].filter(Boolean),
+        actions: [
+          mobilePerf != null && mobilePerf < 75
+            ? `Review the Lighthouse Opportunities on Core Web Vitals — the top 3 suggestions typically account for 70-80% of potential score improvement. Focus on render-blocking resources and image optimization first.`
+            : `Keep the monthly PSI trend clean — schedule a Core Web Vitals review if mobile drops below 80 for two months in a row.`,
+          (wfFull?.admin_2fa?.coverage_pct ?? 100) < 100
+            ? `Enable 2FA for all admin accounts this week. Go to WP Admin → Login Security and enroll every administrator — this blocks 99%+ of account takeovers even if a password leaks.`
+            : 'Rotate admin passwords quarterly and run a review of inactive admin accounts annually.',
+          highRisk.length > 0
+            ? `Update the ${highRisk.length} high-risk plugin${highRisk.length === 1 ? '' : 's'} from Website → Plugins. If any are unmaintained upstream, consider replacing them with actively-developed alternatives.`
+            : `Keep the monthly update cadence — run plugin/theme updates at least once a month, and apply security patches the week they drop.`,
+        ],
+      };
+    })(),
 
     local: {
       observations: [
@@ -347,7 +437,7 @@ function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, 
 }
 
 /* ── Modal content renderer ── */
-function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?: { gbp?: any; reviews?: any; posts?: any; qanda?: any }, bingData?: any, seoData?: any, seoDecayData?: any) {
+function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?: { gbp?: any; reviews?: any; posts?: any; qanda?: any }, bingData?: any, seoData?: any, seoDecayData?: any, pluginData?: any) {
   switch (reportKey) {
     case 'visibility': {
   const sessions = d?.summary?.totalSessions || 255;
@@ -1687,7 +1777,7 @@ function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?
 }
 
 /* ── Report Modal ── */
-function ReportModal({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, seoData, seoDecayData, onClose }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any; bingData?: any; seoData?: any; seoDecayData?: any; onClose: () => void }) {
+function ReportModal({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, seoData, seoDecayData, pluginData, onClose }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any; bingData?: any; seoData?: any; seoDecayData?: any; pluginData?: any; onClose: () => void }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
       <div style={{ background: '#fff', borderRadius: 12, maxWidth: 900, width: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
@@ -1702,10 +1792,10 @@ function ReportModal({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpP
 
         {/* Scrollable body */}
         <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-          {renderModalContent(reportKey, d, searchData, { gbp: gbpData, reviews: gbpReviews, posts: gbpPosts, qanda: gbpQanda }, bingData, seoData, seoDecayData)}
+          {renderModalContent(reportKey, d, searchData, { gbp: gbpData, reviews: gbpReviews, posts: gbpPosts, qanda: gbpQanda }, bingData, seoData, seoDecayData, pluginData)}
 
           {/* ARGUS Insight Box — always last */}
-          <ArgusInsightBox reportKey={reportKey} data={d} searchData={searchData} gbpData={gbpData} gbpReviews={gbpReviews} gbpPosts={gbpPosts} gbpQanda={gbpQanda} bingData={bingData} seoData={seoData} seoDecayData={seoDecayData} />
+          <ArgusInsightBox reportKey={reportKey} data={d} searchData={searchData} gbpData={gbpData} gbpReviews={gbpReviews} gbpPosts={gbpPosts} gbpQanda={gbpQanda} bingData={bingData} seoData={seoData} seoDecayData={seoDecayData} pluginData={pluginData} />
         </div>
 
         {/* Sticky footer */}
@@ -1731,6 +1821,8 @@ export function IAInsightsReports() {
   const [bingData, setBingData] = React.useState<any>(null);
   const [seoData, setSeoData] = React.useState<any>(null);
   const [seoDecayData, setSeoDecayData] = React.useState<any>(null);
+  // v2.0.7 — IA Plugin cross-source data
+  const [pluginData, setPluginData] = React.useState<any>(null);
 
   // Fetch GSC performance (all dimensions) alongside GA4 data so the Search Intelligence modal
   // and ARGUS insight box can render real numbers.
@@ -1770,6 +1862,39 @@ export function IAInsightsReports() {
     return () => { cancelled = true; };
   }, [activeSiteId, arionApi]);
 
+  // v2.0.7 — fetch IA Plugin analytics bundle so every IA Insights report has
+  // cross-source visibility into security, performance, content freshness,
+  // schema coverage, and plugin inventory.
+  React.useEffect(() => {
+    if (!activeSiteId) { setPluginData(null); return; }
+    let cancelled = false;
+    Promise.all([
+      arionApi.getPluginWordfenceFull(activeSiteId).catch(() => null),
+      arionApi.getPluginScanIssues(activeSiteId).catch(() => null),
+      arionApi.getPluginContentPace(activeSiteId).catch(() => null),
+      arionApi.getPluginContentAgeDist(activeSiteId).catch(() => null),
+      arionApi.getPluginContentWordCountDist(activeSiteId).catch(() => null),
+      arionApi.getPluginContentSeoDetail(activeSiteId).catch(() => null),
+      arionApi.getPluginRiskAnalysis(activeSiteId).catch(() => null),
+      arionApi.getPluginContentAggregate(activeSiteId).catch(() => null),
+      arionApi.getPagespeedHistory(activeSiteId).catch(() => null),
+    ]).then(([wfFull, scanIssues, pace, age, wc, seoDetail, risk, seoAgg, psi]) => {
+      if (cancelled) return;
+      setPluginData({
+        wfFull: (wfFull as any)?.data || null,
+        scanIssues: (scanIssues as any)?.data || null,
+        pace: (pace as any)?.data || null,
+        age: (age as any)?.data || null,
+        wordCount: (wc as any)?.data || null,
+        seoDetail: (seoDetail as any)?.data || null,
+        risk: (risk as any)?.data || null,
+        seoAgg: (seoAgg as any)?.data || null,
+        psi: (psi as any)?.data?.snapshots || [],
+      });
+    });
+    return () => { cancelled = true; };
+  }, [activeSiteId, arionApi]);
+
   // Phase 3 Step 4.5: fetch SE Ranking rankings + decay data for Search Intelligence,
   // Content Intelligence, and Business Presence Score modals.
   React.useEffect(() => {
@@ -1800,8 +1925,8 @@ export function IAInsightsReports() {
     // Row 2
     { key: 'content', title: 'Content Intelligence', desc: 'Which content earns its place and which is wasted effort', color: 'rgba(12,74,96,0.8)', hasData: true },
     { key: 'local', title: 'Local Presence & Reputation', desc: 'How your business appears in Google Maps, local search, and review platforms — and whether that presence is building or losing trust', color: '#2D9CDB', hasData: gbpConnectedLive, statusText: gbpConnectedLive ? undefined : 'Requires Google Business Profile connection' },
-    { key: 'tech', title: 'Technical & Site Health', desc: 'PageSpeed, Core Web Vitals, security, uptime, and SEO health across your website infrastructure', color: '#EF6C33', hasData: false, statusText: 'Partial — more data available with IA Plugin' },
-    { key: 'presence', title: 'Business Presence Score', desc: 'Your holistic online health across search, maps, website, and reviews', color: '#999', hasData: false },
+    { key: 'tech', title: 'Technical & Site Health', desc: 'PageSpeed, Core Web Vitals, security, uptime, and SEO health across your website infrastructure', color: '#EF6C33', hasData: true },
+    { key: 'presence', title: 'Business Presence Score', desc: 'Your holistic online health across search, maps, website, and reviews', color: '#999', hasData: true },
   ];
 
   return (
@@ -1879,14 +2004,30 @@ export function IAInsightsReports() {
                   ))}
                 </div>
               ) : r.key === 'tech' ? (
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
-                  {[{ label: 'Speed', color: '#ccc' }, { label: 'Audit', color: '#ccc' }, { label: 'Index', color: '#ccc' }, { label: 'Plugin', color: '#ccc' }].map(dot => (
-                    <div key={dot.label} style={{ textAlign: 'center' }}>
-                      <div style={{ width: 9, height: 9, borderRadius: '50%', background: dot.color, margin: '0 auto 2px' }} />
-                      <div style={{ fontSize: 8, color: '#5A7A8A' }}>{dot.label}</div>
+                (() => {
+                  const psi: any[] = pluginData?.psi || [];
+                  const latestPsi = psi.length > 0 ? psi[psi.length - 1] : null;
+                  const mobilePerf = latestPsi?.mobileScore ?? latestPsi?.mobile?.performance ?? null;
+                  const wfOverall = pluginData?.wfFull?.overall_score ?? null;
+                  const riskPlugins = pluginData?.risk?.plugins || [];
+                  const highRisk = riskPlugins.filter((p: any) => p.risk_band === 'high').length;
+                  const bandColor = (s: number | null, good = 80, ok = 50) => s == null ? '#ccc' : s >= good ? '#1D9E75' : s >= ok ? '#D4A800' : '#D85A30';
+                  return (
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
+                      {[
+                        { label: 'Speed', color: bandColor(mobilePerf) },
+                        { label: 'Security', color: bandColor(wfOverall) },
+                        { label: 'Plugins', color: highRisk === 0 ? '#1D9E75' : highRisk <= 2 ? '#D4A800' : '#D85A30' },
+                        { label: 'Index', color: searchData?.summary?.impressions > 0 ? '#1D9E75' : '#ccc' },
+                      ].map(dot => (
+                        <div key={dot.label} style={{ textAlign: 'center' }}>
+                          <div style={{ width: 9, height: 9, borderRadius: '50%', background: dot.color, margin: '0 auto 2px' }} />
+                          <div style={{ fontSize: 8, color: '#5A7A8A' }}>{dot.label}</div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  );
+                })()
               ) : (
                 Array.from({ length: 20 }).map((_, i) => (
                   <div key={i} style={{ flex: 1, background: r.color, opacity: 0.2 + Math.random() * 0.8, height: `${15 + Math.random() * 85}%` }} />
@@ -1912,7 +2053,7 @@ export function IAInsightsReports() {
       <ConsultingUpsell headline="Want IA to interpret your reports and build a growth plan?" subtext="Strategy sessions with your data." serviceType="Analytics Consulting" triggerPage="ia-insights" />
 
       {/* Modal */}
-      {activeModal && <ReportModal reportKey={activeModal} data={data} searchData={searchData} gbpData={gbpData} gbpReviews={gbpReviews} gbpPosts={gbpPosts} gbpQanda={gbpQanda} bingData={bingData} seoData={seoData} seoDecayData={seoDecayData} onClose={() => setActiveModal(null)} />}
+      {activeModal && <ReportModal reportKey={activeModal} data={data} searchData={searchData} gbpData={gbpData} gbpReviews={gbpReviews} gbpPosts={gbpPosts} gbpQanda={gbpQanda} bingData={bingData} seoData={seoData} seoDecayData={seoDecayData} pluginData={pluginData} onClose={() => setActiveModal(null)} />}
     </div>
   );
 }
