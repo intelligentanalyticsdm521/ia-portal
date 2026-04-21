@@ -340,6 +340,17 @@ export function SecurityOverview() {
         <div style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 14, lineHeight: 1.5 }}>
           These settings tighten your site's security. ARION only allows you to <strong>enable</strong> protections here — to disable any of them you must go to the Wordfence admin directly. This keeps your site safe from accidental misconfigurations.
         </div>
+        <div style={{ marginBottom: 14, padding: 12, background: '#EFF6FF', borderLeft: '3px solid #0284c7', borderRadius: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div style={{ fontSize: 12, color: '#0B1C24', lineHeight: 1.5, flex: 1 }}>
+            <strong>One-click IA Recommended</strong> — enables every setting below at once + applies IA defaults to LiteSpeed, Rank Math, SMTP, and Safe SVG. Runs a fresh PageSpeed test too. This is also the "Restore Defaults" action available on Website Overview.
+          </div>
+          <a
+            href="/app/services/arion_website_overview"
+            style={{ padding: '8px 14px', fontSize: 11, fontWeight: 600, background: '#0B1C24', color: '#fff', border: 'none', borderRadius: 5, textDecoration: 'none', whiteSpace: 'nowrap' }}
+          >
+            Apply All IA Defaults →
+          </a>
+        </div>
         {configNotice && (
           <div style={{ padding: '8px 12px', marginBottom: 12, background: '#F0FDF4', borderLeft: '3px solid #1D9E75', borderRadius: 4, fontSize: 12, color: '#065F46' }}>
             {configNotice}

@@ -1518,6 +1518,29 @@ export async function purgePluginCache(p: { baseUrl: string; bearerToken: string
     body: {},
   });
 }
+// v2.0.10 — Full LiteSpeed config + one-click apply-defaults
+export async function getPluginLitespeedConfig(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<{ installed: boolean; current: Record<string, any>; ia_recommended: Record<string, any>; has_quic_cloud?: boolean }>>({
+    ...p,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/litespeed/config`,
+  });
+}
+export async function setPluginLitespeedConfig(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; body: { settings?: Record<string, any>; apply_ia_defaults?: boolean } }) {
+  return requestJson<PluginEnvelope<{ applied: Record<string, any>; applied_count: number }>>({
+    ...p,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/litespeed/config`,
+    body: p.body,
+  });
+}
+export async function applyPluginIADefaults(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<PluginEnvelope<{ applied_at: string; results: Record<string, { applied: number; total?: number; errors?: string[]; skipped?: string }> }>>({
+    ...p,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/onboarding/apply-defaults`,
+    body: {},
+  });
+}
 export async function getPluginContentPace(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<PluginEnvelope<{ months: Array<{ month: string; posts: number; pages: number }> }>>({ ...p, path: `/arion/sites/${encodeURIComponent(p.siteId)}/plugin/content/publishing-pace` });
 }

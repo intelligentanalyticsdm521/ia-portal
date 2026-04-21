@@ -1,9 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import {
   Card, HealthRow, Loading, EmptyPanel, SidebarCard, ConsultingUpsell,
-  HealthScoreRing,
+  HealthScoreRing, DetailsModal,
 } from '../../components/Ui';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
@@ -19,6 +19,9 @@ import {
  */
 export function WebsiteOverview() {
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [applyBusy, setApplyBusy] = useState(false);
+  const [applyResult, setApplyResult] = useState<any>(null);
 
   const siteId = activeSiteId;
   const fetchIfId = <T,>(fn: (s: string) => Promise<T>) =>
@@ -142,6 +145,20 @@ export function WebsiteOverview() {
     return `Your website needs immediate attention. Address the lowest-scoring areas now.${missingNote}`;
   })();
 
+  const handleApplyDefaults = async () => {
+    if (!activeSiteId || applyBusy) return;
+    setApplyBusy(true);
+    setApplyResult(null);
+    try {
+      const res: any = await arionApi.applyPluginIADefaults(activeSiteId);
+      setApplyResult(res?.data || { results: {} });
+    } catch (err: any) {
+      setApplyResult({ error: err?.message || 'Unknown error' });
+    } finally {
+      setApplyBusy(false);
+    }
+  };
+
   return (
     <div>
       {!pluginConnected && (
@@ -150,6 +167,20 @@ export function WebsiteOverview() {
           <span style={{ marginLeft: 10, color: '#0B1C24', fontSize: 12 }}>
             Some live data will fall back to the most recent snapshot.
           </span>
+        </div>
+      )}
+
+      {/* IA Defaults action bar — applies recommended config across every
+          protected plugin (LiteSpeed, Wordfence, Rank Math, WP Mail SMTP,
+          Safe SVG) and triggers a fresh PageSpeed run */}
+      {pluginConnected && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+          <button
+            onClick={() => setApplyOpen(true)}
+            style={{ padding: '8px 16px', fontSize: 12, fontWeight: 600, background: '#fff', color: '#0B1C24', border: '1px solid #CBD5E1', borderRadius: 6, cursor: 'pointer' }}
+          >
+            ⚙ Apply IA Defaults
+          </button>
         </div>
       )}
 
@@ -422,6 +453,65 @@ export function WebsiteOverview() {
       />
 
       {psL && <div style={{ padding: 6, fontSize: 11, color: '#94A3B8' }}>Checking plugin status…</div>}
+
+      {/* Apply / Restore IA Defaults modal */}
+      <DetailsModal
+        open={applyOpen}
+        onClose={() => { setApplyOpen(false); setApplyResult(null); }}
+        eyebrow="Site configuration"
+        title="Apply IA Defaults"
+        width={720}
+      >
+        <div style={{ fontSize: 13, color: '#0B1C24', lineHeight: 1.6, marginBottom: 14 }}>
+          This applies IA's recommended configuration across every managed plugin. Safe to run any time — this is also the "Restore Defaults" action if someone has changed settings you want back.
+        </div>
+        <div style={{ background: '#F8FAFC', padding: 14, borderRadius: 6, marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>What this does</div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: '#5A7A8A', lineHeight: 1.8 }}>
+            <li><strong>LiteSpeed Cache</strong> — page + mobile + browser cache, CSS/JS minify, image optimization + WebP, lazy-load, DB cleanup (~30 settings)</li>
+            <li><strong>Wordfence</strong> — firewall ON, brute-force protection, require 2FA for admins, all scans enabled, block fake bots, hide WP version (~20 settings)</li>
+            <li><strong>Rank Math SEO</strong> — headless support, readability analysis, sitemap generation</li>
+            <li><strong>WP Mail SMTP</strong> — sets From email/name to your admin email + site name (doesn't touch SMTP credentials)</li>
+            <li><strong>Safe SVG</strong> — verifies active</li>
+            <li><strong>PageSpeed test</strong> — fires a fresh mobile + desktop run so you see the before/after impact</li>
+          </ul>
+        </div>
+        {applyResult && !applyResult.error && (
+          <div style={{ background: '#F0FDF4', borderLeft: '3px solid #1D9E75', padding: 12, borderRadius: 4, marginBottom: 12, fontSize: 12 }}>
+            <strong style={{ color: '#065F46' }}>✓ Defaults applied at {new Date(applyResult.applied_at || Date.now()).toLocaleTimeString()}</strong>
+            <div style={{ marginTop: 8, fontSize: 11, color: '#0B1C24' }}>
+              {Object.entries(applyResult.results || {}).map(([name, r]: any) => (
+                <div key={name} style={{ padding: '2px 0' }}>
+                  <strong style={{ textTransform: 'capitalize' }}>{name.replace(/_/g, ' ')}:</strong>{' '}
+                  {r.skipped ? <span style={{ color: '#94A3B8' }}>{r.skipped.replace(/_/g, ' ')}</span>
+                    : <span>{r.applied || 0}{r.total ? ` / ${r.total}` : ''} settings applied{r.errors?.length ? `, ${r.errors.length} error(s)` : ''}</span>}
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 10, fontSize: 11, color: '#5A7A8A' }}>A fresh PageSpeed run has been queued. Check the Core Web Vitals page in ~90 seconds.</div>
+          </div>
+        )}
+        {applyResult?.error && (
+          <div style={{ background: '#FEF2F2', borderLeft: '3px solid #D85A30', padding: 12, borderRadius: 4, marginBottom: 12, fontSize: 12, color: '#991B1B' }}>
+            {applyResult.error}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button
+            onClick={() => { setApplyOpen(false); setApplyResult(null); }}
+            style={{ padding: '8px 16px', fontSize: 12, fontWeight: 600, background: '#fff', color: '#0B1C24', border: '1px solid #CBD5E1', borderRadius: 6, cursor: 'pointer' }}
+          >
+            Close
+          </button>
+          <button
+            onClick={handleApplyDefaults}
+            disabled={applyBusy}
+            style={{ padding: '8px 18px', fontSize: 12, fontWeight: 600, background: '#0B1C24', color: '#fff', border: 'none', borderRadius: 6, cursor: applyBusy ? 'not-allowed' : 'pointer', opacity: applyBusy ? 0.5 : 1 }}
+          >
+            {applyBusy ? 'Applying…' : (applyResult ? 'Run again' : 'Apply Defaults')}
+          </button>
+        </div>
+      </DetailsModal>
     </div>
   );
 }
