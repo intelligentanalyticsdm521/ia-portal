@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { useAccessToken } from '../../auth/useAccessToken';
-import { connectGoogle, getGoogleProperties, selectGoogleProperties, listArionSites } from '../../lib/arionApi';
+import { connectGoogle, getGoogleProperties, selectGoogleProperties, listArionSites, listGbpLocations, selectGbpLocation, disconnectGbp } from '../../lib/arionApi';
 
 /* ------------------------------------------------------------------ */
 /*  Types & constants                                                  */
@@ -693,7 +693,6 @@ function ConnectedAccountsTab() {
   type Integration = { key: string; name: string; connected: boolean; sharesGoogleAuth: boolean; comingSoon: boolean };
   const OTHER_INTEGRATIONS: Integration[] = [
     { key: 'gsc', name: 'Google Search Console', connected: gaConnected, sharesGoogleAuth: true, comingSoon: false },
-    { key: 'gbp', name: 'Google Business Profile', connected: gaConnected, sharesGoogleAuth: true, comingSoon: false },
     { key: 'abc', name: 'Apple Business Connect', connected: false, sharesGoogleAuth: false, comingSoon: true },
   ];
 
@@ -868,6 +867,16 @@ function ConnectedAccountsTab() {
             </div>
           </div>
         ))}
+
+        {/* Google Business Profile — has its own location picker for security.
+            Separate from the shared-Google-OAuth flow because each tenant must
+            explicitly choose WHICH GBP listing belongs to this site. */}
+        <GbpIntegrationCard
+          siteId={siteId}
+          gaConnected={gaConnected}
+          gaConnecting={gaConnecting}
+          onConnectGoogle={handleGoogleConnect}
+        />
       </div>
 
       {/* Google property selector modal */}
@@ -894,6 +903,190 @@ function ConnectedAccountsTab() {
 interface NotifRule {
   key: string;
   label: string;
+}
+
+/* ------------------------------------------------------------------ */
+/*  GBP Integration Card — explicit location picker (security fix)     */
+/* ------------------------------------------------------------------ */
+
+function GbpIntegrationCard({ siteId, gaConnected, gaConnecting, onConnectGoogle }: {
+  siteId: string | null;
+  gaConnected: boolean;
+  gaConnecting: boolean;
+  onConnectGoogle: () => void;
+}) {
+  const { activeTenantId } = useAppState();
+  const { getToken } = useAccessToken();
+  const apiBaseUrl = import.meta.env.VITE_ARION_API_BASE_URL as string;
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [locations, setLocations] = useState<any[]>([]);
+  const [currentlySelected, setCurrentlySelected] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [savedTitle, setSavedTitle] = useState<string | null>(null);
+
+  const openPicker = useCallback(async () => {
+    if (!siteId || !activeTenantId) return;
+    setPickerOpen(true);
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      const token = await getToken();
+      const res = await listGbpLocations({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+      setLocations(res.data.locations || []);
+      setCurrentlySelected(res.data.currently_selected);
+      setSuggestion(res.data.suggestion);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to load locations');
+    } finally {
+      setLoading(false);
+    }
+  }, [siteId, activeTenantId, apiBaseUrl, getToken]);
+
+  const handleSelect = useCallback(async (locationName: string) => {
+    if (!siteId || !activeTenantId) return;
+    setSaving(locationName);
+    setErrorMsg(null);
+    try {
+      const token = await getToken();
+      const res = await selectGbpLocation({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId, locationName });
+      setCurrentlySelected(locationName);
+      setSavedTitle(res.data.title);
+      setTimeout(() => { setPickerOpen(false); setSavedTitle(null); }, 1500);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to save location');
+    } finally {
+      setSaving(null);
+    }
+  }, [siteId, activeTenantId, apiBaseUrl, getToken]);
+
+  const handleDisconnect = useCallback(async () => {
+    if (!siteId || !activeTenantId) return;
+    if (!confirm('Disconnect Google Business Profile? You will need to reconnect via Google OAuth to use GBP again.')) return;
+    try {
+      const token = await getToken();
+      await disconnectGbp({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+      setCurrentlySelected(null);
+      window.location.reload();
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to disconnect');
+    }
+  }, [siteId, activeTenantId, apiBaseUrl, getToken]);
+
+  return (
+    <>
+      <div className="rounded-lg border bg-white p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-gray-900">Google Business Profile</div>
+            <div className="mt-1 flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${gaConnected ? 'bg-green-500' : 'bg-gray-300'}`} />
+              <span className="text-xs text-gray-500">{gaConnected ? 'Connected' : 'Not connected'}</span>
+            </div>
+            <div className="mt-1 text-[10px] text-gray-400">Uses the same Google connection as Analytics</div>
+            {gaConnected && (
+              <div className="mt-1 text-[10px] text-blue-600">⚠ Each site must explicitly select its GBP location</div>
+            )}
+          </div>
+          <div className="flex flex-col gap-2">
+            {gaConnected && (
+              <button
+                type="button"
+                onClick={openPicker}
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Select Business
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={gaConnecting || !siteId}
+              onClick={onConnectGoogle}
+              title={gaConnected ? 'Re-run Google OAuth (use a different account if needed)' : 'Start Google OAuth'}
+              className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+            >
+              {gaConnecting ? 'Connecting...' : gaConnected ? 'Reconnect' : 'Connect'}
+            </button>
+            {gaConnected && (
+              <button
+                type="button"
+                onClick={handleDisconnect}
+                className="text-[10px] text-red-600 hover:underline"
+              >
+                Disconnect
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {pickerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setPickerOpen(false)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-[94vw] max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b">
+              <div className="text-xs uppercase text-gray-500 tracking-wide">Google Business Profile</div>
+              <div className="text-base font-bold text-gray-900 mt-0.5">Select the business for this site</div>
+              <div className="text-xs text-gray-500 mt-1">Pick the GBP listing that represents this website. ARION will only show data for the listing you select.</div>
+            </div>
+            <div className="flex-1 overflow-auto px-5 py-4">
+              {loading ? (
+                <div className="text-sm text-gray-500 py-4 text-center">Loading your GBP listings...</div>
+              ) : errorMsg ? (
+                <div className="bg-red-50 border-l-4 border-red-500 text-red-800 text-sm p-3 rounded">{errorMsg}</div>
+              ) : locations.length === 0 ? (
+                <div className="text-sm text-gray-500 py-4 text-center">No GBP listings found on this Google account. If you manage your business on a different account, click Reconnect with that account.</div>
+              ) : (
+                <div className="space-y-2">
+                  {locations.map((loc) => {
+                    const isCurrent = currentlySelected === loc.location_name;
+                    const isSuggested = suggestion === loc.location_name;
+                    const isSaving = saving === loc.location_name;
+                    return (
+                      <div key={loc.location_name} className={`rounded-lg border p-3 ${isCurrent ? 'border-green-500 bg-green-50' : isSuggested ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-gray-900">{loc.title}</span>
+                              {isSuggested && !isCurrent && <span className="text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded">Suggested (domain match)</span>}
+                              {isCurrent && <span className="text-[10px] bg-green-600 text-white px-1.5 py-0.5 rounded">✓ Currently selected</span>}
+                            </div>
+                            {loc.address && <div className="text-xs text-gray-600 mt-0.5">{loc.address}</div>}
+                            {loc.website_uri && <div className="text-xs text-gray-500 mt-0.5">{loc.website_uri}</div>}
+                            {loc.category && <div className="text-[10px] text-gray-500 mt-0.5">{loc.category}</div>}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={isSaving || isCurrent}
+                            onClick={() => handleSelect(loc.location_name)}
+                            className={`rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap ${isCurrent ? 'bg-gray-200 text-gray-500 cursor-default' : 'bg-black text-white hover:bg-gray-800'} disabled:opacity-50`}
+                          >
+                            {isSaving ? 'Saving...' : isCurrent ? 'Selected' : 'Select'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {savedTitle && (
+                <div className="mt-3 bg-green-50 border-l-4 border-green-500 text-green-800 text-sm p-3 rounded">
+                  ✓ Saved. Now showing data for "{savedTitle}".
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t bg-gray-50 flex justify-between items-center">
+              <div className="text-[10px] text-gray-500">
+                Don't see your business? Click Reconnect to switch Google accounts.
+              </div>
+              <button onClick={() => setPickerOpen(false)} className="text-sm text-gray-600 hover:underline">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 const NOTIF_RULES: NotifRule[] = [

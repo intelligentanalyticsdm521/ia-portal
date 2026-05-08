@@ -1539,6 +1539,30 @@ export async function setPluginLitespeedConfig(p: { baseUrl: string; bearerToken
     body: p.body,
   });
 }
+// v2.0.13 GBP location picker (security: no auto-resolve)
+export async function listGbpLocations(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<{ data: { locations: any[]; currently_selected: string | null; site_domain: string; suggestion: string | null } }>({
+    ...p,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/gbp/locations`,
+  });
+}
+export async function selectGbpLocation(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; locationName: string }) {
+  return requestJson<{ data: { selected: string; title: string; address: string; website_uri: string } }>({
+    ...p,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/gbp/select-location`,
+    body: { location_name: p.locationName },
+  });
+}
+export async function disconnectGbp(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<{ data: { disconnected: boolean } }>({
+    ...p,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/gbp/disconnect`,
+    body: {},
+  });
+}
+
 export async function applyPluginIADefaults(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<PluginEnvelope<{ applied_at: string; results: Record<string, { applied: number; total?: number; errors?: string[]; skipped?: string }> }>>({
     ...p,
