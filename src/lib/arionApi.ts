@@ -223,6 +223,8 @@ function safeJsonParse(text: string): unknown {
   }
 }
 
+// v2.0.12: plugin apply-defaults + PSI runs can take 30-60s. Allow callers
+// to override the default 20s timeout for known-slow endpoints.
 function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 20000): Promise<Response> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -243,8 +245,12 @@ async function requestJson<T>(params: {
   tenantId: string;
   method?: string;
   body?: unknown;
+  timeoutMs?: number;
 }): Promise<T> {
   const url = `${normalizeBaseUrl(params.baseUrl)}${params.path}`;
+  // v2.0.12: auto-extend timeout for known-slow plugin POST endpoints
+  const slowPaths = ['/onboarding/apply-defaults', '/litespeed/config', '/hosting/pagespeed'];
+  const defaultTimeout = slowPaths.some((p) => params.path.includes(p)) ? 60_000 : 20_000;
   const res = await fetchWithTimeout(url, {
     method: params.method || 'GET',
     headers: {
@@ -253,7 +259,7 @@ async function requestJson<T>(params: {
       'x-tenant-key': params.tenantId
     },
     body: params.body === undefined ? undefined : JSON.stringify(params.body)
-  });
+  }, params.timeoutMs || defaultTimeout);
 
   const text = await res.text();
   const body = text ? safeJsonParse(text) : null;

@@ -97,8 +97,11 @@ export function WebsiteOverview() {
     scores.push({ weight: 25, value: wfOverall, label: 'security' });
     // Performance
     scores.push({ weight: 25, value: typeof mobilePerf === 'number' ? mobilePerf : null, label: 'performance' });
-    // SEO
-    scores.push({ weight: 20, value: seoData?.avg_seo_score ?? null, label: 'seo' });
+    // SEO — content-aggregate response is { summary, seo }, so go via seoData.seo
+    // Fall back to completeness-based coverage_score when posts haven't been
+    // re-saved in the editor yet (so no rank_math_seo_score).
+    const seoVal = seoData?.seo?.avg_seo_score ?? seoData?.seo?.coverage_score ?? null;
+    scores.push({ weight: 20, value: seoVal, label: 'seo' });
     // Content — score based on recency (paceData last month has posts?)
     const contentScore = (() => {
       if (!paceData || paceData.length === 0) return null;
