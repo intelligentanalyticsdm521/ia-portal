@@ -114,3 +114,24 @@ export async function pollByodStatus(domain: string) {
   if (!res.ok) throw new Error(data?.error?.message || 'failed');
   return data.data as { domain: string; verified: boolean; nameservers: string[]; checked_at: string };
 }
+
+// ---------------------------------------------------------------------------
+// Session info (post-checkout context for OnboardingFlow)
+// ---------------------------------------------------------------------------
+export interface SignupSessionInfo {
+  email: string;
+  plan: { key: string; name: string; description: string | null };
+  billing_cycle: BillingCycle;
+  tenant_status: string;
+  site: { domain: string | null; provisioning_state: string | null };
+  saved_questionnaire: Record<string, unknown> | null;
+  saved_domain: { mode: DomainMode; domain: string; pricePerYear?: number } | null;
+  already_submitted: boolean;
+}
+
+export async function fetchSessionInfo(sessionId: string): Promise<SignupSessionInfo> {
+  const res = await fetch(`${API_BASE}/onboarding/session-info?session_id=${encodeURIComponent(sessionId)}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status}`);
+  return data.data as SignupSessionInfo;
+}

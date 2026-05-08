@@ -22,9 +22,11 @@ import {
   checkDomainAvailability,
   startByodVerification,
   pollByodStatus,
+  fetchSessionInfo,
   type DomainCheckResult,
   type DomainMode,
   type ByodInstructions,
+  type SignupSessionInfo,
 } from '../../lib/onboardingApi';
 
 type Step = 'domain' | 'questionnaire' | 'branding' | 'submitting';
@@ -58,6 +60,8 @@ export function OnboardingFlow() {
 
   const [step, setStep] = useState<Step>('domain');
   const [domain, setDomain] = useState<DomainSelection | null>(null);
+  const [sessionInfo, setSessionInfo] = useState<SignupSessionInfo | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<QuestionnaireAnswers>({
     businessName: '',
     industry: '',
@@ -72,17 +76,59 @@ export function OnboardingFlow() {
     tagline: '',
   });
 
-  // Restore progress on reload
+  // Fetch session context (plan, prior progress) on mount.
+  // Stripe webhooks can take a few seconds — retry up to 5 times.
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+    let attempt = 0;
+    async function load() {
+      while (!cancelled && attempt < 5) {
+        try {
+          const info = await fetchSessionInfo(sessionId);
+          if (!cancelled) {
+            setSessionInfo(info);
+            // Hydrate from server-saved progress (overrides localStorage if present)
+            if (info.saved_questionnaire) {
+              setAnswers((a) => ({ ...a, ...(info.saved_questionnaire as Partial<QuestionnaireAnswers>) }));
+            }
+            if (info.saved_domain) {
+              setDomain(info.saved_domain as DomainSelection);
+            }
+            // If they already submitted, jump to status page instead
+            if (info.already_submitted) {
+              window.location.href = `/signup/status?session_id=${encodeURIComponent(sessionId)}`;
+              return;
+            }
+          }
+          return;
+        } catch (err) {
+          attempt += 1;
+          if (attempt >= 5) {
+            if (!cancelled) setSessionError((err as Error).message);
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 1500 * attempt));
+        }
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
+  // Restore progress from localStorage (fallback if server didn't have it)
   useEffect(() => {
     const saved = localStorage.getItem(`iadm_onboarding_${sessionId}`);
     if (saved) {
       try {
         const data = JSON.parse(saved);
-        if (data.domain) setDomain(data.domain);
+        if (data.domain && !domain) setDomain(data.domain);
         if (data.answers) setAnswers((a) => ({ ...a, ...data.answers }));
         if (data.step) setStep(data.step);
       } catch { /* ignore */ }
     }
+    // Intentionally only run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   // Persist on every change
@@ -102,9 +148,19 @@ export function OnboardingFlow() {
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white">
         <div className="mx-auto max-w-3xl px-6 py-4 flex items-center justify-between">
-          <span className="text-xl font-bold text-gray-900">Intelligent Analytics</span>
+          <div>
+            <span className="text-xl font-bold text-gray-900">Intelligent Analytics</span>
+            {sessionInfo && (
+              <span className="ml-3 inline-flex items-center rounded-full bg-[#EF6C33]/10 px-3 py-1 text-xs font-medium text-[#EF6C33]">
+                {sessionInfo.plan.name} · {sessionInfo.billing_cycle}
+              </span>
+            )}
+          </div>
           <StepIndicator current={step} />
         </div>
+        {sessionError && (
+          <div className="mx-auto max-w-3xl px-6 py-2 text-xs text-red-600">{sessionError}</div>
+        )}
       </header>
 
       <main className="mx-auto max-w-3xl px-6 py-12">
