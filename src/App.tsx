@@ -21,6 +21,11 @@ import { PersonalSettings } from './pages/settings/PersonalSettings';
 // NEW: SPARK pricing page route
 import { SparkPricingPage } from './pages/spark/SparkPricingPage';
 
+// Public signup flow
+import { SignupPage } from './pages/signup/SignupPage';
+import { OnboardingFlow } from './pages/signup/OnboardingFlow';
+import { ProvisioningStatus } from './pages/signup/ProvisioningStatus';
+
 export function App() {
   return (
     <BrowserRouter>
@@ -29,6 +34,11 @@ export function App() {
           {/* Public routes */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
+
+          {/* Public signup flow — unauthenticated end-to-end */}
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/signup/onboarding" element={<OnboardingFlow />} />
+          <Route path="/signup/status" element={<ProvisioningStatus />} />
 
           {/* Authenticated app shell */}
           <Route
