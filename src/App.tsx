@@ -26,6 +26,10 @@ import { SignupPage } from './pages/signup/SignupPage';
 import { OnboardingFlow } from './pages/signup/OnboardingFlow';
 import { ProvisioningStatus } from './pages/signup/ProvisioningStatus';
 
+// In-app add-site flow
+import { AddSiteFlow } from './pages/sites/AddSiteFlow';
+import { SiteProvisioningStatus } from './pages/sites/SiteProvisioningStatus';
+
 export function App() {
   return (
     <BrowserRouter>
@@ -68,6 +72,10 @@ export function App() {
 
             {/* NEW: SPARK pricing page used by subscribe buttons */}
             <Route path="spark/pricing" element={<SparkPricingPage />} />
+
+            {/* Add-site flow + in-app provisioning status (existing tenants) */}
+            <Route path="sites/new" element={<AddSiteFlow />} />
+            <Route path="sites/:siteId/provisioning" element={<SiteProvisioningStatus />} />
 
             {/* All feature-specific pages routed by service key */}
             <Route path="services/:serviceKey" element={<ServiceRouter />} />

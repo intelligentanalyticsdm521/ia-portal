@@ -285,6 +285,60 @@ export async function listArionSites(params: { baseUrl: string; bearerToken: str
   return requestJson<{ tenant: OverviewResponse['tenant']; sites: ArionSiteSummary[] }>({ ...params, path: '/arion/sites' });
 }
 
+// ---------------------------------------------------------------------------
+// Add-site provisioning (existing tenants creating a 2nd+ site).
+// Mirrors the public /onboarding/submit flow but tenant-authenticated.
+// ---------------------------------------------------------------------------
+export interface ProvisionSiteRequest {
+  domain: { mode: 'purchase' | 'byod'; domain: string };
+  answers: Record<string, unknown>; // QuestionnaireAnswers
+  whois?: Record<string, unknown> | null;
+}
+
+export interface ProvisionSiteResponse {
+  site_id: string;
+  job_id: string;
+  state: string;
+}
+
+export async function provisionNewSite(params: {
+  baseUrl: string; bearerToken: string; tenantId: string;
+  body: ProvisionSiteRequest;
+}) {
+  const r = await requestJson<{ data: ProvisionSiteResponse }>({
+    baseUrl: params.baseUrl,
+    bearerToken: params.bearerToken,
+    tenantId: params.tenantId,
+    path: '/arion/sites/provision',
+    method: 'POST',
+    body: params.body,
+    timeoutMs: 60_000, // domain purchase + WP create can be slow
+  });
+  return r.data;
+}
+
+export interface ProvisioningStatusResponse {
+  phase: string;
+  progress_percent: number;
+  message: string | null;
+  error: string | null;
+  wp_admin_url: string | null;
+  wp_login_url: string | null;
+  preview_url: string | null;
+}
+
+export async function getProvisioningStatus(params: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+}) {
+  const r = await requestJson<{ data: ProvisioningStatusResponse }>({
+    baseUrl: params.baseUrl,
+    bearerToken: params.bearerToken,
+    tenantId: params.tenantId,
+    path: `/arion/sites/${encodeURIComponent(params.siteId)}/provisioning-status`,
+  });
+  return r.data;
+}
+
 export async function getArionOverview(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId?: string | null }) {
   const qs = params.siteId ? `?siteId=${encodeURIComponent(params.siteId)}` : '';
   return requestJson<OverviewResponse>({ ...params, path: `/arion/overview${qs}` });

@@ -12,11 +12,22 @@ export function OverviewPage() {
   return (
     <div className="space-y-6">
       <section className="iadm-card">
-        <div className="iadm-card-body">
-        <h1 className="text-2xl font-semibold">Overview</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Tenant: <span className="font-medium">{active?.tenant?.tenantFullName}</span>
-        </p>
+        <div className="iadm-card-body flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold">Overview</h1>
+            <p className="mt-2 text-sm text-gray-600">
+              Tenant: <span className="font-medium">{active?.tenant?.tenantFullName}</span>
+            </p>
+          </div>
+          {/* Add-another-site CTA — visible to any tenant with ARION enabled */}
+          {enabledServices.has('arion_dashboard') && (
+            <Link
+              to="/app/sites/new"
+              className="rounded-lg bg-[#EF6C33] px-4 py-2 text-sm font-semibold text-white whitespace-nowrap hover:bg-[#d75a25]"
+            >
+              + Add another site
+            </Link>
+          )}
         </div>
       </section>
 

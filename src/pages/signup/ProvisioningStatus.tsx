@@ -17,7 +17,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-const API_BASE = (import.meta.env.VITE_ARION_API_BASE as string)
+const API_BASE = (import.meta.env.VITE_ARION_API_BASE_URL as string)
   || 'https://app-arion-api-prod-e6fuc9gzd8f3hqfe.centralus-01.azurewebsites.net';
 
 type ProvisioningPhase =
