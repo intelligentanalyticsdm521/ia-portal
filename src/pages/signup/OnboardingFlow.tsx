@@ -51,6 +51,24 @@ interface DomainSelection {
   pricePerYear?: number;
 }
 
+/**
+ * WHOIS contact info — collected only when client buys a new domain.
+ * Most TLDs reject placeholder addresses, so these fields are required.
+ */
+interface WhoisContact {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  address1: string;
+  city: string;
+  state: string;
+  zip: string;
+  country: string;       // ISO-2 code, e.g. "US"
+  entity_type: 'individual' | 'organization';
+  organization?: string; // required when entity_type === organization
+}
+
 const PAGE_OPTIONS = ['Home', 'About', 'Services', 'Contact', 'Blog', 'Shop', 'Portfolio', 'FAQ'];
 const VOICE_OPTIONS: QuestionnaireAnswers['brandVoice'][] = ['Professional', 'Friendly', 'Bold', 'Premium', 'Casual'];
 const STYLE_OPTIONS: QuestionnaireAnswers['stylePreference'][] = ['Modern', 'Classic', 'Minimal', 'Bold'];
@@ -60,6 +78,7 @@ export function OnboardingFlow() {
 
   const [step, setStep] = useState<Step>('domain');
   const [domain, setDomain] = useState<DomainSelection | null>(null);
+  const [whois, setWhois] = useState<WhoisContact | null>(null);
   const [sessionInfo, setSessionInfo] = useState<SignupSessionInfo | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<QuestionnaireAnswers>({
@@ -167,6 +186,8 @@ export function OnboardingFlow() {
         {step === 'domain' && (
           <DomainStep
             value={domain}
+            whois={whois}
+            onWhoisChange={setWhois}
             onChange={setDomain}
             onContinue={() => setStep('questionnaire')}
           />
@@ -190,7 +211,7 @@ export function OnboardingFlow() {
                 await fetch(`${(import.meta.env.VITE_ARION_API_BASE as string) || ''}/onboarding/submit`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ session_id: sessionId, domain, answers }),
+                  body: JSON.stringify({ session_id: sessionId, domain, answers, whois }),
                 });
                 window.location.href = `/signup/status?session_id=${encodeURIComponent(sessionId)}`;
               } catch (err) {
@@ -230,8 +251,10 @@ function StepIndicator({ current }: { current: Step }) {
   );
 }
 
-function DomainStep({ value, onChange, onContinue }: {
+function DomainStep({ value, whois, onWhoisChange, onChange, onContinue }: {
   value: DomainSelection | null;
+  whois: WhoisContact | null;
+  onWhoisChange: (w: WhoisContact | null) => void;
   onChange: (v: DomainSelection) => void;
   onContinue: () => void;
 }) {
@@ -242,6 +265,16 @@ function DomainStep({ value, onChange, onContinue }: {
   const [byodDomain, setByodDomain] = useState(value?.mode === 'byod' ? value.domain : '');
   const [byodVerified, setByodVerified] = useState(false);
   const [byodInstructions, setByodInstructions] = useState<ByodInstructions | null>(null);
+
+  // Whether the form is complete enough to advance
+  const whoisComplete = !whois ? false : !!(
+    whois.first_name && whois.last_name && whois.email && whois.phone &&
+    whois.address1 && whois.city && whois.state && whois.zip && whois.country &&
+    (whois.entity_type === 'individual' || (whois.entity_type === 'organization' && whois.organization))
+  );
+  const canContinue = mode === 'purchase'
+    ? !!(value && value.mode === 'purchase' && value.domain && whoisComplete)
+    : !!(value && value.mode === 'byod' && byodVerified);
 
   async function search() {
     if (!query.trim()) return;
@@ -368,14 +401,90 @@ function DomainStep({ value, onChange, onContinue }: {
         </div>
       )}
 
+      {mode === 'purchase' && value?.mode === 'purchase' && value.domain && (
+        <WhoisForm value={whois} onChange={onWhoisChange} />
+      )}
+
       <div className="mt-10 flex justify-end">
         <button
-          disabled={!value}
+          disabled={!canContinue}
           onClick={onContinue}
           className="rounded-lg bg-[#EF6C33] px-6 py-3 text-sm font-semibold text-white disabled:opacity-50"
         >
           Continue →
         </button>
+      </div>
+    </div>
+  );
+}
+
+function WhoisForm({ value, onChange }: {
+  value: WhoisContact | null;
+  onChange: (w: WhoisContact) => void;
+}) {
+  const w: WhoisContact = value || {
+    first_name: '', last_name: '', email: '', phone: '',
+    address1: '', city: '', state: '', zip: '', country: 'US',
+    entity_type: 'individual', organization: '',
+  };
+  const set = <K extends keyof WhoisContact>(k: K, v: WhoisContact[K]) =>
+    onChange({ ...w, [k]: v });
+
+  return (
+    <div className="mt-8 rounded-xl border border-gray-200 bg-white p-6">
+      <h3 className="text-lg font-semibold text-gray-900">Domain registration contact info</h3>
+      <p className="mt-1 text-sm text-gray-600">Required by the domain registry. We enable WHOIS privacy automatically so this isn't published publicly.</p>
+
+      <div className="mt-5 grid grid-cols-2 gap-3">
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-700 mb-1">Type</span>
+          <select className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" value={w.entity_type} onChange={(e) => set('entity_type', e.target.value as 'individual' | 'organization')}>
+            <option value="individual">Individual</option>
+            <option value="organization">Organization (LLC, Inc, etc.)</option>
+          </select>
+        </label>
+        {w.entity_type === 'organization' && (
+          <label className="block">
+            <span className="block text-xs font-medium text-gray-700 mb-1">Organization name *</span>
+            <input className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" value={w.organization || ''} onChange={(e) => set('organization', e.target.value)} />
+          </label>
+        )}
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-700 mb-1">First name *</span>
+          <input className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" value={w.first_name} onChange={(e) => set('first_name', e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-700 mb-1">Last name *</span>
+          <input className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" value={w.last_name} onChange={(e) => set('last_name', e.target.value)} />
+        </label>
+        <label className="block col-span-2">
+          <span className="block text-xs font-medium text-gray-700 mb-1">Email *</span>
+          <input type="email" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" value={w.email} onChange={(e) => set('email', e.target.value)} />
+        </label>
+        <label className="block col-span-2">
+          <span className="block text-xs font-medium text-gray-700 mb-1">Phone *</span>
+          <input type="tel" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" value={w.phone} onChange={(e) => set('phone', e.target.value)} placeholder="+15125551234" />
+        </label>
+        <label className="block col-span-2">
+          <span className="block text-xs font-medium text-gray-700 mb-1">Street address *</span>
+          <input className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" value={w.address1} onChange={(e) => set('address1', e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-700 mb-1">City *</span>
+          <input className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" value={w.city} onChange={(e) => set('city', e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-700 mb-1">State / Region *</span>
+          <input className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" value={w.state} onChange={(e) => set('state', e.target.value)} placeholder="TX" />
+        </label>
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-700 mb-1">ZIP / Postal code *</span>
+          <input className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" value={w.zip} onChange={(e) => set('zip', e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-700 mb-1">Country *</span>
+          <input className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" value={w.country} onChange={(e) => set('country', e.target.value.toUpperCase().slice(0, 2))} placeholder="US" maxLength={2} />
+        </label>
       </div>
     </div>
   );
