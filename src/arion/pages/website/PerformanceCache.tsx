@@ -319,6 +319,30 @@ export function PerformanceCache() {
         </Card>
       </div>
 
+      {/* Top Lighthouse opportunities — surfaces the WHY directly on summary */}
+      {Array.isArray(latestSnapshot?.mobile?.opportunities) && latestSnapshot.mobile.opportunities.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <Card title="Top opportunities to lift your score">
+            <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10, lineHeight: 1.5 }}>
+              Lighthouse's specific suggestions for THIS site, ranked by estimated savings. Cache + minify don't fix these — they require code changes or feature toggles.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
+              {latestSnapshot.mobile.opportunities.slice(0, 4).map((op: any) => (
+                <div key={op.id} style={{
+                  background: '#F8FAFC', borderRadius: 6, padding: 12,
+                  borderLeft: `3px solid ${op.score == null ? '#94A3B8' : op.score < 0.5 ? '#D85A30' : op.score < 0.9 ? '#D97706' : '#1D9E75'}`,
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#0B1C24' }}>{op.title}</div>
+                  {op.display_value && (
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#D85A30', marginTop: 4 }}>{op.display_value}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
+
       {/* ── LiteSpeed Cache status ─────────────────────────────────────── */}
       <div style={{ marginTop: 14 }}>
         <Card title="LiteSpeed Cache status">
