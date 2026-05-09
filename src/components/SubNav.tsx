@@ -39,7 +39,7 @@ export interface SubNavConfig {
 
 const OLIVER_NAV: SubNavConfig = {
   productName: "OLIVER",
-  tagline: "Field Service Management",
+  tagline: "Universal Job & Project Lifecycle Platform",
   groups: [
     {
       label: "",
