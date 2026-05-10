@@ -1,10 +1,12 @@
+// Stripe-style data table: no card wrapper, just clean rows with subtle dividers
+// and a lightweight hover. Sortable columns, clickable rows, empty state.
 import { useMemo, useState, type ReactNode } from "react";
 
 export interface Column<T> {
   key: string;
   header: string;
   align?: "left" | "right" | "center";
-  width?: string; // tailwind width class
+  width?: string;
   render?: (row: T) => ReactNode;
   sortable?: boolean;
   sortAccessor?: (row: T) => string | number | null | undefined;
@@ -54,7 +56,7 @@ export function DataTable<T>({
 
   if (!rows.length) {
     return (
-      <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card p-12 text-center">
+      <div className="border-t border-slate-200 py-12 text-center">
         <p className="text-sm text-slate-500">{emptyMessage}</p>
         {emptyAction && <div className="mt-4">{emptyAction}</div>}
       </div>
@@ -62,22 +64,22 @@ export function DataTable<T>({
   }
 
   return (
-    <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card overflow-hidden">
+    <div className="overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-          <tr>
+        <thead>
+          <tr className="text-xs font-medium text-slate-500 uppercase tracking-wide">
             {columns.map((c) => {
               const isSorting = sort?.key === c.key;
               const align = c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : "text-left";
               return (
                 <th
                   key={c.key}
-                  className={`px-4 py-3 font-medium ${align} ${c.width ?? ""} ${c.sortable ? "cursor-pointer select-none hover:text-oliver-teal" : ""}`}
+                  className={`py-2.5 px-3 font-medium border-b border-slate-200 ${align} ${c.width ?? ""} ${c.sortable ? "cursor-pointer select-none hover:text-slate-900" : ""}`}
                   onClick={c.sortable ? () => toggleSort(c.key) : undefined}
                 >
                   {c.header}
                   {c.sortable && (
-                    <span className="ml-1 text-[10px]">
+                    <span className={`ml-1 text-[9px] ${isSorting ? "text-slate-700" : "text-slate-300"}`}>
                       {isSorting ? (sort!.direction === "asc" ? "▲" : "▼") : "↕"}
                     </span>
                   )}
@@ -86,19 +88,19 @@ export function DataTable<T>({
             })}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody>
           {sortedRows.map((row) => {
             const extra = rowClassName?.(row) ?? "";
             return (
               <tr
                 key={rowKey(row)}
                 onClick={() => onRowClick?.(row)}
-                className={`${onRowClick ? "cursor-pointer hover:bg-oliver-gold-50/50" : ""} ${extra}`}
+                className={`border-b border-slate-100 ${onRowClick ? "cursor-pointer hover:bg-slate-50" : ""} ${extra}`}
               >
                 {columns.map((c) => {
                   const align = c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : "text-left";
                   return (
-                    <td key={c.key} className={`px-4 py-3 ${align} text-slate-700`}>
+                    <td key={c.key} className={`py-3 px-3 ${align} text-slate-700`}>
                       {c.render ? c.render(row) : ((row as never)[c.key as never] as ReactNode)}
                     </td>
                   );

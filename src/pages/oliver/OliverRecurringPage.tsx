@@ -56,7 +56,8 @@ export function OliverRecurringPage() {
   async function handleSync() {
     setSyncing(true);
     try {
-      await post("/subscriptions/sync");
+      // Use the canonical import endpoint that scopes to the tenant's connected account
+      await post("/settings/stripe/import");
       const data = await get<Subscription[]>("/subscriptions");
       setSubs(data);
     } catch {
