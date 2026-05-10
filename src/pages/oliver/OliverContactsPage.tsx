@@ -3,7 +3,7 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState,
-  StatusBadge, type Column,
+  StatusBadge, Button, type Column,
 } from "../../components/oliver/ui";
 
 interface Contact {
@@ -52,12 +52,13 @@ function contactName(c: Contact) {
 }
 
 export function OliverContactsPage() {
-  const { get, ready } = useOliverApi();
+  const { get, post, ready } = useOliverApi();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [search, setSearch] = useState("");
   const [pickedId, setPickedId] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
@@ -97,6 +98,7 @@ export function OliverContactsPage() {
       <PageHeader
         title="Customers"
         subtitle="Search any customer to see all their jobs, quotes, invoices, and payments"
+        actions={<Button variant="primary" onClick={() => setShowCreate(true)}>+ New customer</Button>}
       />
       {!contacts.length ? (
         <EmptyState title="No customers yet" description="Customers appear here as soon as you create a job, quote, or invoice for them — or when they sign up via the customer portal." />
@@ -118,7 +120,79 @@ export function OliverContactsPage() {
       )}
 
       {pickedId && <ContactDetailModal contactId={pickedId} onClose={() => setPickedId(null)} api={{ get }} />}
+      {showCreate && (
+        <NewContactModal
+          onClose={() => setShowCreate(false)}
+          onCreated={() => { setShowCreate(false); reload(); }}
+          create={(b) => post("/contacts", b)}
+        />
+      )}
     </OliverPageWrapper>
+  );
+}
+
+function NewContactModal({ onClose, onCreated, create }: { onClose: () => void; onCreated: () => void; create: (body: Record<string, string | undefined>) => Promise<unknown> }) {
+  const [first, setFirst] = useState("");
+  const [last, setLast] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [company, setCompany] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    setErr(null);
+    if (!first.trim() || !last.trim()) { setErr("First and last name are required."); return; }
+    setSubmitting(true);
+    try {
+      await create({
+        first_name: first.trim(),
+        last_name: last.trim(),
+        email: email.trim() || undefined,
+        phone: phone.trim() || undefined,
+        company_name: company.trim() || undefined,
+      });
+      onCreated();
+    } catch (e) {
+      const msg = (e as Error).message || "";
+      if (msg.includes("409")) setErr("A customer with this email already exists.");
+      else setErr(msg || "Failed to create customer");
+    } finally { setSubmitting(false); }
+  }
+
+  return (
+    <DetailDrawer open onClose={onClose} title="New customer" subtitle="Add a contact to your customer database" width="md">
+      {err && (
+        <div style={{ background: "#FEE2E2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 6, padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>
+          {err}
+        </div>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <FormField label="First name *" value={first} onChange={setFirst} />
+        <FormField label="Last name *" value={last} onChange={setLast} />
+      </div>
+      <FormField label="Email" value={email} onChange={setEmail} type="email" />
+      <FormField label="Phone" value={phone} onChange={setPhone} type="tel" />
+      <FormField label="Company name" value={company} onChange={setCompany} />
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+        <Button variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" onClick={submit} disabled={submitting || !first.trim() || !last.trim()}>
+          {submitting ? "Creating…" : "Create customer"}
+        </Button>
+      </div>
+    </DetailDrawer>
+  );
+}
+
+function FormField({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
+  return (
+    <label style={{ display: "block", marginBottom: 10 }}>
+      <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>{label}</span>
+      <input
+        type={type} value={value} onChange={(e) => onChange(e.target.value)}
+        style={{ width: "100%", padding: "7px 10px", fontSize: 12, border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6, background: "#fff" }}
+      />
+    </label>
   );
 }
 

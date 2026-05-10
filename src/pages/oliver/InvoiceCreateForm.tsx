@@ -1,11 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { Button } from "../../components/oliver/ui";
 
 interface JobListItem {
   id: string;
   title: string;
   customerName: string;
   status: string;
+}
+
+interface ContactListItem {
+  contact_id: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  company_name?: string;
+}
+
+interface Offering {
+  offering_id: string;
+  name: string;
+  description?: string;
+  prices?: Array<{ price_id: string; amount: number; recurring_interval?: string | null }>;
 }
 
 interface LineItemDraft {
@@ -23,10 +39,18 @@ interface CreateInvoiceProps {
 const blankItem: LineItemDraft = { description: "", quantity: 1, unit_price: 0, is_tax: false };
 const blankTaxItem: LineItemDraft = { description: "Sales Tax", quantity: 1, unit_price: 0, is_tax: true };
 
+function contactName(c: ContactListItem) {
+  return c.company_name || `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || c.email || "(no name)";
+}
+
 export function InvoiceCreateForm({ onCreated, onCancel }: CreateInvoiceProps) {
   const { get, post, ready } = useOliverApi();
+  const [mode, setMode] = useState<"job" | "customer">("customer");
   const [jobs, setJobs] = useState<JobListItem[]>([]);
+  const [contacts, setContacts] = useState<ContactListItem[]>([]);
+  const [offerings, setOfferings] = useState<Offering[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>("");
+  const [selectedContactId, setSelectedContactId] = useState<string>("");
   const [items, setItems] = useState<LineItemDraft[]>([{ ...blankItem }]);
   const [dueDate, setDueDate] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
@@ -36,11 +60,17 @@ export function InvoiceCreateForm({ onCreated, onCancel }: CreateInvoiceProps) {
     if (!ready) return;
     (async () => {
       try {
-        const resCompleted = await get<JobListItem[]>("/jobs?status=completed&per_page=50");
-        const resInvoiced = await get<JobListItem[]>("/jobs?status=invoiced&per_page=50");
-        setJobs([...(resCompleted || []), ...(resInvoiced || [])]);
+        const [c, o, jc, ji] = await Promise.all([
+          get<ContactListItem[]>("/contacts"),
+          get<Offering[]>("/catalog/offerings").catch(() => [] as Offering[]),
+          get<JobListItem[]>("/jobs?status=completed&per_page=50").catch(() => [] as JobListItem[]),
+          get<JobListItem[]>("/jobs?status=invoiced&per_page=50").catch(() => [] as JobListItem[]),
+        ]);
+        setContacts(c || []);
+        setOfferings(o || []);
+        setJobs([...(jc || []), ...(ji || [])]);
       } catch (e) {
-        setError(`Failed to load jobs: ${(e as Error).message}`);
+        setError(`Failed to load data: ${(e as Error).message}`);
       }
     })();
   }, [get, ready]);
@@ -65,29 +95,42 @@ export function InvoiceCreateForm({ onCreated, onCancel }: CreateInvoiceProps) {
   function addLine() { setItems((prev) => [...prev, { ...blankItem }]); }
   function addTaxLine() { setItems((prev) => [...prev, { ...blankTaxItem }]); }
 
+  function addOfferingLine(offeringId: string) {
+    const off = offerings.find((o) => o.offering_id === offeringId);
+    if (!off) return;
+    const oneTimePrice = off.prices?.find((p) => !p.recurring_interval);
+    setItems((prev) => [
+      ...prev.filter((it) => it.description.trim() || it.unit_price > 0),
+      {
+        description: off.name,
+        quantity: 1,
+        unit_price: oneTimePrice ? Number(oneTimePrice.amount) : 0,
+        is_tax: false,
+      },
+    ]);
+  }
+
   async function submit() {
     setError(null);
-    if (!selectedJobId) {
-      setError("Pick a job first.");
-      return;
-    }
+    if (mode === "job" && !selectedJobId) { setError("Pick a job first."); return; }
+    if (mode === "customer" && !selectedContactId) { setError("Pick a customer first."); return; }
     const cleanedItems = items.filter((it) => it.description.trim() && Number(it.unit_price) >= 0);
-    if (!cleanedItems.length) {
-      setError("Add at least one line item.");
-      return;
-    }
+    if (!cleanedItems.length) { setError("Add at least one line item."); return; }
     setSubmitting(true);
     try {
-      await post("/invoices", {
-        job_id: selectedJobId,
+      const body: Record<string, unknown> = {
         line_items: cleanedItems,
         due_date: dueDate || null,
-      });
+      };
+      if (mode === "job") body.job_id = selectedJobId;
+      else body.contact_id = selectedContactId;
+
+      await post("/invoices", body);
       onCreated();
     } catch (e) {
       const msg = (e as Error).message || "";
       if (msg.includes("stripe_not_connected") || msg.includes("412")) {
-        setError("Your Stripe account isn't connected yet. Go to Settings → Payments to finish setup, then return here.");
+        setError("Your Stripe account isn't connected yet. Go to Business Setup → Stripe Connect to finish setup.");
       } else {
         setError(`Create failed: ${msg}`);
       }
@@ -97,142 +140,178 @@ export function InvoiceCreateForm({ onCreated, onCancel }: CreateInvoiceProps) {
   }
 
   return (
-    <div className="rounded-xl bg-white ring-1 ring-gray-200 p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-slate-900">New invoice</h3>
-        <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-800">Cancel</button>
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+        <div>
+          <div className="card-ttl">New invoice</div>
+          <div className="card-sub">Bill a customer directly or convert a completed job into an invoice</div>
+        </div>
+        <button onClick={onCancel} style={{ background: "none", border: "none", color: "#5A7A8A", cursor: "pointer", fontSize: 12 }}>Cancel</button>
       </div>
 
       {error && (
-        <div className="rounded-lg bg-red-50 ring-1 ring-red-200 px-4 py-3 text-sm text-red-800">
+        <div style={{
+          background: "#FEE2E2", border: "1px solid #FECACA",
+          color: "#991B1B", borderRadius: 6, padding: "8px 12px", fontSize: 12, marginBottom: 12,
+        }}>
           {error}
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
-        <label className="block text-sm">
-          <span className="text-slate-700 font-medium">Job</span>
-          <select
-            value={selectedJobId}
-            onChange={(e) => setSelectedJobId(e.target.value)}
-            className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
-          >
-            <option value="">— Pick a completed/invoiced job —</option>
-            {jobs.map((j) => (
-              <option key={j.id} value={j.id}>
-                {j.title || "(untitled)"} — {j.customerName} ({j.status})
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="block text-sm">
-          <span className="text-slate-700 font-medium">Due date (optional)</span>
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
-          />
-        </label>
+      <div className="ptabs" style={{ marginBottom: 12 }}>
+        <button className={`ptab${mode === "customer" ? " active" : ""}`} onClick={() => setMode("customer")}>Bill a customer</button>
+        <button className={`ptab${mode === "job" ? " active" : ""}`} onClick={() => setMode("job")}>From a completed job</button>
       </div>
 
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <h4 className="text-sm font-medium text-slate-700">Line items</h4>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={addLine}
-              className="rounded-lg ring-1 ring-gray-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-gray-50"
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+        {mode === "customer" ? (
+          <Field label="Customer">
+            <select
+              value={selectedContactId}
+              onChange={(e) => setSelectedContactId(e.target.value)}
+              style={selectStyle}
             >
-              + Add line
-            </button>
-            <button
-              type="button"
-              onClick={addTaxLine}
-              className="rounded-lg ring-1 ring-amber-300 px-3 py-1.5 text-xs text-amber-800 bg-amber-50 hover:bg-amber-100"
+              <option value="">— Pick a customer —</option>
+              {contacts.map((c) => (
+                <option key={c.contact_id} value={c.contact_id}>
+                  {contactName(c)}{c.email ? ` · ${c.email}` : ""}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : (
+          <Field label="Job">
+            <select
+              value={selectedJobId}
+              onChange={(e) => setSelectedJobId(e.target.value)}
+              style={selectStyle}
             >
-              + Add tax line
-            </button>
+              <option value="">— Pick a completed/invoiced job —</option>
+              {jobs.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.title || "(untitled)"} — {j.customerName} ({j.status})
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+
+        <Field label="Due date (optional)">
+          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} style={selectStyle} />
+        </Field>
+      </div>
+
+      {offerings.length > 0 && (
+        <Field label="Add from your service catalog (optional)">
+          <select onChange={(e) => { if (e.target.value) { addOfferingLine(e.target.value); e.target.value = ""; } }} style={selectStyle} defaultValue="">
+            <option value="">— Add offering as line item —</option>
+            {offerings.map((o) => {
+              const oneTime = o.prices?.find((p) => !p.recurring_interval);
+              return (
+                <option key={o.offering_id} value={o.offering_id}>
+                  {o.name}{oneTime ? ` · $${Number(oneTime.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : ""}
+                </option>
+              );
+            })}
+          </select>
+        </Field>
+      )}
+
+      <div style={{ marginTop: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4 }}>Line items</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <Button variant="secondary" onClick={addLine}>+ Line</Button>
+            <Button variant="secondary" onClick={addTaxLine}>+ Tax line</Button>
           </div>
         </div>
 
-        <div className="rounded-lg ring-1 ring-gray-200 divide-y divide-gray-100">
+        <div style={{ border: "1px solid #eef2f4", borderRadius: 6 }}>
           {items.map((it, i) => (
-            <div key={i} className={`grid grid-cols-12 gap-2 px-3 py-2 items-center ${it.is_tax ? "bg-amber-50/50" : ""}`}>
+            <div key={i} style={{
+              display: "grid", gridTemplateColumns: "1fr 80px 110px 32px", gap: 8,
+              padding: "8px 10px", alignItems: "center",
+              borderBottom: i < items.length - 1 ? "1px solid #f0f4f6" : "none",
+              background: it.is_tax ? "#FFFBEB" : "transparent",
+            }}>
               <input
                 type="text"
                 placeholder={it.is_tax ? "e.g. Iowa Sales Tax 6%" : "Description"}
                 value={it.description}
                 onChange={(e) => updateItem(i, { description: e.target.value })}
-                className="col-span-6 rounded ring-1 ring-gray-300 px-2 py-1 text-sm"
+                style={inputStyle}
               />
               <input
-                type="number"
-                step="0.001"
-                min="0"
-                placeholder="Qty"
+                type="number" step="0.001" min="0" placeholder="Qty"
                 value={it.quantity}
                 onChange={(e) => updateItem(i, { quantity: Number(e.target.value) })}
-                className="col-span-2 rounded ring-1 ring-gray-300 px-2 py-1 text-sm text-right"
+                style={{ ...inputStyle, textAlign: "right" }}
               />
               <input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="Unit $"
+                type="number" step="0.01" min="0" placeholder="Unit $"
                 value={it.unit_price}
                 onChange={(e) => updateItem(i, { unit_price: Number(e.target.value) })}
-                className="col-span-3 rounded ring-1 ring-gray-300 px-2 py-1 text-sm text-right"
+                style={{ ...inputStyle, textAlign: "right" }}
               />
               <button
-                type="button"
-                onClick={() => removeItem(i)}
-                className="col-span-1 text-slate-400 hover:text-red-600 text-lg"
-                title="Remove"
-              >
-                ×
-              </button>
+                type="button" onClick={() => removeItem(i)} title="Remove"
+                style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: 18, padding: 0 }}
+              >×</button>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="flex justify-end">
-        <div className="text-sm w-64 space-y-1">
-          <div className="flex justify-between text-slate-600">
-            <span>Subtotal</span>
-            <span>${totals.subtotal.toFixed(2)}</span>
-          </div>
-          {totals.tax > 0 && (
-            <div className="flex justify-between text-amber-700">
-              <span>Tax</span>
-              <span>${totals.tax.toFixed(2)}</span>
-            </div>
-          )}
-          <div className="flex justify-between font-semibold text-slate-900 pt-1 border-t border-gray-200">
-            <span>Total</span>
-            <span>${totals.total.toFixed(2)}</span>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+        <div style={{ width: 240, fontSize: 12 }}>
+          <Row label="Subtotal" value={`$${totals.subtotal.toFixed(2)}`} />
+          {totals.tax > 0 && <Row label="Tax" value={`$${totals.tax.toFixed(2)}`} color="#B45309" />}
+          <div style={{ borderTop: "1px solid #eef2f4", marginTop: 4, paddingTop: 6 }}>
+            <Row label="Total" value={`$${totals.total.toFixed(2)}`} bold />
           </div>
         </div>
       </div>
 
-      <div className="flex justify-end gap-2">
-        <button
-          onClick={onCancel}
-          className="rounded-lg ring-1 ring-gray-300 px-4 py-2 text-sm text-slate-700 hover:bg-gray-50"
-        >
-          Cancel
-        </button>
-        <button
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+        <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+        <Button
+          variant="primary"
           onClick={submit}
-          disabled={submitting || !selectedJobId || !items.length}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          disabled={submitting || (mode === "job" ? !selectedJobId : !selectedContactId) || !items.length}
         >
           {submitting ? "Creating…" : "Create invoice (draft)"}
-        </button>
+        </Button>
       </div>
+    </div>
+  );
+}
+
+const selectStyle: React.CSSProperties = {
+  width: "100%", padding: "7px 10px", fontSize: 12,
+  border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6,
+  background: "#fff", color: "#0B1C24",
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%", padding: "5px 8px", fontSize: 12,
+  border: "1px solid rgba(45,156,219,0.18)", borderRadius: 4,
+  background: "#fff",
+};
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: "block" }}>
+      <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function Row({ label, value, bold, color }: { label: string; value: string; bold?: boolean; color?: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", color: color || "#5A7A8A", fontWeight: bold ? 600 : 400 }}>
+      <span>{label}</span>
+      <span style={{ color: bold ? "#0B1C24" : color || "#0B1C24", fontFamily: "monospace" }}>{value}</span>
     </div>
   );
 }

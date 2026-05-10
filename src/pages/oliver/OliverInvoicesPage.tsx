@@ -196,19 +196,26 @@ export function OliverInvoicesPage() {
         actions={!showCreate && <Button variant="primary" onClick={() => setShowCreate(true)}>+ Create invoice</Button>}
       />
 
-      {/* Inline metrics — Stripe-style */}
-      <div className="flex items-end gap-12 mb-6">
-        <div>
-          <div className="text-xs text-slate-500">Paid all-time</div>
-          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{fmtMoney(kpis.paid)}</div>
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-lbl">Paid all-time</div>
+          <div className="stat-val">{fmtMoney(kpis.paid)}</div>
+          <div className="stat-delta neu">{counts["paid"] ?? 0} paid</div>
         </div>
-        <div>
-          <div className="text-xs text-slate-500">Outstanding</div>
-          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{fmtMoney(kpis.outstanding)}</div>
+        <div className="stat-card">
+          <div className="stat-lbl">Outstanding</div>
+          <div className="stat-val">{fmtMoney(kpis.outstanding)}</div>
+          <div className="stat-delta neu">{counts["sent"] ?? 0} sent</div>
         </div>
-        <div>
-          <div className="text-xs text-slate-500">Overdue</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums" style={{ color: kpis.overdue > 0 ? "#D97706" : "#0F172A" }}>{fmtMoney(kpis.overdue)}</div>
+        <div className="stat-card">
+          <div className="stat-lbl">Overdue</div>
+          <div className="stat-val" style={{ color: kpis.overdue > 0 ? "#D97706" : undefined }}>{fmtMoney(kpis.overdue)}</div>
+          <div className="stat-delta neu">{kpis.overdueCount} past due</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Drafts</div>
+          <div className="stat-val">{counts["draft"] ?? 0}</div>
+          <div className="stat-delta neu">awaiting send</div>
         </div>
       </div>
 
