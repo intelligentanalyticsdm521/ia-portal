@@ -30,6 +30,101 @@ interface InvoiceTemplate {
   googleReviewUrl: string | null;
 }
 
+function InvoicePreview({ tpl, businessName, email, phone }: { tpl: InvoiceTemplate; businessName: string; email?: string; phone?: string }) {
+  const accent = tpl.accentColor || "#1A3A4A";
+  const sample = {
+    invoiceNumber: `${tpl.invoiceNumberPrefix || "INV-"}00042`,
+    issued: new Date().toLocaleDateString(),
+    due: new Date(Date.now() + 14 * 86400000).toLocaleDateString(),
+    customer: "Sample Customer Inc.",
+    customerAddr: "123 Main St, Springfield IL 62701",
+    items: [
+      { desc: "Premium service package", qty: 1, price: 299, total: 299 },
+      { desc: "Setup fee (one-time)", qty: 1, price: 99, total: 99 },
+      { desc: "Sales tax 6%", qty: 1, price: 23.88, total: 23.88, isTax: true },
+    ],
+    subtotal: 398,
+    tax: 23.88,
+    total: 421.88,
+  };
+
+  return (
+    <div className="bg-white rounded shadow-md overflow-hidden text-xs">
+      {/* Header strip in tenant's accent color */}
+      <div className="px-5 py-4" style={{ backgroundColor: accent, color: "#FFFFFF" }}>
+        <div className="flex items-start justify-between">
+          <div>
+            {tpl.logoUrl ? (
+              <img src={tpl.logoUrl} alt="logo" className="h-8 mb-2 bg-white rounded p-1" onError={(e) => (e.currentTarget.style.display = "none")} />
+            ) : null}
+            <div className="font-bold text-base">{businessName}</div>
+            <div className="text-[10px] opacity-90 mt-0.5">{email}{email && phone ? " · " : ""}{phone}</div>
+          </div>
+          <div className="text-right">
+            <div className="text-lg font-bold tracking-wide">INVOICE</div>
+            <div className="text-[10px] opacity-90 mt-0.5">{sample.invoiceNumber}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-5 py-3 grid grid-cols-2 gap-2 text-[10px]">
+        <div>
+          <div className="font-semibold uppercase tracking-wide text-slate-500">Bill to</div>
+          <div className="text-slate-800 mt-1">{sample.customer}</div>
+          <div className="text-slate-500">{sample.customerAddr}</div>
+        </div>
+        <div className="text-right space-y-0.5">
+          <div className="text-slate-500">Issued: <span className="text-slate-800 font-medium">{sample.issued}</span></div>
+          <div className="text-slate-500">Due: <span className="text-slate-800 font-medium">{sample.due}</span></div>
+        </div>
+      </div>
+
+      <table className="w-full text-[10px]">
+        <thead style={{ backgroundColor: accent, color: "#FFFFFF" }}>
+          <tr>
+            <th className="px-3 py-1.5 text-left font-semibold">Description</th>
+            <th className="px-2 py-1.5 text-right font-semibold w-10">Qty</th>
+            <th className="px-2 py-1.5 text-right font-semibold w-16">Unit</th>
+            <th className="px-2 py-1.5 text-right font-semibold w-16">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sample.items.map((it, i) => (
+            <tr key={i} className={`border-b border-gray-100 ${it.isTax ? "bg-amber-50/60" : ""}`}>
+              <td className="px-3 py-1.5">{it.desc}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{it.qty}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">${it.price.toFixed(2)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">${it.total.toFixed(2)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="px-5 py-3 flex justify-end">
+        <div className="w-44 space-y-1 text-[10px]">
+          <div className="flex justify-between text-slate-600"><span>Subtotal</span><span className="tabular-nums">${sample.subtotal.toFixed(2)}</span></div>
+          <div className="flex justify-between text-slate-600"><span>Tax</span><span className="tabular-nums">${sample.tax.toFixed(2)}</span></div>
+          <div className="flex justify-between font-bold border-t border-gray-200 pt-1" style={{ color: accent }}>
+            <span>Total</span><span className="tabular-nums">${sample.total.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mx-5 mb-3 rounded text-center py-2" style={{ backgroundColor: accent, color: "#FFFFFF" }}>
+        <div className="text-[10px] font-bold tracking-wide">PAY THIS INVOICE ONLINE</div>
+        <div className="text-[9px] opacity-90 mt-0.5">buy.stripe.com/your-link-here</div>
+      </div>
+
+      {(tpl.terms || tpl.footerNote) && (
+        <div className="px-5 pb-4 text-[9px] text-slate-500 border-t border-gray-100 pt-2">
+          {tpl.terms && <div><span className="font-semibold">Terms:</span> {tpl.terms}</div>}
+          {tpl.footerNote && <div className="mt-0.5">{tpl.footerNote}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function OliverSettingsPage() {
   const { get, post, patch, ready } = useOliverApi();
   const [settings, setSettings] = useState<TenantSettings | null>(null);
@@ -292,85 +387,93 @@ export function OliverSettingsPage() {
             {tplMessage && <span className="text-xs text-slate-500">{tplMessage}</span>}
           </div>
           {tplDraft && (
-            <div className="rounded-xl bg-white ring-1 ring-gray-200 p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <label className="block text-sm">
-                  <span className="text-slate-700 font-medium">Logo URL</span>
-                  <input
-                    type="url"
-                    placeholder="https://yourdomain.com/logo.png"
-                    value={tplDraft.logoUrl ?? ""}
-                    onChange={(e) => setTplDraft({ ...tplDraft, logoUrl: e.target.value || null })}
-                    className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
-                  />
-                </label>
-                <label className="block text-sm">
-                  <span className="text-slate-700 font-medium">Accent color</span>
-                  <div className="flex gap-2 mt-1 items-center">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Editor */}
+              <div className="rounded-xl bg-white ring-1 ring-gray-200 p-6 space-y-4">
+                <div className="grid grid-cols-1 gap-4">
+                  <label className="block text-sm">
+                    <span className="text-slate-700 font-medium">Logo URL</span>
                     <input
-                      type="color"
-                      value={tplDraft.accentColor}
-                      onChange={(e) => setTplDraft({ ...tplDraft, accentColor: e.target.value })}
-                      className="h-9 w-12 rounded ring-1 ring-gray-300"
+                      type="url"
+                      placeholder="https://yourdomain.com/logo.png"
+                      value={tplDraft.logoUrl ?? ""}
+                      onChange={(e) => setTplDraft({ ...tplDraft, logoUrl: e.target.value || null })}
+                      className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
                     />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="text-slate-700 font-medium">Accent color</span>
+                    <div className="flex gap-2 mt-1 items-center">
+                      <input
+                        type="color"
+                        value={tplDraft.accentColor}
+                        onChange={(e) => setTplDraft({ ...tplDraft, accentColor: e.target.value })}
+                        className="h-9 w-14 rounded ring-1 ring-gray-300"
+                      />
+                      <input
+                        type="text"
+                        value={tplDraft.accentColor}
+                        onChange={(e) => setTplDraft({ ...tplDraft, accentColor: e.target.value })}
+                        className="flex-1 rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm font-mono"
+                      />
+                    </div>
+                  </label>
+                  <label className="block text-sm">
+                    <span className="text-slate-700 font-medium">Invoice number prefix</span>
                     <input
                       type="text"
-                      value={tplDraft.accentColor}
-                      onChange={(e) => setTplDraft({ ...tplDraft, accentColor: e.target.value })}
-                      className="flex-1 rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm font-mono"
+                      placeholder="INV-"
+                      value={tplDraft.invoiceNumberPrefix}
+                      onChange={(e) => setTplDraft({ ...tplDraft, invoiceNumberPrefix: e.target.value })}
+                      className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm font-mono"
                     />
-                  </div>
-                </label>
-                <label className="block text-sm">
-                  <span className="text-slate-700 font-medium">Invoice number prefix</span>
-                  <input
-                    type="text"
-                    placeholder="INV-"
-                    value={tplDraft.invoiceNumberPrefix}
-                    onChange={(e) => setTplDraft({ ...tplDraft, invoiceNumberPrefix: e.target.value })}
-                    className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm font-mono"
-                  />
-                  <p className="mt-1 text-xs text-slate-500">Next invoice will be e.g. <span className="font-mono">{tplDraft.invoiceNumberPrefix}00001</span></p>
-                </label>
-                <label className="block text-sm">
-                  <span className="text-slate-700 font-medium">Payment terms</span>
-                  <input
-                    type="text"
-                    placeholder="Due upon receipt"
-                    value={tplDraft.terms}
-                    onChange={(e) => setTplDraft({ ...tplDraft, terms: e.target.value })}
-                    className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
-                  />
-                </label>
-                <label className="block text-sm col-span-2">
-                  <span className="text-slate-700 font-medium">Footer note</span>
-                  <textarea
-                    rows={2}
-                    placeholder="Thank you for your business!"
-                    value={tplDraft.footerNote}
-                    onChange={(e) => setTplDraft({ ...tplDraft, footerNote: e.target.value })}
-                    className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
-                  />
-                </label>
-                <label className="block text-sm col-span-2">
-                  <span className="text-slate-700 font-medium">Google review URL (used in review-request automation)</span>
-                  <input
-                    type="url"
-                    placeholder="https://g.page/r/.../review"
-                    value={tplDraft.googleReviewUrl ?? ""}
-                    onChange={(e) => setTplDraft({ ...tplDraft, googleReviewUrl: e.target.value || null })}
-                    className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
-                  />
-                </label>
+                  </label>
+                  <label className="block text-sm">
+                    <span className="text-slate-700 font-medium">Payment terms</span>
+                    <input
+                      type="text"
+                      placeholder="Due upon receipt"
+                      value={tplDraft.terms}
+                      onChange={(e) => setTplDraft({ ...tplDraft, terms: e.target.value })}
+                      className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="text-slate-700 font-medium">Footer note</span>
+                    <textarea
+                      rows={2}
+                      placeholder="Thank you for your business!"
+                      value={tplDraft.footerNote}
+                      onChange={(e) => setTplDraft({ ...tplDraft, footerNote: e.target.value })}
+                      className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="text-slate-700 font-medium">Google review URL <span className="text-slate-400 font-normal">(used in review-request automation)</span></span>
+                    <input
+                      type="url"
+                      placeholder="https://g.page/r/.../review"
+                      value={tplDraft.googleReviewUrl ?? ""}
+                      onChange={(e) => setTplDraft({ ...tplDraft, googleReviewUrl: e.target.value || null })}
+                      className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
+                    />
+                  </label>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={saveTemplate}
+                    disabled={tplSaving || !tplChanged()}
+                    className="rounded-lg bg-oliver-teal text-white px-4 py-2 text-sm font-medium hover:bg-oliver-teal-600 disabled:opacity-50"
+                  >
+                    {tplSaving ? "Saving…" : "Save template"}
+                  </button>
+                </div>
               </div>
-              <div className="flex justify-end">
-                <button
-                  onClick={saveTemplate}
-                  disabled={tplSaving || !tplChanged()}
-                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  {tplSaving ? "Saving…" : "Save template"}
-                </button>
+
+              {/* Live preview */}
+              <div className="rounded-xl bg-slate-100 ring-1 ring-gray-200 p-4">
+                <div className="text-xs uppercase tracking-wide text-slate-500 mb-2">Live preview</div>
+                <InvoicePreview tpl={tplDraft} businessName={settings?.tenantFullName || settings?.tenantName || "Your Business"} email={settings?.email} phone={settings?.phone} />
               </div>
             </div>
           )}
