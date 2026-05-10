@@ -16,15 +16,47 @@ interface ActivityEvent {
   type: string;
   created_at: string;
 }
+interface BillingOverview {
+  revenue: number;
+  outstanding: number;
+  overdue: number;
+  paid_count: number;
+  open_count: number;
+  overdue_count: number;
+  draft_count: number;
+  upcoming_subscriptions: Array<{ subscription_id: string; service_name: string; amount: number; current_period_end: string; status: string }>;
+  recent_payments: Array<{ payment_id: string; amount: number; type: string; paid_at: string; invoice_number?: string; customer_name?: string }>;
+}
+interface OpsOverview {
+  upcoming_jobs: Array<{ job_id: string; job_number: string; title: string; status: string; scheduled_start: string; customer_name?: string; assigned_to?: string }>;
+  open_requests: Array<{ job_id: string; job_number: string; title: string; created_at: string; customer_notes?: string; customer_name?: string }>;
+}
 
 function fmtMoney(n?: number | null) {
   return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+function fmtRelative(d?: string) {
+  if (!d) return "—";
+  const ms = Date.now() - new Date(d).getTime();
+  const days = Math.floor(ms / 86400000);
+  if (days < 0) {
+    const future = Math.abs(days);
+    if (future === 0) return "today";
+    if (future === 1) return "tomorrow";
+    return `in ${future} days`;
+  }
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+  return new Date(d).toLocaleDateString();
 }
 
 export function OliverDashboardPage() {
   const { get, ready } = useOliverApi();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
+  const [billing, setBilling] = useState<BillingOverview | null>(null);
+  const [ops, setOps] = useState<OpsOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
 
@@ -33,12 +65,13 @@ export function OliverDashboardPage() {
     (async () => {
       setLoading(true); setError(null);
       try {
-        const [s, a] = await Promise.all([
+        const [s, a, b, o] = await Promise.all([
           get<DashboardStats>("/dashboard/stats"),
           get<ActivityEvent[]>("/dashboard/activity"),
+          get<BillingOverview>("/overview/billing"),
+          get<OpsOverview>("/overview/operations"),
         ]);
-        setStats(s);
-        setActivity(a || []);
+        setStats(s); setActivity(a || []); setBilling(b); setOps(o);
       } catch (e) { setError(e); }
       finally { setLoading(false); }
     })();
@@ -48,81 +81,185 @@ export function OliverDashboardPage() {
     <OliverPageWrapper title="Dashboard" subtitle="Overview" error={error} loading={loading}>
       <PageHeader
         title="Dashboard"
-        subtitle="What's happening in your business right now"
+        subtitle="Everything happening in your business right now"
         actions={
           <>
-            <Link to="/app/services/oliver_invoices">
-              <Button variant="ghost">Invoices</Button>
-            </Link>
-            <Link to="/app/services/oliver_job_board">
-              <Button variant="primary">Open job board</Button>
-            </Link>
+            <Link to="/app/services/oliver_invoices"><Button variant="secondary">Invoices</Button></Link>
+            <Link to="/app/services/oliver_job_board"><Button variant="primary">Open job board</Button></Link>
           </>
         }
       />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <DashCard label="Active jobs" value={stats?.activeJobs ?? 0} link="/app/services/oliver_job_board" />
-        <DashCard label="Revenue (paid)" value={fmtMoney(stats?.revenue)} link="/app/services/oliver_payments" tone="emerald" />
-        <DashCard label="Open invoices" value={stats?.openInvoices ?? 0} link="/app/services/oliver_invoices" tone="teal" />
-        <DashCard label="Active workers" value={stats?.workers ?? 0} link="/app/services/oliver_workers" />
+      {/* KPI row — ARION stat-card pattern */}
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-lbl">Active jobs</div>
+          <div className="stat-val">{stats?.activeJobs ?? 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Revenue (paid)</div>
+          <div className="stat-val">{fmtMoney(billing?.revenue)}</div>
+          <div className="stat-delta neu">{billing?.paid_count ?? 0} paid invoices</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Outstanding</div>
+          <div className="stat-val">{fmtMoney(billing?.outstanding)}</div>
+          <div className="stat-delta neu">{billing?.open_count ?? 0} open</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Overdue</div>
+          <div className="stat-val" style={{ color: (billing?.overdue ?? 0) > 0 ? "#D97706" : undefined }}>
+            {fmtMoney(billing?.overdue)}
+          </div>
+          <div className="stat-delta neu">{billing?.overdue_count ?? 0} past due</div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal">Recent activity</h3>
-            <Link to="/app/services/oliver_activity_log" className="text-xs text-slate-500 hover:text-oliver-teal">View all →</Link>
+      {/* Two-col layout: upcoming jobs + service requests */}
+      <div className="two-col">
+        <div className="card">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">Upcoming jobs</div>
+              <div className="card-sub">Scheduled, assigned, or dispatched — next 14 days</div>
+            </div>
+            <Link to="/app/services/oliver_schedule" style={{ fontSize: 11, color: "#1A7DB5", textDecoration: "none" }}>View schedule →</Link>
           </div>
-          {activity.length === 0 ? (
-            <div className="py-8 text-center text-sm text-slate-400 italic">No activity yet — your first job, quote, or invoice will appear here.</div>
+          {!ops?.upcoming_jobs?.length ? (
+            <div style={{ padding: "16px 0", color: "#5A7A8A", fontSize: 12, fontStyle: "italic" }}>
+              No upcoming jobs. New requests appear here when scheduled.
+            </div>
           ) : (
-            <ul className="divide-y divide-gray-100">
-              {activity.slice(0, 12).map((e) => (
-                <li key={e.id} className="py-2.5 flex items-start gap-3">
-                  <StatusBadge status={e.type || "system"} />
-                  <div className="flex-1">
-                    <div className="text-sm text-slate-700">{e.description}</div>
-                    <div className="text-xs text-slate-400 mt-0.5">{new Date(e.created_at).toLocaleString()}</div>
+            ops.upcoming_jobs.slice(0, 8).map((j) => (
+              <div key={j.job_id} className="hrow" style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <StatusBadge status={j.status} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: "#0B1C24" }}>
+                    {j.title || "(untitled)"} · {j.customer_name || "—"}
                   </div>
-                </li>
-              ))}
-            </ul>
+                  <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 1 }}>
+                    {fmtRelative(j.scheduled_start)} {j.assigned_to && `· ${j.assigned_to}`}
+                  </div>
+                </div>
+                <div style={{ fontSize: 10, color: "#5A7A8A", fontFamily: "monospace" }}>{j.job_number}</div>
+              </div>
+            ))
           )}
         </div>
 
-        <aside className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card p-5">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal mb-3">Quick actions</h3>
-          <div className="space-y-2">
-            <QuickLink to="/app/services/oliver_catalog" label="Manage service catalog" hint="Define what you sell" />
-            <QuickLink to="/app/services/oliver_quotes" label="Create a quote" hint="Send pricing to a customer" />
-            <QuickLink to="/app/services/oliver_invoices" label="Send an invoice" hint="Get paid for a completed job" />
-            <QuickLink to="/app/services/oliver_workers" label="Add a worker" hint="Set their weekly availability" />
-            <QuickLink to="/app/services/oliver_settings" label="Connect Stripe" hint="Enable payments" />
-            <QuickLink to="/app/services/oliver_reports" label="View reports" hint="Revenue trends & analytics" />
+        <div className="card">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">New service requests</div>
+              <div className="card-sub">Awaiting review from the customer portal</div>
+            </div>
+            <Link to="/app/services/oliver_service_requests" style={{ fontSize: 11, color: "#1A7DB5", textDecoration: "none" }}>View all →</Link>
           </div>
-        </aside>
+          {!ops?.open_requests?.length ? (
+            <div style={{ padding: "16px 0", color: "#5A7A8A", fontSize: 12, fontStyle: "italic" }}>
+              No open requests right now.
+            </div>
+          ) : (
+            ops.open_requests.slice(0, 5).map((r) => (
+              <div key={r.job_id} className="hrow" style={{ display: "block", padding: "9px 0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>{r.title || "Service request"}</span>
+                  <span style={{ fontSize: 10, color: "#5A7A8A" }}>{fmtRelative(r.created_at)}</span>
+                </div>
+                <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>{r.customer_name}</div>
+                {r.customer_notes && (
+                  <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 4, lineHeight: 1.4, fontStyle: "italic" }}>
+                    "{r.customer_notes.slice(0, 120)}{r.customer_notes.length > 120 ? "…" : ""}"
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Two-col: recent payments + upcoming subscriptions */}
+      <div className="two-col">
+        <div className="card">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">Recent payments</div>
+              <div className="card-sub">Last 10 successful payments</div>
+            </div>
+            <Link to="/app/services/oliver_payments" style={{ fontSize: 11, color: "#1A7DB5", textDecoration: "none" }}>View all →</Link>
+          </div>
+          {!billing?.recent_payments?.length ? (
+            <div style={{ padding: "16px 0", color: "#5A7A8A", fontSize: 12, fontStyle: "italic" }}>
+              No payments yet.
+            </div>
+          ) : (
+            billing.recent_payments.slice(0, 8).map((p) => (
+              <div key={p.payment_id} className="hrow" style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <span className={`hdot ${p.type === "refund" ? "warn" : "ok"}`} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: "#0B1C24" }}>
+                    {p.customer_name || "—"} {p.invoice_number && <span style={{ fontFamily: "monospace", color: "#5A7A8A", fontSize: 11 }}>· {p.invoice_number}</span>}
+                  </div>
+                  <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 1 }}>{fmtRelative(p.paid_at)}</div>
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: p.type === "refund" ? "#9333EA" : "#059669" }}>
+                  {p.type === "refund" ? "−" : ""}{fmtMoney(p.amount)}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">Upcoming subscriptions</div>
+              <div className="card-sub">Renewals in next 30 days</div>
+            </div>
+            <Link to="/app/services/oliver_recurring" style={{ fontSize: 11, color: "#1A7DB5", textDecoration: "none" }}>View all →</Link>
+          </div>
+          {!billing?.upcoming_subscriptions?.length ? (
+            <div style={{ padding: "16px 0", color: "#5A7A8A", fontSize: 12, fontStyle: "italic" }}>
+              No upcoming subscription renewals.
+            </div>
+          ) : (
+            billing.upcoming_subscriptions.slice(0, 8).map((s) => (
+              <div key={s.subscription_id} className="hrow" style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <span className="hdot ok" />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: "#0B1C24" }}>{s.service_name || "Subscription"}</div>
+                  <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 1 }}>{fmtRelative(s.current_period_end)}</div>
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>{fmtMoney(s.amount)}</div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Recent activity stream */}
+      <div className="card">
+        <div className="card-hdr">
+          <div>
+            <div className="card-ttl">Recent activity</div>
+            <div className="card-sub">Status changes, transitions, system events</div>
+          </div>
+          <Link to="/app/services/oliver_activity_log" style={{ fontSize: 11, color: "#1A7DB5", textDecoration: "none" }}>View all →</Link>
+        </div>
+        {!activity.length ? (
+          <div style={{ padding: "16px 0", color: "#5A7A8A", fontSize: 12, fontStyle: "italic" }}>
+            No activity yet.
+          </div>
+        ) : (
+          activity.slice(0, 10).map((e) => (
+            <div key={e.id} className="hrow" style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <StatusBadge status={e.type || "info"} />
+              <div style={{ flex: 1, fontSize: 12, color: "#0B1C24" }}>{e.description}</div>
+              <div style={{ fontSize: 10, color: "#5A7A8A" }}>{fmtRelative(e.created_at)}</div>
+            </div>
+          ))
+        )}
       </div>
     </OliverPageWrapper>
-  );
-}
-
-function DashCard({ label, value, link, tone = "teal" }: { label: string; value: React.ReactNode; link?: string; tone?: "teal" | "emerald" | "amber" }) {
-  const colors: Record<string, string> = { teal: "text-oliver-teal", emerald: "text-emerald-600", amber: "text-amber-600" };
-  const card = (
-    <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-5 py-4 hover:shadow-md transition">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`mt-2 text-2xl font-bold tabular-nums ${colors[tone]}`}>{value}</div>
-    </div>
-  );
-  return link ? <Link to={link}>{card}</Link> : card;
-}
-
-function QuickLink({ to, label, hint }: { to: string; label: string; hint: string }) {
-  return (
-    <Link to={to} className="block rounded-lg px-3 py-2 hover:bg-oliver-gold-50 transition">
-      <div className="text-sm font-medium text-oliver-teal">{label}</div>
-      <div className="text-xs text-slate-500">{hint}</div>
-    </Link>
   );
 }

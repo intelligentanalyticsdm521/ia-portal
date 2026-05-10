@@ -67,6 +67,7 @@ export function OliverServiceCatalogPage() {
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [tab, setTab] = useState<"products" | "coupons" | "shipping">("products");
 
   async function syncFromStripe() {
     setSyncing(true);
@@ -217,22 +218,40 @@ export function OliverServiceCatalogPage() {
     <OliverPageWrapper title="Service Catalog" subtitle="Tenant-defined services" error={error} loading={loading}>
       <PageHeader
         title="Service Catalog"
-        subtitle="What your business sells — services, products, subscriptions. Each item mirrors a Stripe Product."
+        subtitle="What your business sells — services, products, subscriptions, coupons, shipping. Mirrors your Stripe account."
         actions={
           <>
             <Button variant="ghost" onClick={syncFromStripe} loading={syncing}>
               {syncing ? "Syncing…" : "Sync from Stripe"}
             </Button>
-            <Button variant="ghost" onClick={() => setShowCategoryManager(true)}>Manage categories</Button>
-            <Button variant="primary" onClick={openNew}>+ Add service</Button>
+            {tab === "products" && (
+              <>
+                <Button variant="ghost" onClick={() => setShowCategoryManager(true)}>Manage categories</Button>
+                <Button variant="primary" onClick={openNew}>+ Add service</Button>
+              </>
+            )}
           </>
         }
       />
 
+      {/* Tabs across top of catalog */}
+      <div className="ptabs" style={{ marginBottom: 16 }}>
+        <button className={`ptab${tab === "products" ? " active" : ""}`} onClick={() => setTab("products")}>Products & Services</button>
+        <button className={`ptab${tab === "coupons" ? " active" : ""}`} onClick={() => setTab("coupons")}>Coupons</button>
+        <button className={`ptab${tab === "shipping" ? " active" : ""}`} onClick={() => setTab("shipping")}>Shipping rates</button>
+      </div>
+
       {syncMessage && (
-        <div className="mb-4 rounded-lg bg-emerald-50 ring-1 ring-emerald-200 px-4 py-2 text-sm text-emerald-900">{syncMessage}</div>
+        <div className="info-card" style={{ marginBottom: 16 }}>
+          <div className="info-body">{syncMessage}</div>
+        </div>
       )}
 
+      {tab === "coupons" && <CouponsTab api={{ get, post, del }} />}
+      {tab === "shipping" && <ShippingRatesTab api={{ get, post }} />}
+
+      {tab === "products" && (
+      <>
       {!offerings.length ? (
         <EmptyState
           title="No services in your catalog yet"
@@ -281,7 +300,290 @@ export function OliverServiceCatalogPage() {
           api={{ post, patch, del }}
         />
       )}
+      </>
+      )}
     </OliverPageWrapper>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Coupons tab
+// ──────────────────────────────────────────────────────────────────────────────
+
+interface Coupon {
+  id: string;
+  name?: string;
+  percent_off?: number | null;
+  amount_off?: number | null;
+  currency?: string;
+  duration: string;
+  duration_in_months?: number | null;
+  max_redemptions?: number | null;
+  times_redeemed?: number;
+  redeem_by?: number | null;
+  valid?: boolean;
+  created?: number;
+}
+
+function CouponsTab({ api }: { api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T>; del: <T>(p: string) => Promise<T> } }) {
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr(null);
+    try { setCoupons(await api.get<Coupon[]>("/catalog/coupons")); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setLoading(false); }
+  }, [api]);
+  useEffect(() => { load(); }, [load]);
+
+  async function remove(c: Coupon) {
+    if (!confirm(`Delete coupon ${c.name || c.id}?`)) return;
+    try { await api.del(`/catalog/coupons/${c.id}`); await load(); }
+    catch (e) { setErr((e as Error).message); }
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, alignItems: "center" }}>
+        <div style={{ fontSize: 12, color: "#5A7A8A" }}>{coupons.length} coupon{coupons.length === 1 ? "" : "s"}</div>
+        <Button variant="primary" onClick={() => setShowAdd(true)}>+ New coupon</Button>
+      </div>
+      {err && <div className="info-card" style={{ marginBottom: 12, background: "#FEE2E2", borderColor: "#FCA5A5" }}><div className="info-body" style={{ color: "#991B1B" }}>{err}</div></div>}
+      {loading ? <div style={{ padding: 20, color: "#5A7A8A" }}>Loading…</div> : (
+        <div className="card" style={{ padding: 0 }}>
+          <table className="tbl">
+            <thead><tr>
+              <th>Name</th><th>Discount</th><th>Duration</th><th>Redemptions</th><th>Expires</th><th></th>
+            </tr></thead>
+            <tbody>
+              {coupons.map((c) => (
+                <tr key={c.id}>
+                  <td><strong>{c.name || c.id}</strong><div style={{ fontSize: 10, color: "#5A7A8A", fontFamily: "monospace" }}>{c.id}</div></td>
+                  <td>{c.percent_off != null ? `${c.percent_off}% off` : c.amount_off != null ? `$${(c.amount_off / 100).toFixed(2)} off` : "—"}</td>
+                  <td>{c.duration}{c.duration === "repeating" && c.duration_in_months ? ` (${c.duration_in_months}mo)` : ""}</td>
+                  <td>{c.times_redeemed ?? 0}{c.max_redemptions ? ` / ${c.max_redemptions}` : ""}</td>
+                  <td>{c.redeem_by ? new Date(c.redeem_by * 1000).toLocaleDateString() : "Never"}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <button onClick={() => remove(c)} style={{ fontSize: 11, color: "#dc2626", background: "none", border: "none", cursor: "pointer" }}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+              {!coupons.length && <tr><td colSpan={6} style={{ textAlign: "center", padding: "30px 0", color: "#5A7A8A" }}>No coupons yet</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {showAdd && <NewCouponModal onClose={() => setShowAdd(false)} onCreated={() => { setShowAdd(false); load(); }} api={{ post: api.post }} />}
+    </div>
+  );
+}
+
+function NewCouponModal({ onClose, onCreated, api }: { onClose: () => void; onCreated: () => void; api: { post: <T>(p: string, b?: unknown) => Promise<T> } }) {
+  const [name, setName] = useState("");
+  const [discountType, setDiscountType] = useState<"percent" | "amount">("percent");
+  const [discount, setDiscount] = useState("");
+  const [duration, setDuration] = useState<"once" | "forever" | "repeating">("once");
+  const [months, setMonths] = useState("3");
+  const [maxRedemptions, setMaxRedemptions] = useState("");
+  const [redeemBy, setRedeemBy] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    setBusy(true); setErr(null);
+    try {
+      const body: Record<string, unknown> = { name: name || undefined, duration };
+      if (discountType === "percent") body.percentOff = Number(discount);
+      else { body.amountOff = Number(discount); body.currency = "USD"; }
+      if (duration === "repeating") body.durationInMonths = Number(months);
+      if (maxRedemptions) body.maxRedemptions = Number(maxRedemptions);
+      if (redeemBy) body.redeemBy = redeemBy;
+      await api.post("/catalog/coupons", body);
+      onCreated();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <DetailDrawer open onClose={onClose} title="New coupon" subtitle="Stripe coupon — applies to subscriptions or invoices" width="md"
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" loading={busy} onClick={submit}>Create coupon</Button></>}
+    >
+      {err && <div className="info-card" style={{ marginBottom: 12, background: "#FEE2E2", borderColor: "#FCA5A5" }}><div className="info-body" style={{ color: "#991B1B" }}>{err}</div></div>}
+      <div style={{ display: "grid", gap: 12 }}>
+        <label style={{ fontSize: 12 }}>
+          <strong>Name (optional)</strong>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Spring Sale 10% off"
+            style={{ marginTop: 4, width: "100%", padding: "6px 10px", border: "1px solid #ddd", borderRadius: 4, fontSize: 12 }} />
+        </label>
+        <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 8, alignItems: "end" }}>
+          <label style={{ fontSize: 12 }}>
+            <strong>Discount type</strong>
+            <select value={discountType} onChange={(e) => setDiscountType(e.target.value as never)}
+              style={{ marginTop: 4, width: "100%", padding: "6px 10px", border: "1px solid #ddd", borderRadius: 4, fontSize: 12 }}>
+              <option value="percent">% off</option>
+              <option value="amount">$ off</option>
+            </select>
+          </label>
+          <label style={{ fontSize: 12 }}>
+            <strong>{discountType === "percent" ? "Percent" : "Amount (USD)"}</strong>
+            <input type="number" min="0" step={discountType === "percent" ? "1" : "0.01"} value={discount} onChange={(e) => setDiscount(e.target.value)}
+              style={{ marginTop: 4, width: "100%", padding: "6px 10px", border: "1px solid #ddd", borderRadius: 4, fontSize: 12 }} />
+          </label>
+        </div>
+        <label style={{ fontSize: 12 }}>
+          <strong>Applies for</strong>
+          <select value={duration} onChange={(e) => setDuration(e.target.value as never)}
+            style={{ marginTop: 4, width: "100%", padding: "6px 10px", border: "1px solid #ddd", borderRadius: 4, fontSize: 12 }}>
+            <option value="once">Once (first invoice only)</option>
+            <option value="forever">Forever</option>
+            <option value="repeating">Multiple months</option>
+          </select>
+        </label>
+        {duration === "repeating" && (
+          <label style={{ fontSize: 12 }}>
+            <strong>Duration in months</strong>
+            <input type="number" min="1" value={months} onChange={(e) => setMonths(e.target.value)}
+              style={{ marginTop: 4, width: "100%", padding: "6px 10px", border: "1px solid #ddd", borderRadius: 4, fontSize: 12 }} />
+          </label>
+        )}
+        <label style={{ fontSize: 12 }}>
+          <strong>Max redemptions (optional)</strong>
+          <input type="number" min="1" value={maxRedemptions} onChange={(e) => setMaxRedemptions(e.target.value)}
+            style={{ marginTop: 4, width: "100%", padding: "6px 10px", border: "1px solid #ddd", borderRadius: 4, fontSize: 12 }} />
+        </label>
+        <label style={{ fontSize: 12 }}>
+          <strong>Redeem by (optional)</strong>
+          <input type="date" value={redeemBy} onChange={(e) => setRedeemBy(e.target.value)}
+            style={{ marginTop: 4, width: "100%", padding: "6px 10px", border: "1px solid #ddd", borderRadius: 4, fontSize: 12 }} />
+        </label>
+      </div>
+    </DetailDrawer>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Shipping rates tab
+// ──────────────────────────────────────────────────────────────────────────────
+
+interface ShippingRate {
+  id: string;
+  display_name: string;
+  fixed_amount?: { amount: number; currency: string };
+  delivery_estimate?: { minimum?: { value: number; unit: string }; maximum?: { value: number; unit: string } };
+  active: boolean;
+}
+
+function ShippingRatesTab({ api }: { api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T> } }) {
+  const [rates, setRates] = useState<ShippingRate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr(null);
+    try { setRates(await api.get<ShippingRate[]>("/catalog/shipping-rates")); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setLoading(false); }
+  }, [api]);
+  useEffect(() => { load(); }, [load]);
+
+  async function archive(r: ShippingRate) {
+    if (!confirm(`Archive shipping rate ${r.display_name}?`)) return;
+    try { await api.post(`/catalog/shipping-rates/${r.id}/archive`); await load(); }
+    catch (e) { setErr((e as Error).message); }
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, alignItems: "center" }}>
+        <div style={{ fontSize: 12, color: "#5A7A8A" }}>{rates.length} active rate{rates.length === 1 ? "" : "s"}</div>
+        <Button variant="primary" onClick={() => setShowAdd(true)}>+ New shipping rate</Button>
+      </div>
+      {err && <div className="info-card" style={{ marginBottom: 12, background: "#FEE2E2", borderColor: "#FCA5A5" }}><div className="info-body" style={{ color: "#991B1B" }}>{err}</div></div>}
+      {loading ? <div style={{ padding: 20, color: "#5A7A8A" }}>Loading…</div> : (
+        <div className="card" style={{ padding: 0 }}>
+          <table className="tbl">
+            <thead><tr>
+              <th>Name</th><th>Cost</th><th>Delivery estimate</th><th></th>
+            </tr></thead>
+            <tbody>
+              {rates.map((r) => (
+                <tr key={r.id}>
+                  <td><strong>{r.display_name}</strong><div style={{ fontSize: 10, color: "#5A7A8A", fontFamily: "monospace" }}>{r.id}</div></td>
+                  <td>{r.fixed_amount ? `$${(r.fixed_amount.amount / 100).toFixed(2)} ${r.fixed_amount.currency.toUpperCase()}` : "—"}</td>
+                  <td>{r.delivery_estimate?.minimum && r.delivery_estimate?.maximum
+                    ? `${r.delivery_estimate.minimum.value}–${r.delivery_estimate.maximum.value} business days`
+                    : "Not specified"}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <button onClick={() => archive(r)} style={{ fontSize: 11, color: "#dc2626", background: "none", border: "none", cursor: "pointer" }}>Archive</button>
+                  </td>
+                </tr>
+              ))}
+              {!rates.length && <tr><td colSpan={4} style={{ textAlign: "center", padding: "30px 0", color: "#5A7A8A" }}>No shipping rates yet</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {showAdd && <NewShippingRateModal onClose={() => setShowAdd(false)} onCreated={() => { setShowAdd(false); load(); }} api={{ post: api.post }} />}
+    </div>
+  );
+}
+
+function NewShippingRateModal({ onClose, onCreated, api }: { onClose: () => void; onCreated: () => void; api: { post: <T>(p: string, b?: unknown) => Promise<T> } }) {
+  const [displayName, setDisplayName] = useState("");
+  const [amount, setAmount] = useState("");
+  const [deliveryMin, setDeliveryMin] = useState("");
+  const [deliveryMax, setDeliveryMax] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    setBusy(true); setErr(null);
+    try {
+      const body: Record<string, unknown> = { displayName, amount: Number(amount), currency: "USD" };
+      if (deliveryMin && deliveryMax) {
+        body.deliveryMin = Number(deliveryMin);
+        body.deliveryMax = Number(deliveryMax);
+      }
+      await api.post("/catalog/shipping-rates", body);
+      onCreated();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <DetailDrawer open onClose={onClose} title="New shipping rate" width="md"
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" loading={busy} onClick={submit}>Create rate</Button></>}
+    >
+      {err && <div className="info-card" style={{ marginBottom: 12, background: "#FEE2E2", borderColor: "#FCA5A5" }}><div className="info-body" style={{ color: "#991B1B" }}>{err}</div></div>}
+      <div style={{ display: "grid", gap: 12 }}>
+        <label style={{ fontSize: 12 }}>
+          <strong>Display name</strong>
+          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="e.g. Standard Shipping"
+            style={{ marginTop: 4, width: "100%", padding: "6px 10px", border: "1px solid #ddd", borderRadius: 4, fontSize: 12 }} />
+        </label>
+        <label style={{ fontSize: 12 }}>
+          <strong>Amount (USD)</strong>
+          <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
+            style={{ marginTop: 4, width: "100%", padding: "6px 10px", border: "1px solid #ddd", borderRadius: 4, fontSize: 12 }} />
+        </label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <label style={{ fontSize: 12 }}>
+            <strong>Delivery min (days)</strong>
+            <input type="number" min="0" value={deliveryMin} onChange={(e) => setDeliveryMin(e.target.value)}
+              style={{ marginTop: 4, width: "100%", padding: "6px 10px", border: "1px solid #ddd", borderRadius: 4, fontSize: 12 }} />
+          </label>
+          <label style={{ fontSize: 12 }}>
+            <strong>Delivery max (days)</strong>
+            <input type="number" min="0" value={deliveryMax} onChange={(e) => setDeliveryMax(e.target.value)}
+              style={{ marginTop: 4, width: "100%", padding: "6px 10px", border: "1px solid #ddd", borderRadius: 4, fontSize: 12 }} />
+          </label>
+        </div>
+      </div>
+    </DetailDrawer>
   );
 }
 
