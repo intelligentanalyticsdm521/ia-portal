@@ -93,3 +93,23 @@ export function oliverPatch<T>(msal: IPublicClientApplication, account: AccountI
 export function oliverDelete<T>(msal: IPublicClientApplication, account: AccountInfo, path: string) {
   return oliverFetch<T>(msal, account, path, { method: "DELETE" });
 }
+
+// Raw fetch for binary responses (PDFs, blobs). Caller is responsible for
+// reading res.blob() / res.arrayBuffer() and handling errors.
+export async function oliverFetchRaw(
+  msal: IPublicClientApplication,
+  account: AccountInfo,
+  path: string,
+  init?: RequestInit
+): Promise<Response> {
+  const token = await getToken(msal, account);
+  const tenantId = getTenantId(token);
+  return fetch(`${OLIVER_API_BASE}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "x-tenant-key": tenantId,
+      ...(init?.headers as Record<string, string>),
+    },
+  });
+}
