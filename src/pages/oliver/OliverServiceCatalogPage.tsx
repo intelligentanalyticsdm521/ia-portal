@@ -65,6 +65,28 @@ export function OliverServiceCatalogPage() {
 
   const [editingOffering, setEditingOffering] = useState<Offering | null>(null);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
+  async function syncFromStripe() {
+    setSyncing(true);
+    setSyncMessage(null);
+    try {
+      const res = await post<{ products: { imported: number; updated: number }; customers: { imported: number }; subscriptions: { imported: number } }>(
+        "/settings/stripe/import"
+      );
+      setSyncMessage(
+        `Imported from Stripe: ${res.products.imported} new product${res.products.imported === 1 ? "" : "s"} ` +
+        `(${res.products.updated} updated), ${res.customers.imported} new customer${res.customers.imported === 1 ? "" : "s"}, ` +
+        `${res.subscriptions.imported} subscription${res.subscriptions.imported === 1 ? "" : "s"}.`
+      );
+      await reload();
+    } catch (e) {
+      setSyncMessage(`Sync failed: ${(e as Error).message}`);
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -195,23 +217,30 @@ export function OliverServiceCatalogPage() {
     <OliverPageWrapper title="Service Catalog" subtitle="Tenant-defined services" error={error} loading={loading}>
       <PageHeader
         title="Service Catalog"
-        subtitle="Define what your business sells. Each offering syncs to a Stripe Product on your connected account."
+        subtitle="What your business sells — services, products, subscriptions. Each item mirrors a Stripe Product."
         actions={
           <>
+            <Button variant="ghost" onClick={syncFromStripe} loading={syncing}>
+              {syncing ? "Syncing…" : "Sync from Stripe"}
+            </Button>
             <Button variant="ghost" onClick={() => setShowCategoryManager(true)}>Manage categories</Button>
-            <Button variant="primary" onClick={openNew}>+ Add offering</Button>
+            <Button variant="primary" onClick={openNew}>+ Add service</Button>
           </>
         }
       />
 
+      {syncMessage && (
+        <div className="mb-4 rounded-lg bg-emerald-50 ring-1 ring-emerald-200 px-4 py-2 text-sm text-emerald-900">{syncMessage}</div>
+      )}
+
       {!offerings.length ? (
         <EmptyState
-          title="No services defined yet"
-          description="Add your first service to start sending quotes and invoices. Each service can have one or more pricing variants — one-time or recurring."
+          title="No services in your catalog yet"
+          description="Click Sync from Stripe to pull in everything you've already set up there, or add a new service from scratch. Each service can have one-time or subscription pricing."
           action={
             <div className="flex gap-2 justify-center">
-              <Button variant="ghost" onClick={() => setShowCategoryManager(true)}>+ Add category first</Button>
-              <Button variant="primary" onClick={openNew}>+ Add offering</Button>
+              <Button variant="ghost" onClick={syncFromStripe} loading={syncing}>Sync from Stripe</Button>
+              <Button variant="primary" onClick={openNew}>+ Add service</Button>
             </div>
           }
         />
@@ -541,8 +570,8 @@ function CategoryManagerDrawer({ categories, onClose, onSaved, api }: { categori
   }
 
   return (
-    <DetailDrawer open onClose={onClose} title="Manage categories" width="md">
-      <div className="space-y-4">
+    <DetailDrawer open onClose={onClose} title="Manage categories" subtitle="Group your services for easier browsing" width="lg">
+      <div className="space-y-5">
         <div className="rounded-lg ring-1 ring-gray-200 divide-y divide-gray-100">
           {categories.length === 0 && (
             <div className="px-4 py-6 text-center text-sm text-slate-500 italic">No categories yet — add one below.</div>
@@ -551,26 +580,28 @@ function CategoryManagerDrawer({ categories, onClose, onSaved, api }: { categori
             <div key={c.category_id} className="px-3 py-2 flex items-center gap-2">
               <input type="color" value={c.color || "#1A3A4A"}
                 onChange={(e) => recolor(c, e.target.value)}
-                className="h-8 w-10 rounded ring-1 ring-gray-300" />
+                className="h-8 w-10 rounded ring-1 ring-gray-300 flex-shrink-0"
+                title="Category color" />
               <input type="text" defaultValue={c.name}
                 onBlur={(e) => { if (e.target.value !== c.name) rename(c, e.target.value); }}
-                className="flex-1 rounded ring-1 ring-gray-300 px-2 py-1 text-sm" />
-              <button onClick={() => remove(c)} className="text-xs text-red-500 hover:text-red-700">Delete</button>
+                className="flex-1 min-w-0 rounded ring-1 ring-gray-300 px-2 py-1 text-sm" />
+              <button onClick={() => remove(c)} className="text-xs text-red-500 hover:text-red-700 flex-shrink-0 px-2">Delete</button>
             </div>
           ))}
         </div>
 
-        <div className="rounded-lg bg-slate-50 ring-1 ring-gray-200 p-3 space-y-2">
-          <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Add a category</div>
-          <div className="flex items-center gap-2">
+        <div className="rounded-lg bg-oliver-gold-50 ring-1 ring-oliver-gold-300 p-4 space-y-3">
+          <div className="text-xs font-medium uppercase tracking-wide text-oliver-teal">Add a category</div>
+          <div className="flex flex-wrap items-center gap-2">
             <input type="color" value={newColor} onChange={(e) => setNewColor(e.target.value)}
-              className="h-8 w-10 rounded ring-1 ring-gray-300" />
+              className="h-9 w-12 rounded ring-1 ring-gray-300 flex-shrink-0" title="Pick color" />
             <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)}
-              placeholder="e.g. Cleaning, Repairs, Design"
+              placeholder="e.g. Cleaning, Tax Prep, Logo Design, Coffee Beans…"
               onKeyDown={(e) => e.key === "Enter" && add()}
-              className="flex-1 rounded ring-1 ring-gray-300 px-2 py-1 text-sm" />
-            <Button size="sm" variant="primary" onClick={add} disabled={!newName.trim()}>Add</Button>
+              className="flex-1 min-w-[200px] rounded ring-1 ring-gray-300 px-3 py-2 text-sm" />
+            <Button variant="primary" onClick={add} disabled={!newName.trim()}>Add category</Button>
           </div>
+          <p className="text-xs text-slate-600">Categories help you organize services. You can also leave services uncategorized.</p>
         </div>
       </div>
     </DetailDrawer>

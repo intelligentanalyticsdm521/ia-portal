@@ -93,7 +93,7 @@ const OLIVER_NAV: SubNavConfig = {
     },
     {
       label: "",
-      items: [{ key: "oliver_settings", label: "Settings", route: "/app/services/oliver_settings" }],
+      items: [{ key: "oliver_settings", label: "Business Setup", route: "/app/services/oliver_settings" }],
     },
   ],
 };

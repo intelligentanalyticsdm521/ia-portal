@@ -104,7 +104,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_reports', displayName: 'Reports', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_reports', description: 'Revenue, job volume, and completion analytics with charts.' },
   { key: 'oliver_activity_log', displayName: 'Activity Log', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_activity_log', description: 'Full audit trail of all job status transitions.' },
   { key: 'oliver_catalog', displayName: 'Service Catalog', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_catalog', description: 'Define your services and pricing. Each offering syncs to Stripe.' },
-  { key: 'oliver_settings', displayName: 'Settings', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_settings', description: 'Tenant settings and Stripe configuration.' },
+  { key: 'oliver_settings', displayName: 'Business Setup', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_settings', description: 'Business profile, Stripe Connect, and invoice template.' },
   // SPARK — Full CRM + Lead Gen + Intelligence suite
   { key: 'spark_overview', displayName: 'Overview', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_overview', description: 'SPARK CRM summary: contacts, campaigns, leads pipeline, usage.' },
   { key: 'spark_contacts', displayName: 'Contacts', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_contacts', description: 'Contact management with dedup, search, import, and activity history.' },
