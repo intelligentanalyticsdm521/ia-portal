@@ -5,6 +5,7 @@ import {
   PageHeader, FilterBar, DataTable, EmptyState, Button,
   StatusBadge, type Column,
 } from "../../components/oliver/ui";
+import { JobCreateForm } from "./JobCreateForm";
 
 interface Job {
   id: string;
@@ -44,6 +45,7 @@ export function OliverJobBoardPage() {
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
   const [view, setView] = useState<"list" | "kanban">("list");
+  const [showCreate, setShowCreate] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
@@ -100,16 +102,53 @@ export function OliverJobBoardPage() {
         title="Job Board"
         subtitle="Track every job from inquiry to paid"
         actions={
-          <div className="flex items-center gap-1 rounded-lg ring-1 ring-gray-300 bg-white p-0.5">
-            <button onClick={() => setView("list")} className={`px-3 py-1 text-xs font-medium rounded ${view === "list" ? "bg-oliver-teal text-white" : "text-slate-600"}`}>List</button>
-            <button onClick={() => setView("kanban")} className={`px-3 py-1 text-xs font-medium rounded ${view === "kanban" ? "bg-oliver-teal text-white" : "text-slate-600"}`}>Kanban</button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div className="ptabs" style={{ marginBottom: 0 }}>
+              <button className={`ptab${view === "list" ? " active" : ""}`} onClick={() => setView("list")}>List</button>
+              <button className={`ptab${view === "kanban" ? " active" : ""}`} onClick={() => setView("kanban")}>Kanban</button>
+            </div>
+            {!showCreate && <Button variant="primary" onClick={() => setShowCreate(true)}>+ New job</Button>}
           </div>
         }
       />
 
-      {!jobs.length ? (
-        <EmptyState title="No jobs yet" description="Jobs appear here when customers submit service requests, or when you create them manually." />
-      ) : view === "list" ? (
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-lbl">Active</div>
+          <div className="stat-val">{jobs.filter((j) => !["paid", "cancelled", "completed"].includes(j.status)).length}</div>
+          <div className="stat-delta neu">in progress</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Inquiry</div>
+          <div className="stat-val">{counts["inquiry"] ?? 0}</div>
+          <div className="stat-delta neu">awaiting action</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Scheduled</div>
+          <div className="stat-val">{counts["scheduled"] ?? 0}</div>
+          <div className="stat-delta neu">booked</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Completed</div>
+          <div className="stat-val" style={{ color: "#059669" }}>{(counts["completed"] ?? 0) + (counts["invoiced"] ?? 0) + (counts["paid"] ?? 0)}</div>
+          <div className="stat-delta neu">all time</div>
+        </div>
+      </div>
+
+      {showCreate && (
+        <JobCreateForm
+          onCreated={() => { setShowCreate(false); reload(); }}
+          onCancel={() => setShowCreate(false)}
+        />
+      )}
+
+      {!jobs.length && !showCreate ? (
+        <EmptyState
+          title="No jobs yet"
+          description="Jobs appear here when customers submit service requests, or when you create them manually."
+          action={<Button variant="primary" onClick={() => setShowCreate(true)}>+ New job</Button>}
+        />
+      ) : !jobs.length && showCreate ? null : view === "list" ? (
         <>
           <FilterBar
             pills={pills}
