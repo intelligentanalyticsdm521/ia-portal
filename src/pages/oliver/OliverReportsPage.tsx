@@ -102,7 +102,7 @@ export function OliverReportsPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
               <XAxis dataKey="month" stroke="#64748B" fontSize={12} />
               <YAxis stroke="#64748B" fontSize={12} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-              <Tooltip formatter={(v: number) => fmtMoney(v)} />
+              <Tooltip formatter={(v) => fmtMoney(Number(v))} />
               <Line type="monotone" dataKey="revenue" stroke="#FEC82C" strokeWidth={3} dot={{ fill: "#1A3A4A", r: 4 }} />
             </LineChart>
           </ResponsiveContainer>
@@ -149,7 +149,7 @@ export function OliverReportsPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                 <XAxis type="number" stroke="#64748B" fontSize={12} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
                 <YAxis type="category" dataKey="job_type" stroke="#64748B" fontSize={11} width={80} />
-                <Tooltip formatter={(v: number) => fmtMoney(v)} />
+                <Tooltip formatter={(v) => fmtMoney(Number(v))} />
                 <Bar dataKey="revenue" fill="#1A3A4A" radius={[0, 6, 6, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -163,7 +163,7 @@ export function OliverReportsPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                 <XAxis dataKey="month" stroke="#64748B" fontSize={12} />
                 <YAxis stroke="#64748B" fontSize={12} tickFormatter={(v) => `${v}%`} />
-                <Tooltip formatter={(v: number) => `${v}%`} />
+                <Tooltip formatter={(v) => `${Number(v)}%`} />
                 <Line type="monotone" dataKey="conversion_pct" stroke="#10B981" strokeWidth={3} dot={{ fill: "#1A3A4A", r: 4 }} />
               </LineChart>
             </ResponsiveContainer>

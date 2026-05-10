@@ -1,5 +1,5 @@
 // Maps any OLIVER status to the ARION status-pill variants.
-interface Props { status: string; }
+interface Props { status: string; size?: "sm" | "md" }
 
 const variantMap: Record<string, "active" | "warning" | "error" | "info"> = {
   draft:        "info",

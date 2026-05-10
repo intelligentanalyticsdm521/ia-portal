@@ -125,7 +125,7 @@ export function OliverInvoicesPage() {
   const kpis = useMemo(() => {
     const sum = (pred: (r: InvoiceRow) => boolean) => rows.filter(pred).reduce((s, r) => s + Number(r.amount || 0), 0);
     const today = new Date();
-    const isOverdue = (r: InvoiceRow) => r.status === "sent" && r.dueDate && new Date(r.dueDate) < today;
+    const isOverdue = (r: InvoiceRow): boolean => !!(r.status === "sent" && r.dueDate && new Date(r.dueDate) < today);
     return {
       paid: sum((r) => r.status === "paid"),
       outstanding: sum((r) => r.status === "sent"),
