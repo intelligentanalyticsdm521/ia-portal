@@ -356,6 +356,33 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps
     finally { setBusy(null); }
   }
 
+  async function markPaid() {
+    const balance = Number(inv!.balance_due) || (Number(inv!.total) - Number(inv!.amount_paid || 0));
+    const amountStr = prompt(`Record manual payment. Amount (default = balance ${fmtMoney(balance)}):`, balance.toFixed(2));
+    if (amountStr == null) return;
+    const amount = Number(amountStr);
+    if (!(amount > 0)) { setErr("Invalid amount"); return; }
+    const method = prompt("Payment method (cash, check, ACH, other):", "cash") || "cash";
+    setBusy("markpaid"); setErr(null);
+    try {
+      await api.post(`/invoices/${inv!.invoice_id}/mark-paid`, { amount, method });
+      await reload();
+      onChanged();
+    } catch (e) { setErr(`Mark paid failed: ${(e as Error).message}`); }
+    finally { setBusy(null); }
+  }
+
+  async function markUncollectible() {
+    if (!confirm("Mark this invoice as uncollectible? It will be voided.")) return;
+    setBusy("uncollectible"); setErr(null);
+    try {
+      await api.post(`/invoices/${inv!.invoice_id}/mark-uncollectible`);
+      await reload();
+      onChanged();
+    } catch (e) { setErr(`Mark uncollectible failed: ${(e as Error).message}`); }
+    finally { setBusy(null); }
+  }
+
   const overdue = inv.status === "sent" && inv.due_date && new Date(inv.due_date) < new Date();
   const refundable = Number(inv.amount_paid || 0) - Number(inv.total_refunded || 0);
 
@@ -374,8 +401,15 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps
       footer={
         <>
           {inv.status === "draft" && <Button variant="ghost" onClick={voidInvoice} loading={busy === "void"}>Void</Button>}
+          {inv.status === "draft" && <Button variant="secondary" onClick={markPaid} loading={busy === "markpaid"}>Mark as paid</Button>}
           {inv.status === "draft" && <Button variant="primary" onClick={send} loading={busy === "send"}>Send invoice</Button>}
-          {inv.status === "sent" && <Button variant="ghost" onClick={voidInvoice} loading={busy === "void"}>Void</Button>}
+          {inv.status === "sent" && (
+            <>
+              <Button variant="ghost" onClick={markUncollectible} loading={busy === "uncollectible"}>Mark uncollectible</Button>
+              <Button variant="ghost" onClick={voidInvoice} loading={busy === "void"}>Void</Button>
+              <Button variant="primary" onClick={markPaid} loading={busy === "markpaid"}>Mark as paid</Button>
+            </>
+          )}
           {inv.status === "paid" && refundable > 0 && (
             <>
               <Button variant="ghost" onClick={() => setRefundOpen(true)}>Partial refund…</Button>

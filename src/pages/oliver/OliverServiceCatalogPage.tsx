@@ -300,6 +300,8 @@ interface OfferingDrawerProps {
     del: <T>(path: string) => Promise<T>;
   };
 }
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _OfferingDrawerHasArchive = OfferingDrawerProps;
 
 function OfferingDrawer({ offering, categories, onClose, onSaved, api }: OfferingDrawerProps) {
   const [draft, setDraft] = useState(offering);
@@ -325,6 +327,34 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
       };
       if (isNew) await api.post("/catalog/offerings", body);
       else await api.patch(`/catalog/offerings/${draft.offering_id}`, body);
+      onSaved();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function archiveOffering() {
+    if (isNew) return;
+    if (!confirm(`Archive "${draft.name}"? It will be hidden from your catalog and the Stripe Product will be deactivated. You can restore it later.`)) return;
+    setSaving(true);
+    try {
+      await api.post(`/catalog/offerings/${draft.offering_id}/archive`);
+      onSaved();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteOffering() {
+    if (isNew) return;
+    if (!confirm(`Permanently DELETE "${draft.name}"? This removes it and all price variants from OLIVER. (The Stripe Product itself is not deleted.) This cannot be undone.`)) return;
+    setSaving(true);
+    try {
+      await api.del(`/catalog/offerings/${draft.offering_id}`);
       onSaved();
     } catch (e) {
       setErr((e as Error).message);
@@ -359,9 +389,16 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
       width="xl"
       footer={
         <>
+          {!isNew && draft.is_active && (
+            <Button variant="ghost" onClick={archiveOffering}>Archive</Button>
+          )}
+          {!isNew && !draft.is_active && (
+            <Button variant="danger" onClick={deleteOffering}>Delete permanently</Button>
+          )}
+          <div style={{ flex: 1 }} />
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button variant="primary" loading={saving} onClick={save}>
-            {isNew ? "Create offering" : "Save changes"}
+            {isNew ? "Create service" : "Save changes"}
           </Button>
         </>
       }

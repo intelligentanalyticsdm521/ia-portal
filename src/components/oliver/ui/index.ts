@@ -7,3 +7,4 @@ export { DataTable, type Column } from "./DataTable";
 export { DetailDrawer } from "./DetailDrawer";
 export { EmptyState } from "./EmptyState";
 export { Button } from "./Button";
+export { TimeRangeSelector, rangeForPreset, type TimeRange, type RangePreset } from "./TimeRangeSelector";
