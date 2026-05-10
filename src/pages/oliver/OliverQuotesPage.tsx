@@ -5,6 +5,7 @@ import {
   PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState, Button,
   StatusBadge, type Column,
 } from "../../components/oliver/ui";
+import { QuoteCreateForm } from "./QuoteCreateForm";
 
 interface QuoteRow {
   id: string;
@@ -68,6 +69,7 @@ export function OliverQuotesPage() {
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
@@ -155,30 +157,46 @@ export function OliverQuotesPage() {
       <PageHeader
         title="Quotes"
         subtitle="Send estimates, track acceptance, and convert into jobs"
-        actions={<Button variant="primary" disabled>+ Create quote</Button>}
+        actions={!showCreate && <Button variant="primary" onClick={() => setShowCreate(true)}>+ Create quote</Button>}
       />
 
-      <div className="flex items-end gap-12 mb-6">
-        <div>
-          <div className="text-xs text-slate-500">Open</div>
-          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{fmtMoney(kpis.sentValue)}</div>
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-lbl">Open</div>
+          <div className="stat-val">{fmtMoney(kpis.sentValue)}</div>
+          <div className="stat-delta neu">{kpis.open} sent</div>
         </div>
-        <div>
-          <div className="text-xs text-slate-500">Accepted</div>
-          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{fmtMoney(kpis.acceptedValue)}</div>
+        <div className="stat-card">
+          <div className="stat-lbl">Accepted</div>
+          <div className="stat-val" style={{ color: "#059669" }}>{fmtMoney(kpis.acceptedValue)}</div>
+          <div className="stat-delta neu">{counts["accepted"] ?? 0} accepted</div>
         </div>
-        <div>
-          <div className="text-xs text-slate-500">Conversion</div>
-          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{kpis.conversionRate != null ? `${kpis.conversionRate}%` : "—"}</div>
+        <div className="stat-card">
+          <div className="stat-lbl">Conversion rate</div>
+          <div className="stat-val">{kpis.conversionRate != null ? `${kpis.conversionRate}%` : "—"}</div>
+          <div className="stat-delta neu">accepted ÷ decided</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Drafts</div>
+          <div className="stat-val">{counts["draft"] ?? 0}</div>
+          <div className="stat-delta neu">awaiting send</div>
         </div>
       </div>
 
-      {!rows.length ? (
+      {showCreate && (
+        <QuoteCreateForm
+          onCreated={() => { setShowCreate(false); reload(); }}
+          onCancel={() => setShowCreate(false)}
+        />
+      )}
+
+      {!rows.length && !showCreate ? (
         <EmptyState
           title="No quotes yet"
-          description="Create a quote from a job to send pricing to your customer. Accepted quotes auto-flow to invoices."
+          description="Create your first quote to send pricing to a customer. Accepted quotes auto-flow to invoices."
+          action={<Button variant="primary" onClick={() => setShowCreate(true)}>+ Create quote</Button>}
         />
-      ) : (
+      ) : !rows.length && showCreate ? null : (
         <>
           <FilterBar
             pills={pills}
