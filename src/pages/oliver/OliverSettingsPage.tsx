@@ -21,10 +21,23 @@ interface StripeStatus {
   readyToCharge?: boolean;
 }
 
+interface InvoiceTemplate {
+  logoUrl: string | null;
+  accentColor: string;
+  invoiceNumberPrefix: string;
+  terms: string;
+  footerNote: string;
+  googleReviewUrl: string | null;
+}
+
 export function OliverSettingsPage() {
-  const { get, post, ready } = useOliverApi();
+  const { get, post, patch, ready } = useOliverApi();
   const [settings, setSettings] = useState<TenantSettings | null>(null);
   const [stripe, setStripe] = useState<StripeStatus | null>(null);
+  const [tpl, setTpl] = useState<InvoiceTemplate | null>(null);
+  const [tplDraft, setTplDraft] = useState<InvoiceTemplate | null>(null);
+  const [tplSaving, setTplSaving] = useState(false);
+  const [tplMessage, setTplMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [stripeAction, setStripeAction] = useState<"idle" | "connecting" | "syncing">("idle");
@@ -34,18 +47,47 @@ export function OliverSettingsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [s, st] = await Promise.all([
+      const [s, st, t] = await Promise.all([
         get<TenantSettings>("/settings"),
         get<StripeStatus>("/settings/stripe"),
+        get<InvoiceTemplate>("/settings/invoice-template"),
       ]);
       setSettings(s);
       setStripe(st);
+      setTpl(t);
+      setTplDraft(t);
     } catch (err) {
       setError(err);
     } finally {
       setLoading(false);
     }
   }, [get]);
+
+  async function saveTemplate() {
+    if (!tplDraft) return;
+    setTplSaving(true);
+    setTplMessage(null);
+    try {
+      await patch("/settings/invoice-template", tplDraft);
+      setTpl(tplDraft);
+      setTplMessage("Saved.");
+      setTimeout(() => setTplMessage(null), 2500);
+    } catch (err) {
+      setTplMessage(`Save failed: ${(err as Error).message}`);
+    } finally {
+      setTplSaving(false);
+    }
+  }
+
+  function tplChanged(): boolean {
+    if (!tpl || !tplDraft) return false;
+    return tpl.logoUrl !== tplDraft.logoUrl
+      || tpl.accentColor !== tplDraft.accentColor
+      || tpl.invoiceNumberPrefix !== tplDraft.invoiceNumberPrefix
+      || tpl.terms !== tplDraft.terms
+      || tpl.footerNote !== tplDraft.footerNote
+      || tpl.googleReviewUrl !== tplDraft.googleReviewUrl;
+  }
 
   useEffect(() => {
     if (!ready) return;
@@ -242,6 +284,96 @@ export function OliverSettingsPage() {
         <section>
           <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500 mb-3">Payments</h2>
           {renderStripeStatus()}
+        </section>
+
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Invoice template</h2>
+            {tplMessage && <span className="text-xs text-slate-500">{tplMessage}</span>}
+          </div>
+          {tplDraft && (
+            <div className="rounded-xl bg-white ring-1 ring-gray-200 p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <label className="block text-sm">
+                  <span className="text-slate-700 font-medium">Logo URL</span>
+                  <input
+                    type="url"
+                    placeholder="https://yourdomain.com/logo.png"
+                    value={tplDraft.logoUrl ?? ""}
+                    onChange={(e) => setTplDraft({ ...tplDraft, logoUrl: e.target.value || null })}
+                    className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="text-slate-700 font-medium">Accent color</span>
+                  <div className="flex gap-2 mt-1 items-center">
+                    <input
+                      type="color"
+                      value={tplDraft.accentColor}
+                      onChange={(e) => setTplDraft({ ...tplDraft, accentColor: e.target.value })}
+                      className="h-9 w-12 rounded ring-1 ring-gray-300"
+                    />
+                    <input
+                      type="text"
+                      value={tplDraft.accentColor}
+                      onChange={(e) => setTplDraft({ ...tplDraft, accentColor: e.target.value })}
+                      className="flex-1 rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm font-mono"
+                    />
+                  </div>
+                </label>
+                <label className="block text-sm">
+                  <span className="text-slate-700 font-medium">Invoice number prefix</span>
+                  <input
+                    type="text"
+                    placeholder="INV-"
+                    value={tplDraft.invoiceNumberPrefix}
+                    onChange={(e) => setTplDraft({ ...tplDraft, invoiceNumberPrefix: e.target.value })}
+                    className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm font-mono"
+                  />
+                  <p className="mt-1 text-xs text-slate-500">Next invoice will be e.g. <span className="font-mono">{tplDraft.invoiceNumberPrefix}00001</span></p>
+                </label>
+                <label className="block text-sm">
+                  <span className="text-slate-700 font-medium">Payment terms</span>
+                  <input
+                    type="text"
+                    placeholder="Due upon receipt"
+                    value={tplDraft.terms}
+                    onChange={(e) => setTplDraft({ ...tplDraft, terms: e.target.value })}
+                    className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="block text-sm col-span-2">
+                  <span className="text-slate-700 font-medium">Footer note</span>
+                  <textarea
+                    rows={2}
+                    placeholder="Thank you for your business!"
+                    value={tplDraft.footerNote}
+                    onChange={(e) => setTplDraft({ ...tplDraft, footerNote: e.target.value })}
+                    className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="block text-sm col-span-2">
+                  <span className="text-slate-700 font-medium">Google review URL (used in review-request automation)</span>
+                  <input
+                    type="url"
+                    placeholder="https://g.page/r/.../review"
+                    value={tplDraft.googleReviewUrl ?? ""}
+                    onChange={(e) => setTplDraft({ ...tplDraft, googleReviewUrl: e.target.value || null })}
+                    className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  onClick={saveTemplate}
+                  disabled={tplSaving || !tplChanged()}
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {tplSaving ? "Saving…" : "Save template"}
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
         <section>
