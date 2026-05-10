@@ -1,6 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import {
+  PageHeader, FilterBar, EmptyState,
+  StatusBadge, Button,
+} from "../../components/oliver/ui";
 
 interface Job {
   id: string;
@@ -18,6 +22,18 @@ interface Worker {
   last_name: string;
 }
 
+const FILTER_PILLS = [
+  { key: "", label: "All ready" },
+  { key: "status:scheduled", label: "Scheduled (unassigned)" },
+  { key: "status:dispatched", label: "Dispatched (offered)" },
+  { key: "status:assigned", label: "Assigned" },
+];
+
+function fmtDate(d?: string) {
+  if (!d) return "Unscheduled";
+  return new Date(d).toLocaleDateString();
+}
+
 export function OliverDispatchPage() {
   const { get, post, ready } = useOliverApi();
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -26,28 +42,23 @@ export function OliverDispatchPage() {
   const [error, setError] = useState<unknown>(null);
   const [offering, setOffering] = useState<string | null>(null);
   const [selectedWorker, setSelectedWorker] = useState<Record<string, string>>({});
+  const [filter, setFilter] = useState("");
+  const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    if (!ready) return;
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const [j, w] = await Promise.all([
-          get<Job[]>("/jobs?status=scheduled,dispatched,assigned"),
-          get<Worker[]>("/workers"),
-        ]);
-        if (!cancelled) { setJobs(j); setWorkers(w); }
-      } catch (err) {
-        if (!cancelled) setError(err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [get, ready]);
+  const reload = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const [j, w] = await Promise.all([
+        get<Job[]>("/jobs?status=scheduled,dispatched,assigned"),
+        get<Worker[]>("/workers"),
+      ]);
+      setJobs(j || []);
+      setWorkers(w || []);
+    } catch (err) { setError(err); }
+    finally { setLoading(false); }
+  }, [get]);
+
+  useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
   async function handleOffer(jobId: string) {
     const workerId = selectedWorker[jobId];
@@ -55,69 +66,137 @@ export function OliverDispatchPage() {
     setOffering(jobId);
     try {
       await post("/dispatch/offer", { job_id: jobId, worker_id: workerId });
+      const w = workers.find((wk) => wk.id === workerId);
       setJobs((prev) =>
         prev.map((j) =>
           j.id === jobId
-            ? { ...j, status: "dispatched", assignedWorkerId: workerId, assignedWorkerName: workers.find((w) => w.id === workerId)?.first_name ?? "Worker" }
+            ? { ...j, status: "dispatched", assignedWorkerId: workerId, assignedWorkerName: w ? `${w.first_name} ${w.last_name}` : "Worker" }
             : j
         )
       );
-    } catch {
-      // keep state as-is on failure
-    } finally {
-      setOffering(null);
-    }
+    } catch { /* keep state */ }
+    finally { setOffering(null); }
   }
 
-  return (
-    <OliverPageWrapper title="Dispatch" subtitle="Assign workers to jobs" error={error} loading={loading}>
+  const filtered = useMemo(() => {
+    let list = jobs;
+    if (filter.startsWith("status:")) {
+      const s = filter.split(":")[1];
+      list = list.filter((j) => j.status === s);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((j) =>
+        j.title?.toLowerCase().includes(q) ||
+        j.customerName?.toLowerCase().includes(q) ||
+        j.assignedWorkerName?.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [jobs, filter, search]);
 
-      {jobs.length === 0 ? (
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 p-8 text-center text-slate-400">
-          No jobs ready for dispatch.
+  const unassigned = jobs.filter((j) => j.status === "scheduled" && !j.assignedWorkerId).length;
+  const offered = jobs.filter((j) => j.status === "dispatched").length;
+  const accepted = jobs.filter((j) => j.status === "assigned").length;
+
+  return (
+    <OliverPageWrapper title="Dispatch" subtitle="Assign and offer jobs to your team" error={error} loading={loading}>
+      <PageHeader
+        title="Dispatch"
+        subtitle="Pick a worker and offer the job — the worker accepts or declines on their device"
+      />
+
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-lbl">Unassigned</div>
+          <div className="stat-val" style={{ color: unassigned > 0 ? "#D97706" : undefined }}>{unassigned}</div>
+          <div className="stat-delta neu">need a worker</div>
         </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Offered</div>
+          <div className="stat-val">{offered}</div>
+          <div className="stat-delta neu">awaiting accept</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Assigned</div>
+          <div className="stat-val" style={{ color: "#059669" }}>{accepted}</div>
+          <div className="stat-delta neu">ready to go</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Active workers</div>
+          <div className="stat-val">{workers.length}</div>
+          <div className="stat-delta neu">available</div>
+        </div>
+      </div>
+
+      {!jobs.length ? (
+        <EmptyState
+          title="No jobs ready for dispatch"
+          description="Once a job is scheduled, it appears here so you can offer it to a worker. Workers accept or decline on their device, and accepted jobs move to the assigned state."
+        />
       ) : (
-        <div className="space-y-3">
-          {jobs.map((job) => (
-            <div key={job.id} className="rounded-xl bg-white ring-1 ring-gray-200 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-800 truncate">{job.title}</p>
-                <p className="text-xs text-slate-500">
-                  {job.customerName} &middot; {job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : "Unscheduled"}
-                </p>
-                <span className={`inline-block mt-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-                  job.status === "assigned" ? "bg-green-50 text-green-700" :
-                  job.status === "dispatched" ? "bg-amber-50 text-amber-700" :
-                  "bg-blue-50 text-blue-700"
-                }`}>
-                  {job.status}
-                </span>
-                {job.assignedWorkerName && (
-                  <span className="ml-2 text-xs text-slate-500">Assigned to {job.assignedWorkerName}</span>
-                )}
+        <>
+          <FilterBar
+            pills={FILTER_PILLS}
+            activePill={filter}
+            onPillChange={setFilter}
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search job, customer, or assigned worker…"
+          />
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {filtered.map((job) => (
+              <div key={job.id} className="card" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#0B1C24" }}>{job.title || "(untitled)"}</div>
+                  <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>
+                    {job.customerName} · {fmtDate(job.scheduledDate)}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                    <StatusBadge status={job.status} />
+                    {job.assignedWorkerName && (
+                      <span style={{ fontSize: 11, color: "#5A7A8A" }}>
+                        → {job.assignedWorkerName}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <select
+                    style={{
+                      padding: "6px 10px",
+                      border: "1px solid rgba(45,156,219,0.28)",
+                      borderRadius: 6, fontSize: 12, background: "#fff",
+                      minWidth: 160,
+                    }}
+                    value={selectedWorker[job.id] ?? job.assignedWorkerId ?? ""}
+                    onChange={(e) => setSelectedWorker({ ...selectedWorker, [job.id]: e.target.value })}
+                  >
+                    <option value="">Select worker…</option>
+                    {workers.map((w) => (
+                      <option key={w.id} value={w.id}>{w.first_name} {w.last_name}</option>
+                    ))}
+                  </select>
+                  <Button
+                    variant="primary"
+                    onClick={() => handleOffer(job.id)}
+                    disabled={!selectedWorker[job.id] || offering === job.id}
+                  >
+                    {offering === job.id ? "Sending…" : "Offer"}
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <select
-                  className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={selectedWorker[job.id] ?? ""}
-                  onChange={(e) => setSelectedWorker({ ...selectedWorker, [job.id]: e.target.value })}
-                >
-                  <option value="">Select worker</option>
-                  {workers.map((w) => (
-                    <option key={w.id} value={w.id}>{w.first_name} {w.last_name}</option>
-                  ))}
-                </select>
-                <button
-                  onClick={() => handleOffer(job.id)}
-                  disabled={!selectedWorker[job.id] || offering === job.id}
-                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {offering === job.id ? "Sending..." : "Offer"}
-                </button>
+            ))}
+            {filtered.length === 0 && (
+              <div className="card">
+                <div style={{ padding: "16px 0", color: "#5A7A8A", fontSize: 12, fontStyle: "italic", textAlign: "center" }}>
+                  No jobs match these filters.
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            )}
+          </div>
+        </>
       )}
     </OliverPageWrapper>
   );

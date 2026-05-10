@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { PageHeader, Button } from "../../components/oliver/ui";
 
 interface CalendarEvent {
   id: string;
@@ -8,6 +9,19 @@ interface CalendarEvent {
   date: string;
   status: string;
 }
+
+const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
+  scheduled:    { bg: "#DBEAFE", fg: "#1E40AF" },
+  assigned:     { bg: "#CFFAFE", fg: "#0E7490" },
+  dispatched:   { bg: "#CFFAFE", fg: "#0E7490" },
+  in_progress:  { bg: "#FEF3C7", fg: "#B45309" },
+  completed:    { bg: "#D1FAE5", fg: "#047857" },
+  invoiced:     { bg: "#DBEAFE", fg: "#1E40AF" },
+  paid:         { bg: "#D1FAE5", fg: "#047857" },
+  cancelled:    { bg: "#FEE2E2", fg: "#B91C1C" },
+  inquiry:      { bg: "#F3E8FF", fg: "#7E22CE" },
+  quoted:       { bg: "#E0E7FF", fg: "#4338CA" },
+};
 
 export function OliverSchedulePage() {
   const { get, ready } = useOliverApi();
@@ -26,19 +40,14 @@ export function OliverSchedulePage() {
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
+    (async () => {
+      setLoading(true); setError(null);
       try {
         const data = await get<CalendarEvent[]>(`/schedule/calendar?start=${startStr}&end=${endStr}`);
-        if (!cancelled) setEvents(data);
-      } catch (err) {
-        if (!cancelled) setError(err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
+        if (!cancelled) setEvents(data || []);
+      } catch (err) { if (!cancelled) setError(err); }
+      finally { if (!cancelled) setLoading(false); }
+    })();
     return () => { cancelled = true; };
   }, [get, ready, startStr, endStr]);
 
@@ -71,45 +80,111 @@ export function OliverSchedulePage() {
   function nextMonth() {
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
   }
+  function goToday() {
+    const now = new Date();
+    setCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+  }
+
+  // Quick KPIs
+  const totalThisMonth = events.length;
+  const completed = events.filter((e) => ["completed", "invoiced", "paid"].includes(e.status)).length;
+  const upcoming = events.filter((e) => new Date(e.date) > new Date()).length;
+  const today = events.filter((e) => {
+    const d = new Date(e.date);
+    const now = new Date();
+    return d.toDateString() === now.toDateString();
+  }).length;
 
   return (
     <OliverPageWrapper title="Schedule" subtitle="Calendar view of scheduled jobs" error={error} loading={loading}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={prevMonth} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50">&larr;</button>
-          <span className="text-sm font-medium text-slate-700">{monthLabel}</span>
-          <button onClick={nextMonth} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50">&rarr;</button>
+      <PageHeader
+        title="Schedule"
+        subtitle="Monthly calendar view of every job, color-coded by status"
+        actions={
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <Button variant="secondary" onClick={prevMonth}>←</Button>
+            <Button variant="secondary" onClick={goToday}>Today</Button>
+            <Button variant="secondary" onClick={nextMonth}>→</Button>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24", marginLeft: 8 }}>{monthLabel}</span>
+          </div>
+        }
+      />
+
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-lbl">Today</div>
+          <div className="stat-val">{today}</div>
+          <div className="stat-delta neu">scheduled today</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">This month</div>
+          <div className="stat-val">{totalThisMonth}</div>
+          <div className="stat-delta neu">total jobs</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Upcoming</div>
+          <div className="stat-val">{upcoming}</div>
+          <div className="stat-delta neu">future events</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Completed</div>
+          <div className="stat-val" style={{ color: "#059669" }}>{completed}</div>
+          <div className="stat-delta neu">done this month</div>
         </div>
       </div>
 
-      <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">
-        <div className="grid grid-cols-7 text-center text-xs font-semibold text-slate-500 uppercase bg-gray-50 py-2">
-          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-            <div key={d}>{d}</div>
-          ))}
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(7, 1fr)",
+          textAlign: "center", fontSize: 10, fontWeight: 600,
+          color: "#5A7A8A", textTransform: "uppercase",
+          background: "#f8fafc", padding: "10px 0",
+          borderBottom: "1px solid #eef2f4",
+        }}>
+          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => <div key={d}>{d}</div>)}
         </div>
-        <div className="grid grid-cols-7 border-t border-gray-100">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
           {calendarDays.map((day, i) => {
             const dayEvents = day ? eventsByDay.get(day) ?? [] : [];
-            const isToday = day !== null && new Date().getDate() === day && new Date().getMonth() === currentMonth.getMonth() && new Date().getFullYear() === currentMonth.getFullYear();
+            const isToday = day !== null
+              && new Date().getDate() === day
+              && new Date().getMonth() === currentMonth.getMonth()
+              && new Date().getFullYear() === currentMonth.getFullYear();
             return (
               <div
                 key={i}
-                className={`min-h-[80px] border-b border-r border-gray-100 p-1.5 ${day === null ? "bg-gray-50/50" : ""}`}
+                style={{
+                  minHeight: 92,
+                  borderBottom: "1px solid #eef2f4",
+                  borderRight: "1px solid #eef2f4",
+                  padding: 6,
+                  background: day === null ? "#fafbfc" : "#fff",
+                }}
               >
                 {day !== null && (
                   <>
-                    <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs ${isToday ? "bg-blue-600 text-white font-bold" : "text-slate-600"}`}>
-                      {day}
-                    </span>
-                    <div className="mt-0.5 space-y-0.5">
-                      {dayEvents.slice(0, 3).map((ev) => (
-                        <div key={ev.id} className="truncate rounded bg-blue-50 px-1 py-0.5 text-[10px] text-blue-700">
-                          {ev.title}
-                        </div>
-                      ))}
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      width: 22, height: 22, borderRadius: "50%",
+                      fontSize: 11, fontWeight: isToday ? 700 : 500,
+                      background: isToday ? "#0C4A60" : "transparent",
+                      color: isToday ? "#fff" : "#0B1C24",
+                    }}>{day}</span>
+                    <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
+                      {dayEvents.slice(0, 3).map((ev) => {
+                        const c = STATUS_COLORS[ev.status] || { bg: "#E5E7EB", fg: "#374151" };
+                        return (
+                          <div key={ev.id} style={{
+                            background: c.bg, color: c.fg,
+                            fontSize: 10, padding: "2px 5px", borderRadius: 3,
+                            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                          }}>
+                            {ev.title}
+                          </div>
+                        );
+                      })}
                       {dayEvents.length > 3 && (
-                        <span className="text-[10px] text-slate-400">+{dayEvents.length - 3} more</span>
+                        <span style={{ fontSize: 9, color: "#94A3B8" }}>+{dayEvents.length - 3} more</span>
                       )}
                     </div>
                   </>

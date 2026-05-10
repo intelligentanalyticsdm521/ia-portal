@@ -1,6 +1,11 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import {
+  PageHeader, FilterBar, DataTable, EmptyState,
+  TimeRangeSelector, rangeForPreset,
+  type Column, type TimeRange,
+} from "../../components/oliver/ui";
 
 interface CrewStat {
   worker_id: string;
@@ -11,87 +16,181 @@ interface CrewStat {
   completed_jobs: number;
 }
 
+const FILTER_PILLS = [
+  { key: "", label: "All" },
+  { key: "type:employee", label: "Employees" },
+  { key: "type:contractor", label: "Contractors" },
+];
+
+function rangeToQuery(r: TimeRange): string {
+  const params = new URLSearchParams();
+  if (r.fromISO) params.set("from", r.fromISO);
+  if (r.toISO) params.set("to", r.toISO);
+  const s = params.toString();
+  return s ? `?${s}` : "";
+}
+
 export function OliverCrewPerformancePage() {
   const { get, ready } = useOliverApi();
+  const [range, setRange] = useState<TimeRange>(() => rangeForPreset("last_30_days"));
   const [crew, setCrew] = useState<CrewStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
+  const [filter, setFilter] = useState("");
+  const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    if (!ready) return;
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await get<CrewStat[]>("/reports/crew");
-        if (!cancelled) setCrew(data);
-      } catch (err) {
-        if (!cancelled) setError(err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+  const reload = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const data = await get<CrewStat[]>(`/reports/crew${rangeToQuery(range)}`);
+      setCrew(data || []);
+    } catch (err) { setError(err); }
+    finally { setLoading(false); }
+  }, [get, range]);
+
+  useEffect(() => { if (ready) reload(); }, [ready, reload]);
+
+  const filtered = useMemo(() => {
+    let list = crew;
+    if (filter.startsWith("type:")) {
+      const t = filter.split(":")[1];
+      list = list.filter((c) => c.type === t);
     }
-    load();
-    return () => { cancelled = true; };
-  }, [get, ready]);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((c) =>
+        `${c.first_name} ${c.last_name}`.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [crew, filter, search]);
 
   const maxAssignments = Math.max(1, ...crew.map((c) => c.total_assignments));
+  const totalCompleted = crew.reduce((s, c) => s + c.completed_jobs, 0);
+  const totalAssigned = crew.reduce((s, c) => s + c.total_assignments, 0);
+  const avgCompletion = totalAssigned ? Math.round((totalCompleted / totalAssigned) * 100) : 0;
+  const top = [...crew].sort((a, b) => b.completed_jobs - a.completed_jobs)[0];
+
+  const columns: Column<CrewStat>[] = [
+    {
+      key: "name",
+      header: "Worker",
+      sortable: true,
+      sortAccessor: (c) => `${c.last_name} ${c.first_name}`.toLowerCase(),
+      render: (c) => <strong style={{ color: "#0B1C24" }}>{c.first_name} {c.last_name}</strong>,
+    },
+    {
+      key: "type",
+      header: "Type",
+      render: (c) => (
+        <span style={{
+          display: "inline-block", fontSize: 10, fontWeight: 500,
+          padding: "2px 8px", borderRadius: 999,
+          background: c.type === "employee" ? "#E0E7FF" : "#FEF3C7",
+          color: c.type === "employee" ? "#4338CA" : "#B45309",
+          textTransform: "uppercase",
+        }}>{c.type}</span>
+      ),
+    },
+    {
+      key: "assigned",
+      header: "Assigned",
+      align: "right",
+      sortable: true,
+      sortAccessor: (c) => c.total_assignments,
+      render: (c) => <span style={{ fontFamily: "monospace", fontSize: 12 }}>{c.total_assignments}</span>,
+    },
+    {
+      key: "completed",
+      header: "Completed",
+      align: "right",
+      sortable: true,
+      sortAccessor: (c) => c.completed_jobs,
+      render: (c) => <span style={{ fontFamily: "monospace", fontSize: 12, color: "#059669", fontWeight: 600 }}>{c.completed_jobs}</span>,
+    },
+    {
+      key: "completion",
+      header: "Completion rate",
+      render: (c) => {
+        const pct = c.total_assignments > 0 ? Math.round((c.completed_jobs / c.total_assignments) * 100) : 0;
+        const barWidth = (c.total_assignments / maxAssignments) * 100;
+        return (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{
+              flex: 1, height: 8, background: "#f1f5f9", borderRadius: 999, overflow: "hidden", position: "relative",
+            }}>
+              <div style={{
+                position: "absolute", inset: 0, width: `${barWidth}%`,
+                background: "#CBD5E1", borderRadius: 999,
+              }} />
+              <div style={{
+                position: "absolute", left: 0, top: 0, height: "100%",
+                width: `${(c.completed_jobs / maxAssignments) * 100}%`,
+                background: "#059669", borderRadius: 999,
+              }} />
+            </div>
+            <span style={{ fontSize: 11, color: "#5A7A8A", width: 36, textAlign: "right" }}>{pct}%</span>
+          </div>
+        );
+      },
+    },
+  ];
 
   return (
-    <OliverPageWrapper title="Team Performance" subtitle="Per-member completion stats" error={error} loading={loading}>
-      <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-xs text-slate-500 uppercase tracking-wide">
-            <tr>
-              <th className="px-4 py-3">Worker</th>
-              <th className="px-4 py-3">Type</th>
-              <th className="px-4 py-3 text-right">Assigned</th>
-              <th className="px-4 py-3 text-right">Completed</th>
-              <th className="px-4 py-3 w-48">Completion</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {crew.map((c) => {
-              const pct = c.total_assignments > 0 ? Math.round((c.completed_jobs / c.total_assignments) * 100) : 0;
-              const barWidth = (c.total_assignments / maxAssignments) * 100;
-              return (
-                <tr key={c.worker_id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-slate-800">{c.first_name} {c.last_name}</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                      c.type === "employee" ? "bg-indigo-50 text-indigo-700" : "bg-amber-50 text-amber-700"
-                    }`}>
-                      {c.type}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right text-slate-700">{c.total_assignments}</td>
-                  <td className="px-4 py-3 text-right text-slate-700">{c.completed_jobs}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 flex-1 rounded-full bg-gray-100 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-blue-500 transition-all"
-                          style={{ width: `${barWidth}%` }}
-                        >
-                          <div
-                            className="h-full rounded-full bg-green-500"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
-                      <span className="text-xs text-slate-500 w-10 text-right">{pct}%</span>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-            {crew.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">No crew performance data.</td></tr>
-            )}
-          </tbody>
-        </table>
+    <OliverPageWrapper title="Team Performance" subtitle="Per-worker completion stats" error={error} loading={loading}>
+      <PageHeader
+        title="Team Performance"
+        subtitle="See assignment volume and completion rate per team member"
+        actions={<TimeRangeSelector value={range} onChange={setRange} />}
+      />
+
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-lbl">Active workers</div>
+          <div className="stat-val">{crew.length}</div>
+          <div className="stat-delta neu">in selected range</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Jobs completed</div>
+          <div className="stat-val" style={{ color: "#059669" }}>{totalCompleted}</div>
+          <div className="stat-delta neu">across the team</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Avg completion</div>
+          <div className="stat-val">{avgCompletion}%</div>
+          <div className="stat-delta neu">team-wide rate</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Top performer</div>
+          <div className="stat-val" style={{ fontSize: 14 }}>{top ? `${top.first_name} ${top.last_name}` : "—"}</div>
+          <div className="stat-delta neu">{top ? `${top.completed_jobs} completed` : "—"}</div>
+        </div>
       </div>
+
+      {!crew.length ? (
+        <EmptyState
+          title="No performance data yet"
+          description="Once jobs are assigned to your team and completed, performance metrics appear here. Pro+ tenants can view crew performance reports."
+        />
+      ) : (
+        <>
+          <FilterBar
+            pills={FILTER_PILLS}
+            activePill={filter}
+            onPillChange={setFilter}
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search by name…"
+          />
+          <DataTable
+            rows={filtered}
+            columns={columns}
+            rowKey={(c) => c.worker_id}
+            initialSort={{ key: "completed", direction: "desc" }}
+            emptyMessage="No workers match these filters."
+          />
+        </>
+      )}
     </OliverPageWrapper>
   );
 }
