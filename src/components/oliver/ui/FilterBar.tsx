@@ -1,4 +1,4 @@
-// Stripe-style filter bar: horizontal pill row + inline search, no card wrapper.
+// FilterBar using ARION's .ptabs pattern (segmented control). Search on right.
 import type { ReactNode } from "react";
 
 interface FilterPill {
@@ -23,44 +23,43 @@ export function FilterBar({
   rightSlot,
 }: Props) {
   return (
-    <div className="flex items-center gap-4 flex-wrap py-2 mb-1">
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
       {pills && pills.length > 0 && (
-        <div className="flex items-center gap-4 text-sm">
-          {pills.map((p) => {
-            const isActive = activePill === p.key;
-            return (
-              <button
-                key={p.key}
-                onClick={() => onPillChange?.(p.key)}
-                className={`pb-1.5 transition-colors border-b-2 ${
-                  isActive
-                    ? "border-oliver-teal text-oliver-teal font-medium"
-                    : "border-transparent text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                {p.label}
-                {p.count != null && p.count > 0 && (
-                  <span className="ml-1.5 text-xs text-slate-400">{p.count}</span>
-                )}
-              </button>
-            );
-          })}
+        <div className="ptabs">
+          {pills.map((p) => (
+            <button
+              key={p.key}
+              className={`ptab${activePill === p.key ? " active" : ""}`}
+              onClick={() => onPillChange?.(p.key)}
+            >
+              {p.label}
+              {p.count != null && p.count > 0 && (
+                <span style={{ marginLeft: 6, opacity: 0.7, fontSize: 11 }}>{p.count}</span>
+              )}
+            </button>
+          ))}
         </div>
       )}
 
       {onSearchChange && (
-        <div className="ml-auto w-64">
-          <input
-            type="search"
-            value={search ?? ""}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder={searchPlaceholder}
-            className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm placeholder-slate-400 focus:border-slate-400 focus:ring-1 focus:ring-slate-200 focus:outline-none"
-          />
-        </div>
+        <input
+          type="search"
+          value={search ?? ""}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder={searchPlaceholder}
+          style={{
+            marginLeft: "auto",
+            width: 240,
+            padding: "6px 10px",
+            border: "1px solid rgba(45,156,219,0.22)",
+            borderRadius: 6,
+            fontSize: 12,
+            outline: "none",
+          }}
+        />
       )}
 
-      {rightSlot && <div className="flex items-center gap-2">{rightSlot}</div>}
+      {rightSlot && <div style={{ display: "flex", gap: 8 }}>{rightSlot}</div>}
     </div>
   );
 }

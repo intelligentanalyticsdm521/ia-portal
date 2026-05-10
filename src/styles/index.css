@@ -227,7 +227,10 @@ body {
 }
 
 /* Stat row + cards */
+/* OLIVER pages reuse the ARION design system — same look across products. */
 .arion-page .stat-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 14px; }
+.oliver-stat-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 14px; }
+@keyframes oliver-spin { to { transform: rotate(360deg); } }
 .arion-page .stat-card { background: #fff; border: 1px solid rgba(45,156,219,0.14); border-top: 2px solid var(--arion-sky); border-radius: 8px; padding: 11px 13px; }
 .arion-page .stat-lbl { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.4px; }
 .arion-page .stat-val { font-size: 20px; font-weight: 600; color: var(--text-primary); }

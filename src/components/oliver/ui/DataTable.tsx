@@ -1,5 +1,4 @@
-// Stripe-style data table: no card wrapper, just clean rows with subtle dividers
-// and a lightweight hover. Sortable columns, clickable rows, empty state.
+// Tabular data using ARION's .tbl pattern.
 import { useMemo, useState, type ReactNode } from "react";
 
 export interface Column<T> {
@@ -33,7 +32,7 @@ export function DataTable<T>({
     if (!sort) return rows;
     const col = columns.find((c) => c.key === sort.key);
     if (!col?.sortAccessor) return rows;
-    const sorted = [...rows].sort((a, b) => {
+    return [...rows].sort((a, b) => {
       const av = col.sortAccessor!(a);
       const bv = col.sortAccessor!(b);
       if (av == null && bv == null) return 0;
@@ -43,7 +42,6 @@ export function DataTable<T>({
       if (av > bv) return sort.direction === "asc" ? 1 : -1;
       return 0;
     });
-    return sorted;
   }, [rows, sort, columns]);
 
   function toggleSort(key: string) {
@@ -56,30 +54,34 @@ export function DataTable<T>({
 
   if (!rows.length) {
     return (
-      <div className="border-t border-slate-200 py-12 text-center">
-        <p className="text-sm text-slate-500">{emptyMessage}</p>
-        {emptyAction && <div className="mt-4">{emptyAction}</div>}
+      <div className="card" style={{ textAlign: "center", padding: "40px 20px" }}>
+        <div style={{ color: "#5A7A8A", fontSize: 13 }}>{emptyMessage}</div>
+        {emptyAction && <div style={{ marginTop: 14 }}>{emptyAction}</div>}
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+    <div className="card" style={{ padding: 0 }}>
+      <table className="tbl" style={{ width: "100%" }}>
         <thead>
-          <tr className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+          <tr>
             {columns.map((c) => {
               const isSorting = sort?.key === c.key;
-              const align = c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : "text-left";
+              const align = c.align === "right" ? "right" : c.align === "center" ? "center" : "left";
               return (
                 <th
                   key={c.key}
-                  className={`py-2.5 px-3 font-medium border-b border-slate-200 ${align} ${c.width ?? ""} ${c.sortable ? "cursor-pointer select-none hover:text-slate-900" : ""}`}
+                  style={{
+                    textAlign: align,
+                    cursor: c.sortable ? "pointer" : undefined,
+                    userSelect: "none",
+                  }}
                   onClick={c.sortable ? () => toggleSort(c.key) : undefined}
                 >
                   {c.header}
                   {c.sortable && (
-                    <span className={`ml-1 text-[9px] ${isSorting ? "text-slate-700" : "text-slate-300"}`}>
+                    <span style={{ marginLeft: 4, fontSize: 9, color: isSorting ? "#0B1C24" : "#CBD5E1" }}>
                       {isSorting ? (sort!.direction === "asc" ? "▲" : "▼") : "↕"}
                     </span>
                   )}
@@ -95,12 +97,17 @@ export function DataTable<T>({
               <tr
                 key={rowKey(row)}
                 onClick={() => onRowClick?.(row)}
-                className={`border-b border-slate-100 ${onRowClick ? "cursor-pointer hover:bg-slate-50" : ""} ${extra}`}
+                className={extra}
+                style={{
+                  cursor: onRowClick ? "pointer" : undefined,
+                }}
+                onMouseEnter={onRowClick ? (e) => (e.currentTarget.style.background = "#F8FAFC") : undefined}
+                onMouseLeave={onRowClick ? (e) => (e.currentTarget.style.background = "") : undefined}
               >
                 {columns.map((c) => {
-                  const align = c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : "text-left";
+                  const align = c.align === "right" ? "right" : c.align === "center" ? "center" : "left";
                   return (
-                    <td key={c.key} className={`py-3 px-3 ${align} text-slate-700`}>
+                    <td key={c.key} style={{ textAlign: align }}>
                       {c.render ? c.render(row) : ((row as never)[c.key as never] as ReactNode)}
                     </td>
                   );

@@ -1,5 +1,4 @@
-// Stripe-style buttons: simple, low-visual-weight. Primary = solid teal, secondary = outline,
-// ghost = text-only. No gradients, no shadows.
+// Buttons matching ARION's .abtn pattern (sky/dark/outline) + ghost & danger.
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
@@ -12,27 +11,44 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
 }
 
-const variantStyles: Record<Variant, string> = {
-  primary:   "bg-slate-900 text-white hover:bg-slate-800 disabled:bg-slate-300",
-  secondary: "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 disabled:bg-slate-50 disabled:text-slate-400",
-  ghost:     "bg-transparent text-slate-700 hover:bg-slate-100 disabled:opacity-50",
-  danger:    "bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300",
-};
+export function Button({ variant = "primary", size = "md", loading, children, disabled, className = "", style, ...rest }: Props) {
+  const base = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    fontWeight: 500,
+    fontSize: size === "sm" ? 11 : 12,
+    padding: size === "sm" ? "5px 10px" : "7px 13px",
+    borderRadius: 6,
+    cursor: disabled || loading ? "not-allowed" : "pointer",
+    border: "none",
+    transition: "background-color 0.15s",
+    opacity: disabled || loading ? 0.55 : 1,
+  } as React.CSSProperties;
 
-const sizeStyles: Record<Size, string> = {
-  sm: "px-2.5 py-1 text-xs",
-  md: "px-3 py-1.5 text-sm",
-};
+  const variants: Record<Variant, React.CSSProperties> = {
+    primary:   { background: "#0C4A60", color: "#fff" },                                                  // ia-core-blue
+    secondary: { background: "#fff", color: "#0B1C24", border: "1px solid rgba(45,156,219,0.28)" },        // outline
+    ghost:     { background: "transparent", color: "#0B1C24" },
+    danger:    { background: "#dc2626", color: "#fff" },
+  };
 
-export function Button({ variant = "primary", size = "md", loading, children, disabled, className = "", ...rest }: Props) {
   return (
     <button
       {...rest}
       disabled={disabled || loading}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors disabled:cursor-not-allowed ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
+      className={className}
+      style={{ ...base, ...variants[variant], ...style }}
     >
       {loading && (
-        <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+        <span style={{
+          display: "inline-block",
+          width: 11, height: 11,
+          border: "2px solid currentColor",
+          borderTopColor: "transparent",
+          borderRadius: "50%",
+          animation: "oliver-spin 0.7s linear infinite",
+        }} />
       )}
       {children}
     </button>

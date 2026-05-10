@@ -1,5 +1,5 @@
-// Stripe-style page header: large title, subtitle in lighter grey, actions on the right.
-// No decorative card. Plenty of vertical breathing room.
+// Page header that matches ARION's pattern: site/business badge on left,
+// breadcrumb in center, primary action on right. Lightweight, no shadows.
 import type { ReactNode } from "react";
 
 interface Props {
@@ -10,12 +10,17 @@ interface Props {
 
 export function PageHeader({ title, subtitle, actions }: Props) {
   return (
-    <div className="flex items-end justify-between gap-4 pb-5 mb-5 border-b border-slate-200">
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      background: "#fff", border: "1px solid rgba(45,156,219,0.12)",
+      borderRadius: 10, padding: "14px 18px", marginBottom: 16,
+    }}>
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#0B1C24" }}>OLIVER</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: "#0B1C24", marginTop: 2 }}>{title}</div>
+        {subtitle && <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>{subtitle}</div>}
       </div>
-      {actions && <div className="shrink-0 flex items-center gap-2">{actions}</div>}
+      {actions && <div style={{ display: "flex", gap: 8 }}>{actions}</div>}
     </div>
   );
 }
