@@ -31,6 +31,12 @@ interface OpsOverview {
   upcoming_jobs: Array<{ job_id: string; job_number: string; title: string; status: string; scheduled_start: string; customer_name?: string; assigned_to?: string }>;
   open_requests: Array<{ job_id: string; job_number: string; title: string; created_at: string; customer_notes?: string; customer_name?: string }>;
 }
+interface StripeStatus {
+  connected: boolean;
+  readyToCharge?: boolean;
+  detailsSubmitted?: boolean;
+  chargesEnabled?: boolean;
+}
 
 function fmtMoney(n?: number | null) {
   return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
@@ -57,6 +63,7 @@ export function OliverDashboardPage() {
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [billing, setBilling] = useState<BillingOverview | null>(null);
   const [ops, setOps] = useState<OpsOverview | null>(null);
+  const [stripeStatus, setStripeStatus] = useState<StripeStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
 
@@ -65,17 +72,44 @@ export function OliverDashboardPage() {
     (async () => {
       setLoading(true); setError(null);
       try {
-        const [s, a, b, o] = await Promise.all([
+        const [s, a, b, o, st] = await Promise.all([
           get<DashboardStats>("/dashboard/stats"),
           get<ActivityEvent[]>("/dashboard/activity"),
           get<BillingOverview>("/overview/billing"),
           get<OpsOverview>("/overview/operations"),
+          get<StripeStatus>("/settings/stripe").catch(() => null),
         ]);
-        setStats(s); setActivity(a || []); setBilling(b); setOps(o);
+        setStats(s); setActivity(a || []); setBilling(b); setOps(o); setStripeStatus(st);
       } catch (e) { setError(e); }
       finally { setLoading(false); }
     })();
   }, [get, ready]);
+
+  // Show onboarding banner when Stripe is not connected, or connected but not ready to charge.
+  const stripeBanner = stripeStatus && !stripeStatus.readyToCharge ? (
+    <div className="card" style={{
+      background: "linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)",
+      border: "1px solid #F59E0B",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#92400E", marginBottom: 4 }}>
+            {stripeStatus.connected ? "Finish your Stripe setup to start collecting payments" : "Connect Stripe to start collecting payments"}
+          </div>
+          <div style={{ fontSize: 12, color: "#78350F", lineHeight: 1.5 }}>
+            {stripeStatus.connected
+              ? "Your Stripe account exists but isn't ready to accept charges yet. Finish onboarding (bank account, ID verification) to start sending invoices and accepting payments."
+              : "OLIVER routes every invoice and payment through Stripe Connect — money flows directly to your bank, not to us. Setup takes about 5 minutes."}
+          </div>
+        </div>
+        <Link to="/app/services/oliver_settings" style={{ flexShrink: 0 }}>
+          <Button variant="primary">
+            {stripeStatus.connected ? "Finish setup" : "Connect Stripe"}
+          </Button>
+        </Link>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <OliverPageWrapper title="Dashboard" subtitle="Overview" error={error} loading={loading}>
@@ -89,6 +123,8 @@ export function OliverDashboardPage() {
           </>
         }
       />
+
+      {stripeBanner}
 
       {/* KPI row — ARION stat-card pattern */}
       <div className="stat-row">
