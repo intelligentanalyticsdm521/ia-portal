@@ -1,219 +1,184 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import {
+  PageHeader, FilterBar, DataTable, EmptyState, Button,
+  StatusBadge, type Column,
+} from "../../components/oliver/ui";
 
 interface Job {
   id: string;
   title: string;
   customerName: string;
   status: string;
-  scheduledDate: string;
+  scheduledDate?: string | null;
   total: number;
 }
 
-const STATUSES = ["all", "inquiry", "quoted", "scheduled", "in_progress", "completed", "invoiced", "paid"] as const;
+const FILTER_PILLS = [
+  { key: "", label: "All" },
+  { key: "inquiry", label: "Inquiry" },
+  { key: "quoted", label: "Quoted" },
+  { key: "scheduled", label: "Scheduled" },
+  { key: "in_progress", label: "In progress" },
+  { key: "completed", label: "Completed" },
+  { key: "invoiced", label: "Invoiced" },
+  { key: "paid", label: "Paid" },
+];
+
 const KANBAN_COLS = ["inquiry", "quoted", "scheduled", "in_progress", "completed", "invoiced", "paid"] as const;
 
+function fmtMoney(n?: number | null) {
+  return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+function fmtDate(d?: string | null) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 export function OliverJobBoardPage() {
-  const { get, post, ready } = useOliverApi();
+  const { get, ready } = useOliverApi();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
-  const [filter, setFilter] = useState<string>("all");
+  const [filter, setFilter] = useState("");
+  const [search, setSearch] = useState("");
   const [view, setView] = useState<"list" | "kanban">("list");
-  const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ title: "", customerName: "", source: "manual" });
-  const [creating, setCreating] = useState(false);
 
-  useEffect(() => {
-    if (!ready) return;
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await get<Job[]>("/jobs");
-        if (!cancelled) setJobs(data);
-      } catch (err) {
-        if (!cancelled) setError(err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [get, ready]);
-
-  const filtered = filter === "all" ? jobs : jobs.filter((j) => j.status === filter);
-
-  async function handleCreate() {
-    if (!form.title.trim()) return;
-    setCreating(true);
+  const reload = useCallback(async () => {
+    setLoading(true); setError(null);
     try {
-      const newJob = await post<Job>("/jobs", form);
-      setJobs((prev) => [newJob, ...prev]);
-      setShowCreate(false);
-      setForm({ title: "", customerName: "", source: "manual" });
-    } catch {
-      // error handled inline
-    } finally {
-      setCreating(false);
+      const data = await get<Job[]>("/jobs?per_page=200");
+      setJobs(data || []);
+    } catch (e) { setError(e); }
+    finally { setLoading(false); }
+  }, [get]);
+
+  useEffect(() => { if (ready) reload(); }, [ready, reload]);
+
+  const filtered = useMemo(() => {
+    let list = jobs;
+    if (filter) list = list.filter((j) => j.status === filter);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((j) => j.title?.toLowerCase().includes(q) || j.customerName?.toLowerCase().includes(q));
     }
-  }
+    return list;
+  }, [jobs, filter, search]);
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { "": jobs.length };
+    for (const j of jobs) c[j.status] = (c[j.status] || 0) + 1;
+    return c;
+  }, [jobs]);
+  const pills = FILTER_PILLS.map((p) => ({ ...p, count: counts[p.key] ?? 0 }));
+
+  const columns: Column<Job>[] = [
+    {
+      key: "title", header: "Job", sortable: true, sortAccessor: (j) => j.title?.toLowerCase() ?? "",
+      render: (j) => (
+        <div>
+          <div className="font-medium text-oliver-teal">{j.title || "(untitled)"}</div>
+          <div className="text-xs text-slate-500 mt-0.5">{j.customerName || "—"}</div>
+        </div>
+      ),
+    },
+    { key: "status", header: "Status", sortable: true, sortAccessor: (j) => j.status, render: (j) => <StatusBadge status={j.status} /> },
+    {
+      key: "scheduled", header: "Scheduled", sortable: true, sortAccessor: (j) => j.scheduledDate ?? "",
+      render: (j) => <span className="text-sm text-slate-600">{j.scheduledDate ? new Date(j.scheduledDate).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—"}</span>,
+    },
+    {
+      key: "total", header: "Amount", align: "right", sortable: true, sortAccessor: (j) => Number(j.total),
+      render: (j) => <span className="font-medium tabular-nums">{fmtMoney(j.total)}</span>,
+    },
+  ];
 
   return (
-    <OliverPageWrapper title="Job Board" subtitle="Manage and track all service jobs" error={error} loading={loading}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setView(view === "list" ? "kanban" : "list")}
-            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-gray-50"
-          >
-            {view === "list" ? "Kanban" : "List"}
-          </button>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
-          >
-            Create Job
-          </button>
-        </div>
-      </div>
+    <OliverPageWrapper title="Job Board" subtitle="Active and recent jobs" error={error} loading={loading}>
+      <PageHeader
+        title="Job Board"
+        subtitle="Track every job from inquiry to paid"
+        actions={
+          <div className="flex items-center gap-1 rounded-lg ring-1 ring-gray-300 bg-white p-0.5">
+            <button onClick={() => setView("list")} className={`px-3 py-1 text-xs font-medium rounded ${view === "list" ? "bg-oliver-teal text-white" : "text-slate-600"}`}>List</button>
+            <button onClick={() => setView("kanban")} className={`px-3 py-1 text-xs font-medium rounded ${view === "kanban" ? "bg-oliver-teal text-white" : "text-slate-600"}`}>Kanban</button>
+          </div>
+        }
+      />
 
-      {/* Status filter tabs */}
-      <div className="flex flex-wrap gap-1">
-        {STATUSES.map((s) => (
-          <button
-            key={s}
-            onClick={() => setFilter(s)}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-              filter === s ? "bg-blue-600 text-white" : "bg-gray-100 text-slate-600 hover:bg-gray-200"
-            }`}
-          >
-            {s === "all" ? "All" : s.replace("_", " ")}
-          </button>
-        ))}
-      </div>
-
-      {/* List View */}
-      {view === "list" && (
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left text-xs text-slate-500 uppercase tracking-wide">
-              <tr>
-                <th className="px-4 py-3">Title</th>
-                <th className="px-4 py-3">Customer</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Scheduled</th>
-                <th className="px-4 py-3 text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filtered.map((j) => (
-                <tr key={j.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-slate-800">{j.title}</td>
-                  <td className="px-4 py-3 text-slate-600">{j.customerName}</td>
-                  <td className="px-4 py-3">
-                    <span className="inline-block rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
-                      {j.status.replace("_", " ")}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-500">
-                    {j.scheduledDate ? new Date(j.scheduledDate).toLocaleDateString() : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-right text-slate-700">${j.total?.toLocaleString() ?? "0"}</td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">No jobs found.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+      {!jobs.length ? (
+        <EmptyState title="No jobs yet" description="Jobs appear here when customers submit service requests, or when you create them manually." />
+      ) : view === "list" ? (
+        <>
+          <FilterBar
+            pills={pills}
+            activePill={filter}
+            onPillChange={setFilter}
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search title or customer…"
+          />
+          <DataTable
+            rows={filtered}
+            columns={columns}
+            rowKey={(j) => j.id}
+            initialSort={{ key: "scheduled", direction: "desc" }}
+          />
+        </>
+      ) : (
+        <KanbanView jobs={jobs} search={search} onSearch={setSearch} />
       )}
+    </OliverPageWrapper>
+  );
+}
 
-      {/* Kanban View */}
-      {view === "kanban" && (
-        <div className="flex gap-3 overflow-x-auto pb-4">
+function KanbanView({ jobs, search, onSearch }: { jobs: Job[]; search: string; onSearch: (q: string) => void }) {
+  const filtered = useMemo(() => {
+    if (!search.trim()) return jobs;
+    const q = search.toLowerCase();
+    return jobs.filter((j) => j.title?.toLowerCase().includes(q) || j.customerName?.toLowerCase().includes(q));
+  }, [jobs, search]);
+
+  return (
+    <>
+      <div className="mb-4">
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+          placeholder="Search title or customer…"
+          className="w-full md:w-80 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm focus:border-oliver-gold focus:ring-1 focus:ring-oliver-gold focus:outline-none"
+        />
+      </div>
+      <div className="overflow-x-auto pb-3">
+        <div className="flex gap-3 min-w-max">
           {KANBAN_COLS.map((col) => {
-            const colJobs = jobs.filter((j) => j.status === col);
+            const colJobs = filtered.filter((j) => j.status === col);
             return (
-              <div key={col} className="min-w-[220px] flex-shrink-0">
-                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  {col.replace("_", " ")} ({colJobs.length})
-                </h3>
-                <div className="space-y-2">
+              <div key={col} className="w-72 flex-shrink-0">
+                <div className="bg-slate-100 rounded-t-lg px-3 py-2 flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{col.replace(/_/g, " ")}</span>
+                  <span className="text-xs text-slate-500">{colJobs.length}</span>
+                </div>
+                <div className="bg-slate-50 rounded-b-lg p-2 min-h-[400px] space-y-2">
+                  {colJobs.length === 0 && <div className="text-xs text-slate-400 italic text-center py-4">No jobs</div>}
                   {colJobs.map((j) => (
-                    <div key={j.id} className="rounded-lg bg-white ring-1 ring-gray-200 p-3">
-                      <p className="text-sm font-medium text-slate-800">{j.title}</p>
-                      <p className="text-xs text-slate-500">{j.customerName}</p>
-                      {j.total > 0 && <p className="text-xs text-slate-400 mt-1">${j.total.toLocaleString()}</p>}
+                    <div key={j.id} className="bg-white rounded-lg ring-1 ring-gray-200 p-3 shadow-sm hover:shadow-md transition cursor-pointer">
+                      <div className="text-sm font-medium text-oliver-teal line-clamp-2">{j.title || "(untitled)"}</div>
+                      {j.customerName && <div className="text-xs text-slate-500 mt-1">{j.customerName}</div>}
+                      <div className="flex items-center justify-between mt-2">
+                        {j.scheduledDate && <span className="text-xs text-slate-500">{fmtDate(j.scheduledDate)}</span>}
+                        {Number(j.total) > 0 && <span className="text-xs font-medium tabular-nums text-slate-700">{fmtMoney(j.total)}</span>}
+                      </div>
                     </div>
                   ))}
-                  {colJobs.length === 0 && (
-                    <div className="rounded-lg border border-dashed border-gray-200 p-3 text-center text-xs text-slate-400">
-                      Empty
-                    </div>
-                  )}
                 </div>
               </div>
             );
           })}
         </div>
-      )}
-
-      {/* Create Modal */}
-      {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="rounded-xl bg-white p-6 shadow-xl w-full max-w-md space-y-4">
-            <h2 className="text-lg font-semibold text-slate-900">Create Job</h2>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
-              <input
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Customer Name</label>
-              <input
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={form.customerName}
-                onChange={(e) => setForm({ ...form, customerName: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Source</label>
-              <select
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={form.source}
-                onChange={(e) => setForm({ ...form, source: e.target.value })}
-              >
-                <option value="manual">Manual</option>
-                <option value="portal">Customer Portal</option>
-                <option value="referral">Referral</option>
-                <option value="website">Website</option>
-              </select>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowCreate(false)}
-                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-slate-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={creating || !form.title.trim()}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-              >
-                {creating ? "Creating..." : "Create"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </OliverPageWrapper>
+      </div>
+    </>
   );
 }
