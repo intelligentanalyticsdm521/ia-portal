@@ -70,6 +70,7 @@ const OLIVER_NAV: SubNavConfig = {
     {
       label: "Billing",
       items: [
+        { key: "oliver_billing_overview", label: "Overview", route: "/app/services/oliver_billing_overview" },
         { key: "oliver_catalog", label: "Service Catalog", route: "/app/services/oliver_catalog" },
         { key: "oliver_quotes", label: "Quotes", route: "/app/services/oliver_quotes" },
         { key: "oliver_invoices", label: "Invoices", route: "/app/services/oliver_invoices" },

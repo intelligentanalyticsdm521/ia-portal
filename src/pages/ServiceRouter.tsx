@@ -90,6 +90,7 @@ import { OliverReportsPage } from './oliver/OliverReportsPage';
 import { OliverActivityLogPage } from './oliver/OliverActivityLogPage';
 import { OliverSettingsPage } from './oliver/OliverSettingsPage';
 import { OliverServiceCatalogPage } from './oliver/OliverServiceCatalogPage';
+import { OliverBillingOverviewPage } from './oliver/OliverBillingOverviewPage';
 import { ConsultingOverviewPage } from './consulting/ConsultingOverviewPage';
 import { ConsultingEngagementWrapper } from './consulting/ConsultingEngagementWrapper';
 import { ConsultingCalendarPage } from './consulting/ConsultingCalendarPage';
@@ -196,6 +197,7 @@ export function ServiceRouter() {
       case 'oliver_activity_log': return <OliverActivityLogPage />;
       case 'oliver_settings': return <OliverSettingsPage />;
       case 'oliver_catalog': return <OliverServiceCatalogPage />;
+      case 'oliver_billing_overview': return <OliverBillingOverviewPage />;
       default: break;
     }
   }

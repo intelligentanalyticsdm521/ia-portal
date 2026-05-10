@@ -26,3 +26,6 @@ dist-ssr
 
 .env.local
 .env.*.local
+
+# TypeScript build cache — regenerated on every build, no value in tracking
+tsconfig.tsbuildinfo

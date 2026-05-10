@@ -3,7 +3,8 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState,
-  StatusBadge, type Column,
+  StatusBadge, TimeRangeSelector, rangeForPreset,
+  type Column, type TimeRange,
 } from "../../components/oliver/ui";
 
 interface PaymentRow {
@@ -31,6 +32,11 @@ interface PaymentMeta {
   refund_count: number;
 }
 
+interface PaymentsEnvelope {
+  rows: PaymentRow[];
+  meta: PaymentMeta;
+}
+
 const FILTER_PILLS = [
   { key: "", label: "All" },
   { key: "type:payment", label: "Payments" },
@@ -43,8 +49,17 @@ function fmtMoney(n?: number | null) {
   return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function rangeToQuery(r: TimeRange): string {
+  const params = new URLSearchParams();
+  if (r.fromISO) params.set("from", r.fromISO);
+  if (r.toISO) params.set("to", r.toISO);
+  const s = params.toString();
+  return s ? `?${s}` : "";
+}
+
 export function OliverPaymentsPage() {
   const { get, ready } = useOliverApi();
+  const [range, setRange] = useState<TimeRange>(() => rangeForPreset("last_30_days"));
   const [rows, setRows] = useState<PaymentRow[]>([]);
   const [meta, setMeta] = useState<PaymentMeta | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,27 +72,22 @@ export function OliverPaymentsPage() {
     setLoading(true);
     setError(null);
     try {
-      // Use the underlying request to access meta envelope
-      const path = "/payments";
-      const data = await get<PaymentRow[]>(path);
-      setRows(data || []);
-      // Re-fetch with meta envelope (requires a follow-up call since unwrap strips meta)
-      // For now compute KPIs locally
-      const collected = (data ?? []).filter(r => r.type === "payment" && r.status === "succeeded").reduce((s, r) => s + Number(r.amount || 0), 0);
-      const refunded  = (data ?? []).filter(r => r.type === "refund"  && r.status === "succeeded").reduce((s, r) => s + Number(r.amount || 0), 0);
-      setMeta({
-        total_collected: collected,
-        total_refunded: refunded,
-        net_collected: collected - refunded,
-        payment_count: (data ?? []).filter(r => r.type === "payment" && r.status === "succeeded").length,
-        refund_count: (data ?? []).filter(r => r.type === "refund" && r.status === "succeeded").length,
-      });
+      const env = await get<PaymentsEnvelope>(`/payments${rangeToQuery(range)}`);
+      // New shape: { rows, meta }. Old shape (defensive): direct array.
+      if (env && Array.isArray((env as unknown as PaymentRow[]))) {
+        const arr = env as unknown as PaymentRow[];
+        setRows(arr);
+        setMeta(computeMetaFromRows(arr));
+      } else {
+        setRows(env?.rows || []);
+        setMeta(env?.meta || computeMetaFromRows(env?.rows || []));
+      }
     } catch (err) {
       setError(err);
     } finally {
       setLoading(false);
     }
-  }, [get]);
+  }, [get, range]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
@@ -109,32 +119,33 @@ export function OliverPaymentsPage() {
       header: "Date",
       sortable: true,
       sortAccessor: (r) => r.paid_at ?? r.created_at,
-      render: (r) => <span className="text-sm text-slate-600">{new Date(r.paid_at || r.created_at).toLocaleDateString()}</span>,
+      render: (r) => <span style={{ fontSize: 12, color: "#5A7A8A" }}>{new Date(r.paid_at || r.created_at).toLocaleDateString()}</span>,
     },
     {
       key: "customer",
       header: "Customer",
       render: (r) => (
         <div>
-          <div className="text-sm text-slate-700">{r.customerName || "—"}</div>
-          {r.customerEmail && <div className="text-xs text-slate-500">{r.customerEmail}</div>}
+          <div style={{ fontSize: 12, color: "#0B1C24" }}>{r.customerName || "—"}</div>
+          {r.customerEmail && <div style={{ fontSize: 10, color: "#5A7A8A" }}>{r.customerEmail}</div>}
         </div>
       ),
     },
     {
       key: "invoice",
       header: "Invoice",
-      render: (r) => r.invoice_number ? <span className="font-mono text-sm text-oliver-teal">{r.invoice_number}</span> : "—",
+      render: (r) => r.invoice_number ? <span style={{ fontFamily: "monospace", fontSize: 12, color: "#1A7DB5" }}>{r.invoice_number}</span> : "—",
     },
     {
       key: "type",
       header: "Type",
       render: (r) => (
-        <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ring-1 ring-inset ${
-          r.type === "refund" ? "bg-purple-50 text-purple-700 ring-purple-200" : "bg-emerald-50 text-emerald-700 ring-emerald-200"
-        }`}>
-          {r.type}
-        </span>
+        <span style={{
+          display: "inline-block", fontSize: 10, fontWeight: 500,
+          padding: "2px 8px", borderRadius: 999,
+          background: r.type === "refund" ? "#F3E8FF" : "#D1FAE5",
+          color: r.type === "refund" ? "#7E22CE" : "#047857",
+        }}>{r.type}</span>
       ),
     },
     {
@@ -144,7 +155,7 @@ export function OliverPaymentsPage() {
       sortable: true,
       sortAccessor: (r) => Number(r.amount),
       render: (r) => (
-        <span className={`font-medium tabular-nums ${r.type === "refund" ? "text-purple-700" : "text-emerald-700"}`}>
+        <span style={{ fontWeight: 600, fontFamily: "monospace", color: r.type === "refund" ? "#9333EA" : "#059669" }}>
           {r.type === "refund" ? "−" : ""}{fmtMoney(r.amount)}
         </span>
       ),
@@ -159,34 +170,48 @@ export function OliverPaymentsPage() {
       header: "Stripe ID",
       render: (r) => {
         const id = r.stripe_refund_id || r.stripe_charge_id || r.stripe_payment_intent_id;
-        return id ? <span className="font-mono text-xs text-slate-500">{id.slice(0, 18)}…</span> : <span className="text-xs text-slate-400">—</span>;
+        return id ? <span style={{ fontFamily: "monospace", fontSize: 10, color: "#5A7A8A" }}>{id.slice(0, 18)}…</span> : <span style={{ fontSize: 10, color: "#94A3B8" }}>—</span>;
       },
     },
   ];
 
   return (
     <OliverPageWrapper title="Payments" subtitle="Payment & refund history" error={error} loading={loading}>
-      <PageHeader title="Payments" subtitle="Every charge and refund routed through your Stripe Connect account" />
+      <PageHeader
+        title="Payments"
+        subtitle="Every charge and refund routed through your Stripe Connect account"
+        actions={<TimeRangeSelector value={range} onChange={setRange} />}
+      />
 
-      <div className="flex items-end gap-12 mb-6">
-        <div>
-          <div className="text-xs text-slate-500">Net collected</div>
-          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{fmtMoney(meta?.net_collected)}</div>
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-lbl">Net collected</div>
+          <div className="stat-val">{fmtMoney(meta?.net_collected)}</div>
+          <div className="stat-delta neu">in selected range</div>
         </div>
-        <div>
-          <div className="text-xs text-slate-500">Gross</div>
-          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{fmtMoney(meta?.total_collected)}</div>
+        <div className="stat-card">
+          <div className="stat-lbl">Gross</div>
+          <div className="stat-val">{fmtMoney(meta?.total_collected)}</div>
+          <div className="stat-delta neu">{meta?.payment_count ?? 0} payments</div>
         </div>
-        <div>
-          <div className="text-xs text-slate-500">Refunded</div>
-          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{fmtMoney(meta?.total_refunded)}</div>
+        <div className="stat-card">
+          <div className="stat-lbl">Refunded</div>
+          <div className="stat-val">{fmtMoney(meta?.total_refunded)}</div>
+          <div className="stat-delta neu">{meta?.refund_count ?? 0} refunds</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Average</div>
+          <div className="stat-val">
+            {fmtMoney((meta?.payment_count ?? 0) > 0 ? (meta!.total_collected / meta!.payment_count) : 0)}
+          </div>
+          <div className="stat-delta neu">per successful payment</div>
         </div>
       </div>
 
       {!rows.length ? (
         <EmptyState
-          title="No payments yet"
-          description="Payments and refunds appear here as soon as your customers pay an invoice. Send your first invoice from the Invoices page to get started."
+          title="No payments in this range"
+          description="Try a wider time range, or send your first invoice from the Invoices page to start collecting payments."
         />
       ) : (
         <>
@@ -220,6 +245,18 @@ export function OliverPaymentsPage() {
   );
 }
 
+function computeMetaFromRows(rows: PaymentRow[]): PaymentMeta {
+  const collected = rows.filter(r => r.type === "payment" && r.status === "succeeded").reduce((s, r) => s + Number(r.amount || 0), 0);
+  const refunded  = rows.filter(r => r.type === "refund"  && r.status === "succeeded").reduce((s, r) => s + Number(r.amount || 0), 0);
+  return {
+    total_collected: collected,
+    total_refunded: refunded,
+    net_collected: collected - refunded,
+    payment_count: rows.filter(r => r.type === "payment" && r.status === "succeeded").length,
+    refund_count: rows.filter(r => r.type === "refund" && r.status === "succeeded").length,
+  };
+}
+
 interface PaymentDetail extends PaymentRow {
   invoice_total?: number;
   customer_name?: string;
@@ -233,7 +270,7 @@ function PaymentDetailDrawer({ paymentId, onClose, api }: { paymentId: string; o
   }, [paymentId, api]);
 
   if (!p) {
-    return <DetailDrawer open onClose={onClose} title="Loading…" width="md"><div className="text-sm text-slate-500">Loading payment…</div></DetailDrawer>;
+    return <DetailDrawer open onClose={onClose} title="Loading…" width="md"><div style={{ padding: 20, color: "#5A7A8A" }}>Loading payment…</div></DetailDrawer>;
   }
   return (
     <DetailDrawer
@@ -242,31 +279,33 @@ function PaymentDetailDrawer({ paymentId, onClose, api }: { paymentId: string; o
       subtitle={`${fmtMoney(p.amount)} · ${new Date(p.paid_at || p.created_at).toLocaleString()}`}
       width="lg"
     >
-      <div className="space-y-5">
-        <div className="flex items-center gap-2">
-          <StatusBadge status={p.status} size="md" />
-          <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ring-1 ring-inset ${
-            p.type === "refund" ? "bg-purple-50 text-purple-700 ring-purple-200" : "bg-emerald-50 text-emerald-700 ring-emerald-200"
-          }`}>{p.type}</span>
-        </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <StatusBadge status={p.status} />
+        <span style={{
+          display: "inline-block", fontSize: 10, fontWeight: 500,
+          padding: "2px 8px", borderRadius: 999,
+          background: p.type === "refund" ? "#F3E8FF" : "#D1FAE5",
+          color: p.type === "refund" ? "#7E22CE" : "#047857",
+        }}>{p.type}</span>
+      </div>
 
-        <div className="rounded-xl bg-slate-50 ring-1 ring-gray-200 p-4 space-y-2 text-sm">
-          <Row label="Amount" value={<span className="tabular-nums font-semibold">{fmtMoney(p.amount)} {p.currency}</span>} />
-          {p.invoice_number && <Row label="Invoice" value={<span className="font-mono text-oliver-teal">{p.invoice_number}</span>} />}
-          {p.invoice_total != null && <Row label="Invoice total" value={<span className="tabular-nums">{fmtMoney(p.invoice_total)}</span>} />}
-          {p.customer_name && <Row label="Customer" value={<>{p.customer_name}{p.customer_email && <span className="text-slate-500"> · {p.customer_email}</span>}</>} />}
-          {p.paid_at && <Row label="Settled" value={new Date(p.paid_at).toLocaleString()} />}
-        </div>
+      <div className="card">
+        <div className="card-ttl">Transaction</div>
+        <Row label="Amount" value={<span style={{ fontFamily: "monospace", fontWeight: 600 }}>{fmtMoney(p.amount)} {p.currency}</span>} />
+        {p.invoice_number && <Row label="Invoice" value={<span style={{ fontFamily: "monospace", color: "#1A7DB5" }}>{p.invoice_number}</span>} />}
+        {p.invoice_total != null && <Row label="Invoice total" value={<span style={{ fontFamily: "monospace" }}>{fmtMoney(p.invoice_total)}</span>} />}
+        {p.customer_name && <Row label="Customer" value={<>{p.customer_name}{p.customer_email && <span style={{ color: "#5A7A8A" }}> · {p.customer_email}</span>}</>} />}
+        {p.paid_at && <Row label="Settled" value={new Date(p.paid_at).toLocaleString()} />}
+      </div>
 
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 p-4 text-sm space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Stripe references</h3>
-          {p.stripe_payment_intent_id && <Row label="Payment Intent" value={<span className="font-mono text-xs">{p.stripe_payment_intent_id}</span>} />}
-          {p.stripe_charge_id && <Row label="Charge" value={<span className="font-mono text-xs">{p.stripe_charge_id}</span>} />}
-          {p.stripe_refund_id && <Row label="Refund" value={<span className="font-mono text-xs">{p.stripe_refund_id}</span>} />}
-          {!p.stripe_payment_intent_id && !p.stripe_charge_id && !p.stripe_refund_id && (
-            <div className="text-xs text-slate-500 italic">No Stripe references on this transaction.</div>
-          )}
-        </div>
+      <div className="card">
+        <div className="card-ttl">Stripe references</div>
+        {p.stripe_payment_intent_id && <Row label="Payment Intent" value={<span style={{ fontFamily: "monospace", fontSize: 11 }}>{p.stripe_payment_intent_id}</span>} />}
+        {p.stripe_charge_id && <Row label="Charge" value={<span style={{ fontFamily: "monospace", fontSize: 11 }}>{p.stripe_charge_id}</span>} />}
+        {p.stripe_refund_id && <Row label="Refund" value={<span style={{ fontFamily: "monospace", fontSize: 11 }}>{p.stripe_refund_id}</span>} />}
+        {!p.stripe_payment_intent_id && !p.stripe_charge_id && !p.stripe_refund_id && (
+          <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic" }}>No Stripe references on this transaction.</div>
+        )}
       </div>
     </DetailDrawer>
   );
@@ -274,9 +313,9 @@ function PaymentDetailDrawer({ paymentId, onClose, api }: { paymentId: string; o
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex justify-between items-center gap-3">
-      <span className="text-slate-500">{label}</span>
-      <span className="text-slate-800">{value}</span>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "5px 0", fontSize: 12 }}>
+      <span style={{ color: "#5A7A8A" }}>{label}</span>
+      <span style={{ color: "#0B1C24" }}>{value}</span>
     </div>
   );
 }
