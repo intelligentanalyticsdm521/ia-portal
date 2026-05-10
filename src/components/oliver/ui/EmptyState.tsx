@@ -1,19 +1,22 @@
-// Stripe-style empty state: centered, no card wrapper, just text + action.
 import type { ReactNode } from "react";
 
 interface Props {
-  icon?: ReactNode;
   title: string;
   description?: string;
   action?: ReactNode;
+  icon?: ReactNode;
 }
 
 export function EmptyState({ title, description, action }: Props) {
   return (
-    <div className="border-t border-slate-200 py-16 text-center">
-      <h3 className="text-base font-medium text-slate-900">{title}</h3>
-      {description && <p className="mt-1.5 text-sm text-slate-500 max-w-md mx-auto">{description}</p>}
-      {action && <div className="mt-5">{action}</div>}
+    <div className="card" style={{ textAlign: "center", padding: "40px 20px" }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: "#0B1C24" }}>{title}</div>
+      {description && (
+        <div style={{ fontSize: 12, color: "#5A7A8A", marginTop: 6, maxWidth: 480, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>
+          {description}
+        </div>
+      )}
+      {action && <div style={{ marginTop: 16 }}>{action}</div>}
     </div>
   );
 }
