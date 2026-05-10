@@ -158,24 +158,18 @@ export function OliverQuotesPage() {
         actions={<Button variant="primary" disabled>+ Create quote</Button>}
       />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Sent / waiting</div>
-          <div className="mt-1 text-xl font-bold text-oliver-teal tabular-nums">{fmtMoney(kpis.sentValue)}</div>
-          <div className="text-xs text-slate-500">{kpis.open} open quote{kpis.open === 1 ? "" : "s"}</div>
+      <div className="flex items-end gap-12 mb-6">
+        <div>
+          <div className="text-xs text-slate-500">Open</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{fmtMoney(kpis.sentValue)}</div>
         </div>
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Accepted (all-time)</div>
-          <div className="mt-1 text-xl font-bold text-emerald-600 tabular-nums">{fmtMoney(kpis.acceptedValue)}</div>
+        <div>
+          <div className="text-xs text-slate-500">Accepted</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{fmtMoney(kpis.acceptedValue)}</div>
         </div>
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Conversion rate</div>
-          <div className="mt-1 text-xl font-bold text-slate-700 tabular-nums">{kpis.conversionRate != null ? `${kpis.conversionRate}%` : "—"}</div>
-          <div className="text-xs text-slate-500">accepted ÷ decided</div>
-        </div>
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Total quotes</div>
-          <div className="mt-1 text-xl font-bold text-slate-700 tabular-nums">{rows.length}</div>
+        <div>
+          <div className="text-xs text-slate-500">Conversion</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{kpis.conversionRate != null ? `${kpis.conversionRate}%` : "—"}</div>
         </div>
       </div>
 

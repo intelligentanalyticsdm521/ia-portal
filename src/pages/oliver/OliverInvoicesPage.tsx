@@ -196,24 +196,19 @@ export function OliverInvoicesPage() {
         actions={!showCreate && <Button variant="primary" onClick={() => setShowCreate(true)}>+ Create invoice</Button>}
       />
 
-      {/* KPI summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Paid (all-time)</div>
-          <div className="mt-1 text-xl font-bold text-emerald-600 tabular-nums">{fmtMoney(kpis.paid)}</div>
+      {/* Inline metrics — Stripe-style */}
+      <div className="flex items-end gap-12 mb-6">
+        <div>
+          <div className="text-xs text-slate-500">Paid all-time</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{fmtMoney(kpis.paid)}</div>
         </div>
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Outstanding</div>
-          <div className="mt-1 text-xl font-bold text-oliver-teal tabular-nums">{fmtMoney(kpis.outstanding)}</div>
+        <div>
+          <div className="text-xs text-slate-500">Outstanding</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{fmtMoney(kpis.outstanding)}</div>
         </div>
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Overdue</div>
-          <div className="mt-1 text-xl font-bold text-amber-600 tabular-nums">{fmtMoney(kpis.overdue)}</div>
-          <div className="text-xs text-slate-500">{kpis.overdueCount} invoice{kpis.overdueCount === 1 ? "" : "s"}</div>
-        </div>
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Total invoices</div>
-          <div className="mt-1 text-xl font-bold text-slate-700 tabular-nums">{rows.length}</div>
+        <div>
+          <div className="text-xs text-slate-500">Overdue</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums" style={{ color: kpis.overdue > 0 ? "#D97706" : "#0F172A" }}>{fmtMoney(kpis.overdue)}</div>
         </div>
       </div>
 

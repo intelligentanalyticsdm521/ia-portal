@@ -168,26 +168,18 @@ export function OliverPaymentsPage() {
     <OliverPageWrapper title="Payments" subtitle="Payment & refund history" error={error} loading={loading}>
       <PageHeader title="Payments" subtitle="Every charge and refund routed through your Stripe Connect account" />
 
-      {/* KPI summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Net collected</div>
-          <div className="mt-1 text-xl font-bold text-emerald-600 tabular-nums">{fmtMoney(meta?.net_collected)}</div>
-          <div className="text-xs text-slate-500">After refunds</div>
+      <div className="flex items-end gap-12 mb-6">
+        <div>
+          <div className="text-xs text-slate-500">Net collected</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{fmtMoney(meta?.net_collected)}</div>
         </div>
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Gross collected</div>
-          <div className="mt-1 text-xl font-bold text-oliver-teal tabular-nums">{fmtMoney(meta?.total_collected)}</div>
-          <div className="text-xs text-slate-500">{meta?.payment_count ?? 0} payment{meta?.payment_count === 1 ? "" : "s"}</div>
+        <div>
+          <div className="text-xs text-slate-500">Gross</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{fmtMoney(meta?.total_collected)}</div>
         </div>
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Refunded</div>
-          <div className="mt-1 text-xl font-bold text-purple-600 tabular-nums">{fmtMoney(meta?.total_refunded)}</div>
-          <div className="text-xs text-slate-500">{meta?.refund_count ?? 0} refund{meta?.refund_count === 1 ? "" : "s"}</div>
-        </div>
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Total transactions</div>
-          <div className="mt-1 text-xl font-bold text-slate-700 tabular-nums">{rows.length}</div>
+        <div>
+          <div className="text-xs text-slate-500">Refunded</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{fmtMoney(meta?.total_refunded)}</div>
         </div>
       </div>
 
