@@ -1,172 +1,293 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import {
+  PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState, Button,
+  StatusBadge, type Column,
+} from "../../components/oliver/ui";
 
-interface Quote {
+interface QuoteRow {
   id: string;
   jobTitle: string;
   jobId: string;
+  customerName?: string;
   amount: number;
   status: string;
   createdAt: string;
+  sentAt?: string | null;
+  validUntil?: string | null;
+}
+
+interface QuoteLineItem {
+  line_item_id: string;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+  sort_order: number;
+}
+
+interface QuoteDetail {
+  quote_id: string;
+  job_id: string;
+  contact_id: string;
+  status: string;
+  subtotal: number;
+  tax_amount: number;
+  total: number;
+  valid_until?: string | null;
+  notes?: string | null;
+  sent_at?: string | null;
+  accepted_at?: string | null;
+  created_at: string;
+  line_items?: QuoteLineItem[];
+}
+
+const FILTER_PILLS = [
+  { key: "", label: "All" },
+  { key: "draft", label: "Draft" },
+  { key: "sent", label: "Sent" },
+  { key: "accepted", label: "Accepted" },
+  { key: "declined", label: "Declined" },
+  { key: "expired", label: "Expired" },
+];
+
+function fmtMoney(n?: number | null) {
+  return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+function fmtDate(d?: string | null) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 export function OliverQuotesPage() {
   const { get, post, ready } = useOliverApi();
-  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [rows, setRows] = useState<QuoteRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ jobId: "", amount: "" });
-  const [creating, setCreating] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const [detailId, setDetailId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!ready) return;
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await get<Quote[]>("/quotes");
-        if (!cancelled) setQuotes(data);
-      } catch (err) {
-        if (!cancelled) setError(err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [get, ready]);
-
-  async function handleSend(quoteId: string) {
-    setActionLoading(quoteId);
+  const reload = useCallback(async () => {
+    setLoading(true); setError(null);
     try {
-      await post(`/quotes/${quoteId}/send`);
-      setQuotes((prev) => prev.map((q) => q.id === quoteId ? { ...q, status: "sent" } : q));
-    } catch {
-      // silent
-    } finally {
-      setActionLoading(null);
-    }
-  }
+      const data = await get<QuoteRow[]>("/quotes");
+      setRows(data || []);
+    } catch (err) { setError(err); }
+    finally { setLoading(false); }
+  }, [get]);
 
-  async function handleConvert(quoteId: string) {
-    setActionLoading(quoteId);
-    try {
-      await post(`/quotes/${quoteId}/convert`);
-      setQuotes((prev) => prev.map((q) => q.id === quoteId ? { ...q, status: "converted" } : q));
-    } catch {
-      // silent
-    } finally {
-      setActionLoading(null);
-    }
-  }
+  useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
-  async function handleCreate() {
-    if (!form.jobId.trim() || !form.amount) return;
-    setCreating(true);
-    try {
-      const q = await post<Quote>("/quotes", { job_id: form.jobId, amount: parseFloat(form.amount) });
-      setQuotes((prev) => [q, ...prev]);
-      setShowCreate(false);
-      setForm({ jobId: "", amount: "" });
-    } catch {
-      // keep form open
-    } finally {
-      setCreating(false);
+  const filtered = useMemo(() => {
+    let list = rows;
+    if (filter) list = list.filter((r) => r.status === filter);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((r) => r.jobTitle?.toLowerCase().includes(q) || r.customerName?.toLowerCase().includes(q));
     }
-  }
+    return list;
+  }, [rows, filter, search]);
 
-  const statusColor: Record<string, string> = {
-    draft: "bg-gray-100 text-gray-600",
-    sent: "bg-blue-50 text-blue-700",
-    accepted: "bg-green-50 text-green-700",
-    declined: "bg-red-50 text-red-700",
-    converted: "bg-indigo-50 text-indigo-700",
-  };
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { "": rows.length };
+    for (const r of rows) c[r.status] = (c[r.status] || 0) + 1;
+    return c;
+  }, [rows]);
+  const pills = FILTER_PILLS.map((p) => ({ ...p, count: counts[p.key] ?? 0 }));
+
+  const kpis = useMemo(() => {
+    const valueByStatus = (s: string) => rows.filter((r) => r.status === s).reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    const open = rows.filter((r) => r.status === "sent").length;
+    const totalDecided = rows.filter((r) => r.status === "accepted" || r.status === "declined").length;
+    const accepted = rows.filter((r) => r.status === "accepted").length;
+    const rate = totalDecided ? Math.round((accepted / totalDecided) * 100) : null;
+    return { sentValue: valueByStatus("sent"), acceptedValue: valueByStatus("accepted"), open, conversionRate: rate };
+  }, [rows]);
+
+  const columns: Column<QuoteRow>[] = [
+    {
+      key: "job",
+      header: "Job",
+      sortable: true,
+      sortAccessor: (r) => r.jobTitle?.toLowerCase() ?? "",
+      render: (r) => (
+        <div>
+          <div className="font-medium text-oliver-teal">{r.jobTitle || "(untitled)"}</div>
+          {r.customerName && <div className="text-xs text-slate-500 mt-0.5">{r.customerName}</div>}
+        </div>
+      ),
+    },
+    {
+      key: "amount",
+      header: "Amount",
+      align: "right",
+      sortable: true,
+      sortAccessor: (r) => Number(r.amount),
+      render: (r) => <span className="font-medium tabular-nums">{fmtMoney(r.amount)}</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      sortAccessor: (r) => r.status,
+      render: (r) => <StatusBadge status={r.status} />,
+    },
+    {
+      key: "validUntil",
+      header: "Valid until",
+      sortable: true,
+      sortAccessor: (r) => r.validUntil ?? "",
+      render: (r) => <span className="text-sm text-slate-600">{fmtDate(r.validUntil)}</span>,
+    },
+    {
+      key: "createdAt",
+      header: "Created",
+      sortable: true,
+      sortAccessor: (r) => r.createdAt,
+      render: (r) => <span className="text-sm text-slate-500">{fmtDate(r.createdAt)}</span>,
+    },
+  ];
 
   return (
-    <OliverPageWrapper title="Quotes" subtitle="Create and manage quotes" error={error} loading={loading}>
-      <div className="flex items-center justify-between">
-        <button onClick={() => setShowCreate(true)} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700">
-          Create Quote
-        </button>
-      </div>
+    <OliverPageWrapper title="Quotes" subtitle="Quote management" error={error} loading={loading}>
+      <PageHeader
+        title="Quotes"
+        subtitle="Send estimates, track acceptance, and convert into jobs"
+        actions={<Button variant="primary" disabled>+ Create quote</Button>}
+      />
 
-      <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-xs text-slate-500 uppercase tracking-wide">
-            <tr>
-              <th className="px-4 py-3">Job</th>
-              <th className="px-4 py-3 text-right">Amount</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {quotes.map((q) => (
-              <tr key={q.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 font-medium text-slate-800">{q.jobTitle || q.jobId}</td>
-                <td className="px-4 py-3 text-right text-slate-700">${q.amount.toLocaleString()}</td>
-                <td className="px-4 py-3">
-                  <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusColor[q.status] ?? "bg-gray-100 text-gray-600"}`}>
-                    {q.status}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-slate-500">{new Date(q.createdAt).toLocaleDateString()}</td>
-                <td className="px-4 py-3 text-right space-x-2">
-                  {q.status === "draft" && (
-                    <button
-                      onClick={() => handleSend(q.id)}
-                      disabled={actionLoading === q.id}
-                      className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
-                    >
-                      Send
-                    </button>
-                  )}
-                  {q.status === "accepted" && (
-                    <button
-                      onClick={() => handleConvert(q.id)}
-                      disabled={actionLoading === q.id}
-                      className="text-xs text-green-600 hover:text-green-800 disabled:opacity-50"
-                    >
-                      Convert to Invoice
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {quotes.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">No quotes yet.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="rounded-xl bg-white p-6 shadow-xl w-full max-w-md space-y-4">
-            <h2 className="text-lg font-semibold text-slate-900">Create Quote</h2>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Job ID</label>
-              <input className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" value={form.jobId} onChange={(e) => setForm({ ...form, jobId: e.target.value })} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Amount ($)</label>
-              <input type="number" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
-            </div>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setShowCreate(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-slate-700 hover:bg-gray-50">Cancel</button>
-              <button onClick={handleCreate} disabled={creating || !form.jobId.trim()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-                {creating ? "Creating..." : "Create"}
-              </button>
-            </div>
-          </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Sent / waiting</div>
+          <div className="mt-1 text-xl font-bold text-oliver-teal tabular-nums">{fmtMoney(kpis.sentValue)}</div>
+          <div className="text-xs text-slate-500">{kpis.open} open quote{kpis.open === 1 ? "" : "s"}</div>
         </div>
+        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Accepted (all-time)</div>
+          <div className="mt-1 text-xl font-bold text-emerald-600 tabular-nums">{fmtMoney(kpis.acceptedValue)}</div>
+        </div>
+        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Conversion rate</div>
+          <div className="mt-1 text-xl font-bold text-slate-700 tabular-nums">{kpis.conversionRate != null ? `${kpis.conversionRate}%` : "—"}</div>
+          <div className="text-xs text-slate-500">accepted ÷ decided</div>
+        </div>
+        <div className="rounded-xl bg-white ring-1 ring-gray-200 shadow-oliver-card px-4 py-3">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Total quotes</div>
+          <div className="mt-1 text-xl font-bold text-slate-700 tabular-nums">{rows.length}</div>
+        </div>
+      </div>
+
+      {!rows.length ? (
+        <EmptyState
+          title="No quotes yet"
+          description="Create a quote from a job to send pricing to your customer. Accepted quotes auto-flow to invoices."
+        />
+      ) : (
+        <>
+          <FilterBar
+            pills={pills}
+            activePill={filter}
+            onPillChange={setFilter}
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search by job or customer…"
+          />
+          <DataTable
+            rows={filtered}
+            columns={columns}
+            rowKey={(r) => r.id}
+            onRowClick={(r) => setDetailId(r.id)}
+            initialSort={{ key: "createdAt", direction: "desc" }}
+            emptyMessage="No quotes match these filters."
+          />
+        </>
+      )}
+
+      {detailId && (
+        <QuoteDetailDrawer
+          quoteId={detailId}
+          onClose={() => setDetailId(null)}
+          onChanged={reload}
+          api={{ get, post }}
+        />
       )}
     </OliverPageWrapper>
+  );
+}
+
+function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: string; onClose: () => void; onChanged: () => void; api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T> }; }) {
+  const [q, setQ] = useState<QuoteDetail | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    setQ(await api.get<QuoteDetail>(`/quotes/${quoteId}`));
+  }, [api, quoteId]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  if (!q) return <DetailDrawer open onClose={onClose} title="Loading…" width="lg"><div className="text-sm text-slate-500">Loading quote…</div></DetailDrawer>;
+
+  async function send() {
+    setBusy("send"); setErr(null);
+    try { await api.post(`/quotes/${q!.quote_id}/send`); await reload(); onChanged(); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setBusy(null); }
+  }
+  async function convert() {
+    setBusy("convert"); setErr(null);
+    try { await api.post(`/quotes/${q!.quote_id}/convert-to-invoice`); await reload(); onChanged(); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setBusy(null); }
+  }
+
+  return (
+    <DetailDrawer
+      open onClose={onClose}
+      title={`Quote · ${fmtMoney(q.total)}`}
+      subtitle={`${fmtDate(q.created_at)} · ${q.line_items?.length ?? 0} line item${q.line_items?.length === 1 ? "" : "s"}`}
+      width="xl"
+      footer={
+        <>
+          {q.status === "draft" && <Button variant="primary" loading={busy === "send"} onClick={send}>Send to customer</Button>}
+          {q.status === "accepted" && <Button variant="secondary" loading={busy === "convert"} onClick={convert}>Convert to invoice</Button>}
+        </>
+      }
+    >
+      {err && <div className="mb-4 rounded-lg bg-red-50 ring-1 ring-red-200 px-4 py-2 text-sm text-red-800">{err}</div>}
+      <div className="flex items-center gap-2 mb-5">
+        <StatusBadge status={q.status} size="md" />
+        {q.sent_at && <span className="text-sm text-slate-500">Sent {fmtDate(q.sent_at)}</span>}
+        {q.accepted_at && <span className="text-sm text-emerald-700">Accepted {fmtDate(q.accepted_at)}</span>}
+        {q.valid_until && <span className="text-sm text-slate-500">Valid until {fmtDate(q.valid_until)}</span>}
+      </div>
+
+      <div className="rounded-xl bg-slate-50 ring-1 ring-gray-200 p-4 mb-5 text-sm">
+        <div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span className="tabular-nums">{fmtMoney(q.subtotal)}</span></div>
+        {Number(q.tax_amount) > 0 && <div className="flex justify-between"><span className="text-slate-500">Tax</span><span className="tabular-nums">{fmtMoney(q.tax_amount)}</span></div>}
+        <div className="flex justify-between mt-1 pt-1 border-t border-gray-200"><span className="font-semibold text-slate-700">Total</span><span className="tabular-nums font-semibold text-oliver-teal">{fmtMoney(q.total)}</span></div>
+      </div>
+
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal mb-2">Line items</h3>
+      <div className="rounded-lg ring-1 ring-gray-200 divide-y divide-gray-100 mb-4">
+        {(q.line_items ?? []).map((li) => (
+          <div key={li.line_item_id} className="px-3 py-2 grid grid-cols-12 gap-2 items-center">
+            <div className="col-span-7 text-sm text-slate-800">{li.description}</div>
+            <div className="col-span-1 text-right text-xs text-slate-500 tabular-nums">{li.quantity}</div>
+            <div className="col-span-2 text-right text-sm tabular-nums">{fmtMoney(li.unit_price)}</div>
+            <div className="col-span-2 text-right text-sm font-medium tabular-nums">{fmtMoney(li.line_total)}</div>
+          </div>
+        ))}
+      </div>
+
+      {q.notes && (
+        <div className="rounded-lg bg-amber-50 ring-1 ring-amber-200 p-3 text-sm text-amber-900">
+          <div className="font-medium uppercase text-xs tracking-wide mb-1">Notes</div>
+          {q.notes}
+        </div>
+      )}
+    </DetailDrawer>
   );
 }
