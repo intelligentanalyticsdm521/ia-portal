@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { PageHeader, Button } from "../../components/oliver/ui";
 
 interface TenantSettings {
   tenantName?: string;
@@ -49,76 +50,83 @@ function InvoicePreview({ tpl, businessName, email, phone }: { tpl: InvoiceTempl
   };
 
   return (
-    <div className="bg-white rounded shadow-md overflow-hidden text-xs">
-      {/* Header strip in tenant's accent color */}
-      <div className="px-5 py-4" style={{ backgroundColor: accent, color: "#FFFFFF" }}>
-        <div className="flex items-start justify-between">
+    <div style={{ background: "#fff", borderRadius: 6, overflow: "hidden", fontSize: 11, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+      <div style={{ padding: "16px 18px", background: accent, color: "#fff" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             {tpl.logoUrl ? (
-              <img src={tpl.logoUrl} alt="logo" className="h-8 mb-2 bg-white rounded p-1" onError={(e) => (e.currentTarget.style.display = "none")} />
+              <img
+                src={tpl.logoUrl} alt="logo"
+                style={{ height: 28, marginBottom: 6, background: "#fff", borderRadius: 3, padding: 2 }}
+                onError={(e) => (e.currentTarget.style.display = "none")}
+              />
             ) : null}
-            <div className="font-bold text-base">{businessName}</div>
-            <div className="text-[10px] opacity-90 mt-0.5">{email}{email && phone ? " · " : ""}{phone}</div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{businessName}</div>
+            <div style={{ fontSize: 10, opacity: 0.9, marginTop: 2 }}>{email}{email && phone ? " · " : ""}{phone}</div>
           </div>
-          <div className="text-right">
-            <div className="text-lg font-bold tracking-wide">INVOICE</div>
-            <div className="text-[10px] opacity-90 mt-0.5">{sample.invoiceNumber}</div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: 1 }}>INVOICE</div>
+            <div style={{ fontSize: 10, opacity: 0.9, marginTop: 2 }}>{sample.invoiceNumber}</div>
           </div>
         </div>
       </div>
 
-      <div className="px-5 py-3 grid grid-cols-2 gap-2 text-[10px]">
+      <div style={{ padding: "10px 18px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 10 }}>
         <div>
-          <div className="font-semibold uppercase tracking-wide text-slate-500">Bill to</div>
-          <div className="text-slate-800 mt-1">{sample.customer}</div>
-          <div className="text-slate-500">{sample.customerAddr}</div>
+          <div style={{ fontWeight: 700, textTransform: "uppercase", color: "#5A7A8A", letterSpacing: 0.3 }}>Bill to</div>
+          <div style={{ color: "#0B1C24", marginTop: 2 }}>{sample.customer}</div>
+          <div style={{ color: "#5A7A8A" }}>{sample.customerAddr}</div>
         </div>
-        <div className="text-right space-y-0.5">
-          <div className="text-slate-500">Issued: <span className="text-slate-800 font-medium">{sample.issued}</span></div>
-          <div className="text-slate-500">Due: <span className="text-slate-800 font-medium">{sample.due}</span></div>
+        <div style={{ textAlign: "right", color: "#5A7A8A" }}>
+          <div>Issued: <span style={{ color: "#0B1C24", fontWeight: 500 }}>{sample.issued}</span></div>
+          <div style={{ marginTop: 2 }}>Due: <span style={{ color: "#0B1C24", fontWeight: 500 }}>{sample.due}</span></div>
         </div>
       </div>
 
-      <table className="w-full text-[10px]">
-        <thead style={{ backgroundColor: accent, color: "#FFFFFF" }}>
+      <table style={{ width: "100%", fontSize: 10, borderCollapse: "collapse" }}>
+        <thead style={{ background: accent, color: "#fff" }}>
           <tr>
-            <th className="px-3 py-1.5 text-left font-semibold">Description</th>
-            <th className="px-2 py-1.5 text-right font-semibold w-10">Qty</th>
-            <th className="px-2 py-1.5 text-right font-semibold w-16">Unit</th>
-            <th className="px-2 py-1.5 text-right font-semibold w-16">Amount</th>
+            <th style={{ padding: "5px 12px", textAlign: "left", fontWeight: 600 }}>Description</th>
+            <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 600, width: 36 }}>Qty</th>
+            <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 600, width: 56 }}>Unit</th>
+            <th style={{ padding: "5px 8px", textAlign: "right", fontWeight: 600, width: 56 }}>Amount</th>
           </tr>
         </thead>
         <tbody>
           {sample.items.map((it, i) => (
-            <tr key={i} className={`border-b border-gray-100 ${it.isTax ? "bg-amber-50/60" : ""}`}>
-              <td className="px-3 py-1.5">{it.desc}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums">{it.qty}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums">${it.price.toFixed(2)}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums">${it.total.toFixed(2)}</td>
+            <tr key={i} style={{ borderBottom: "1px solid #f0f4f6", background: it.isTax ? "#FEF9E7" : "transparent" }}>
+              <td style={{ padding: "5px 12px" }}>{it.desc}</td>
+              <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: "monospace" }}>{it.qty}</td>
+              <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: "monospace" }}>${it.price.toFixed(2)}</td>
+              <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: "monospace" }}>${it.total.toFixed(2)}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <div className="px-5 py-3 flex justify-end">
-        <div className="w-44 space-y-1 text-[10px]">
-          <div className="flex justify-between text-slate-600"><span>Subtotal</span><span className="tabular-nums">${sample.subtotal.toFixed(2)}</span></div>
-          <div className="flex justify-between text-slate-600"><span>Tax</span><span className="tabular-nums">${sample.tax.toFixed(2)}</span></div>
-          <div className="flex justify-between font-bold border-t border-gray-200 pt-1" style={{ color: accent }}>
-            <span>Total</span><span className="tabular-nums">${sample.total.toFixed(2)}</span>
+      <div style={{ padding: "10px 18px", display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ width: 180, fontSize: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", color: "#5A7A8A" }}>
+            <span>Subtotal</span><span style={{ fontFamily: "monospace" }}>${sample.subtotal.toFixed(2)}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", color: "#5A7A8A", marginTop: 2 }}>
+            <span>Tax</span><span style={{ fontFamily: "monospace" }}>${sample.tax.toFixed(2)}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, borderTop: "1px solid #e5e7eb", marginTop: 4, paddingTop: 4, color: accent }}>
+            <span>Total</span><span style={{ fontFamily: "monospace" }}>${sample.total.toFixed(2)}</span>
           </div>
         </div>
       </div>
 
-      <div className="mx-5 mb-3 rounded text-center py-2" style={{ backgroundColor: accent, color: "#FFFFFF" }}>
-        <div className="text-[10px] font-bold tracking-wide">PAY THIS INVOICE ONLINE</div>
-        <div className="text-[9px] opacity-90 mt-0.5">buy.stripe.com/your-link-here</div>
+      <div style={{ margin: "0 18px 12px", background: accent, color: "#fff", textAlign: "center", padding: "6px 0", borderRadius: 4 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>PAY THIS INVOICE ONLINE</div>
+        <div style={{ fontSize: 9, opacity: 0.9, marginTop: 1 }}>buy.stripe.com/your-link-here</div>
       </div>
 
       {(tpl.terms || tpl.footerNote) && (
-        <div className="px-5 pb-4 text-[9px] text-slate-500 border-t border-gray-100 pt-2">
-          {tpl.terms && <div><span className="font-semibold">Terms:</span> {tpl.terms}</div>}
-          {tpl.footerNote && <div className="mt-0.5">{tpl.footerNote}</div>}
+        <div style={{ padding: "8px 18px 14px", fontSize: 9, color: "#5A7A8A", borderTop: "1px solid #f0f4f6" }}>
+          {tpl.terms && <div><strong>Terms:</strong> {tpl.terms}</div>}
+          {tpl.footerNote && <div style={{ marginTop: 2 }}>{tpl.footerNote}</div>}
         </div>
       )}
     </div>
@@ -219,7 +227,6 @@ export function OliverSettingsPage() {
       })();
     }
 
-    // Clean the querystring once handled
     const url = new URL(window.location.href);
     url.searchParams.delete("stripe");
     window.history.replaceState({}, "", url.toString());
@@ -264,237 +271,223 @@ export function OliverSettingsPage() {
     ["Address", settings?.address || "—"],
   ];
 
-  const renderStripeStatus = () => {
-    if (!stripe || !stripe.connected) {
-      return (
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 p-6">
-          <div className="flex items-start justify-between gap-6">
-            <div>
-              <h3 className="text-base font-semibold text-slate-900">Connect your bank to accept payments</h3>
-              <p className="mt-1 text-sm text-slate-600 max-w-2xl">
-                OLIVER sends invoices and collects payments through Stripe. Money flows directly to your
-                bank — never to Intelligent Analytics. Setup takes about 5 minutes: business name, EIN,
-                bank account, and an ID photo.
-              </p>
-            </div>
-            <button
-              onClick={startStripeConnect}
-              disabled={stripeAction !== "idle"}
-              className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {stripeAction === "connecting" ? "Opening Stripe…" : "Connect Stripe"}
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    const ready = stripe.readyToCharge;
-    const incomplete = stripe.connected && !ready;
-
-    return (
-      <div className="rounded-xl bg-white ring-1 ring-gray-200 p-6">
-        <div className="flex items-start justify-between gap-6">
-          <div className="flex-1">
-            <h3 className="text-base font-semibold text-slate-900">
-              Stripe — {stripe.type === "express" ? "Express" : "Standard"} account
-            </h3>
-            <div className="mt-3 grid grid-cols-2 gap-y-2 gap-x-6 text-sm max-w-md">
-              <div className="text-slate-500">Account ID</div>
-              <div className="text-slate-700 font-mono text-xs">{stripe.stripeAccountId}</div>
-
-              <div className="text-slate-500">Charges enabled</div>
-              <div>
-                <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                  stripe.chargesEnabled ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
-                }`}>
-                  {stripe.chargesEnabled ? "Yes" : "Pending"}
-                </span>
-              </div>
-
-              <div className="text-slate-500">Payouts enabled</div>
-              <div>
-                <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                  stripe.payoutsEnabled ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
-                }`}>
-                  {stripe.payoutsEnabled ? "Yes" : "Pending"}
-                </span>
-              </div>
-
-              <div className="text-slate-500">Onboarding submitted</div>
-              <div>
-                <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                  stripe.detailsSubmitted ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
-                }`}>
-                  {stripe.detailsSubmitted ? "Yes" : "Incomplete"}
-                </span>
-              </div>
-            </div>
-
-            {incomplete && (
-              <p className="mt-4 text-sm text-amber-700">
-                Onboarding isn't quite complete. Click "Continue Setup" to finish in Stripe — once charges
-                are enabled, OLIVER can start sending invoices on your behalf.
-              </p>
-            )}
-            {ready && (
-              <p className="mt-4 text-sm text-green-700">
-                Ready to accept payments. Invoices you send through OLIVER will route directly to your bank.
-              </p>
-            )}
-          </div>
-
-          <div className="shrink-0 flex flex-col gap-2">
-            {incomplete && (
-              <button
-                onClick={startStripeConnect}
-                disabled={stripeAction !== "idle"}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-              >
-                Continue Setup
-              </button>
-            )}
-            <button
-              onClick={syncStripe}
-              disabled={stripeAction !== "idle"}
-              className="rounded-lg bg-white ring-1 ring-gray-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-gray-50 disabled:opacity-50"
-            >
-              {stripeAction === "syncing" ? "Syncing…" : "Refresh Status"}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   return (
-    <OliverPageWrapper title="Settings" subtitle="Tenant configuration" error={error} loading={loading}>
-      <div className="space-y-6">
-        {stripeMessage && (
-          <div className="rounded-lg bg-blue-50 ring-1 ring-blue-200 px-4 py-3 text-sm text-blue-800">
-            {stripeMessage}
+    <OliverPageWrapper title="Business Setup" subtitle="Tenant configuration" error={error} loading={loading}>
+      <PageHeader
+        title="Business Setup"
+        subtitle="Stripe Connect, invoice template, and business profile"
+      />
+
+      {stripeMessage && (
+        <div className="card" style={{ background: "#E8F4FB", border: "1px solid rgba(45,156,219,0.3)" }}>
+          <div style={{ fontSize: 12, color: "#0C4A60" }}>{stripeMessage}</div>
+        </div>
+      )}
+
+      {/* Payments / Stripe Connect */}
+      <div className="card">
+        <div className="card-hdr">
+          <div>
+            <div className="card-ttl">Payments — Stripe Connect</div>
+            <div className="card-sub">Money flows directly from your customers to your bank — never to Intelligent Analytics</div>
+          </div>
+        </div>
+
+        {!stripe || !stripe.connected ? (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, padding: "8px 0" }}>
+            <div style={{ flex: 1, fontSize: 12, color: "#0B1C24", lineHeight: 1.5 }}>
+              OLIVER sends invoices and collects payments through Stripe. Setup takes about 5 minutes:
+              business name, EIN, bank account, and an ID photo. Once connected, you can send invoices,
+              accept card / ACH payments, and Stripe sends money directly to your bank.
+            </div>
+            <Button variant="primary" onClick={startStripeConnect} disabled={stripeAction !== "idle"}>
+              {stripeAction === "connecting" ? "Opening Stripe…" : "Connect Stripe"}
+            </Button>
+          </div>
+        ) : (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24", marginBottom: 6 }}>
+                  {stripe.type === "express" ? "Stripe Express" : "Stripe Standard"} — {stripe.stripeAccountId}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: "5px 16px", fontSize: 11, alignItems: "center" }}>
+                  <span style={{ color: "#5A7A8A" }}>Charges enabled</span>
+                  <StatusPill ok={!!stripe.chargesEnabled} />
+                  <span style={{ color: "#5A7A8A" }}>Payouts enabled</span>
+                  <StatusPill ok={!!stripe.payoutsEnabled} />
+                  <span style={{ color: "#5A7A8A" }}>Onboarding submitted</span>
+                  <StatusPill ok={!!stripe.detailsSubmitted} />
+                </div>
+
+                {!stripe.readyToCharge && (
+                  <div style={{ marginTop: 10, fontSize: 11, color: "#B45309", padding: "8px 10px", background: "#FEF3C7", borderRadius: 6 }}>
+                    Onboarding isn't quite complete. Click <strong>Continue setup</strong> to finish in Stripe —
+                    once charges are enabled, OLIVER can start sending invoices on your behalf.
+                  </div>
+                )}
+                {stripe.readyToCharge && (
+                  <div style={{ marginTop: 10, fontSize: 11, color: "#047857", padding: "8px 10px", background: "#D1FAE5", borderRadius: 6 }}>
+                    Ready to accept payments. Invoices you send through OLIVER will route directly to your bank.
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+                {!stripe.readyToCharge && (
+                  <Button variant="primary" onClick={startStripeConnect} disabled={stripeAction !== "idle"}>
+                    Continue setup
+                  </Button>
+                )}
+                <Button variant="secondary" onClick={syncStripe} disabled={stripeAction !== "idle"}>
+                  {stripeAction === "syncing" ? "Syncing…" : "Refresh status"}
+                </Button>
+              </div>
+            </div>
           </div>
         )}
+      </div>
 
-        <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500 mb-3">Payments</h2>
-          {renderStripeStatus()}
-        </section>
-
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Invoice template</h2>
-            {tplMessage && <span className="text-xs text-slate-500">{tplMessage}</span>}
+      {/* Invoice Template */}
+      {tplDraft && (
+        <div className="card">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">Invoice template</div>
+              <div className="card-sub">Customize the logo, colors, prefix, terms, and footer that appear on every invoice you send</div>
+            </div>
+            {tplMessage && <span style={{ fontSize: 11, color: "#5A7A8A" }}>{tplMessage}</span>}
           </div>
-          {tplDraft && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Editor */}
-              <div className="rounded-xl bg-white ring-1 ring-gray-200 p-6 space-y-4">
-                <div className="grid grid-cols-1 gap-4">
-                  <label className="block text-sm">
-                    <span className="text-slate-700 font-medium">Logo URL</span>
-                    <input
-                      type="url"
-                      placeholder="https://yourdomain.com/logo.png"
-                      value={tplDraft.logoUrl ?? ""}
-                      onChange={(e) => setTplDraft({ ...tplDraft, logoUrl: e.target.value || null })}
-                      className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
-                    />
-                  </label>
-                  <label className="block text-sm">
-                    <span className="text-slate-700 font-medium">Accent color</span>
-                    <div className="flex gap-2 mt-1 items-center">
-                      <input
-                        type="color"
-                        value={tplDraft.accentColor}
-                        onChange={(e) => setTplDraft({ ...tplDraft, accentColor: e.target.value })}
-                        className="h-9 w-14 rounded ring-1 ring-gray-300"
-                      />
-                      <input
-                        type="text"
-                        value={tplDraft.accentColor}
-                        onChange={(e) => setTplDraft({ ...tplDraft, accentColor: e.target.value })}
-                        className="flex-1 rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm font-mono"
-                      />
-                    </div>
-                  </label>
-                  <label className="block text-sm">
-                    <span className="text-slate-700 font-medium">Invoice number prefix</span>
-                    <input
-                      type="text"
-                      placeholder="INV-"
-                      value={tplDraft.invoiceNumberPrefix}
-                      onChange={(e) => setTplDraft({ ...tplDraft, invoiceNumberPrefix: e.target.value })}
-                      className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm font-mono"
-                    />
-                  </label>
-                  <label className="block text-sm">
-                    <span className="text-slate-700 font-medium">Payment terms</span>
-                    <input
-                      type="text"
-                      placeholder="Due upon receipt"
-                      value={tplDraft.terms}
-                      onChange={(e) => setTplDraft({ ...tplDraft, terms: e.target.value })}
-                      className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
-                    />
-                  </label>
-                  <label className="block text-sm">
-                    <span className="text-slate-700 font-medium">Footer note</span>
-                    <textarea
-                      rows={2}
-                      placeholder="Thank you for your business!"
-                      value={tplDraft.footerNote}
-                      onChange={(e) => setTplDraft({ ...tplDraft, footerNote: e.target.value })}
-                      className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
-                    />
-                  </label>
-                  <label className="block text-sm">
-                    <span className="text-slate-700 font-medium">Google review URL <span className="text-slate-400 font-normal">(used in review-request automation)</span></span>
-                    <input
-                      type="url"
-                      placeholder="https://g.page/r/.../review"
-                      value={tplDraft.googleReviewUrl ?? ""}
-                      onChange={(e) => setTplDraft({ ...tplDraft, googleReviewUrl: e.target.value || null })}
-                      className="mt-1 block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
-                    />
-                  </label>
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    onClick={saveTemplate}
-                    disabled={tplSaving || !tplChanged()}
-                    className="rounded-lg bg-oliver-teal text-white px-4 py-2 text-sm font-medium hover:bg-oliver-teal-600 disabled:opacity-50"
-                  >
-                    {tplSaving ? "Saving…" : "Save template"}
-                  </button>
-                </div>
-              </div>
 
-              {/* Live preview */}
-              <div className="rounded-xl bg-slate-100 ring-1 ring-gray-200 p-4">
-                <div className="text-xs uppercase tracking-wide text-slate-500 mb-2">Live preview</div>
-                <InvoicePreview tpl={tplDraft} businessName={settings?.tenantFullName || settings?.tenantName || "Your Business"} email={settings?.email} phone={settings?.phone} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            {/* Editor */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <Field label="Logo URL">
+                <input
+                  type="url" placeholder="https://yourdomain.com/logo.png"
+                  value={tplDraft.logoUrl ?? ""}
+                  onChange={(e) => setTplDraft({ ...tplDraft, logoUrl: e.target.value || null })}
+                  style={inputStyle}
+                />
+              </Field>
+              <Field label="Accent color">
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="color"
+                    value={tplDraft.accentColor}
+                    onChange={(e) => setTplDraft({ ...tplDraft, accentColor: e.target.value })}
+                    style={{ height: 32, width: 50, border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6, padding: 0, cursor: "pointer" }}
+                  />
+                  <input
+                    type="text"
+                    value={tplDraft.accentColor}
+                    onChange={(e) => setTplDraft({ ...tplDraft, accentColor: e.target.value })}
+                    style={{ ...inputStyle, fontFamily: "monospace", flex: 1 }}
+                  />
+                </div>
+              </Field>
+              <Field label="Invoice number prefix">
+                <input
+                  type="text" placeholder="INV-"
+                  value={tplDraft.invoiceNumberPrefix}
+                  onChange={(e) => setTplDraft({ ...tplDraft, invoiceNumberPrefix: e.target.value })}
+                  style={{ ...inputStyle, fontFamily: "monospace" }}
+                />
+              </Field>
+              <Field label="Payment terms">
+                <input
+                  type="text" placeholder="Due upon receipt"
+                  value={tplDraft.terms}
+                  onChange={(e) => setTplDraft({ ...tplDraft, terms: e.target.value })}
+                  style={inputStyle}
+                />
+              </Field>
+              <Field label="Footer note">
+                <textarea
+                  rows={2} placeholder="Thank you for your business!"
+                  value={tplDraft.footerNote}
+                  onChange={(e) => setTplDraft({ ...tplDraft, footerNote: e.target.value })}
+                  style={{ ...inputStyle, fontFamily: "inherit", resize: "vertical" }}
+                />
+              </Field>
+              <Field label="Google review URL (review-request automation)">
+                <input
+                  type="url" placeholder="https://g.page/r/.../review"
+                  value={tplDraft.googleReviewUrl ?? ""}
+                  onChange={(e) => setTplDraft({ ...tplDraft, googleReviewUrl: e.target.value || null })}
+                  style={inputStyle}
+                />
+              </Field>
+
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <Button variant="primary" onClick={saveTemplate} disabled={tplSaving || !tplChanged()}>
+                  {tplSaving ? "Saving…" : "Save template"}
+                </Button>
               </div>
             </div>
-          )}
-        </section>
 
-        <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500 mb-3">Business Profile</h2>
-          <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <tbody className="divide-y divide-gray-100">
-                {businessRows.map(([key, value]) => (
-                  <tr key={key} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-slate-700 w-48">{key}</td>
-                    <td className="px-4 py-3 text-slate-600">{value}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {/* Live preview */}
+            <div style={{ background: "#f3f6f8", padding: 12, borderRadius: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>
+                Live preview
+              </div>
+              <InvoicePreview
+                tpl={tplDraft}
+                businessName={settings?.tenantFullName || settings?.tenantName || "Your Business"}
+                email={settings?.email} phone={settings?.phone}
+              />
+            </div>
           </div>
-        </section>
+        </div>
+      )}
+
+      {/* Business Profile */}
+      <div className="card">
+        <div className="card-hdr">
+          <div>
+            <div className="card-ttl">Business profile</div>
+            <div className="card-sub">Contact info shown on invoices, quotes, and the customer portal</div>
+          </div>
+        </div>
+        <table className="tbl" style={{ marginTop: 0 }}>
+          <tbody>
+            {businessRows.map(([k, v]) => (
+              <tr key={k}>
+                <td style={{ width: 180, fontWeight: 500, color: "#5A7A8A" }}>{k}</td>
+                <td style={{ color: "#0B1C24" }}>{v}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </OliverPageWrapper>
+  );
+}
+
+const inputStyle: React.CSSProperties = {
+  width: "100%", padding: "7px 10px", fontSize: 12,
+  border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6,
+  background: "#fff", color: "#0B1C24",
+};
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: "block" }}>
+      <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function StatusPill({ ok }: { ok: boolean }) {
+  return (
+    <span style={{
+      display: "inline-block", fontSize: 10, fontWeight: 500,
+      padding: "2px 8px", borderRadius: 999,
+      background: ok ? "#D1FAE5" : "#FEF3C7",
+      color: ok ? "#047857" : "#B45309",
+    }}>
+      {ok ? "Yes" : "Pending"}
+    </span>
   );
 }
