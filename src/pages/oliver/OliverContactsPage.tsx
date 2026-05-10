@@ -119,7 +119,7 @@ export function OliverContactsPage() {
         </>
       )}
 
-      {pickedId && <ContactDetailModal contactId={pickedId} onClose={() => setPickedId(null)} api={{ get }} />}
+      {pickedId && <ContactDetailModal contactId={pickedId} onClose={() => setPickedId(null)} api={{ get, post }} />}
       {showCreate && (
         <NewContactModal
           onClose={() => setShowCreate(false)}
@@ -198,28 +198,29 @@ function FormField({ label, value, onChange, type = "text" }: { label: string; v
 
 // ──────────────────────────────────────────────────────────────────────────────
 
-function ContactDetailModal({ contactId, onClose, api }: { contactId: string; onClose: () => void; api: { get: <T>(p: string) => Promise<T> } }) {
+function ContactDetailModal({ contactId, onClose, api }: { contactId: string; onClose: () => void; api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T> } }) {
   const [detail, setDetail] = useState<ContactDetail | null>(null);
   const [activity, setActivity] = useState<Activity | null>(null);
   const [tab, setTab] = useState<"overview" | "jobs" | "quotes" | "invoices" | "payments">("overview");
+  const [showAddAddress, setShowAddAddress] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      const [d, a] = await Promise.all([
-        api.get<ContactDetail>(`/contacts/${contactId}`),
-        api.get<Activity>(`/contacts/${contactId}/activity`),
-      ]);
-      setDetail(d);
-      setActivity(a);
-    })();
-  }, [contactId, api]);
+  const reload = async () => {
+    const [d, a] = await Promise.all([
+      api.get<ContactDetail>(`/contacts/${contactId}`),
+      api.get<Activity>(`/contacts/${contactId}/activity`),
+    ]);
+    setDetail(d);
+    setActivity(a);
+  };
+
+  useEffect(() => { reload(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [contactId]);
 
   if (!detail || !activity) {
     return <DetailDrawer open onClose={onClose} title="Loading…" width="xl"><div style={{ padding: 20, color: "#5A7A8A" }}>Loading customer…</div></DetailDrawer>;
   }
 
   const snap = detail.financial_snapshot;
-  const addr = detail.addresses?.[0];
+  const addrs = detail.addresses ?? [];
 
   return (
     <DetailDrawer
@@ -260,12 +261,26 @@ function ContactDetailModal({ contactId, onClose, api }: { contactId: string; on
             </div>
           </div>
 
-          {addr && (
-            <div className="card">
-              <div className="card-ttl">Service address</div>
-              <div className="card-sub">{addr.address_line_1}, {addr.city}, {addr.state} {addr.postal_code}</div>
+          <div className="card">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+              <div>
+                <div className="card-ttl">Service addresses</div>
+                <div className="card-sub">{addrs.length ? `${addrs.length} on file` : "None on file"}</div>
+              </div>
+              <Button variant="secondary" onClick={() => setShowAddAddress(true)}>+ Add address</Button>
             </div>
-          )}
+            {addrs.length ? (
+              addrs.map((a, i) => (
+                <div key={i} style={{ padding: "8px 0", fontSize: 12, color: "#0B1C24", borderTop: i > 0 ? "1px solid #f0f4f6" : "none" }}>
+                  {a.address_line_1}, {a.city}, {a.state} {a.postal_code}
+                </div>
+              ))
+            ) : (
+              <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "4px 0" }}>
+                Add a service address so this customer can be assigned to jobs.
+              </div>
+            )}
+          </div>
 
           {snap.service_types && (
             <div className="card">
@@ -274,6 +289,15 @@ function ContactDetailModal({ contactId, onClose, api }: { contactId: string; on
             </div>
           )}
         </>
+      )}
+
+      {showAddAddress && (
+        <AddAddressModal
+          contactId={contactId}
+          onClose={() => setShowAddAddress(false)}
+          onAdded={() => { setShowAddAddress(false); reload(); }}
+          create={(b) => api.post(`/contacts/${contactId}/addresses`, b)}
+        />
       )}
 
       {tab === "jobs" && (
@@ -360,6 +384,71 @@ function ContactDetailModal({ contactId, onClose, api }: { contactId: string; on
           </tbody>
         </table>
       )}
+    </DetailDrawer>
+  );
+}
+
+function AddAddressModal({ contactId, onClose, onAdded, create }: { contactId: string; onClose: () => void; onAdded: () => void; create: (body: Record<string, string>) => Promise<unknown> }) {
+  const [label, setLabel] = useState("Primary");
+  const [line1, setLine1] = useState("");
+  const [line2, setLine2] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [zip, setZip] = useState("");
+  const [accessNotes, setAccessNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    setErr(null);
+    if (!line1.trim() || !city.trim() || !state.trim() || !zip.trim()) {
+      setErr("Street, city, state, and ZIP are required.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await create({
+        label: label.trim() || "Primary",
+        address_line_1: line1.trim(),
+        address_line_2: line2.trim() || "",
+        city: city.trim(), state: state.trim(),
+        postal_code: zip.trim(),
+        access_notes: accessNotes.trim() || "",
+      });
+      onAdded();
+    } catch (e) {
+      setErr((e as Error).message || "Failed to add address");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <DetailDrawer open onClose={onClose} title="Add service address" subtitle={`Linked to contact ${contactId.slice(0, 8)}…`} width="md">
+      {err && (
+        <div style={{ background: "#FEE2E2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 6, padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>{err}</div>
+      )}
+      <FormField label="Label (e.g. Home, Office, Warehouse)" value={label} onChange={setLabel} />
+      <FormField label="Street address *" value={line1} onChange={setLine1} />
+      <FormField label="Suite / unit (optional)" value={line2} onChange={setLine2} />
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 80px 100px", gap: 8, marginBottom: 10 }}>
+        <FormField label="City *" value={city} onChange={setCity} />
+        <FormField label="State *" value={state} onChange={setState} />
+        <FormField label="ZIP *" value={zip} onChange={setZip} />
+      </div>
+      <label style={{ display: "block", marginBottom: 10 }}>
+        <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Access notes (gate code, dog warning, etc.)</span>
+        <textarea
+          rows={2} value={accessNotes} onChange={(e) => setAccessNotes(e.target.value)}
+          style={{ width: "100%", padding: "7px 10px", fontSize: 12, border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6, fontFamily: "inherit" }}
+        />
+      </label>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+        <Button variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" onClick={submit} disabled={submitting || !line1.trim() || !city.trim() || !state.trim() || !zip.trim()}>
+          {submitting ? "Adding…" : "Add address"}
+        </Button>
+      </div>
     </DetailDrawer>
   );
 }
