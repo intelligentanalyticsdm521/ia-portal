@@ -241,8 +241,9 @@ interface JobDetail {
   customerName?: string;
   customerEmail?: string;
   status: string;
-  description?: string;
+  description?: string; // mapped from team_notes server-side
   scheduledDate?: string;
+  scheduledEnd?: string;
   total?: number;
   assignedWorkers?: Array<{ id: string; name: string }>;
   quotes?: Array<{ id: string; amount: number; status: string }>;
@@ -277,6 +278,11 @@ function JobDetailDrawer({ jobId, onClose, onChanged, api }: {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [eTitle, setETitle] = useState("");
+  const [eStart, setEStart] = useState("");
+  const [eEnd, setEEnd] = useState("");
+  const [eNotes, setENotes] = useState("");
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -285,6 +291,40 @@ function JobDetailDrawer({ jobId, onClose, onChanged, api }: {
   }, [api, jobId]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  function toLocalDtInput(iso?: string): string {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function startEdit() {
+    if (!job) return;
+    setETitle(job.title || "");
+    setEStart(toLocalDtInput(job.scheduledDate));
+    setEEnd(toLocalDtInput(job.scheduledEnd));
+    setENotes(job.description || "");
+    setEditing(true);
+    setErr(null);
+  }
+  async function saveEdit() {
+    setBusy("save"); setErr(null);
+    try {
+      await api.patch(`/jobs/${jobId}`, {
+        title: eTitle.trim(),
+        scheduled_start: eStart ? new Date(eStart).toISOString() : null,
+        scheduled_end: eEnd ? new Date(eEnd).toISOString() : null,
+        team_notes: eNotes,
+      });
+      setEditing(false);
+      await reload();
+      onChanged();
+    } catch (e) {
+      setErr(`Save failed: ${(e as Error).message}`);
+    } finally { setBusy(null); }
+  }
 
   async function advanceTo(newStatus: string) {
     if (newStatus === "cancelled" && !confirm("Cancel this job? This is a terminal status.")) return;
@@ -315,19 +355,33 @@ function JobDetailDrawer({ jobId, onClose, onChanged, api }: {
       title={job.title || "(untitled)"}
       subtitle={`${job.customerName || "—"}${job.customerEmail ? ` · ${job.customerEmail}` : ""}`}
       width="xl"
+      headerActions={
+        !editing && job.status !== "cancelled" && job.status !== "paid"
+          ? <button onClick={startEdit} style={{ background: "none", border: "none", color: "#1A7DB5", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>Edit job</button>
+          : undefined
+      }
       footer={
-        <>
-          {nonTerminal.map((s) => (
-            <Button key={s} variant="primary" onClick={() => advanceTo(s)} disabled={busy === s}>
-              {busy === s ? "Updating…" : `Advance to ${s.replace(/_/g, " ")}`}
+        editing ? (
+          <>
+            <Button variant="secondary" onClick={() => setEditing(false)}>Cancel</Button>
+            <Button variant="primary" onClick={saveEdit} disabled={busy === "save"}>
+              {busy === "save" ? "Saving…" : "Save changes"}
             </Button>
-          ))}
-          {nextStates.includes("cancelled") && (
-            <Button variant="danger" onClick={() => advanceTo("cancelled")} disabled={busy === "cancelled"}>
-              {busy === "cancelled" ? "Cancelling…" : "Cancel job"}
-            </Button>
-          )}
-        </>
+          </>
+        ) : (
+          <>
+            {nonTerminal.map((s) => (
+              <Button key={s} variant="primary" onClick={() => advanceTo(s)} disabled={busy === s}>
+                {busy === s ? "Updating…" : `Advance to ${s.replace(/_/g, " ")}`}
+              </Button>
+            ))}
+            {nextStates.includes("cancelled") && (
+              <Button variant="danger" onClick={() => advanceTo("cancelled")} disabled={busy === "cancelled"}>
+                {busy === "cancelled" ? "Cancelling…" : "Cancel job"}
+              </Button>
+            )}
+          </>
+        )
       }
     >
       {err && <div style={{ marginBottom: 12, background: "#FEE2E2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 6, padding: "8px 12px", fontSize: 12 }}>{err}</div>}
@@ -338,12 +392,34 @@ function JobDetailDrawer({ jobId, onClose, onChanged, api }: {
         {Number(job.total) > 0 && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Quote/invoice total: <strong>{fmtMoney(job.total)}</strong></span>}
       </div>
 
-      {job.description && (
+      {editing ? (
+        <div className="card">
+          <div className="card-ttl">Edit job details</div>
+          <label style={{ display: "block", marginTop: 10 }}>
+            <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Title</span>
+            <input value={eTitle} onChange={(e) => setETitle(e.target.value)} style={jdInputStyle} />
+          </label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+            <label>
+              <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Scheduled start</span>
+              <input type="datetime-local" value={eStart} onChange={(e) => setEStart(e.target.value)} style={jdInputStyle} />
+            </label>
+            <label>
+              <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Scheduled end</span>
+              <input type="datetime-local" value={eEnd} onChange={(e) => setEEnd(e.target.value)} style={jdInputStyle} />
+            </label>
+          </div>
+          <label style={{ display: "block", marginTop: 10 }}>
+            <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Team notes (internal)</span>
+            <textarea rows={4} value={eNotes} onChange={(e) => setENotes(e.target.value)} style={{ ...jdInputStyle, fontFamily: "inherit", resize: "vertical" }} />
+          </label>
+        </div>
+      ) : job.description ? (
         <div className="card">
           <div className="card-ttl">Team notes</div>
           <div style={{ fontSize: 12, color: "#0B1C24", marginTop: 6, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{job.description}</div>
         </div>
-      )}
+      ) : null}
 
       <div className="two-col">
         <div className="card">
@@ -434,3 +510,9 @@ function JobDetailDrawer({ jobId, onClose, onChanged, api }: {
     </DetailDrawer>
   );
 }
+
+const jdInputStyle: React.CSSProperties = {
+  width: "100%", padding: "7px 10px", fontSize: 12,
+  border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6,
+  background: "#fff",
+};
