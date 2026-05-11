@@ -31,6 +31,13 @@ const FILTER_PILLS = [
   { key: "paid", label: "Paid" },
 ];
 
+const PROFIT_PILLS = [
+  { key: "", label: "Any profit" },
+  { key: "profit:positive", label: "Profitable" },
+  { key: "profit:negative", label: "Losing money" },
+  { key: "profit:none", label: "No data" },
+];
+
 const KANBAN_COLS = ["inquiry", "quoted", "scheduled", "in_progress", "completed", "invoiced", "paid"] as const;
 
 function fmtMoney(n?: number | null) {
@@ -47,6 +54,7 @@ export function OliverJobBoardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [filter, setFilter] = useState("");
+  const [profitFilter, setProfitFilter] = useState("");
   const [search, setSearch] = useState("");
   const [view, setView] = useState<"list" | "kanban">("list");
   const [showCreate, setShowCreate] = useState(false);
@@ -79,12 +87,19 @@ export function OliverJobBoardPage() {
   const filtered = useMemo(() => {
     let list = jobs;
     if (filter) list = list.filter((j) => j.status === filter);
+    if (profitFilter === "profit:positive") {
+      list = list.filter((j) => Number(j.profit ?? 0) > 0);
+    } else if (profitFilter === "profit:negative") {
+      list = list.filter((j) => Number(j.profit ?? 0) < 0 || (Number(j.laborCost ?? 0) > 0 && Number(j.revenue ?? 0) === 0));
+    } else if (profitFilter === "profit:none") {
+      list = list.filter((j) => Number(j.revenue ?? 0) === 0 && Number(j.laborCost ?? 0) === 0);
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter((j) => j.title?.toLowerCase().includes(q) || j.customerName?.toLowerCase().includes(q));
     }
     return list;
-  }, [jobs, filter, search]);
+  }, [jobs, filter, profitFilter, search]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { "": jobs.length };
@@ -199,6 +214,18 @@ export function OliverJobBoardPage() {
             onSearchChange={setSearch}
             searchPlaceholder="Search title or customer…"
           />
+          {/* Second-row profitability pills — separate from status so they stack */}
+          <div className="ptabs" style={{ marginBottom: 12, marginTop: -4 }}>
+            {PROFIT_PILLS.map((p) => (
+              <button
+                key={p.key}
+                onClick={() => setProfitFilter(p.key)}
+                className={`ptab${profitFilter === p.key ? " active" : ""}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
           <DataTable
             rows={filtered}
             columns={columns}
