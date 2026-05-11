@@ -2,91 +2,99 @@ import { lazy, Suspense, useMemo } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 
 // Lazy-load a named React export so it's compatible with React.lazy
-// (which expects { default: Component }). Lets the OLIVER section
-// code-split into its own chunk, keeping ARION/SPARK users from
-// downloading OLIVER pages they never visit.
+// (which expects { default: Component }). Lets each service section
+// code-split into its own chunk, keeping users who only visit one
+// product (e.g. ARION-only) from downloading the others.
 function lazyNamed<T extends Record<string, unknown>>(
   loader: () => Promise<T>,
   name: keyof T,
 ) {
+  // Use `any` so callers can pass the original component's props through
+  // at the JSX call site (e.g. <ArionOverviewPage service={...} />).
+  // The underlying component is unchanged, so prop checks still happen
+  // inside its own implementation.
   return lazy(() =>
-    loader().then((m) => ({ default: m[name] as React.ComponentType<unknown> })),
+    loader().then((m) => ({ default: m[name] as React.ComponentType<any> })),
   );
 }
 import { useAppState } from '../app/AppState';
 import { SERVICE_CATALOG, resolveServiceStatus, type PortalService, type ServiceStatus } from '../config/serviceCatalog';
-import { ArionOverviewPage } from './arion/ArionOverviewPage';
+// ArionPageWrapper stays static — it's a small shared frame used by every
+// ARION page below. Lazy-loading it would just add a network round-trip
+// without saving bytes.
 import { ArionPageWrapper } from '../arion/ArionPageWrapper';
-// Website pages
-import { WebsiteOverview } from '../arion/pages/website/WebsiteOverview';
-import { WebsiteContent } from '../arion/pages/website/WebsiteContent';
-import { ContentSeoOverview } from '../arion/pages/website/ContentSeoOverview';
+
+// ARION pages — lazy-loaded; each becomes its own chunk
+const ArionOverviewPage = lazyNamed(() => import('./arion/ArionOverviewPage'), 'ArionOverviewPage');
+// Website
+const WebsiteOverview = lazyNamed(() => import('../arion/pages/website/WebsiteOverview'), 'WebsiteOverview');
+const WebsiteContent = lazyNamed(() => import('../arion/pages/website/WebsiteContent'), 'WebsiteContent');
+const ContentSeoOverview = lazyNamed(() => import('../arion/pages/website/ContentSeoOverview'), 'ContentSeoOverview');
 // ContentSeoPages / ContentSeoPosts / ContentSeoSchema removed 2026-04-21 —
 // consolidated into the single Content SEO Overview storytelling page with
 // an internal "See Full Details" modal (tabs for Pages, Posts, Issues).
-import { SecurityOverview } from '../arion/pages/website/SecurityOverview';
-import { SecurityVulnerabilities } from '../arion/pages/website/SecurityVulnerabilities';
-import { SecurityFirewall } from '../arion/pages/website/SecurityFirewall';
-import { PerformanceCache } from '../arion/pages/website/PerformanceCache';
-import { PerformanceImages } from '../arion/pages/website/PerformanceImages';
-import { WebsiteUpdates } from '../arion/pages/website/WebsiteUpdates';
-import { WebsiteStaging } from '../arion/pages/website/WebsiteStaging';
-import { WebsiteSupport } from '../arion/pages/website/WebsiteSupport';
-import { WebsiteSettings } from '../arion/pages/website/WebsiteSettings';
-// Hosting pages
-import { HostingOverview } from '../arion/pages/hosting/HostingOverview';
-import { HostingDomainDns } from '../arion/pages/hosting/HostingDomainDns';
-import { HostingBackups } from '../arion/pages/hosting/HostingBackups';
-import { HostingPerformance } from '../arion/pages/hosting/HostingPerformance';
-// Analytics pages
-import { AnalyticsOverview } from '../arion/pages/analytics/AnalyticsOverview';
-import { AnalyticsTraffic } from '../arion/pages/analytics/AnalyticsTraffic';
-import { AnalyticsAudience } from '../arion/pages/analytics/AnalyticsAudience';
-import { AnalyticsContent } from '../arion/pages/analytics/AnalyticsContent';
-import { AnalyticsConversions } from '../arion/pages/analytics/AnalyticsConversions';
-import { AnalyticsPages } from '../arion/pages/analytics/AnalyticsPages';
-import { AnalyticsReports } from '../arion/pages/analytics/AnalyticsReports';
-import { IAInsightsCrossChannel } from '../arion/pages/analytics/IAInsightsCrossChannel';
-import { IAInsightsReports } from '../arion/pages/analytics/IAInsightsReports';
-// SEO pages
-import { SeoOverview } from '../arion/pages/seo/SeoOverview';
-import { SeoRankings } from '../arion/pages/seo/SeoRankings';
-import { SeoSiteAudit } from '../arion/pages/seo/SeoSiteAudit';
-import { SeoCompetitors } from '../arion/pages/seo/SeoCompetitors';
-import { SeoAiSearch } from '../arion/pages/seo/SeoAiSearch';
-import { SeoMarketMonitor } from '../arion/pages/seo/SeoMarketMonitor';
-import { SeoReports } from '../arion/pages/seo/SeoReports';
-// Search pages
-import { SearchPerformance } from '../arion/pages/search/SearchPerformance';
-import { SearchIndexing } from '../arion/pages/search/SearchIndexing';
-import { SearchSitemaps } from '../arion/pages/search/SearchSitemaps';
-import { SearchCoreWebVitals } from '../arion/pages/search/SearchCoreWebVitals';
-import { SearchBingCopilot } from '../arion/pages/search/SearchBingCopilot';
-import { SearchBingIndexNow } from '../arion/pages/search/SearchBingIndexNow';
-// Business pages
-import { BusinessOverview } from '../arion/pages/business/BusinessOverview';
-import { BusinessReviews } from '../arion/pages/business/BusinessReviews';
-import { BusinessInsights } from '../arion/pages/business/BusinessInsights';
-import { BusinessPosts } from '../arion/pages/business/BusinessPosts';
-import { BusinessServices } from '../arion/pages/business/BusinessServices';
-import { BusinessBingOverview } from '../arion/pages/business/BusinessBingOverview';
-import { BusinessAppleOverview } from '../arion/pages/business/BusinessAppleOverview';
-// Brand page
-import { BrandPage } from '../arion/pages/BrandPage';
-import { SparkOverviewPage } from './spark/SparkOverviewPage';
-import { SparkContactsPage } from './spark/SparkContactsPage';
-import { SparkListsPage } from './spark/SparkListsPage';
-import { SparkTagsPage } from './spark/SparkTagsPage';
-import { SparkSegmentsPage } from './spark/SparkSegmentsPage';
-import { SparkCampaignsPage } from './spark/SparkCampaignsPage';
-import { SparkFormsPage } from './spark/SparkFormsPage';
-import { SparkAutomationsPage } from './spark/SparkAutomationsPage';
-import { SparkLeadsPage } from './spark/SparkLeadsPage';
-import { SparkSearchProfilesPage } from './spark/SparkSearchProfilesPage';
-import { SparkIntelligencePage } from './spark/SparkIntelligencePage';
-import { SparkUsagePage } from './spark/SparkUsagePage';
-// OLIVER pages are lazy-loaded so they only enter the bundle when a tenant
-// visits an OLIVER route. Cuts initial bundle size for ARION-only tenants.
+const SecurityOverview = lazyNamed(() => import('../arion/pages/website/SecurityOverview'), 'SecurityOverview');
+const SecurityVulnerabilities = lazyNamed(() => import('../arion/pages/website/SecurityVulnerabilities'), 'SecurityVulnerabilities');
+const PerformanceCache = lazyNamed(() => import('../arion/pages/website/PerformanceCache'), 'PerformanceCache');
+const PerformanceImages = lazyNamed(() => import('../arion/pages/website/PerformanceImages'), 'PerformanceImages');
+const WebsiteUpdates = lazyNamed(() => import('../arion/pages/website/WebsiteUpdates'), 'WebsiteUpdates');
+const WebsiteStaging = lazyNamed(() => import('../arion/pages/website/WebsiteStaging'), 'WebsiteStaging');
+const WebsiteSupport = lazyNamed(() => import('../arion/pages/website/WebsiteSupport'), 'WebsiteSupport');
+const WebsiteSettings = lazyNamed(() => import('../arion/pages/website/WebsiteSettings'), 'WebsiteSettings');
+// Hosting
+const HostingOverview = lazyNamed(() => import('../arion/pages/hosting/HostingOverview'), 'HostingOverview');
+const HostingDomainDns = lazyNamed(() => import('../arion/pages/hosting/HostingDomainDns'), 'HostingDomainDns');
+const HostingBackups = lazyNamed(() => import('../arion/pages/hosting/HostingBackups'), 'HostingBackups');
+const HostingPerformance = lazyNamed(() => import('../arion/pages/hosting/HostingPerformance'), 'HostingPerformance');
+// Analytics
+const AnalyticsOverview = lazyNamed(() => import('../arion/pages/analytics/AnalyticsOverview'), 'AnalyticsOverview');
+const AnalyticsTraffic = lazyNamed(() => import('../arion/pages/analytics/AnalyticsTraffic'), 'AnalyticsTraffic');
+const AnalyticsAudience = lazyNamed(() => import('../arion/pages/analytics/AnalyticsAudience'), 'AnalyticsAudience');
+const AnalyticsContent = lazyNamed(() => import('../arion/pages/analytics/AnalyticsContent'), 'AnalyticsContent');
+const AnalyticsConversions = lazyNamed(() => import('../arion/pages/analytics/AnalyticsConversions'), 'AnalyticsConversions');
+const AnalyticsPages = lazyNamed(() => import('../arion/pages/analytics/AnalyticsPages'), 'AnalyticsPages');
+const AnalyticsReports = lazyNamed(() => import('../arion/pages/analytics/AnalyticsReports'), 'AnalyticsReports');
+const IAInsightsCrossChannel = lazyNamed(() => import('../arion/pages/analytics/IAInsightsCrossChannel'), 'IAInsightsCrossChannel');
+const IAInsightsReports = lazyNamed(() => import('../arion/pages/analytics/IAInsightsReports'), 'IAInsightsReports');
+// SEO
+const SeoOverview = lazyNamed(() => import('../arion/pages/seo/SeoOverview'), 'SeoOverview');
+const SeoRankings = lazyNamed(() => import('../arion/pages/seo/SeoRankings'), 'SeoRankings');
+const SeoSiteAudit = lazyNamed(() => import('../arion/pages/seo/SeoSiteAudit'), 'SeoSiteAudit');
+const SeoCompetitors = lazyNamed(() => import('../arion/pages/seo/SeoCompetitors'), 'SeoCompetitors');
+const SeoAiSearch = lazyNamed(() => import('../arion/pages/seo/SeoAiSearch'), 'SeoAiSearch');
+const SeoMarketMonitor = lazyNamed(() => import('../arion/pages/seo/SeoMarketMonitor'), 'SeoMarketMonitor');
+const SeoReports = lazyNamed(() => import('../arion/pages/seo/SeoReports'), 'SeoReports');
+// Search
+const SearchPerformance = lazyNamed(() => import('../arion/pages/search/SearchPerformance'), 'SearchPerformance');
+const SearchIndexing = lazyNamed(() => import('../arion/pages/search/SearchIndexing'), 'SearchIndexing');
+const SearchBingCopilot = lazyNamed(() => import('../arion/pages/search/SearchBingCopilot'), 'SearchBingCopilot');
+const SearchBingIndexNow = lazyNamed(() => import('../arion/pages/search/SearchBingIndexNow'), 'SearchBingIndexNow');
+// Business
+const BusinessOverview = lazyNamed(() => import('../arion/pages/business/BusinessOverview'), 'BusinessOverview');
+const BusinessReviews = lazyNamed(() => import('../arion/pages/business/BusinessReviews'), 'BusinessReviews');
+const BusinessInsights = lazyNamed(() => import('../arion/pages/business/BusinessInsights'), 'BusinessInsights');
+const BusinessPosts = lazyNamed(() => import('../arion/pages/business/BusinessPosts'), 'BusinessPosts');
+const BusinessServices = lazyNamed(() => import('../arion/pages/business/BusinessServices'), 'BusinessServices');
+const BusinessBingOverview = lazyNamed(() => import('../arion/pages/business/BusinessBingOverview'), 'BusinessBingOverview');
+const BusinessAppleOverview = lazyNamed(() => import('../arion/pages/business/BusinessAppleOverview'), 'BusinessAppleOverview');
+// Brand
+const BrandPage = lazyNamed(() => import('../arion/pages/BrandPage'), 'BrandPage');
+
+// SPARK / LUMEN pages — lazy-loaded
+const SparkOverviewPage = lazyNamed(() => import('./spark/SparkOverviewPage'), 'SparkOverviewPage');
+const SparkContactsPage = lazyNamed(() => import('./spark/SparkContactsPage'), 'SparkContactsPage');
+const SparkListsPage = lazyNamed(() => import('./spark/SparkListsPage'), 'SparkListsPage');
+const SparkTagsPage = lazyNamed(() => import('./spark/SparkTagsPage'), 'SparkTagsPage');
+const SparkSegmentsPage = lazyNamed(() => import('./spark/SparkSegmentsPage'), 'SparkSegmentsPage');
+const SparkCampaignsPage = lazyNamed(() => import('./spark/SparkCampaignsPage'), 'SparkCampaignsPage');
+const SparkFormsPage = lazyNamed(() => import('./spark/SparkFormsPage'), 'SparkFormsPage');
+const SparkAutomationsPage = lazyNamed(() => import('./spark/SparkAutomationsPage'), 'SparkAutomationsPage');
+const SparkLeadsPage = lazyNamed(() => import('./spark/SparkLeadsPage'), 'SparkLeadsPage');
+const SparkSearchProfilesPage = lazyNamed(() => import('./spark/SparkSearchProfilesPage'), 'SparkSearchProfilesPage');
+const SparkIntelligencePage = lazyNamed(() => import('./spark/SparkIntelligencePage'), 'SparkIntelligencePage');
+const SparkUsagePage = lazyNamed(() => import('./spark/SparkUsagePage'), 'SparkUsagePage');
+
+// OLIVER pages — lazy-loaded (introduced 2026-05-11)
 const OliverDashboardPage = lazyNamed(() => import('./oliver/OliverDashboardPage'), 'OliverDashboardPage');
 const OliverJobBoardPage = lazyNamed(() => import('./oliver/OliverJobBoardPage'), 'OliverJobBoardPage');
 const OliverSchedulePage = lazyNamed(() => import('./oliver/OliverSchedulePage'), 'OliverSchedulePage');
@@ -108,9 +116,20 @@ const OliverServiceCatalogPage = lazyNamed(() => import('./oliver/OliverServiceC
 const OliverBillingOverviewPage = lazyNamed(() => import('./oliver/OliverBillingOverviewPage'), 'OliverBillingOverviewPage');
 const OliverRemindersPage = lazyNamed(() => import('./oliver/OliverRemindersPage'), 'OliverRemindersPage');
 const OliverOnboardingPage = lazyNamed(() => import('./oliver/OliverOnboardingPage'), 'OliverOnboardingPage');
-import { ConsultingOverviewPage } from './consulting/ConsultingOverviewPage';
-import { ConsultingEngagementWrapper } from './consulting/ConsultingEngagementWrapper';
-import { ConsultingCalendarPage } from './consulting/ConsultingCalendarPage';
+
+// CONSULTING — lazy-loaded
+const ConsultingOverviewPage = lazyNamed(() => import('./consulting/ConsultingOverviewPage'), 'ConsultingOverviewPage');
+const ConsultingEngagementWrapper = lazyNamed(() => import('./consulting/ConsultingEngagementWrapper'), 'ConsultingEngagementWrapper');
+const ConsultingCalendarPage = lazyNamed(() => import('./consulting/ConsultingCalendarPage'), 'ConsultingCalendarPage');
+
+// Shared loading fallback used by every Suspense boundary in this router.
+function RouteLoading() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 60, color: '#5A7A8A', fontSize: 13 }}>
+      Loading…
+    </div>
+  );
+}
 
 export function ServiceRouter() {
   const { serviceKey } = useParams<{ serviceKey: string }>();
@@ -133,64 +152,72 @@ export function ServiceRouter() {
   const status: ServiceStatus = resolveServiceStatus(service, enabledServices);
 
   if (service.section === 'ARION') {
+    let arionPage: React.ReactNode = null;
     switch (service.key) {
-      case 'arion_dashboard': return <ArionPageWrapper><ArionOverviewPage service={service} status={status} /></ArionPageWrapper>;
-      case 'arion_website_overview': return <ArionPageWrapper><WebsiteOverview /></ArionPageWrapper>;
-      case 'arion_website_content': return <ArionPageWrapper><WebsiteContent /></ArionPageWrapper>;
-      case 'arion_website_content_seo_overview': return <ArionPageWrapper><ContentSeoOverview /></ArionPageWrapper>;
+      case 'arion_dashboard': arionPage = <ArionOverviewPage service={service} status={status} />; break;
+      case 'arion_website_overview': arionPage = <WebsiteOverview />; break;
+      case 'arion_website_content': arionPage = <WebsiteContent />; break;
+      case 'arion_website_content_seo_overview': arionPage = <ContentSeoOverview />; break;
       // Legacy sub-routes — redirect to the consolidated Content SEO Overview
       case 'arion_website_content_seo_pages':
       case 'arion_website_content_seo_posts':
       case 'arion_website_content_seo_schema':
         return <Navigate to="/app/services/arion_website_content_seo_overview" replace />;
-      case 'arion_website_security_overview': return <ArionPageWrapper><SecurityOverview /></ArionPageWrapper>;
-      case 'arion_website_security_vulnerabilities': return <ArionPageWrapper><SecurityVulnerabilities /></ArionPageWrapper>;
+      case 'arion_website_security_overview': arionPage = <SecurityOverview />; break;
+      case 'arion_website_security_vulnerabilities': arionPage = <SecurityVulnerabilities />; break;
       case 'arion_website_security_firewall': return <Navigate to="/app/services/arion_website_security_overview" replace />;
-      case 'arion_website_performance_cache': return <ArionPageWrapper><PerformanceCache /></ArionPageWrapper>;
-      case 'arion_website_performance_images': return <ArionPageWrapper><PerformanceImages /></ArionPageWrapper>;
-      case 'arion_website_updates': return <ArionPageWrapper><WebsiteUpdates /></ArionPageWrapper>;
-      case 'arion_website_staging': return <ArionPageWrapper><WebsiteStaging /></ArionPageWrapper>;
-      case 'arion_website_support': return <ArionPageWrapper><WebsiteSupport /></ArionPageWrapper>;
-      case 'arion_website_settings': return <ArionPageWrapper><WebsiteSettings /></ArionPageWrapper>;
-      case 'arion_hosting_overview': return <ArionPageWrapper><HostingOverview /></ArionPageWrapper>;
-      case 'arion_hosting_domain_dns': return <ArionPageWrapper><HostingDomainDns /></ArionPageWrapper>;
-      case 'arion_hosting_backups': return <ArionPageWrapper><HostingBackups /></ArionPageWrapper>;
-      case 'arion_hosting_performance': return <ArionPageWrapper><HostingPerformance /></ArionPageWrapper>;
-      case 'arion_analytics_overview': return <ArionPageWrapper><AnalyticsOverview /></ArionPageWrapper>;
-      case 'arion_analytics_traffic': return <ArionPageWrapper><AnalyticsTraffic /></ArionPageWrapper>;
-      case 'arion_analytics_audience': return <ArionPageWrapper><AnalyticsAudience /></ArionPageWrapper>;
-      case 'arion_analytics_content': return <ArionPageWrapper><AnalyticsContent /></ArionPageWrapper>;
-      case 'arion_analytics_conversions': return <ArionPageWrapper><AnalyticsConversions /></ArionPageWrapper>;
-      case 'arion_analytics_pages': return <ArionPageWrapper><AnalyticsPages /></ArionPageWrapper>;
-      case 'arion_analytics_reports': return <ArionPageWrapper><AnalyticsReports /></ArionPageWrapper>;
-      case 'arion_analytics_ia_cross_channel': return <ArionPageWrapper><IAInsightsCrossChannel /></ArionPageWrapper>;
-      case 'arion_analytics_ia_reports': return <ArionPageWrapper><IAInsightsReports /></ArionPageWrapper>;
-      case 'arion_seo_overview': return <ArionPageWrapper><SeoOverview /></ArionPageWrapper>;
-      case 'arion_seo_rankings': return <ArionPageWrapper><SeoRankings /></ArionPageWrapper>;
-      case 'arion_seo_site_audit': return <ArionPageWrapper><SeoSiteAudit /></ArionPageWrapper>;
-      case 'arion_seo_competitors': return <ArionPageWrapper><SeoCompetitors /></ArionPageWrapper>;
-      case 'arion_seo_ai_search': return <ArionPageWrapper><SeoAiSearch /></ArionPageWrapper>;
-      case 'arion_seo_market_monitor': return <ArionPageWrapper><SeoMarketMonitor /></ArionPageWrapper>;
+      case 'arion_website_performance_cache': arionPage = <PerformanceCache />; break;
+      case 'arion_website_performance_images': arionPage = <PerformanceImages />; break;
+      case 'arion_website_updates': arionPage = <WebsiteUpdates />; break;
+      case 'arion_website_staging': arionPage = <WebsiteStaging />; break;
+      case 'arion_website_support': arionPage = <WebsiteSupport />; break;
+      case 'arion_website_settings': arionPage = <WebsiteSettings />; break;
+      case 'arion_hosting_overview': arionPage = <HostingOverview />; break;
+      case 'arion_hosting_domain_dns': arionPage = <HostingDomainDns />; break;
+      case 'arion_hosting_backups': arionPage = <HostingBackups />; break;
+      case 'arion_hosting_performance': arionPage = <HostingPerformance />; break;
+      case 'arion_analytics_overview': arionPage = <AnalyticsOverview />; break;
+      case 'arion_analytics_traffic': arionPage = <AnalyticsTraffic />; break;
+      case 'arion_analytics_audience': arionPage = <AnalyticsAudience />; break;
+      case 'arion_analytics_content': arionPage = <AnalyticsContent />; break;
+      case 'arion_analytics_conversions': arionPage = <AnalyticsConversions />; break;
+      case 'arion_analytics_pages': arionPage = <AnalyticsPages />; break;
+      case 'arion_analytics_reports': arionPage = <AnalyticsReports />; break;
+      case 'arion_analytics_ia_cross_channel': arionPage = <IAInsightsCrossChannel />; break;
+      case 'arion_analytics_ia_reports': arionPage = <IAInsightsReports />; break;
+      case 'arion_seo_overview': arionPage = <SeoOverview />; break;
+      case 'arion_seo_rankings': arionPage = <SeoRankings />; break;
+      case 'arion_seo_site_audit': arionPage = <SeoSiteAudit />; break;
+      case 'arion_seo_competitors': arionPage = <SeoCompetitors />; break;
+      case 'arion_seo_ai_search': arionPage = <SeoAiSearch />; break;
+      case 'arion_seo_market_monitor': arionPage = <SeoMarketMonitor />; break;
       // Opportunities was folded into IA Insights Search Intelligence modal
       // (whitespace + SERP-feature gap sections). Old links redirect to the
       // IA Insights page rather than 404.
       case 'arion_seo_opportunities': return <Navigate to="/app/services/arion_analytics_ia_reports" replace />;
-      case 'arion_seo_reports': return <ArionPageWrapper><SeoReports /></ArionPageWrapper>;
-      case 'arion_search_performance': return <ArionPageWrapper><SearchPerformance /></ArionPageWrapper>;
-      case 'arion_search_indexing': return <ArionPageWrapper><SearchIndexing /></ArionPageWrapper>;
+      case 'arion_seo_reports': arionPage = <SeoReports />; break;
+      case 'arion_search_performance': arionPage = <SearchPerformance />; break;
+      case 'arion_search_indexing': arionPage = <SearchIndexing />; break;
       case 'arion_search_sitemaps': return <Navigate to="/app/services/arion_search_indexing" replace />;
       case 'arion_search_core_web_vitals': return <Navigate to="/app/services/arion_website_performance_cache" replace />;
-      case 'arion_search_bing_copilot': return <ArionPageWrapper><SearchBingCopilot /></ArionPageWrapper>;
-      case 'arion_search_bing_indexnow': return <ArionPageWrapper><SearchBingIndexNow /></ArionPageWrapper>;
-      case 'arion_business_overview': return <ArionPageWrapper><BusinessOverview /></ArionPageWrapper>;
-      case 'arion_business_reviews': return <ArionPageWrapper><BusinessReviews /></ArionPageWrapper>;
-      case 'arion_business_insights': return <ArionPageWrapper><BusinessInsights /></ArionPageWrapper>;
-      case 'arion_business_posts': return <ArionPageWrapper><BusinessPosts /></ArionPageWrapper>;
-      case 'arion_business_services': return <ArionPageWrapper><BusinessServices /></ArionPageWrapper>;
-      case 'arion_business_bing_overview': return <ArionPageWrapper><BusinessBingOverview /></ArionPageWrapper>;
-      case 'arion_business_apple_overview': return <ArionPageWrapper><BusinessAppleOverview /></ArionPageWrapper>;
-      case 'arion_brand': return <ArionPageWrapper><BrandPage /></ArionPageWrapper>;
+      case 'arion_search_bing_copilot': arionPage = <SearchBingCopilot />; break;
+      case 'arion_search_bing_indexnow': arionPage = <SearchBingIndexNow />; break;
+      case 'arion_business_overview': arionPage = <BusinessOverview />; break;
+      case 'arion_business_reviews': arionPage = <BusinessReviews />; break;
+      case 'arion_business_insights': arionPage = <BusinessInsights />; break;
+      case 'arion_business_posts': arionPage = <BusinessPosts />; break;
+      case 'arion_business_services': arionPage = <BusinessServices />; break;
+      case 'arion_business_bing_overview': arionPage = <BusinessBingOverview />; break;
+      case 'arion_business_apple_overview': arionPage = <BusinessAppleOverview />; break;
+      case 'arion_brand': arionPage = <BrandPage />; break;
       default: break;
+    }
+    if (arionPage) {
+      return (
+        <Suspense fallback={<RouteLoading />}>
+          <ArionPageWrapper>{arionPage}</ArionPageWrapper>
+        </Suspense>
+      );
     }
   }
 
@@ -220,56 +247,54 @@ export function ServiceRouter() {
       case 'oliver_onboarding': oliverPage = <OliverOnboardingPage />; break;
     }
     if (oliverPage) {
-      return (
-        <Suspense
-          fallback={
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 60, color: "#5A7A8A", fontSize: 13 }}>
-              Loading…
-            </div>
-          }
-        >
-          {oliverPage}
-        </Suspense>
-      );
+      return <Suspense fallback={<RouteLoading />}>{oliverPage}</Suspense>;
     }
   }
 
   if (service.section === 'LUMEN') {
+    let sparkPage: React.ReactNode = null;
     switch (service.key) {
-      case 'spark_overview': return <SparkOverviewPage />;
-      case 'spark_contacts': return <SparkContactsPage />;
-      case 'spark_lists': return <SparkListsPage />;
-      case 'spark_tags': return <SparkTagsPage />;
-      case 'spark_segments': return <SparkSegmentsPage />;
-      case 'spark_campaigns': return <SparkCampaignsPage />;
-      case 'spark_forms': return <SparkFormsPage />;
-      case 'spark_automations': return <SparkAutomationsPage />;
-      case 'spark_leads': return <SparkLeadsPage />;
-      case 'spark_search_profiles': return <SparkSearchProfilesPage />;
-      case 'spark_intelligence': return <SparkIntelligencePage />;
-      case 'spark_usage': return <SparkUsagePage />;
+      case 'spark_overview': sparkPage = <SparkOverviewPage />; break;
+      case 'spark_contacts': sparkPage = <SparkContactsPage />; break;
+      case 'spark_lists': sparkPage = <SparkListsPage />; break;
+      case 'spark_tags': sparkPage = <SparkTagsPage />; break;
+      case 'spark_segments': sparkPage = <SparkSegmentsPage />; break;
+      case 'spark_campaigns': sparkPage = <SparkCampaignsPage />; break;
+      case 'spark_forms': sparkPage = <SparkFormsPage />; break;
+      case 'spark_automations': sparkPage = <SparkAutomationsPage />; break;
+      case 'spark_leads': sparkPage = <SparkLeadsPage />; break;
+      case 'spark_search_profiles': sparkPage = <SparkSearchProfilesPage />; break;
+      case 'spark_intelligence': sparkPage = <SparkIntelligencePage />; break;
+      case 'spark_usage': sparkPage = <SparkUsagePage />; break;
       // Backward compat aliases for old lumen_* keys
-      case 'lumen_overview': return <SparkOverviewPage />;
-      case 'lumen_contacts': return <SparkContactsPage />;
-      case 'lumen_campaigns': return <SparkCampaignsPage />;
-      case 'lumen_leads': return <SparkLeadsPage />;
+      case 'lumen_overview': sparkPage = <SparkOverviewPage />; break;
+      case 'lumen_contacts': sparkPage = <SparkContactsPage />; break;
+      case 'lumen_campaigns': sparkPage = <SparkCampaignsPage />; break;
+      case 'lumen_leads': sparkPage = <SparkLeadsPage />; break;
       default: break;
+    }
+    if (sparkPage) {
+      return <Suspense fallback={<RouteLoading />}>{sparkPage}</Suspense>;
     }
   }
 
   if (service.section === 'CONSULTING') {
+    let consultingPage: React.ReactNode = null;
     switch (service.key) {
-      case 'consulting_overview': return <ConsultingOverviewPage />;
-      case 'consulting_brand_tasks': return <ConsultingEngagementWrapper engagementType="build_your_brand" view="tasks" />;
-      case 'consulting_brand_deliverables': return <ConsultingEngagementWrapper engagementType="build_your_brand" view="deliverables" />;
-      case 'consulting_foundation_tasks': return <ConsultingEngagementWrapper engagementType="build_your_foundation" view="tasks" />;
-      case 'consulting_foundation_deliverables': return <ConsultingEngagementWrapper engagementType="build_your_foundation" view="deliverables" />;
-      case 'consulting_clarity_tasks': return <ConsultingEngagementWrapper engagementType="build_your_clarity" view="tasks" />;
-      case 'consulting_clarity_deliverables': return <ConsultingEngagementWrapper engagementType="build_your_clarity" view="deliverables" />;
-      case 'consulting_engine_tasks': return <ConsultingEngagementWrapper engagementType="build_your_engine" view="tasks" />;
-      case 'consulting_engine_deliverables': return <ConsultingEngagementWrapper engagementType="build_your_engine" view="deliverables" />;
-      case 'consulting_calendar': return <ConsultingCalendarPage />;
+      case 'consulting_overview': consultingPage = <ConsultingOverviewPage />; break;
+      case 'consulting_brand_tasks': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_brand" view="tasks" />; break;
+      case 'consulting_brand_deliverables': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_brand" view="deliverables" />; break;
+      case 'consulting_foundation_tasks': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_foundation" view="tasks" />; break;
+      case 'consulting_foundation_deliverables': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_foundation" view="deliverables" />; break;
+      case 'consulting_clarity_tasks': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_clarity" view="tasks" />; break;
+      case 'consulting_clarity_deliverables': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_clarity" view="deliverables" />; break;
+      case 'consulting_engine_tasks': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_engine" view="tasks" />; break;
+      case 'consulting_engine_deliverables': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_engine" view="deliverables" />; break;
+      case 'consulting_calendar': consultingPage = <ConsultingCalendarPage />; break;
       default: break;
+    }
+    if (consultingPage) {
+      return <Suspense fallback={<RouteLoading />}>{consultingPage}</Suspense>;
     }
   }
 
