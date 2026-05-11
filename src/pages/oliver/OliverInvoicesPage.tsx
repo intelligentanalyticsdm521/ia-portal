@@ -86,24 +86,51 @@ export function OliverInvoicesPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulkSending, setBulkSending] = useState(false);
-  const [bulkResult, setBulkResult] = useState<{ sent: number; failed: number } | null>(null);
+  const [bulkBusy, setBulkBusy] = useState<"send" | "mark-paid" | null>(null);
+  const [bulkResult, setBulkResult] = useState<{ kind: "send" | "mark-paid"; ok: number; failed: number } | null>(null);
 
   async function bulkSendDrafts() {
     const draftIds = rows.filter((r) => selected.has(r.id) && r.status === "draft").map((r) => r.id);
     if (!draftIds.length) return;
     if (!confirm(`Send ${draftIds.length} draft invoice${draftIds.length === 1 ? "" : "s"} to customers?`)) return;
-    setBulkSending(true);
+    setBulkBusy("send");
     setBulkResult(null);
-    let sent = 0;
+    let ok = 0;
     let failed = 0;
     await Promise.all(draftIds.map(async (id) => {
-      try { await post(`/invoices/${id}/send`); sent++; }
+      try { await post(`/invoices/${id}/send`); ok++; }
       catch { failed++; }
     }));
-    setBulkResult({ sent, failed });
+    setBulkResult({ kind: "send", ok, failed });
     setSelected(new Set());
-    setBulkSending(false);
+    setBulkBusy(null);
+    await reload();
+    setTimeout(() => setBulkResult(null), 6000);
+  }
+
+  async function bulkMarkPaid() {
+    const sentRows = rows.filter((r) => selected.has(r.id) && r.status === "sent");
+    if (!sentRows.length) return;
+    const method = prompt(
+      `Mark ${sentRows.length} sent invoice${sentRows.length === 1 ? "" : "s"} as paid.\nPayment method (cash, check, ACH, other):`,
+      "cash"
+    );
+    if (!method) return;
+    setBulkBusy("mark-paid");
+    setBulkResult(null);
+    let ok = 0;
+    let failed = 0;
+    await Promise.all(sentRows.map(async (r) => {
+      try {
+        // Mark each invoice paid for its full balance. Backend defaults to balance_due
+        // when amount is omitted, so we pass nothing and let it figure out the amount.
+        await post(`/invoices/${r.id}/mark-paid`, { amount: Number(r.amount), method });
+        ok++;
+      } catch { failed++; }
+    }));
+    setBulkResult({ kind: "mark-paid", ok, failed });
+    setSelected(new Set());
+    setBulkBusy(null);
     await reload();
     setTimeout(() => setBulkResult(null), 6000);
   }
@@ -303,28 +330,32 @@ export function OliverInvoicesPage() {
           {bulkResult && (
             <div className="card" style={{ background: "#D1FAE5", border: "1px solid #6EE7B7", marginBottom: 8 }}>
               <div style={{ fontSize: 12, color: "#065F46" }}>
-                {bulkResult.sent} invoice{bulkResult.sent === 1 ? "" : "s"} sent{bulkResult.failed > 0 ? ` · ${bulkResult.failed} failed` : ""}.
+                {bulkResult.ok} invoice{bulkResult.ok === 1 ? "" : "s"} {bulkResult.kind === "send" ? "sent" : "marked paid"}
+                {bulkResult.failed > 0 ? ` · ${bulkResult.failed} failed` : ""}.
               </div>
             </div>
           )}
 
           {selected.size > 0 && (() => {
-            const eligibleDrafts = rows.filter((r) => selected.has(r.id) && r.status === "draft").length;
+            const sel = rows.filter((r) => selected.has(r.id));
+            const draftCount = sel.filter((r) => r.status === "draft").length;
+            const sentCount = sel.filter((r) => r.status === "sent").length;
             return (
               <div className="card" style={{ background: "#E8F4FB", border: "1px solid rgba(45,156,219,0.3)", marginBottom: 8, padding: "10px 14px" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                   <div style={{ fontSize: 12, color: "#0C4A60" }}>
                     <strong>{selected.size}</strong> selected
-                    {eligibleDrafts < selected.size && (
-                      <span style={{ color: "#5A7A8A", marginLeft: 8 }}>
-                        ({eligibleDrafts} draft{eligibleDrafts === 1 ? "" : "s"} can be sent)
-                      </span>
-                    )}
+                    <span style={{ color: "#5A7A8A", marginLeft: 8 }}>
+                      ({draftCount} draft{draftCount === 1 ? "" : "s"} · {sentCount} sent)
+                    </span>
                   </div>
-                  <div style={{ display: "flex", gap: 6 }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     <Button variant="secondary" onClick={() => setSelected(new Set())}>Clear</Button>
-                    <Button variant="primary" onClick={bulkSendDrafts} disabled={bulkSending || eligibleDrafts === 0}>
-                      {bulkSending ? "Sending…" : `Send ${eligibleDrafts} draft${eligibleDrafts === 1 ? "" : "s"}`}
+                    <Button variant="secondary" onClick={bulkMarkPaid} disabled={!!bulkBusy || sentCount === 0}>
+                      {bulkBusy === "mark-paid" ? "Marking…" : `Mark ${sentCount} as paid`}
+                    </Button>
+                    <Button variant="primary" onClick={bulkSendDrafts} disabled={!!bulkBusy || draftCount === 0}>
+                      {bulkBusy === "send" ? "Sending…" : `Send ${draftCount} draft${draftCount === 1 ? "" : "s"}`}
                     </Button>
                   </div>
                 </div>

@@ -70,6 +70,28 @@ export function OliverQuotesPage() {
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ ok: number; failed: number } | null>(null);
+
+  async function bulkSendDrafts() {
+    const draftIds = rows.filter((r) => selected.has(r.id) && r.status === "draft").map((r) => r.id);
+    if (!draftIds.length) return;
+    if (!confirm(`Send ${draftIds.length} draft quote${draftIds.length === 1 ? "" : "s"} to customers?`)) return;
+    setBulkBusy(true);
+    setBulkResult(null);
+    let ok = 0;
+    let failed = 0;
+    await Promise.all(draftIds.map(async (id) => {
+      try { await post(`/quotes/${id}/send`); ok++; }
+      catch { failed++; }
+    }));
+    setBulkResult({ ok, failed });
+    setSelected(new Set());
+    setBulkBusy(false);
+    await reload();
+    setTimeout(() => setBulkResult(null), 6000);
+  }
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
@@ -216,6 +238,34 @@ export function OliverQuotesPage() {
             onSearchChange={setSearch}
             searchPlaceholder="Search by job or customer…"
           />
+
+          {bulkResult && (
+            <div className="card" style={{ background: "#D1FAE5", border: "1px solid #6EE7B7", marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: "#065F46" }}>
+                {bulkResult.ok} quote{bulkResult.ok === 1 ? "" : "s"} sent{bulkResult.failed > 0 ? ` · ${bulkResult.failed} failed` : ""}.
+              </div>
+            </div>
+          )}
+
+          {selected.size > 0 && (() => {
+            const draftCount = rows.filter((r) => selected.has(r.id) && r.status === "draft").length;
+            return (
+              <div className="card" style={{ background: "#E8F4FB", border: "1px solid rgba(45,156,219,0.3)", marginBottom: 8, padding: "10px 14px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 12, color: "#0C4A60" }}>
+                    <strong>{selected.size}</strong> selected · {draftCount} draft{draftCount === 1 ? "" : "s"} can be sent
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Button variant="secondary" onClick={() => setSelected(new Set())}>Clear</Button>
+                    <Button variant="primary" onClick={bulkSendDrafts} disabled={bulkBusy || draftCount === 0}>
+                      {bulkBusy ? "Sending…" : `Send ${draftCount} draft${draftCount === 1 ? "" : "s"}`}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           <DataTable
             rows={filtered}
             columns={columns}
@@ -223,6 +273,9 @@ export function OliverQuotesPage() {
             onRowClick={(r) => setDetailId(r.id)}
             initialSort={{ key: "createdAt", direction: "desc" }}
             emptyMessage="No quotes match these filters."
+            selectedIds={selected}
+            onSelectionChange={setSelected}
+            isRowSelectable={(r) => r.status === "draft" || r.status === "sent"}
           />
         </>
       )}
