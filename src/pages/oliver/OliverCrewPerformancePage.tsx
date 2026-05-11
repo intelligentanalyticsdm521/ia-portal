@@ -14,6 +14,13 @@ interface CrewStat {
   type: string;
   total_assignments: number;
   completed_jobs: number;
+  revenue_generated: number;
+  paid_invoice_count: number;
+  avg_job_value: number;
+}
+
+function fmtMoneyShort(n?: number | null) {
+  return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
 const FILTER_PILLS = [
@@ -69,7 +76,8 @@ export function OliverCrewPerformancePage() {
   const totalCompleted = crew.reduce((s, c) => s + c.completed_jobs, 0);
   const totalAssigned = crew.reduce((s, c) => s + c.total_assignments, 0);
   const avgCompletion = totalAssigned ? Math.round((totalCompleted / totalAssigned) * 100) : 0;
-  const top = [...crew].sort((a, b) => b.completed_jobs - a.completed_jobs)[0];
+  const totalRevenue = crew.reduce((s, c) => s + Number(c.revenue_generated || 0), 0);
+  const top = [...crew].sort((a, b) => Number(b.revenue_generated || 0) - Number(a.revenue_generated || 0))[0];
 
   const columns: Column<CrewStat>[] = [
     {
@@ -109,6 +117,26 @@ export function OliverCrewPerformancePage() {
       render: (c) => <span style={{ fontFamily: "monospace", fontSize: 12, color: "#059669", fontWeight: 600 }}>{c.completed_jobs}</span>,
     },
     {
+      key: "revenue",
+      header: "Revenue",
+      align: "right",
+      sortable: true,
+      sortAccessor: (c) => Number(c.revenue_generated || 0),
+      render: (c) => Number(c.revenue_generated || 0) > 0
+        ? <span style={{ fontFamily: "monospace", fontSize: 12, color: "#059669", fontWeight: 600 }}>{fmtMoneyShort(c.revenue_generated)}</span>
+        : <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>,
+    },
+    {
+      key: "avg_job",
+      header: "Avg job",
+      align: "right",
+      sortable: true,
+      sortAccessor: (c) => Number(c.avg_job_value || 0),
+      render: (c) => Number(c.avg_job_value || 0) > 0
+        ? <span style={{ fontFamily: "monospace", fontSize: 12, color: "#5A7A8A" }}>{fmtMoneyShort(c.avg_job_value)}</span>
+        : <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>,
+    },
+    {
       key: "completion",
       header: "Completion rate",
       render: (c) => {
@@ -146,24 +174,24 @@ export function OliverCrewPerformancePage() {
 
       <div className="stat-row">
         <div className="stat-card">
+          <div className="stat-lbl">Team revenue</div>
+          <div className="stat-val" style={{ color: "#059669" }}>{fmtMoneyShort(totalRevenue)}</div>
+          <div className="stat-delta neu">paid invoices in range</div>
+        </div>
+        <div className="stat-card">
           <div className="stat-lbl">Active workers</div>
           <div className="stat-val">{crew.length}</div>
           <div className="stat-delta neu">in selected range</div>
         </div>
         <div className="stat-card">
           <div className="stat-lbl">Jobs completed</div>
-          <div className="stat-val" style={{ color: "#059669" }}>{totalCompleted}</div>
-          <div className="stat-delta neu">across the team</div>
+          <div className="stat-val">{totalCompleted}</div>
+          <div className="stat-delta neu">{avgCompletion}% completion rate</div>
         </div>
         <div className="stat-card">
-          <div className="stat-lbl">Avg completion</div>
-          <div className="stat-val">{avgCompletion}%</div>
-          <div className="stat-delta neu">team-wide rate</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-lbl">Top performer</div>
+          <div className="stat-lbl">Top by revenue</div>
           <div className="stat-val" style={{ fontSize: 14 }}>{top ? `${top.first_name} ${top.last_name}` : "—"}</div>
-          <div className="stat-delta neu">{top ? `${top.completed_jobs} completed` : "—"}</div>
+          <div className="stat-delta neu">{top ? fmtMoneyShort(top.revenue_generated) : "—"}</div>
         </div>
       </div>
 
@@ -186,7 +214,7 @@ export function OliverCrewPerformancePage() {
             rows={filtered}
             columns={columns}
             rowKey={(c) => c.worker_id}
-            initialSort={{ key: "completed", direction: "desc" }}
+            initialSort={{ key: "revenue", direction: "desc" }}
             emptyMessage="No workers match these filters."
           />
         </>
