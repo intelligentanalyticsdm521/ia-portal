@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
@@ -58,6 +59,19 @@ export function OliverJobBoardPage() {
   }, [get]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
+
+  // Deep-link: ?focus=<job_id> opens the JobDetailDrawer immediately.
+  // Used by the Service Requests detail drawer's "Open in job board" action.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const focus = searchParams.get("focus");
+    if (focus) {
+      setDetailId(focus);
+      const next = new URLSearchParams(searchParams);
+      next.delete("focus");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const filtered = useMemo(() => {
     let list = jobs;
