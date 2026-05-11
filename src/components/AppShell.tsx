@@ -1,8 +1,24 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { HeaderBar } from "./HeaderBar";
 import { IconRail, type ProductKey } from "./IconRail";
-import { SubNav, SUB_NAV_CONFIGS } from "./SubNav";
+import { SubNav, SUB_NAV_CONFIGS, type SubNavConfig } from "./SubNav";
+import { useOliverRole } from "../hooks/useOliverRole";
+
+// Strip OLIVER nav items that aren't in allowedServiceKeys, and drop any
+// group that becomes empty. Returns the original config when no filter
+// applies (admin users / null allowedServiceKeys).
+function applyOliverNavFilter(
+  config: SubNavConfig,
+  allowedServiceKeys: string[] | null,
+): SubNavConfig {
+  if (!allowedServiceKeys) return config;
+  const allowSet = new Set(allowedServiceKeys);
+  const filteredGroups = config.groups
+    .map((g) => ({ ...g, items: g.items.filter((i) => allowSet.has(i.key)) }))
+    .filter((g) => g.items.length > 0);
+  return { ...config, groups: filteredGroups };
+}
 
 /** Derive the active product from the current URL path */
 function deriveProduct(pathname: string): ProductKey {
@@ -54,7 +70,18 @@ export function AppShell() {
     [navigate]
   );
 
-  const subNavConfig = activeProduct !== "overview" ? SUB_NAV_CONFIGS[activeProduct] : null;
+  // OLIVER role drives accountant nav filtering. The hook fetches /overview/me
+  // once per session; defaults to 'admin' until resolved so the full nav
+  // doesn't briefly flash a restricted view for real admins.
+  const { roleInfo } = useOliverRole();
+
+  const rawSubNavConfig =
+    activeProduct !== "overview" ? SUB_NAV_CONFIGS[activeProduct] : null;
+  const subNavConfig = useMemo(() => {
+    if (!rawSubNavConfig) return null;
+    if (activeProduct !== "oliver") return rawSubNavConfig;
+    return applyOliverNavFilter(rawSubNavConfig, roleInfo.allowedServiceKeys);
+  }, [rawSubNavConfig, activeProduct, roleInfo.allowedServiceKeys]);
 
   return (
     // h-screen (not min-h-screen) locks the shell to exactly 100vh so the nav row's
