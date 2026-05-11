@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { oliverDownload } from "../../lib/oliverApi";
@@ -308,6 +309,7 @@ function FormField({ label, value, onChange, type = "text" }: { label: string; v
 // ──────────────────────────────────────────────────────────────────────────────
 
 function ContactDetailModal({ contactId, onClose, api }: { contactId: string; onClose: () => void; api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T> } }) {
+  const navigate = useNavigate();
   const [detail, setDetail] = useState<ContactDetail | null>(null);
   const [activity, setActivity] = useState<Activity | null>(null);
   const [tab, setTab] = useState<"overview" | "jobs" | "quotes" | "invoices" | "payments">("overview");
@@ -337,6 +339,16 @@ function ContactDetailModal({ contactId, onClose, api }: { contactId: string; on
       title={contactName(detail)}
       subtitle={[detail.email, detail.phone].filter(Boolean).join(" · ")}
       width="xl"
+      headerActions={
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button variant="secondary" onClick={() => navigate(`/app/services/oliver_quotes?for_customer=${contactId}`)}>
+            + Quote
+          </Button>
+          <Button variant="primary" onClick={() => navigate(`/app/services/oliver_invoices?for_customer=${contactId}`)}>
+            + Invoice
+          </Button>
+        </div>
+      }
     >
       <div className="ptabs" style={{ marginBottom: 16 }}>
         <button className={`ptab${tab === "overview" ? " active" : ""}`} onClick={() => setTab("overview")}>Overview</button>

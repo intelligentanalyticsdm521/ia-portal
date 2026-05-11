@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
@@ -174,6 +175,24 @@ export function OliverInvoicesPage() {
     return () => window.removeEventListener("oliver:open-invoice", onOpen);
   }, [reload]);
 
+  // Deep-link: ?from_job=<id> or ?for_customer=<id> opens the creator pre-seeded.
+  const [initialJobId, setInitialJobId] = useState<string | undefined>();
+  const [initialContactId, setInitialContactId] = useState<string | undefined>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const fromJob = searchParams.get("from_job");
+    const forCustomer = searchParams.get("for_customer");
+    if (fromJob || forCustomer) {
+      if (fromJob) setInitialJobId(fromJob);
+      if (forCustomer) setInitialContactId(forCustomer);
+      setShowCreate(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete("from_job");
+      next.delete("for_customer");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
   const filtered = useMemo(() => {
     let list = rows;
     if (filter) list = list.filter((r) => r.status === filter);
@@ -304,8 +323,10 @@ export function OliverInvoicesPage() {
       {showCreate && (
         <div className="mb-4">
           <InvoiceCreateForm
-            onCreated={() => { setShowCreate(false); reload(); }}
-            onCancel={() => setShowCreate(false)}
+            onCreated={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); reload(); }}
+            onCancel={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); }}
+            initialJobId={initialJobId}
+            initialContactId={initialContactId}
           />
         </div>
       )}

@@ -34,6 +34,10 @@ interface LineItemDraft {
 interface CreateInvoiceProps {
   onCreated: () => void;
   onCancel: () => void;
+  /** Pre-seed the form with a job (opens in "From a completed job" mode). */
+  initialJobId?: string;
+  /** Pre-seed the form with a customer (opens in "Bill a customer" mode). */
+  initialContactId?: string;
 }
 
 const blankItem: LineItemDraft = { description: "", quantity: 1, unit_price: 0, is_tax: false };
@@ -43,14 +47,14 @@ function contactName(c: ContactListItem) {
   return c.company_name || `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || c.email || "(no name)";
 }
 
-export function InvoiceCreateForm({ onCreated, onCancel }: CreateInvoiceProps) {
+export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialContactId }: CreateInvoiceProps) {
   const { get, post, ready } = useOliverApi();
-  const [mode, setMode] = useState<"job" | "customer">("customer");
+  const [mode, setMode] = useState<"job" | "customer">(initialJobId ? "job" : "customer");
   const [jobs, setJobs] = useState<JobListItem[]>([]);
   const [contacts, setContacts] = useState<ContactListItem[]>([]);
   const [offerings, setOfferings] = useState<Offering[]>([]);
-  const [selectedJobId, setSelectedJobId] = useState<string>("");
-  const [selectedContactId, setSelectedContactId] = useState<string>("");
+  const [selectedJobId, setSelectedJobId] = useState<string>(initialJobId || "");
+  const [selectedContactId, setSelectedContactId] = useState<string>(initialContactId || "");
   const [items, setItems] = useState<LineItemDraft[]>([{ ...blankItem }]);
   const [dueDate, setDueDate] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);

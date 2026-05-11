@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
@@ -288,6 +288,7 @@ function JobDetailDrawer({ jobId, onClose, onChanged, api }: {
     patch: <T>(p: string, b: unknown) => Promise<T>;
   };
 }) {
+  const navigate = useNavigate();
   const [job, setJob] = useState<JobDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -384,6 +385,12 @@ function JobDetailDrawer({ jobId, onClose, onChanged, api }: {
           </>
         ) : (
           <>
+            <Button variant="ghost" onClick={() => navigate(`/app/services/oliver_invoices?from_job=${jobId}`)}>
+              + Create invoice
+            </Button>
+            <Button variant="ghost" onClick={() => navigate(`/app/services/oliver_quotes?from_job=${jobId}`)}>
+              + Create quote
+            </Button>
             {nonTerminal.map((s) => (
               <Button key={s} variant="primary" onClick={() => advanceTo(s)} disabled={busy === s}>
                 {busy === s ? "Updating…" : `Advance to ${s.replace(/_/g, " ")}`}

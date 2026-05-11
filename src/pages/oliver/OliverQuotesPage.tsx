@@ -72,18 +72,22 @@ export function OliverQuotesPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [initialJobId, setInitialJobId] = useState<string | undefined>();
+  const [initialContactId, setInitialContactId] = useState<string | undefined>();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Open the creator pre-seeded with a job when the page is opened
-  // with ?from_job=<id> (used by the Service Requests detail drawer).
+  // Open the creator pre-seeded by deep-links:
+  //   ?from_job=<id>      → from Service Requests detail drawer
+  //   ?for_customer=<id>  → from Customers detail drawer
   useEffect(() => {
     const fromJob = searchParams.get("from_job");
-    if (fromJob) {
-      setInitialJobId(fromJob);
+    const forCustomer = searchParams.get("for_customer");
+    if (fromJob || forCustomer) {
+      if (fromJob) setInitialJobId(fromJob);
+      if (forCustomer) setInitialContactId(forCustomer);
       setShowCreate(true);
-      // Clean the param so a refresh doesn't reopen the form.
       const next = new URLSearchParams(searchParams);
       next.delete("from_job");
+      next.delete("for_customer");
       setSearchParams(next, { replace: true });
     }
   }, [searchParams, setSearchParams]);
@@ -234,9 +238,10 @@ export function OliverQuotesPage() {
 
       {showCreate && (
         <QuoteCreateForm
-          onCreated={() => { setShowCreate(false); setInitialJobId(undefined); reload(); }}
-          onCancel={() => { setShowCreate(false); setInitialJobId(undefined); }}
+          onCreated={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); reload(); }}
+          onCancel={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); }}
           initialJobId={initialJobId}
+          initialContactId={initialContactId}
         />
       )}
 
