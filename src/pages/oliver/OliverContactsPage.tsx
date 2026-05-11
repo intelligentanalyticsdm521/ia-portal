@@ -92,6 +92,33 @@ export function OliverContactsPage() {
   }
 
   const [filter, setFilter] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{
+    customers: { imported: number; contacts_created: number; mappings_updated: number; total: number };
+    invoices: { imported: number; relinked: number; total: number };
+    subscriptions: { imported: number; relinked: number; total: number };
+  } | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  async function syncFromStripe() {
+    setSyncing(true);
+    setSyncError(null);
+    setSyncResult(null);
+    try {
+      const result = await post<{
+        customers: { imported: number; contacts_created: number; mappings_updated: number; total: number };
+        invoices: { imported: number; relinked: number; total: number };
+        subscriptions: { imported: number; relinked: number; total: number };
+      }>("/settings/stripe/import");
+      setSyncResult(result);
+      await reload(); // Refresh the contacts list
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Sync failed";
+      setSyncError(msg);
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
@@ -176,6 +203,9 @@ export function OliverContactsPage() {
         subtitle="Search any customer to see all their jobs, quotes, invoices, and payments"
         actions={
           <>
+            <Button variant="secondary" onClick={syncFromStripe} disabled={syncing}>
+              {syncing ? "Syncing from Stripe…" : "Sync from Stripe"}
+            </Button>
             <Button variant="secondary" onClick={exportCsv} disabled={exporting || !contacts.length}>
               {exporting ? "Exporting…" : "Export CSV"}
             </Button>
@@ -183,6 +213,28 @@ export function OliverContactsPage() {
           </>
         }
       />
+      {syncError && (
+        <div style={{ padding: 12, margin: "8px 0", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 8, color: "#991B1B", fontSize: 13 }}>
+          Stripe sync failed: {syncError}
+        </div>
+      )}
+      {syncResult && (
+        <div style={{ padding: 12, margin: "8px 0", background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, color: "#15803D", fontSize: 13 }}>
+          <strong>Stripe sync complete.</strong>{" "}
+          {syncResult.customers.contacts_created > 0 && <>Created {syncResult.customers.contacts_created} new customer{syncResult.customers.contacts_created === 1 ? "" : "s"}. </>}
+          {syncResult.customers.mappings_updated > 0 && <>Linked {syncResult.customers.mappings_updated} existing Stripe customer{syncResult.customers.mappings_updated === 1 ? "" : "s"}. </>}
+          {syncResult.invoices.imported > 0 && <>Imported {syncResult.invoices.imported} new invoice{syncResult.invoices.imported === 1 ? "" : "s"}. </>}
+          {syncResult.invoices.relinked > 0 && <>Re-linked {syncResult.invoices.relinked} orphaned invoice{syncResult.invoices.relinked === 1 ? "" : "s"}. </>}
+          {syncResult.subscriptions.imported > 0 && <>Imported {syncResult.subscriptions.imported} new subscription{syncResult.subscriptions.imported === 1 ? "" : "s"}. </>}
+          {syncResult.subscriptions.relinked > 0 && <>Re-linked {syncResult.subscriptions.relinked} orphaned subscription{syncResult.subscriptions.relinked === 1 ? "" : "s"}.</>}
+          {syncResult.customers.contacts_created === 0 &&
+            syncResult.customers.mappings_updated === 0 &&
+            syncResult.invoices.imported === 0 &&
+            syncResult.invoices.relinked === 0 &&
+            syncResult.subscriptions.imported === 0 &&
+            syncResult.subscriptions.relinked === 0 && <>Everything was already up to date.</>}
+        </div>
+      )}
       {!contacts.length ? (
         <EmptyState title="No customers yet" description="Customers appear here as soon as you create a job, quote, or invoice for them — or when they sign up via the customer portal." />
       ) : (
