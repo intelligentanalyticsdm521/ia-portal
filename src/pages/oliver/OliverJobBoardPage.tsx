@@ -15,6 +15,9 @@ interface Job {
   status: string;
   scheduledDate?: string | null;
   total: number;
+  revenue?: number;
+  laborCost?: number;
+  profit?: number;
 }
 
 const FILTER_PILLS = [
@@ -108,6 +111,29 @@ export function OliverJobBoardPage() {
     {
       key: "total", header: "Amount", align: "right", sortable: true, sortAccessor: (j) => Number(j.total),
       render: (j) => <span className="font-medium tabular-nums">{fmtMoney(j.total)}</span>,
+    },
+    {
+      key: "profit", header: "Profit", align: "right",
+      sortable: true,
+      sortAccessor: (j) => Number(j.profit ?? 0),
+      render: (j) => {
+        const rev = Number(j.revenue ?? 0);
+        const lc = Number(j.laborCost ?? 0);
+        const p = Number(j.profit ?? 0);
+        if (rev === 0 && lc === 0) {
+          return <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>;
+        }
+        return (
+          <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 600, color: p >= 0 ? "#059669" : "#DC2626" }}>
+            {p >= 0 ? "" : "−"}{fmtMoney(Math.abs(p))}
+            {lc > 0 && (
+              <div style={{ fontSize: 10, color: "#5A7A8A", fontWeight: 400 }}>
+                {fmtMoney(rev)} − {fmtMoney(lc)}
+              </div>
+            )}
+          </span>
+        );
+      },
     },
   ];
 
