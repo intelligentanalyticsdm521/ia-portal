@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
@@ -70,6 +71,22 @@ export function OliverQuotesPage() {
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [initialJobId, setInitialJobId] = useState<string | undefined>();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Open the creator pre-seeded with a job when the page is opened
+  // with ?from_job=<id> (used by the Service Requests detail drawer).
+  useEffect(() => {
+    const fromJob = searchParams.get("from_job");
+    if (fromJob) {
+      setInitialJobId(fromJob);
+      setShowCreate(true);
+      // Clean the param so a refresh doesn't reopen the form.
+      const next = new URLSearchParams(searchParams);
+      next.delete("from_job");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ ok: number; failed: number } | null>(null);
@@ -217,8 +234,9 @@ export function OliverQuotesPage() {
 
       {showCreate && (
         <QuoteCreateForm
-          onCreated={() => { setShowCreate(false); reload(); }}
-          onCancel={() => setShowCreate(false)}
+          onCreated={() => { setShowCreate(false); setInitialJobId(undefined); reload(); }}
+          onCancel={() => { setShowCreate(false); setInitialJobId(undefined); }}
+          initialJobId={initialJobId}
         />
       )}
 

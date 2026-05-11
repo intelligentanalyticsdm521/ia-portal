@@ -33,6 +33,8 @@ interface LineItemDraft {
 interface CreateQuoteProps {
   onCreated: () => void;
   onCancel: () => void;
+  /** When provided, opens the form in "job" mode with this job pre-selected. */
+  initialJobId?: string;
 }
 
 const blankItem: LineItemDraft = { description: "", quantity: 1, unit_price: 0 };
@@ -41,13 +43,13 @@ function contactName(c: ContactListItem) {
   return c.company_name || `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || c.email || "(no name)";
 }
 
-export function QuoteCreateForm({ onCreated, onCancel }: CreateQuoteProps) {
+export function QuoteCreateForm({ onCreated, onCancel, initialJobId }: CreateQuoteProps) {
   const { get, post, ready } = useOliverApi();
-  const [mode, setMode] = useState<"customer" | "job">("customer");
+  const [mode, setMode] = useState<"customer" | "job">(initialJobId ? "job" : "customer");
   const [jobs, setJobs] = useState<JobListItem[]>([]);
   const [contacts, setContacts] = useState<ContactListItem[]>([]);
   const [offerings, setOfferings] = useState<Offering[]>([]);
-  const [selectedJobId, setSelectedJobId] = useState("");
+  const [selectedJobId, setSelectedJobId] = useState(initialJobId || "");
   const [selectedContactId, setSelectedContactId] = useState("");
   const [items, setItems] = useState<LineItemDraft[]>([{ ...blankItem }]);
   const [validUntil, setValidUntil] = useState("");
