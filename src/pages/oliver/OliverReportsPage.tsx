@@ -33,6 +33,7 @@ interface CompletionReport {
 }
 interface RevenueTrendBucket { month: string; revenue: number; paid_count: number; }
 interface ServiceBreakdown { job_type: string; revenue: number; invoice_count: number; }
+interface OfferingRevenue { offering_id: string; name: string; category_name: string; revenue: number; units_sold: number; line_count: number; }
 interface QuoteConversion { month: string; total_quotes: number; accepted: number; declined: number; still_open: number; conversion_pct: number; }
 interface TopClient { contactName: string | null; contactEmail: string | null; total_revenue: number; invoice_count: number; }
 
@@ -63,6 +64,7 @@ export function OliverReportsPage() {
   const [comp, setComp] = useState<CompletionReport | null>(null);
   const [trend, setTrend] = useState<RevenueTrendBucket[]>([]);
   const [breakdown, setBreakdown] = useState<ServiceBreakdown[]>([]);
+  const [offerings, setOfferings] = useState<OfferingRevenue[]>([]);
   const [conversion, setConversion] = useState<QuoteConversion[]>([]);
   const [topClients, setTopClients] = useState<TopClient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,15 +76,16 @@ export function OliverReportsPage() {
     (async () => {
       setLoading(true); setError(null);
       try {
-        const [r, j, c, t, b, q] = await Promise.all([
+        const [r, j, c, t, b, q, o] = await Promise.all([
           get<RevenueSummary>(`/reports/revenue${qs}`),
           get<JobsReport>(`/reports/jobs${qs}`),
           get<CompletionReport>(`/reports/completion${qs}`),
           get<RevenueTrendBucket[]>(`/reports/revenue-trend${qs}`),
           get<ServiceBreakdown[]>(`/reports/service-breakdown${qs}`),
           get<QuoteConversion[]>(`/reports/quote-conversion${qs}`),
+          get<OfferingRevenue[]>(`/reports/offering-revenue${qs}`).catch(() => [] as OfferingRevenue[]),
         ]);
-        setRev(r); setJobs(j); setComp(c); setTrend(t || []); setBreakdown(b || []); setConversion(q || []);
+        setRev(r); setJobs(j); setComp(c); setTrend(t || []); setBreakdown(b || []); setConversion(q || []); setOfferings(o || []);
         try {
           const top = await get<TopClient[]>(`/reports/top-clients${qs}`);
           setTopClients(top || []);
@@ -235,6 +238,39 @@ export function OliverReportsPage() {
           )}
         </div>
       </div>
+
+      {offerings.length > 0 && (
+        <div className="card">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">Revenue by service offering</div>
+              <div className="card-sub">Top 10 catalog offerings · paid invoices, tax lines excluded</div>
+            </div>
+          </div>
+          <table className="tbl" style={{ marginTop: 0 }}>
+            <thead>
+              <tr>
+                <th>Offering</th>
+                <th>Category</th>
+                <th style={{ textAlign: "right" }}>Units</th>
+                <th style={{ textAlign: "right" }}>Line count</th>
+                <th style={{ textAlign: "right" }}>Revenue</th>
+              </tr>
+            </thead>
+            <tbody>
+              {offerings.slice(0, 10).map((o, i) => (
+                <tr key={`${o.offering_id}-${i}`}>
+                  <td><strong style={{ color: "#0B1C24" }}>{o.name}</strong></td>
+                  <td style={{ color: "#5A7A8A", fontSize: 12 }}>{o.category_name}</td>
+                  <td style={{ textAlign: "right", fontFamily: "monospace", fontSize: 12 }}>{Number(o.units_sold || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                  <td style={{ textAlign: "right", fontFamily: "monospace", fontSize: 12, color: "#5A7A8A" }}>{o.line_count}</td>
+                  <td style={{ textAlign: "right", fontFamily: "monospace", fontWeight: 600, color: "#059669" }}>{fmtMoney(o.revenue)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {topClients.length > 0 && (
         <div className="card">
