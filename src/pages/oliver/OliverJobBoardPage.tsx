@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
-  PageHeader, FilterBar, DataTable, EmptyState, Button,
+  PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState, Button,
   StatusBadge, type Column,
 } from "../../components/oliver/ui";
 import { JobCreateForm } from "./JobCreateForm";
@@ -38,7 +38,7 @@ function fmtDate(d?: string | null) {
 }
 
 export function OliverJobBoardPage() {
-  const { get, ready } = useOliverApi();
+  const { get, post, patch, ready } = useOliverApi();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -46,6 +46,7 @@ export function OliverJobBoardPage() {
   const [search, setSearch] = useState("");
   const [view, setView] = useState<"list" | "kanban">("list");
   const [showCreate, setShowCreate] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
@@ -162,17 +163,27 @@ export function OliverJobBoardPage() {
             rows={filtered}
             columns={columns}
             rowKey={(j) => j.id}
+            onRowClick={(j) => setDetailId(j.id)}
             initialSort={{ key: "scheduled", direction: "desc" }}
           />
         </>
       ) : (
-        <KanbanView jobs={jobs} search={search} onSearch={setSearch} />
+        <KanbanView jobs={jobs} search={search} onSearch={setSearch} onPick={setDetailId} />
+      )}
+
+      {detailId && (
+        <JobDetailDrawer
+          jobId={detailId}
+          onClose={() => setDetailId(null)}
+          onChanged={reload}
+          api={{ get, post, patch }}
+        />
       )}
     </OliverPageWrapper>
   );
 }
 
-function KanbanView({ jobs, search, onSearch }: { jobs: Job[]; search: string; onSearch: (q: string) => void }) {
+function KanbanView({ jobs, search, onSearch, onPick }: { jobs: Job[]; search: string; onSearch: (q: string) => void; onPick: (id: string) => void }) {
   const filtered = useMemo(() => {
     if (!search.trim()) return jobs;
     const q = search.toLowerCase();
@@ -203,7 +214,7 @@ function KanbanView({ jobs, search, onSearch }: { jobs: Job[]; search: string; o
                 <div className="bg-slate-50 rounded-b-lg p-2 min-h-[400px] space-y-2">
                   {colJobs.length === 0 && <div className="text-xs text-slate-400 italic text-center py-4">No jobs</div>}
                   {colJobs.map((j) => (
-                    <div key={j.id} className="bg-white rounded-lg ring-1 ring-gray-200 p-3 shadow-sm hover:shadow-md transition cursor-pointer">
+                    <div key={j.id} onClick={() => onPick(j.id)} className="bg-white rounded-lg ring-1 ring-gray-200 p-3 shadow-sm hover:shadow-md transition cursor-pointer">
                       <div className="text-sm font-medium text-oliver-teal line-clamp-2">{j.title || "(untitled)"}</div>
                       {j.customerName && <div className="text-xs text-slate-500 mt-1">{j.customerName}</div>}
                       <div className="flex items-center justify-between mt-2">
@@ -219,5 +230,207 @@ function KanbanView({ jobs, search, onSearch }: { jobs: Job[]; search: string; o
         </div>
       </div>
     </>
+  );
+}
+
+// ─── Job Detail Drawer ───────────────────────────────────────────────────────
+
+interface JobDetail {
+  id: string;
+  title?: string;
+  customerName?: string;
+  customerEmail?: string;
+  status: string;
+  description?: string;
+  scheduledDate?: string;
+  total?: number;
+  assignedWorkers?: Array<{ id: string; name: string }>;
+  quotes?: Array<{ id: string; amount: number; status: string }>;
+  invoices?: Array<{ id: string; amount: number; status: string }>;
+  statusHistory?: Array<{ status: string; timestamp: string; note?: string }>;
+}
+
+const VALID_NEXT: Record<string, string[]> = {
+  inquiry: ["quoted", "cancelled"],
+  quoted: ["scheduled", "cancelled"],
+  scheduled: ["dispatched", "cancelled"],
+  dispatched: ["assigned", "cancelled"],
+  assigned: ["in_progress", "cancelled"],
+  in_progress: ["completed", "cancelled"],
+  completed: ["invoiced"],
+  invoiced: ["paid"],
+  paid: [],
+  cancelled: [],
+};
+
+function JobDetailDrawer({ jobId, onClose, onChanged, api }: {
+  jobId: string;
+  onClose: () => void;
+  onChanged: () => void;
+  api: {
+    get: <T>(p: string) => Promise<T>;
+    post: <T>(p: string, b?: unknown) => Promise<T>;
+    patch: <T>(p: string, b: unknown) => Promise<T>;
+  };
+}) {
+  const [job, setJob] = useState<JobDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try { setJob(await api.get<JobDetail>(`/jobs/${jobId}`)); }
+    finally { setLoading(false); }
+  }, [api, jobId]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  async function advanceTo(newStatus: string) {
+    if (newStatus === "cancelled" && !confirm("Cancel this job? This is a terminal status.")) return;
+    setBusy(newStatus); setErr(null);
+    try {
+      await api.patch(`/jobs/${jobId}/status`, { status: newStatus });
+      await reload();
+      onChanged();
+    } catch (e) {
+      setErr(`Status update failed: ${(e as Error).message}`);
+    } finally { setBusy(null); }
+  }
+
+  if (loading || !job) {
+    return (
+      <DetailDrawer open onClose={onClose} title="Loading…" width="xl">
+        <div style={{ padding: 20, color: "#5A7A8A" }}>Loading job…</div>
+      </DetailDrawer>
+    );
+  }
+
+  const nextStates = VALID_NEXT[job.status] || [];
+  const nonTerminal = nextStates.filter((s) => s !== "cancelled");
+
+  return (
+    <DetailDrawer
+      open onClose={onClose}
+      title={job.title || "(untitled)"}
+      subtitle={`${job.customerName || "—"}${job.customerEmail ? ` · ${job.customerEmail}` : ""}`}
+      width="xl"
+      footer={
+        <>
+          {nonTerminal.map((s) => (
+            <Button key={s} variant="primary" onClick={() => advanceTo(s)} disabled={busy === s}>
+              {busy === s ? "Updating…" : `Advance to ${s.replace(/_/g, " ")}`}
+            </Button>
+          ))}
+          {nextStates.includes("cancelled") && (
+            <Button variant="danger" onClick={() => advanceTo("cancelled")} disabled={busy === "cancelled"}>
+              {busy === "cancelled" ? "Cancelling…" : "Cancel job"}
+            </Button>
+          )}
+        </>
+      }
+    >
+      {err && <div style={{ marginBottom: 12, background: "#FEE2E2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 6, padding: "8px 12px", fontSize: 12 }}>{err}</div>}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <StatusBadge status={job.status} />
+        {job.scheduledDate && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Scheduled {new Date(job.scheduledDate).toLocaleString()}</span>}
+        {Number(job.total) > 0 && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Quote/invoice total: <strong>{fmtMoney(job.total)}</strong></span>}
+      </div>
+
+      {job.description && (
+        <div className="card">
+          <div className="card-ttl">Team notes</div>
+          <div style={{ fontSize: 12, color: "#0B1C24", marginTop: 6, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{job.description}</div>
+        </div>
+      )}
+
+      <div className="two-col">
+        <div className="card">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">Assigned workers</div>
+              <div className="card-sub">{job.assignedWorkers?.length || 0} active</div>
+            </div>
+          </div>
+          {(job.assignedWorkers ?? []).length === 0 ? (
+            <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "8px 0" }}>
+              No active assignments. Use the Dispatch page to offer this job to a worker.
+            </div>
+          ) : (
+            (job.assignedWorkers ?? []).map((w) => (
+              <div key={w.id} className="hrow" style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <span className="hdot ok" />
+                <div style={{ flex: 1, fontSize: 12, color: "#0B1C24" }}>{w.name}</div>
+                <div style={{ fontSize: 10, color: "#5A7A8A", fontFamily: "monospace" }}>{w.id.slice(0, 8)}…</div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">Status history</div>
+              <div className="card-sub">{job.statusHistory?.length || 0} transitions</div>
+            </div>
+          </div>
+          {(job.statusHistory ?? []).map((h, i) => (
+            <div key={i} className="hrow" style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <StatusBadge status={h.status} />
+              <div style={{ flex: 1, fontSize: 11, color: "#5A7A8A" }}>
+                {new Date(h.timestamp).toLocaleString()}
+              </div>
+              {h.note && <div style={{ fontSize: 11, color: "#0B1C24", fontStyle: "italic" }}>{h.note}</div>}
+            </div>
+          ))}
+          {!(job.statusHistory ?? []).length && (
+            <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "8px 0" }}>No history yet.</div>
+          )}
+        </div>
+      </div>
+
+      <div className="two-col">
+        <div className="card">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">Quotes</div>
+              <div className="card-sub">{job.quotes?.length || 0} on this job</div>
+            </div>
+          </div>
+          {(job.quotes ?? []).length === 0 ? (
+            <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "8px 0" }}>No quotes yet.</div>
+          ) : (
+            (job.quotes ?? []).map((q) => (
+              <div key={q.id} className="hrow" style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <StatusBadge status={q.status} />
+                <div style={{ flex: 1, fontSize: 11, color: "#5A7A8A", fontFamily: "monospace" }}>{q.id.slice(0, 12)}…</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>{fmtMoney(q.amount)}</div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">Invoices</div>
+              <div className="card-sub">{job.invoices?.length || 0} on this job</div>
+            </div>
+          </div>
+          {(job.invoices ?? []).length === 0 ? (
+            <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "8px 0" }}>No invoices yet.</div>
+          ) : (
+            (job.invoices ?? []).map((inv) => (
+              <div key={inv.id} className="hrow" style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <StatusBadge status={inv.status} />
+                <div style={{ flex: 1, fontSize: 11, color: "#5A7A8A", fontFamily: "monospace" }}>{inv.id.slice(0, 12)}…</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>{fmtMoney(inv.amount)}</div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </DetailDrawer>
   );
 }
