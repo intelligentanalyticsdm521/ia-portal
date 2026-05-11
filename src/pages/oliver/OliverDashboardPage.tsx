@@ -37,6 +37,17 @@ interface StripeStatus {
   detailsSubmitted?: boolean;
   chargesEnabled?: boolean;
 }
+interface ArrearsCustomer {
+  contact_id: string;
+  customer_name: string;
+  company_name?: string;
+  email?: string;
+  outstanding: number;
+  overdue: number;
+  open_count: number;
+  overdue_count: number;
+  max_days_late?: number;
+}
 
 function fmtMoney(n?: number | null) {
   return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
@@ -63,6 +74,7 @@ export function OliverDashboardPage() {
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [billing, setBilling] = useState<BillingOverview | null>(null);
   const [ops, setOps] = useState<OpsOverview | null>(null);
+  const [arrears, setArrears] = useState<ArrearsCustomer[]>([]);
   const [stripeStatus, setStripeStatus] = useState<StripeStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -72,14 +84,15 @@ export function OliverDashboardPage() {
     (async () => {
       setLoading(true); setError(null);
       try {
-        const [s, a, b, o, st] = await Promise.all([
+        const [s, a, b, o, ar, st] = await Promise.all([
           get<DashboardStats>("/dashboard/stats"),
           get<ActivityEvent[]>("/dashboard/activity"),
           get<BillingOverview>("/overview/billing"),
           get<OpsOverview>("/overview/operations"),
+          get<ArrearsCustomer[]>("/overview/arrears?limit=5").catch(() => [] as ArrearsCustomer[]),
           get<StripeStatus>("/settings/stripe").catch(() => null),
         ]);
-        setStats(s); setActivity(a || []); setBilling(b); setOps(o); setStripeStatus(st);
+        setStats(s); setActivity(a || []); setBilling(b); setOps(o); setArrears(ar || []); setStripeStatus(st);
       } catch (e) { setError(e); }
       finally { setLoading(false); }
     })();
@@ -214,8 +227,58 @@ export function OliverDashboardPage() {
         </div>
       </div>
 
-      {/* Two-col: recent payments + upcoming subscriptions */}
+      {/* Two-col: customers in arrears + recent payments */}
       <div className="two-col">
+        <div className="card">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">Customers in arrears</div>
+              <div className="card-sub">Highest outstanding balances, overdue first</div>
+            </div>
+            <Link to="/app/services/oliver_reminders" style={{ fontSize: 11, color: "#1A7DB5", textDecoration: "none" }}>View reminders →</Link>
+          </div>
+          {!arrears.length ? (
+            <div style={{ padding: "16px 0", color: "#5A7A8A", fontSize: 12, fontStyle: "italic" }}>
+              All customers are paid up — nothing outstanding.
+            </div>
+          ) : (
+            arrears.slice(0, 5).map((a) => (
+              <Link
+                key={a.contact_id}
+                to="/app/services/oliver_contacts"
+                style={{ textDecoration: "none", color: "inherit" }}
+              >
+                <div className="hrow" style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                  <span className={`hdot ${a.overdue > 0 ? "warn" : "neu"}`} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: "#0B1C24" }}>
+                      {a.company_name || a.customer_name}
+                      {a.overdue_count > 0 && (
+                        <span style={{
+                          display: "inline-block", marginLeft: 8, fontSize: 9, fontWeight: 600,
+                          padding: "1px 6px", borderRadius: 999, background: "#FEE2E2", color: "#991B1B",
+                        }}>
+                          {a.overdue_count} overdue
+                          {a.max_days_late ? ` · ${a.max_days_late}d late` : ""}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 1 }}>{a.open_count} open invoice{a.open_count === 1 ? "" : "s"}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: a.overdue > 0 ? "#DC2626" : "#0B1C24" }}>
+                      {fmtMoney(a.outstanding)}
+                    </div>
+                    {a.overdue > 0 && (
+                      <div style={{ fontSize: 10, color: "#DC2626" }}>{fmtMoney(a.overdue)} overdue</div>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            ))
+          )}
+        </div>
+
         <div className="card">
           <div className="card-hdr">
             <div>
@@ -245,15 +308,17 @@ export function OliverDashboardPage() {
             ))
           )}
         </div>
+      </div>
 
-        <div className="card">
-          <div className="card-hdr">
-            <div>
-              <div className="card-ttl">Upcoming subscriptions</div>
-              <div className="card-sub">Renewals in next 30 days</div>
-            </div>
-            <Link to="/app/services/oliver_recurring" style={{ fontSize: 11, color: "#1A7DB5", textDecoration: "none" }}>View all →</Link>
+      {/* Upcoming subscriptions (full width) */}
+      <div className="card">
+        <div className="card-hdr">
+          <div>
+            <div className="card-ttl">Upcoming subscriptions</div>
+            <div className="card-sub">Renewals in next 30 days</div>
           </div>
+          <Link to="/app/services/oliver_recurring" style={{ fontSize: 11, color: "#1A7DB5", textDecoration: "none" }}>View all →</Link>
+        </div>
           {!billing?.upcoming_subscriptions?.length ? (
             <div style={{ padding: "16px 0", color: "#5A7A8A", fontSize: 12, fontStyle: "italic" }}>
               No upcoming subscription renewals.
@@ -270,7 +335,6 @@ export function OliverDashboardPage() {
               </div>
             ))
           )}
-        </div>
       </div>
 
       {/* Recent activity stream */}
