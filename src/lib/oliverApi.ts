@@ -113,3 +113,28 @@ export async function oliverFetchRaw(
     },
   });
 }
+
+// Download a file (CSV, PDF, etc.) from the OLIVER API by triggering a
+// browser download. `filename` becomes the suggested name on disk.
+// Throws on non-2xx so callers can surface the error.
+export async function oliverDownload(
+  msal: IPublicClientApplication,
+  account: AccountInfo,
+  path: string,
+  filename: string
+): Promise<void> {
+  const res = await oliverFetchRaw(msal, account, path);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Download failed (${res.status}): ${text}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

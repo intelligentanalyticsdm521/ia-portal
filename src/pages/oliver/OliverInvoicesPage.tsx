@@ -6,7 +6,7 @@ import {
   StatusBadge, type Column,
 } from "../../components/oliver/ui";
 import { useMsal } from "@azure/msal-react";
-import { oliverFetchRaw } from "../../lib/oliverApi";
+import { oliverFetchRaw, oliverDownload } from "../../lib/oliverApi";
 import { InvoiceCreateForm } from "./InvoiceCreateForm";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -76,6 +76,7 @@ function fmtDate(d?: string | null) {
 
 export function OliverInvoicesPage() {
   const { get, post, patch, ready } = useOliverApi();
+  const { instance, accounts } = useMsal();
   const [rows, setRows] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -83,6 +84,21 @@ export function OliverInvoicesPage() {
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  async function exportCsv() {
+    const account = accounts[0];
+    if (!account) return;
+    setExporting(true);
+    try {
+      const qs = filter ? `?status=${encodeURIComponent(filter)}` : "";
+      await oliverDownload(instance, account, `/exports/invoices.csv${qs}`, `invoices-${new Date().toISOString().slice(0, 10)}.csv`);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -193,7 +209,14 @@ export function OliverInvoicesPage() {
       <PageHeader
         title="Invoices"
         subtitle="Send, track, and reconcile invoices through Stripe"
-        actions={!showCreate && <Button variant="primary" onClick={() => setShowCreate(true)}>+ Create invoice</Button>}
+        actions={
+          <>
+            <Button variant="secondary" onClick={exportCsv} disabled={exporting || !rows.length}>
+              {exporting ? "Exporting…" : "Export CSV"}
+            </Button>
+            {!showCreate && <Button variant="primary" onClick={() => setShowCreate(true)}>+ Create invoice</Button>}
+          </>
+        }
       />
 
       <div className="stat-row">

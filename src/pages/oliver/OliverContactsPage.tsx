@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMsal } from "@azure/msal-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { oliverDownload } from "../../lib/oliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState,
@@ -53,12 +55,27 @@ function contactName(c: Contact) {
 
 export function OliverContactsPage() {
   const { get, post, ready } = useOliverApi();
+  const { instance, accounts } = useMsal();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [search, setSearch] = useState("");
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  async function exportCsv() {
+    const account = accounts[0];
+    if (!account) return;
+    setExporting(true);
+    try {
+      await oliverDownload(instance, account, "/exports/contacts.csv", `contacts-${new Date().toISOString().slice(0, 10)}.csv`);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
@@ -98,7 +115,14 @@ export function OliverContactsPage() {
       <PageHeader
         title="Customers"
         subtitle="Search any customer to see all their jobs, quotes, invoices, and payments"
-        actions={<Button variant="primary" onClick={() => setShowCreate(true)}>+ New customer</Button>}
+        actions={
+          <>
+            <Button variant="secondary" onClick={exportCsv} disabled={exporting || !contacts.length}>
+              {exporting ? "Exporting…" : "Export CSV"}
+            </Button>
+            <Button variant="primary" onClick={() => setShowCreate(true)}>+ New customer</Button>
+          </>
+        }
       />
       {!contacts.length ? (
         <EmptyState title="No customers yet" description="Customers appear here as soon as you create a job, quote, or invoice for them — or when they sign up via the customer portal." />

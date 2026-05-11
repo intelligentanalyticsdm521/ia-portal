@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMsal } from "@azure/msal-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { oliverDownload } from "../../lib/oliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState,
-  StatusBadge, TimeRangeSelector, rangeForPreset,
+  StatusBadge, TimeRangeSelector, Button, rangeForPreset,
   type Column, type TimeRange,
 } from "../../components/oliver/ui";
 
@@ -59,6 +61,7 @@ function rangeToQuery(r: TimeRange): string {
 
 export function OliverPaymentsPage() {
   const { get, ready } = useOliverApi();
+  const { instance, accounts } = useMsal();
   const [range, setRange] = useState<TimeRange>(() => rangeForPreset("last_30_days"));
   const [rows, setRows] = useState<PaymentRow[]>([]);
   const [meta, setMeta] = useState<PaymentMeta | null>(null);
@@ -67,6 +70,26 @@ export function OliverPaymentsPage() {
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  async function exportCsv() {
+    const account = accounts[0];
+    if (!account) return;
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (range.fromISO) params.set("from", range.fromISO);
+      if (range.toISO) params.set("to", range.toISO);
+      if (filter.startsWith("type:")) params.set("type", filter.split(":")[1]);
+      if (filter.startsWith("status:")) params.set("status", filter.split(":")[1]);
+      const qs = params.toString() ? `?${params.toString()}` : "";
+      await oliverDownload(instance, account, `/exports/payments.csv${qs}`, `payments-${new Date().toISOString().slice(0, 10)}.csv`);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -180,7 +203,14 @@ export function OliverPaymentsPage() {
       <PageHeader
         title="Payments"
         subtitle="Every charge and refund routed through your Stripe Connect account"
-        actions={<TimeRangeSelector value={range} onChange={setRange} />}
+        actions={
+          <>
+            <Button variant="secondary" onClick={exportCsv} disabled={exporting || !rows.length}>
+              {exporting ? "Exporting…" : "Export CSV"}
+            </Button>
+            <TimeRangeSelector value={range} onChange={setRange} />
+          </>
+        }
       />
 
       <div className="stat-row">
