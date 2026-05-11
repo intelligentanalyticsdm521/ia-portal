@@ -82,6 +82,16 @@ export function OliverQuotesPage() {
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
+  // Duplicate action in the drawer hops to the new draft.
+  useEffect(() => {
+    function onOpen(e: Event) {
+      const id = (e as CustomEvent<{ quoteId: string }>).detail?.quoteId;
+      if (id) { reload(); setDetailId(id); }
+    }
+    window.addEventListener("oliver:open-quote", onOpen);
+    return () => window.removeEventListener("oliver:open-quote", onOpen);
+  }, [reload]);
+
   const filtered = useMemo(() => {
     let list = rows;
     if (filter) list = list.filter((r) => r.status === filter);
@@ -258,6 +268,16 @@ function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: stri
     catch (e) { setErr((e as Error).message); }
     finally { setBusy(null); }
   }
+  async function duplicate() {
+    setBusy("duplicate"); setErr(null);
+    try {
+      const dup = await api.post<{ quote_id: string }>(`/quotes/${q!.quote_id}/duplicate`);
+      onChanged();
+      onClose();
+      window.dispatchEvent(new CustomEvent("oliver:open-quote", { detail: { quoteId: dup.quote_id } }));
+    } catch (e) { setErr(`Duplicate failed: ${(e as Error).message}`); }
+    finally { setBusy(null); }
+  }
   function startEdit() {
     if (!q) return;
     setEditItems((q.line_items ?? []).map((li) => ({
@@ -301,6 +321,7 @@ function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: stri
       width="xl"
       footer={
         <>
+          <Button variant="ghost" loading={busy === "duplicate"} onClick={duplicate}>Duplicate</Button>
           {q.status === "draft" && <Button variant="primary" loading={busy === "send"} onClick={send}>Send to customer</Button>}
           {q.status === "accepted" && <Button variant="secondary" loading={busy === "convert"} onClick={convert}>Convert to invoice</Button>}
         </>

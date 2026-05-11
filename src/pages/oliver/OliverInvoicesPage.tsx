@@ -115,6 +115,16 @@ export function OliverInvoicesPage() {
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
+  // When a Duplicate action fires from inside a drawer, jump to the new invoice.
+  useEffect(() => {
+    function onOpen(e: Event) {
+      const id = (e as CustomEvent<{ invoiceId: string }>).detail?.invoiceId;
+      if (id) { reload(); setDetailId(id); }
+    }
+    window.addEventListener("oliver:open-invoice", onOpen);
+    return () => window.removeEventListener("oliver:open-invoice", onOpen);
+  }, [reload]);
+
   const filtered = useMemo(() => {
     let list = rows;
     if (filter) list = list.filter((r) => r.status === filter);
@@ -417,6 +427,20 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps
     finally { setBusy(null); }
   }
 
+  async function duplicate() {
+    setBusy("duplicate"); setErr(null);
+    try {
+      const dup = await api.post<{ invoice_id: string }>(`/invoices/${inv!.invoice_id}/duplicate`);
+      onChanged();
+      // Hop the drawer to the new draft so the user can immediately edit + send.
+      onClose();
+      // The parent reload + opening logic doesn't expose a "switch invoice" API,
+      // so emit a custom event the page listens for.
+      window.dispatchEvent(new CustomEvent("oliver:open-invoice", { detail: { invoiceId: dup.invoice_id } }));
+    } catch (e) { setErr(`Duplicate failed: ${(e as Error).message}`); }
+    finally { setBusy(null); }
+  }
+
   function startEdit() {
     if (!inv) return;
     setEditItems((inv.line_items ?? []).map((li) => ({
@@ -477,6 +501,7 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps
       }
       footer={
         <>
+          <Button variant="ghost" onClick={duplicate} loading={busy === "duplicate"}>Duplicate</Button>
           {inv.status === "draft" && <Button variant="ghost" onClick={voidInvoice} loading={busy === "void"}>Void</Button>}
           {inv.status === "draft" && <Button variant="secondary" onClick={markPaid} loading={busy === "markpaid"}>Mark as paid</Button>}
           {inv.status === "draft" && <Button variant="primary" onClick={send} loading={busy === "send"}>Send invoice</Button>}
