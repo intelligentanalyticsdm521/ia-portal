@@ -28,6 +28,9 @@ interface LineItemDraft {
   description: string;
   quantity: number;
   unit_price: number;
+  /** Set when this line came from the service catalog dropdown. */
+  service_offering_id?: string;
+  service_price_id?: string;
 }
 
 interface CreateQuoteProps {
@@ -102,6 +105,8 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
         description: off.name,
         quantity: 1,
         unit_price: oneTimePrice ? Number(oneTimePrice.amount) : 0,
+        service_offering_id: off.offering_id,
+        service_price_id: oneTimePrice?.price_id,
       },
     ]);
   }

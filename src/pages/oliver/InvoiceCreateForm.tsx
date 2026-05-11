@@ -29,6 +29,9 @@ interface LineItemDraft {
   quantity: number;
   unit_price: number;
   is_tax: boolean;
+  /** Set when this line came from the service catalog dropdown. */
+  service_offering_id?: string;
+  service_price_id?: string;
 }
 
 interface CreateInvoiceProps {
@@ -110,6 +113,8 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
         quantity: 1,
         unit_price: oneTimePrice ? Number(oneTimePrice.amount) : 0,
         is_tax: false,
+        service_offering_id: off.offering_id,
+        service_price_id: oneTimePrice?.price_id,
       },
     ]);
   }
