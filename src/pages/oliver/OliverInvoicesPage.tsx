@@ -85,6 +85,28 @@ export function OliverInvoicesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkSending, setBulkSending] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ sent: number; failed: number } | null>(null);
+
+  async function bulkSendDrafts() {
+    const draftIds = rows.filter((r) => selected.has(r.id) && r.status === "draft").map((r) => r.id);
+    if (!draftIds.length) return;
+    if (!confirm(`Send ${draftIds.length} draft invoice${draftIds.length === 1 ? "" : "s"} to customers?`)) return;
+    setBulkSending(true);
+    setBulkResult(null);
+    let sent = 0;
+    let failed = 0;
+    await Promise.all(draftIds.map(async (id) => {
+      try { await post(`/invoices/${id}/send`); sent++; }
+      catch { failed++; }
+    }));
+    setBulkResult({ sent, failed });
+    setSelected(new Set());
+    setBulkSending(false);
+    await reload();
+    setTimeout(() => setBulkResult(null), 6000);
+  }
 
   async function exportCsv() {
     const account = accounts[0];
@@ -277,6 +299,39 @@ export function OliverInvoicesPage() {
             onSearchChange={setSearch}
             searchPlaceholder="Search invoice #, customer, job…"
           />
+
+          {bulkResult && (
+            <div className="card" style={{ background: "#D1FAE5", border: "1px solid #6EE7B7", marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: "#065F46" }}>
+                {bulkResult.sent} invoice{bulkResult.sent === 1 ? "" : "s"} sent{bulkResult.failed > 0 ? ` · ${bulkResult.failed} failed` : ""}.
+              </div>
+            </div>
+          )}
+
+          {selected.size > 0 && (() => {
+            const eligibleDrafts = rows.filter((r) => selected.has(r.id) && r.status === "draft").length;
+            return (
+              <div className="card" style={{ background: "#E8F4FB", border: "1px solid rgba(45,156,219,0.3)", marginBottom: 8, padding: "10px 14px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                  <div style={{ fontSize: 12, color: "#0C4A60" }}>
+                    <strong>{selected.size}</strong> selected
+                    {eligibleDrafts < selected.size && (
+                      <span style={{ color: "#5A7A8A", marginLeft: 8 }}>
+                        ({eligibleDrafts} draft{eligibleDrafts === 1 ? "" : "s"} can be sent)
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Button variant="secondary" onClick={() => setSelected(new Set())}>Clear</Button>
+                    <Button variant="primary" onClick={bulkSendDrafts} disabled={bulkSending || eligibleDrafts === 0}>
+                      {bulkSending ? "Sending…" : `Send ${eligibleDrafts} draft${eligibleDrafts === 1 ? "" : "s"}`}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           <DataTable
             rows={filtered}
             columns={columns}
@@ -284,6 +339,9 @@ export function OliverInvoicesPage() {
             onRowClick={(r) => setDetailId(r.id)}
             initialSort={{ key: "issuedAt", direction: "desc" }}
             emptyMessage="No invoices match these filters."
+            selectedIds={selected}
+            onSelectionChange={setSelected}
+            isRowSelectable={(r) => r.status === "draft" || r.status === "sent"}
           />
         </>
       )}

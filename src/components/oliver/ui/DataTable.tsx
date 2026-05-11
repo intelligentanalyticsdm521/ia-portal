@@ -20,12 +20,20 @@ interface Props<T> {
   emptyMessage?: string;
   emptyAction?: ReactNode;
   initialSort?: { key: string; direction: "asc" | "desc" };
+  // Multi-select. When `selectedIds` is provided the table renders a
+  // checkbox column. `isRowSelectable` opts individual rows in/out (used to
+  // gate selection by status, e.g. only draft invoices).
+  selectedIds?: Set<string>;
+  onSelectionChange?: (ids: Set<string>) => void;
+  isRowSelectable?: (row: T) => boolean;
 }
 
 export function DataTable<T>({
   rows, columns, rowKey, onRowClick, rowClassName,
   emptyMessage = "No records found.", emptyAction, initialSort,
+  selectedIds, onSelectionChange, isRowSelectable,
 }: Props<T>) {
+  const selectable = !!(selectedIds && onSelectionChange);
   const [sort, setSort] = useState(initialSort ?? null);
 
   const sortedRows = useMemo(() => {
@@ -61,11 +69,46 @@ export function DataTable<T>({
     );
   }
 
+  const eligibleRows = selectable ? sortedRows.filter((r) => !isRowSelectable || isRowSelectable(r)) : [];
+  const allSelected = selectable && eligibleRows.length > 0 && eligibleRows.every((r) => selectedIds!.has(rowKey(r)));
+  const someSelected = selectable && eligibleRows.some((r) => selectedIds!.has(rowKey(r))) && !allSelected;
+
+  function toggleRow(id: string) {
+    if (!selectable) return;
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    onSelectionChange!(next);
+  }
+  function toggleAll() {
+    if (!selectable) return;
+    if (allSelected) {
+      const next = new Set(selectedIds);
+      eligibleRows.forEach((r) => next.delete(rowKey(r)));
+      onSelectionChange!(next);
+    } else {
+      const next = new Set(selectedIds);
+      eligibleRows.forEach((r) => next.add(rowKey(r)));
+      onSelectionChange!(next);
+    }
+  }
+
   return (
     <div className="card" style={{ padding: 0 }}>
       <table className="tbl" style={{ width: "100%" }}>
         <thead>
           <tr>
+            {selectable && (
+              <th style={{ width: 36, textAlign: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                  onChange={toggleAll}
+                  disabled={!eligibleRows.length}
+                  aria-label="Select all"
+                />
+              </th>
+            )}
             {columns.map((c) => {
               const isSorting = sort?.key === c.key;
               const align = c.align === "right" ? "right" : c.align === "center" ? "center" : "left";
@@ -93,17 +136,33 @@ export function DataTable<T>({
         <tbody>
           {sortedRows.map((row) => {
             const extra = rowClassName?.(row) ?? "";
+            const id = rowKey(row);
+            const eligible = !isRowSelectable || isRowSelectable(row);
+            const isSelected = selectable && selectedIds!.has(id);
             return (
               <tr
-                key={rowKey(row)}
+                key={id}
                 onClick={() => onRowClick?.(row)}
                 className={extra}
                 style={{
                   cursor: onRowClick ? "pointer" : undefined,
+                  background: isSelected ? "#E8F4FB" : undefined,
                 }}
-                onMouseEnter={onRowClick ? (e) => (e.currentTarget.style.background = "#F8FAFC") : undefined}
-                onMouseLeave={onRowClick ? (e) => (e.currentTarget.style.background = "") : undefined}
+                onMouseEnter={onRowClick ? (e) => { if (!isSelected) e.currentTarget.style.background = "#F8FAFC"; } : undefined}
+                onMouseLeave={onRowClick ? (e) => { if (!isSelected) e.currentTarget.style.background = ""; } : undefined}
               >
+                {selectable && (
+                  <td style={{ textAlign: "center", width: 36 }} onClick={(e) => e.stopPropagation()}>
+                    {eligible ? (
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleRow(id)}
+                        aria-label={`Select row ${id}`}
+                      />
+                    ) : null}
+                  </td>
+                )}
                 {columns.map((c) => {
                   const align = c.align === "right" ? "right" : c.align === "center" ? "center" : "left";
                   return (
