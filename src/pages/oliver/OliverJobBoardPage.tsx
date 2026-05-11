@@ -259,7 +259,13 @@ interface JobDetail {
   scheduledDate?: string;
   scheduledEnd?: string;
   total?: number;
-  assignedWorkers?: Array<{ id: string; name: string }>;
+  assignedWorkers?: Array<{
+    assignmentId?: string;
+    id: string;
+    name: string;
+    actualHours?: number | null;
+    hourlyRate?: number | null;
+  }>;
   quotes?: Array<{ id: string; amount: number; status: string }>;
   invoices?: Array<{ id: string; amount: number; status: string }>;
   statusHistory?: Array<{ status: string; timestamp: string; note?: string }>;
@@ -447,7 +453,7 @@ function JobDetailDrawer({ jobId, onClose, onChanged, api }: {
           <div className="card-hdr">
             <div>
               <div className="card-ttl">Assigned workers</div>
-              <div className="card-sub">{job.assignedWorkers?.length || 0} active</div>
+              <div className="card-sub">{job.assignedWorkers?.length || 0} active · enter hours to track labor cost</div>
             </div>
           </div>
           {(job.assignedWorkers ?? []).length === 0 ? (
@@ -456,11 +462,16 @@ function JobDetailDrawer({ jobId, onClose, onChanged, api }: {
             </div>
           ) : (
             (job.assignedWorkers ?? []).map((w) => (
-              <div key={w.id} className="hrow" style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                <span className="hdot ok" />
-                <div style={{ flex: 1, fontSize: 12, color: "#0B1C24" }}>{w.name}</div>
-                <div style={{ fontSize: 10, color: "#5A7A8A", fontFamily: "monospace" }}>{w.id.slice(0, 8)}…</div>
-              </div>
+              <AssignmentRow
+                key={w.assignmentId || w.id}
+                worker={w}
+                onSave={async (hours) => {
+                  if (!w.assignmentId) return;
+                  await api.patch(`/jobs/${jobId}/assignments/${w.assignmentId}`, { actual_hours: hours });
+                  await reload();
+                  onChanged();
+                }}
+              />
             ))
           )}
         </div>
@@ -537,3 +548,71 @@ const jdInputStyle: React.CSSProperties = {
   border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6,
   background: "#fff",
 };
+
+function AssignmentRow({
+  worker,
+  onSave,
+}: {
+  worker: { id: string; name: string; assignmentId?: string; actualHours?: number | null; hourlyRate?: number | null };
+  onSave: (hours: number | null) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState<string>(worker.actualHours != null ? String(worker.actualHours) : "");
+  const [saving, setSaving] = useState(false);
+  const rate = Number(worker.hourlyRate || 0);
+  const hours = Number(worker.actualHours || 0);
+  const cost = hours * rate;
+
+  async function save() {
+    setSaving(true);
+    try {
+      const num = val.trim() === "" ? null : Number(val);
+      await onSave(num != null && Number.isFinite(num) ? num : null);
+      setEditing(false);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="hrow" style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+      <span className="hdot ok" />
+      <div style={{ flex: 1, minWidth: 120 }}>
+        <div style={{ fontSize: 12, color: "#0B1C24", fontWeight: 500 }}>{worker.name}</div>
+        {rate > 0 && !editing && (
+          <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 1 }}>
+            ${rate.toFixed(2)}/hr{hours > 0 ? ` · ${hours.toFixed(1)}h · $${cost.toFixed(2)} cost` : ""}
+          </div>
+        )}
+      </div>
+
+      {editing ? (
+        <>
+          <input
+            type="number" step="0.25" min="0" placeholder="Hours"
+            value={val}
+            onChange={(e) => setVal(e.target.value)}
+            autoFocus
+            style={{ width: 70, padding: "4px 6px", fontSize: 12, border: "1px solid rgba(45,156,219,0.28)", borderRadius: 4, textAlign: "right" }}
+          />
+          <span style={{ fontSize: 11, color: "#5A7A8A" }}>hr</span>
+          <button onClick={save} disabled={saving}
+            style={{ fontSize: 11, padding: "3px 8px", border: "none", background: "#0C4A60", color: "#fff", borderRadius: 4, cursor: "pointer" }}>
+            {saving ? "…" : "Save"}
+          </button>
+          <button onClick={() => { setVal(worker.actualHours != null ? String(worker.actualHours) : ""); setEditing(false); }}
+            style={{ fontSize: 11, padding: "3px 8px", border: "1px solid #ddd", background: "#fff", borderRadius: 4, cursor: "pointer" }}>
+            Cancel
+          </button>
+        </>
+      ) : (
+        <button onClick={() => setEditing(true)}
+          style={{ fontSize: 11, padding: "3px 10px", border: "1px solid rgba(45,156,219,0.28)", background: "#fff", color: "#1A7DB5", borderRadius: 4, cursor: "pointer", fontWeight: 500 }}>
+          {worker.actualHours != null ? `${hours.toFixed(1)}h` : "+ Hours"}
+        </button>
+      )}
+    </div>
+  );
+}
