@@ -47,13 +47,16 @@ function fmtRelative(d?: string) {
 }
 
 export function OliverServiceRequestsPage() {
-  const { get, ready } = useOliverApi();
+  const { get, patch, ready } = useOliverApi();
   const navigate = useNavigate();
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [search, setSearch] = useState("");
   const [pickedId, setPickedId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState<"quote" | "cancel" | null>(null);
+  const [bulkResult, setBulkResult] = useState<{ kind: "quote" | "cancel"; ok: number; failed: number } | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
@@ -65,6 +68,26 @@ export function OliverServiceRequestsPage() {
   }, [get]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
+
+  async function bulkAdvance(toStatus: "quoted" | "cancelled") {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    const label = toStatus === "quoted" ? "mark as quoted" : "cancel";
+    if (!confirm(`${label.charAt(0).toUpperCase() + label.slice(1)} ${ids.length} request${ids.length === 1 ? "" : "s"}?`)) return;
+    setBulkBusy(toStatus === "quoted" ? "quote" : "cancel");
+    setBulkResult(null);
+    let ok = 0;
+    let failed = 0;
+    await Promise.all(ids.map(async (id) => {
+      try { await patch(`/jobs/${id}/status`, { status: toStatus }); ok++; }
+      catch { failed++; }
+    }));
+    setBulkResult({ kind: toStatus === "quoted" ? "quote" : "cancel", ok, failed });
+    setSelected(new Set());
+    setBulkBusy(null);
+    await reload();
+    setTimeout(() => setBulkResult(null), 6000);
+  }
 
   const filtered = useMemo(() => {
     if (!search.trim()) return requests;
@@ -178,6 +201,35 @@ export function OliverServiceRequestsPage() {
             onSearchChange={setSearch}
             searchPlaceholder="Search title, customer, email, or notes…"
           />
+
+          {bulkResult && (
+            <div className="card" style={{ background: "#D1FAE5", border: "1px solid #6EE7B7", marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: "#065F46" }}>
+                {bulkResult.ok} request{bulkResult.ok === 1 ? "" : "s"} {bulkResult.kind === "quote" ? "advanced to quoted" : "cancelled"}
+                {bulkResult.failed > 0 ? ` · ${bulkResult.failed} failed` : ""}.
+              </div>
+            </div>
+          )}
+
+          {selected.size > 0 && (
+            <div className="card" style={{ background: "#E8F4FB", border: "1px solid rgba(45,156,219,0.3)", marginBottom: 8, padding: "10px 14px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 12, color: "#0C4A60" }}>
+                  <strong>{selected.size}</strong> selected
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <Button variant="secondary" onClick={() => setSelected(new Set())}>Clear</Button>
+                  <Button variant="ghost" onClick={() => bulkAdvance("cancelled")} disabled={!!bulkBusy}>
+                    {bulkBusy === "cancel" ? "Cancelling…" : `Cancel ${selected.size}`}
+                  </Button>
+                  <Button variant="primary" onClick={() => bulkAdvance("quoted")} disabled={!!bulkBusy}>
+                    {bulkBusy === "quote" ? "Updating…" : `Mark ${selected.size} as quoted`}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <DataTable
             rows={filtered}
             columns={columns}
@@ -185,6 +237,8 @@ export function OliverServiceRequestsPage() {
             onRowClick={(r) => setPickedId(r.id || r.job_id || null)}
             initialSort={{ key: "received", direction: "desc" }}
             emptyMessage="No service requests match this search."
+            selectedIds={selected}
+            onSelectionChange={setSelected}
           />
         </>
       )}
