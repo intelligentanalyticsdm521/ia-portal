@@ -267,7 +267,7 @@ interface JobDetail {
     hourlyRate?: number | null;
   }>;
   quotes?: Array<{ id: string; amount: number; status: string }>;
-  invoices?: Array<{ id: string; amount: number; status: string }>;
+  invoices?: Array<{ id: string; amount: number; amountPaid?: number; status: string }>;
   statusHistory?: Array<{ status: string; timestamp: string; note?: string }>;
 }
 
@@ -498,6 +498,11 @@ function JobDetailDrawer({ jobId, onClose, onChanged, api }: {
         </div>
       </div>
 
+      <JobProfitabilityCard
+        workers={job.assignedWorkers ?? []}
+        invoices={job.invoices ?? []}
+      />
+
       <div className="two-col">
         <div className="card">
           <div className="card-hdr">
@@ -548,6 +553,59 @@ const jdInputStyle: React.CSSProperties = {
   border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6,
   background: "#fff",
 };
+
+function JobProfitabilityCard({
+  workers,
+  invoices,
+}: {
+  workers: Array<{ assignmentId?: string; id: string; name: string; actualHours?: number | null; hourlyRate?: number | null }>;
+  invoices: Array<{ id: string; amount: number; amountPaid?: number; status: string }>;
+}) {
+  const laborCost = workers.reduce((s, w) => {
+    const hrs = Number(w.actualHours || 0);
+    const rate = Number(w.hourlyRate || 0);
+    return s + hrs * rate;
+  }, 0);
+  const totalHours = workers.reduce((s, w) => s + Number(w.actualHours || 0), 0);
+  const revenue = invoices
+    .filter((i) => i.status === "paid")
+    .reduce((s, i) => s + Number(i.amountPaid ?? i.amount ?? 0), 0);
+  const profit = revenue - laborCost;
+  const margin = revenue > 0 ? Math.round((profit / revenue) * 100) : null;
+  const hasData = laborCost > 0 || revenue > 0;
+
+  if (!hasData) {
+    return (
+      <div className="card" style={{ background: "#f8fafc" }}>
+        <div className="card-ttl">Profitability</div>
+        <div style={{ fontSize: 12, color: "#5A7A8A", marginTop: 4, lineHeight: 1.5 }}>
+          Set hourly rates on the Workers page and log hours on each assignment, then send + collect on an invoice to see this job's profit.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{ background: profit >= 0 ? "#F0FDF4" : "#FEF2F2", borderLeft: `4px solid ${profit >= 0 ? "#059669" : "#DC2626"}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+        <div>
+          <div className="card-ttl" style={{ margin: 0 }}>Profitability</div>
+          <div className="card-sub" style={{ marginTop: 2 }}>
+            {revenue > 0 ? fmtMoney(revenue) : "$0"} collected · {totalHours.toFixed(1)}h logged · {fmtMoney(laborCost)} labor
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 24, fontWeight: 700, color: profit >= 0 ? "#059669" : "#DC2626", fontFamily: "monospace" }}>
+            {profit >= 0 ? "" : "−"}{fmtMoney(Math.abs(profit))}
+          </div>
+          <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>
+            {margin != null ? `${margin}% margin` : "profit"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AssignmentRow({
   worker,
