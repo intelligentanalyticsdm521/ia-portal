@@ -108,6 +108,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_reminders', displayName: 'Reminders', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_reminders', description: 'Overdue invoice tracker. See which automated reminders have fired and send manual nudges.' },
   { key: 'oliver_onboarding', displayName: 'Get Started', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_onboarding', description: 'Guided 5-step setup wizard for new tenants.' },
   { key: 'oliver_settings', displayName: 'Business Setup', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_settings', description: 'Business profile, Stripe Connect, and invoice template.' },
+  { key: 'oliver_team_access', displayName: 'Team Access', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_team_access', description: 'Assign Admin or Accountant roles to OLIVER users. Accountants get a read-only Billing/Reports view.' },
   // SPARK — Full CRM + Lead Gen + Intelligence suite
   { key: 'spark_overview', displayName: 'Overview', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_overview', description: 'SPARK CRM summary: contacts, campaigns, leads pipeline, usage.' },
   { key: 'spark_contacts', displayName: 'Contacts', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_contacts', description: 'Contact management with dedup, search, import, and activity history.' },

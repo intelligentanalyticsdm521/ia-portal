@@ -58,6 +58,7 @@ const OLIVER_NAV: SubNavConfig = {
       items: [
         { key: "oliver_workers", label: "Workers", route: "/app/services/oliver_workers" },
         { key: "oliver_crew_performance", label: "Team Performance", route: "/app/services/oliver_crew_performance", gated: true },
+        { key: "oliver_team_access", label: "Team Access", route: "/app/services/oliver_team_access" },
       ],
     },
     {

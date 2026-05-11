@@ -116,6 +116,7 @@ const OliverServiceCatalogPage = lazyNamed(() => import('./oliver/OliverServiceC
 const OliverBillingOverviewPage = lazyNamed(() => import('./oliver/OliverBillingOverviewPage'), 'OliverBillingOverviewPage');
 const OliverRemindersPage = lazyNamed(() => import('./oliver/OliverRemindersPage'), 'OliverRemindersPage');
 const OliverOnboardingPage = lazyNamed(() => import('./oliver/OliverOnboardingPage'), 'OliverOnboardingPage');
+const OliverTeamAccessPage = lazyNamed(() => import('./oliver/OliverTeamAccessPage'), 'OliverTeamAccessPage');
 
 // CONSULTING — lazy-loaded
 const ConsultingOverviewPage = lazyNamed(() => import('./consulting/ConsultingOverviewPage'), 'ConsultingOverviewPage');
@@ -245,6 +246,7 @@ export function ServiceRouter() {
       case 'oliver_billing_overview': oliverPage = <OliverBillingOverviewPage />; break;
       case 'oliver_reminders': oliverPage = <OliverRemindersPage />; break;
       case 'oliver_onboarding': oliverPage = <OliverOnboardingPage />; break;
+      case 'oliver_team_access': oliverPage = <OliverTeamAccessPage />; break;
     }
     if (oliverPage) {
       return <Suspense fallback={<RouteLoading />}>{oliverPage}</Suspense>;
