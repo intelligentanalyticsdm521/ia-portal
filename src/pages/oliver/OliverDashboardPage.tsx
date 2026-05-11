@@ -37,6 +37,12 @@ interface StripeStatus {
   detailsSubmitted?: boolean;
   chargesEnabled?: boolean;
 }
+interface OnboardingStatus {
+  onboarding_completed_at: string | null;
+  all_required_complete: boolean;
+  completed_count: number;
+  total_steps: number;
+}
 interface ArrearsCustomer {
   contact_id: string;
   customer_name: string;
@@ -76,6 +82,7 @@ export function OliverDashboardPage() {
   const [ops, setOps] = useState<OpsOverview | null>(null);
   const [arrears, setArrears] = useState<ArrearsCustomer[]>([]);
   const [stripeStatus, setStripeStatus] = useState<StripeStatus | null>(null);
+  const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
 
@@ -84,45 +91,78 @@ export function OliverDashboardPage() {
     (async () => {
       setLoading(true); setError(null);
       try {
-        const [s, a, b, o, ar, st] = await Promise.all([
+        const [s, a, b, o, ar, st, ob] = await Promise.all([
           get<DashboardStats>("/dashboard/stats"),
           get<ActivityEvent[]>("/dashboard/activity"),
           get<BillingOverview>("/overview/billing"),
           get<OpsOverview>("/overview/operations"),
           get<ArrearsCustomer[]>("/overview/arrears?limit=5").catch(() => [] as ArrearsCustomer[]),
           get<StripeStatus>("/settings/stripe").catch(() => null),
+          get<OnboardingStatus>("/onboarding/status").catch(() => null),
         ]);
-        setStats(s); setActivity(a || []); setBilling(b); setOps(o); setArrears(ar || []); setStripeStatus(st);
+        setStats(s); setActivity(a || []); setBilling(b); setOps(o); setArrears(ar || []); setStripeStatus(st); setOnboarding(ob);
       } catch (e) { setError(e); }
       finally { setLoading(false); }
     })();
   }, [get, ready]);
 
-  // Show onboarding banner when Stripe is not connected, or connected but not ready to charge.
-  const stripeBanner = stripeStatus && !stripeStatus.readyToCharge ? (
-    <div className="card" style={{
-      background: "linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)",
-      border: "1px solid #F59E0B",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#92400E", marginBottom: 4 }}>
-            {stripeStatus.connected ? "Finish your Stripe setup to start collecting payments" : "Connect Stripe to start collecting payments"}
+  // Prefer the guided onboarding banner when wizard hasn't been completed.
+  // Falls back to the original Stripe-only banner if /onboarding/status fails.
+  let topBanner: React.ReactNode = null;
+  if (onboarding && !onboarding.onboarding_completed_at) {
+    const pct = Math.round((onboarding.completed_count / onboarding.total_steps) * 100);
+    topBanner = (
+      <div className="card" style={{
+        background: "linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)",
+        border: "1px solid #F59E0B",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#92400E", marginBottom: 4 }}>
+              Welcome to OLIVER — let's finish setting up
+            </div>
+            <div style={{ fontSize: 12, color: "#78350F", lineHeight: 1.5 }}>
+              You've completed {onboarding.completed_count} of {onboarding.total_steps} setup steps ({pct}%).
+              The guided wizard walks you through Stripe, your invoice template, and your service catalog so you can start sending invoices today.
+            </div>
+            {/* mini progress bar */}
+            <div style={{ marginTop: 8, height: 4, background: "rgba(120,53,15,0.15)", borderRadius: 999, overflow: "hidden", maxWidth: 360 }}>
+              <div style={{ width: `${pct}%`, height: "100%", background: "#92400E" }} />
+            </div>
           </div>
-          <div style={{ fontSize: 12, color: "#78350F", lineHeight: 1.5 }}>
-            {stripeStatus.connected
-              ? "Your Stripe account exists but isn't ready to accept charges yet. Finish onboarding (bank account, ID verification) to start sending invoices and accepting payments."
-              : "OLIVER routes every invoice and payment through Stripe Connect — money flows directly to your bank, not to us. Setup takes about 5 minutes."}
-          </div>
+          <Link to="/app/services/oliver_onboarding" style={{ flexShrink: 0 }}>
+            <Button variant="primary">Open setup wizard</Button>
+          </Link>
         </div>
-        <Link to="/app/services/oliver_settings" style={{ flexShrink: 0 }}>
-          <Button variant="primary">
-            {stripeStatus.connected ? "Finish setup" : "Connect Stripe"}
-          </Button>
-        </Link>
       </div>
-    </div>
-  ) : null;
+    );
+  } else if (stripeStatus && !stripeStatus.readyToCharge) {
+    // Onboarding marked done, but Stripe regressed — still surface Stripe-only nag.
+    topBanner = (
+      <div className="card" style={{
+        background: "linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)",
+        border: "1px solid #F59E0B",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#92400E", marginBottom: 4 }}>
+              {stripeStatus.connected ? "Finish your Stripe setup to start collecting payments" : "Connect Stripe to start collecting payments"}
+            </div>
+            <div style={{ fontSize: 12, color: "#78350F", lineHeight: 1.5 }}>
+              {stripeStatus.connected
+                ? "Your Stripe account exists but isn't ready to accept charges yet. Finish onboarding (bank account, ID verification) to start sending invoices and accepting payments."
+                : "OLIVER routes every invoice and payment through Stripe Connect — money flows directly to your bank, not to us. Setup takes about 5 minutes."}
+            </div>
+          </div>
+          <Link to="/app/services/oliver_settings" style={{ flexShrink: 0 }}>
+            <Button variant="primary">
+              {stripeStatus.connected ? "Finish setup" : "Connect Stripe"}
+            </Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <OliverPageWrapper title="Dashboard" subtitle="Overview" error={error} loading={loading}>
@@ -137,7 +177,7 @@ export function OliverDashboardPage() {
         }
       />
 
-      {stripeBanner}
+      {topBanner}
 
       {/* KPI row — ARION stat-card pattern */}
       <div className="stat-row">

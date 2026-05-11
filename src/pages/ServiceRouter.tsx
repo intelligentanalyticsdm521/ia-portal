@@ -92,6 +92,7 @@ import { OliverSettingsPage } from './oliver/OliverSettingsPage';
 import { OliverServiceCatalogPage } from './oliver/OliverServiceCatalogPage';
 import { OliverBillingOverviewPage } from './oliver/OliverBillingOverviewPage';
 import { OliverRemindersPage } from './oliver/OliverRemindersPage';
+import { OliverOnboardingPage } from './oliver/OliverOnboardingPage';
 import { ConsultingOverviewPage } from './consulting/ConsultingOverviewPage';
 import { ConsultingEngagementWrapper } from './consulting/ConsultingEngagementWrapper';
 import { ConsultingCalendarPage } from './consulting/ConsultingCalendarPage';
@@ -200,6 +201,7 @@ export function ServiceRouter() {
       case 'oliver_catalog': return <OliverServiceCatalogPage />;
       case 'oliver_billing_overview': return <OliverBillingOverviewPage />;
       case 'oliver_reminders': return <OliverRemindersPage />;
+      case 'oliver_onboarding': return <OliverOnboardingPage />;
       default: break;
     }
   }
