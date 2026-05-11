@@ -14,6 +14,7 @@ interface Worker {
   phone?: string;
   type: string; // employee | contractor
   status: string;
+  hourly_rate?: number | null;
 }
 
 interface AvailabilitySlot {
@@ -89,6 +90,14 @@ export function OliverWorkersPage() {
           w.type === "employee" ? "bg-indigo-50 text-indigo-700 ring-indigo-200" : "bg-amber-50 text-amber-700 ring-amber-200"
         }`}>{w.type}</span>
       ),
+    },
+    {
+      key: "hourly_rate", header: "Rate", align: "right",
+      sortable: true,
+      sortAccessor: (w) => Number(w.hourly_rate ?? 0),
+      render: (w) => (w.hourly_rate ?? 0) > 0
+        ? <span style={{ fontFamily: "monospace", fontSize: 12 }}>${Number(w.hourly_rate).toFixed(2)}/hr</span>
+        : <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>,
     },
     { key: "status", header: "Status", render: (w) => <StatusBadge status={w.status} /> },
   ];
@@ -230,6 +239,20 @@ function WorkerDrawer({ workerId, onClose, onSaved, api }: { workerId: string | 
               <option value="employee">Employee</option>
               <option value="contractor">Contractor</option>
             </select>
+          </Field>
+          <Field label="Hourly rate (optional)">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-500">$</span>
+              <input
+                type="number" step="0.01" min="0"
+                value={worker.hourly_rate ?? ""}
+                onChange={(e) => setField("hourly_rate", e.target.value === "" ? null : Number(e.target.value))}
+                placeholder="e.g. 35.00"
+                className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm"
+              />
+              <span className="text-sm text-slate-500 whitespace-nowrap">/ hr</span>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">Used by reports to compute labor cost + job profitability.</p>
           </Field>
         </div>
       </section>

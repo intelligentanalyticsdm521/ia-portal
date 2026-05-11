@@ -17,6 +17,10 @@ interface CrewStat {
   revenue_generated: number;
   paid_invoice_count: number;
   avg_job_value: number;
+  hourly_rate: number;
+  labor_hours: number;
+  labor_cost: number;
+  profit: number;
 }
 
 function fmtMoneyShort(n?: number | null) {
@@ -77,6 +81,9 @@ export function OliverCrewPerformancePage() {
   const totalAssigned = crew.reduce((s, c) => s + c.total_assignments, 0);
   const avgCompletion = totalAssigned ? Math.round((totalCompleted / totalAssigned) * 100) : 0;
   const totalRevenue = crew.reduce((s, c) => s + Number(c.revenue_generated || 0), 0);
+  const totalLaborCost = crew.reduce((s, c) => s + Number(c.labor_cost || 0), 0);
+  const totalProfit = totalRevenue - totalLaborCost;
+  const teamMargin = totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 100) : 0;
   const top = [...crew].sort((a, b) => Number(b.revenue_generated || 0) - Number(a.revenue_generated || 0))[0];
 
   const columns: Column<CrewStat>[] = [
@@ -125,6 +132,40 @@ export function OliverCrewPerformancePage() {
       render: (c) => Number(c.revenue_generated || 0) > 0
         ? <span style={{ fontFamily: "monospace", fontSize: 12, color: "#059669", fontWeight: 600 }}>{fmtMoneyShort(c.revenue_generated)}</span>
         : <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>,
+    },
+    {
+      key: "labor_cost",
+      header: "Labor cost",
+      align: "right",
+      sortable: true,
+      sortAccessor: (c) => Number(c.labor_cost || 0),
+      render: (c) => Number(c.labor_cost || 0) > 0
+        ? <span style={{ fontFamily: "monospace", fontSize: 12, color: "#B91C1C" }}>
+            {fmtMoneyShort(c.labor_cost)}
+            <div style={{ fontSize: 10, color: "#5A7A8A", fontWeight: 400 }}>{Number(c.labor_hours).toFixed(1)}h @ ${Number(c.hourly_rate).toFixed(0)}/hr</div>
+          </span>
+        : <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>,
+    },
+    {
+      key: "profit",
+      header: "Profit",
+      align: "right",
+      sortable: true,
+      sortAccessor: (c) => Number(c.profit || 0),
+      render: (c) => {
+        const p = Number(c.profit || 0);
+        const r = Number(c.revenue_generated || 0);
+        if (r === 0) return <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>;
+        const marginPct = r > 0 ? Math.round((p / r) * 100) : 0;
+        return (
+          <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 600, color: p >= 0 ? "#059669" : "#B91C1C" }}>
+            {fmtMoneyShort(p)}
+            {Number(c.labor_cost || 0) > 0 && (
+              <div style={{ fontSize: 10, color: "#5A7A8A", fontWeight: 400 }}>{marginPct}% margin</div>
+            )}
+          </span>
+        );
+      },
     },
     {
       key: "avg_job",
@@ -179,14 +220,14 @@ export function OliverCrewPerformancePage() {
           <div className="stat-delta neu">paid invoices in range</div>
         </div>
         <div className="stat-card">
-          <div className="stat-lbl">Active workers</div>
-          <div className="stat-val">{crew.length}</div>
-          <div className="stat-delta neu">in selected range</div>
+          <div className="stat-lbl">Labor cost</div>
+          <div className="stat-val" style={{ color: totalLaborCost > 0 ? "#B91C1C" : undefined }}>{fmtMoneyShort(totalLaborCost)}</div>
+          <div className="stat-delta neu">{totalLaborCost > 0 ? "tracked hours × rate" : "set rates + log hours"}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-lbl">Jobs completed</div>
-          <div className="stat-val">{totalCompleted}</div>
-          <div className="stat-delta neu">{avgCompletion}% completion rate</div>
+          <div className="stat-lbl">Profit</div>
+          <div className="stat-val" style={{ color: totalProfit >= 0 ? "#059669" : "#B91C1C" }}>{fmtMoneyShort(totalProfit)}</div>
+          <div className="stat-delta neu">{totalLaborCost > 0 ? `${teamMargin}% margin` : "revenue − labor"}</div>
         </div>
         <div className="stat-card">
           <div className="stat-lbl">Top by revenue</div>
