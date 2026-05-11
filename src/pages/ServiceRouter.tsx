@@ -1,5 +1,18 @@
-import { useMemo } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
+
+// Lazy-load a named React export so it's compatible with React.lazy
+// (which expects { default: Component }). Lets the OLIVER section
+// code-split into its own chunk, keeping ARION/SPARK users from
+// downloading OLIVER pages they never visit.
+function lazyNamed<T extends Record<string, unknown>>(
+  loader: () => Promise<T>,
+  name: keyof T,
+) {
+  return lazy(() =>
+    loader().then((m) => ({ default: m[name] as React.ComponentType<unknown> })),
+  );
+}
 import { useAppState } from '../app/AppState';
 import { SERVICE_CATALOG, resolveServiceStatus, type PortalService, type ServiceStatus } from '../config/serviceCatalog';
 import { ArionOverviewPage } from './arion/ArionOverviewPage';
@@ -72,27 +85,29 @@ import { SparkLeadsPage } from './spark/SparkLeadsPage';
 import { SparkSearchProfilesPage } from './spark/SparkSearchProfilesPage';
 import { SparkIntelligencePage } from './spark/SparkIntelligencePage';
 import { SparkUsagePage } from './spark/SparkUsagePage';
-import { OliverDashboardPage } from './oliver/OliverDashboardPage';
-import { OliverJobBoardPage } from './oliver/OliverJobBoardPage';
-import { OliverSchedulePage } from './oliver/OliverSchedulePage';
-import { OliverDispatchPage } from './oliver/OliverDispatchPage';
-import { OliverWorkersPage } from './oliver/OliverWorkersPage';
-import { OliverCrewPerformancePage } from './oliver/OliverCrewPerformancePage';
-import { OliverContactsPage } from './oliver/OliverContactsPage';
-import { OliverServiceRequestsPage } from './oliver/OliverServiceRequestsPage';
-import { OliverQuotesPage } from './oliver/OliverQuotesPage';
-import { OliverInvoicesPage } from './oliver/OliverInvoicesPage';
-import { OliverPaymentsPage } from './oliver/OliverPaymentsPage';
-import { OliverRecurringPage } from './oliver/OliverRecurringPage';
-import { OliverMessagesPage } from './oliver/OliverMessagesPage';
-import { OliverNotificationsPage } from './oliver/OliverNotificationsPage';
-import { OliverReportsPage } from './oliver/OliverReportsPage';
-import { OliverActivityLogPage } from './oliver/OliverActivityLogPage';
-import { OliverSettingsPage } from './oliver/OliverSettingsPage';
-import { OliverServiceCatalogPage } from './oliver/OliverServiceCatalogPage';
-import { OliverBillingOverviewPage } from './oliver/OliverBillingOverviewPage';
-import { OliverRemindersPage } from './oliver/OliverRemindersPage';
-import { OliverOnboardingPage } from './oliver/OliverOnboardingPage';
+// OLIVER pages are lazy-loaded so they only enter the bundle when a tenant
+// visits an OLIVER route. Cuts initial bundle size for ARION-only tenants.
+const OliverDashboardPage = lazyNamed(() => import('./oliver/OliverDashboardPage'), 'OliverDashboardPage');
+const OliverJobBoardPage = lazyNamed(() => import('./oliver/OliverJobBoardPage'), 'OliverJobBoardPage');
+const OliverSchedulePage = lazyNamed(() => import('./oliver/OliverSchedulePage'), 'OliverSchedulePage');
+const OliverDispatchPage = lazyNamed(() => import('./oliver/OliverDispatchPage'), 'OliverDispatchPage');
+const OliverWorkersPage = lazyNamed(() => import('./oliver/OliverWorkersPage'), 'OliverWorkersPage');
+const OliverCrewPerformancePage = lazyNamed(() => import('./oliver/OliverCrewPerformancePage'), 'OliverCrewPerformancePage');
+const OliverContactsPage = lazyNamed(() => import('./oliver/OliverContactsPage'), 'OliverContactsPage');
+const OliverServiceRequestsPage = lazyNamed(() => import('./oliver/OliverServiceRequestsPage'), 'OliverServiceRequestsPage');
+const OliverQuotesPage = lazyNamed(() => import('./oliver/OliverQuotesPage'), 'OliverQuotesPage');
+const OliverInvoicesPage = lazyNamed(() => import('./oliver/OliverInvoicesPage'), 'OliverInvoicesPage');
+const OliverPaymentsPage = lazyNamed(() => import('./oliver/OliverPaymentsPage'), 'OliverPaymentsPage');
+const OliverRecurringPage = lazyNamed(() => import('./oliver/OliverRecurringPage'), 'OliverRecurringPage');
+const OliverMessagesPage = lazyNamed(() => import('./oliver/OliverMessagesPage'), 'OliverMessagesPage');
+const OliverNotificationsPage = lazyNamed(() => import('./oliver/OliverNotificationsPage'), 'OliverNotificationsPage');
+const OliverReportsPage = lazyNamed(() => import('./oliver/OliverReportsPage'), 'OliverReportsPage');
+const OliverActivityLogPage = lazyNamed(() => import('./oliver/OliverActivityLogPage'), 'OliverActivityLogPage');
+const OliverSettingsPage = lazyNamed(() => import('./oliver/OliverSettingsPage'), 'OliverSettingsPage');
+const OliverServiceCatalogPage = lazyNamed(() => import('./oliver/OliverServiceCatalogPage'), 'OliverServiceCatalogPage');
+const OliverBillingOverviewPage = lazyNamed(() => import('./oliver/OliverBillingOverviewPage'), 'OliverBillingOverviewPage');
+const OliverRemindersPage = lazyNamed(() => import('./oliver/OliverRemindersPage'), 'OliverRemindersPage');
+const OliverOnboardingPage = lazyNamed(() => import('./oliver/OliverOnboardingPage'), 'OliverOnboardingPage');
 import { ConsultingOverviewPage } from './consulting/ConsultingOverviewPage';
 import { ConsultingEngagementWrapper } from './consulting/ConsultingEngagementWrapper';
 import { ConsultingCalendarPage } from './consulting/ConsultingCalendarPage';
@@ -180,29 +195,42 @@ export function ServiceRouter() {
   }
 
   if (service.section === 'OLIVER') {
+    let oliverPage: React.ReactNode = null;
     switch (service.key) {
-      case 'oliver_dashboard': return <OliverDashboardPage />;
-      case 'oliver_job_board': return <OliverJobBoardPage />;
-      case 'oliver_schedule': return <OliverSchedulePage />;
-      case 'oliver_dispatch': return <OliverDispatchPage />;
-      case 'oliver_workers': return <OliverWorkersPage />;
-      case 'oliver_crew_performance': return <OliverCrewPerformancePage />;
-      case 'oliver_contacts': return <OliverContactsPage />;
-      case 'oliver_service_requests': return <OliverServiceRequestsPage />;
-      case 'oliver_quotes': return <OliverQuotesPage />;
-      case 'oliver_invoices': return <OliverInvoicesPage />;
-      case 'oliver_payments': return <OliverPaymentsPage />;
-      case 'oliver_recurring': return <OliverRecurringPage />;
-      case 'oliver_messages': return <OliverMessagesPage />;
-      case 'oliver_notifications': return <OliverNotificationsPage />;
-      case 'oliver_reports': return <OliverReportsPage />;
-      case 'oliver_activity_log': return <OliverActivityLogPage />;
-      case 'oliver_settings': return <OliverSettingsPage />;
-      case 'oliver_catalog': return <OliverServiceCatalogPage />;
-      case 'oliver_billing_overview': return <OliverBillingOverviewPage />;
-      case 'oliver_reminders': return <OliverRemindersPage />;
-      case 'oliver_onboarding': return <OliverOnboardingPage />;
-      default: break;
+      case 'oliver_dashboard': oliverPage = <OliverDashboardPage />; break;
+      case 'oliver_job_board': oliverPage = <OliverJobBoardPage />; break;
+      case 'oliver_schedule': oliverPage = <OliverSchedulePage />; break;
+      case 'oliver_dispatch': oliverPage = <OliverDispatchPage />; break;
+      case 'oliver_workers': oliverPage = <OliverWorkersPage />; break;
+      case 'oliver_crew_performance': oliverPage = <OliverCrewPerformancePage />; break;
+      case 'oliver_contacts': oliverPage = <OliverContactsPage />; break;
+      case 'oliver_service_requests': oliverPage = <OliverServiceRequestsPage />; break;
+      case 'oliver_quotes': oliverPage = <OliverQuotesPage />; break;
+      case 'oliver_invoices': oliverPage = <OliverInvoicesPage />; break;
+      case 'oliver_payments': oliverPage = <OliverPaymentsPage />; break;
+      case 'oliver_recurring': oliverPage = <OliverRecurringPage />; break;
+      case 'oliver_messages': oliverPage = <OliverMessagesPage />; break;
+      case 'oliver_notifications': oliverPage = <OliverNotificationsPage />; break;
+      case 'oliver_reports': oliverPage = <OliverReportsPage />; break;
+      case 'oliver_activity_log': oliverPage = <OliverActivityLogPage />; break;
+      case 'oliver_settings': oliverPage = <OliverSettingsPage />; break;
+      case 'oliver_catalog': oliverPage = <OliverServiceCatalogPage />; break;
+      case 'oliver_billing_overview': oliverPage = <OliverBillingOverviewPage />; break;
+      case 'oliver_reminders': oliverPage = <OliverRemindersPage />; break;
+      case 'oliver_onboarding': oliverPage = <OliverOnboardingPage />; break;
+    }
+    if (oliverPage) {
+      return (
+        <Suspense
+          fallback={
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 60, color: "#5A7A8A", fontSize: 13 }}>
+              Loading…
+            </div>
+          }
+        >
+          {oliverPage}
+        </Suspense>
+      );
     }
   }
 
