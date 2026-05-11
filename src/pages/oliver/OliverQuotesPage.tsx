@@ -62,7 +62,7 @@ function fmtDate(d?: string | null) {
 }
 
 export function OliverQuotesPage() {
-  const { get, post, ready } = useOliverApi();
+  const { get, post, patch, ready } = useOliverApi();
   const [rows, setRows] = useState<QuoteRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -222,17 +222,21 @@ export function OliverQuotesPage() {
           quoteId={detailId}
           onClose={() => setDetailId(null)}
           onChanged={reload}
-          api={{ get, post }}
+          api={{ get, post, patch }}
         />
       )}
     </OliverPageWrapper>
   );
 }
 
-function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: string; onClose: () => void; onChanged: () => void; api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T> }; }) {
+function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: string; onClose: () => void; onChanged: () => void; api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T>; patch: <T>(p: string, b: unknown) => Promise<T> }; }) {
   const [q, setQ] = useState<QuoteDetail | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editItems, setEditItems] = useState<Array<{ description: string; quantity: number; unit_price: number }>>([]);
+  const [editValidUntil, setEditValidUntil] = useState<string>("");
+  const [editNotes, setEditNotes] = useState<string>("");
 
   const reload = useCallback(async () => {
     setQ(await api.get<QuoteDetail>(`/quotes/${quoteId}`));
@@ -254,6 +258,40 @@ function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: stri
     catch (e) { setErr((e as Error).message); }
     finally { setBusy(null); }
   }
+  function startEdit() {
+    if (!q) return;
+    setEditItems((q.line_items ?? []).map((li) => ({
+      description: li.description,
+      quantity: Number(li.quantity),
+      unit_price: Number(li.unit_price),
+    })));
+    setEditValidUntil(q.valid_until ? new Date(q.valid_until).toISOString().slice(0, 10) : "");
+    setEditNotes(q.notes ?? "");
+    setEditing(true);
+    setErr(null);
+  }
+  async function saveEdit() {
+    setBusy("save"); setErr(null);
+    try {
+      const cleaned = editItems.filter((it) => it.description.trim() && Number(it.unit_price) >= 0);
+      if (!cleaned.length) { setErr("Add at least one line item."); setBusy(null); return; }
+      await api.patch(`/quotes/${q!.quote_id}`, {
+        line_items: cleaned,
+        valid_until: editValidUntil || null,
+        notes: editNotes.trim() || null,
+      });
+      setEditing(false);
+      await reload();
+      onChanged();
+    } catch (e) {
+      setErr(`Save failed: ${(e as Error).message}`);
+    } finally { setBusy(null); }
+  }
+  function updateEditItem(idx: number, patch: Partial<{ description: string; quantity: number; unit_price: number }>) {
+    setEditItems((prev) => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
+  }
+  function removeEditItem(idx: number) { setEditItems((prev) => prev.filter((_, i) => i !== idx)); }
+  function addEditLine() { setEditItems((prev) => [...prev, { description: "", quantity: 1, unit_price: 0 }]); }
 
   return (
     <DetailDrawer
@@ -282,24 +320,90 @@ function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: stri
         <div className="flex justify-between mt-1 pt-1 border-t border-gray-200"><span className="font-semibold text-slate-700">Total</span><span className="tabular-nums font-semibold text-oliver-teal">{fmtMoney(q.total)}</span></div>
       </div>
 
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal mb-2">Line items</h3>
-      <div className="rounded-lg ring-1 ring-gray-200 divide-y divide-gray-100 mb-4">
-        {(q.line_items ?? []).map((li) => (
-          <div key={li.line_item_id} className="px-3 py-2 grid grid-cols-12 gap-2 items-center">
-            <div className="col-span-7 text-sm text-slate-800">{li.description}</div>
-            <div className="col-span-1 text-right text-xs text-slate-500 tabular-nums">{li.quantity}</div>
-            <div className="col-span-2 text-right text-sm tabular-nums">{fmtMoney(li.unit_price)}</div>
-            <div className="col-span-2 text-right text-sm font-medium tabular-nums">{fmtMoney(li.line_total)}</div>
-          </div>
-        ))}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal" style={{ margin: 0 }}>Line items</h3>
+        {q.status === "draft" && !editing && <Button variant="secondary" onClick={startEdit}>Edit</Button>}
+        {editing && <Button variant="secondary" onClick={addEditLine}>+ Line</Button>}
       </div>
 
-      {q.notes && (
-        <div className="rounded-lg bg-amber-50 ring-1 ring-amber-200 p-3 text-sm text-amber-900">
-          <div className="font-medium uppercase text-xs tracking-wide mb-1">Notes</div>
-          {q.notes}
-        </div>
+      {!editing ? (
+        <>
+          <div className="rounded-lg ring-1 ring-gray-200 divide-y divide-gray-100 mb-4">
+            {(q.line_items ?? []).map((li) => (
+              <div key={li.line_item_id} className="px-3 py-2 grid grid-cols-12 gap-2 items-center">
+                <div className="col-span-7 text-sm text-slate-800">{li.description}</div>
+                <div className="col-span-1 text-right text-xs text-slate-500 tabular-nums">{li.quantity}</div>
+                <div className="col-span-2 text-right text-sm tabular-nums">{fmtMoney(li.unit_price)}</div>
+                <div className="col-span-2 text-right text-sm font-medium tabular-nums">{fmtMoney(li.line_total)}</div>
+              </div>
+            ))}
+          </div>
+
+          {q.notes && (
+            <div className="rounded-lg bg-amber-50 ring-1 ring-amber-200 p-3 text-sm text-amber-900">
+              <div className="font-medium uppercase text-xs tracking-wide mb-1">Notes</div>
+              {q.notes}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <div style={{ border: "1px solid #eef2f4", borderRadius: 6, marginBottom: 12 }}>
+            {editItems.map((it, i) => (
+              <div key={i} style={{
+                display: "grid", gridTemplateColumns: "1fr 80px 110px 110px 32px", gap: 8,
+                padding: "8px 10px", alignItems: "center",
+                borderBottom: i < editItems.length - 1 ? "1px solid #f0f4f6" : "none",
+              }}>
+                <input
+                  type="text" placeholder="Description"
+                  value={it.description} onChange={(e) => updateEditItem(i, { description: e.target.value })}
+                  style={qEditInputStyle}
+                />
+                <input
+                  type="number" step="0.001" min="0" placeholder="Qty"
+                  value={it.quantity} onChange={(e) => updateEditItem(i, { quantity: Number(e.target.value) })}
+                  style={{ ...qEditInputStyle, textAlign: "right" }}
+                />
+                <input
+                  type="number" step="0.01" min="0" placeholder="Unit $"
+                  value={it.unit_price} onChange={(e) => updateEditItem(i, { unit_price: Number(e.target.value) })}
+                  style={{ ...qEditInputStyle, textAlign: "right" }}
+                />
+                <span style={{ textAlign: "right", fontSize: 12, fontFamily: "monospace", color: "#0B1C24" }}>
+                  {fmtMoney(it.quantity * it.unit_price)}
+                </span>
+                <button onClick={() => removeEditItem(i)} title="Remove"
+                  style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: 18, padding: 0 }}>×</button>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <label style={{ display: "block" }}>
+              <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Valid until</span>
+              <input type="date" value={editValidUntil} onChange={(e) => setEditValidUntil(e.target.value)} style={qEditInputStyle} />
+            </label>
+            <label style={{ display: "block" }}>
+              <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Notes</span>
+              <textarea rows={2} value={editNotes} onChange={(e) => setEditNotes(e.target.value)} style={{ ...qEditInputStyle, fontFamily: "inherit", resize: "vertical" }} />
+            </label>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <Button variant="secondary" onClick={() => setEditing(false)}>Cancel</Button>
+            <Button variant="primary" onClick={saveEdit} disabled={busy === "save"}>
+              {busy === "save" ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        </>
       )}
     </DetailDrawer>
   );
 }
+
+const qEditInputStyle: React.CSSProperties = {
+  width: "100%", padding: "5px 8px", fontSize: 12,
+  border: "1px solid rgba(45,156,219,0.18)", borderRadius: 4,
+  background: "#fff",
+};

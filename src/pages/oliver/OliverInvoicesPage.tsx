@@ -75,7 +75,7 @@ function fmtDate(d?: string | null) {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export function OliverInvoicesPage() {
-  const { get, post, ready } = useOliverApi();
+  const { get, post, patch, ready } = useOliverApi();
   const [rows, setRows] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -260,7 +260,7 @@ export function OliverInvoicesPage() {
           invoiceId={detailId}
           onClose={() => setDetailId(null)}
           onChanged={() => { reload(); }}
-          api={{ get, post }}
+          api={{ get, post, patch }}
         />
       )}
     </OliverPageWrapper>
@@ -276,6 +276,7 @@ interface DrawerProps {
   api: {
     get: <T>(p: string) => Promise<T>;
     post: <T>(p: string, b?: unknown) => Promise<T>;
+    patch: <T>(p: string, b: unknown) => Promise<T>;
   };
 }
 
@@ -286,6 +287,9 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [refundOpen, setRefundOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editItems, setEditItems] = useState<Array<{ description: string; quantity: number; unit_price: number; is_tax: boolean }>>([]);
+  const [editDueDate, setEditDueDate] = useState<string>("");
 
   async function downloadPdf() {
     const account = accounts[0];
@@ -390,6 +394,49 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps
     finally { setBusy(null); }
   }
 
+  function startEdit() {
+    if (!inv) return;
+    setEditItems((inv.line_items ?? []).map((li) => ({
+      description: li.description,
+      quantity: Number(li.quantity),
+      unit_price: Number(li.unit_price),
+      is_tax: !!li.is_tax,
+    })));
+    setEditDueDate(inv.due_date ? new Date(inv.due_date).toISOString().slice(0, 10) : "");
+    setEditing(true);
+    setErr(null);
+  }
+
+  async function saveEdit() {
+    setBusy("save"); setErr(null);
+    try {
+      const cleaned = editItems.filter((it) => it.description.trim() && Number(it.unit_price) >= 0);
+      if (!cleaned.length) { setErr("Add at least one line item."); setBusy(null); return; }
+      await api.patch(`/invoices/${inv!.invoice_id}`, {
+        line_items: cleaned,
+        due_date: editDueDate || null,
+      });
+      setEditing(false);
+      await reload();
+      onChanged();
+    } catch (e) {
+      setErr(`Save failed: ${(e as Error).message}`);
+    } finally { setBusy(null); }
+  }
+
+  function updateEditItem(idx: number, patch: Partial<{ description: string; quantity: number; unit_price: number; is_tax: boolean }>) {
+    setEditItems((prev) => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
+  }
+  function removeEditItem(idx: number) {
+    setEditItems((prev) => prev.filter((_, i) => i !== idx));
+  }
+  function addEditLine() {
+    setEditItems((prev) => [...prev, { description: "", quantity: 1, unit_price: 0, is_tax: false }]);
+  }
+  function addEditTaxLine() {
+    setEditItems((prev) => [...prev, { description: "Sales Tax", quantity: 1, unit_price: 0, is_tax: true }]);
+  }
+
   const overdue = inv.status === "sent" && inv.due_date && new Date(inv.due_date) < new Date();
   const refundable = Number(inv.amount_paid || 0) - Number(inv.total_refunded || 0);
 
@@ -474,21 +521,86 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps
         </div>
       </div>
 
-      {/* Line items */}
-      <h3 className="text-sm font-semibold text-oliver-teal uppercase tracking-wide mb-2">Line items</h3>
-      <div className="rounded-lg ring-1 ring-gray-200 divide-y divide-gray-100 mb-5">
-        {(inv.line_items ?? []).map((li) => (
-          <div key={li.line_item_id} className={`px-3 py-2 grid grid-cols-12 gap-2 items-center ${li.is_tax ? "bg-amber-50/50" : ""}`}>
-            <div className="col-span-7">
-              <div className="text-sm text-slate-800">{li.description}</div>
-              {li.is_tax && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Tax</span>}
-            </div>
-            <div className="col-span-1 text-right text-xs text-slate-500 tabular-nums">{li.quantity}</div>
-            <div className="col-span-2 text-right text-sm tabular-nums">{fmtMoney(li.unit_price)}</div>
-            <div className="col-span-2 text-right text-sm font-medium tabular-nums">{fmtMoney(li.line_total)}</div>
+      {/* Line items — editable when draft */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <h3 className="text-sm font-semibold text-oliver-teal uppercase tracking-wide" style={{ margin: 0 }}>Line items</h3>
+        {inv.status === "draft" && !editing && (
+          <Button variant="secondary" onClick={startEdit}>Edit</Button>
+        )}
+        {editing && (
+          <div style={{ display: "flex", gap: 6 }}>
+            <Button variant="secondary" onClick={addEditLine}>+ Line</Button>
+            <Button variant="secondary" onClick={addEditTaxLine}>+ Tax line</Button>
           </div>
-        ))}
+        )}
       </div>
+
+      {!editing ? (
+        <div className="rounded-lg ring-1 ring-gray-200 divide-y divide-gray-100 mb-5">
+          {(inv.line_items ?? []).map((li) => (
+            <div key={li.line_item_id} className={`px-3 py-2 grid grid-cols-12 gap-2 items-center ${li.is_tax ? "bg-amber-50/50" : ""}`}>
+              <div className="col-span-7">
+                <div className="text-sm text-slate-800">{li.description}</div>
+                {li.is_tax && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Tax</span>}
+              </div>
+              <div className="col-span-1 text-right text-xs text-slate-500 tabular-nums">{li.quantity}</div>
+              <div className="col-span-2 text-right text-sm tabular-nums">{fmtMoney(li.unit_price)}</div>
+              <div className="col-span-2 text-right text-sm font-medium tabular-nums">{fmtMoney(li.line_total)}</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div style={{ border: "1px solid #eef2f4", borderRadius: 6, marginBottom: 12 }}>
+            {editItems.map((it, i) => (
+              <div key={i} style={{
+                display: "grid", gridTemplateColumns: "1fr 80px 110px 110px 32px", gap: 8,
+                padding: "8px 10px", alignItems: "center",
+                borderBottom: i < editItems.length - 1 ? "1px solid #f0f4f6" : "none",
+                background: it.is_tax ? "#FFFBEB" : "transparent",
+              }}>
+                <input
+                  type="text"
+                  placeholder={it.is_tax ? "e.g. Sales Tax 6%" : "Description"}
+                  value={it.description}
+                  onChange={(e) => updateEditItem(i, { description: e.target.value })}
+                  style={editInputStyle}
+                />
+                <input
+                  type="number" step="0.001" min="0" placeholder="Qty"
+                  value={it.quantity}
+                  onChange={(e) => updateEditItem(i, { quantity: Number(e.target.value) })}
+                  style={{ ...editInputStyle, textAlign: "right" }}
+                />
+                <input
+                  type="number" step="0.01" min="0" placeholder="Unit $"
+                  value={it.unit_price}
+                  onChange={(e) => updateEditItem(i, { unit_price: Number(e.target.value) })}
+                  style={{ ...editInputStyle, textAlign: "right" }}
+                />
+                <span style={{ textAlign: "right", fontSize: 12, fontFamily: "monospace", color: "#0B1C24" }}>
+                  {fmtMoney(it.quantity * it.unit_price)}
+                </span>
+                <button onClick={() => removeEditItem(i)} title="Remove"
+                  style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: 18, padding: 0 }}>×</button>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <label style={{ display: "block" }}>
+              <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Due date</span>
+              <input type="date" value={editDueDate} onChange={(e) => setEditDueDate(e.target.value)} style={editInputStyle} />
+            </label>
+            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "flex-end", gap: 8 }}>
+              <Button variant="secondary" onClick={() => setEditing(false)}>Cancel</Button>
+              <Button variant="primary" onClick={saveEdit} disabled={busy === "save"}>
+                {busy === "save" ? "Saving…" : "Save changes"}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="text-xs text-slate-400 space-y-1">
         <div>Invoice ID: <span className="font-mono">{inv.invoice_id}</span></div>
@@ -556,3 +668,9 @@ function PartialRefundForm({ maxAmount, onCancel, onSubmit }: { maxAmount: numbe
     </div>
   );
 }
+
+const editInputStyle: React.CSSProperties = {
+  width: "100%", padding: "5px 8px", fontSize: 12,
+  border: "1px solid rgba(45,156,219,0.18)", borderRadius: 4,
+  background: "#fff",
+};
