@@ -8,6 +8,14 @@ import {
   StatusBadge, Button, type Column,
 } from "../../components/oliver/ui";
 
+const CUSTOMER_PILLS = [
+  { key: "", label: "All" },
+  { key: "f:overdue", label: "Has overdue" },
+  { key: "f:outstanding", label: "Has outstanding" },
+  { key: "f:paying", label: "Active paying" },
+  { key: "f:new", label: "New (no invoices)" },
+];
+
 interface Contact {
   contact_id: string;
   first_name?: string;
@@ -15,6 +23,11 @@ interface Contact {
   email?: string;
   phone?: string;
   company_name?: string;
+  outstanding_balance?: number;
+  overdue_balance?: number;
+  overdue_count?: number;
+  total_paid?: number;
+  last_payment_at?: string | null;
 }
 
 interface FinancialSnapshot {
@@ -77,6 +90,8 @@ export function OliverContactsPage() {
     }
   }
 
+  const [filter, setFilter] = useState("");
+
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
     try {
@@ -89,25 +104,68 @@ export function OliverContactsPage() {
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return contacts;
-    const q = search.toLowerCase();
-    return contacts.filter((c) =>
-      contactName(c).toLowerCase().includes(q) ||
-      c.email?.toLowerCase().includes(q) ||
-      c.phone?.includes(q) ||
-      c.company_name?.toLowerCase().includes(q)
-    );
-  }, [contacts, search]);
+    let list = contacts;
+    if (filter === "f:overdue") list = list.filter((c) => (c.overdue_count ?? 0) > 0);
+    else if (filter === "f:outstanding") list = list.filter((c) => (c.outstanding_balance ?? 0) > 0);
+    else if (filter === "f:paying") list = list.filter((c) => (c.total_paid ?? 0) > 0);
+    else if (filter === "f:new") list = list.filter((c) => (c.total_paid ?? 0) === 0 && (c.outstanding_balance ?? 0) === 0);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((c) =>
+        contactName(c).toLowerCase().includes(q) ||
+        c.email?.toLowerCase().includes(q) ||
+        c.phone?.includes(q) ||
+        c.company_name?.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [contacts, search, filter]);
+
+  const totalOutstanding = contacts.reduce((s, c) => s + Number(c.outstanding_balance || 0), 0);
+  const totalOverdue = contacts.reduce((s, c) => s + Number(c.overdue_balance || 0), 0);
+  const withOverdue = contacts.filter((c) => (c.overdue_count ?? 0) > 0).length;
+  const activePaying = contacts.filter((c) => (c.total_paid ?? 0) > 0).length;
+
+  function fmtMoneyShort(n?: number | null) {
+    return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  }
 
   const columns: Column<Contact>[] = [
     {
       key: "name", header: "Name", sortable: true,
       sortAccessor: (c) => contactName(c).toLowerCase(),
-      render: (c) => <strong style={{ color: "#0B1C24" }}>{contactName(c)}</strong>,
+      render: (c) => (
+        <div>
+          <strong style={{ color: "#0B1C24" }}>{contactName(c)}</strong>
+          {(c.overdue_count ?? 0) > 0 && (
+            <span style={{
+              display: "inline-block", marginLeft: 8, fontSize: 10, fontWeight: 600,
+              padding: "2px 6px", borderRadius: 999, background: "#FEE2E2", color: "#991B1B",
+            }}>
+              {c.overdue_count} overdue
+            </span>
+          )}
+        </div>
+      ),
     },
     { key: "email",   header: "Email",   render: (c) => c.email || "—" },
     { key: "phone",   header: "Phone",   render: (c) => c.phone || "—" },
-    { key: "company", header: "Company", render: (c) => c.company_name || "—" },
+    {
+      key: "outstanding_balance", header: "Outstanding", align: "right", sortable: true,
+      sortAccessor: (c) => Number(c.outstanding_balance ?? 0),
+      render: (c) => (c.outstanding_balance ?? 0) > 0
+        ? <span style={{ fontFamily: "monospace", color: (c.overdue_count ?? 0) > 0 ? "#DC2626" : "#0B1C24", fontWeight: 600 }}>
+            {fmtMoneyShort(c.outstanding_balance)}
+          </span>
+        : <span style={{ color: "#94A3B8" }}>—</span>,
+    },
+    {
+      key: "total_paid", header: "Lifetime paid", align: "right", sortable: true,
+      sortAccessor: (c) => Number(c.total_paid ?? 0),
+      render: (c) => (c.total_paid ?? 0) > 0
+        ? <span style={{ fontFamily: "monospace", color: "#059669", fontWeight: 600 }}>{fmtMoneyShort(c.total_paid)}</span>
+        : <span style={{ color: "#94A3B8" }}>—</span>,
+    },
   ];
 
   return (
@@ -128,7 +186,33 @@ export function OliverContactsPage() {
         <EmptyState title="No customers yet" description="Customers appear here as soon as you create a job, quote, or invoice for them — or when they sign up via the customer portal." />
       ) : (
         <>
+          <div className="stat-row">
+            <div className="stat-card">
+              <div className="stat-lbl">Total customers</div>
+              <div className="stat-val">{contacts.length}</div>
+              <div className="stat-delta neu">in your database</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-lbl">Active paying</div>
+              <div className="stat-val" style={{ color: "#059669" }}>{activePaying}</div>
+              <div className="stat-delta neu">have paid 1+ invoice</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-lbl">Outstanding</div>
+              <div className="stat-val">{fmtMoneyShort(totalOutstanding)}</div>
+              <div className="stat-delta neu">across all customers</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-lbl">Overdue</div>
+              <div className="stat-val" style={{ color: totalOverdue > 0 ? "#DC2626" : undefined }}>{fmtMoneyShort(totalOverdue)}</div>
+              <div className="stat-delta neu">{withOverdue} customer{withOverdue === 1 ? "" : "s"}</div>
+            </div>
+          </div>
+
           <FilterBar
+            pills={CUSTOMER_PILLS}
+            activePill={filter}
+            onPillChange={setFilter}
             search={search}
             onSearchChange={setSearch}
             searchPlaceholder="Search by name, email, phone, or company…"
@@ -138,6 +222,7 @@ export function OliverContactsPage() {
             columns={columns}
             rowKey={(c) => c.contact_id}
             onRowClick={(c) => setPickedId(c.contact_id)}
+            initialSort={{ key: "outstanding_balance", direction: "desc" }}
             emptyMessage="No customers match this search."
           />
         </>
