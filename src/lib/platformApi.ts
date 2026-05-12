@@ -310,6 +310,134 @@ export async function getProfile(params: {
   return body as ProfileResponse;
 }
 
+/**
+ * Platform-level access — caller's role + product access list, plus admin
+ * endpoints to manage other users in the tenant.
+ */
+export type PlatformRole = 'admin' | 'user' | 'read_only';
+
+export interface MeAccessResponse {
+  role: PlatformRole;
+  products: string[]; // e.g. ['arion', 'oliver', 'spark']
+  capabilities: {
+    canManageUsers: boolean;
+    canViewBilling: boolean;
+    canMutate: boolean;
+  };
+}
+
+export interface PlatformTenantUser {
+  userId: string;
+  email: string;
+  displayName: string | null;
+  role: PlatformRole;
+  hasExplicitRole: boolean;
+  products: string[];
+  isSelf: boolean;
+}
+
+export async function getMeAccess(params: {
+  baseUrl: string;
+  bearerToken: string;
+  tenantId: string;
+}): Promise<MeAccessResponse> {
+  const url = `${normalizeBaseUrl(params.baseUrl)}/me/access`;
+  const res = await fetchWithTimeout(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${params.bearerToken}`,
+      'Content-Type': 'application/json',
+      'x-tenant-key': params.tenantId,
+    },
+  });
+  const body = safeJsonParse(await res.text());
+  if (!res.ok) {
+    const msg = typeof body === 'object' && body && 'error' in body
+      ? String((body as any).error)
+      : `Request failed (${res.status})`;
+    throw new PlatformApiError(msg, res.status, body);
+  }
+  return body as MeAccessResponse;
+}
+
+export async function listTenantUsers(params: {
+  baseUrl: string;
+  bearerToken: string;
+  tenantId: string;
+}): Promise<{ users: PlatformTenantUser[] }> {
+  const url = `${normalizeBaseUrl(params.baseUrl)}/tenant-users`;
+  const res = await fetchWithTimeout(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${params.bearerToken}`,
+      'Content-Type': 'application/json',
+      'x-tenant-key': params.tenantId,
+    },
+  });
+  const body = safeJsonParse(await res.text());
+  if (!res.ok) {
+    const msg = typeof body === 'object' && body && 'error' in body
+      ? String((body as any).error)
+      : `Request failed (${res.status})`;
+    throw new PlatformApiError(msg, res.status, body);
+  }
+  return body as { users: PlatformTenantUser[] };
+}
+
+export async function updateTenantUserRole(params: {
+  baseUrl: string;
+  bearerToken: string;
+  tenantId: string;
+  userId: string;
+  role: PlatformRole;
+}): Promise<PlatformTenantUser> {
+  const url = `${normalizeBaseUrl(params.baseUrl)}/tenant-users/${encodeURIComponent(params.userId)}/role`;
+  const res = await fetchWithTimeout(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${params.bearerToken}`,
+      'Content-Type': 'application/json',
+      'x-tenant-key': params.tenantId,
+    },
+    body: JSON.stringify({ role: params.role }),
+  });
+  const body = safeJsonParse(await res.text());
+  if (!res.ok) {
+    const msg = typeof body === 'object' && body && 'error' in body
+      ? String((body as any).error)
+      : `Request failed (${res.status})`;
+    throw new PlatformApiError(msg, res.status, body);
+  }
+  return body as PlatformTenantUser;
+}
+
+export async function updateTenantUserProducts(params: {
+  baseUrl: string;
+  bearerToken: string;
+  tenantId: string;
+  userId: string;
+  products: string[];
+}): Promise<PlatformTenantUser> {
+  const url = `${normalizeBaseUrl(params.baseUrl)}/tenant-users/${encodeURIComponent(params.userId)}/products`;
+  const res = await fetchWithTimeout(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${params.bearerToken}`,
+      'Content-Type': 'application/json',
+      'x-tenant-key': params.tenantId,
+    },
+    body: JSON.stringify({ products: params.products }),
+  });
+  const body = safeJsonParse(await res.text());
+  if (!res.ok) {
+    const msg = typeof body === 'object' && body && 'error' in body
+      ? String((body as any).error)
+      : `Request failed (${res.status})`;
+    throw new PlatformApiError(msg, res.status, body);
+  }
+  return body as PlatformTenantUser;
+}
+
 export async function updateProfile(params: {
   baseUrl: string;
   bearerToken: string;

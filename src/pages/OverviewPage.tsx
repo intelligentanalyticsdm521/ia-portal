@@ -1,60 +1,46 @@
-import { Link } from 'react-router-dom';
-import { useAppState } from '../app/AppState';
-import { SERVICE_CATALOG, resolveServiceStatus } from '../config/serviceCatalog';
+import { useState } from "react";
+import { useAppState } from "../app/AppState";
+import { CommandDashboard } from "./command/CommandDashboard";
+import { CommandCalendar } from "./command/CommandCalendar";
+import { CommandAlerts } from "./command/CommandAlerts";
+
+type Tab = "dashboard" | "calendar" | "alerts";
 
 export function OverviewPage() {
-  const { active, enabledServices } = useAppState();
-
-  const quickLinks = SERVICE_CATALOG.filter((s) => s.key !== 'portal_overview')
-    .map((s) => ({ svc: s, status: resolveServiceStatus(s, enabledServices) }))
-    .slice(0, 4);
+  const { active } = useAppState();
+  const [tab, setTab] = useState<Tab>("dashboard");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 px-2 sm:px-4">
       <section className="iadm-card">
-        <div className="iadm-card-body flex items-start justify-between gap-4">
+        <div className="iadm-card-body flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold">Overview</h1>
-            <p className="mt-2 text-sm text-gray-600">
-              Tenant: <span className="font-medium">{active?.tenant?.tenantFullName}</span>
+            <h1 className="text-2xl font-semibold">Command Center</h1>
+            <p className="mt-1 text-sm text-gray-600">
+              Good morning. Here's what's happening at{" "}
+              <span className="font-medium">{active?.tenant?.tenantFullName || active?.tenant?.tenantName || "your business"}</span>.
             </p>
           </div>
-          {/* Add-another-site CTA — visible to any tenant with ARION enabled */}
-          {enabledServices.has('arion_dashboard') && (
-            <Link
-              to="/app/sites/new"
-              className="rounded-lg bg-[#EF6C33] px-4 py-2 text-sm font-semibold text-white whitespace-nowrap hover:bg-[#d75a25]"
-            >
-              + Add another site
-            </Link>
-          )}
+          <div className="text-xs text-gray-500">{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</div>
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2">
-        {quickLinks.map(({ svc, status }) => (
-          <Link
-            key={svc.key}
-            to={svc.route}
-            className="iadm-card hover:bg-gray-50"
-          >
-            <div className="iadm-card-body">
-              <div className="text-sm font-medium">{svc.displayName}</div>
-              <div className="mt-1 text-sm text-gray-600">{svc.description}</div>
-              <div className="mt-3 text-xs text-gray-500">Status: {status.replace('_', ' ')}</div>
-            </div>
-          </Link>
+      <nav className="flex border-b border-gray-200">
+        {(["dashboard", "calendar", "alerts"] as Tab[]).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px capitalize ${
+              tab === t ? "border-[#EF6C33] text-[#EF6C33]" : "border-transparent text-gray-600 hover:text-gray-900"
+            }`}>
+            {t}
+          </button>
         ))}
-      </section>
+      </nav>
 
-      <section className="iadm-card">
-        <div className="iadm-card-body">
-          <h2 className="text-base font-semibold">Need a new service?</h2>
-          <p className="mt-2 text-sm text-gray-700">
-            Contact <span className="font-medium">info@intelligentanalyticsdm.com</span> to request setup.
-          </p>
-        </div>
-      </section>
+      <div>
+        {tab === "dashboard" && <CommandDashboard />}
+        {tab === "calendar" && <CommandCalendar />}
+        {tab === "alerts" && <CommandAlerts />}
+      </div>
     </div>
   );
 }

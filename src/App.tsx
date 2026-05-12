@@ -21,6 +21,9 @@ import { PersonalSettings } from './pages/settings/PersonalSettings';
 // NEW: SPARK pricing page route
 import { SparkPricingPage } from './pages/spark/SparkPricingPage';
 
+// Platform admin: team access (role + product gating)
+import { PlatformTeamAccess } from './pages/settings/PlatformTeamAccess';
+
 // Public signup flow
 import { SignupPage } from './pages/signup/SignupPage';
 import { OnboardingFlow } from './pages/signup/OnboardingFlow';
@@ -72,6 +75,9 @@ export function App() {
 
             {/* NEW: SPARK pricing page used by subscribe buttons */}
             <Route path="spark/pricing" element={<SparkPricingPage />} />
+
+            {/* Platform admin: team access */}
+            <Route path="team-access" element={<PlatformTeamAccess />} />
 
             {/* Add-site flow + in-app provisioning status (existing tenants) */}
             <Route path="sites/new" element={<AddSiteFlow />} />
