@@ -79,6 +79,7 @@ const OLIVER_NAV: SubNavConfig = {
         { key: "oliver_payments", label: "Payments", route: "/app/services/oliver_payments" },
         { key: "oliver_recurring", label: "Recurring & Subscriptions", route: "/app/services/oliver_recurring" },
         { key: "oliver_coupons", label: "Coupons", route: "/app/services/oliver_coupons" },
+        { key: "oliver_disputes", label: "Disputes", route: "/app/services/oliver_disputes" },
         { key: "oliver_reminders", label: "Reminders", route: "/app/services/oliver_reminders" },
       ],
     },
