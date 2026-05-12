@@ -60,7 +60,7 @@ function rangeToQuery(r: TimeRange): string {
 }
 
 export function OliverPaymentsPage() {
-  const { get, ready } = useOliverApi();
+  const { get, post, ready } = useOliverApi();
   const { instance, accounts } = useMsal();
   const [range, setRange] = useState<TimeRange>(() => rangeForPreset("last_30_days"));
   const [rows, setRows] = useState<PaymentRow[]>([]);
@@ -268,7 +268,8 @@ export function OliverPaymentsPage() {
         <PaymentDetailDrawer
           paymentId={detailId}
           onClose={() => setDetailId(null)}
-          api={{ get }}
+          api={{ get, post }}
+          onMutated={reload}
         />
       )}
     </OliverPageWrapper>
@@ -293,15 +294,59 @@ interface PaymentDetail extends PaymentRow {
   customer_email?: string;
 }
 
-function PaymentDetailDrawer({ paymentId, onClose, api }: { paymentId: string; onClose: () => void; api: { get: <T>(p: string) => Promise<T> } }) {
+function PaymentDetailDrawer({
+  paymentId, onClose, api, onMutated,
+}: {
+  paymentId: string;
+  onClose: () => void;
+  api: {
+    get: <T>(p: string) => Promise<T>;
+    post: <T>(p: string, body?: unknown) => Promise<T>;
+  };
+  onMutated?: () => void;
+}) {
   const [p, setP] = useState<PaymentDetail | null>(null);
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundReason, setRefundReason] = useState("customer_request");
+  const [refundSaving, setRefundSaving] = useState(false);
+  const [refundMsg, setRefundMsg] = useState<string | null>(null);
+
   useEffect(() => {
     (async () => { setP(await api.get<PaymentDetail>(`/payments/${paymentId}`)); })();
   }, [paymentId, api]);
 
+  async function submitRefund() {
+    if (!p) return;
+    setRefundSaving(true);
+    setRefundMsg(null);
+    try {
+      const amount = refundAmount.trim() ? Number(refundAmount) : undefined;
+      const result = await api.post<{ amount_refunded: number; stripe_refund_id: string; fully_refunded: boolean }>(
+        `/payments/${paymentId}/refund`,
+        { amount, reason: refundReason },
+      );
+      setRefundMsg(
+        `Refunded ${fmtMoney(result.amount_refunded)} successfully${result.fully_refunded ? " (full refund)" : ""}.`,
+      );
+      // Refresh detail so the "refundable balance" reflects the new state
+      setP(await api.get<PaymentDetail>(`/payments/${paymentId}`));
+      onMutated?.();
+      setTimeout(() => { setRefundOpen(false); setRefundMsg(null); }, 2000);
+    } catch (e) {
+      setRefundMsg(e instanceof Error ? e.message : "Refund failed");
+    } finally {
+      setRefundSaving(false);
+    }
+  }
+
   if (!p) {
     return <DetailDrawer open onClose={onClose} title="Loading…" width="md"><div style={{ padding: 20, color: "#5A7A8A" }}>Loading payment…</div></DetailDrawer>;
   }
+
+  const canRefund = p.type === "payment" && p.status === "succeeded"
+    && (p.stripe_payment_intent_id || p.stripe_charge_id);
+
   return (
     <DetailDrawer
       open onClose={onClose}
@@ -309,7 +354,7 @@ function PaymentDetailDrawer({ paymentId, onClose, api }: { paymentId: string; o
       subtitle={`${fmtMoney(p.amount)} · ${new Date(p.paid_at || p.created_at).toLocaleString()}`}
       width="lg"
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
         <StatusBadge status={p.status} />
         <span style={{
           display: "inline-block", fontSize: 10, fontWeight: 500,
@@ -317,7 +362,51 @@ function PaymentDetailDrawer({ paymentId, onClose, api }: { paymentId: string; o
           background: p.type === "refund" ? "#F3E8FF" : "#D1FAE5",
           color: p.type === "refund" ? "#7E22CE" : "#047857",
         }}>{p.type}</span>
+        {canRefund && !refundOpen && (
+          <Button variant="secondary" onClick={() => setRefundOpen(true)} style={{ marginLeft: "auto" }}>
+            Refund this payment
+          </Button>
+        )}
       </div>
+
+      {refundOpen && (
+        <div className="card" style={{ background: "#FFFBEB", border: "1px solid #FDE68A" }}>
+          <div className="card-ttl" style={{ color: "#92400E" }}>Issue refund</div>
+          <div className="card-sub">Posts to Stripe and records a refund row locally. Amount can be partial.</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 10 }}>
+            <label style={{ display: "block" }}>
+              <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Amount (USD)</span>
+              <input type="number" min="0.01" step="0.01" placeholder={`Full: ${fmtMoney(p.amount)}`}
+                style={{ width: "100%", padding: "7px 10px", fontSize: 12, border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6, background: "#fff", color: "#0B1C24" }}
+                value={refundAmount} onChange={(e) => setRefundAmount(e.target.value)} />
+            </label>
+            <label style={{ display: "block" }}>
+              <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Reason</span>
+              <select style={{ width: "100%", padding: "7px 10px", fontSize: 12, border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6, background: "#fff", color: "#0B1C24" }}
+                value={refundReason} onChange={(e) => setRefundReason(e.target.value)}>
+                <option value="customer_request">Requested by customer</option>
+                <option value="duplicate">Duplicate</option>
+                <option value="fraud">Fraudulent</option>
+              </select>
+            </label>
+          </div>
+          {refundMsg && (
+            <div style={{ marginTop: 10, padding: 8, fontSize: 12,
+                          background: refundMsg.includes("failed") ? "#FEF2F2" : "#F0FDF4",
+                          color: refundMsg.includes("failed") ? "#991B1B" : "#15803D",
+                          border: `1px solid ${refundMsg.includes("failed") ? "#FECACA" : "#BBF7D0"}`,
+                          borderRadius: 6 }}>{refundMsg}</div>
+          )}
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <Button variant="ghost" onClick={() => { setRefundOpen(false); setRefundAmount(""); setRefundMsg(null); }} disabled={refundSaving}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={submitRefund} disabled={refundSaving}>
+              {refundSaving ? "Refunding…" : "Issue refund"}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <div className="card-ttl">Transaction</div>
