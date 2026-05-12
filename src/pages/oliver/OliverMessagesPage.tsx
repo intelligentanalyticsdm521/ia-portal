@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
@@ -19,6 +19,9 @@ interface Message {
   sender: string;
   body: string;
   timestamp: string;
+  // Optional: from_us flag from API (set when the sender is the tenant/admin).
+  // Falls back to a heuristic when missing.
+  from_us?: boolean;
 }
 
 function fmtRelative(d?: string) {
@@ -43,6 +46,12 @@ export function OliverMessagesPage() {
   const [sending, setSending] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
   const [composeForm, setComposeForm] = useState({ subject: "", recipient: "", body: "" });
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to the most recent message whenever the messages list changes
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
@@ -152,16 +161,46 @@ export function OliverMessagesPage() {
                       No messages in this thread yet.
                     </div>
                   ) : (
-                    messages.map((m) => (
-                      <div key={m.id} style={{ marginBottom: 12 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: "#0B1C24" }}>{m.sender}</span>
-                          <span style={{ fontSize: 10, color: "#94A3B8" }}>{fmtRelative(m.timestamp)}</span>
+                    messages.map((m) => {
+                      // Heuristic when from_us flag isn't supplied: anything containing
+                      // "you" or the active user marker. Falls back to treating odd-positioned
+                      // messages as from-us so the bubbles still alternate visually.
+                      const fromUs = m.from_us ?? (
+                        m.sender?.toLowerCase().includes("you") ||
+                        m.sender?.toLowerCase().includes("staff") ||
+                        m.sender?.toLowerCase().includes("admin")
+                      );
+                      return (
+                        <div key={m.id} style={{
+                          marginBottom: 12, display: "flex",
+                          flexDirection: "column",
+                          alignItems: fromUs ? "flex-end" : "flex-start",
+                        }}>
+                          <div style={{
+                            display: "flex", alignItems: "center", gap: 6, marginBottom: 3,
+                            flexDirection: fromUs ? "row-reverse" : "row",
+                          }}>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: "#0B1C24" }}>
+                              {fromUs ? "You" : m.sender}
+                            </span>
+                            <span style={{ fontSize: 10, color: "#94A3B8" }}>{fmtRelative(m.timestamp)}</span>
+                          </div>
+                          <div style={{
+                            fontSize: 12,
+                            color: fromUs ? "#fff" : "#0B1C24",
+                            background: fromUs ? "#1A7DB5" : "#f1f5f9",
+                            padding: "9px 13px",
+                            borderRadius: fromUs ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
+                            lineHeight: 1.45,
+                            maxWidth: "75%",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                          }}>{m.body}</div>
                         </div>
-                        <div style={{ fontSize: 12, color: "#0B1C24", background: "#f8fafc", padding: "8px 12px", borderRadius: 8, lineHeight: 1.45 }}>{m.body}</div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
+                  <div ref={messagesEndRef} />
                 </div>
                 <div style={{ borderTop: "1px solid #eef2f4", padding: 10, display: "flex", gap: 8 }}>
                   <input

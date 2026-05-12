@@ -3,7 +3,7 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader, FilterBar, DataTable, EmptyState,
-  StatusBadge, type Column,
+  type Column,
 } from "../../components/oliver/ui";
 
 interface ActivityEvent {
@@ -23,6 +23,17 @@ const TYPE_PILLS = [
   { key: "type:dispatch", label: "Dispatch" },
   { key: "type:notification", label: "Notifications" },
 ];
+
+// Per-type visual treatment so admins can scan the log by eye.
+const TYPE_META: Record<string, { icon: string; bg: string; color: string; label: string }> = {
+  job_status:   { icon: "🛠",  bg: "#DBEAFE", color: "#1E40AF", label: "Job" },
+  invoice:      { icon: "🧾",  bg: "#D1FAE5", color: "#047857", label: "Invoice" },
+  quote:        { icon: "📋",  bg: "#FEF3C7", color: "#92400E", label: "Quote" },
+  payment:      { icon: "💰",  bg: "#D1FAE5", color: "#047857", label: "Payment" },
+  dispatch:     { icon: "🚚",  bg: "#E0E7FF", color: "#4338CA", label: "Dispatch" },
+  notification: { icon: "📧",  bg: "#F3E8FF", color: "#7E22CE", label: "Notification" },
+  info:         { icon: "ℹ",   bg: "#F1F5F9", color: "#5A7A8A", label: "Info" },
+};
 
 function fmtRelative(d?: string) {
   if (!d) return "—";
@@ -86,7 +97,20 @@ export function OliverActivityLogPage() {
     {
       key: "type",
       header: "Type",
-      render: (e) => <StatusBadge status={e.type || "info"} />,
+      render: (e) => {
+        const meta = TYPE_META[e.type] || TYPE_META.info;
+        return (
+          <span style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "3px 9px", borderRadius: 99,
+            background: meta.bg, color: meta.color,
+            fontSize: 11, fontWeight: 600,
+          }}>
+            <span style={{ fontSize: 13 }}>{meta.icon}</span>
+            {meta.label}
+          </span>
+        );
+      },
     },
     {
       key: "description",
