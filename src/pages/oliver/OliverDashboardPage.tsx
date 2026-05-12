@@ -1,8 +1,30 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import {
+  ResponsiveContainer, AreaChart, Area, Tooltip,
+} from "recharts";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button, StatusBadge } from "../../components/oliver/ui";
+
+interface TodaySummary {
+  jobs_today: number;
+  jobs_done_today: number;
+  revenue_today: number;
+  revenue_this_week: number;
+  revenue_last_week: number;
+  revenue_wow_pct: number | null;
+  open_requests: number;
+  overdue_invoices: number;
+  overdue_amount: number;
+  disputes_open: number;
+  sparkline: Array<{ day: string; revenue: number }>;
+  headline: {
+    tone: "alert" | "warn" | "info" | "ok";
+    message: string;
+    action: { label: string; to: string };
+  };
+}
 
 interface DashboardStats {
   activeJobs: number;
@@ -83,6 +105,7 @@ export function OliverDashboardPage() {
   const [arrears, setArrears] = useState<ArrearsCustomer[]>([]);
   const [stripeStatus, setStripeStatus] = useState<StripeStatus | null>(null);
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null);
+  const [today, setToday] = useState<TodaySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
 
@@ -91,7 +114,7 @@ export function OliverDashboardPage() {
     (async () => {
       setLoading(true); setError(null);
       try {
-        const [s, a, b, o, ar, st, ob] = await Promise.all([
+        const [s, a, b, o, ar, st, ob, t] = await Promise.all([
           get<DashboardStats>("/dashboard/stats"),
           get<ActivityEvent[]>("/dashboard/activity"),
           get<BillingOverview>("/overview/billing"),
@@ -99,8 +122,9 @@ export function OliverDashboardPage() {
           get<ArrearsCustomer[]>("/overview/arrears?limit=5").catch(() => [] as ArrearsCustomer[]),
           get<StripeStatus>("/settings/stripe").catch(() => null),
           get<OnboardingStatus>("/onboarding/status").catch(() => null),
+          get<TodaySummary>("/dashboard/today").catch(() => null),
         ]);
-        setStats(s); setActivity(a || []); setBilling(b); setOps(o); setArrears(ar || []); setStripeStatus(st); setOnboarding(ob);
+        setStats(s); setActivity(a || []); setBilling(b); setOps(o); setArrears(ar || []); setStripeStatus(st); setOnboarding(ob); setToday(t);
       } catch (e) { setError(e); }
       finally { setLoading(false); }
     })();
@@ -178,6 +202,11 @@ export function OliverDashboardPage() {
       />
 
       {topBanner}
+
+      {/* Hero "Today" narrative + sparkline — ARION-style headline card */}
+      {today && (
+        <TodayHero today={today} />
+      )}
 
       {/* KPI row — ARION stat-card pattern */}
       <div className="stat-row">
@@ -401,5 +430,129 @@ export function OliverDashboardPage() {
         )}
       </div>
     </OliverPageWrapper>
+  );
+}
+
+// ─── Today's hero card ─────────────────────────────────────────────────────
+// Narrative + headline + 7-day sparkline. Replaces the old "row of numbers"
+// landing experience with a glanceable summary plus a one-sentence "what
+// needs attention right now".
+function TodayHero({ today }: { today: TodaySummary }) {
+  const palette: Record<TodaySummary["headline"]["tone"], { bg: string; border: string; text: string; icon: string }> = {
+    alert: { bg: "linear-gradient(90deg, #FEE2E2 0%, #FECACA 100%)", border: "#FCA5A5", text: "#991B1B", icon: "!" },
+    warn:  { bg: "linear-gradient(90deg, #FEF3C7 0%, #FEF9C3 100%)", border: "#FDE68A", text: "#92400E", icon: "!" },
+    info:  { bg: "linear-gradient(90deg, #DBEAFE 0%, #BFDBFE 100%)", border: "#93C5FD", text: "#1E40AF", icon: "i" },
+    ok:    { bg: "linear-gradient(90deg, #D1FAE5 0%, #A7F3D0 100%)", border: "#6EE7B7", text: "#065F46", icon: "✓" },
+  };
+  const c = palette[today.headline.tone];
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 12) return "Good morning";
+    if (h < 17) return "Good afternoon";
+    return "Good evening";
+  })();
+  const max = Math.max(...today.sparkline.map((s) => s.revenue), 0);
+
+  return (
+    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      {/* Headline narrative banner */}
+      <div style={{
+        padding: 16, background: c.bg, borderBottom: `1px solid ${c.border}`,
+        display: "flex", alignItems: "center", gap: 14,
+      }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: "50%",
+          background: c.text, color: "#fff",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontWeight: 700, fontSize: 16, flexShrink: 0,
+        }}>{c.icon}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 11, color: c.text, opacity: 0.75, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>
+            {greeting}
+          </div>
+          <div style={{ fontSize: 14, color: c.text, fontWeight: 600, lineHeight: 1.4, marginTop: 2 }}>
+            {today.headline.message}
+          </div>
+        </div>
+        <Link
+          to={today.headline.action.to}
+          style={{
+            padding: "8px 16px", borderRadius: 8, background: c.text, color: "#fff",
+            fontSize: 12, fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0,
+          }}
+        >
+          {today.headline.action.label} →
+        </Link>
+      </div>
+
+      {/* Stat strip: today's jobs + revenue + sparkline */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: 0 }}>
+        <div style={{ padding: 16, borderRight: "1px solid #E5E7EB" }}>
+          <div style={{ fontSize: 11, color: "#5A7A8A", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>
+            Today's schedule
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 6 }}>
+            <span style={{ fontSize: 28, fontWeight: 700, color: "#1A3A4A", fontFamily: "monospace" }}>{today.jobs_today}</span>
+            {today.jobs_today > 0 && (
+              <span style={{ fontSize: 11, color: "#059669", fontWeight: 600 }}>
+                · {today.jobs_done_today} done
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 4 }}>
+            job{today.jobs_today === 1 ? "" : "s"} scheduled
+          </div>
+        </div>
+
+        <div style={{ padding: 16, borderRight: "1px solid #E5E7EB" }}>
+          <div style={{ fontSize: 11, color: "#5A7A8A", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>
+            Collected today
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 6 }}>
+            <span style={{ fontSize: 28, fontWeight: 700, color: "#059669", fontFamily: "monospace" }}>
+              ${Number(today.revenue_today).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            </span>
+          </div>
+          {today.revenue_wow_pct != null ? (
+            <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600,
+                          color: today.revenue_wow_pct >= 0 ? "#059669" : "#B91C1C" }}>
+              {today.revenue_wow_pct >= 0 ? "▲" : "▼"} {Math.abs(today.revenue_wow_pct)}% WoW
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 4 }}>this week</div>
+          )}
+        </div>
+
+        <div style={{ padding: 16, position: "relative" }}>
+          <div style={{ fontSize: 11, color: "#5A7A8A", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>
+            Last 7 days revenue
+          </div>
+          {max > 0 ? (
+            <div style={{ height: 70, marginTop: 4 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={today.sparkline} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="dashSpark" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#1A7DB5" stopOpacity={0.5} />
+                      <stop offset="100%" stopColor="#1A7DB5" stopOpacity={0.05} />
+                    </linearGradient>
+                  </defs>
+                  <Tooltip
+                    formatter={(v) => `$${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    labelFormatter={(label) => new Date(label).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+                    contentStyle={{ borderRadius: 6, fontSize: 11, padding: 6 }}
+                  />
+                  <Area type="monotone" dataKey="revenue" stroke="#1A7DB5" strokeWidth={2} fill="url(#dashSpark)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div style={{ height: 70, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#94A3B8", fontStyle: "italic" }}>
+              No revenue in the last 7 days
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
