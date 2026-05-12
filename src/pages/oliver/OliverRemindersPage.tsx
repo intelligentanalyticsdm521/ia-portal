@@ -231,6 +231,75 @@ export function OliverRemindersPage() {
         </div>
       </div>
 
+      {/* Ageing distribution — stacked bar shows where the money is sitting */}
+      {rows.length > 0 && (
+        <div className="card">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">Where the overdue money is sitting</div>
+              <div className="card-sub">{fmtMoney(totalOutstanding)} total · sorted by how risky the collection is</div>
+            </div>
+          </div>
+          {(() => {
+            const buckets = [
+              { key: "1-2",  label: "1–2 days late",   color: "#FCD34D", min: 1, max: 2 },
+              { key: "3-6",  label: "3–6 days late",   color: "#F59E0B", min: 3, max: 6 },
+              { key: "7-13", label: "7–13 days late",  color: "#EA580C", min: 7, max: 13 },
+              { key: "14+",  label: "14+ days late",   color: "#B91C1C", min: 14, max: Infinity },
+            ].map((b) => {
+              const matching = rows.filter((r) => r.days_past_due >= b.min && r.days_past_due <= b.max);
+              return {
+                ...b,
+                count: matching.length,
+                amount: matching.reduce((s, r) => s + Number(r.balance_due || 0), 0),
+              };
+            });
+            const total = buckets.reduce((s, b) => s + b.amount, 0);
+            return (
+              <div>
+                <div style={{ display: "flex", height: 36, borderRadius: 6, overflow: "hidden", border: "1px solid #E2E8F0" }}>
+                  {buckets.map((b) => {
+                    const w = total > 0 ? (b.amount / total) * 100 : 0;
+                    if (w === 0) return null;
+                    return (
+                      <div key={b.key}
+                        onClick={() => setFilter(`stage:${b.key}`)}
+                        title={`${b.count} invoice${b.count === 1 ? "" : "s"} · ${fmtMoney(b.amount)}`}
+                        style={{
+                          width: `${w}%`, background: b.color,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 12, fontWeight: 700, color: "#fff",
+                          cursor: "pointer",
+                        }}>
+                        {w > 12 && fmtMoney(b.amount)}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 11, gap: 8, flexWrap: "wrap" }}>
+                  {buckets.map((b) => (
+                    <button
+                      key={b.key}
+                      onClick={() => setFilter(filter === `stage:${b.key}` ? "" : `stage:${b.key}`)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        background: filter === `stage:${b.key}` ? "rgba(0,0,0,0.05)" : "transparent",
+                        border: 0, padding: "4px 8px", borderRadius: 6, cursor: "pointer",
+                        opacity: b.count === 0 ? 0.4 : 1,
+                      }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 2, background: b.color, flexShrink: 0 }} />
+                      <span style={{ color: "#0B1C24", fontWeight: 600 }}>{b.label}</span>
+                      <span style={{ color: "#5A7A8A" }}>· {b.count}</span>
+                      <span style={{ color: "#0B1C24", fontFamily: "monospace" }}>{fmtMoney(b.amount)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       <div className="card" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE" }}>
         <div style={{ fontSize: 12, color: "#1E40AF", lineHeight: 1.5 }}>
           <strong>Automatic chasers</strong> fire on a cadence: a friendly first reminder at <strong>3 days late</strong>,

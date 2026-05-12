@@ -100,8 +100,45 @@ export function OliverServiceRequestsPage() {
     );
   }, [requests, search]);
 
+  // Source label normalization — covers the historical sources + new lead intake routes
+  function sourceLabel(s?: string): { label: string; bg: string; color: string } {
+    const key = (s || "portal").toLowerCase();
+    if (key === "api" || key === "portal") return { label: "Customer portal", bg: "#F3E8FF", color: "#7E22CE" };
+    if (key === "arion_lead_form" || key.startsWith("arion")) return { label: "ARION lead form", bg: "#E0F2FE", color: "#075985" };
+    if (key === "zapier") return { label: "Zapier", bg: "#FEF3C7", color: "#92400E" };
+    if (key === "lead_intake") return { label: "External intake", bg: "#DBEAFE", color: "#1E40AF" };
+    if (key === "manual" || key === "admin") return { label: "Manual", bg: "#F1F5F9", color: "#5A7A8A" };
+    if (key === "lead_intake") return { label: "External", bg: "#F1F5F9", color: "#5A7A8A" };
+    return { label: key.charAt(0).toUpperCase() + key.slice(1), bg: "#F1F5F9", color: "#5A7A8A" };
+  }
+
+  // Age in hours since received. Drives staleness coloring + "average wait" KPI.
+  function ageHours(r: ServiceRequest): number {
+    if (!r.createdAt) return 0;
+    return Math.floor((Date.now() - new Date(r.createdAt).getTime()) / 3600000);
+  }
+
   const fromPortal = requests.filter((r) => r.source === "api" || r.source === "portal").length;
   const last24h = requests.filter((r) => r.createdAt && Date.now() - new Date(r.createdAt).getTime() < 86400000).length;
+  const oldestHours = requests.length
+    ? Math.max(...requests.map(ageHours))
+    : 0;
+  const avgAgeHours = requests.length
+    ? Math.round(requests.reduce((s, r) => s + ageHours(r), 0) / requests.length)
+    : 0;
+
+  // Group by source for the breakdown card. Limit to top 4 + "other" bucket.
+  const sourceBreakdown = useMemo(() => {
+    const map = new Map<string, { label: string; count: number; bg: string; color: string }>();
+    for (const r of requests) {
+      const meta = sourceLabel(r.source);
+      const key = meta.label;
+      const cur = map.get(key) || { ...meta, count: 0 };
+      cur.count++;
+      map.set(key, cur);
+    }
+    return Array.from(map.values()).sort((a, b) => b.count - a.count);
+  }, [requests]);
 
   const columns: Column<ServiceRequest>[] = [
     {
@@ -135,7 +172,24 @@ export function OliverServiceRequestsPage() {
       header: "Received",
       sortable: true,
       sortAccessor: (r) => r.createdAt ?? "",
-      render: (r) => <span style={{ fontSize: 11, color: "#5A7A8A" }}>{fmtRelative(r.createdAt)}</span>,
+      render: (r) => {
+        const h = ageHours(r);
+        const stale = h >= 48;     // ≥ 2 days → red
+        const aging = h >= 24;     // ≥ 1 day → amber
+        return (
+          <div>
+            <div style={{
+              fontSize: 11, fontWeight: stale ? 700 : 500,
+              color: stale ? "#B91C1C" : aging ? "#D97706" : "#0B1C24",
+            }}>{fmtRelative(r.createdAt)}</div>
+            {(stale || aging) && (
+              <div style={{ fontSize: 9, color: stale ? "#B91C1C" : "#D97706", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>
+                {stale ? "Needs reply" : "Aging"}
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "preferred",
@@ -145,11 +199,14 @@ export function OliverServiceRequestsPage() {
     {
       key: "source",
       header: "Source",
-      render: (r) => (
-        <span style={{ fontSize: 10, fontWeight: 500, padding: "2px 8px", borderRadius: 999, background: "#F3E8FF", color: "#7E22CE", textTransform: "uppercase" }}>
-          {r.source === "api" ? "Portal" : (r.source || "Portal")}
-        </span>
-      ),
+      render: (r) => {
+        const meta = sourceLabel(r.source);
+        return (
+          <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: meta.bg, color: meta.color }}>
+            {meta.label}
+          </span>
+        );
+      },
     },
     { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
   ];
@@ -169,7 +226,7 @@ export function OliverServiceRequestsPage() {
       <div className="stat-row">
         <div className="stat-card">
           <div className="stat-lbl">Pending</div>
-          <div className="stat-val">{requests.length}</div>
+          <div className="stat-val" style={{ color: requests.length > 0 ? "#D97706" : undefined }}>{requests.length}</div>
           <div className="stat-delta neu">awaiting review</div>
         </div>
         <div className="stat-card">
@@ -178,16 +235,56 @@ export function OliverServiceRequestsPage() {
           <div className="stat-delta neu">new requests</div>
         </div>
         <div className="stat-card">
-          <div className="stat-lbl">From portal</div>
-          <div className="stat-val">{fromPortal}</div>
-          <div className="stat-delta neu">customer-initiated</div>
+          <div className="stat-lbl">Average wait</div>
+          <div className="stat-val" style={{ color: avgAgeHours >= 48 ? "#B91C1C" : avgAgeHours >= 24 ? "#D97706" : undefined }}>
+            {avgAgeHours === 0 ? "—" : avgAgeHours < 24 ? `${avgAgeHours}h` : `${Math.round(avgAgeHours / 24)}d`}
+          </div>
+          <div className="stat-delta neu">since received</div>
         </div>
         <div className="stat-card">
-          <div className="stat-lbl">Avg response</div>
-          <div className="stat-val">—</div>
-          <div className="stat-delta neu">tracked over time</div>
+          <div className="stat-lbl">Oldest pending</div>
+          <div className="stat-val" style={{ color: oldestHours >= 48 ? "#B91C1C" : oldestHours >= 24 ? "#D97706" : undefined }}>
+            {oldestHours === 0 ? "—" : oldestHours < 24 ? `${oldestHours}h` : `${Math.round(oldestHours / 24)}d`}
+          </div>
+          <div className="stat-delta neu">don't leave them waiting</div>
         </div>
       </div>
+
+      {/* Source breakdown card — only meaningful with at least one request */}
+      {requests.length > 0 && sourceBreakdown.length > 1 && (
+        <div className="card">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">Where requests come from</div>
+              <div className="card-sub">Of your {requests.length} pending request{requests.length === 1 ? "" : "s"}</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", height: 28, borderRadius: 6, overflow: "hidden", border: "1px solid #E2E8F0" }}>
+            {sourceBreakdown.map((s) => {
+              const w = (s.count / requests.length) * 100;
+              return (
+                <div key={s.label} title={`${s.count} from ${s.label}`}
+                  style={{
+                    width: `${w}%`, background: s.color, color: "#fff",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 11, fontWeight: 700,
+                  }}>
+                  {w > 14 && s.count}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 10, fontSize: 12 }}>
+            {sourceBreakdown.map((s) => (
+              <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+                <span style={{ color: "#0B1C24", fontWeight: 500 }}>{s.label}</span>
+                <span style={{ color: "#5A7A8A", fontFamily: "monospace" }}>· {s.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {!requests.length ? (
         <EmptyState
