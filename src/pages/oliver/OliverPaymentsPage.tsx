@@ -18,6 +18,9 @@ interface PaymentRow {
   stripe_payment_intent_id?: string | null;
   stripe_charge_id?: string | null;
   stripe_refund_id?: string | null;
+  payment_brand?: string | null;
+  payment_last4?: string | null;
+  payment_method?: string | null;
   paid_at?: string | null;
   created_at: string;
   invoice_id?: string;
@@ -172,6 +175,11 @@ export function OliverPaymentsPage() {
           color: r.type === "refund" ? "#7E22CE" : "#047857",
         }}>{r.type}</span>
       ),
+    },
+    {
+      key: "method",
+      header: "Method",
+      render: (r) => <PaymentMethodCell row={r} />,
     },
     {
       key: "amount",
@@ -450,6 +458,46 @@ function PaymentDetailDrawer({
       </div>
     </DetailDrawer>
   );
+}
+
+// ─── Payment method cell ────────────────────────────────────────────────
+// Shows card brand + last4, or "Cash"/"Check"/"Wire" for manual payments.
+function PaymentMethodCell({ row }: { row: PaymentRow }) {
+  // Manual payments (payment_method set by /payments/manual)
+  if (row.payment_method && !row.payment_brand) {
+    const label: Record<string, string> = {
+      cash: "Cash", check: "Check", wire: "Wire", ach_manual: "ACH (manual)", other: "Other",
+    };
+    return (
+      <div style={{ fontSize: 12 }}>
+        <div style={{ color: "#0B1C24", fontWeight: 500 }}>{label[row.payment_method] || row.payment_method}</div>
+        <div style={{ fontSize: 10, color: "#5A7A8A" }}>Manual</div>
+      </div>
+    );
+  }
+  // Stripe-tagged payments
+  if (row.payment_brand && row.payment_last4) {
+    const brandLabel: Record<string, string> = {
+      visa: "Visa", mastercard: "Mastercard", amex: "Amex", discover: "Discover",
+      diners: "Diners", jcb: "JCB", unionpay: "UnionPay", link: "Link",
+    };
+    return (
+      <div style={{ fontSize: 12 }}>
+        <div style={{ color: "#0B1C24", fontWeight: 500 }}>
+          {brandLabel[row.payment_brand] || row.payment_brand}
+        </div>
+        <div style={{ fontSize: 10, color: "#5A7A8A", fontFamily: "monospace" }}>•••• {row.payment_last4}</div>
+      </div>
+    );
+  }
+  if (row.payment_brand) {
+    return <span style={{ fontSize: 12, color: "#0B1C24" }}>{row.payment_brand}</span>;
+  }
+  // Fallback: Stripe payment with no method details (older import)
+  if (row.stripe_payment_intent_id || row.stripe_charge_id) {
+    return <span style={{ fontSize: 12, color: "#0B1C24" }}>Stripe</span>;
+  }
+  return <span style={{ fontSize: 10, color: "#94A3B8" }}>—</span>;
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
