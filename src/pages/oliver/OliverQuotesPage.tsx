@@ -161,6 +161,16 @@ export function OliverQuotesPage() {
     return { sentValue: valueByStatus("sent"), acceptedValue: valueByStatus("accepted"), open, conversionRate: rate };
   }, [rows]);
 
+  // Quotes in 'sent' that expire within 3 days — call out before they go stale
+  const expiringSoon = useMemo(() => {
+    const cutoff = Date.now() + 3 * 86400000;
+    return rows.filter((r) =>
+      r.status === "sent" && r.validUntil &&
+      new Date(r.validUntil).getTime() <= cutoff &&
+      new Date(r.validUntil).getTime() >= Date.now()
+    ).length;
+  }, [rows]);
+
   const columns: Column<QuoteRow>[] = [
     {
       key: "job",
@@ -194,7 +204,30 @@ export function OliverQuotesPage() {
       header: "Valid until",
       sortable: true,
       sortAccessor: (r) => r.validUntil ?? "",
-      render: (r) => <span className="text-sm text-slate-600">{fmtDate(r.validUntil)}</span>,
+      render: (r) => {
+        if (!r.validUntil) return <span className="text-sm text-slate-600">—</span>;
+        const ms = new Date(r.validUntil).getTime() - Date.now();
+        const days = Math.floor(ms / 86400000);
+        const expired = ms < 0;
+        const expiring = !expired && days <= 3 && r.status === "sent";
+        return (
+          <div>
+            <div className={`text-sm ${expired ? "text-red-600 font-semibold" : expiring ? "text-amber-600 font-semibold" : "text-slate-600"}`}>
+              {fmtDate(r.validUntil)}
+            </div>
+            {expiring && !expired && (
+              <div className="text-[10px] font-semibold text-amber-600 uppercase tracking-wide mt-0.5">
+                {days === 0 ? "Expires today" : `${days}d left`}
+              </div>
+            )}
+            {expired && r.status === "sent" && (
+              <div className="text-[10px] font-semibold text-red-600 uppercase tracking-wide mt-0.5">
+                Expired
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "createdAt",
@@ -215,26 +248,88 @@ export function OliverQuotesPage() {
 
       <div className="stat-row">
         <div className="stat-card">
-          <div className="stat-lbl">Open</div>
+          <div className="stat-lbl">Open value</div>
           <div className="stat-val">{fmtMoney(kpis.sentValue)}</div>
-          <div className="stat-delta neu">{kpis.open} sent</div>
+          <div className="stat-delta neu">{kpis.open} sent · pending decision</div>
         </div>
         <div className="stat-card">
-          <div className="stat-lbl">Accepted</div>
+          <div className="stat-lbl">Accepted value</div>
           <div className="stat-val" style={{ color: "#059669" }}>{fmtMoney(kpis.acceptedValue)}</div>
           <div className="stat-delta neu">{counts["accepted"] ?? 0} accepted</div>
         </div>
         <div className="stat-card">
           <div className="stat-lbl">Conversion rate</div>
-          <div className="stat-val">{kpis.conversionRate != null ? `${kpis.conversionRate}%` : "—"}</div>
+          <div className="stat-val" style={{
+            color: kpis.conversionRate != null
+              ? kpis.conversionRate >= 60 ? "#059669"
+                : kpis.conversionRate >= 30 ? undefined
+                : "#D97706"
+              : undefined,
+          }}>{kpis.conversionRate != null ? `${kpis.conversionRate}%` : "—"}</div>
           <div className="stat-delta neu">accepted ÷ decided</div>
         </div>
         <div className="stat-card">
-          <div className="stat-lbl">Drafts</div>
-          <div className="stat-val">{counts["draft"] ?? 0}</div>
-          <div className="stat-delta neu">awaiting send</div>
+          <div className="stat-lbl">Expiring soon</div>
+          <div className="stat-val" style={{ color: expiringSoon > 0 ? "#D97706" : undefined }}>{expiringSoon}</div>
+          <div className="stat-delta neu">sent · within 3 days</div>
         </div>
       </div>
+
+      {/* Funnel — visual hierarchy of where quotes are stuck */}
+      {rows.length > 0 && (
+        <div className="card">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">Quote funnel</div>
+              <div className="card-sub">Where your quotes are in their lifecycle</div>
+            </div>
+          </div>
+          {(() => {
+            const stages = [
+              { key: "draft", label: "Drafted", color: "#94A3B8", value: counts["draft"] ?? 0 },
+              { key: "sent",  label: "Sent",    color: "#1A7DB5", value: counts["sent"] ?? 0 },
+              { key: "accepted", label: "Accepted", color: "#059669", value: counts["accepted"] ?? 0 },
+              { key: "rejected", label: "Declined", color: "#9333EA", value: (counts["rejected"] ?? 0) + (counts["expired"] ?? 0) },
+            ];
+            const max = Math.max(...stages.map((s) => s.value), 1);
+            return (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginTop: 6 }}>
+                {stages.map((s, i) => {
+                  const conversion = i > 0 && stages[i - 1].value > 0
+                    ? Math.round((s.value / stages[i - 1].value) * 100)
+                    : null;
+                  return (
+                    <div key={s.key} onClick={() => setFilter(s.key === "rejected" ? "rejected" : s.key)}
+                      style={{ cursor: "pointer" }}>
+                      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                          {s.label}
+                        </span>
+                        {conversion != null && i === 2 && (
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 99,
+                            background: conversion >= 60 ? "#D1FAE5" : conversion >= 30 ? "#FEF3C7" : "#FEE2E2",
+                            color: conversion >= 60 ? "#047857" : conversion >= 30 ? "#92400E" : "#991B1B",
+                          }}>{conversion}%</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 24, fontWeight: 700, color: s.color, fontFamily: "monospace" }}>
+                        {s.value}
+                      </div>
+                      <div style={{ marginTop: 4, height: 6, background: "#F1F5F9", borderRadius: 99 }}>
+                        <div style={{
+                          width: `${(s.value / max) * 100}%`, height: "100%",
+                          background: s.color, borderRadius: 99,
+                        }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {showCreate && (
         <QuoteCreateForm
