@@ -145,13 +145,19 @@ export function OliverNotificationsPage() {
           <div className="stat-delta neu">in selected range</div>
         </div>
         <div className="stat-card">
-          <div className="stat-lbl">Sent</div>
-          <div className="stat-val" style={{ color: "#059669" }}>{sent}</div>
-          <div className="stat-delta neu">delivered</div>
+          <div className="stat-lbl">Delivery rate</div>
+          <div className="stat-val" style={{
+            color: events.length === 0 ? undefined
+              : sent / events.length >= 0.95 ? "#059669"
+              : sent / events.length >= 0.8 ? "#D97706" : "#DC2626",
+          }}>
+            {events.length === 0 ? "—" : `${Math.round((sent / events.length) * 100)}%`}
+          </div>
+          <div className="stat-delta neu">{sent} of {events.length} delivered</div>
         </div>
         <div className="stat-card">
           <div className="stat-lbl">Queued</div>
-          <div className="stat-val" style={{ color: "#D97706" }}>{queued}</div>
+          <div className="stat-val" style={{ color: queued > 0 ? "#D97706" : undefined }}>{queued}</div>
           <div className="stat-delta neu">awaiting send</div>
         </div>
         <div className="stat-card">
@@ -160,6 +166,31 @@ export function OliverNotificationsPage() {
           <div className="stat-delta neu">delivery errors</div>
         </div>
       </div>
+
+      {/* Delivery-status stacked bar — visualizes where each batch ended up */}
+      {events.length > 0 && (
+        <div className="card">
+          <div style={{ display: "flex", height: 24, borderRadius: 6, overflow: "hidden", border: "1px solid #E2E8F0" }}>
+            {[
+              { count: sent,   color: "#059669", label: "Sent" },
+              { count: queued, color: "#D97706", label: "Queued" },
+              { count: failed, color: "#DC2626", label: "Failed" },
+            ].map((seg) => {
+              const w = (seg.count / events.length) * 100;
+              if (w === 0) return null;
+              return (
+                <div key={seg.label} title={`${seg.count} ${seg.label}`} style={{
+                  width: `${w}%`, background: seg.color, color: "#fff",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 10, fontWeight: 700,
+                }}>
+                  {w > 12 && seg.count}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {!events.length ? (
         <EmptyState

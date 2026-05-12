@@ -22,6 +22,13 @@ interface Worker {
   last_name: string;
 }
 
+// Per-status visual treatment for the job card
+const STATUS_BORDER: Record<string, string> = {
+  scheduled:  "#F59E0B",   // amber — needs attention
+  dispatched: "#1A7DB5",   // blue — offered, waiting
+  assigned:   "#059669",   // emerald — accepted, ready
+};
+
 const FILTER_PILLS = [
   { key: "", label: "All ready" },
   { key: "status:scheduled", label: "Scheduled (unassigned)" },
@@ -99,6 +106,20 @@ export function OliverDispatchPage() {
   const offered = jobs.filter((j) => j.status === "dispatched").length;
   const accepted = jobs.filter((j) => j.status === "assigned").length;
 
+  // Workload per worker today — how many jobs each worker is on so dispatcher
+  // doesn't pile on. Counts active states (scheduled/dispatched/assigned/
+  // in_progress) for the worker's id.
+  const workloadByWorker = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const j of jobs) {
+      if (!j.assignedWorkerId) continue;
+      if (["scheduled", "dispatched", "assigned", "in_progress"].includes(j.status)) {
+        map.set(j.assignedWorkerId, (map.get(j.assignedWorkerId) || 0) + 1);
+      }
+    }
+    return map;
+  }, [jobs]);
+
   return (
     <OliverPageWrapper title="Dispatch" subtitle="Assign and offer jobs to your team" error={error} loading={loading}>
       <PageHeader
@@ -146,48 +167,65 @@ export function OliverDispatchPage() {
           />
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {filtered.map((job) => (
-              <div key={job.id} className="card" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                <div style={{ flex: 1, minWidth: 200 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "#0B1C24" }}>{job.title || "(untitled)"}</div>
-                  <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>
-                    {job.customerName} · {fmtDate(job.scheduledDate)}
+            {filtered.map((job) => {
+              const borderColor = STATUS_BORDER[job.status] || "#E5E7EB";
+              return (
+                <div key={job.id} className="card" style={{
+                  display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+                  borderLeft: `4px solid ${borderColor}`,
+                }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#0B1C24" }}>{job.title || "(untitled)"}</div>
+                    <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>
+                      {job.customerName} · {fmtDate(job.scheduledDate)}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                      <StatusBadge status={job.status} />
+                      {job.assignedWorkerName && (
+                        <span style={{ fontSize: 11, color: "#5A7A8A" }}>
+                          → {job.assignedWorkerName}
+                          {job.assignedWorkerId && workloadByWorker.has(job.assignedWorkerId) && (
+                            <span style={{ marginLeft: 4, color: "#94A3B8" }}>
+                              ({workloadByWorker.get(job.assignedWorkerId)} active)
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-                    <StatusBadge status={job.status} />
-                    {job.assignedWorkerName && (
-                      <span style={{ fontSize: 11, color: "#5A7A8A" }}>
-                        → {job.assignedWorkerName}
-                      </span>
-                    )}
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <select
+                      style={{
+                        padding: "6px 10px",
+                        border: "1px solid rgba(45,156,219,0.28)",
+                        borderRadius: 6, fontSize: 12, background: "#fff",
+                        minWidth: 200,
+                      }}
+                      value={selectedWorker[job.id] ?? job.assignedWorkerId ?? ""}
+                      onChange={(e) => setSelectedWorker({ ...selectedWorker, [job.id]: e.target.value })}
+                    >
+                      <option value="">Select worker…</option>
+                      {workers.map((w) => {
+                        const load = workloadByWorker.get(w.id) || 0;
+                        return (
+                          <option key={w.id} value={w.id}>
+                            {w.first_name} {w.last_name}
+                            {load > 0 ? ` · ${load} active` : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <Button
+                      variant="primary"
+                      onClick={() => handleOffer(job.id)}
+                      disabled={!selectedWorker[job.id] || offering === job.id}
+                    >
+                      {offering === job.id ? "Sending…" : job.status === "scheduled" ? "Offer" : "Re-offer"}
+                    </Button>
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <select
-                    style={{
-                      padding: "6px 10px",
-                      border: "1px solid rgba(45,156,219,0.28)",
-                      borderRadius: 6, fontSize: 12, background: "#fff",
-                      minWidth: 160,
-                    }}
-                    value={selectedWorker[job.id] ?? job.assignedWorkerId ?? ""}
-                    onChange={(e) => setSelectedWorker({ ...selectedWorker, [job.id]: e.target.value })}
-                  >
-                    <option value="">Select worker…</option>
-                    {workers.map((w) => (
-                      <option key={w.id} value={w.id}>{w.first_name} {w.last_name}</option>
-                    ))}
-                  </select>
-                  <Button
-                    variant="primary"
-                    onClick={() => handleOffer(job.id)}
-                    disabled={!selectedWorker[job.id] || offering === job.id}
-                  >
-                    {offering === job.id ? "Sending…" : "Offer"}
-                  </Button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             {filtered.length === 0 && (
               <div className="card">
                 <div style={{ padding: "16px 0", color: "#5A7A8A", fontSize: 12, fontStyle: "italic", textAlign: "center" }}>
