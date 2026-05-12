@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button } from "../../components/oliver/ui";
@@ -9,6 +10,9 @@ interface CalendarEvent {
   date: string;
   status: string;
 }
+
+// Status keys that count toward "workload" (i.e. someone's actively on this)
+const ACTIVE_STATUSES = new Set(["scheduled", "assigned", "dispatched", "in_progress"]);
 
 const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   scheduled:    { bg: "#DBEAFE", fg: "#1E40AF" },
@@ -133,6 +137,55 @@ export function OliverSchedulePage() {
         </div>
       </div>
 
+      {/* Workload pulse — daily job count across the month, so the user sees
+          capacity issues (cluster days vs gaps) at a glance. */}
+      {events.length > 0 && (() => {
+        const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+        const counts: number[] = Array(daysInMonth).fill(0);
+        for (const ev of events) {
+          const d = new Date(ev.date).getDate();
+          if (d >= 1 && d <= daysInMonth) counts[d - 1]++;
+        }
+        const max = Math.max(...counts);
+        if (max === 0) return null;
+        const todayDay = new Date().getMonth() === currentMonth.getMonth()
+                       && new Date().getFullYear() === currentMonth.getFullYear()
+          ? new Date().getDate() : null;
+        return (
+          <div className="card">
+            <div className="card-hdr">
+              <div>
+                <div className="card-ttl">Workload pulse</div>
+                <div className="card-sub">Jobs per day across the month · taller bars = busier days</div>
+              </div>
+              <span style={{ fontSize: 11, color: "#5A7A8A" }}>peak: {max} job{max === 1 ? "" : "s"}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 56, marginTop: 6 }}>
+              {counts.map((c, i) => {
+                const isToday = todayDay === i + 1;
+                const h = max > 0 ? (c / max) * 100 : 0;
+                return (
+                  <div key={i}
+                    title={`${currentMonth.toLocaleDateString("en-US", { month: "short" })} ${i + 1}: ${c} job${c === 1 ? "" : "s"}`}
+                    style={{
+                      flex: 1,
+                      height: `${h}%`,
+                      minHeight: c > 0 ? 4 : 0,
+                      background: isToday ? "#0C4A60" : c >= max * 0.75 ? "#D97706" : c > 0 ? "#1A7DB5" : "transparent",
+                      borderRadius: "3px 3px 0 0",
+                      cursor: "default",
+                    }} />
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 9, color: "#94A3B8" }}>
+              <span>{currentMonth.toLocaleDateString("en-US", { month: "short" })} 1</span>
+              <span>{currentMonth.toLocaleDateString("en-US", { month: "short" })} {daysInMonth}</span>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{
           display: "grid", gridTemplateColumns: "repeat(7, 1fr)",
@@ -174,13 +227,16 @@ export function OliverSchedulePage() {
                       {dayEvents.slice(0, 3).map((ev) => {
                         const c = STATUS_COLORS[ev.status] || { bg: "#E5E7EB", fg: "#374151" };
                         return (
-                          <div key={ev.id} style={{
-                            background: c.bg, color: c.fg,
-                            fontSize: 10, padding: "2px 5px", borderRadius: 3,
-                            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                          }}>
+                          <Link key={ev.id} to={`/app/services/oliver_job_board?focus=${ev.id}`}
+                            style={{
+                              background: c.bg, color: c.fg,
+                              fontSize: 10, padding: "2px 5px", borderRadius: 3,
+                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                              textDecoration: "none", display: "block",
+                            }}
+                            title={`${ev.title} · ${ev.status}`}>
                             {ev.title}
-                          </div>
+                          </Link>
                         );
                       })}
                       {dayEvents.length > 3 && (
@@ -190,6 +246,40 @@ export function OliverSchedulePage() {
                   </>
                 )}
               </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Status legend — what the colors mean */}
+      <div className="card">
+        <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>
+          Status colors
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {[
+            { key: "inquiry",     label: "Inquiry" },
+            { key: "quoted",      label: "Quoted" },
+            { key: "scheduled",   label: "Scheduled" },
+            { key: "assigned",    label: "Assigned" },
+            { key: "dispatched",  label: "Dispatched" },
+            { key: "in_progress", label: "In progress" },
+            { key: "completed",   label: "Completed" },
+            { key: "invoiced",    label: "Invoiced" },
+            { key: "paid",        label: "Paid" },
+            { key: "cancelled",   label: "Cancelled" },
+          ].map((s) => {
+            const c = STATUS_COLORS[s.key] || { bg: "#E5E7EB", fg: "#374151" };
+            return (
+              <span key={s.key} style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "3px 9px", borderRadius: 99,
+                background: c.bg, color: c.fg,
+                fontSize: 11, fontWeight: 600,
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.fg }} />
+                {s.label}
+              </span>
             );
           })}
         </div>
