@@ -49,6 +49,7 @@ const OLIVER_NAV: SubNavConfig = {
       label: "Jobs",
       items: [
         { key: "oliver_job_board", label: "Job Board", route: "/app/services/oliver_job_board" },
+        { key: "oliver_projects", label: "Projects", route: "/app/services/oliver_projects" },
         { key: "oliver_schedule", label: "Schedule", route: "/app/services/oliver_schedule" },
         { key: "oliver_dispatch", label: "Dispatch", route: "/app/services/oliver_dispatch" },
       ],

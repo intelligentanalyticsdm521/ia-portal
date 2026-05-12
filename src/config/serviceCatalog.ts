@@ -111,6 +111,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_team_access', displayName: 'Team Access', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_team_access', description: 'Assign Admin or Accountant roles to OLIVER users. Accountants get a read-only Billing/Reports view.' },
   { key: 'oliver_coupons', displayName: 'Coupons', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_coupons', description: 'Discount codes & promotion codes, synced bidirectionally with Stripe.' },
   { key: 'oliver_insights', displayName: 'Insights', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_insights', description: 'Customer health, service profitability, and cash flow forecast.' },
+  { key: 'oliver_projects', displayName: 'Projects', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_projects', description: 'Group multiple jobs into a single multi-stage customer engagement.' },
   // SPARK — Full CRM + Lead Gen + Intelligence suite
   { key: 'spark_overview', displayName: 'Overview', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_overview', description: 'SPARK CRM summary: contacts, campaigns, leads pipeline, usage.' },
   { key: 'spark_contacts', displayName: 'Contacts', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_contacts', description: 'Contact management with dedup, search, import, and activity history.' },
