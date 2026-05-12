@@ -610,7 +610,143 @@ export function OliverSettingsPage() {
           every other IADM product (ARION, customer portal, etc.). Editing here updates them everywhere.
         </div>
       </div>
+
+      {/* Lead intake — public endpoint URL for ARION lead forms / Zapier / etc. */}
+      <LeadIntakePanel api={{ get, post }} />
     </OliverPageWrapper>
+  );
+}
+
+// ─── Lead Intake panel ────────────────────────────────────────────────────
+function LeadIntakePanel({ api }: { api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T> } }) {
+  const [data, setData] = useState<{ intake_key: string; post_url: string; header_name: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState<"none" | "loading" | "rotating" | "copied">("none");
+  const [err, setErr] = useState<string | null>(null);
+
+  async function load() {
+    setBusy("loading"); setErr(null); setLoading(true);
+    try {
+      const r = await api.get<{ intake_key: string; post_url: string; header_name: string }>("/settings/lead-intake");
+      setData(r);
+    } catch (e) {
+      setErr((e as Error).message || "Failed to load");
+    } finally {
+      setLoading(false); setBusy("none");
+    }
+  }
+
+  async function rotate() {
+    if (!confirm("Rotate the lead intake key? Existing form integrations will need to be updated with the new key.")) return;
+    setBusy("rotating"); setErr(null);
+    try {
+      const r = await api.post<{ intake_key: string; post_url: string; header_name: string }>("/settings/lead-intake/rotate");
+      setData(r);
+    } catch (e) {
+      setErr((e as Error).message || "Rotation failed");
+    } finally { setBusy("none"); }
+  }
+
+  async function copy(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setBusy("copied");
+      setTimeout(() => setBusy("none"), 1500);
+    } catch {
+      prompt("Copy:", value);
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="card-hdr">
+        <div>
+          <div className="card-ttl">Lead intake</div>
+          <div className="card-sub">
+            Plug ARION lead forms, Zapier, or any external system into OLIVER. Submissions create a service request automatically.
+          </div>
+        </div>
+        {!data && (
+          <Button variant="secondary" onClick={load} disabled={loading}>
+            {loading ? "Loading…" : "Show intake URL"}
+          </Button>
+        )}
+      </div>
+
+      {err && (
+        <div style={{ marginTop: 8, padding: 10, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 6 }}>
+          {err}
+        </div>
+      )}
+
+      {data && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>
+            POST URL
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input
+              type="text" readOnly value={data.post_url}
+              onClick={(e) => (e.target as HTMLInputElement).select()}
+              style={{ flex: 1, fontFamily: "monospace", fontSize: 11, padding: "6px 10px", border: "1px solid #D5E2E8", borderRadius: 6, background: "#fff", color: "#0B1C24" }}
+            />
+            <Button variant="ghost" onClick={() => copy(data.post_url)}>
+              {busy === "copied" ? "Copied!" : "Copy"}
+            </Button>
+          </div>
+
+          <div style={{ marginTop: 10, fontSize: 11, fontWeight: 600, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>
+            {data.header_name}
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input
+              type="text" readOnly value={data.intake_key}
+              onClick={(e) => (e.target as HTMLInputElement).select()}
+              style={{ flex: 1, fontFamily: "monospace", fontSize: 11, padding: "6px 10px", border: "1px solid #D5E2E8", borderRadius: 6, background: "#fff", color: "#0B1C24" }}
+            />
+            <Button variant="ghost" onClick={() => copy(data.intake_key)}>Copy</Button>
+            <Button variant="ghost" onClick={rotate} disabled={busy === "rotating"}>
+              {busy === "rotating" ? "Rotating…" : "Rotate"}
+            </Button>
+          </div>
+
+          <details style={{ marginTop: 14 }}>
+            <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 600, color: "#1A7DB5" }}>
+              Sample POST body
+            </summary>
+            <pre style={{
+              marginTop: 8, padding: 12, background: "#0B1C24", color: "#E2E8F0",
+              borderRadius: 6, fontSize: 11, fontFamily: "monospace",
+              overflow: "auto", lineHeight: 1.5,
+            }}>{`{
+  "customer": {
+    "firstName": "Jane",
+    "lastName":  "Doe",
+    "email":     "jane@example.com",
+    "phone":     "(555) 123-4567",
+    "company":   "Acme Co"
+  },
+  "address": {
+    "line1":      "123 Main St",
+    "city":       "Springfield",
+    "state":      "IL",
+    "postalCode": "62701"
+  },
+  "service": {
+    "type":           "Kitchen remodel",
+    "description":    "Looking for an estimate on a full kitchen remodel.",
+    "preferred_date": "2026-06-01"
+  },
+  "source": "arion_lead_form"
+}`}</pre>
+          </details>
+
+          <div style={{ marginTop: 10, fontSize: 11, color: "#5A7A8A", lineHeight: 1.5 }}>
+            <strong>Privacy:</strong> the intake key only allows creating service requests. Treat it like a password and rotate if it leaks.
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
