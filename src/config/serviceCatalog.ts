@@ -127,6 +127,22 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_search_profiles', displayName: 'Search Profiles', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_search_profiles', description: 'Saved lead search configurations.' },
   { key: 'spark_intelligence', displayName: 'Contact Scoring', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_intelligence', description: 'X/Y/Z contact intelligence with OLIVER cross-platform signals.' },
   { key: 'spark_usage', displayName: 'Usage & Billing', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_usage', description: 'Email, SMS, contact, and lead usage vs tier limits.' },
+  // SPARK Pro tier
+  { key: 'spark_pipelines', displayName: 'Sales Pipeline', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_pipelines', description: 'Multi-stage sales pipelines with Kanban board (Pro).' },
+  { key: 'spark_deals', displayName: 'Deals', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_deals', description: 'Opportunity tracking, value forecasting, win/loss analysis (Pro).' },
+  { key: 'spark_nps', displayName: 'NPS', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_nps', description: 'Net Promoter Score tracking, promoters/detractors, review routing (Pro).' },
+  { key: 'spark_qr_codes', displayName: 'QR Codes', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_qr_codes', description: 'Dynamic QR generator with UTM + scan analytics (Pro).' },
+  { key: 'spark_referrals', displayName: 'Referrals', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_referrals', description: 'Customer referral programs, tracking, rewards, leaderboard (Pro).' },
+  { key: 'spark_social', displayName: 'Social Scheduler', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_social', description: 'Schedule + analyze posts across FB/IG/LI/X/GBP (Pro).' },
+  { key: 'spark_newsletter', displayName: 'Newsletter Studio', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_newsletter', description: 'Newsletter editions with auto-publish to WordPress (Pro).' },
+  { key: 'spark_calendar', displayName: 'Content Calendar', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_calendar', description: 'Unified content calendar: campaigns, social, newsletters (Pro).' },
+  // SPARK Business tier
+  { key: 'spark_landing_pages', displayName: 'Landing Pages', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_landing_pages', description: 'Hosted landing page builder with submission capture (Business).' },
+  { key: 'spark_reviews', displayName: 'Reputation Hub', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_reviews', description: 'Aggregated reviews across Google/Yelp/Facebook + response workflow (Business).' },
+  { key: 'spark_accounts', displayName: 'B2B Accounts', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_accounts', description: 'Group multiple contacts under a single B2B account with health score (Business).' },
+  { key: 'spark_ai_writer', displayName: 'AI Writer', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_ai_writer', description: 'Anthropic-powered marketing copy assistant (Business).' },
+  // Cross-channel
+  { key: 'spark_insights', displayName: 'Insights', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_insights', description: 'Cross-channel SPARK insights — 7 categories with ARGUS observation boxes.' },
   {
     key: 'forge_integrations',
     displayName: 'Integrations',

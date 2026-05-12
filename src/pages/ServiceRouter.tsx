@@ -93,6 +93,22 @@ const SparkLeadsPage = lazyNamed(() => import('./spark/SparkLeadsPage'), 'SparkL
 const SparkSearchProfilesPage = lazyNamed(() => import('./spark/SparkSearchProfilesPage'), 'SparkSearchProfilesPage');
 const SparkIntelligencePage = lazyNamed(() => import('./spark/SparkIntelligencePage'), 'SparkIntelligencePage');
 const SparkUsagePage = lazyNamed(() => import('./spark/SparkUsagePage'), 'SparkUsagePage');
+// SPARK Pro
+const SparkPipelinesPage = lazyNamed(() => import('./spark/SparkPipelinesPage'), 'SparkPipelinesPage');
+const SparkDealsPage = lazyNamed(() => import('./spark/SparkDealsPage'), 'SparkDealsPage');
+const SparkNpsPage = lazyNamed(() => import('./spark/SparkNpsPage'), 'SparkNpsPage');
+const SparkQrCodesPage = lazyNamed(() => import('./spark/SparkQrCodesPage'), 'SparkQrCodesPage');
+const SparkReferralsPage = lazyNamed(() => import('./spark/SparkReferralsPage'), 'SparkReferralsPage');
+const SparkSocialPage = lazyNamed(() => import('./spark/SparkSocialPage'), 'SparkSocialPage');
+const SparkNewsletterPage = lazyNamed(() => import('./spark/SparkNewsletterPage'), 'SparkNewsletterPage');
+const SparkCalendarPage = lazyNamed(() => import('./spark/SparkCalendarPage'), 'SparkCalendarPage');
+// SPARK Business
+const SparkLandingPagesPage = lazyNamed(() => import('./spark/SparkLandingPagesPage'), 'SparkLandingPagesPage');
+const SparkReviewsPage = lazyNamed(() => import('./spark/SparkReviewsPage'), 'SparkReviewsPage');
+const SparkAccountsPage = lazyNamed(() => import('./spark/SparkAccountsPage'), 'SparkAccountsPage');
+const SparkAiWriterPage = lazyNamed(() => import('./spark/SparkAiWriterPage'), 'SparkAiWriterPage');
+// SPARK Insights
+const SparkInsightsPage = lazyNamed(() => import('./spark/SparkInsightsPage'), 'SparkInsightsPage');
 
 // OLIVER pages — lazy-loaded (introduced 2026-05-11)
 const OliverDashboardPage = lazyNamed(() => import('./oliver/OliverDashboardPage'), 'OliverDashboardPage');
@@ -278,6 +294,22 @@ export function ServiceRouter() {
       case 'spark_search_profiles': sparkPage = <SparkSearchProfilesPage />; break;
       case 'spark_intelligence': sparkPage = <SparkIntelligencePage />; break;
       case 'spark_usage': sparkPage = <SparkUsagePage />; break;
+      // SPARK Pro
+      case 'spark_pipelines': sparkPage = <SparkPipelinesPage />; break;
+      case 'spark_deals': sparkPage = <SparkDealsPage />; break;
+      case 'spark_nps': sparkPage = <SparkNpsPage />; break;
+      case 'spark_qr_codes': sparkPage = <SparkQrCodesPage />; break;
+      case 'spark_referrals': sparkPage = <SparkReferralsPage />; break;
+      case 'spark_social': sparkPage = <SparkSocialPage />; break;
+      case 'spark_newsletter': sparkPage = <SparkNewsletterPage />; break;
+      case 'spark_calendar': sparkPage = <SparkCalendarPage />; break;
+      // SPARK Business
+      case 'spark_landing_pages': sparkPage = <SparkLandingPagesPage />; break;
+      case 'spark_reviews': sparkPage = <SparkReviewsPage />; break;
+      case 'spark_accounts': sparkPage = <SparkAccountsPage />; break;
+      case 'spark_ai_writer': sparkPage = <SparkAiWriterPage />; break;
+      // Insights
+      case 'spark_insights': sparkPage = <SparkInsightsPage />; break;
       // Backward compat aliases for old lumen_* keys
       case 'lumen_overview': sparkPage = <SparkOverviewPage />; break;
       case 'lumen_contacts': sparkPage = <SparkContactsPage />; break;
