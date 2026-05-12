@@ -71,6 +71,8 @@ export function OliverPaymentsPage() {
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualFlash, setManualFlash] = useState<string | null>(null);
 
   async function exportCsv() {
     const account = accounts[0];
@@ -205,6 +207,7 @@ export function OliverPaymentsPage() {
         subtitle="Every charge and refund routed through your Stripe Connect account"
         actions={
           <>
+            <Button variant="secondary" onClick={() => setManualOpen(true)}>+ Record payment</Button>
             <Button variant="secondary" onClick={exportCsv} disabled={exporting || !rows.length}>
               {exporting ? "Exporting…" : "Export CSV"}
             </Button>
@@ -212,6 +215,25 @@ export function OliverPaymentsPage() {
           </>
         }
       />
+
+      {manualOpen && (
+        <ManualPaymentDrawer
+          onClose={() => setManualOpen(false)}
+          onRecorded={async (msg) => {
+            setManualOpen(false);
+            await reload();
+            setManualFlash(msg);
+            setTimeout(() => setManualFlash(null), 3500);
+          }}
+          api={{ get, post }}
+        />
+      )}
+
+      {manualFlash && (
+        <div style={{ padding: 10, marginBottom: 12, fontSize: 12, background: "#F0FDF4", color: "#15803D", border: "1px solid #BBF7D0", borderRadius: 6 }}>
+          {manualFlash}
+        </div>
+      )}
 
       <div className="stat-row">
         <div className="stat-card">
@@ -438,3 +460,191 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
     </div>
   );
 }
+
+// ─── Manual payment drawer ──────────────────────────────────────────────────
+// Lets the admin record an off-Stripe payment (cash/check/wire/etc.) against
+// an outstanding invoice. We fetch the list of open invoices for the picker
+// so the user doesn't have to remember invoice numbers.
+interface OpenInvoiceOption {
+  id: string;
+  invoice_number: string;
+  total: number;
+  balance_due: number;
+  customer_name?: string | null;
+}
+
+function ManualPaymentDrawer({
+  onClose, onRecorded, api,
+}: {
+  onClose: () => void;
+  onRecorded: (msg: string) => void;
+  api: {
+    get: <T>(p: string) => Promise<T>;
+    post: <T>(p: string, body?: unknown) => Promise<T>;
+  };
+}) {
+  const [invoices, setInvoices] = useState<OpenInvoiceOption[]>([]);
+  const [invoiceId, setInvoiceId] = useState<string>("");
+  const [amount, setAmount] = useState<string>("");
+  const [method, setMethod] = useState<string>("check");
+  const [paidAt, setPaidAt] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [note, setNote] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        // Reuse the existing invoice list endpoint, filter for open balances.
+        const list = await api.get<Array<{
+          invoice_id: string; invoice_number: string;
+          total: number; balance_due: number; status: string;
+          customer_name?: string;
+        }>>("/invoices?status=sent");
+        const open = (list || [])
+          .filter((i) => Number(i.balance_due) > 0)
+          .map((i) => ({
+            id: i.invoice_id, invoice_number: i.invoice_number,
+            total: Number(i.total), balance_due: Number(i.balance_due),
+            customer_name: i.customer_name,
+          }));
+        setInvoices(open);
+      } catch {
+        setInvoices([]);
+      }
+    })();
+  }, [api]);
+
+  const selected = invoices.find((i) => i.id === invoiceId);
+
+  async function submit() {
+    if (!invoiceId) { setErr("Select an invoice"); return; }
+    const amt = Number(amount);
+    if (!Number.isFinite(amt) || amt <= 0) { setErr("Enter an amount > 0"); return; }
+    setErr(null);
+    setSaving(true);
+    try {
+      const res = await api.post<{
+        amount: number; invoice_status: string; invoice_balance: number;
+      }>("/payments/manual", {
+        invoice_id: invoiceId,
+        amount: amt,
+        method,
+        paid_at: paidAt ? new Date(paidAt + "T12:00:00").toISOString() : undefined,
+        note: note.trim() || undefined,
+      });
+      onRecorded(
+        res.invoice_status === "paid"
+          ? `Recorded ${fmtMoney(res.amount)} via ${method}. Invoice marked paid.`
+          : `Recorded ${fmtMoney(res.amount)} via ${method}. Balance remaining: ${fmtMoney(res.invoice_balance)}.`,
+      );
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(11,28,36,0.4)", zIndex: 1000, display: "flex", justifyContent: "flex-end" }}>
+      <div style={{ width: 480, height: "100%", background: "#fff", overflowY: "auto", boxShadow: "-4px 0 24px rgba(0,0,0,0.1)" }}>
+        <div style={{ padding: 20, borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#1A3A4A" }}>Record payment</h2>
+          <button onClick={onClose} style={{ background: "transparent", border: 0, fontSize: 22, color: "#5A7A8A", cursor: "pointer" }}>×</button>
+        </div>
+
+        <div style={{ padding: 20, display: "grid", gap: 14 }}>
+          <div style={{ fontSize: 12, color: "#5A7A8A", lineHeight: 1.5, padding: 10, background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 6 }}>
+            Records a payment that didn't go through Stripe (cash, check, wire, etc.). The invoice's balance and status are updated automatically.
+          </div>
+
+          <label style={{ display: "block" }}>
+            <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Invoice</span>
+            <select style={inputStyleM} value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)}>
+              <option value="">Pick an open invoice…</option>
+              {invoices.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.invoice_number} — {i.customer_name || "(no customer)"} · {fmtMoney(i.balance_due)} due
+                </option>
+              ))}
+            </select>
+            {!invoices.length && (
+              <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 6 }}>
+                No invoices with an outstanding balance.
+              </div>
+            )}
+          </label>
+
+          {selected && (
+            <div style={{ padding: 10, background: "#F0F9FF", border: "1px solid #BAE6FD", borderRadius: 8, fontSize: 12 }}>
+              <div style={{ color: "#0B1C24" }}>{selected.invoice_number} — {selected.customer_name || "(no customer)"}</div>
+              <div style={{ color: "#5A7A8A", marginTop: 4 }}>
+                Total {fmtMoney(selected.total)} · Balance due <strong style={{ color: "#B91C1C" }}>{fmtMoney(selected.balance_due)}</strong>
+              </div>
+            </div>
+          )}
+
+          <label style={{ display: "block" }}>
+            <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Amount (USD)</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ color: "#5A7A8A" }}>$</span>
+              <input type="number" min="0.01" step="0.01"
+                placeholder={selected ? selected.balance_due.toFixed(2) : "0.00"}
+                style={{ ...inputStyleM, flex: 1 }}
+                value={amount} onChange={(e) => setAmount(e.target.value)} />
+              {selected && (
+                <button type="button" onClick={() => setAmount(selected.balance_due.toFixed(2))}
+                  style={{ padding: "5px 10px", fontSize: 11, fontWeight: 600, borderRadius: 6, border: "1px solid #1A7DB5", background: "#fff", color: "#1A7DB5", cursor: "pointer" }}>
+                  Pay in full
+                </button>
+              )}
+            </div>
+          </label>
+
+          <label style={{ display: "block" }}>
+            <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Method</span>
+            <select style={inputStyleM} value={method} onChange={(e) => setMethod(e.target.value)}>
+              <option value="check">Check</option>
+              <option value="cash">Cash</option>
+              <option value="wire">Wire transfer</option>
+              <option value="ach_manual">ACH (manual)</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+
+          <label style={{ display: "block" }}>
+            <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Date received</span>
+            <input type="date" style={inputStyleM}
+              value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
+          </label>
+
+          <label style={{ display: "block" }}>
+            <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Note (optional)</span>
+            <textarea rows={2} style={{ ...inputStyleM, resize: "vertical" }}
+              placeholder="Check #1234, deposited 5/12"
+              value={note} onChange={(e) => setNote(e.target.value)} />
+          </label>
+
+          {err && (
+            <div style={{ padding: 10, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 6 }}>
+              {err}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+            <Button variant="primary" onClick={submit} disabled={saving || !invoiceId || !amount}>
+              {saving ? "Recording…" : "Record payment"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const inputStyleM: React.CSSProperties = {
+  width: "100%", padding: "7px 10px", fontSize: 12,
+  border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6,
+  background: "#fff", color: "#0B1C24",
+};

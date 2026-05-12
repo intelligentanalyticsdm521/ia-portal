@@ -656,6 +656,37 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps
               <div className="text-right tabular-nums">{fmtMoney(inv.tax_amount)}</div>
             </>
           )}
+          {Number((inv as InvoiceDetail & { discount_amount?: number }).discount_amount || 0) > 0 && (
+            <>
+              <div className="text-emerald-700">
+                Discount
+                {(inv as InvoiceDetail & { discount_code?: string }).discount_code && (
+                  <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, padding: "1px 6px", borderRadius: 99, background: "#D1FAE5", color: "#047857", fontFamily: "monospace" }}>
+                    {(inv as InvoiceDetail & { discount_code?: string }).discount_code}
+                  </span>
+                )}
+              </div>
+              <div className="text-right tabular-nums text-emerald-700">
+                −{fmtMoney((inv as InvoiceDetail & { discount_amount?: number }).discount_amount || 0)}
+                {inv.status === "draft" && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await api.post(`/coupons/remove`, { invoice_id: inv.invoice_id });
+                        await reload();
+                        onChanged();
+                      } catch (e) {
+                        setErr(`Remove coupon failed: ${(e as Error).message}`);
+                      }
+                    }}
+                    style={{ marginLeft: 8, fontSize: 10, color: "#9333EA", background: "transparent", border: 0, textDecoration: "underline", cursor: "pointer" }}
+                  >
+                    remove
+                  </button>
+                )}
+              </div>
+            </>
+          )}
           <div className="text-slate-700 font-semibold">Total</div>
           <div className="text-right tabular-nums font-semibold text-oliver-teal">{fmtMoney(inv.total)}</div>
           {Number(inv.amount_paid) > 0 && (
@@ -677,6 +708,17 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps
             </>
           )}
         </div>
+
+        {/* Apply coupon affordance — draft only, hidden if a coupon already applied */}
+        {inv.status === "draft" && !Number((inv as InvoiceDetail & { discount_amount?: number }).discount_amount || 0) && (
+          <ApplyCouponInline
+            onApply={async (code) => {
+              await api.post(`/coupons/apply`, { code, invoice_id: inv.invoice_id });
+              await reload();
+              onChanged();
+            }}
+          />
+        )}
       </div>
 
       {/* Line items — editable when draft */}
@@ -832,3 +874,63 @@ const editInputStyle: React.CSSProperties = {
   border: "1px solid rgba(45,156,219,0.18)", borderRadius: 4,
   background: "#fff",
 };
+
+// ─── Apply Coupon inline ─────────────────────────────────────────────────────
+// Compact form embedded in the invoice summary block. Lets an admin type a
+// code, hit Apply, and see the discount appear immediately on the totals.
+function ApplyCouponInline({ onApply }: { onApply: (code: string) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (!open) {
+    return (
+      <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #CBD5E1", textAlign: "right" }}>
+        <button
+          onClick={() => setOpen(true)}
+          style={{ fontSize: 11, fontWeight: 600, color: "#1A7DB5", background: "transparent", border: 0, cursor: "pointer", padding: 0 }}
+        >
+          + Apply coupon
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #CBD5E1" }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          type="text"
+          placeholder="Enter coupon code"
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          autoFocus
+          style={{ flex: 1, padding: "6px 10px", fontSize: 12, border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6, background: "#fff", textTransform: "uppercase", letterSpacing: 0.5, fontFamily: "monospace" }}
+        />
+        <Button
+          variant="primary"
+          onClick={async () => {
+            if (!code.trim()) return;
+            setBusy(true); setErr(null);
+            try {
+              await onApply(code.trim());
+              setOpen(false); setCode("");
+            } catch (e) {
+              setErr((e as Error).message || "Failed to apply");
+            } finally {
+              setBusy(false);
+            }
+          }}
+          disabled={busy || !code.trim()}
+        >
+          {busy ? "Applying…" : "Apply"}
+        </Button>
+        <Button variant="ghost" onClick={() => { setOpen(false); setCode(""); setErr(null); }}>Cancel</Button>
+      </div>
+      {err && (
+        <div style={{ marginTop: 6, fontSize: 11, color: "#B91C1C" }}>{err}</div>
+      )}
+    </div>
+  );
+}
