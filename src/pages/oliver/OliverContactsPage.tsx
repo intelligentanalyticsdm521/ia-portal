@@ -385,6 +385,34 @@ function ContactDetailModal({ contactId, onClose, api }: { contactId: string; on
   const snap = detail.financial_snapshot;
   const addrs = detail.addresses ?? [];
 
+  // Derive a customer-health pill from the financial snapshot so admins see
+  // at a glance whether this is a top spender, at-risk, or a slow payer.
+  const healthPill = (() => {
+    if (!snap) return null;
+    const outstanding = Number(snap.outstanding_balance || 0);
+    const totalPaid = Number(snap.total_paid || 0);
+    const lastPaid = snap.last_payment_date ? new Date(snap.last_payment_date).getTime() : null;
+    const daysSincePaid = lastPaid ? Math.floor((Date.now() - lastPaid) / 86400000) : null;
+
+    // Priority: overdue/slow-pay > at-risk (quiet) > top-spender > new
+    if ((detail.overdue_balance ?? 0) > 0) {
+      return { label: "Slow payer", bg: "#FEE2E2", color: "#991B1B", icon: "⏰" };
+    }
+    if (totalPaid > 0 && daysSincePaid != null && daysSincePaid > 60 && daysSincePaid <= 365) {
+      return { label: "At risk · went quiet", bg: "#FEF3C7", color: "#92400E", icon: "📉" };
+    }
+    if (totalPaid >= 5000) {
+      return { label: "Top spender", bg: "#D1FAE5", color: "#047857", icon: "🏆" };
+    }
+    if (totalPaid === 0 && outstanding === 0 && snap.total_jobs === 0) {
+      return { label: "New customer", bg: "#F1F5F9", color: "#5A7A8A", icon: "✨" };
+    }
+    if (outstanding > 0) {
+      return { label: "Active · has balance", bg: "#DBEAFE", color: "#1E40AF", icon: "•" };
+    }
+    return { label: "Active · paid up", bg: "#D1FAE5", color: "#047857", icon: "✓" };
+  })();
+
   return (
     <DetailDrawer
       open onClose={onClose}
@@ -392,7 +420,18 @@ function ContactDetailModal({ contactId, onClose, api }: { contactId: string; on
       subtitle={[detail.email, detail.phone].filter(Boolean).join(" · ")}
       width="xl"
       headerActions={
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {healthPill && (
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "4px 10px", borderRadius: 99,
+              background: healthPill.bg, color: healthPill.color,
+              fontSize: 11, fontWeight: 700,
+            }}>
+              <span style={{ fontSize: 13 }}>{healthPill.icon}</span>
+              {healthPill.label}
+            </span>
+          )}
           <Button variant="secondary" onClick={() => navigate(`/app/services/oliver_quotes?for_customer=${contactId}`)}>
             + Quote
           </Button>
