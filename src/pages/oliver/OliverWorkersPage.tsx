@@ -257,6 +257,12 @@ function WorkerDrawer({ workerId, onClose, onSaved, api }: { workerId: string | 
         </div>
       </section>
 
+      {!isNew && (
+        <section className="mt-6 space-y-3 pt-4 border-t border-gray-200">
+          <CalendarSyncPanel workerId={worker.id} api={api} />
+        </section>
+      )}
+
       <section className="mt-6 space-y-3 pt-4 border-t border-gray-200">
         <div>
           <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal">Weekly availability</h3>
@@ -310,5 +316,121 @@ function Field({ label, required, children }: { label: string; required?: boolea
       <span className="text-slate-700 font-medium">{label}{required && <span className="text-red-500 ml-1">*</span>}</span>
       <div className="mt-1">{children}</div>
     </label>
+  );
+}
+
+// ─── Calendar Sync panel ─────────────────────────────────────────────────────
+// Renders inside the worker drawer. Lazy-fetches the worker's ICS feed URL
+// (creating the token if it doesn't exist), shows the copy-paste URL + a
+// one-click webcal:// subscribe button, plus a "rotate token" path.
+function CalendarSyncPanel({ workerId, api }: {
+  workerId: string;
+  api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T> };
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [webcalUrl, setWebcalUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState<"none" | "loading" | "rotating" | "copied">("none");
+  const [err, setErr] = useState<string | null>(null);
+
+  async function loadUrl() {
+    setBusy("loading"); setErr(null); setLoading(true);
+    try {
+      const data = await api.get<{ url: string; webcal_url: string }>(`/workers/${workerId}/cal-sync`);
+      setUrl(data.url);
+      setWebcalUrl(data.webcal_url);
+    } catch (e) {
+      setErr((e as Error).message || "Failed to load calendar sync");
+    } finally {
+      setLoading(false);
+      setBusy("none");
+    }
+  }
+
+  async function rotate() {
+    if (!confirm("Rotate the calendar feed token? Existing subscriptions will stop working and the worker will need to re-subscribe.")) return;
+    setBusy("rotating"); setErr(null);
+    try {
+      const data = await api.post<{ url: string; webcal_url: string }>(`/workers/${workerId}/cal-sync/rotate`);
+      setUrl(data.url);
+      setWebcalUrl(data.webcal_url);
+    } catch (e) {
+      setErr((e as Error).message || "Rotation failed");
+    } finally {
+      setBusy("none");
+    }
+  }
+
+  async function copy() {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setBusy("copied");
+      setTimeout(() => setBusy("none"), 1500);
+    } catch {
+      // Fallback: select-all the input via prompt
+      prompt("Copy this URL:", url);
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal" style={{ margin: 0 }}>Calendar sync</h3>
+          <p className="text-xs text-slate-500" style={{ marginTop: 4 }}>
+            Subscribe to assigned jobs in Google Calendar, Outlook, or Apple Calendar. Updates within ~15 minutes of OLIVER changes.
+          </p>
+        </div>
+        {!url && (
+          <Button variant="secondary" onClick={loadUrl} disabled={loading}>
+            {loading ? "Loading…" : "Show subscribe URL"}
+          </Button>
+        )}
+      </div>
+
+      {err && (
+        <div style={{ marginTop: 8, padding: 10, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 6 }}>
+          {err}
+        </div>
+      )}
+
+      {url && (
+        <div style={{ marginTop: 10, padding: 12, background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>
+            Subscribe URL
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              type="text" readOnly value={url}
+              onClick={(e) => (e.target as HTMLInputElement).select()}
+              style={{ flex: 1, fontFamily: "monospace", fontSize: 11, padding: "6px 10px", border: "1px solid #D5E2E8", borderRadius: 6, background: "#fff", color: "#0B1C24" }}
+            />
+            <Button variant="ghost" onClick={copy}>
+              {busy === "copied" ? "Copied!" : "Copy"}
+            </Button>
+          </div>
+          {webcalUrl && (
+            <div style={{ marginTop: 8, display: "flex", gap: 6, fontSize: 11 }}>
+              <a href={webcalUrl}
+                style={{ padding: "5px 12px", borderRadius: 6, background: "#1A7DB5", color: "#fff", textDecoration: "none", fontWeight: 600 }}>
+                One-click subscribe
+              </a>
+              <a href={`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(url)}`} target="_blank" rel="noopener noreferrer"
+                style={{ padding: "5px 12px", borderRadius: 6, background: "#fff", color: "#1A7DB5", border: "1px solid #1A7DB5", textDecoration: "none", fontWeight: 600 }}>
+                Add to Google Calendar
+              </a>
+              <button onClick={rotate} disabled={busy === "rotating"}
+                style={{ marginLeft: "auto", padding: "5px 12px", borderRadius: 6, background: "transparent", color: "#9333EA", border: 0, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                {busy === "rotating" ? "Rotating…" : "Rotate token"}
+              </button>
+            </div>
+          )}
+          <div style={{ marginTop: 10, fontSize: 11, color: "#5A7A8A", lineHeight: 1.5 }}>
+            <strong>Privacy:</strong> anyone with this URL sees this worker's schedule. Treat it like a password and rotate if compromised.
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
