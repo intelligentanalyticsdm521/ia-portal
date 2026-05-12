@@ -91,6 +91,7 @@ const OLIVER_NAV: SubNavConfig = {
     {
       label: "Insights",
       items: [
+        { key: "oliver_insights", label: "Insights", route: "/app/services/oliver_insights" },
         { key: "oliver_reports", label: "Reports", route: "/app/services/oliver_reports" },
         { key: "oliver_activity_log", label: "Activity Log", route: "/app/services/oliver_activity_log" },
       ],
