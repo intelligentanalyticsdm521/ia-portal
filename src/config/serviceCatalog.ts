@@ -113,6 +113,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_insights', displayName: 'Insights', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_insights', description: 'Customer health, service profitability, and cash flow forecast.' },
   { key: 'oliver_projects', displayName: 'Projects', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_projects', description: 'Group multiple jobs into a single multi-stage customer engagement.' },
   { key: 'oliver_disputes', displayName: 'Disputes', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_disputes', description: 'Stripe chargebacks pulled in with deep-links to respond on Stripe.' },
+  { key: 'oliver_proposals', displayName: 'Proposals', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_proposals', description: 'Branded proposals with tracked send + click-to-accept. Accepted proposals auto-create OLIVER quotes.' },
   // SPARK — Full CRM + Lead Gen + Intelligence suite
   { key: 'spark_overview', displayName: 'Overview', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_overview', description: 'SPARK CRM summary: contacts, campaigns, leads pipeline, usage.' },
   { key: 'spark_contacts', displayName: 'Contacts', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_contacts', description: 'Contact management with dedup, search, import, and activity history.' },
