@@ -10,6 +10,19 @@ interface TenantSettings {
   phone?: string;
   website?: string;
   address?: string;
+  // Shared with your business profile — also surfaced in ARION + customer portal
+  logoUrl?: string | null;
+  brandColor?: string | null;
+  billingEmail?: string | null;
+  supportEmail?: string | null;
+  // Per-field flag: true means the value came from the shared platform-level
+  // business profile (core.tenants), not an OLIVER-specific override.
+  inherited?: {
+    email?: boolean;
+    phone?: boolean;
+    website?: boolean;
+    address?: boolean;
+  };
 }
 
 interface StripeStatus {
@@ -263,13 +276,45 @@ export function OliverSettingsPage() {
     }
   }
 
-  const businessRows: [string, string][] = [
-    ["Business Name", settings?.tenantFullName || settings?.tenantName || "—"],
-    ["Email", settings?.email || "—"],
-    ["Phone", settings?.phone || "—"],
-    ["Website", settings?.website || "—"],
-    ["Address", settings?.address || "—"],
-  ];
+  // Business profile editable form state. Keep tracking inheritance hint so
+  // we can show "Shared" pills next to fields that mirror the platform-level
+  // profile (which ARION + customer portal also read).
+  const [bizDraft, setBizDraft] = useState<TenantSettings | null>(null);
+  const [bizSaving, setBizSaving] = useState(false);
+  const [bizMessage, setBizMessage] = useState<string | null>(null);
+  useEffect(() => { setBizDraft(settings); }, [settings]);
+
+  async function saveBusiness() {
+    if (!bizDraft) return;
+    setBizSaving(true);
+    setBizMessage(null);
+    try {
+      // Only send changed fields (vs current `settings`) so we don't blow
+      // away an inherited value by writing back an empty string.
+      const payload: Record<string, unknown> = {};
+      const k: (keyof TenantSettings)[] = [
+        "tenantFullName", "email", "phone", "website", "address",
+        "logoUrl", "brandColor", "billingEmail", "supportEmail",
+      ];
+      for (const f of k) {
+        if (bizDraft[f] !== settings?.[f]) payload[f] = bizDraft[f] ?? "";
+      }
+      if (Object.keys(payload).length === 0) {
+        setBizMessage("No changes to save.");
+        setTimeout(() => setBizMessage(null), 2500);
+        return;
+      }
+      const updated = await patch<TenantSettings>("/settings", payload);
+      setSettings(updated);
+      setBizDraft(updated);
+      setBizMessage("Saved.");
+      setTimeout(() => setBizMessage(null), 2500);
+    } catch (err) {
+      setBizMessage(`Save failed: ${(err as Error).message}`);
+    } finally {
+      setBizSaving(false);
+    }
+  }
 
   return (
     <OliverPageWrapper title="Business Setup" subtitle="Tenant configuration" error={error} loading={loading}>
@@ -446,21 +491,161 @@ export function OliverSettingsPage() {
         <div className="card-hdr">
           <div>
             <div className="card-ttl">Business profile</div>
-            <div className="card-sub">Contact info shown on invoices, quotes, and the customer portal</div>
+            <div className="card-sub">
+              Shared across OLIVER, ARION, and your customer portal. Set it once here.
+            </div>
           </div>
+          <Button variant="primary" onClick={saveBusiness} disabled={bizSaving || !bizDraft}>
+            {bizSaving ? "Saving…" : "Save business profile"}
+          </Button>
         </div>
-        <table className="tbl" style={{ marginTop: 0 }}>
-          <tbody>
-            {businessRows.map(([k, v]) => (
-              <tr key={k}>
-                <td style={{ width: 180, fontWeight: 500, color: "#5A7A8A" }}>{k}</td>
-                <td style={{ color: "#0B1C24" }}>{v}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+
+        {bizMessage && (
+          <div style={{
+            margin: "0 0 10px", padding: "8px 12px", fontSize: 12,
+            background: bizMessage.startsWith("Save failed") ? "#FEF2F2" : "#F0FDF4",
+            color: bizMessage.startsWith("Save failed") ? "#991B1B" : "#15803D",
+            border: `1px solid ${bizMessage.startsWith("Save failed") ? "#FECACA" : "#BBF7D0"}`,
+            borderRadius: 6,
+          }}>
+            {bizMessage}
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 16px", marginTop: 8 }}>
+          <Field label="Business name">
+            <input
+              type="text"
+              style={inputStyle}
+              placeholder="Your business legal/customer-facing name"
+              value={bizDraft?.tenantFullName || ""}
+              onChange={(e) => setBizDraft({ ...bizDraft, tenantFullName: e.target.value })}
+            />
+          </Field>
+          <Field label="Website">
+            <SharedInput
+              type="text"
+              placeholder="https://yourbusiness.com"
+              value={bizDraft?.website || ""}
+              inherited={!!settings?.inherited?.website}
+              onChange={(v) => setBizDraft({ ...bizDraft, website: v })}
+            />
+          </Field>
+          <Field label="Primary contact email">
+            <SharedInput
+              type="email"
+              placeholder="hello@yourbusiness.com"
+              value={bizDraft?.email || ""}
+              inherited={!!settings?.inherited?.email}
+              onChange={(v) => setBizDraft({ ...bizDraft, email: v })}
+            />
+          </Field>
+          <Field label="Primary phone">
+            <SharedInput
+              type="tel"
+              placeholder="(555) 123-4567"
+              value={bizDraft?.phone || ""}
+              inherited={!!settings?.inherited?.phone}
+              onChange={(v) => setBizDraft({ ...bizDraft, phone: v })}
+            />
+          </Field>
+          <Field label="Billing email">
+            <input
+              type="email"
+              style={inputStyle}
+              placeholder="Leave blank to use primary contact email"
+              value={bizDraft?.billingEmail || ""}
+              onChange={(e) => setBizDraft({ ...bizDraft, billingEmail: e.target.value })}
+            />
+          </Field>
+          <Field label="Support email">
+            <input
+              type="email"
+              style={inputStyle}
+              placeholder="Leave blank to use primary contact email"
+              value={bizDraft?.supportEmail || ""}
+              onChange={(e) => setBizDraft({ ...bizDraft, supportEmail: e.target.value })}
+            />
+          </Field>
+          <Field label="Logo URL">
+            <input
+              type="text"
+              style={inputStyle}
+              placeholder="https://… (PNG/SVG used on invoices + customer portal)"
+              value={bizDraft?.logoUrl || ""}
+              onChange={(e) => setBizDraft({ ...bizDraft, logoUrl: e.target.value })}
+            />
+          </Field>
+          <Field label="Brand accent color">
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="color"
+                style={{ width: 36, height: 30, padding: 0, border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6, background: "#fff" }}
+                value={bizDraft?.brandColor || "#1A3A4A"}
+                onChange={(e) => setBizDraft({ ...bizDraft, brandColor: e.target.value })}
+              />
+              <input
+                type="text"
+                style={{ ...inputStyle, flex: 1 }}
+                placeholder="#1A3A4A"
+                value={bizDraft?.brandColor || ""}
+                onChange={(e) => setBizDraft({ ...bizDraft, brandColor: e.target.value })}
+              />
+            </div>
+          </Field>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <Field label="Address">
+            <textarea
+              rows={2}
+              style={{ ...inputStyle, resize: "vertical" }}
+              placeholder="123 Main St, Springfield IL 62701"
+              value={bizDraft?.address || ""}
+              onChange={(e) => setBizDraft({ ...bizDraft, address: e.target.value })}
+            />
+          </Field>
+        </div>
+        <div style={{ marginTop: 10, fontSize: 11, color: "#5A7A8A", lineHeight: 1.5 }}>
+          Fields marked <SharedPill /> are inherited from your platform-wide business profile and shared with
+          every other IADM product (ARION, customer portal, etc.). Editing here updates them everywhere.
+        </div>
       </div>
     </OliverPageWrapper>
+  );
+}
+
+function SharedPill() {
+  return (
+    <span style={{
+      display: "inline-block", fontSize: 9, fontWeight: 600,
+      padding: "1px 6px", borderRadius: 999,
+      background: "#E0F2FE", color: "#075985",
+      verticalAlign: "middle",
+    }}>SHARED</span>
+  );
+}
+
+function SharedInput({
+  type, value, onChange, placeholder, inherited,
+}: {
+  type: string; value: string; onChange: (v: string) => void;
+  placeholder?: string; inherited: boolean;
+}) {
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        type={type}
+        style={inputStyle}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {inherited && (
+        <div style={{ position: "absolute", right: 8, top: 8 }}>
+          <SharedPill />
+        </div>
+      )}
+    </div>
   );
 }
 

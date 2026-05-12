@@ -97,6 +97,7 @@ export interface ProfileResponse {
     businessName: string | null;
     businessType: string | null;
     jobTitle: string | null;
+    primaryContactEmail: string | null;
     primaryContactPhone: string | null;
 
     addressLine1: string | null;
@@ -105,6 +106,15 @@ export interface ProfileResponse {
     stateProvince: string | null;
     postalCode: string | null;
     countryRegion: string | null;
+
+    // Cross-product brandable fields. OLIVER invoices, customer portal,
+    // ARION reports — every customer-facing surface reads these so a tenant
+    // configures their brand once and it flows everywhere.
+    logoUrl: string | null;
+    brandColor: string | null;
+    billingEmail: string | null;
+    supportEmail: string | null;
+    websiteUrl: string | null;
   };
 }
 
@@ -117,6 +127,7 @@ export interface UpdateProfileRequest {
     businessName?: string | null;
     businessType?: string | null;
     jobTitle?: string | null;
+    primaryContactEmail?: string | null;
     primaryContactPhone?: string | null;
 
     addressLine1?: string | null;
@@ -125,6 +136,12 @@ export interface UpdateProfileRequest {
     stateProvince?: string | null;
     postalCode?: string | null;
     countryRegion?: string | null;
+
+    logoUrl?: string | null;
+    brandColor?: string | null;
+    billingEmail?: string | null;
+    supportEmail?: string | null;
+    websiteUrl?: string | null;
   };
 }
 
