@@ -118,6 +118,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_territories', displayName: 'Territories', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_territories', description: 'Service area rules + primary/backup workers (Business).' },
   { key: 'oliver_sla_policies', displayName: 'SLA Policies', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_sla_policies', description: 'Service-level commitments + breach reporting (Business).' },
   { key: 'oliver_job_costing', displayName: 'Job Costing', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_job_costing', description: 'Per-job revenue vs cost margin analysis. Sync from time entries + expenses (Business).' },
+  { key: 'oliver_argus', displayName: 'ARGUS Insights', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_argus', description: 'AI-generated weekly business insights — margin alerts, ticket triage, cash flow flags (Business).' },
   { key: 'oliver_reminders', displayName: 'Reminders', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_reminders', description: 'Overdue invoice tracker. See which automated reminders have fired and send manual nudges.' },
   { key: 'oliver_onboarding', displayName: 'Get Started', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_onboarding', description: 'Guided 5-step setup wizard for new tenants.' },
   { key: 'oliver_settings', displayName: 'Business Setup', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_settings', description: 'Business profile, Stripe Connect, and invoice template.' },
@@ -174,6 +175,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_scheduled_reports', displayName: 'Scheduled Reports', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_scheduled_reports', description: 'Save report configurations and have them emailed on a daily/weekly/monthly cadence (Business).' },
   { key: 'spark_audience_sync', displayName: 'Audience Sync', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_audience_sync', description: 'Export hashed audiences for Google Ads Customer Match + Meta Custom Audiences (Business).' },
   { key: 'spark_journey_builder', displayName: 'Journey Builder', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_journey_builder', description: 'Visual graph editor for branching automation journeys with yes/no edge wiring.' },
+  { key: 'spark_tracking', displayName: 'Visitor Tracking', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_tracking', description: 'One-line tracking snippet for your website: visitor identification, pageview attribution, page-visit scoring triggers (Business).' },
   {
     key: 'forge_integrations',
     displayName: 'Integrations',

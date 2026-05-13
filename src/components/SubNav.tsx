@@ -112,6 +112,7 @@ const OLIVER_NAV: SubNavConfig = {
       label: "Insights", icon: BarChart2, collapsible: true, sectionId: "oliver_insights",
       items: [
         { key: "oliver_insights", label: "Insights", route: "/app/services/oliver_insights" },
+        { key: "oliver_argus", label: "ARGUS AI Insights", route: "/app/services/oliver_argus" },
         { key: "oliver_reports", label: "Reports", route: "/app/services/oliver_reports" },
         { key: "oliver_activity_log", label: "Activity Log", route: "/app/services/oliver_activity_log" },
       ],
@@ -276,6 +277,7 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_routing_rules", label: "Routing Rules", route: "/app/services/spark_routing_rules" },
         { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution" },
         { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync" },
+        { key: "spark_tracking", label: "Visitor Tracking", route: "/app/services/spark_tracking" },
       ],
     },
     {

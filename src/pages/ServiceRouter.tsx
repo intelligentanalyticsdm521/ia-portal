@@ -127,6 +127,7 @@ const SparkStellaPage = lazyNamed(() => import('./spark/SparkStellaPage'), 'Spar
 const SparkScheduledReportsPage = lazyNamed(() => import('./spark/SparkScheduledReportsPage'), 'SparkScheduledReportsPage');
 const SparkAudienceSyncPage = lazyNamed(() => import('./spark/SparkAudienceSyncPage'), 'SparkAudienceSyncPage');
 const SparkJourneyBuilderPage = lazyNamed(() => import('./spark/SparkJourneyBuilderPage'), 'SparkJourneyBuilderPage');
+const SparkTrackingPage = lazyNamed(() => import('./spark/SparkTrackingPage'), 'SparkTrackingPage');
 
 // OLIVER pages — lazy-loaded (introduced 2026-05-11)
 const OliverDashboardPage = lazyNamed(() => import('./oliver/OliverDashboardPage'), 'OliverDashboardPage');
@@ -168,6 +169,7 @@ const OliverQuoteOptionsPage = lazyNamed(() => import('./oliver/OliverQuoteOptio
 const OliverTerritoriesPage = lazyNamed(() => import('./oliver/OliverTerritoriesPage'), 'OliverTerritoriesPage');
 const OliverSlaPoliciesPage = lazyNamed(() => import('./oliver/OliverSlaPoliciesPage'), 'OliverSlaPoliciesPage');
 const OliverJobCostingPage = lazyNamed(() => import('./oliver/OliverJobCostingPage'), 'OliverJobCostingPage');
+const OliverArgusPage = lazyNamed(() => import('./oliver/OliverArgusPage'), 'OliverArgusPage');
 const ArionUsagePage = lazyNamed(() => import('./arion/ArionUsagePage'), 'ArionUsagePage');
 
 // CONSULTING — lazy-loaded
@@ -317,6 +319,7 @@ export function ServiceRouter() {
       case 'oliver_territories': oliverPage = <OliverTerritoriesPage />; break;
       case 'oliver_sla_policies': oliverPage = <OliverSlaPoliciesPage />; break;
       case 'oliver_job_costing': oliverPage = <OliverJobCostingPage />; break;
+      case 'oliver_argus': oliverPage = <OliverArgusPage />; break;
     }
     if (oliverPage) {
       return <Suspense fallback={<RouteLoading />}>{oliverPage}</Suspense>;
@@ -372,6 +375,7 @@ export function ServiceRouter() {
       case 'spark_scheduled_reports': sparkPage = <SparkScheduledReportsPage />; break;
       case 'spark_audience_sync': sparkPage = <SparkAudienceSyncPage />; break;
       case 'spark_journey_builder': sparkPage = <SparkJourneyBuilderPage />; break;
+      case 'spark_tracking': sparkPage = <SparkTrackingPage />; break;
       // Backward compat aliases for old lumen_* keys
       case 'lumen_overview': sparkPage = <SparkOverviewPage />; break;
       case 'lumen_contacts': sparkPage = <SparkContactsPage />; break;
