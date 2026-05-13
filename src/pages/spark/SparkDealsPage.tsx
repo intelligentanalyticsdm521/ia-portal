@@ -1,6 +1,9 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
+import { SparkDrawer } from "../../components/spark/SparkDrawer";
+import { Plus, Trophy, XCircle, DollarSign, Briefcase, ArrowRight } from "lucide-react";
 
 interface Pipeline { id: number; name: string; is_default: boolean; }
 interface Stage { id: number; name: string; sort_order: number; is_won: boolean; is_lost: boolean; }
@@ -19,8 +22,8 @@ export function SparkDealsPage() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ title: "", value: 0, stage_id: 0 });
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [form, setForm] = useState({ title: "", value: 0, stage_id: 0 });
 
   const loadPipelines = useCallback(async () => {
     if (!ready) return;
@@ -37,14 +40,13 @@ export function SparkDealsPage() {
     try {
       const r = await get<{ data: Stage[] }>(`/api/v1/pipelines/${pipelineId}/stages`);
       setStages(r.data || []);
-      if (r.data?.[0]) setCreateForm(f => ({ ...f, stage_id: r.data[0].id }));
+      if (r.data?.[0]) setForm(f => ({ ...f, stage_id: r.data[0].id }));
     } catch (err) { setError(err); }
   }, [get, ready, pipelineId]);
 
   const loadDeals = useCallback(async () => {
     if (!ready || !pipelineId) return;
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
       const r = await get<{ data: Deal[] }>(`/api/v1/deals?pipeline_id=${pipelineId}&limit=200`);
       setDeals(r.data || []);
@@ -56,43 +58,25 @@ export function SparkDealsPage() {
   useEffect(() => { loadDeals(); }, [loadDeals]);
 
   async function moveDeal(dealId: number, stageId: number) {
-    try {
-      await post(`/api/v1/deals/${dealId}/move`, { stage_id: stageId });
-      await loadDeals();
-    } catch (err) { setError(err); }
+    try { await post(`/api/v1/deals/${dealId}/move`, { stage_id: stageId }); await loadDeals(); }
+    catch (err) { setError(err); }
   }
 
   async function createDeal() {
-    if (!createForm.title.trim() || !pipelineId || !createForm.stage_id) return;
+    if (!form.title.trim() || !pipelineId || !form.stage_id) return;
     try {
-      await post("/api/v1/deals", {
-        pipeline_id: pipelineId, stage_id: createForm.stage_id,
-        title: createForm.title.trim(), value: createForm.value,
-      });
-      setShowCreate(false);
-      setCreateForm({ title: "", value: 0, stage_id: stages[0]?.id || 0 });
+      await post("/api/v1/deals", { pipeline_id: pipelineId, stage_id: form.stage_id, title: form.title.trim(), value: form.value });
+      setDrawerOpen(false);
+      setForm({ title: "", value: 0, stage_id: stages[0]?.id || 0 });
       await loadDeals();
     } catch (err) { setError(err); }
   }
 
-  async function markWon(d: Deal) {
-    const winStage = stages.find(s => s.is_won);
+  async function markStatus(d: Deal, status: "won" | "lost") {
+    const target = stages.find(s => status === "won" ? s.is_won : s.is_lost);
     try {
       await put(`/api/v1/deals/${d.id}`, {
-        status: "won",
-        stage_id: winStage?.id || d.stage_id,
-        actual_close_date: new Date().toISOString().slice(0, 10),
-      });
-      await loadDeals();
-    } catch (err) { setError(err); }
-  }
-
-  async function markLost(d: Deal) {
-    const lossStage = stages.find(s => s.is_lost);
-    try {
-      await put(`/api/v1/deals/${d.id}`, {
-        status: "lost",
-        stage_id: lossStage?.id || d.stage_id,
+        status, stage_id: target?.id || d.stage_id,
         actual_close_date: new Date().toISOString().slice(0, 10),
       });
       await loadDeals();
@@ -101,44 +85,80 @@ export function SparkDealsPage() {
 
   const stageOpenDeals = (stageId: number) => deals.filter(d => d.stage_id === stageId && d.status === "open");
 
-  return (
-    <OliverPageWrapper title="Deals" subtitle="Drag deals through your pipeline" error={error} loading={loading}>
-      <div className="arion-page">
-        <div className="card mb-4">
-          <div className="card-hdr">
-            <div className="card-ttl">Pipeline</div>
-          </div>
-          <div className="p-4 flex flex-wrap items-center gap-3">
-            <select value={pipelineId || ""} onChange={e => setPipelineId(Number(e.target.value))}
-              className="border border-gray-300 rounded-md px-2 py-1 text-sm">
-              {pipelines.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
-            </select>
-            <button onClick={() => setShowCreate(true)} className="ml-auto px-3 py-1.5 rounded-md text-sm bg-blue-600 text-white">+ New deal</button>
-          </div>
-        </div>
+  const totals = useMemo(() => {
+    const open = deals.filter(d => d.status === "open");
+    const won = deals.filter(d => d.status === "won");
+    const lost = deals.filter(d => d.status === "lost");
+    return {
+      openCount: open.length,
+      openValue: open.reduce((s, d) => s + Number(d.value || 0), 0),
+      wonCount: won.length,
+      wonValue: won.reduce((s, d) => s + Number(d.value || 0), 0),
+      lostCount: lost.length,
+    };
+  }, [deals]);
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+  return (
+    <SparkPageShell
+      title="Deals"
+      subtitle="Drag deals through your pipeline"
+      actions={
+        <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent" disabled={!stages.length}>
+          <Plus className="h-3.5 w-3.5" /> New deal
+        </button>
+      }
+      stats={
+        <SparkStatStrip stats={[
+          { label: "Open deals", value: totals.openCount, icon: Briefcase },
+          { label: "Open value", value: `$${totals.openValue.toLocaleString()}`, icon: DollarSign, accent: "emerald" },
+          { label: "Won", value: totals.wonCount, icon: Trophy, accent: "emerald", delta: totals.wonValue > 0 ? `$${totals.wonValue.toLocaleString()}` : undefined, deltaPositive: true },
+          { label: "Lost", value: totals.lostCount, icon: XCircle, accent: "rose" },
+        ]} />
+      }
+      filters={
+        <div className="flex flex-wrap items-center gap-1.5">
+          {pipelines.map(p => (
+            <button key={p.id} onClick={() => setPipelineId(p.id)}
+              className={`spark-pill ${pipelineId === p.id ? "spark-pill-active" : ""}`}>
+              {p.name}
+            </button>
+          ))}
+        </div>
+      }
+      loading={loading}
+      error={error}
+    >
+      {stages.length === 0 ? (
+        <div className="spark-mini-card py-8 text-center">
+          <div className="text-sm text-slate-500">This pipeline has no stages yet.</div>
+          <a href="/app/services/spark_pipelines" className="text-sm text-emerald-600 mt-2 inline-block">Configure pipeline stages →</a>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
           {stages.filter(s => !s.is_won && !s.is_lost).map(stage => {
             const open = stageOpenDeals(stage.id);
             const totalVal = open.reduce((a, d) => a + Number(d.value || 0), 0);
             return (
-              <div key={stage.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3 min-h-[200px]">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-xs uppercase font-medium text-gray-600">{stage.name}</div>
-                  <div className="text-xs text-gray-500">{open.length} / ${totalVal.toLocaleString()}</div>
+              <div key={stage.id} className="bg-white border border-slate-200 rounded-lg flex flex-col min-h-[300px]">
+                <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between">
+                  <span className="text-xs uppercase font-semibold text-slate-700 tracking-wide">{stage.name}</span>
+                  <span className="text-[10px] text-slate-500 font-mono">{open.length} · ${(totalVal / 1000).toFixed(0)}k</span>
                 </div>
-                <div className="space-y-2">
+                <div className="flex-1 p-2 space-y-2 overflow-y-auto">
+                  {open.length === 0 && <div className="text-center text-xs text-slate-400 py-6">No deals</div>}
                   {open.map(d => (
-                    <div key={d.id} className="bg-white border border-gray-200 rounded-md p-2 shadow-sm">
-                      <div className="text-sm font-medium">{d.title}</div>
-                      <div className="text-xs text-gray-500">${Number(d.value).toLocaleString()} · {d.currency}</div>
-                      <div className="flex gap-1 mt-1.5 flex-wrap">
+                    <div key={d.id} className="bg-slate-50 border border-slate-200 rounded-md p-2.5 hover:shadow-sm hover:border-slate-300 transition">
+                      <div className="text-sm font-medium text-slate-900 truncate">{d.title}</div>
+                      <div className="text-xs text-emerald-700 font-semibold mt-0.5">${Number(d.value).toLocaleString()}</div>
+                      <div className="flex gap-1 mt-2 flex-wrap">
                         {stages.filter(s => !s.is_won && !s.is_lost && s.id !== d.stage_id).slice(0, 2).map(s => (
                           <button key={s.id} onClick={() => moveDeal(d.id, s.id)}
-                            className="text-[10px] bg-gray-100 hover:bg-blue-100 px-1.5 py-0.5 rounded">→ {s.name}</button>
+                            className="text-[10px] flex items-center gap-0.5 bg-white border border-slate-200 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 px-1.5 py-0.5 rounded transition">
+                            <ArrowRight className="h-2.5 w-2.5" /> {s.name}
+                          </button>
                         ))}
-                        <button onClick={() => markWon(d)} className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded hover:bg-emerald-200">Won</button>
-                        <button onClick={() => markLost(d)} className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded hover:bg-rose-200">Lost</button>
+                        <button onClick={() => markStatus(d, "won")} className="text-[10px] bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-1.5 py-0.5 rounded">Won</button>
+                        <button onClick={() => markStatus(d, "lost")} className="text-[10px] bg-rose-50 text-rose-700 hover:bg-rose-100 px-1.5 py-0.5 rounded">Lost</button>
                       </div>
                     </div>
                   ))}
@@ -147,30 +167,36 @@ export function SparkDealsPage() {
             );
           })}
         </div>
+      )}
 
-        {showCreate && (
-          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-5">
-              <div className="text-lg font-semibold mb-3">Create deal</div>
-              <div className="space-y-3">
-                <input placeholder="Deal title" value={createForm.title} onChange={e => setCreateForm({ ...createForm, title: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
-                <input type="number" placeholder="Value" value={createForm.value || ""} onChange={e => setCreateForm({ ...createForm, value: Number(e.target.value) })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
-                <select value={createForm.stage_id || ""} onChange={e => setCreateForm({ ...createForm, stage_id: Number(e.target.value) })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
-                  {stages.filter(s => !s.is_won && !s.is_lost).map(s => (<option key={s.id} value={s.id}>{s.name}</option>))}
-                </select>
-              </div>
-              <div className="flex justify-end gap-2 mt-4">
-                <button onClick={() => setShowCreate(false)} className="px-3 py-1.5 rounded-md text-sm border">Cancel</button>
-                <button onClick={createDeal} className="px-3 py-1.5 rounded-md text-sm bg-emerald-600 text-white">Create</button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </OliverPageWrapper>
+      <SparkDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title="Create deal"
+        subtitle="Track an opportunity through your pipeline"
+        footer={
+          <>
+            <button onClick={() => setDrawerOpen(false)} className="spark-btn spark-btn-secondary">Cancel</button>
+            <button onClick={createDeal} disabled={!form.title.trim()} className="spark-btn spark-btn-primary">Create deal</button>
+          </>
+        }
+      >
+        <div className="spark-field">
+          <label className="spark-field-label">Title</label>
+          <input className="spark-field-input" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Acme Inc. — annual contract" autoFocus />
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">Value (USD)</label>
+          <input type="number" className="spark-field-input" value={form.value || ""} onChange={e => setForm({ ...form, value: Number(e.target.value) })} placeholder="15000" />
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">Starting stage</label>
+          <select className="spark-field-select" value={form.stage_id || ""} onChange={e => setForm({ ...form, stage_id: Number(e.target.value) })}>
+            {stages.filter(s => !s.is_won && !s.is_lost).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+      </SparkDrawer>
+    </SparkPageShell>
   );
 }
 

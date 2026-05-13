@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { ArgusInsightBox } from "../../components/oliver/ArgusInsightBox";
+import { Sparkles } from "lucide-react";
 
 // ─ Types ─────────────────────────────────────────────────────────────────────
 interface CustomerHealth { tier_distribution: { tier: string | null; n: number }[]; }
@@ -167,12 +168,21 @@ export function SparkInsightsPage() {
   }, [gv]);
 
   return (
-    <OliverPageWrapper title="SPARK Insights" subtitle="7 cross-channel insight categories" error={error} loading={loading}>
-      <div className="arion-page space-y-6">
+    <SparkPageShell title="Insights" subtitle="7 cross-channel insight categories" error={error} loading={loading}>
+      {/* v2 banner — current rules are basic heuristics; full IA Intelligence Layer in v2 */}
+      <div className="rounded-md bg-gradient-to-r from-lime-50 to-emerald-50 border border-emerald-200 px-4 py-2.5 mb-4 flex items-center gap-2 text-xs">
+        <Sparkles className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0" />
+        <span className="text-emerald-900">
+          <strong>Preview.</strong> Full IA Intelligence Layer launches in v2 with regression
+          modeling, forecasting, and prescriptive analytics across 100+ rules per category.
+        </span>
+      </div>
+
+      <div className="space-y-4">
         {/* 1. Customer Health */}
-        <section className="card">
-          <div className="card-hdr"><div className="card-ttl">1. Customer Health</div></div>
-          <div className="p-4">
+        <section className="spark-mini-card">
+          <div className="spark-mini-card-header"><span className="spark-mini-card-title">1. Customer Health</span></div>
+          <div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
               {ch?.tier_distribution.map(t => (
                 <div key={t.tier || "none"} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
@@ -186,9 +196,9 @@ export function SparkInsightsPage() {
         </section>
 
         {/* 2. Communication Performance */}
-        <section className="card">
-          <div className="card-hdr"><div className="card-ttl">2. Communication Performance</div></div>
-          <div className="p-4">
+        <section className="spark-mini-card">
+          <div className="spark-mini-card-header"><span className="spark-mini-card-title">2. Communication Performance</span></div>
+          <div>
             {cp && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                 <Stat label="Sent" value={cp.totals.sent} />
@@ -202,9 +212,9 @@ export function SparkInsightsPage() {
         </section>
 
         {/* 3. Pipeline Velocity */}
-        <section className="card">
-          <div className="card-hdr"><div className="card-ttl">3. Pipeline Velocity</div></div>
-          <div className="p-4">
+        <section className="spark-mini-card">
+          <div className="spark-mini-card-header"><span className="spark-mini-card-title">3. Pipeline Velocity</span></div>
+          <div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               {pv?.win_loss.map(w => (
                 <Stat key={w.status} label={w.status} value={`${w.n} · $${Number(w.total_value).toLocaleString()}`} accent={w.status === "won" ? "emerald" : w.status === "lost" ? "rose" : "gray"} />
@@ -215,9 +225,9 @@ export function SparkInsightsPage() {
         </section>
 
         {/* 4. Reputation */}
-        <section className="card">
-          <div className="card-hdr"><div className="card-ttl">4. Reputation</div></div>
-          <div className="p-4">
+        <section className="spark-mini-card">
+          <div className="spark-mini-card-header"><span className="spark-mini-card-title">4. Reputation</span></div>
+          <div>
             {rep && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                 <Stat label="NPS" value={rep.nps.score} accent={rep.nps.score >= 50 ? "emerald" : rep.nps.score >= 0 ? "amber" : "rose"} />
@@ -231,9 +241,9 @@ export function SparkInsightsPage() {
         </section>
 
         {/* 5. Revenue Attribution */}
-        <section className="card">
-          <div className="card-hdr"><div className="card-ttl">5. Revenue Attribution</div></div>
-          <div className="p-4">
+        <section className="spark-mini-card">
+          <div className="spark-mini-card-header"><span className="spark-mini-card-title">5. Revenue Attribution</span></div>
+          <div>
             <table className="data-table text-sm mb-4">
               <thead><tr><th>Source</th><th>Deals</th><th>Revenue</th></tr></thead>
               <tbody>
@@ -248,9 +258,9 @@ export function SparkInsightsPage() {
         </section>
 
         {/* 6. Lead Gen ROI */}
-        <section className="card">
-          <div className="card-hdr"><div className="card-ttl">6. Lead Gen ROI</div></div>
-          <div className="p-4">
+        <section className="spark-mini-card">
+          <div className="spark-mini-card-header"><span className="spark-mini-card-title">6. Lead Gen ROI</span></div>
+          <div>
             {lg && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                 <Stat label="Total leads" value={lg.total_leads} />
@@ -267,9 +277,9 @@ export function SparkInsightsPage() {
         </section>
 
         {/* 7. Growth Velocity */}
-        <section className="card">
-          <div className="card-hdr"><div className="card-ttl">7. Growth Velocity</div></div>
-          <div className="p-4">
+        <section className="spark-mini-card">
+          <div className="spark-mini-card-header"><span className="spark-mini-card-title">7. Growth Velocity</span></div>
+          <div>
             {gv && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                 <Stat label="Velocity score" value={`${gv.growth_velocity_score} / 100`} accent="emerald" />
@@ -284,7 +294,7 @@ export function SparkInsightsPage() {
           </div>
         </section>
       </div>
-    </OliverPageWrapper>
+    </SparkPageShell>
   );
 }
 

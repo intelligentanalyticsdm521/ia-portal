@@ -1,6 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
+import { SparkDrawer } from "../../components/spark/SparkDrawer";
+import { SparkTable } from "../../components/spark/SparkTable";
+import { Plus, QrCode, ExternalLink, Eye } from "lucide-react";
 
 interface QrCode {
   id: number; label: string; target_url: string; short_code: string;
@@ -13,7 +17,7 @@ export function SparkQrCodesPage() {
   const [list, setList] = useState<QrCode[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [form, setForm] = useState({ label: "", target_url: "", utm_source: "", utm_medium: "qr", utm_campaign: "" });
 
   const load = useCallback(async () => {
@@ -24,73 +28,100 @@ export function SparkQrCodesPage() {
       setList(r.data || []);
     } catch (err) { setError(err); } finally { setLoading(false); }
   }, [get, ready]);
-
   useEffect(() => { load(); }, [load]);
 
   async function create() {
     if (!form.label.trim() || !form.target_url.trim()) return;
     try {
       await post("/api/v1/qr-codes", form);
-      setShowCreate(false);
       setForm({ label: "", target_url: "", utm_source: "", utm_medium: "qr", utm_campaign: "" });
+      setDrawerOpen(false);
       await load();
     } catch (err) { setError(err); }
   }
 
-  return (
-    <OliverPageWrapper title="QR Codes" subtitle="Dynamic QR codes with scan tracking + UTM" error={error} loading={loading}>
-      <div className="arion-page">
-        <div className="card">
-          <div className="card-hdr flex items-center justify-between">
-            <div className="card-ttl">All codes</div>
-            <button onClick={() => setShowCreate(true)} className="px-3 py-1.5 rounded-md text-sm bg-blue-600 text-white">+ New QR</button>
-          </div>
-          <table className="data-table">
-            <thead><tr><th>Label</th><th>Short code</th><th>Target</th><th>UTM</th><th>Scans</th></tr></thead>
-            <tbody>
-              {list.map(q => (
-                <tr key={q.id}>
-                  <td className="font-medium">{q.label}</td>
-                  <td className="font-mono text-xs">{q.short_code}</td>
-                  <td className="text-xs text-blue-700 truncate max-w-[280px]">{q.target_url}</td>
-                  <td className="text-xs text-gray-500">{[q.utm_source, q.utm_medium, q.utm_campaign].filter(Boolean).join(" / ") || "—"}</td>
-                  <td className="text-sm font-medium">{q.scan_count}</td>
-                </tr>
-              ))}
-              {list.length === 0 && <tr><td colSpan={5} className="text-center py-4 text-gray-500">No QR codes yet</td></tr>}
-            </tbody>
-          </table>
-        </div>
+  const totalScans = list.reduce((s, q) => s + q.scan_count, 0);
+  const active = list.filter(q => q.is_active).length;
 
-        {showCreate && (
-          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-5">
-              <div className="text-lg font-semibold mb-3">Create QR code</div>
-              <div className="space-y-3">
-                <input placeholder="Label (e.g. Flyer Q2 2026)" value={form.label}
-                  onChange={e => setForm({ ...form, label: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
-                <input placeholder="Target URL" value={form.target_url}
-                  onChange={e => setForm({ ...form, target_url: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
-                <div className="grid grid-cols-3 gap-2">
-                  <input placeholder="utm_source" value={form.utm_source} onChange={e => setForm({ ...form, utm_source: e.target.value })}
-                    className="border border-gray-300 rounded-md px-2 py-1.5 text-sm" />
-                  <input placeholder="utm_medium" value={form.utm_medium} onChange={e => setForm({ ...form, utm_medium: e.target.value })}
-                    className="border border-gray-300 rounded-md px-2 py-1.5 text-sm" />
-                  <input placeholder="utm_campaign" value={form.utm_campaign} onChange={e => setForm({ ...form, utm_campaign: e.target.value })}
-                    className="border border-gray-300 rounded-md px-2 py-1.5 text-sm" />
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 mt-4">
-                <button onClick={() => setShowCreate(false)} className="px-3 py-1.5 rounded-md text-sm border">Cancel</button>
-                <button onClick={create} className="px-3 py-1.5 rounded-md text-sm bg-emerald-600 text-white">Create</button>
-              </div>
-            </div>
+  return (
+    <SparkPageShell
+      title="QR Codes"
+      subtitle="Dynamic QR codes with scan tracking + UTM"
+      actions={
+        <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
+          <Plus className="h-3.5 w-3.5" /> New QR
+        </button>
+      }
+      stats={
+        <SparkStatStrip stats={[
+          { label: "Total codes", value: list.length, icon: QrCode },
+          { label: "Active", value: active, accent: "emerald" },
+          { label: "Total scans", value: totalScans.toLocaleString(), icon: Eye, accent: "blue" },
+        ]} />
+      }
+      loading={loading}
+      error={error}
+    >
+      <SparkTable<QrCode>
+        rows={list}
+        getRowKey={q => q.id}
+        emptyState="No QR codes yet. Create one to start tracking offline-to-online attribution."
+        totalCount={list.length}
+        columns={[
+          { key: "label", header: "Label", width: "wide",
+            cell: q => <span className="font-medium">{q.label}</span>,
+          },
+          { key: "short", header: "Short code", width: "compact",
+            cell: q => <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded">{q.short_code}</span>,
+          },
+          { key: "target", header: "Target URL", width: "wide", hideOnMobile: true,
+            cell: q => (
+              <a href={q.target_url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                className="text-xs text-blue-600 truncate flex items-center gap-1 max-w-[280px]">
+                <span className="truncate">{q.target_url}</span>
+                <ExternalLink className="h-3 w-3 flex-shrink-0" />
+              </a>
+            ),
+          },
+          { key: "utm", header: "UTM", hideOnMobile: true,
+            cell: q => <span className="text-xs text-slate-500">{[q.utm_source, q.utm_medium, q.utm_campaign].filter(Boolean).join(" / ") || "—"}</span>,
+          },
+          { key: "scans", header: "Scans", width: "narrow", align: "right",
+            cell: q => <span className="font-semibold text-slate-900">{q.scan_count.toLocaleString()}</span>,
+          },
+        ]}
+      />
+
+      <SparkDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title="Create QR code"
+        subtitle="Dynamic redirect with scan tracking. Add UTM params for marketing attribution."
+        footer={
+          <>
+            <button onClick={() => setDrawerOpen(false)} className="spark-btn spark-btn-secondary">Cancel</button>
+            <button onClick={create} disabled={!form.label.trim() || !form.target_url.trim()} className="spark-btn spark-btn-primary">Create QR code</button>
+          </>
+        }
+      >
+        <div className="spark-field">
+          <label className="spark-field-label">Label</label>
+          <input className="spark-field-input" value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} placeholder="Spring flyer / Trade show 2026" autoFocus />
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">Target URL</label>
+          <input className="spark-field-input" value={form.target_url} onChange={e => setForm({ ...form, target_url: e.target.value })} placeholder="https://your-site.com/landing-page" />
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">UTM parameters</label>
+          <div className="grid grid-cols-3 gap-2">
+            <input className="spark-field-input" placeholder="source" value={form.utm_source} onChange={e => setForm({ ...form, utm_source: e.target.value })} />
+            <input className="spark-field-input" placeholder="medium" value={form.utm_medium} onChange={e => setForm({ ...form, utm_medium: e.target.value })} />
+            <input className="spark-field-input" placeholder="campaign" value={form.utm_campaign} onChange={e => setForm({ ...form, utm_campaign: e.target.value })} />
           </div>
-        )}
-      </div>
-    </OliverPageWrapper>
+        </div>
+      </SparkDrawer>
+    </SparkPageShell>
   );
 }
 

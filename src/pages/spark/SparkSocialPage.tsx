@@ -1,6 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
+import { SparkDrawer } from "../../components/spark/SparkDrawer";
+import { SparkTable } from "../../components/spark/SparkTable";
+import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
+import { Plus, Share2, Calendar, Link as LinkIcon } from "lucide-react";
 
 interface SocialAccount { id: number; provider: string; account_label: string | null; is_active: boolean; connected_at: string; }
 interface SocialPost { id: number; social_account_id: number; status: string; content: string; scheduled_at: string | null; posted_at: string | null; provider?: string; account_label?: string; }
@@ -19,7 +24,8 @@ export function SparkSocialPage() {
   const [posts, setPosts] = useState<SocialPost[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState<"account" | "post" | null>(null);
+  const [drawer, setDrawer] = useState<"account" | "post" | null>(null);
+  const [filter, setFilter] = useState("all");
   const [acctForm, setAcctForm] = useState({ provider: "facebook", account_label: "" });
   const [postForm, setPostForm] = useState({ social_account_id: 0, content: "", scheduled_at: "" });
 
@@ -35,122 +41,152 @@ export function SparkSocialPage() {
       setPosts(p.data || []);
     } catch (err) { setError(err); } finally { setLoading(false); }
   }, [get, ready]);
-
   useEffect(() => { load(); }, [load]);
 
   async function createAccount() {
-    try {
-      await post("/api/v1/social-accounts", acctForm);
-      setShowCreate(null);
-      setAcctForm({ provider: "facebook", account_label: "" });
-      await load();
-    } catch (err) { setError(err); }
+    await post("/api/v1/social-accounts", acctForm);
+    setAcctForm({ provider: "facebook", account_label: "" });
+    setDrawer(null);
+    await load();
   }
 
   async function createPost() {
     if (!postForm.content || !postForm.social_account_id) return;
-    try {
-      await post("/api/v1/social-posts", {
-        social_account_id: Number(postForm.social_account_id),
-        content: postForm.content,
-        scheduled_at: postForm.scheduled_at || null,
-        status: postForm.scheduled_at ? "scheduled" : "draft",
-      });
-      setShowCreate(null);
-      setPostForm({ social_account_id: 0, content: "", scheduled_at: "" });
-      await load();
-    } catch (err) { setError(err); }
+    await post("/api/v1/social-posts", {
+      social_account_id: Number(postForm.social_account_id),
+      content: postForm.content,
+      scheduled_at: postForm.scheduled_at || null,
+      status: postForm.scheduled_at ? "scheduled" : "draft",
+    });
+    setPostForm({ social_account_id: 0, content: "", scheduled_at: "" });
+    setDrawer(null);
+    await load();
   }
 
+  const filteredPosts = filter === "all" ? posts : posts.filter(p => p.status === filter);
+
   return (
-    <OliverPageWrapper title="Social Scheduler" subtitle="Schedule + track posts across all your channels" error={error} loading={loading}>
-      <div className="arion-page">
-        <div className="card mb-4">
-          <div className="card-hdr flex items-center justify-between">
-            <div className="card-ttl">Connected accounts</div>
-            <button onClick={() => setShowCreate("account")} className="px-3 py-1.5 rounded-md text-sm bg-blue-600 text-white">+ Add account</button>
-          </div>
-          <table className="data-table text-sm">
-            <thead><tr><th>Provider</th><th>Label</th><th>Status</th><th>Connected</th></tr></thead>
-            <tbody>
-              {accounts.map(a => (
-                <tr key={a.id}>
-                  <td className="capitalize font-medium">{a.provider}</td>
-                  <td>{a.account_label || "—"}</td>
-                  <td>{a.is_active ? <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 text-xs rounded">Active</span> : <span className="text-gray-500">Inactive</span>}</td>
-                  <td className="text-xs text-gray-500">{new Date(a.connected_at).toLocaleDateString()}</td>
-                </tr>
-              ))}
-              {accounts.length === 0 && <tr><td colSpan={4} className="text-center py-4 text-gray-500">No accounts connected. OAuth setup pending — manual entry available.</td></tr>}
-            </tbody>
-          </table>
+    <SparkPageShell
+      title="Social Scheduler"
+      subtitle="Schedule + track posts across all your channels"
+      actions={
+        <div className="flex gap-2">
+          <button onClick={() => setDrawer("account")} className="spark-btn spark-btn-secondary">
+            <LinkIcon className="h-3.5 w-3.5" /> Connect account
+          </button>
+          <button onClick={() => setDrawer("post")} className="spark-btn spark-btn-accent" disabled={!accounts.length}>
+            <Plus className="h-3.5 w-3.5" /> New post
+          </button>
         </div>
-
-        <div className="card">
-          <div className="card-hdr flex items-center justify-between">
-            <div className="card-ttl">Scheduled posts</div>
-            <button onClick={() => setShowCreate("post")} className="px-3 py-1.5 rounded-md text-sm bg-blue-600 text-white">+ New post</button>
-          </div>
-          <table className="data-table text-sm">
-            <thead><tr><th>When</th><th>Provider</th><th>Status</th><th>Content</th></tr></thead>
-            <tbody>
-              {posts.map(p => (
-                <tr key={p.id}>
-                  <td className="text-xs text-gray-500 whitespace-nowrap">{new Date(p.scheduled_at || p.posted_at || "").toLocaleString()}</td>
-                  <td className="capitalize">{p.provider || "—"}</td>
-                  <td><span className="capitalize">{p.status}</span></td>
-                  <td className="text-sm max-w-[400px] truncate">{p.content}</td>
-                </tr>
-              ))}
-              {posts.length === 0 && <tr><td colSpan={4} className="text-center py-4 text-gray-500">No scheduled posts</td></tr>}
-            </tbody>
-          </table>
+      }
+      stats={
+        <SparkStatStrip stats={[
+          { label: "Accounts", value: accounts.filter(a => a.is_active).length, icon: Share2, accent: "blue" },
+          { label: "Drafts", value: posts.filter(p => p.status === "draft").length },
+          { label: "Scheduled", value: posts.filter(p => p.status === "scheduled").length, icon: Calendar, accent: "amber" },
+          { label: "Posted", value: posts.filter(p => p.status === "posted").length, accent: "emerald" },
+        ]} />
+      }
+      filters={
+        <SparkFilterPills
+          active={filter}
+          onChange={setFilter}
+          pills={[
+            { key: "all", label: "All", count: posts.length },
+            { key: "draft", label: "Drafts", count: posts.filter(p => p.status === "draft").length },
+            { key: "scheduled", label: "Scheduled", count: posts.filter(p => p.status === "scheduled").length },
+            { key: "posted", label: "Posted", count: posts.filter(p => p.status === "posted").length },
+          ]}
+        />
+      }
+      loading={loading}
+      error={error}
+    >
+      {accounts.length === 0 ? (
+        <div className="spark-mini-card py-8 text-center">
+          <Share2 className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+          <div className="text-sm text-slate-600">No social accounts connected yet.</div>
+          <div className="text-xs text-slate-500 mt-1">OAuth flows for Meta / LinkedIn / X coming in v2 — manual entry available for now.</div>
         </div>
+      ) : (
+        <SparkTable<SocialPost>
+          rows={filteredPosts}
+          getRowKey={p => p.id}
+          emptyState="No posts yet for this filter."
+          totalCount={filteredPosts.length}
+          columns={[
+            { key: "when", header: "When", width: "compact",
+              cell: p => <span className="text-xs text-slate-500 whitespace-nowrap">{p.scheduled_at || p.posted_at ? new Date(p.scheduled_at || p.posted_at!).toLocaleString() : "—"}</span>,
+            },
+            { key: "provider", header: "Channel", width: "compact",
+              cell: p => <span className="capitalize text-sm">{p.provider || "—"}</span>,
+            },
+            { key: "status", header: "Status", width: "compact",
+              cell: p => <span className={`text-xs px-2 py-0.5 rounded capitalize ${p.status === "posted" ? "bg-emerald-100 text-emerald-700" : p.status === "scheduled" ? "bg-amber-100 text-amber-700" : p.status === "failed" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600"}`}>{p.status}</span>,
+            },
+            { key: "content", header: "Content", width: "wide",
+              cell: p => <span className="text-sm text-slate-700 line-clamp-2">{p.content}</span>,
+            },
+          ]}
+        />
+      )}
 
-        {showCreate === "account" && (
-          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-5">
-              <div className="text-lg font-semibold mb-3">Connect social account</div>
-              <div className="space-y-3">
-                <select value={acctForm.provider} onChange={e => setAcctForm({ ...acctForm, provider: e.target.value })} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
-                  {PROVIDERS.map(p => (<option key={p.value} value={p.value}>{p.label}</option>))}
-                </select>
-                <input placeholder="Account label (e.g. @yourbiz)" value={acctForm.account_label}
-                  onChange={e => setAcctForm({ ...acctForm, account_label: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
-                <div className="text-xs text-gray-500">OAuth flow is pending. Account will be added without tokens until OAuth apps are configured.</div>
-              </div>
-              <div className="flex justify-end gap-2 mt-4">
-                <button onClick={() => setShowCreate(null)} className="px-3 py-1.5 rounded-md text-sm border">Cancel</button>
-                <button onClick={createAccount} className="px-3 py-1.5 rounded-md text-sm bg-emerald-600 text-white">Add</button>
-              </div>
-            </div>
-          </div>
-        )}
+      <SparkDrawer
+        open={drawer === "account"}
+        onClose={() => setDrawer(null)}
+        title="Connect social account"
+        subtitle="OAuth flows for Meta / LinkedIn / X are wired and ready — app registrations pending. Manual entry available below."
+        footer={
+          <>
+            <button onClick={() => setDrawer(null)} className="spark-btn spark-btn-secondary">Cancel</button>
+            <button onClick={createAccount} className="spark-btn spark-btn-primary">Add account</button>
+          </>
+        }
+      >
+        <div className="spark-field">
+          <label className="spark-field-label">Provider</label>
+          <select className="spark-field-select" value={acctForm.provider} onChange={e => setAcctForm({ ...acctForm, provider: e.target.value })}>
+            {PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+          </select>
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">Account label</label>
+          <input className="spark-field-input" value={acctForm.account_label} onChange={e => setAcctForm({ ...acctForm, account_label: e.target.value })} placeholder="@yourbiz" />
+        </div>
+      </SparkDrawer>
 
-        {showCreate === "post" && (
-          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-5">
-              <div className="text-lg font-semibold mb-3">Schedule post</div>
-              <div className="space-y-3">
-                <select value={postForm.social_account_id || ""} onChange={e => setPostForm({ ...postForm, social_account_id: Number(e.target.value) })} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
-                  <option value="">Select account…</option>
-                  {accounts.filter(a => a.is_active).map(a => (<option key={a.id} value={a.id}>{a.provider}{a.account_label ? " · " + a.account_label : ""}</option>))}
-                </select>
-                <textarea placeholder="Post content" value={postForm.content} onChange={e => setPostForm({ ...postForm, content: e.target.value })}
-                  rows={4} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
-                <input type="datetime-local" value={postForm.scheduled_at} onChange={e => setPostForm({ ...postForm, scheduled_at: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
-              </div>
-              <div className="flex justify-end gap-2 mt-4">
-                <button onClick={() => setShowCreate(null)} className="px-3 py-1.5 rounded-md text-sm border">Cancel</button>
-                <button onClick={createPost} className="px-3 py-1.5 rounded-md text-sm bg-emerald-600 text-white">Schedule</button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </OliverPageWrapper>
+      <SparkDrawer
+        open={drawer === "post"}
+        onClose={() => setDrawer(null)}
+        title="Schedule post"
+        width="wide"
+        footer={
+          <>
+            <button onClick={() => setDrawer(null)} className="spark-btn spark-btn-secondary">Cancel</button>
+            <button onClick={createPost} disabled={!postForm.content || !postForm.social_account_id} className="spark-btn spark-btn-primary">
+              {postForm.scheduled_at ? "Schedule" : "Save draft"}
+            </button>
+          </>
+        }
+      >
+        <div className="spark-field">
+          <label className="spark-field-label">Account</label>
+          <select className="spark-field-select" value={postForm.social_account_id || ""} onChange={e => setPostForm({ ...postForm, social_account_id: Number(e.target.value) })}>
+            <option value="">Select account…</option>
+            {accounts.filter(a => a.is_active).map(a => <option key={a.id} value={a.id}>{a.provider}{a.account_label ? " · " + a.account_label : ""}</option>)}
+          </select>
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">Post content</label>
+          <textarea className="spark-field-textarea" rows={6} value={postForm.content} onChange={e => setPostForm({ ...postForm, content: e.target.value })} placeholder="What's your message?" />
+          <p className="text-[11px] text-slate-500 mt-1">{postForm.content.length} chars · X/Twitter limit is 280</p>
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">Schedule for (leave empty = draft)</label>
+          <input type="datetime-local" className="spark-field-input" value={postForm.scheduled_at} onChange={e => setPostForm({ ...postForm, scheduled_at: e.target.value })} />
+        </div>
+      </SparkDrawer>
+    </SparkPageShell>
   );
 }
 

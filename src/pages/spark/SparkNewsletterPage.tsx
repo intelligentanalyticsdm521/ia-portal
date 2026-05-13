@@ -1,6 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
+import { SparkDrawer } from "../../components/spark/SparkDrawer";
+import { SparkTable } from "../../components/spark/SparkTable";
+import { Plus, Newspaper, ExternalLink, Send, FileText } from "lucide-react";
 
 interface NewsletterIssue {
   id: number; issue_number: number; edition_date: string; title: string; summary: string | null;
@@ -12,7 +16,7 @@ export function SparkNewsletterPage() {
   const [list, setList] = useState<NewsletterIssue[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [form, setForm] = useState({
     issue_number: 1, edition_date: new Date().toISOString().slice(0, 10),
     title: "", summary: "",
@@ -25,99 +29,115 @@ export function SparkNewsletterPage() {
     try {
       const r = await get<{ data: NewsletterIssue[] }>("/api/v1/newsletters");
       setList(r.data || []);
-      // Auto-set next issue number
       if (r.data?.length) setForm(f => ({ ...f, issue_number: (r.data[0].issue_number || 0) + 1 }));
     } catch (err) { setError(err); } finally { setLoading(false); }
   }, [get, ready]);
-
   useEffect(() => { load(); }, [load]);
 
   async function create() {
-    try {
-      await post("/api/v1/newsletters", form);
-      setShowCreate(false);
-      setForm({ issue_number: form.issue_number + 1, edition_date: new Date().toISOString().slice(0, 10), title: "", summary: "" });
-      await load();
-    } catch (err) { setError(err); }
+    await post("/api/v1/newsletters", form);
+    setForm({ issue_number: form.issue_number + 1, edition_date: new Date().toISOString().slice(0, 10), title: "", summary: "" });
+    setDrawerOpen(false);
+    await load();
   }
 
   async function publish(id: number) {
     setPublishing(id);
-    try {
-      await post(`/api/v1/newsletters/${id}/publish`, {});
-      await load();
-    } catch (err) { setError(err); } finally { setPublishing(null); }
+    try { await post(`/api/v1/newsletters/${id}/publish`, {}); await load(); }
+    catch (err) { setError(err); } finally { setPublishing(null); }
   }
 
-  return (
-    <OliverPageWrapper title="Newsletter Studio" subtitle="Create + publish newsletter issues to WordPress" error={error} loading={loading}>
-      <div className="arion-page">
-        <div className="card">
-          <div className="card-hdr flex items-center justify-between">
-            <div className="card-ttl">Issues</div>
-            <button onClick={() => setShowCreate(true)} className="px-3 py-1.5 rounded-md text-sm bg-blue-600 text-white">+ New issue</button>
-          </div>
-          <table className="data-table text-sm">
-            <thead><tr><th>#</th><th>Date</th><th>Title</th><th>Status</th><th>WP</th><th></th></tr></thead>
-            <tbody>
-              {list.map(n => (
-                <tr key={n.id}>
-                  <td className="font-mono text-xs">#{n.issue_number}</td>
-                  <td className="text-xs">{n.edition_date}</td>
-                  <td className="font-medium">{n.title}</td>
-                  <td>
-                    {n.published_at
-                      ? <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 text-xs rounded">Published</span>
-                      : <span className="bg-gray-100 text-gray-700 px-2 py-0.5 text-xs rounded">Draft</span>}
-                  </td>
-                  <td>
-                    {n.wp_post_url
-                      ? <a href={n.wp_post_url} target="_blank" rel="noreferrer" className="text-xs text-blue-700 underline">View</a>
-                      : <span className="text-xs text-gray-500">—</span>}
-                  </td>
-                  <td>
-                    {!n.published_at && (
-                      <button onClick={() => publish(n.id)} disabled={publishing === n.id}
-                        className="px-2 py-1 rounded-md text-xs bg-emerald-600 text-white disabled:opacity-50">
-                        {publishing === n.id ? "Publishing…" : "Publish"}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {list.length === 0 && <tr><td colSpan={6} className="text-center py-4 text-gray-500">No newsletter issues yet</td></tr>}
-            </tbody>
-          </table>
-        </div>
+  const draftCount = list.filter(n => !n.published_at).length;
+  const publishedCount = list.filter(n => n.published_at).length;
+  const thisYear = list.filter(n => new Date(n.edition_date).getFullYear() === new Date().getFullYear()).length;
 
-        {showCreate && (
-          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-lg max-w-lg w-full p-5">
-              <div className="text-lg font-semibold mb-3">New newsletter issue</div>
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="text-sm"><div className="text-xs text-gray-500 mb-1">Issue #</div>
-                    <input type="number" value={form.issue_number} onChange={e => setForm({ ...form, issue_number: Number(e.target.value) })}
-                      className="w-full border border-gray-300 rounded-md px-2 py-1.5" /></label>
-                  <label className="text-sm"><div className="text-xs text-gray-500 mb-1">Edition date</div>
-                    <input type="date" value={form.edition_date} onChange={e => setForm({ ...form, edition_date: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-2 py-1.5" /></label>
-                </div>
-                <input placeholder="Title" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
-                <textarea placeholder="Summary (intro paragraph)" value={form.summary}
-                  onChange={e => setForm({ ...form, summary: e.target.value })}
-                  rows={5} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
-              </div>
-              <div className="flex justify-end gap-2 mt-4">
-                <button onClick={() => setShowCreate(false)} className="px-3 py-1.5 rounded-md text-sm border">Cancel</button>
-                <button onClick={create} className="px-3 py-1.5 rounded-md text-sm bg-emerald-600 text-white">Create draft</button>
-              </div>
-            </div>
+  return (
+    <SparkPageShell
+      title="Newsletter Studio"
+      subtitle="Create + auto-publish newsletter issues to WordPress"
+      actions={
+        <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
+          <Plus className="h-3.5 w-3.5" /> New issue
+        </button>
+      }
+      stats={
+        <SparkStatStrip stats={[
+          { label: "Total issues", value: list.length, icon: Newspaper },
+          { label: "This year", value: thisYear, accent: "blue" },
+          { label: "Drafts", value: draftCount, icon: FileText, accent: "amber" },
+          { label: "Published", value: publishedCount, accent: "emerald" },
+        ]} />
+      }
+      loading={loading}
+      error={error}
+    >
+      <SparkTable<NewsletterIssue>
+        rows={list}
+        getRowKey={n => n.id}
+        emptyState="No newsletter issues yet. Create your first issue to start publishing."
+        totalCount={list.length}
+        columns={[
+          { key: "num", header: "#", width: "narrow",
+            cell: n => <span className="font-mono text-xs text-slate-500">#{n.issue_number}</span>,
+          },
+          { key: "date", header: "Edition", width: "compact",
+            cell: n => <span className="text-xs text-slate-600">{n.edition_date}</span>,
+          },
+          { key: "title", header: "Title", width: "wide",
+            cell: n => <span className="font-medium">{n.title}</span>,
+          },
+          { key: "status", header: "Status", width: "compact",
+            cell: n => n.published_at
+              ? <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">Published</span>
+              : <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600">Draft</span>,
+          },
+          { key: "wp", header: "WordPress", width: "compact",
+            cell: n => n.wp_post_url
+              ? <a href={n.wp_post_url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="text-xs text-blue-600 inline-flex items-center gap-1">
+                  View <ExternalLink className="h-3 w-3" />
+                </a>
+              : <span className="text-xs text-slate-400">—</span>,
+          },
+        ]}
+        rowActions={n => !n.published_at ? (
+          <button onClick={() => publish(n.id)} disabled={publishing === n.id} className="spark-btn spark-btn-sm spark-btn-primary">
+            <Send className="h-3 w-3" /> {publishing === n.id ? "Publishing…" : "Publish"}
+          </button>
+        ) : null}
+      />
+
+      <SparkDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title="New newsletter issue"
+        subtitle="Draft creates a record. Click Publish on the row to push to WordPress."
+        footer={
+          <>
+            <button onClick={() => setDrawerOpen(false)} className="spark-btn spark-btn-secondary">Cancel</button>
+            <button onClick={create} disabled={!form.title.trim()} className="spark-btn spark-btn-primary">Create draft</button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <div className="spark-field">
+            <label className="spark-field-label">Issue #</label>
+            <input type="number" className="spark-field-input" value={form.issue_number} onChange={e => setForm({ ...form, issue_number: Number(e.target.value) })} />
           </div>
-        )}
-      </div>
-    </OliverPageWrapper>
+          <div className="spark-field">
+            <label className="spark-field-label">Edition date</label>
+            <input type="date" className="spark-field-input" value={form.edition_date} onChange={e => setForm({ ...form, edition_date: e.target.value })} />
+          </div>
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">Title</label>
+          <input className="spark-field-input" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="January 2026 Update" autoFocus />
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">Summary / intro</label>
+          <textarea className="spark-field-textarea" rows={5} value={form.summary} onChange={e => setForm({ ...form, summary: e.target.value })} placeholder="Lead paragraph for the newsletter…" />
+        </div>
+      </SparkDrawer>
+    </SparkPageShell>
   );
 }
 

@@ -1,6 +1,11 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
+import { SparkDrawer } from "../../components/spark/SparkDrawer";
+import { SparkTable } from "../../components/spark/SparkTable";
+import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
+import { Plus, Smile, Meh, Frown, Heart } from "lucide-react";
 
 interface NpsResponse {
   id: number; contact_id: number | null; score: number; category: string;
@@ -14,6 +19,8 @@ export function SparkNpsPage() {
   const [summary, setSummary] = useState<NpsSummary | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [filter, setFilter] = useState("all");
   const [form, setForm] = useState({ score: 8, comment: "", contact_id: "" });
 
   const load = useCallback(async () => {
@@ -26,7 +33,6 @@ export function SparkNpsPage() {
       setSummary(s.data);
     } catch (err) { setError(err); } finally { setLoading(false); }
   }, [get, ready]);
-
   useEffect(() => { load(); }, [load]);
 
   async function submit() {
@@ -37,78 +43,111 @@ export function SparkNpsPage() {
         request_source: "manual",
       });
       setForm({ score: 8, comment: "", contact_id: "" });
+      setDrawerOpen(false);
       await load();
     } catch (err) { setError(err); }
   }
 
+  const filtered = useMemo(() => {
+    if (filter === "all") return list;
+    return list.filter(r => r.category === filter);
+  }, [list, filter]);
+
   return (
-    <OliverPageWrapper title="NPS" subtitle="Net Promoter Score — last 90 days" error={error} loading={loading}>
-      <div className="arion-page">
-        {summary && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <div className="card p-4">
-              <div className="text-xs uppercase text-gray-500">NPS</div>
-              <div className={`text-3xl font-semibold mt-1 ${summary.nps >= 50 ? "text-emerald-600" : summary.nps >= 0 ? "text-amber-600" : "text-rose-600"}`}>{summary.nps}</div>
-            </div>
-            <div className="card p-4">
-              <div className="text-xs uppercase text-emerald-600">Promoters</div>
-              <div className="text-3xl font-semibold mt-1">{summary.promoters}</div>
-            </div>
-            <div className="card p-4">
-              <div className="text-xs uppercase text-amber-600">Passives</div>
-              <div className="text-3xl font-semibold mt-1">{summary.passives}</div>
-            </div>
-            <div className="card p-4">
-              <div className="text-xs uppercase text-rose-600">Detractors</div>
-              <div className="text-3xl font-semibold mt-1">{summary.detractors}</div>
-            </div>
-          </div>
-        )}
+    <SparkPageShell
+      title="NPS"
+      subtitle="Net Promoter Score — 90-day rolling"
+      actions={
+        <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
+          <Plus className="h-3.5 w-3.5" /> Submit response
+        </button>
+      }
+      stats={
+        summary
+          ? <SparkStatStrip stats={[
+              { label: "NPS Score", value: summary.nps, accent: summary.nps >= 50 ? "emerald" : summary.nps >= 0 ? "amber" : "rose" },
+              { label: "Promoters", value: summary.promoters, icon: Smile, accent: "emerald" },
+              { label: "Passives", value: summary.passives, icon: Meh, accent: "amber" },
+              { label: "Detractors", value: summary.detractors, icon: Frown, accent: "rose" },
+            ]} />
+          : undefined
+      }
+      filters={
+        <SparkFilterPills
+          active={filter}
+          onChange={setFilter}
+          pills={[
+            { key: "all", label: "All", count: list.length },
+            { key: "promoter", label: "Promoters", count: list.filter(r => r.category === "promoter").length },
+            { key: "passive", label: "Passives", count: list.filter(r => r.category === "passive").length },
+            { key: "detractor", label: "Detractors", count: list.filter(r => r.category === "detractor").length },
+          ]}
+        />
+      }
+      loading={loading}
+      error={error}
+    >
+      <SparkTable<NpsResponse>
+        rows={filtered}
+        getRowKey={r => r.id}
+        emptyState="No NPS responses yet. Click 'Submit response' to record one."
+        totalCount={filtered.length}
+        columns={[
+          { key: "score", header: "Score", width: "narrow",
+            cell: r => (
+              <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold ${r.category === "promoter" ? "bg-emerald-100 text-emerald-700" : r.category === "passive" ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"}`}>
+                {r.score}
+              </span>
+            ),
+          },
+          { key: "category", header: "Category", width: "compact",
+            cell: r => <span className="capitalize text-slate-700">{r.category}</span>,
+          },
+          { key: "source", header: "Source", width: "compact", hideOnMobile: true,
+            cell: r => <span className="text-xs text-slate-500">{r.request_source || "—"}</span>,
+          },
+          { key: "comment", header: "Comment", width: "wide",
+            cell: r => <span className="text-slate-700">{r.comment || <span className="text-slate-400">—</span>}</span>,
+          },
+          { key: "when", header: "When", width: "compact", hideOnMobile: true,
+            cell: r => <span className="text-xs text-slate-500">{new Date(r.created_at).toLocaleDateString()}</span>,
+          },
+        ]}
+      />
 
-        <div className="card mb-4">
-          <div className="card-hdr"><div className="card-ttl">Submit response</div></div>
-          <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-            <label className="text-sm">
-              <div className="text-xs text-gray-500 mb-1">Score (0–10)</div>
-              <input type="number" min={0} max={10} value={form.score} onChange={e => setForm({ ...form, score: Number(e.target.value) })}
-                className="w-full border border-gray-300 rounded-md px-2 py-1.5" />
-            </label>
-            <label className="text-sm">
-              <div className="text-xs text-gray-500 mb-1">Contact ID (optional)</div>
-              <input value={form.contact_id} onChange={e => setForm({ ...form, contact_id: e.target.value })}
-                className="w-full border border-gray-300 rounded-md px-2 py-1.5" />
-            </label>
-            <label className="text-sm md:col-span-3">
-              <div className="text-xs text-gray-500 mb-1">Comment</div>
-              <textarea value={form.comment} onChange={e => setForm({ ...form, comment: e.target.value })}
-                rows={2} className="w-full border border-gray-300 rounded-md px-2 py-1.5" />
-            </label>
-            <div className="md:col-span-3">
-              <button onClick={submit} className="px-3 py-1.5 rounded-md text-sm bg-blue-600 text-white">Submit</button>
-            </div>
+      <SparkDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title="Record NPS response"
+        subtitle="On a scale of 0–10, how likely is this customer to recommend us?"
+        footer={
+          <>
+            <button onClick={() => setDrawerOpen(false)} className="spark-btn spark-btn-secondary">Cancel</button>
+            <button onClick={submit} className="spark-btn spark-btn-primary">Submit</button>
+          </>
+        }
+      >
+        <div className="spark-field">
+          <label className="spark-field-label">Score ({form.score})</label>
+          <input type="range" min={0} max={10} value={form.score} onChange={e => setForm({ ...form, score: Number(e.target.value) })} className="w-full" />
+          <div className="flex justify-between text-[10px] text-slate-500 mt-1">
+            <span>0 detractor</span><span>7-8 passive</span><span>9-10 promoter</span>
           </div>
         </div>
-
-        <div className="card">
-          <div className="card-hdr"><div className="card-ttl">Recent responses</div></div>
-          <table className="data-table">
-            <thead><tr><th>Score</th><th>Category</th><th>Source</th><th>Comment</th><th>When</th></tr></thead>
-            <tbody>
-              {list.map(r => (
-                <tr key={r.id}>
-                  <td><span className={`inline-block rounded-full w-7 h-7 text-center leading-7 text-xs font-medium ${r.category === "promoter" ? "bg-emerald-100 text-emerald-700" : r.category === "passive" ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"}`}>{r.score}</span></td>
-                  <td className="capitalize">{r.category}</td>
-                  <td className="text-xs text-gray-500">{r.request_source || "—"}</td>
-                  <td className="text-sm">{r.comment || "—"}</td>
-                  <td className="text-xs text-gray-500">{new Date(r.created_at).toLocaleString()}</td>
-                </tr>
-              ))}
-              {list.length === 0 && <tr><td colSpan={5} className="text-center py-4 text-gray-500">No responses yet</td></tr>}
-            </tbody>
-          </table>
+        <div className="spark-field">
+          <label className="spark-field-label">Contact ID (optional)</label>
+          <input className="spark-field-input" value={form.contact_id} onChange={e => setForm({ ...form, contact_id: e.target.value })} placeholder="Leave blank for anonymous" />
         </div>
-      </div>
-    </OliverPageWrapper>
+        <div className="spark-field">
+          <label className="spark-field-label">Comment</label>
+          <textarea className="spark-field-textarea" value={form.comment} onChange={e => setForm({ ...form, comment: e.target.value })} placeholder="What did they say?" rows={4} />
+        </div>
+        <div className="text-xs text-slate-500 pt-2 border-t border-slate-100">
+          <Heart className="inline h-3 w-3 text-rose-500 mr-1" />
+          Promoters (9-10) are your review-request candidates.
+        </div>
+      </SparkDrawer>
+    </SparkPageShell>
   );
 }
 

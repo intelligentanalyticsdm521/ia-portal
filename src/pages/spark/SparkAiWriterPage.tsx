@@ -1,121 +1,119 @@
-import { useEffect, useState, useCallback } from "react";
-import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { Link } from "react-router-dom";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import {
+  Sparkles, Mail, MessageSquare, FileText, Newspaper, Share2, Type, Zap, Coins,
+} from "lucide-react";
 
-interface UsageRow { feature: string; drafts: number; tokens_in: number; tokens_out: number; cost_cents: number; }
+/**
+ * AI Writer is a v2 feature. It requires:
+ *  - Anthropic API key (provisioning pending)
+ *  - AI Credits billing system (not yet built)
+ *  - aiRouter abstraction (Claude for analysis + writing, OpenAI later for images)
+ *
+ * Until v2, this is a coming-soon page showing what will be available + the
+ * credit pricing.
+ */
 
-const FEATURES = [
-  { value: "email_draft", label: "Email draft", systemPrompt: "You are an email marketing expert helping a small business owner write a compelling email. Produce a complete email with subject line + body.", placeholder: "Topic, audience, call-to-action…" },
-  { value: "sms_draft", label: "SMS draft", systemPrompt: "Write a concise SMS marketing message (under 160 chars). Direct, no emoji unless requested.", placeholder: "Offer, audience, expiry date…" },
-  { value: "subject_lines", label: "Subject lines (5)", systemPrompt: "Generate 5 high-conversion email subject lines. Each on its own line.", placeholder: "Email topic, audience…" },
-  { value: "newsletter", label: "Newsletter section", systemPrompt: "Write a newsletter section (intro + 2-3 paragraphs).", placeholder: "Newsletter theme + section topic…" },
-  { value: "landing_copy", label: "Landing page copy", systemPrompt: "Write landing page copy: headline, sub-headline, 3 bullets, CTA copy.", placeholder: "Product/offer + target audience…" },
-  { value: "social", label: "Social post", systemPrompt: "Write a social media post (3-4 sentences, conversational).", placeholder: "Topic + platform + tone…" },
+interface FeatureCard {
+  icon: typeof Mail;
+  title: string;
+  desc: string;
+  credits: number;
+}
+
+const FEATURES: FeatureCard[] = [
+  { icon: Mail, title: "Email drafts", desc: "Full email with subject + body, on brand voice", credits: 2 },
+  { icon: Type, title: "Subject lines (×5)", desc: "Five high-conversion subject lines per request", credits: 1 },
+  { icon: MessageSquare, title: "SMS drafts", desc: "Punchy SMS under 160 chars, A/B variants", credits: 1 },
+  { icon: Newspaper, title: "Newsletter sections", desc: "Intro + 2-3 paragraph sections from a brief", credits: 4 },
+  { icon: FileText, title: "Landing page copy", desc: "Headline, sub-head, 3 bullets, CTA copy", credits: 6 },
+  { icon: Share2, title: "Social posts", desc: "Conversational posts tuned to your channels", credits: 1 },
 ];
 
 export function SparkAiWriterPage() {
-  const { get, post, ready } = useSparkApi();
-  const [feature, setFeature] = useState(FEATURES[0]);
-  const [prompt, setPrompt] = useState("");
-  const [output, setOutput] = useState<{ content: string; tokens_in: number; tokens_out: number; cost_cents: number } | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [usage, setUsage] = useState<UsageRow[]>([]);
-  const [error, setError] = useState<unknown>(null);
-  const [loading, setLoading] = useState(true);
-
-  const loadUsage = useCallback(async () => {
-    if (!ready) return;
-    setLoading(true);
-    try {
-      const r = await get<{ data: UsageRow[] }>("/api/v1/ai-writer/usage?days=30");
-      setUsage(r.data || []);
-    } catch (err) { setError(err); } finally { setLoading(false); }
-  }, [get, ready]);
-
-  useEffect(() => { loadUsage(); }, [loadUsage]);
-
-  async function generate() {
-    if (!prompt.trim()) return;
-    setGenerating(true);
-    setError(null);
-    setOutput(null);
-    try {
-      const r = await post<{ data: { content: string; tokens_in: number; tokens_out: number; cost_cents: number } }>("/api/v1/ai-writer/draft", {
-        feature: feature.value,
-        prompt: prompt.trim(),
-        system: feature.systemPrompt,
-        max_tokens: 1024,
-      });
-      setOutput(r.data);
-      await loadUsage();
-    } catch (err) { setError(err); } finally { setGenerating(false); }
-  }
-
   return (
-    <OliverPageWrapper title="AI Writer" subtitle="Anthropic-powered marketing copy assistant" error={error} loading={loading}>
-      <div className="arion-page">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="card lg:col-span-2">
-            <div className="card-hdr"><div className="card-ttl">Draft generator</div></div>
-            <div className="p-4 space-y-3">
-              <label className="text-sm">
-                <div className="text-xs text-gray-500 mb-1">Feature</div>
-                <select value={feature.value} onChange={e => { const f = FEATURES.find(x => x.value === e.target.value); if (f) setFeature(f); }}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
-                  {FEATURES.map(f => (<option key={f.value} value={f.value}>{f.label}</option>))}
-                </select>
-              </label>
-              <label className="text-sm">
-                <div className="text-xs text-gray-500 mb-1">Your brief</div>
-                <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={6}
-                  placeholder={feature.placeholder}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
-              </label>
-              <button onClick={generate} disabled={generating || !prompt.trim()}
-                className="px-4 py-2 rounded-md text-sm bg-emerald-600 text-white disabled:opacity-50">
-                {generating ? "Generating…" : "Generate draft"}
-              </button>
-
-              {output && (
-                <div className="mt-3 border border-gray-200 rounded-md p-3 bg-gray-50">
-                  <div className="text-xs text-gray-500 mb-2">
-                    {output.tokens_in + output.tokens_out} tokens · ${(output.cost_cents / 100).toFixed(3)}
-                  </div>
-                  <pre className="whitespace-pre-wrap text-sm">{output.content}</pre>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="card-hdr"><div className="card-ttl">30-day usage</div></div>
-            <div className="p-4">
-              {usage.length === 0
-                ? <div className="text-sm text-gray-500 text-center py-4">No drafts yet</div>
-                : (
-                  <table className="data-table text-sm">
-                    <thead><tr><th>Feature</th><th>Drafts</th><th>Cost</th></tr></thead>
-                    <tbody>
-                      {usage.map(u => (
-                        <tr key={u.feature}>
-                          <td className="capitalize text-xs">{u.feature.replace("_", " ")}</td>
-                          <td>{u.drafts}</td>
-                          <td>${((u.cost_cents || 0) / 100).toFixed(2)}</td>
-                        </tr>
-                      ))}
-                      <tr className="font-semibold border-t">
-                        <td>Total</td>
-                        <td>{usage.reduce((a, u) => a + u.drafts, 0)}</td>
-                        <td>${(usage.reduce((a, u) => a + (u.cost_cents || 0), 0) / 100).toFixed(2)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                )}
-            </div>
-          </div>
+    <SparkPageShell
+      title="AI Writer"
+      subtitle="Marketing copy assistant — coming with v2"
+    >
+      {/* Coming Soon hero */}
+      <div className="rounded-xl bg-gradient-to-br from-violet-50 via-white to-emerald-50 border border-slate-200 p-8 mb-4">
+        <div className="flex items-center gap-2 text-xs uppercase font-semibold text-violet-600 mb-2">
+          <Sparkles className="h-4 w-4" /> v2 — AI Credits required
+        </div>
+        <h2 className="text-2xl font-semibold text-slate-900 mb-2">Brand-voice marketing copy, on demand</h2>
+        <p className="text-sm text-slate-600 max-w-2xl">
+          AI Writer turns a brief into ready-to-send copy — emails, SMS, newsletters,
+          landing pages, social posts. It learns your brand voice from ARION My Brand
+          and Anthropic Claude does the writing. Credits gate usage so you stay in
+          control of cost.
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full bg-white border border-slate-200">
+            <Zap className="h-3 w-3 text-amber-500" /> Powered by Claude Sonnet 4.5
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full bg-white border border-slate-200">
+            <Coins className="h-3 w-3 text-emerald-600" /> Pro: 100 credits/mo · Business: 500/mo
+          </span>
         </div>
       </div>
-    </OliverPageWrapper>
+
+      {/* Feature preview cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+        {FEATURES.map(f => {
+          const Icon = f.icon;
+          return (
+            <div key={f.title} className="spark-mini-card">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-lg bg-violet-50">
+                  <Icon className="h-4 w-4 text-violet-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-slate-900">{f.title}</h3>
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                      <Coins className="h-2.5 w-2.5" /> {f.credits}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 mt-1">{f.desc}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* What's coming */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
+        <div className="spark-mini-card">
+          <h3 className="text-sm font-semibold text-slate-900 mb-2">What's coming in v2</h3>
+          <ul className="space-y-1.5 text-sm text-slate-700">
+            <li>• Claude Sonnet 4.5 for analysis + writing</li>
+            <li>• Brand voice from ARION My Brand (auto-applied)</li>
+            <li>• Output validators: length caps, banned-phrase filters, brand-compliance check</li>
+            <li>• A/B variant generation (5 options per request)</li>
+            <li>• One-click insert into Campaigns / Newsletter / Social</li>
+            <li>• Full audit log on every generation (tokens + cost per tenant)</li>
+          </ul>
+        </div>
+        <div className="spark-mini-card">
+          <h3 className="text-sm font-semibold text-slate-900 mb-2">AI Credits — how it works</h3>
+          <ul className="space-y-1.5 text-sm text-slate-700">
+            <li>• 1 credit = $0.10 in pricing terms (~50% margin over raw API cost)</li>
+            <li>• Pro tier includes 100 credits/month (~50 email drafts)</li>
+            <li>• Business tier includes 500 credits/month</li>
+            <li>• Top up: $20 = 250 credits, $50 = 700 credits</li>
+            <li>• Unused credits roll forward 30 days then expire</li>
+            <li>• Each operation shows credit cost before you commit</li>
+          </ul>
+          <Link to="/app/services/spark_usage" className="inline-block mt-3 text-xs text-emerald-600 font-medium">View tier comparison →</Link>
+        </div>
+      </div>
+
+      <div className="text-center text-xs text-slate-500 py-4">
+        v2 ships with the IA Intelligence Layer rollout. Want early access? Reach out at support@iadm.io.
+      </div>
+    </SparkPageShell>
   );
 }
 
