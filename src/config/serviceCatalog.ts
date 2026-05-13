@@ -78,6 +78,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'arion_business_bing_overview', displayName: 'Bing Places', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_business_bing_overview', description: 'Bing Places for Business listing status and profile management.' },
   { key: 'arion_business_apple_overview', displayName: 'Apple Business Connect', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_business_apple_overview', description: 'Apple Business Connect listing and Apple Maps presence management.' },
   { key: 'arion_brand', displayName: 'Your Brand', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_brand', description: 'Brand management tools — assets, style guides, and digital brand presence.' },
+  { key: 'arion_usage', displayName: 'Plan & Pricing', section: 'ARION', defaultStatus: 'not_subscribed', route: '/app/services/arion_usage', description: 'ARION hosting tier comparison + SEO add-on picker with live total.' },
   {
     key: 'stella_dashboards',
     displayName: 'Dashboards',
@@ -105,6 +106,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_activity_log', displayName: 'Activity Log', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_activity_log', description: 'Full audit trail of all job status transitions.' },
   { key: 'oliver_catalog', displayName: 'Service Catalog', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_catalog', description: 'Define your services and pricing. Each offering syncs to Stripe.' },
   { key: 'oliver_billing_overview', displayName: 'Billing Overview', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_billing_overview', description: 'Stripe-style billing dashboard: gross volume, outstanding, MRR, and recent payments.' },
+  { key: 'oliver_usage', displayName: 'Plan & Pricing', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_usage', description: 'OLIVER tier comparison + live plan total. See your current seats/jobs usage and switch tiers.' },
   { key: 'oliver_reminders', displayName: 'Reminders', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_reminders', description: 'Overdue invoice tracker. See which automated reminders have fired and send manual nudges.' },
   { key: 'oliver_onboarding', displayName: 'Get Started', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_onboarding', description: 'Guided 5-step setup wizard for new tenants.' },
   { key: 'oliver_settings', displayName: 'Business Setup', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_settings', description: 'Business profile, Stripe Connect, and invoice template.' },

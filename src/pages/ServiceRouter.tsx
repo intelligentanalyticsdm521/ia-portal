@@ -138,6 +138,8 @@ const OliverInsightsPage = lazyNamed(() => import('./oliver/OliverInsightsPage')
 const OliverProjectsPage = lazyNamed(() => import('./oliver/OliverProjectsPage'), 'OliverProjectsPage');
 const OliverDisputesPage = lazyNamed(() => import('./oliver/OliverDisputesPage'), 'OliverDisputesPage');
 const OliverProposalsPage = lazyNamed(() => import('./oliver/OliverProposalsPage'), 'OliverProposalsPage');
+const OliverUsagePage = lazyNamed(() => import('./oliver/OliverUsagePage'), 'OliverUsagePage');
+const ArionUsagePage = lazyNamed(() => import('./arion/ArionUsagePage'), 'ArionUsagePage');
 
 // CONSULTING — lazy-loaded
 const ConsultingOverviewPage = lazyNamed(() => import('./consulting/ConsultingOverviewPage'), 'ConsultingOverviewPage');
@@ -232,6 +234,7 @@ export function ServiceRouter() {
       case 'arion_business_bing_overview': arionPage = <BusinessBingOverview />; break;
       case 'arion_business_apple_overview': arionPage = <BusinessAppleOverview />; break;
       case 'arion_brand': arionPage = <BrandPage />; break;
+      case 'arion_usage': arionPage = <ArionUsagePage service={service} status={status} />; break;
       default: break;
     }
     if (arionPage) {
@@ -273,6 +276,7 @@ export function ServiceRouter() {
       case 'oliver_projects': oliverPage = <OliverProjectsPage />; break;
       case 'oliver_disputes': oliverPage = <OliverDisputesPage />; break;
       case 'oliver_proposals': oliverPage = <OliverProposalsPage />; break;
+      case 'oliver_usage': oliverPage = <OliverUsagePage />; break;
     }
     if (oliverPage) {
       return <Suspense fallback={<RouteLoading />}>{oliverPage}</Suspense>;

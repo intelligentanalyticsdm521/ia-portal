@@ -103,7 +103,10 @@ const OLIVER_NAV: SubNavConfig = {
     },
     {
       label: "", icon: Settings,
-      items: [{ key: "oliver_settings", label: "Business Setup", route: "/app/services/oliver_settings" }],
+      items: [
+        { key: "oliver_settings", label: "Business Setup", route: "/app/services/oliver_settings" },
+        { key: "oliver_usage", label: "Plan & Pricing", route: "/app/services/oliver_usage" },
+      ],
     },
   ],
 };
@@ -188,7 +191,10 @@ const ARION_NAV: SubNavConfig = {
     },
     {
       label: "", icon: Star,
-      items: [{ key: "arion_brand", label: "My Brand", route: "/app/services/arion_brand" }],
+      items: [
+        { key: "arion_brand", label: "My Brand", route: "/app/services/arion_brand" },
+        { key: "arion_usage", label: "Plan & Pricing", route: "/app/services/arion_usage" },
+      ],
     },
   ],
 };
