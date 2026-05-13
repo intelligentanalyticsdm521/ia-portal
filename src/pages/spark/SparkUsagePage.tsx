@@ -676,9 +676,19 @@ function LeadGenCard({ tier, active, extras, onActivate, onExtrasChange }: {
 
       {/* Extras slider */}
       <div className="mt-3 bg-white/5 border border-white/10 rounded-lg p-3">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-start justify-between mb-2">
           <span className="text-[10px] uppercase tracking-wider text-white/70">Extra leads</span>
-          <span className="text-xs font-bold">+{extras} leads {extras === 0 && <span className="text-white/50 font-normal text-[10px] ml-1">No extras</span>}</span>
+          <div className="text-right">
+            <div className="text-xs font-bold">
+              +{extras} {extras === 1 ? "lead" : "leads"}
+            </div>
+            <div className="text-[10px] text-[#EF6C33] font-semibold mt-0.5">
+              {extras === 0
+                ? <span className="text-white/50 font-normal">No extras</span>
+                : <>+${(extras * tier.overage).toFixed(2)} <span className="text-white/50 font-normal">(${tier.overage.toFixed(2)}/lead)</span></>
+              }
+            </div>
+          </div>
         </div>
         <input
           type="range" min={0} max={tier.cap} step={5}
