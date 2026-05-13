@@ -24,14 +24,16 @@ interface UsageResponse {
 const EMAIL_STEPS = [500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
 
 function basePriceForEmails(emails: number): number {
-  if (emails <= 500) return 17;
-  if (emails <= 1000) return 27;
-  if (emails <= 2500) return 39;
-  if (emails <= 5000) return 59;
-  if (emails <= 10000) return 89;
-  if (emails <= 25000) return 139;
-  if (emails <= 50000) return 209;
-  return 309;
+  // Monthly prices (annual = 10% off applied at total).
+  // Standard tier at 500-email baseline = $19/mo per public pricing page.
+  if (emails <= 500) return 19;
+  if (emails <= 1000) return 29;
+  if (emails <= 2500) return 44;
+  if (emails <= 5000) return 69;
+  if (emails <= 10000) return 99;
+  if (emails <= 25000) return 159;
+  if (emails <= 50000) return 239;
+  return 349;
 }
 // Industry-standard: contacts ≈ email_volume / 10
 function contactsForEmails(emails: number): number { return Math.round(emails / 10); }
