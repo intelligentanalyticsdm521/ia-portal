@@ -424,10 +424,19 @@ body {
  * - Pill filter row above tables
  * ============================================================================ */
 .spark-page {
+  /* Match .arion-page constrained width so SPARK pages don't sprawl across
+   * the full main content area. 80% / centered, same as ARION. */
+  max-width: 80%;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  min-height: calc(100% - 16px);
   background: #fafbfc;
+  border: 1px solid rgb(226, 232, 240);
+  border-radius: 10px;
+  margin-top: 16px;
+  margin-bottom: 16px;
+  overflow: hidden;
 }
 .spark-page-header {
   position: sticky;
@@ -437,18 +446,25 @@ body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 20px;
-  background: #fff;
+  padding: 16px 20px;
+  background: linear-gradient(to bottom, #ffffff 0%, #fafbfc 100%);
   border-bottom: 1px solid rgb(226, 232, 240);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
+}
+.spark-page-header h1 {
+  font-size: 20px;
+  font-weight: 600;
+  color: rgb(15, 23, 42);
+  letter-spacing: -0.01em;
 }
 .spark-stat-strip-wrap {
-  background: #fff;
+  background: linear-gradient(to bottom, #f8fafc 0%, #f1f5f9 100%);
   border-bottom: 1px solid rgb(226, 232, 240);
 }
 .spark-stat-strip {
   display: flex;
   gap: 0;
-  padding: 12px 20px;
+  padding: 14px 20px;
 }
 .spark-stat-item {
   flex: 1;
@@ -467,6 +483,13 @@ body {
   background: #fff;
   border-bottom: 1px solid rgb(226, 232, 240);
   flex-wrap: wrap;
+}
+
+/* Make .spark-page-body distinctly different from old card-on-white pattern.
+ * Subtle background tint + tighter top spacing makes it obvious data is the
+ * primary surface, not a card containing data. */
+.spark-page-body {
+  background: #fafbfc;
 }
 .spark-page-body {
   flex: 1;
