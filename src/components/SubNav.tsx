@@ -209,6 +209,7 @@ const ARION_NAV: SubNavConfig = {
       label: "", icon: Star,
       items: [
         { key: "arion_brand", label: "My Brand", route: "/app/services/arion_brand" },
+        { key: "arion_plugin_provisioning", label: "Plugin Provisioning", route: "/app/services/arion_plugin_provisioning" },
         { key: "arion_usage", label: "Plan & Pricing", route: "/app/services/arion_usage" },
       ],
     },

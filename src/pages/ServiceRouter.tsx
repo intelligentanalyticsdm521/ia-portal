@@ -172,6 +172,7 @@ const OliverSlaPoliciesPage = lazyNamed(() => import('./oliver/OliverSlaPolicies
 const OliverJobCostingPage = lazyNamed(() => import('./oliver/OliverJobCostingPage'), 'OliverJobCostingPage');
 const OliverArgusPage = lazyNamed(() => import('./oliver/OliverArgusPage'), 'OliverArgusPage');
 const ArionUsagePage = lazyNamed(() => import('./arion/ArionUsagePage'), 'ArionUsagePage');
+const ArionPluginProvisioningPage = lazyNamed(() => import('./arion/ArionPluginProvisioningPage'), 'ArionPluginProvisioningPage');
 
 // CONSULTING — lazy-loaded
 const ConsultingOverviewPage = lazyNamed(() => import('./consulting/ConsultingOverviewPage'), 'ConsultingOverviewPage');
@@ -267,6 +268,7 @@ export function ServiceRouter() {
       case 'arion_business_apple_overview': arionPage = <BusinessAppleOverview />; break;
       case 'arion_brand': arionPage = <BrandPage />; break;
       case 'arion_usage': arionPage = <ArionUsagePage service={service} status={status} />; break;
+      case 'arion_plugin_provisioning': arionPage = <ArionPluginProvisioningPage service={service} status={status} />; break;
       default: break;
     }
     if (arionPage) {

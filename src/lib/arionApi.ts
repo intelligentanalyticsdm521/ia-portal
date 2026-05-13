@@ -285,6 +285,28 @@ export async function listArionSites(params: { baseUrl: string; bearerToken: str
   return requestJson<{ tenant: OverviewResponse['tenant']; sites: ArionSiteSummary[] }>({ ...params, path: '/arion/sites' });
 }
 
+export interface ProvisionCodeResponse {
+  data: {
+    code: string;
+    code_id: number;
+    expires_at: string;
+    install_options: {
+      zero_touch_wp_cli: string;
+      zero_touch_wp_cli_alt: string;
+      magic_link: string;
+      manual_code: string;
+    };
+    site: { id: string; domain: string; primary_url: string | null };
+  };
+}
+
+export async function mintProvisionCode(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; ttl_days?: number }) {
+  return requestJson<ProvisionCodeResponse>({
+    ...params, path: `/arion/sites/${params.siteId}/provision-code`, method: 'POST',
+    body: { ttl_days: params.ttl_days || 7 },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Add-site provisioning (existing tenants creating a 2nd+ site).
 // Mirrors the public /onboarding/submit flow but tenant-authenticated.

@@ -79,6 +79,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'arion_business_apple_overview', displayName: 'Apple Business Connect', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_business_apple_overview', description: 'Apple Business Connect listing and Apple Maps presence management.' },
   { key: 'arion_brand', displayName: 'Your Brand', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_brand', description: 'Brand management tools — assets, style guides, and digital brand presence.' },
   { key: 'arion_usage', displayName: 'Plan & Pricing', section: 'ARION', defaultStatus: 'not_subscribed', route: '/app/services/arion_usage', description: 'ARION hosting tier comparison + SEO add-on picker with live total.' },
+  { key: 'arion_plugin_provisioning', displayName: 'Plugin Provisioning', section: 'ARION', defaultStatus: 'not_subscribed', route: '/app/services/arion_plugin_provisioning', description: 'Mint plugin provisioning codes — WP-CLI zero-touch, magic link, or manual paste install paths.' },
   {
     key: 'stella_dashboards',
     displayName: 'Dashboards',
