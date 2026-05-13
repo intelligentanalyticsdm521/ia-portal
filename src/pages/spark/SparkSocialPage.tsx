@@ -69,6 +69,18 @@ export function SparkSocialPage() {
     <SparkPageShell
       title="Social Scheduler"
       subtitle="Schedule + track posts across all your channels"
+      help={
+        <>
+          <strong className="block mb-1">How this works:</strong>
+          1. <strong>Connect your accounts</strong> — Facebook / Instagram / LinkedIn / X / Google Business Profile. OAuth flows are pending app registration with each provider (we'll handle that as part of v2 rollout); for now you can add accounts manually as placeholders.
+          <br /><br />
+          2. <strong>Schedule posts</strong> in a single composer. Pick an account, write the content, set a date/time. SPARK saves it as <em>scheduled</em>.
+          <br /><br />
+          3. <strong>A worker publishes them</strong> at the scheduled time using your stored OAuth tokens — once the OAuth side is live. Until then, scheduled posts are tracked here but won't actually post.
+          <br /><br />
+          4. <strong>Status + analytics</strong> flow back: draft → scheduled → posted, with impressions and engagement pulled from each provider where supported.
+        </>
+      }
       actions={
         <div className="flex gap-2">
           <button onClick={() => setDrawer("account")} className="spark-btn spark-btn-secondary">

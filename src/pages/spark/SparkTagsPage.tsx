@@ -56,6 +56,14 @@ export function SparkTagsPage() {
     <SparkPageShell
       title="Tags"
       subtitle="Color-coded labels for organizing contacts"
+      help={
+        <>
+          <strong className="block mb-1">Tags are flexible labels you stick on contacts.</strong>
+          One contact can have many tags. Use them for anything you'd otherwise scribble in a notebook: <em>"VIP"</em>, <em>"Hot lead"</em>, <em>"Past customer"</em>, <em>"Wants quarterly newsletter"</em>.
+          <br /><br />
+          Tags are referenced in <strong>Segments</strong> filters to dynamically target campaigns. Color-coding is for fast visual scanning in the Contacts list.
+        </>
+      }
       actions={
         <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
           <Plus className="h-3.5 w-3.5" /> New tag

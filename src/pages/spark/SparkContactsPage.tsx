@@ -7,6 +7,7 @@ import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkTable, type SparkTableColumn } from "../../components/spark/SparkTable";
 import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
 import { SparkSearchBox } from "../../components/spark/SparkSearchBox";
+import { SparkTooltip } from "../../components/spark/SparkTooltip";
 import {
   Users, Plus, Upload, Download, Mail, Phone, Building2, Sparkles, Trash2,
   Tag as TagIcon, ListPlus, Send, MoreHorizontal, AlertTriangle, ChevronUp, ChevronDown, Activity,
@@ -250,6 +251,16 @@ export function SparkContactsPage() {
     <SparkPageShell
       title="Contacts"
       subtitle="Everyone in your CRM — auto-scored and segmented"
+      help={
+        <>
+          <strong className="block mb-1">What you can do here:</strong>
+          Manage every person in your CRM. Import from a CSV, add manually, or let SPARK forms capture them automatically.
+          <br /><br />
+          <strong>Tier X / Y / Z:</strong> Contact Intelligence auto-scores each person based on engagement, behavior, and (when OLIVER is connected) job history. <strong>X</strong> = highest value, most engaged. <strong>Y</strong> = warm but not your best. <strong>Z</strong> = stale or cold.
+          <br /><br />
+          Companies auto-link via email domain. Bulk-select rows to tag, add to a list, or send a campaign.
+        </>
+      }
       actions={
         <>
           <button onClick={handleExport} className="spark-btn spark-btn-secondary" disabled={!contacts.length}>

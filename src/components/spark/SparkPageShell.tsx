@@ -1,10 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { isTierGateError, type TierGateError } from "../../hooks/useOliverApi";
 import { OliverUpgradeGate } from "../OliverUpgradeGate";
+import { SparkTooltip } from "./SparkTooltip";
 
 interface SparkPageShellProps {
   title: string;
   subtitle?: string;
+  /** Plain-English explanation of what this page is and when to use it.
+   *  Renders as a (?) icon next to the subtitle that shows a tooltip on hover. */
+  help?: ReactNode;
   /** Right-side actions in the sticky header (e.g. primary "+ New" button) */
   actions?: ReactNode;
   /** Optional inline horizontal stat strip directly under the header */
@@ -31,7 +35,7 @@ interface SparkPageShellProps {
  * Use this instead of OliverPageWrapper on all interactive SPARK pages.
  */
 export function SparkPageShell({
-  title, subtitle, actions, stats, filters, children, error, loading,
+  title, subtitle, help, actions, stats, filters, children, error, loading,
 }: SparkPageShellProps) {
   if (isTierGateError(error)) {
     return (
@@ -50,7 +54,7 @@ export function SparkPageShell({
 
   return (
     <div className="spark-page">
-      <SparkPageHeader title={title} subtitle={subtitle} actions={actions} />
+      <SparkPageHeader title={title} subtitle={subtitle} help={help} actions={actions} />
       {stats && <div className="spark-stat-strip-wrap">{stats}</div>}
       {filters && <div className="spark-filter-row">{filters}</div>}
       <div className="spark-page-body">
@@ -111,14 +115,20 @@ function LoadingWithTimeout() {
 interface SparkPageHeaderProps {
   title: string;
   subtitle?: string;
+  help?: ReactNode;
   actions?: ReactNode;
 }
-function SparkPageHeader({ title, subtitle, actions }: SparkPageHeaderProps) {
+function SparkPageHeader({ title, subtitle, help, actions }: SparkPageHeaderProps) {
   return (
     <div className="spark-page-header">
       <div className="min-w-0">
         <h1 className="text-xl font-semibold text-slate-900 truncate">{title}</h1>
-        {subtitle && <p className="text-xs text-slate-500 mt-0.5 truncate">{subtitle}</p>}
+        {subtitle && (
+          <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
+            <span className="truncate">{subtitle}</span>
+            {help && <SparkTooltip content={help} maxWidth={320} side="bottom" />}
+          </p>
+        )}
       </div>
       {actions && <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>}
     </div>

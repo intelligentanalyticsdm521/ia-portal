@@ -54,7 +54,17 @@ export function SparkListsPage() {
   return (
     <SparkPageShell
       title="Lists"
-      subtitle="Static contact lists for campaign targeting"
+      subtitle="Static contact groups for campaign targeting"
+      help={
+        <>
+          <strong className="block mb-1">When to use Lists vs Segments:</strong>
+          A <strong>List</strong> is a static, manually-curated group of contacts. You add and remove people by hand. Good for: a specific campaign send, a conference attendee list, a one-off mailing.
+          <br /><br />
+          A <strong>Segment</strong> is dynamic — it's a filter (like "everyone tagged VIP who hasn't bought in 90 days") that auto-updates as contacts match the rules.
+          <br /><br />
+          Use Lists when membership shouldn't change. Use Segments when you want "everyone who currently matches X."
+        </>
+      }
       actions={
         <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
           <Plus className="h-3.5 w-3.5" /> New list

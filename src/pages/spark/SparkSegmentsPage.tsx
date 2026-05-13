@@ -65,6 +65,16 @@ export function SparkSegmentsPage() {
     <SparkPageShell
       title="Segments"
       subtitle="Dynamic groups — filter rules auto-update as contacts change"
+      help={
+        <>
+          <strong className="block mb-1">Segments are smart filters that re-run automatically.</strong>
+          Define a rule once ("all contacts tagged VIP in Texas who opened an email in the last 30 days") and the segment auto-includes everyone who matches. As contacts change, the segment updates.
+          <br /><br />
+          Compare to <strong>Lists</strong>: lists are manual (you add/remove people by hand). Segments are dynamic.
+          <br /><br />
+          Use segments to power campaigns that should always target "current X" instead of a frozen snapshot.
+        </>
+      }
       actions={
         <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
           <Plus className="h-3.5 w-3.5" /> New segment

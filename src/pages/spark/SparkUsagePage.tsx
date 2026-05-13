@@ -25,15 +25,17 @@ interface UsageResponse {
 // Slider snap points for the contact slider — common tier breakpoints
 const CONTACT_STEPS = [500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
 
+// Base price from the contact slider. Standard tier is $17/mo base (per the
+// public pricing page) with the 500-contact entry point free for trials.
 function basePriceForContacts(contacts: number): number {
-  if (contacts <= 500) return 0;       // free tier
-  if (contacts <= 1000) return 19;
-  if (contacts <= 2500) return 29;
-  if (contacts <= 5000) return 49;
-  if (contacts <= 10000) return 79;
-  if (contacts <= 25000) return 129;
-  if (contacts <= 50000) return 199;
-  return 299;                           // 100k
+  if (contacts <= 500) return 17;
+  if (contacts <= 1000) return 27;
+  if (contacts <= 2500) return 39;
+  if (contacts <= 5000) return 59;
+  if (contacts <= 10000) return 89;
+  if (contacts <= 25000) return 139;
+  if (contacts <= 50000) return 209;
+  return 309;                           // 100k
 }
 
 function emailVolumeForContacts(contacts: number): number {
@@ -41,20 +43,20 @@ function emailVolumeForContacts(contacts: number): number {
   return contacts * 10;
 }
 
-const PRO_ADDON = 40;        // $/month
-const BUSINESS_ADDON = 90;   // $/month, replaces Pro (includes Pro features)
+const PRO_ADDON = 40;        // $/month (matches public pricing page)
+const BUSINESS_ADDON = 71;   // $/month, layered on Standard (includes Pro features)
 
-// Lead Generation pricing — placeholder until user confirms model
-const LEAD_GEN_STEPS = [0, 100, 250, 500, 1000, 2500, 5000];
-function leadGenPrice(leads: number): number {
-  if (leads <= 0) return 0;
-  if (leads <= 100) return 29;
-  if (leads <= 250) return 59;
-  if (leads <= 500) return 99;
-  if (leads <= 1000) return 149;
-  if (leads <= 2500) return 249;
-  return 399;
-}
+// Lead Generation add-on — three sub-tiers from the public pricing page:
+// Essentials $49.99 (50 leads, +$1.25/lead overage)
+// Growth     $99.99 (100 leads, +$1.15/lead overage)
+// Authority  $149.99 (150 leads, +$1.00/lead overage)
+// Steps maps slider index to a lead-volume tier.
+const LEAD_GEN_TIERS = [
+  { leads: 0,   price: 0,      overage: 1.75, label: "Off",              note: "On-demand at $1.75/lead" },
+  { leads: 50,  price: 49.99,  overage: 1.25, label: "Essentials",       note: "$1.25/lead overage" },
+  { leads: 100, price: 99.99,  overage: 1.15, label: "Growth",           note: "$1.15/lead overage" },
+  { leads: 150, price: 149.99, overage: 1.00, label: "Authority",        note: "$1.00/lead overage · best rate" },
+];
 
 const PRO_FEATURES = [
   "Sales Pipeline + Deals (Kanban)",
@@ -85,15 +87,20 @@ export function SparkUsagePage() {
   // Slider state (drives the live price preview)
   const [contactsIdx, setContactsIdx] = useState(2);             // index into CONTACT_STEPS, default 2500
   const [tier, setTier] = useState<"standard" | "pro" | "business">("standard");
-  const [leadsIdx, setLeadsIdx] = useState(0);                   // index into LEAD_GEN_STEPS, default 0
+  const [leadsIdx, setLeadsIdx] = useState(0);                   // index into LEAD_GEN_TIERS, default Off
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
 
   const targetContacts = CONTACT_STEPS[contactsIdx];
-  const targetLeads = LEAD_GEN_STEPS[leadsIdx];
+  const leadTier = LEAD_GEN_TIERS[leadsIdx];
+  const targetLeads = leadTier.leads;
   const targetEmails = emailVolumeForContacts(targetContacts);
   const basePrice = basePriceForContacts(targetContacts);
   const tierPrice = tier === "pro" ? PRO_ADDON : tier === "business" ? BUSINESS_ADDON : 0;
-  const leadPrice = leadGenPrice(targetLeads);
-  const totalPrice = basePrice + tierPrice + leadPrice;
+  const leadPrice = leadTier.price;
+  const subtotal = basePrice + tierPrice + leadPrice;
+  // Annual = 10% off (per pricing page)
+  const annualDiscount = billingCycle === "annual" ? subtotal * 0.10 : 0;
+  const totalPrice = subtotal - annualDiscount;
 
   // Load current usage
   useEffect(() => {
@@ -277,36 +284,37 @@ export function SparkUsagePage() {
               <div className="flex items-baseline justify-between mb-2">
                 <div>
                   <span className="text-3xl font-bold text-slate-900">{targetLeads.toLocaleString()}</span>
-                  <span className="text-sm text-slate-500 ml-1">leads/mo</span>
+                  <span className="text-sm text-slate-500 ml-1">leads/mo · {leadTier.label}</span>
                 </div>
                 <div className="text-right">
                   <div className="text-sm font-semibold text-amber-700">${leadPrice}/mo</div>
-                  <div className="text-[10px] uppercase text-slate-500">add-on cost</div>
+                  <div className="text-[10px] uppercase text-slate-500">{leadTier.note}</div>
                 </div>
               </div>
               <input
                 type="range"
                 min={0}
-                max={LEAD_GEN_STEPS.length - 1}
+                max={LEAD_GEN_TIERS.length - 1}
                 step={1}
                 value={leadsIdx}
                 onChange={e => setLeadsIdx(Number(e.target.value))}
                 className="w-full accent-amber-600"
               />
-              <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-mono">
-                {LEAD_GEN_STEPS.map((s, i) => (
+              <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                {LEAD_GEN_TIERS.map((t, i) => (
                   <button
-                    key={s}
+                    key={t.label}
                     type="button"
                     onClick={() => setLeadsIdx(i)}
-                    className={`hover:text-slate-700 transition ${i === leadsIdx ? "text-amber-700 font-semibold" : ""}`}
+                    className={`hover:text-slate-700 transition flex flex-col items-center ${i === leadsIdx ? "text-amber-700 font-semibold" : ""}`}
                   >
-                    {s === 0 ? "Off" : s >= 1000 ? `${s / 1000}k` : s}
+                    <span>{t.leads === 0 ? "Off" : t.leads}</span>
+                    <span className="text-[9px]">{t.label}</span>
                   </button>
                 ))}
               </div>
-              <div className="mt-3 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-md p-2">
-                <strong>Pricing TBD —</strong> the values shown are placeholders. Final per-volume pricing will replace these once we finalize the lead-gen unit economics.
+              <div className="mt-3 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-md p-2">
+                <strong className="text-slate-900">Pure add-on, available at any tier.</strong> No free leads are included with Standard/Pro/Business — the lead-gen subscription is independent. Overage is billed per-lead at the rate shown.
               </div>
             </div>
           </div>
@@ -319,6 +327,24 @@ export function SparkUsagePage() {
               <span className="spark-mini-card-title">Your plan</span>
               <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">Live preview</span>
             </div>
+
+            {/* Billing cycle toggle */}
+            <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-md mb-3">
+              <button
+                type="button"
+                onClick={() => setBillingCycle("monthly")}
+                className={`text-xs py-1.5 rounded transition ${billingCycle === "monthly" ? "bg-white shadow-sm font-semibold text-slate-900" : "text-slate-600"}`}
+              >Monthly</button>
+              <button
+                type="button"
+                onClick={() => setBillingCycle("annual")}
+                className={`text-xs py-1.5 rounded transition flex items-center justify-center gap-1 ${billingCycle === "annual" ? "bg-white shadow-sm font-semibold text-slate-900" : "text-slate-600"}`}
+              >
+                Annual
+                <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-700">−10%</span>
+              </button>
+            </div>
+
             <div className="space-y-2 text-sm">
               <Line label={`Contacts (${targetContacts.toLocaleString()})`} value={basePrice} />
               <Line label={`Emails included`} value={null} note={`${targetEmails.toLocaleString()}/mo`} />
@@ -326,21 +352,25 @@ export function SparkUsagePage() {
                 <Line label={`${tier === "pro" ? "Pro" : "Business"} features`} value={tierPrice} />
               )}
               {leadPrice > 0 && (
-                <Line label={`Lead Gen (${targetLeads.toLocaleString()}/mo)`} value={leadPrice} />
+                <Line label={`Lead Gen ${leadTier.label} (${targetLeads}/mo)`} value={leadPrice} />
+              )}
+              {billingCycle === "annual" && annualDiscount > 0 && (
+                <Line label="Annual discount" value={-annualDiscount} accent="emerald" />
               )}
             </div>
             <div className="border-t border-slate-200 mt-3 pt-3 flex items-baseline justify-between">
               <span className="text-sm text-slate-600">Total</span>
-              <span className="text-2xl font-bold text-slate-900">${totalPrice}<span className="text-sm font-normal text-slate-500">/mo</span></span>
+              <span className="text-2xl font-bold text-slate-900">
+                ${totalPrice.toFixed(2)}<span className="text-sm font-normal text-slate-500">/mo</span>
+              </span>
             </div>
+            {billingCycle === "annual" && (
+              <p className="text-[11px] text-slate-500 text-right mt-0.5">Billed as ${(totalPrice * 12).toFixed(2)}/yr</p>
+            )}
             <button
               type="button"
               onClick={() => alert("Stripe checkout flow ships with v2 billing. Email support@iadm.io to change your plan today.")}
               className="mt-3 w-full spark-btn spark-btn-primary"
-              disabled={
-                usage?.tier === tier &&
-                CONTACT_STEPS.findIndex(s => s >= (usage?.limits.contacts_max || 0)) === contactsIdx
-              }
             >
               {usage?.tier === tier ? "Update plan" : `Switch to ${tier.toUpperCase()}`}
               <ArrowRight className="h-3.5 w-3.5" />
@@ -417,12 +447,14 @@ function TierCard({ title, subtitle, price, active, onClick, bullets, more, acce
   );
 }
 
-function Line({ label, value, note }: { label: string; value: number | null; note?: string }) {
+function Line({ label, value, note, accent }: { label: string; value: number | null; note?: string; accent?: "emerald" }) {
   return (
     <div className="flex items-center justify-between text-sm">
       <span className="text-slate-600">{label}</span>
       {value != null ? (
-        <span className="font-medium text-slate-900">${value}</span>
+        <span className={`font-medium ${accent === "emerald" ? "text-emerald-700" : "text-slate-900"}`}>
+          {value < 0 ? `−$${Math.abs(value).toFixed(2)}` : `$${value.toFixed(2)}`}
+        </span>
       ) : (
         <span className="text-[11px] text-slate-500">{note}</span>
       )}
