@@ -207,29 +207,39 @@ const SPARK_NAV: SubNavConfig = {
       label: "CRM", icon: Users, collapsible: true, sectionId: "spark_crm",
       items: [
         { key: "spark_contacts", label: "Contacts", route: "/app/services/spark_contacts" },
-        { key: "spark_accounts", label: "B2B Accounts", route: "/app/services/spark_accounts" },
+        // Companies (renamed from "B2B Accounts" — matches HubSpot/Salesforce/Pipedrive
+        // industry convention). Auto-matched from contact email domains.
+        { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts" },
         { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
         { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags" },
         { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments" },
       ],
     },
     {
-      label: "Marketing", icon: Megaphone, collapsible: true, sectionId: "spark_marketing",
+      label: "Outreach", icon: Megaphone, collapsible: true, sectionId: "spark_outreach",
       items: [
         { key: "spark_campaigns", label: "Campaigns", route: "/app/services/spark_campaigns" },
         { key: "spark_automations", label: "Automations", route: "/app/services/spark_automations" },
-        { key: "spark_forms", label: "Forms", route: "/app/services/spark_forms" },
-        { key: "spark_landing_pages", label: "Landing Pages", route: "/app/services/spark_landing_pages" },
         { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter" },
         { key: "spark_social", label: "Social Scheduler", route: "/app/services/spark_social" },
         { key: "spark_calendar", label: "Content Calendar", route: "/app/services/spark_calendar" },
+      ],
+    },
+    {
+      label: "Capture", icon: Target, collapsible: true, sectionId: "spark_capture",
+      items: [
+        { key: "spark_forms", label: "Forms", route: "/app/services/spark_forms" },
+        { key: "spark_landing_pages", label: "Landing Pages", route: "/app/services/spark_landing_pages" },
         { key: "spark_qr_codes", label: "QR Codes", route: "/app/services/spark_qr_codes" },
       ],
     },
     {
       label: "Sales", icon: Briefcase, collapsible: true, sectionId: "spark_sales",
       items: [
-        { key: "spark_pipelines", label: "Sales Pipeline", route: "/app/services/spark_pipelines" },
+        // Lead Gen folded into Sales — they're sequential: lead → deal → close.
+        { key: "spark_leads", label: "Lead Inbox", route: "/app/services/spark_leads" },
+        { key: "spark_search_profiles", label: "Search Profiles", route: "/app/services/spark_search_profiles" },
+        { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines" },
         { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals" },
       ],
     },
@@ -239,13 +249,6 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_nps", label: "NPS", route: "/app/services/spark_nps" },
         { key: "spark_reviews", label: "Reputation Hub", route: "/app/services/spark_reviews" },
         { key: "spark_referrals", label: "Referrals", route: "/app/services/spark_referrals" },
-      ],
-    },
-    {
-      label: "Lead Generation", icon: Target, collapsible: true, sectionId: "spark_leadgen",
-      items: [
-        { key: "spark_leads", label: "Lead Inbox", route: "/app/services/spark_leads" },
-        { key: "spark_search_profiles", label: "Search Profiles", route: "/app/services/spark_search_profiles" },
       ],
     },
     {
@@ -353,10 +356,10 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("arion_business_")) return "business";
   // SPARK sections
   if (path.includes("/spark_contacts") || path.includes("/spark_accounts") || path.includes("/spark_lists") || path.includes("/spark_tags") || path.includes("/spark_segments")) return "spark_crm";
-  if (path.includes("/spark_campaigns") || path.includes("/spark_automations") || path.includes("/spark_forms") || path.includes("/spark_landing_pages") || path.includes("/spark_newsletter") || path.includes("/spark_social") || path.includes("/spark_calendar") || path.includes("/spark_qr_codes")) return "spark_marketing";
-  if (path.includes("/spark_pipelines") || path.includes("/spark_deals")) return "spark_sales";
+  if (path.includes("/spark_campaigns") || path.includes("/spark_automations") || path.includes("/spark_newsletter") || path.includes("/spark_social") || path.includes("/spark_calendar")) return "spark_outreach";
+  if (path.includes("/spark_forms") || path.includes("/spark_landing_pages") || path.includes("/spark_qr_codes")) return "spark_capture";
+  if (path.includes("/spark_leads") || path.includes("/spark_search_profiles") || path.includes("/spark_pipelines") || path.includes("/spark_deals")) return "spark_sales";
   if (path.includes("/spark_nps") || path.includes("/spark_reviews") || path.includes("/spark_referrals")) return "spark_customer_success";
-  if (path.includes("/spark_leads") || path.includes("/spark_search_profiles")) return "spark_leadgen";
   if (path.includes("/spark_ai_writer") || path.includes("/spark_intelligence") || path.includes("/spark_insights")) return "spark_intelligence";
   // OLIVER sections
   if (path.includes("/oliver_job_board") || path.includes("/oliver_projects") || path.includes("/oliver_schedule") || path.includes("/oliver_dispatch")) return "oliver_jobs";

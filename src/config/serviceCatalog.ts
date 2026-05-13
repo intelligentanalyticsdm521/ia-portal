@@ -139,7 +139,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   // SPARK Business tier
   { key: 'spark_landing_pages', displayName: 'Landing Pages', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_landing_pages', description: 'Hosted landing page builder with submission capture (Business).' },
   { key: 'spark_reviews', displayName: 'Reputation Hub', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_reviews', description: 'Aggregated reviews across Google/Yelp/Facebook + response workflow (Business).' },
-  { key: 'spark_accounts', displayName: 'B2B Accounts', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_accounts', description: 'Group multiple contacts under a single B2B account with health score (Business).' },
+  { key: 'spark_accounts', displayName: 'Companies', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_accounts', description: 'Group contacts under company entities with auto-domain matching + health scoring.' },
   { key: 'spark_ai_writer', displayName: 'AI Writer', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_ai_writer', description: 'Anthropic-powered marketing copy assistant (Business).' },
   // Cross-channel
   { key: 'spark_insights', displayName: 'Insights', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_insights', description: 'Cross-channel SPARK insights — 7 categories with ARGUS observation boxes.' },
