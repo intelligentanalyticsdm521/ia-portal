@@ -172,6 +172,8 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_attribution', displayName: 'Attribution', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_attribution', description: 'Multi-touch attribution — first/last/linear/u-shaped models with per-contact journey viewer (Business).' },
   { key: 'spark_stella', displayName: 'STELLA Send Intelligence', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_stella', description: 'Best-time-to-send heatmap and per-contact recommendation, learned from your historical engagement data.' },
   { key: 'spark_scheduled_reports', displayName: 'Scheduled Reports', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_scheduled_reports', description: 'Save report configurations and have them emailed on a daily/weekly/monthly cadence (Business).' },
+  { key: 'spark_audience_sync', displayName: 'Audience Sync', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_audience_sync', description: 'Export hashed audiences for Google Ads Customer Match + Meta Custom Audiences (Business).' },
+  { key: 'spark_journey_builder', displayName: 'Journey Builder', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_journey_builder', description: 'Visual graph editor for branching automation journeys with yes/no edge wiring.' },
   {
     key: 'forge_integrations',
     displayName: 'Integrations',

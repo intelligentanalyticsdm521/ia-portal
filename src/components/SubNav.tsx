@@ -243,6 +243,7 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_email_templates", label: "Email Templates", route: "/app/services/spark_email_templates" },
         { key: "spark_automations", label: "Automations", route: "/app/services/spark_automations" },
         { key: "spark_automation_builder", label: "Automation Builder", route: "/app/services/spark_automation_builder" },
+        { key: "spark_journey_builder", label: "Journey Builder (graph)", route: "/app/services/spark_journey_builder" },
         { key: "spark_ab_tests", label: "A/B Tests", route: "/app/services/spark_ab_tests" },
         { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter" },
         { key: "spark_social", label: "Social Scheduler", route: "/app/services/spark_social" },
@@ -274,6 +275,7 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_scoring_rules", label: "Scoring Rules", route: "/app/services/spark_scoring_rules" },
         { key: "spark_routing_rules", label: "Routing Rules", route: "/app/services/spark_routing_rules" },
         { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution" },
+        { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync" },
       ],
     },
     {
