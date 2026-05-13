@@ -12,7 +12,7 @@ interface UnifiedEvent {
   status?: string | null;
 }
 
-interface OliverJob { job_id: string; title: string; status: string; scheduled_start_at: string; }
+interface OliverJob { id: string; title: string; status: string; scheduledDate: string | null; }
 interface SparkFeedItem { source: string; id: number; title: string; kind: string; at: string; status: string | null; }
 
 const KIND_COLORS: Record<string, string> = {
@@ -45,10 +45,12 @@ export function CommandCalendar() {
 
     if (hasOliver && oliver.ready) {
       try {
-        const r = await oliver.get<{ data: OliverJob[] }>("/jobs?upcoming=1&limit=50");
+        // /jobs supports status + per_page (no upcoming param). Pull scheduled jobs;
+        // client-side filters to ones with a scheduled date in our window.
+        const r = await oliver.get<{ data: OliverJob[] }>("/jobs?status=scheduled&per_page=100");
         for (const j of (r.data || [])) {
-          if (!j.scheduled_start_at) continue;
-          next.push({ source: "oliver", kind: "job", id: j.job_id, title: j.title, at: j.scheduled_start_at, status: j.status });
+          if (!j.scheduledDate) continue;
+          next.push({ source: "oliver", kind: "job", id: j.id, title: j.title, at: j.scheduledDate, status: j.status });
         }
       } catch { /* skip */ }
     }

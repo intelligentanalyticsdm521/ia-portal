@@ -39,7 +39,8 @@ export function SparkLeadsPage() {
 
   async function handleAction(leadId: string, action: "accept" | "reject") {
     try {
-      await put(`/api/v1/leads/${leadId}`, { status: action === "accept" ? "accepted" : "rejected" });
+      // LUMEN-API exposes dedicated /:id/accept and /:id/reject endpoints (PUT, no body).
+      await put(`/api/v1/leads/${leadId}/${action}`, {});
       setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, status: action === "accept" ? "accepted" : "rejected" } : l));
     } catch (err) {
       setError(err);

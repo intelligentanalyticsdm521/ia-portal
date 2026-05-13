@@ -5,8 +5,23 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { useSparkApi } from "../../hooks/useSparkApi";
 
 // Each card pulls one piece of data; failures degrade gracefully (card shows "—").
-interface OliverJobBoard { kpis: { jobs_today: number; jobs_overdue: number; revenue_today: number }; }
-interface OliverDashboard { kpis: { jobs_open: number; quotes_pending: number; invoices_due: number; cash_in_30d: number; }; }
+interface OliverDashboardToday {
+  jobs_today: number;
+  jobs_done_today: number;
+  revenue_today: number;
+  open_requests: number;
+  overdue_invoices: number;
+  overdue_amount: number;
+  disputes_open: number;
+  revenue_this_week: number;
+  revenue_last_week: number;
+}
+interface OliverDashboardStats {
+  activeJobs: number;
+  revenue: number;        // month-to-date
+  openInvoices: number;
+  workers: number;
+}
 interface SparkNpsSummary { nps: number; total: number; }
 interface SparkGrowth { growth_velocity_score: number; new_contacts: number; deals_won: number; }
 
@@ -18,15 +33,15 @@ export function CommandDashboard() {
   const hasOliver = enabledServices.has("oliver_dashboard") || enabledServices.has("oliver_jobs");
   const hasSpark = enabledServices.has("spark_overview") || enabledServices.has("spark_contacts");
 
-  const [oliverDash, setOliverDash] = useState<OliverDashboard | null>(null);
-  const [oliverBoard, setOliverBoard] = useState<OliverJobBoard | null>(null);
+  const [oliverToday, setOliverToday] = useState<OliverDashboardToday | null>(null);
+  const [oliverStats, setOliverStats] = useState<OliverDashboardStats | null>(null);
   const [sparkNps, setSparkNps] = useState<SparkNpsSummary | null>(null);
   const [sparkGrowth, setSparkGrowth] = useState<SparkGrowth | null>(null);
 
   const load = useCallback(async () => {
     if (hasOliver && oliver.ready) {
-      try { setOliverDash((await oliver.get<{ data: OliverDashboard }>("/dashboard"))?.data); } catch { /* skip */ }
-      try { setOliverBoard((await oliver.get<{ data: OliverJobBoard }>("/job-board?days=1"))?.data); } catch { /* skip */ }
+      try { setOliverToday((await oliver.get<{ data: OliverDashboardToday }>("/dashboard/today"))?.data); } catch { /* skip */ }
+      try { setOliverStats((await oliver.get<{ data: OliverDashboardStats }>("/dashboard/stats"))?.data); } catch { /* skip */ }
     }
     if (hasSpark && spark.ready) {
       try {
@@ -48,12 +63,14 @@ export function CommandDashboard() {
         {/* OLIVER cards */}
         {hasOliver && (
           <>
-            <Card label="Jobs today" value={oliverBoard?.kpis?.jobs_today ?? "—"} accent="blue" href="/app/services/oliver_jobs" />
-            <Card label="Overdue jobs" value={oliverBoard?.kpis?.jobs_overdue ?? "—"} accent={oliverBoard?.kpis?.jobs_overdue ? "rose" : "gray"} href="/app/services/oliver_jobs" />
-            <Card label="Quotes pending" value={oliverDash?.kpis?.quotes_pending ?? "—"} accent="amber" href="/app/services/oliver_quotes" />
-            <Card label="Invoices due" value={oliverDash?.kpis?.invoices_due ?? "—"} accent="amber" href="/app/services/oliver_invoices" />
-            <Card label="Open jobs" value={oliverDash?.kpis?.jobs_open ?? "—"} href="/app/services/oliver_jobs" />
-            <Card label="Cash next 30d" value={oliverDash?.kpis?.cash_in_30d != null ? `$${Number(oliverDash.kpis.cash_in_30d).toLocaleString()}` : "—"} accent="emerald" href="/app/services/oliver_insights" />
+            <Card label="Jobs today" value={oliverToday?.jobs_today ?? "—"} accent="blue" href="/app/services/oliver_job_board" />
+            <Card label="Overdue invoices" value={oliverToday?.overdue_invoices ?? "—"} accent={oliverToday?.overdue_invoices ? "rose" : "gray"} href="/app/services/oliver_invoices" />
+            <Card label="Open service requests" value={oliverToday?.open_requests ?? "—"} accent="amber" href="/app/services/oliver_service_requests" />
+            <Card label="Disputes open" value={oliverToday?.disputes_open ?? "—"} accent={oliverToday?.disputes_open ? "rose" : "gray"} href="/app/services/oliver_disputes" />
+            <Card label="Active jobs" value={oliverStats?.activeJobs ?? "—"} href="/app/services/oliver_job_board" />
+            <Card label="Revenue today" value={oliverToday ? `$${Number(oliverToday.revenue_today).toLocaleString()}` : "—"} accent="emerald" href="/app/services/oliver_billing_overview" />
+            <Card label="MTD revenue" value={oliverStats ? `$${Number(oliverStats.revenue).toLocaleString()}` : "—"} accent="emerald" href="/app/services/oliver_reports" />
+            <Card label="Workers active" value={oliverStats?.workers ?? "—"} accent="blue" href="/app/services/oliver_workers" />
           </>
         )}
         {/* SPARK cards */}
@@ -72,7 +89,7 @@ export function CommandDashboard() {
           <div className="iadm-card-body">
             <h3 className="text-base font-semibold">Quick actions</h3>
             <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-              {hasOliver && <Link to="/app/services/oliver_jobs" className="px-3 py-2 border rounded-md hover:bg-gray-50">+ New job</Link>}
+              {hasOliver && <Link to="/app/services/oliver_job_board" className="px-3 py-2 border rounded-md hover:bg-gray-50">+ New job</Link>}
               {hasOliver && <Link to="/app/services/oliver_proposals" className="px-3 py-2 border rounded-md hover:bg-gray-50">+ New proposal</Link>}
               {hasSpark && <Link to="/app/services/spark_campaigns" className="px-3 py-2 border rounded-md hover:bg-gray-50">+ New campaign</Link>}
               {hasSpark && <Link to="/app/services/spark_deals" className="px-3 py-2 border rounded-md hover:bg-gray-50">+ New deal</Link>}
@@ -86,12 +103,13 @@ export function CommandDashboard() {
           <div className="iadm-card-body">
             <h3 className="text-base font-semibold">Today's focus</h3>
             <ul className="mt-3 space-y-2 text-sm text-gray-700">
-              {oliverBoard?.kpis?.jobs_overdue ? <li>⚠ {oliverBoard.kpis.jobs_overdue} overdue jobs — reschedule or close out.</li> : null}
-              {oliverDash?.kpis?.quotes_pending ? <li>📋 {oliverDash.kpis.quotes_pending} quotes pending — follow up before they go cold.</li> : null}
-              {oliverDash?.kpis?.invoices_due ? <li>💰 {oliverDash.kpis.invoices_due} invoices due — send reminders.</li> : null}
+              {oliverToday?.overdue_invoices ? <li>💰 {oliverToday.overdue_invoices} overdue invoices (${Number(oliverToday.overdue_amount).toLocaleString()}) — send reminders.</li> : null}
+              {oliverToday?.open_requests ? <li>📋 {oliverToday.open_requests} new service requests waiting — respond before they go cold.</li> : null}
+              {oliverToday?.disputes_open ? <li>⚠ {oliverToday.disputes_open} Stripe disputes need response.</li> : null}
               {sparkGrowth?.new_contacts === 0 ? <li>👥 No new contacts in 30 days — capture forms may need attention.</li> : null}
               {sparkNps && sparkNps.nps < 0 ? <li>🔴 NPS is negative — talk to a detractor today.</li> : null}
-              {!oliverBoard && !sparkGrowth && <li className="text-gray-500">Loading focus items…</li>}
+              {!oliverToday && !sparkGrowth && <li className="text-gray-500">Loading focus items…</li>}
+              {oliverToday && !oliverToday.overdue_invoices && !oliverToday.open_requests && !oliverToday.disputes_open && sparkGrowth && sparkGrowth.new_contacts > 0 && (!sparkNps || sparkNps.nps >= 0) && <li className="text-emerald-700">✅ No critical signals — keep going.</li>}
             </ul>
           </div>
         </div>

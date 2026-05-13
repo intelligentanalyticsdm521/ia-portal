@@ -31,31 +31,31 @@ export function CommandAlerts() {
     // OLIVER signals
     if (hasOliver && oliver.ready) {
       try {
-        type OliverDashboard = { kpis: { invoices_due: number; quotes_pending: number; jobs_overdue?: number; } };
-        const r = await oliver.get<{ data: OliverDashboard }>("/dashboard");
-        const k = r.data?.kpis;
-        if (k?.jobs_overdue && k.jobs_overdue > 0) {
+        type OliverToday = { overdue_invoices: number; overdue_amount: number; open_requests: number; disputes_open: number; };
+        const r = await oliver.get<{ data: OliverToday }>("/dashboard/today");
+        const d = r.data;
+        if (d?.overdue_invoices && d.overdue_invoices > 0) {
           next.push({
-            id: "oliver-jobs-overdue", severity: "critical", source: "oliver",
-            title: `${k.jobs_overdue} overdue jobs`,
-            description: "Jobs past their scheduled completion date are damaging customer trust. Close out or reschedule.",
-            href: "/app/services/oliver_jobs",
-          });
-        }
-        if (k?.invoices_due && k.invoices_due > 5) {
-          next.push({
-            id: "oliver-invoices-due", severity: "warning", source: "oliver",
-            title: `${k.invoices_due} invoices outstanding`,
+            id: "oliver-invoices-overdue", severity: d.overdue_invoices > 5 ? "critical" : "warning", source: "oliver",
+            title: `${d.overdue_invoices} overdue invoices (${d.overdue_amount > 0 ? `$${Number(d.overdue_amount).toLocaleString()}` : "amount n/a"})`,
             description: "Cash flow at risk. Send reminders or escalate.",
             href: "/app/services/oliver_invoices",
           });
         }
-        if (k?.quotes_pending && k.quotes_pending > 10) {
+        if (d?.open_requests && d.open_requests > 5) {
           next.push({
-            id: "oliver-quotes-pending", severity: "warning", source: "oliver",
-            title: `${k.quotes_pending} quotes awaiting response`,
-            description: "Quote follow-up correlates strongly with win rate. Set a 48-hour reminder.",
-            href: "/app/services/oliver_quotes",
+            id: "oliver-open-requests", severity: "warning", source: "oliver",
+            title: `${d.open_requests} service requests waiting`,
+            description: "Inbound requests stay hot for ~24 hours. Respond before they go cold.",
+            href: "/app/services/oliver_service_requests",
+          });
+        }
+        if (d?.disputes_open && d.disputes_open > 0) {
+          next.push({
+            id: "oliver-disputes-open", severity: "critical", source: "oliver",
+            title: `${d.disputes_open} Stripe disputes need response`,
+            description: "Disputes default to a loss if not responded to in time. Review and contest.",
+            href: "/app/services/oliver_disputes",
           });
         }
       } catch { /* skip */ }
