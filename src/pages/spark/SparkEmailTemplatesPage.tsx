@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
-import { Plus, Save, Send, Trash2, ChevronUp, ChevronDown, Copy, Eye } from "lucide-react";
+import { Plus, Save, Send, Trash2, ChevronUp, ChevronDown, Copy, Eye, Sparkles, Wand2 } from "lucide-react";
 
 type Category = "transactional" | "marketing" | "system";
 
@@ -76,6 +76,8 @@ export function SparkEmailTemplatesPage() {
   const [renderedHtml, setRenderedHtml] = useState<string>("");
   const [previewMode, setPreviewMode] = useState<"editor" | "preview">("editor");
   const [testEmail, setTestEmail] = useState("");
+  const [subjectSuggestions, setSubjectSuggestions] = useState<string[]>([]);
+  const [aiBusy, setAiBusy] = useState(false);
 
   const fetchList = useCallback(async () => {
     if (!ready) return;
@@ -153,6 +155,44 @@ export function SparkEmailTemplatesPage() {
       setSelectedId(null);
       await fetchList();
     } catch (err) { alert(`Failed: ${(err as Error).message}`); }
+  }
+
+  async function suggestSubjects() {
+    if (!renderedHtml) return;
+    setAiBusy(true);
+    try {
+      const r = await post<{ data: { suggestions: string[] } }>("/api/v1/ai-writer/suggest-subject", {
+        body_html: renderedHtml,
+        audience_description: undefined, goal: "engagement",
+      });
+      setSubjectSuggestions(r?.data?.suggestions || []);
+    } catch (err) {
+      const m = (err as Error).message;
+      if (m.includes("ai_writer_not_configured") || m.includes("503")) {
+        alert("AI Writer not configured. Set ANTHROPIC_API_KEY on LUMEN-API.");
+      } else {
+        alert(`AI suggest failed: ${m}`);
+      }
+    } finally { setAiBusy(false); }
+  }
+
+  async function improveCopy(idx: number, style: "concise" | "persuasive" | "friendly" | "professional") {
+    const block = tree.blocks[idx];
+    if (block.type !== "paragraph" || !block.text) return;
+    setAiBusy(true);
+    try {
+      const r = await post<{ data: { content: string } }>("/api/v1/ai-writer/improve-copy", {
+        body_text: block.text, style,
+      });
+      if (r?.data?.content) updateBlock(idx, { text: r.data.content });
+    } catch (err) {
+      const m = (err as Error).message;
+      if (m.includes("ai_writer_not_configured") || m.includes("503")) {
+        alert("AI Writer not configured. Set ANTHROPIC_API_KEY on LUMEN-API.");
+      } else {
+        alert(`Improve failed: ${m}`);
+      }
+    } finally { setAiBusy(false); }
   }
 
   async function sendTest() {
@@ -261,6 +301,10 @@ export function SparkEmailTemplatesPage() {
                   <button onClick={() => setPreviewMode("preview")} className={`text-xs px-3 py-1 rounded flex items-center gap-1 ${previewMode === "preview" ? "bg-white border border-slate-300" : "text-slate-500"}`}><Eye className="h-3 w-3" /> Preview</button>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button disabled={aiBusy || !renderedHtml} onClick={suggestSubjects}
+                    className="text-xs px-2.5 py-1 rounded border border-purple-300 text-purple-700 flex items-center gap-1 disabled:opacity-50 hover:bg-purple-50">
+                    <Sparkles className="h-3 w-3" /> {aiBusy ? "AI…" : "AI subject lines"}
+                  </button>
                   <input type="email" value={testEmail} onChange={e => setTestEmail(e.target.value)} placeholder="test@example.com" className="text-xs border border-slate-300 rounded px-2 py-1 w-44" />
                   <button disabled={!testEmail.trim()} onClick={sendTest} className="text-xs px-2.5 py-1 rounded border border-[#EF6C33] text-[#EF6C33] flex items-center gap-1 disabled:opacity-50">
                     <Send className="h-3 w-3" /> Send test
@@ -275,6 +319,22 @@ export function SparkEmailTemplatesPage() {
                   )}
                 </div>
               </div>
+
+              {/* AI subject suggestions */}
+              {subjectSuggestions.length > 0 && (
+                <div className="px-4 pt-3 pb-1 border-b border-slate-200 bg-purple-50">
+                  <div className="text-xs font-semibold text-purple-800 mb-1 flex items-center gap-1"><Sparkles className="h-3 w-3" /> AI suggestions — click to apply</div>
+                  <div className="flex flex-wrap gap-1">
+                    {subjectSuggestions.map((s, i) => (
+                      <button key={i} onClick={() => { setDraft(d => ({ ...d, subject: s })); setSubjectSuggestions([]); }}
+                        className="text-xs px-2 py-1 rounded bg-white border border-purple-200 hover:bg-purple-100 text-slate-800">
+                        {s}
+                      </button>
+                    ))}
+                    <button onClick={() => setSubjectSuggestions([])} className="text-xs px-2 py-1 text-purple-700 hover:underline">Dismiss</button>
+                  </div>
+                </div>
+              )}
 
               {/* Metadata */}
               <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3 border-b border-slate-200">
@@ -306,6 +366,8 @@ export function SparkEmailTemplatesPage() {
                         onUp={() => moveBlock(i, -1)} onDown={() => moveBlock(i, 1)}
                         onDelete={() => deleteBlock(i)}
                         onDuplicate={() => setTree(t => ({ ...t, blocks: [...t.blocks.slice(0, i + 1), { ...b }, ...t.blocks.slice(i + 1)] }))}
+                        onImprove={(style) => improveCopy(i, style)}
+                        aiBusy={aiBusy}
                       />
                     ))}
                     <div className="flex flex-wrap gap-1 mt-3">
@@ -346,10 +408,12 @@ function Input({ label, value, onChange }: { label: string; value: string; onCha
   );
 }
 
-function BlockEditor({ idx, block, onChange, onUp, onDown, onDelete, onDuplicate }: {
+function BlockEditor({ idx, block, onChange, onUp, onDown, onDelete, onDuplicate, onImprove, aiBusy }: {
   idx: number; block: Block;
   onChange: (p: Partial<Block>) => void;
   onUp: () => void; onDown: () => void; onDelete: () => void; onDuplicate: () => void;
+  onImprove?: (style: "concise" | "persuasive" | "friendly" | "professional") => void;
+  aiBusy?: boolean;
 }) {
   return (
     <div className="border border-slate-200 rounded p-2 bg-white">
@@ -377,9 +441,22 @@ function BlockEditor({ idx, block, onChange, onUp, onDown, onDelete, onDuplicate
         </>
       )}
       {block.type === "paragraph" && (
-        <textarea value={block.text || ""} onChange={(e) => onChange({ text: e.target.value })} rows={3}
-          placeholder="Body copy. Variables like {{contact.first_name}} are supported."
-          className="w-full text-sm border border-slate-200 rounded p-1.5" />
+        <>
+          <textarea value={block.text || ""} onChange={(e) => onChange({ text: e.target.value })} rows={3}
+            placeholder="Body copy. Variables like {{contact.first_name}} are supported."
+            className="w-full text-sm border border-slate-200 rounded p-1.5" />
+          {onImprove && block.text && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              <span className="text-[10px] text-slate-500 self-center"><Wand2 className="h-3 w-3 inline mr-0.5" />Improve:</span>
+              {(["concise", "persuasive", "friendly", "professional"] as const).map(s => (
+                <button key={s} disabled={aiBusy} onClick={() => onImprove(s)}
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-purple-200 text-purple-700 hover:bg-purple-50 disabled:opacity-50 capitalize">
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
       )}
       {block.type === "image" && (
         <div className="space-y-1">

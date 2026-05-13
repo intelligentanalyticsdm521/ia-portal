@@ -170,6 +170,8 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_scoring_rules', displayName: 'Scoring Rules', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_scoring_rules', description: 'Rules-based lead scoring engine — assign points on event triggers (Business).' },
   { key: 'spark_routing_rules', displayName: 'Routing Rules', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_routing_rules', description: 'Round-robin / weighted / territory routing for new leads (Business).' },
   { key: 'spark_attribution', displayName: 'Attribution', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_attribution', description: 'Multi-touch attribution — first/last/linear/u-shaped models with per-contact journey viewer (Business).' },
+  { key: 'spark_stella', displayName: 'STELLA Send Intelligence', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_stella', description: 'Best-time-to-send heatmap and per-contact recommendation, learned from your historical engagement data.' },
+  { key: 'spark_scheduled_reports', displayName: 'Scheduled Reports', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_scheduled_reports', description: 'Save report configurations and have them emailed on a daily/weekly/monthly cadence (Business).' },
   {
     key: 'forge_integrations',
     displayName: 'Integrations',

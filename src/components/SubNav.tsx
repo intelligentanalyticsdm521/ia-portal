@@ -280,6 +280,7 @@ const SPARK_NAV: SubNavConfig = {
       label: "Admin", icon: Sparkles, collapsible: true, sectionId: "spark_admin",
       items: [
         { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals" },
+        { key: "spark_scheduled_reports", label: "Scheduled Reports", route: "/app/services/spark_scheduled_reports" },
       ],
     },
     {
@@ -295,6 +296,7 @@ const SPARK_NAV: SubNavConfig = {
       items: [
         { key: "spark_ai_writer", label: "AI Writer", route: "/app/services/spark_ai_writer" },
         { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence" },
+        { key: "spark_stella", label: "STELLA Send Intelligence", route: "/app/services/spark_stella", intelligence: true },
         { key: "spark_insights", label: "Insights", route: "/app/services/spark_insights", intelligence: true },
       ],
     },
