@@ -411,3 +411,282 @@ body {
 @media (max-width: 560px) {
   .ia-reports-grid { grid-template-columns: 1fr !important; }
 }
+/* ============================================================================
+ * SPARK design system — Brevo/Pipedrive/HubSpot interactive-SaaS style.
+ * Used by all SPARK pages (and progressively migrated OLIVER pages).
+ *
+ * Differences from .arion-page (which is reporting/dashboard style):
+ * - No card-on-card nesting; data sits on a light page background
+ * - Sticky page header with title + actions
+ * - Compact data tables with row hover + on-hover action icons
+ * - Inline horizontal stat strip (not a 4-card grid)
+ * - Right-side slide-out drawer for create/edit (not center modal)
+ * - Pill filter row above tables
+ * ============================================================================ */
+.spark-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: #fafbfc;
+}
+.spark-page-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  background: #fff;
+  border-bottom: 1px solid rgb(226, 232, 240);
+}
+.spark-stat-strip-wrap {
+  background: #fff;
+  border-bottom: 1px solid rgb(226, 232, 240);
+}
+.spark-stat-strip {
+  display: flex;
+  gap: 0;
+  padding: 12px 20px;
+}
+.spark-stat-item {
+  flex: 1;
+  min-width: 0;
+  padding: 0 20px;
+  border-right: 1px solid rgb(241, 245, 249);
+}
+.spark-stat-item:first-child { padding-left: 0; }
+.spark-stat-item:last-child { border-right: 0; padding-right: 0; }
+.spark-filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
+  background: #fff;
+  border-bottom: 1px solid rgb(226, 232, 240);
+  flex-wrap: wrap;
+}
+.spark-page-body {
+  flex: 1;
+  padding: 16px 20px;
+  min-width: 0;
+}
+.spark-loading {
+  padding: 32px;
+  text-align: center;
+  font-size: 13px;
+  color: rgb(100, 116, 139);
+}
+.spark-error {
+  background: rgb(254, 242, 242);
+  border: 1px solid rgb(252, 165, 165);
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: rgb(127, 29, 29);
+}
+
+/* Pills */
+.spark-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgb(71, 85, 105);
+  background: rgb(241, 245, 249);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 120ms;
+}
+.spark-pill:hover { background: rgb(226, 232, 240); }
+.spark-pill-active {
+  background: rgb(15, 23, 42);
+  color: #fff;
+}
+.spark-pill-active:hover { background: rgb(30, 41, 59); }
+.spark-pill-count {
+  background: rgb(255, 255, 255, 0.7);
+  color: rgb(71, 85, 105);
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.spark-pill-count-active {
+  background: rgb(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+/* Table */
+.spark-table-wrap {
+  background: #fff;
+  border: 1px solid rgb(226, 232, 240);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.spark-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+.spark-table thead th {
+  position: sticky;
+  top: 0;
+  background: rgb(248, 250, 252);
+  border-bottom: 1px solid rgb(226, 232, 240);
+  padding: 8px 14px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgb(100, 116, 139);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  white-space: nowrap;
+}
+.spark-table tbody td {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgb(241, 245, 249);
+  color: rgb(15, 23, 42);
+}
+.spark-table tbody tr:last-child td { border-bottom: 0; }
+.spark-table-row {
+  transition: background 80ms;
+}
+.spark-table-row:hover { background: rgb(248, 250, 252); }
+.spark-table-row-actions {
+  text-align: right;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.spark-table-row:hover .spark-table-row-actions { opacity: 1; }
+.spark-table-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  border-top: 1px solid rgb(241, 245, 249);
+  background: rgb(250, 251, 252);
+}
+
+/* Drawer slide-in */
+@keyframes spark-drawer-in {
+  from { transform: translateX(20px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.animate-spark-drawer-in {
+  animation: spark-drawer-in 180ms ease-out;
+}
+
+/* Form field helpers used inside drawers */
+.spark-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.spark-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  color: rgb(71, 85, 105);
+}
+.spark-field-input,
+.spark-field-textarea,
+.spark-field-select {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid rgb(203, 213, 225);
+  border-radius: 6px;
+  font-size: 13px;
+  background: #fff;
+}
+.spark-field-input:focus,
+.spark-field-textarea:focus,
+.spark-field-select:focus {
+  outline: none;
+  border-color: rgb(16, 185, 129);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+}
+.spark-field-textarea { resize: vertical; min-height: 80px; }
+
+/* Buttons */
+.spark-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 120ms;
+  white-space: nowrap;
+}
+.spark-btn-primary {
+  background: rgb(15, 23, 42);
+  color: #fff;
+}
+.spark-btn-primary:hover { background: rgb(30, 41, 59); }
+.spark-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.spark-btn-secondary {
+  background: #fff;
+  color: rgb(15, 23, 42);
+  border-color: rgb(203, 213, 225);
+}
+.spark-btn-secondary:hover { background: rgb(248, 250, 252); }
+.spark-btn-accent {
+  background: rgb(239, 108, 51);
+  color: #fff;
+}
+.spark-btn-accent:hover { background: rgb(215, 90, 37); }
+.spark-btn-sm { padding: 4px 10px; font-size: 12px; }
+.spark-btn-icon {
+  padding: 5px;
+  background: transparent;
+  color: rgb(100, 116, 139);
+  border: 1px solid transparent;
+}
+.spark-btn-icon:hover {
+  background: rgb(241, 245, 249);
+  color: rgb(15, 23, 42);
+}
+
+/* Compact cards used inside the page body (e.g. on Overview) */
+.spark-mini-card {
+  background: #fff;
+  border: 1px solid rgb(226, 232, 240);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.spark-mini-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgb(241, 245, 249);
+}
+.spark-mini-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  color: rgb(71, 85, 105);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .spark-stat-strip { flex-wrap: wrap; gap: 12px; }
+  .spark-stat-item { flex-basis: 45%; padding: 0; border-right: 0; }
+  .spark-page-body { padding: 12px; }
+  .spark-table-row-actions { opacity: 1; }
+}
