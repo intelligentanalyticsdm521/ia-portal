@@ -17,31 +17,41 @@ interface UsageResponse {
 // Pricing model — mirrors intelligentanalyticsdm.com/platforms/spark/spark-pricing
 // ─────────────────────────────────────────────────────────────────────────────
 // Email volume is the primary slider. Contacts + SMS follow as derived limits.
-// Standard tier baseline is $17/mo at 500-email volume.
-// Pro adds +$49/mo. Business adds +$89/mo (replaces Pro, includes Pro features).
-// Annual billing = −10% applied once at total.
+//
+// Public page reference (https://intelligentanalyticsdm.com/platforms/spark/spark-pricing):
+//   Slider range: 5,000 → 500,000 emails/month
+//   At 5k:   1,000 contacts, 100 SMS, $19/mo monthly ($17/mo annual)
+//   Pro add-on:      $49/mo monthly ($44/mo annual) — 10% annual savings
+//   Business add-on: $89/mo monthly ($80/mo annual)
+//   Enterprise:      $150/mo monthly ($135/mo annual)
+//   Annual billing saves 10% (one discount, applied at total)
+//
+// Resource ratios at the 5k baseline: contacts = emails / 5, SMS = emails / 50
 
-const EMAIL_STEPS = [500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
+const EMAIL_STEPS = [5000, 10000, 25000, 50000, 100000, 250000, 500000];
 
-function basePriceForEmails(emails: number): number {
-  // Monthly prices (annual = 10% off applied at total).
-  // Standard tier at 500-email baseline = $19/mo per public pricing page.
-  if (emails <= 500) return 19;
-  if (emails <= 1000) return 29;
-  if (emails <= 2500) return 44;
-  if (emails <= 5000) return 69;
-  if (emails <= 10000) return 99;
-  if (emails <= 25000) return 159;
-  if (emails <= 50000) return 239;
-  return 349;
+function basePriceForEmails(emails: number, cycle: "monthly" | "annual"): number {
+  // Monthly prices. Annual prices are 10% lower.
+  const monthly =
+    emails <= 5000   ? 19  :
+    emails <= 10000  ? 29  :
+    emails <= 25000  ? 49  :
+    emails <= 50000  ? 79  :
+    emails <= 100000 ? 129 :
+    emails <= 250000 ? 239 :
+                       399;
+  return cycle === "annual" ? +(monthly * 0.9).toFixed(2) : monthly;
 }
-// Industry-standard: contacts ≈ email_volume / 10
-function contactsForEmails(emails: number): number { return Math.round(emails / 10); }
-// SMS ≈ email_volume / 50 (much lower per contact)
+
+function contactsForEmails(emails: number): number { return Math.round(emails / 5); }
 function smsForEmails(emails: number): number { return Math.round(emails / 50); }
 
-const PRO_ADDON = 49;
-const BUSINESS_ADDON = 89;
+// Tier add-ons — monthly rates. Annual = 10% off.
+const TIER_ADDON_MONTHLY = { standard: 0, pro: 49, business: 89, enterprise: 150 } as const;
+function tierAddOn(t: keyof typeof TIER_ADDON_MONTHLY, cycle: "monthly" | "annual"): number {
+  const m = TIER_ADDON_MONTHLY[t];
+  return cycle === "annual" ? +(m * 0.9).toFixed(2) : m;
+}
 
 // ─ Feature gating data (from public pricing page) ────────────────────────────
 
@@ -212,7 +222,7 @@ export function SparkUsagePage() {
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 
-  const [emailsIdx, setEmailsIdx] = useState(2);   // default 2500
+  const [emailsIdx, setEmailsIdx] = useState(0);   // default to 5,000 — slider entry point
   const [tier, setTier] = useState<"standard" | "pro" | "business">("standard");
   const [leadGenTier, setLeadGenTier] = useState<LeadGenTier["key"] | null>(null);
   const [leadExtras, setLeadExtras] = useState<Record<LeadGenTier["key"], number>>({
@@ -225,17 +235,20 @@ export function SparkUsagePage() {
   const targetEmails = EMAIL_STEPS[emailsIdx];
   const targetContacts = contactsForEmails(targetEmails);
   const targetSms = smsForEmails(targetEmails);
-  const basePrice = basePriceForEmails(targetEmails);
-  const tierPrice = tier === "pro" ? PRO_ADDON : tier === "business" ? BUSINESS_ADDON : 0;
+  const basePrice = basePriceForEmails(targetEmails, billingCycle);
+  const tierPrice = tierAddOn(tier as keyof typeof TIER_ADDON_MONTHLY, billingCycle);
 
   const lgTierObj = leadGenTier ? LEAD_GEN_TIERS.find(t => t.key === leadGenTier) : null;
   const lgExtras = lgTierObj ? leadExtras[lgTierObj.key] : 0;
   const lgExtrasCost = lgTierObj ? lgExtras * lgTierObj.overage : 0;
-  const lgPrice = lgTierObj ? lgTierObj.price + lgExtrasCost : 0;
+  // Lead Gen tier prices follow the same 10% annual discount as the rest of SPARK.
+  const lgBasePrice = lgTierObj ? (billingCycle === "annual" ? +(lgTierObj.price * 0.9).toFixed(2) : lgTierObj.price) : 0;
+  const lgPrice = lgBasePrice + lgExtrasCost;
 
-  const subtotal = basePrice + tierPrice + lgPrice;
-  const annualDiscount = billingCycle === "annual" ? subtotal * 0.10 : 0;
-  const totalMonthly = subtotal - annualDiscount;
+  // basePrice, tierPrice, and lgBasePrice already have the annual discount applied
+  // by their helper functions. Per-lead overage is NOT discounted (it's an a la
+  // carte usage charge). So total is just the sum — no extra discount layer.
+  const totalMonthly = basePrice + tierPrice + lgPrice;
   const totalAnnualBilled = totalMonthly * 12;
 
   // ─ Load ──────────────────────────────────────────────────────────────────
@@ -389,13 +402,13 @@ export function SparkUsagePage() {
                 bullets={["Contacts / Lists / Tags / Segments", "Email + SMS campaigns", "Forms + UTM tracking", "Basic Insights"]}
               />
               <TierCard
-                title="Pro" subtitle="Marketing power tools" addOn={PRO_ADDON}
+                title="Pro" subtitle="Marketing power tools" addOn={tierAddOn("pro", billingCycle)}
                 active={tier === "pro"} onClick={() => setTier("pro")} accent
                 bullets={["Sales Pipeline + Deals (Kanban)", "Newsletter Studio + WP auto-publish", "Social Scheduler + Calendar", "Landing Pages, NPS, Referrals", "Reputation Hub"]}
                 more={2}
               />
               <TierCard
-                title="Business" subtitle="Pro + AI + B2B" addOn={BUSINESS_ADDON}
+                title="Business" subtitle="Pro + AI + B2B" addOn={tierAddOn("business", billingCycle)}
                 active={tier === "business"} onClick={() => setTier("business")}
                 bullets={["Everything in Pro", "B2B Companies + account reporting", "AI Writer (full access)", "IA Intelligence monthly + on-demand", "Annual deep-dive AI report"]}
                 more={2}
@@ -434,14 +447,17 @@ export function SparkUsagePage() {
               )}
               {lgTierObj && (
                 <>
-                  <Line label={`+ ${lgTierObj.name} (${lgTierObj.leadsIncluded} leads)`} value={lgTierObj.price} accent />
+                  <Line label={`+ ${lgTierObj.name} (${lgTierObj.leadsIncluded} leads)`} value={lgBasePrice} accent />
                   {lgExtras > 0 && (
                     <Line label={`  +${lgExtras} extra leads @ $${lgTierObj.overage.toFixed(2)}/lead`} value={lgExtrasCost} sub />
                   )}
                 </>
               )}
-              {billingCycle === "annual" && annualDiscount > 0 && (
-                <Line label="Annual discount" value={-annualDiscount} discount />
+              {billingCycle === "annual" && (
+                <div className="flex items-center justify-between text-[11px] pt-1 text-emerald-400">
+                  <span>Annual billing</span>
+                  <span>−10% applied</span>
+                </div>
               )}
             </div>
 
