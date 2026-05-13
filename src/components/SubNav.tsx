@@ -78,9 +78,12 @@ const OLIVER_NAV: SubNavConfig = {
         { key: "oliver_catalog", label: "Service Catalog", route: "/app/services/oliver_catalog" },
         { key: "oliver_proposals", label: "Proposals", route: "/app/services/oliver_proposals" },
         { key: "oliver_quotes", label: "Quotes", route: "/app/services/oliver_quotes" },
+        { key: "oliver_quote_options", label: "Quote Options (good/better/best)", route: "/app/services/oliver_quote_options" },
         { key: "oliver_invoices", label: "Invoices", route: "/app/services/oliver_invoices" },
         { key: "oliver_payments", label: "Payments", route: "/app/services/oliver_payments" },
         { key: "oliver_recurring", label: "Recurring & Subscriptions", route: "/app/services/oliver_recurring" },
+        { key: "oliver_expenses", label: "Expenses", route: "/app/services/oliver_expenses" },
+        { key: "oliver_job_costing", label: "Job Costing", route: "/app/services/oliver_job_costing" },
         { key: "oliver_coupons", label: "Coupons", route: "/app/services/oliver_coupons" },
         { key: "oliver_disputes", label: "Disputes", route: "/app/services/oliver_disputes" },
         { key: "oliver_reminders", label: "Reminders", route: "/app/services/oliver_reminders" },
@@ -91,6 +94,18 @@ const OLIVER_NAV: SubNavConfig = {
       items: [
         { key: "oliver_messages", label: "Messages", route: "/app/services/oliver_messages" },
         { key: "oliver_notifications", label: "Notifications", route: "/app/services/oliver_notifications" },
+        { key: "oliver_support_tickets", label: "Support Tickets", route: "/app/services/oliver_support_tickets" },
+      ],
+    },
+    {
+      label: "Operations", icon: Wrench, collapsible: true, sectionId: "oliver_ops",
+      items: [
+        { key: "oliver_workflow_templates", label: "Workflow Templates", route: "/app/services/oliver_workflow_templates" },
+        { key: "oliver_job_offers", label: "Job Offers", route: "/app/services/oliver_job_offers" },
+        { key: "oliver_reschedule_requests", label: "Reschedule Queue", route: "/app/services/oliver_reschedule_requests" },
+        { key: "oliver_time_tracking", label: "Time Tracking", route: "/app/services/oliver_time_tracking" },
+        { key: "oliver_territories", label: "Territories", route: "/app/services/oliver_territories" },
+        { key: "oliver_sla_policies", label: "SLA Policies", route: "/app/services/oliver_sla_policies" },
       ],
     },
     {
@@ -225,10 +240,15 @@ const SPARK_NAV: SubNavConfig = {
       label: "Outreach", icon: Megaphone, collapsible: true, sectionId: "spark_outreach",
       items: [
         { key: "spark_campaigns", label: "Campaigns", route: "/app/services/spark_campaigns" },
+        { key: "spark_email_templates", label: "Email Templates", route: "/app/services/spark_email_templates" },
         { key: "spark_automations", label: "Automations", route: "/app/services/spark_automations" },
+        { key: "spark_automation_builder", label: "Automation Builder", route: "/app/services/spark_automation_builder" },
+        { key: "spark_ab_tests", label: "A/B Tests", route: "/app/services/spark_ab_tests" },
         { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter" },
         { key: "spark_social", label: "Social Scheduler", route: "/app/services/spark_social" },
         { key: "spark_calendar", label: "Content Calendar", route: "/app/services/spark_calendar" },
+        { key: "spark_sms_inbox", label: "SMS Inbox", route: "/app/services/spark_sms_inbox" },
+        { key: "spark_deliverability", label: "Deliverability", route: "/app/services/spark_deliverability" },
       ],
     },
     {
@@ -245,8 +265,21 @@ const SPARK_NAV: SubNavConfig = {
         // Lead Gen folded into Sales — they're sequential: lead → deal → close.
         { key: "spark_leads", label: "Lead Inbox", route: "/app/services/spark_leads" },
         { key: "spark_search_profiles", label: "Search Profiles", route: "/app/services/spark_search_profiles" },
+        { key: "spark_lead_suppression", label: "Lead Suppression", route: "/app/services/spark_lead_suppression" },
+        { key: "spark_lead_territories", label: "Lead Territories", route: "/app/services/spark_lead_territories" },
+        { key: "spark_autotag_rules", label: "Auto-Tag Rules", route: "/app/services/spark_autotag_rules" },
+        { key: "spark_competitor_watch", label: "Competitor Watch", route: "/app/services/spark_competitor_watch" },
         { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines" },
         { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals" },
+        { key: "spark_scoring_rules", label: "Scoring Rules", route: "/app/services/spark_scoring_rules" },
+        { key: "spark_routing_rules", label: "Routing Rules", route: "/app/services/spark_routing_rules" },
+        { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution" },
+      ],
+    },
+    {
+      label: "Admin", icon: Sparkles, collapsible: true, sectionId: "spark_admin",
+      items: [
+        { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals" },
       ],
     },
     {

@@ -434,7 +434,11 @@ export function ArionUsagePage(_: Props) {
 
             <button
               type="button"
-              onClick={() => alert("Stripe checkout connects with v2 billing. Email support@iadm.io to change your plan today.")}
+              onClick={() => {
+                window.location.href = "mailto:support@iadm.io?subject=ARION plan change&body=" + encodeURIComponent(
+                  `Please switch my ARION plan to ${baseDef.name} (${billingCycle})${seoDef ? ` with ${seoDef.name}` : ""}.`
+                );
+              }}
               className="mt-4 w-full py-2.5 rounded-md bg-[#FFD166] hover:bg-[#e6bb5c] font-semibold text-[#0C4A60] transition"
             >
               Switch to {baseDef.name.toUpperCase()}{seoDef ? ` + ${seoDef.name.replace("SEO ", "")}` : ""}

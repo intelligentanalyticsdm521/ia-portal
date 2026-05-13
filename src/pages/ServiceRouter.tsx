@@ -109,6 +109,20 @@ const SparkAccountsPage = lazyNamed(() => import('./spark/SparkAccountsPage'), '
 const SparkAiWriterPage = lazyNamed(() => import('./spark/SparkAiWriterPage'), 'SparkAiWriterPage');
 // SPARK Insights
 const SparkInsightsPage = lazyNamed(() => import('./spark/SparkInsightsPage'), 'SparkInsightsPage');
+// SPARK v1.0 additions
+const SparkApprovalsPage = lazyNamed(() => import('./spark/SparkApprovalsPage'), 'SparkApprovalsPage');
+const SparkSmsInboxPage = lazyNamed(() => import('./spark/SparkSmsInboxPage'), 'SparkSmsInboxPage');
+const SparkEmailTemplatesPage = lazyNamed(() => import('./spark/SparkEmailTemplatesPage'), 'SparkEmailTemplatesPage');
+const SparkAutomationBuilderPage = lazyNamed(() => import('./spark/SparkAutomationBuilderPage'), 'SparkAutomationBuilderPage');
+const SparkDeliverabilityPage = lazyNamed(() => import('./spark/SparkDeliverabilityPage'), 'SparkDeliverabilityPage');
+const SparkAbTestsPage = lazyNamed(() => import('./spark/SparkAbTestsPage'), 'SparkAbTestsPage');
+const SparkLeadSuppressionPage = lazyNamed(() => import('./spark/SparkLeadSuppressionPage'), 'SparkLeadSuppressionPage');
+const SparkTerritoriesPage = lazyNamed(() => import('./spark/SparkTerritoriesPage'), 'SparkTerritoriesPage');
+const SparkAutoTagRulesPage = lazyNamed(() => import('./spark/SparkAutoTagRulesPage'), 'SparkAutoTagRulesPage');
+const SparkCompetitorWatchPage = lazyNamed(() => import('./spark/SparkCompetitorWatchPage'), 'SparkCompetitorWatchPage');
+const SparkScoringRulesPage = lazyNamed(() => import('./spark/SparkScoringRulesPage'), 'SparkScoringRulesPage');
+const SparkRoutingRulesPage = lazyNamed(() => import('./spark/SparkRoutingRulesPage'), 'SparkRoutingRulesPage');
+const SparkAttributionPage = lazyNamed(() => import('./spark/SparkAttributionPage'), 'SparkAttributionPage');
 
 // OLIVER pages — lazy-loaded (introduced 2026-05-11)
 const OliverDashboardPage = lazyNamed(() => import('./oliver/OliverDashboardPage'), 'OliverDashboardPage');
@@ -139,6 +153,17 @@ const OliverProjectsPage = lazyNamed(() => import('./oliver/OliverProjectsPage')
 const OliverDisputesPage = lazyNamed(() => import('./oliver/OliverDisputesPage'), 'OliverDisputesPage');
 const OliverProposalsPage = lazyNamed(() => import('./oliver/OliverProposalsPage'), 'OliverProposalsPage');
 const OliverUsagePage = lazyNamed(() => import('./oliver/OliverUsagePage'), 'OliverUsagePage');
+// OLIVER v1.0 additions
+const OliverWorkflowTemplatesPage = lazyNamed(() => import('./oliver/OliverWorkflowTemplatesPage'), 'OliverWorkflowTemplatesPage');
+const OliverJobOffersPage = lazyNamed(() => import('./oliver/OliverJobOffersPage'), 'OliverJobOffersPage');
+const OliverSupportTicketsPage = lazyNamed(() => import('./oliver/OliverSupportTicketsPage'), 'OliverSupportTicketsPage');
+const OliverTimeTrackingPage = lazyNamed(() => import('./oliver/OliverTimeTrackingPage'), 'OliverTimeTrackingPage');
+const OliverExpensesPage = lazyNamed(() => import('./oliver/OliverExpensesPage'), 'OliverExpensesPage');
+const OliverRescheduleRequestsPage = lazyNamed(() => import('./oliver/OliverRescheduleRequestsPage'), 'OliverRescheduleRequestsPage');
+const OliverQuoteOptionsPage = lazyNamed(() => import('./oliver/OliverQuoteOptionsPage'), 'OliverQuoteOptionsPage');
+const OliverTerritoriesPage = lazyNamed(() => import('./oliver/OliverTerritoriesPage'), 'OliverTerritoriesPage');
+const OliverSlaPoliciesPage = lazyNamed(() => import('./oliver/OliverSlaPoliciesPage'), 'OliverSlaPoliciesPage');
+const OliverJobCostingPage = lazyNamed(() => import('./oliver/OliverJobCostingPage'), 'OliverJobCostingPage');
 const ArionUsagePage = lazyNamed(() => import('./arion/ArionUsagePage'), 'ArionUsagePage');
 
 // CONSULTING — lazy-loaded
@@ -277,6 +302,17 @@ export function ServiceRouter() {
       case 'oliver_disputes': oliverPage = <OliverDisputesPage />; break;
       case 'oliver_proposals': oliverPage = <OliverProposalsPage />; break;
       case 'oliver_usage': oliverPage = <OliverUsagePage />; break;
+      // v1.0 additions
+      case 'oliver_workflow_templates': oliverPage = <OliverWorkflowTemplatesPage />; break;
+      case 'oliver_job_offers': oliverPage = <OliverJobOffersPage />; break;
+      case 'oliver_support_tickets': oliverPage = <OliverSupportTicketsPage />; break;
+      case 'oliver_time_tracking': oliverPage = <OliverTimeTrackingPage />; break;
+      case 'oliver_expenses': oliverPage = <OliverExpensesPage />; break;
+      case 'oliver_reschedule_requests': oliverPage = <OliverRescheduleRequestsPage />; break;
+      case 'oliver_quote_options': oliverPage = <OliverQuoteOptionsPage />; break;
+      case 'oliver_territories': oliverPage = <OliverTerritoriesPage />; break;
+      case 'oliver_sla_policies': oliverPage = <OliverSlaPoliciesPage />; break;
+      case 'oliver_job_costing': oliverPage = <OliverJobCostingPage />; break;
     }
     if (oliverPage) {
       return <Suspense fallback={<RouteLoading />}>{oliverPage}</Suspense>;
@@ -314,6 +350,20 @@ export function ServiceRouter() {
       case 'spark_ai_writer': sparkPage = <SparkAiWriterPage />; break;
       // Insights
       case 'spark_insights': sparkPage = <SparkInsightsPage />; break;
+      // v1.0 additions
+      case 'spark_approvals': sparkPage = <SparkApprovalsPage />; break;
+      case 'spark_sms_inbox': sparkPage = <SparkSmsInboxPage />; break;
+      case 'spark_email_templates': sparkPage = <SparkEmailTemplatesPage />; break;
+      case 'spark_automation_builder': sparkPage = <SparkAutomationBuilderPage />; break;
+      case 'spark_deliverability': sparkPage = <SparkDeliverabilityPage />; break;
+      case 'spark_ab_tests': sparkPage = <SparkAbTestsPage />; break;
+      case 'spark_lead_suppression': sparkPage = <SparkLeadSuppressionPage />; break;
+      case 'spark_lead_territories': sparkPage = <SparkTerritoriesPage />; break;
+      case 'spark_autotag_rules': sparkPage = <SparkAutoTagRulesPage />; break;
+      case 'spark_competitor_watch': sparkPage = <SparkCompetitorWatchPage />; break;
+      case 'spark_scoring_rules': sparkPage = <SparkScoringRulesPage />; break;
+      case 'spark_routing_rules': sparkPage = <SparkRoutingRulesPage />; break;
+      case 'spark_attribution': sparkPage = <SparkAttributionPage />; break;
       // Backward compat aliases for old lumen_* keys
       case 'lumen_overview': sparkPage = <SparkOverviewPage />; break;
       case 'lumen_contacts': sparkPage = <SparkContactsPage />; break;

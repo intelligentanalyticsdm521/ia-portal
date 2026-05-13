@@ -418,7 +418,14 @@ export function OliverUsagePage() {
 
             <button
               type="button"
-              onClick={() => alert("Stripe checkout connects with v2 billing. Email support@iadm.io to change your plan today.")}
+              onClick={() => {
+                // v1.0: OLIVER tier change goes through manual support to avoid double
+                // Stripe customer creation. Tenant-level Stripe customer is established
+                // via SPARK billing (one customer = all products) and OLIVER is added as
+                // a separate subscription item to the same customer. v1.1 will surface
+                // this via a direct Stripe Checkout session here.
+                window.location.href = "mailto:support@iadm.io?subject=OLIVER plan change&body=Please switch my OLIVER tier to " + tierDef.name + " (" + billingCycle + ").";
+              }}
               className="mt-4 w-full py-2.5 rounded-md bg-[#FEC82C] hover:bg-[#e3b424] font-semibold text-[#1A3A4A] transition"
             >
               {usage?.tier === tier ? "Update plan" : `Switch to ${tierDef.name.toUpperCase()}`}

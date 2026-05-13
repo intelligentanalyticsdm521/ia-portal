@@ -217,7 +217,7 @@ const LEAD_GEN_TIERS: LeadGenTier[] = [
 // ─ Page ──────────────────────────────────────────────────────────────────────
 
 export function SparkUsagePage() {
-  const { get, ready } = useSparkApi();
+  const { get, post, ready } = useSparkApi();
   const [usage, setUsage] = useState<UsageResponse["data"] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
@@ -474,7 +474,33 @@ export function SparkUsagePage() {
 
             <button
               type="button"
-              onClick={() => alert("Stripe checkout connects with v2 billing. Email support@iadm.io to change your plan today.")}
+              onClick={async () => {
+                try {
+                  const lineItems: { tier: string; cycle: typeof billingCycle }[] = [];
+                  // Map slider to a per-volume key like "5k","10k","25k" via the basePrice
+                  // Use the email step as the "tier" identifier — backend env should declare
+                  // STRIPE_PRICE_SPARK_<TIER>_<CYCLE> with names like SPARK_5K, SPARK_10K, etc.
+                  const volumeKey = targetEmails >= 1000 ? `${targetEmails / 1000}k` : `${targetEmails}`;
+                  lineItems.push({ tier: `volume_${volumeKey}`, cycle: billingCycle });
+                  if (tier !== "standard") lineItems.push({ tier, cycle: billingCycle });
+                  if (lgTierObj) lineItems.push({ tier: `leadgen_${lgTierObj.key}`, cycle: billingCycle });
+                  const r = await post<{ url: string }>("/api/v1/billing/checkout", {
+                    product: "spark",
+                    line_items: lineItems,
+                    success_url: `${window.location.origin}/app/services/spark_usage?checkout=success`,
+                    cancel_url: `${window.location.origin}/app/services/spark_usage?checkout=cancel`,
+                    metadata: { volume: targetEmails, tier, lead_gen: lgTierObj?.key || null },
+                  });
+                  if (r?.url) { window.location.href = r.url; }
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  if (msg.includes("503") || msg.toLowerCase().includes("not configured")) {
+                    alert("Stripe is not yet wired up in this environment. Email support@iadm.io to change your plan.");
+                  } else {
+                    alert(`Checkout failed: ${msg}`);
+                  }
+                }
+              }}
               className="mt-4 w-full py-2.5 rounded-md bg-[#EF6C33] hover:bg-[#d75a25] font-semibold text-white transition"
             >
               {usage?.tier === tier ? "Update plan" : `Switch to ${tier.toUpperCase()}`}

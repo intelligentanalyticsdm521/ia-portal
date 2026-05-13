@@ -76,6 +76,10 @@ export function sparkPut<T>(msal: IPublicClientApplication, account: AccountInfo
   return sparkFetch<T>(msal, account, path, { method: "PUT", body: JSON.stringify(body) });
 }
 
+export function sparkPatch<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, body: unknown) {
+  return sparkFetch<T>(msal, account, path, { method: "PATCH", body: JSON.stringify(body) });
+}
+
 export function sparkDelete<T>(msal: IPublicClientApplication, account: AccountInfo, path: string) {
   return sparkFetch<T>(msal, account, path, { method: "DELETE" });
 }
