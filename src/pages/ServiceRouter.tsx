@@ -171,6 +171,7 @@ const OliverTerritoriesPage = lazyNamed(() => import('./oliver/OliverTerritories
 const OliverSlaPoliciesPage = lazyNamed(() => import('./oliver/OliverSlaPoliciesPage'), 'OliverSlaPoliciesPage');
 const OliverJobCostingPage = lazyNamed(() => import('./oliver/OliverJobCostingPage'), 'OliverJobCostingPage');
 const OliverArgusPage = lazyNamed(() => import('./oliver/OliverArgusPage'), 'OliverArgusPage');
+const OliverPayoutsPage = lazyNamed(() => import('./oliver/OliverPayoutsPage'), 'OliverPayoutsPage');
 const ArionUsagePage = lazyNamed(() => import('./arion/ArionUsagePage'), 'ArionUsagePage');
 const ArionPluginProvisioningPage = lazyNamed(() => import('./arion/ArionPluginProvisioningPage'), 'ArionPluginProvisioningPage');
 
@@ -323,6 +324,7 @@ export function ServiceRouter() {
       case 'oliver_sla_policies': oliverPage = <OliverSlaPoliciesPage />; break;
       case 'oliver_job_costing': oliverPage = <OliverJobCostingPage />; break;
       case 'oliver_argus': oliverPage = <OliverArgusPage />; break;
+      case 'oliver_payouts': oliverPage = <OliverPayoutsPage />; break;
     }
     if (oliverPage) {
       return <Suspense fallback={<RouteLoading />}>{oliverPage}</Suspense>;

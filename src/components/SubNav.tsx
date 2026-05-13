@@ -81,6 +81,7 @@ const OLIVER_NAV: SubNavConfig = {
         { key: "oliver_quote_options", label: "Quote Options (good/better/best)", route: "/app/services/oliver_quote_options" },
         { key: "oliver_invoices", label: "Invoices", route: "/app/services/oliver_invoices" },
         { key: "oliver_payments", label: "Payments", route: "/app/services/oliver_payments" },
+        { key: "oliver_payouts", label: "Stripe Payouts", route: "/app/services/oliver_payouts" },
         { key: "oliver_recurring", label: "Recurring & Subscriptions", route: "/app/services/oliver_recurring" },
         { key: "oliver_expenses", label: "Expenses", route: "/app/services/oliver_expenses" },
         { key: "oliver_job_costing", label: "Job Costing", route: "/app/services/oliver_job_costing" },
