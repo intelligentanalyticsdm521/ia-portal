@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { isTierGateError, type TierGateError } from "../../hooks/useOliverApi";
 import { OliverUpgradeGate } from "../OliverUpgradeGate";
 
@@ -54,17 +54,56 @@ export function SparkPageShell({
       {stats && <div className="spark-stat-strip-wrap">{stats}</div>}
       {filters && <div className="spark-filter-row">{filters}</div>}
       <div className="spark-page-body">
-        {loading && <div className="spark-loading">Loading…</div>}
+        {loading && <LoadingWithTimeout />}
         {error && !loading ? (
           <div className="spark-error">
             <div className="font-medium">Something went wrong loading this page.</div>
             <div className="text-xs mt-1 text-rose-700">
               {error instanceof Error ? error.message : String(error)}
             </div>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="spark-btn spark-btn-secondary spark-btn-sm mt-3"
+            >
+              Reload page
+            </button>
           </div>
         ) : null}
         {!loading && !error ? children : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Loading indicator that flips to a "still loading?" message after 8s.
+ * Prevents the "stuck on loading" UX where users see a spinner forever
+ * with no way to recover.
+ */
+function LoadingWithTimeout() {
+  const [stalled, setStalled] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setStalled(true), 8000);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div className="spark-loading">
+      {stalled ? (
+        <div>
+          <div>Still loading…</div>
+          <div className="text-[11px] text-slate-400 mt-1">If this hangs, try reloading the page.</div>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="spark-btn spark-btn-secondary spark-btn-sm mt-3"
+          >
+            Reload
+          </button>
+        </div>
+      ) : (
+        <span>Loading…</span>
+      )}
     </div>
   );
 }

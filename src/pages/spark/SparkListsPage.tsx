@@ -1,115 +1,165 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
+import { SparkDrawer } from "../../components/spark/SparkDrawer";
+import { SparkTable } from "../../components/spark/SparkTable";
+import { SparkSearchBox } from "../../components/spark/SparkSearchBox";
+import { List as ListIcon, Plus, Users, Send } from "lucide-react";
 
 interface ContactList {
-  id: string;
+  id: number;
   name: string;
+  description?: string | null;
   contact_count: number;
   created_at: string;
+  updated_at?: string;
 }
 
 export function SparkListsPage() {
   const { get, post, ready } = useSparkApi();
   const [lists, setLists] = useState<ContactList[]>([]);
+  const [search, setSearch] = useState("");
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [name, setName] = useState("");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [form, setForm] = useState({ name: "", description: "" });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!ready) return;
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
-      const raw = await get<{ data: ContactList[] }>("/api/v1/lists");
-      setLists(raw.data || []);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
+      const r = await get<{ data: ContactList[] }>("/api/v1/lists");
+      setLists(r.data || []);
+    } catch (err) { setError(err); } finally { setLoading(false); }
   }, [get, ready]);
-
   useEffect(() => { load(); }, [load]);
 
   async function handleCreate() {
+    if (!form.name.trim()) return;
     setSaving(true);
     try {
-      await post("/api/v1/lists", { name });
-      setShowModal(false);
-      setName("");
+      await post("/api/v1/lists", form);
+      setDrawerOpen(false);
+      setForm({ name: "", description: "" });
       await load();
-    } catch (err) {
-      setError(err);
-    } finally {
-      setSaving(false);
-    }
+    } catch (err) { setError(err); } finally { setSaving(false); }
   }
 
+  const filtered = search ? lists.filter(l => l.name.toLowerCase().includes(search.toLowerCase())) : lists;
+  const totalContacts = lists.reduce((s, l) => s + (l.contact_count || 0), 0);
+  const populated = lists.filter(l => l.contact_count > 0).length;
+
   return (
-    <OliverPageWrapper title="Lists" subtitle="Static contact lists for campaign targeting" error={error} loading={loading}>
-      <div className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-slate-500">{lists.length} list{lists.length !== 1 ? "s" : ""}</p>
-          <button
-            onClick={() => setShowModal(true)}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            Create List
+    <SparkPageShell
+      title="Lists"
+      subtitle="Static contact lists for campaign targeting"
+      actions={
+        <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
+          <Plus className="h-3.5 w-3.5" /> New list
+        </button>
+      }
+      stats={
+        <SparkStatStrip stats={[
+          { label: "Total lists", value: lists.length, icon: ListIcon },
+          { label: "Populated", value: populated, accent: "emerald" },
+          { label: "Total members", value: totalContacts.toLocaleString(), icon: Users, accent: "blue" },
+        ]} />
+      }
+      filters={
+        <div className="flex justify-between w-full">
+          <span className="text-xs text-slate-500">Pick a list to target a specific campaign send</span>
+          <SparkSearchBox value={search} onChange={setSearch} placeholder="Search lists…" />
+        </div>
+      }
+      loading={loading}
+      error={error}
+    >
+      {lists.length === 0 && !loading ? (
+        <div className="spark-mini-card py-12 text-center">
+          <div className="mx-auto w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mb-3">
+            <ListIcon className="h-7 w-7 text-slate-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-slate-900">No lists yet</h3>
+          <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
+            Create a list to manually group contacts for a specific campaign. For
+            dynamic groups based on filters, use <strong>Segments</strong> instead.
+          </p>
+          <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-primary mt-4">
+            <Plus className="h-3.5 w-3.5" /> Create your first list
           </button>
         </div>
+      ) : (
+        <SparkTable<ContactList>
+          rows={filtered}
+          getRowKey={l => l.id}
+          totalCount={filtered.length}
+          emptyState={search ? `No lists match "${search}"` : "No lists"}
+          columns={[
+            {
+              key: "name", header: "List", width: "wide",
+              cell: l => (
+                <div>
+                  <div className="font-medium">{l.name}</div>
+                  {l.description && <div className="text-xs text-slate-500 truncate max-w-md">{l.description}</div>}
+                </div>
+              ),
+            },
+            {
+              key: "count", header: "Members", width: "compact",
+              cell: l => (
+                <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium">
+                  <Users className="h-3 w-3" /> {l.contact_count.toLocaleString()}
+                </span>
+              ),
+            },
+            {
+              key: "created", header: "Created", width: "compact", hideOnMobile: true,
+              cell: l => <span className="text-xs text-slate-500">{new Date(l.created_at).toLocaleDateString()}</span>,
+            },
+          ]}
+          rowActions={l => (
+            <button
+              onClick={() => alert(`Send campaign to ${l.name} — flow connects in v2`)}
+              className="spark-btn spark-btn-sm spark-btn-secondary"
+              disabled={l.contact_count === 0}
+              title={l.contact_count === 0 ? "Add contacts first" : "Send a campaign"}
+            >
+              <Send className="h-3 w-3" /> Send
+            </button>
+          )}
+        />
+      )}
 
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-gray-50 text-xs text-slate-500 uppercase tracking-wide">
-              <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Contacts</th>
-                <th className="px-4 py-3">Created</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {lists.map((l) => (
-                <tr key={l.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-slate-900">{l.name}</td>
-                  <td className="px-4 py-3 text-slate-600">{l.contact_count.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">{new Date(l.created_at).toLocaleDateString()}</td>
-                </tr>
-              ))}
-              {lists.length === 0 && !loading && (
-                <tr>
-                  <td colSpan={3} className="px-4 py-8 text-center text-sm text-slate-400">
-                    No lists yet. Create one to get started.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+      <SparkDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title="New list"
+        subtitle="Static lists hold a manually-curated set of contacts. For dynamic filtering, use Segments."
+        footer={
+          <>
+            <button onClick={() => setDrawerOpen(false)} className="spark-btn spark-btn-secondary">Cancel</button>
+            <button onClick={handleCreate} disabled={saving || !form.name.trim()} className="spark-btn spark-btn-primary">
+              {saving ? "Creating…" : "Create list"}
+            </button>
+          </>
+        }
+      >
+        <div className="spark-field">
+          <label className="spark-field-label">List name</label>
+          <input className="spark-field-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Holiday VIPs / Conference attendees" autoFocus />
         </div>
-
-        {showModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-            <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">Create List</h3>
-              <input
-                type="text"
-                placeholder="List name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <div className="mt-5 flex justify-end gap-2">
-                <button onClick={() => setShowModal(false)} className="rounded-lg border px-4 py-2 text-sm text-slate-600 hover:bg-gray-50">Cancel</button>
-                <button onClick={handleCreate} disabled={saving || !name.trim()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-                  {saving ? "Creating..." : "Create"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </OliverPageWrapper>
+        <div className="spark-field">
+          <label className="spark-field-label">Description</label>
+          <textarea className="spark-field-textarea" rows={3} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="What this list is for (optional)" />
+        </div>
+        <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md p-3">
+          After creating the list, add contacts to it from the <strong>Contacts</strong> page using the bulk-action toolbar.
+        </div>
+      </SparkDrawer>
+    </SparkPageShell>
   );
 }
+
+export default SparkListsPage;

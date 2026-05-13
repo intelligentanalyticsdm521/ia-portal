@@ -1,127 +1,190 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
+import { SparkDrawer } from "../../components/spark/SparkDrawer";
+import { SparkTable } from "../../components/spark/SparkTable";
+import { Plus, Filter, Users, Zap, Sparkles } from "lucide-react";
 
 interface Segment {
-  id: string;
+  id: number;
   name: string;
-  filter_summary: string;
+  filter_summary?: string;
+  filters?: string;     // JSON
   contact_count: number;
   created_at: string;
 }
+
+// Quick-start segment templates the user can pick from
+const TEMPLATES = [
+  { name: "Hot leads (Tier X)", summary: "Contact Intelligence Tier = X", description: "Your highest-scoring contacts — likely buyers and most engaged" },
+  { name: "Engaged in last 30 days", summary: "Last email opened within 30 days", description: "People who recently interacted with your campaigns" },
+  { name: "Dormant (no activity 60+ days)", summary: "No email opened in 60+ days AND email_subscribed = true", description: "Re-engagement candidates" },
+  { name: "Active newsletter readers", summary: "On Newsletter list AND email_unsubscribed = false", description: "Loyal newsletter audience" },
+  { name: "Has phone, no email", summary: "Phone IS NOT NULL AND email IS NULL", description: "SMS-only outreach targets" },
+];
 
 export function SparkSegmentsPage() {
   const { get, post, ready } = useSparkApi();
   const [segments, setSegments] = useState<Segment[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [form, setForm] = useState({ name: "", filter_summary: "" });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!ready) return;
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
-      const raw = await get<{ data: Segment[] }>("/api/v1/segments");
-      setSegments(raw.data || []);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
+      const r = await get<{ data: Segment[] }>("/api/v1/segments");
+      setSegments(r.data || []);
+    } catch (err) { setError(err); } finally { setLoading(false); }
   }, [get, ready]);
-
   useEffect(() => { load(); }, [load]);
 
   async function handleCreate() {
+    if (!form.name.trim()) return;
     setSaving(true);
     try {
       await post("/api/v1/segments", form);
-      setShowModal(false);
+      setDrawerOpen(false);
       setForm({ name: "", filter_summary: "" });
       await load();
-    } catch (err) {
-      setError(err);
-    } finally {
-      setSaving(false);
-    }
+    } catch (err) { setError(err); } finally { setSaving(false); }
   }
 
+  function useTemplate(t: typeof TEMPLATES[number]) {
+    setForm({ name: t.name, filter_summary: t.summary });
+    setDrawerOpen(true);
+  }
+
+  const totalContacts = segments.reduce((s, x) => s + (x.contact_count || 0), 0);
+
   return (
-    <OliverPageWrapper title="Segments" subtitle="Dynamic contact segments with filter rules" error={error} loading={loading}>
-      <div className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-slate-500">{segments.length} segment{segments.length !== 1 ? "s" : ""}</p>
-          <button
-            onClick={() => setShowModal(true)}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            Create Segment
-          </button>
-        </div>
+    <SparkPageShell
+      title="Segments"
+      subtitle="Dynamic groups — filter rules auto-update as contacts change"
+      actions={
+        <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
+          <Plus className="h-3.5 w-3.5" /> New segment
+        </button>
+      }
+      stats={
+        <SparkStatStrip stats={[
+          { label: "Total segments", value: segments.length, icon: Filter },
+          { label: "Total contacts in segments", value: totalContacts.toLocaleString(), icon: Users, accent: "blue" },
+        ]} />
+      }
+      loading={loading}
+      error={error}
+    >
+      {segments.length === 0 && !loading ? (
+        <>
+          <div className="spark-mini-card py-10 text-center">
+            <div className="mx-auto w-14 h-14 rounded-full bg-violet-50 flex items-center justify-center mb-3">
+              <Filter className="h-7 w-7 text-violet-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900">No segments yet</h3>
+            <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
+              Segments are <strong>dynamic</strong> — they update automatically as contacts match the rules.
+              Lists (static) vs. Segments (dynamic) — use a segment when "this group should always include everyone who…"
+            </p>
+          </div>
 
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-gray-50 text-xs text-slate-500 uppercase tracking-wide">
-              <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Filters</th>
-                <th className="px-4 py-3">Contacts</th>
-                <th className="px-4 py-3">Created</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {segments.map((s) => (
-                <tr key={s.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-slate-900">{s.name}</td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">{s.filter_summary || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{s.contact_count.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">{new Date(s.created_at).toLocaleDateString()}</td>
-                </tr>
-              ))}
-              {segments.length === 0 && !loading && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-400">
-                    No segments yet. Create one to dynamically group contacts.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-600 mt-6 mb-2">Start with a template</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {TEMPLATES.map(t => (
+              <button
+                key={t.name}
+                type="button"
+                onClick={() => useTemplate(t)}
+                className="text-left spark-mini-card hover:border-violet-400 hover:shadow-sm transition group"
+              >
+                <div className="flex items-start gap-2.5">
+                  <div className="p-1.5 rounded-md bg-violet-50 text-violet-600 flex-shrink-0">
+                    <Sparkles className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-sm text-slate-900">{t.name}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">{t.description}</div>
+                    <div className="text-[10px] text-violet-700 font-mono mt-1.5 truncate">{t.summary}</div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <SparkTable<Segment>
+          rows={segments}
+          getRowKey={s => s.id}
+          totalCount={segments.length}
+          columns={[
+            {
+              key: "name", header: "Segment", width: "wide",
+              cell: s => (
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-1.5 rounded-md bg-violet-50 text-violet-600 flex-shrink-0">
+                    <Filter className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-medium">{s.name}</div>
+                    {s.filter_summary && <div className="text-xs text-slate-500 truncate font-mono">{s.filter_summary}</div>}
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: "count", header: "Matches", width: "compact",
+              cell: s => (
+                <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-medium">
+                  <Zap className="h-3 w-3" /> {s.contact_count.toLocaleString()}
+                </span>
+              ),
+            },
+            {
+              key: "created", header: "Created", width: "compact", hideOnMobile: true,
+              cell: s => <span className="text-xs text-slate-500">{new Date(s.created_at).toLocaleDateString()}</span>,
+            },
+          ]}
+        />
+      )}
 
-        {showModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-            <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">Create Segment</h3>
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  placeholder="Segment name"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                <textarea
-                  placeholder="Filter description (e.g., contacts tagged 'VIP' in Texas)"
-                  value={form.filter_summary}
-                  onChange={(e) => setForm({ ...form, filter_summary: e.target.value })}
-                  rows={3}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <div className="mt-5 flex justify-end gap-2">
-                <button onClick={() => setShowModal(false)} className="rounded-lg border px-4 py-2 text-sm text-slate-600 hover:bg-gray-50">Cancel</button>
-                <button onClick={handleCreate} disabled={saving || !form.name.trim()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-                  {saving ? "Creating..." : "Create"}
-                </button>
-              </div>
+      <SparkDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title="New segment"
+        subtitle="Visual filter builder coming in v2. For now, describe your filter in plain English — IA Intelligence will compile it."
+        footer={
+          <>
+            <button onClick={() => setDrawerOpen(false)} className="spark-btn spark-btn-secondary">Cancel</button>
+            <button onClick={handleCreate} disabled={saving || !form.name.trim()} className="spark-btn spark-btn-primary">
+              {saving ? "Creating…" : "Create segment"}
+            </button>
+          </>
+        }
+      >
+        <div className="spark-field">
+          <label className="spark-field-label">Name</label>
+          <input className="spark-field-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="VIP customers in Texas" autoFocus />
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">Filter description</label>
+          <textarea className="spark-field-textarea" rows={4} value={form.filter_summary} onChange={e => setForm({ ...form, filter_summary: e.target.value })} placeholder='Plain English: "Contacts tagged VIP, in Texas, who opened an email in the last 30 days"' />
+        </div>
+        <div className="text-xs text-slate-500 bg-violet-50 border border-violet-200 rounded-md p-3">
+          <div className="flex items-start gap-2">
+            <Sparkles className="h-3.5 w-3.5 text-violet-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <strong className="text-violet-900">Visual filter builder coming in v2</strong>
+              <p className="mt-1">Pick fields, operators, and values from dropdowns. AND/OR logic. Saved filter sets reusable across segments.</p>
             </div>
           </div>
-        )}
-      </div>
-    </OliverPageWrapper>
+        </div>
+      </SparkDrawer>
+    </SparkPageShell>
   );
 }
+
+export default SparkSegmentsPage;

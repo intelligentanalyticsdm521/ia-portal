@@ -1,86 +1,79 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
-import { Mail, MessageSquare, Users, Target, Check, Sparkles, Coins, AlertCircle } from "lucide-react";
+import {
+  Mail, MessageSquare, Users, Target, Check, Sparkles, Coins, AlertCircle,
+  Briefcase, Zap, ArrowRight,
+} from "lucide-react";
 
 interface UsageResponse {
   data: {
     tier: string;
     usage: { emails_sent: number; sms_sent: number; contacts_count: number; leads_issued: number };
     limits: { emails_per_month: number; sms_per_month: number; contacts_max: number };
-    remaining: { emails: number; sms: number; contacts: number };
   };
 }
 
-interface TierDef {
-  key: string;
-  name: string;
-  monthly: number;
-  highlight?: boolean;
-  features: { label: string; value: string }[];
-  perks: string[];
+// ─ Pricing model ─────────────────────────────────────────────────────────────
+// The base plan is contact-volume driven. Tier 'add-ons' layer on top with fixed
+// monthly upcharges. Lead generation is its own slider with its own pricing.
+//
+// All numbers here are illustrative. Final pricing should come from Stripe
+// product config (when wired in v2 billing) — this UI just visualizes it.
+
+// Slider snap points for the contact slider — common tier breakpoints
+const CONTACT_STEPS = [500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
+
+function basePriceForContacts(contacts: number): number {
+  if (contacts <= 500) return 0;       // free tier
+  if (contacts <= 1000) return 19;
+  if (contacts <= 2500) return 29;
+  if (contacts <= 5000) return 49;
+  if (contacts <= 10000) return 79;
+  if (contacts <= 25000) return 129;
+  if (contacts <= 50000) return 199;
+  return 299;                           // 100k
 }
 
-const TIERS: TierDef[] = [
-  {
-    key: "standard",
-    name: "Standard",
-    monthly: 0,
-    features: [
-      { label: "Contacts", value: "1,000" },
-      { label: "Emails/mo", value: "500" },
-      { label: "SMS/mo", value: "100" },
-      { label: "Leads/mo", value: "50" },
-    ],
-    perks: [
-      "Basic CRM (contacts, lists, tags, segments)",
-      "Email + SMS campaigns",
-      "Forms + QR codes",
-      "Basic Insights (heuristic)",
-    ],
-  },
-  {
-    key: "pro",
-    name: "Pro",
-    monthly: 99,
-    highlight: true,
-    features: [
-      { label: "Contacts", value: "10,000" },
-      { label: "Emails/mo", value: "10,000" },
-      { label: "SMS/mo", value: "1,000" },
-      { label: "Leads/mo", value: "500" },
-    ],
-    perks: [
-      "Everything in Standard",
-      "Sales Pipeline + Deals (Kanban)",
-      "Newsletter Studio + auto-publish to WP",
-      "Social Scheduler + Content Calendar",
-      "NPS, Referrals, Landing Pages, Reputation Hub",
-      "Full IA Intelligence Layer — quarterly insights",
-      "100 AI Credits/mo (v2)",
-    ],
-  },
-  {
-    key: "business",
-    name: "Business",
-    monthly: 199,
-    features: [
-      { label: "Contacts", value: "50,000" },
-      { label: "Emails/mo", value: "50,000" },
-      { label: "SMS/mo", value: "5,000" },
-      { label: "Leads/mo", value: "2,500" },
-    ],
-    perks: [
-      "Everything in Pro",
-      "B2B Companies + account-based reporting",
-      "AI Writer (full access)",
-      "Full IA Intelligence Layer — monthly + on-demand",
-      "Annual deep-dive AI report",
-      "500 AI Credits/mo (v2)",
-      "Priority support",
-    ],
-  },
+function emailVolumeForContacts(contacts: number): number {
+  // Industry-standard: 10x contacts in monthly email send volume
+  return contacts * 10;
+}
+
+const PRO_ADDON = 40;        // $/month
+const BUSINESS_ADDON = 90;   // $/month, replaces Pro (includes Pro features)
+
+// Lead Generation pricing — placeholder until user confirms model
+const LEAD_GEN_STEPS = [0, 100, 250, 500, 1000, 2500, 5000];
+function leadGenPrice(leads: number): number {
+  if (leads <= 0) return 0;
+  if (leads <= 100) return 29;
+  if (leads <= 250) return 59;
+  if (leads <= 500) return 99;
+  if (leads <= 1000) return 149;
+  if (leads <= 2500) return 249;
+  return 399;
+}
+
+const PRO_FEATURES = [
+  "Sales Pipeline + Deals (Kanban)",
+  "Newsletter Studio + WP auto-publish",
+  "Social Scheduler + Content Calendar",
+  "NPS, Referrals, Landing Pages",
+  "Reputation Hub (review aggregation)",
+  "IA Intelligence — quarterly insights",
+  "100 AI Credits/mo (v2)",
+];
+
+const BUSINESS_FEATURES = [
+  "Everything in Pro",
+  "B2B Companies + account-based reporting",
+  "AI Writer (full access)",
+  "IA Intelligence — monthly + on-demand",
+  "Annual deep-dive AI report",
+  "500 AI Credits/mo (v2)",
+  "Priority support",
 ];
 
 export function SparkUsagePage() {
@@ -89,6 +82,20 @@ export function SparkUsagePage() {
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 
+  // Slider state (drives the live price preview)
+  const [contactsIdx, setContactsIdx] = useState(2);             // index into CONTACT_STEPS, default 2500
+  const [tier, setTier] = useState<"standard" | "pro" | "business">("standard");
+  const [leadsIdx, setLeadsIdx] = useState(0);                   // index into LEAD_GEN_STEPS, default 0
+
+  const targetContacts = CONTACT_STEPS[contactsIdx];
+  const targetLeads = LEAD_GEN_STEPS[leadsIdx];
+  const targetEmails = emailVolumeForContacts(targetContacts);
+  const basePrice = basePriceForContacts(targetContacts);
+  const tierPrice = tier === "pro" ? PRO_ADDON : tier === "business" ? BUSINESS_ADDON : 0;
+  const leadPrice = leadGenPrice(targetLeads);
+  const totalPrice = basePrice + tierPrice + leadPrice;
+
+  // Load current usage
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
@@ -96,13 +103,30 @@ export function SparkUsagePage() {
       setLoading(true); setError(null);
       try {
         const raw = await get<UsageResponse>("/api/v1/usage");
-        if (!cancelled) setUsage(raw.data || null);
+        if (!cancelled) {
+          setUsage(raw.data || null);
+          // Initialize slider near current usage
+          if (raw.data?.limits.contacts_max) {
+            const idx = CONTACT_STEPS.findIndex(s => s >= raw.data!.limits.contacts_max);
+            if (idx >= 0) setContactsIdx(idx);
+          }
+          if (raw.data?.tier === "pro") setTier("pro");
+          else if (raw.data?.tier === "business") setTier("business");
+        }
       } catch (err) { if (!cancelled) setError(err); }
       finally { if (!cancelled) setLoading(false); }
     }
     load();
     return () => { cancelled = true; };
   }, [get, ready]);
+
+  // Usage bars (current consumption)
+  const bars = useMemo(() => usage ? [
+    { label: "Emails sent", used: usage.usage.emails_sent, limit: usage.limits.emails_per_month, icon: Mail },
+    { label: "SMS sent", used: usage.usage.sms_sent, limit: usage.limits.sms_per_month, icon: MessageSquare },
+    { label: "Contacts", used: usage.usage.contacts_count, limit: usage.limits.contacts_max, icon: Users },
+    { label: "Leads issued", used: usage.usage.leads_issued, limit: 50, icon: Target },
+  ] : [], [usage]);
 
   function pct(used: number, limit: number) {
     return limit === 0 ? 0 : Math.min(100, Math.round((used / limit) * 100));
@@ -112,23 +136,15 @@ export function SparkUsagePage() {
     if (p >= 70) return "bg-amber-500";
     return "bg-emerald-500";
   }
-
-  const currentTier = usage?.tier || "standard";
-  const bars = usage ? [
-    { label: "Emails", used: usage.usage.emails_sent, limit: usage.limits.emails_per_month, icon: Mail },
-    { label: "SMS", used: usage.usage.sms_sent, limit: usage.limits.sms_per_month, icon: MessageSquare },
-    { label: "Contacts", used: usage.usage.contacts_count, limit: usage.limits.contacts_max, icon: Users },
-    { label: "Leads", used: usage.usage.leads_issued, limit: 50, icon: Target },
-  ] : [];
   const anyNearLimit = bars.some(b => pct(b.used, b.limit) >= 80);
 
   return (
     <SparkPageShell
       title="Usage & Billing"
-      subtitle="Monitor usage, manage your tier, and top up when needed"
+      subtitle="Adjust your plan with sliders — pricing updates live"
       stats={usage
         ? <SparkStatStrip stats={[
-            { label: "Current tier", value: currentTier.toUpperCase(), accent: "blue" },
+            { label: "Current tier", value: usage.tier.toUpperCase(), accent: "blue" },
             { label: "Emails this month", value: usage.usage.emails_sent.toLocaleString() },
             { label: "Contacts", value: usage.usage.contacts_count.toLocaleString(), icon: Users },
             { label: "Leads issued", value: usage.usage.leads_issued.toLocaleString(), icon: Target },
@@ -137,7 +153,7 @@ export function SparkUsagePage() {
       loading={loading}
       error={error}
     >
-      {/* USAGE BARS */}
+      {/* CURRENT USAGE */}
       <div className="spark-mini-card mb-4">
         <div className="spark-mini-card-header">
           <span className="spark-mini-card-title">This month's usage</span>
@@ -159,143 +175,278 @@ export function SparkUsagePage() {
                 <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
                   <div className={`h-full ${barColor(p)} transition-all`} style={{ width: `${p}%` }} />
                 </div>
-                <div className="mt-1 text-[10px] text-slate-500">
-                  {p}% used · {(b.limit - b.used).toLocaleString()} left
-                </div>
+                <div className="mt-1 text-[10px] text-slate-500">{p}% used</div>
               </div>
             );
           })}
         </div>
-
         {anyNearLimit && (
           <div className="mt-3 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
             <div className="text-xs text-amber-900">
-              <strong>Approaching plan limits.</strong> Upgrade your tier or buy a top-up below before you run out.
+              <strong>Approaching plan limits.</strong> Adjust the sliders below to right-size your plan.
             </div>
           </div>
         )}
       </div>
 
-      {/* TIER COMPARISON */}
-      <div className="spark-mini-card mb-4">
-        <div className="spark-mini-card-header">
-          <span className="spark-mini-card-title">Plans</span>
-          <span className="text-xs text-slate-500">All annual. Cancel anytime.</span>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {TIERS.map(tier => {
-            const isCurrent = tier.key === currentTier;
-            return (
-              <div
-                key={tier.key}
-                className={`rounded-lg p-4 border ${
-                  isCurrent
-                    ? "border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20"
-                    : tier.highlight
-                      ? "border-slate-900 bg-slate-50"
-                      : "border-slate-200 bg-white"
-                }`}
-              >
-                <div className="flex items-baseline justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-slate-900">{tier.name}</h3>
-                    <div className="text-2xl font-bold mt-1">
-                      ${tier.monthly}<span className="text-xs font-normal text-slate-500">/mo</span>
-                    </div>
-                  </div>
-                  {isCurrent && <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">Current</span>}
-                  {tier.highlight && !isCurrent && <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-slate-900 text-white">Recommended</span>}
+      {/* ── PLAN BUILDER (the big new thing) ───────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+        {/* Left: sliders */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* CONTACTS SLIDER */}
+          <div className="spark-mini-card">
+            <div className="spark-mini-card-header">
+              <span className="spark-mini-card-title flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5 text-blue-600" /> Contacts + email volume
+              </span>
+              <span className="text-xs text-slate-500">Drives your base plan price</span>
+            </div>
+            <div className="px-1 py-2">
+              <div className="flex items-baseline justify-between mb-2">
+                <div>
+                  <span className="text-3xl font-bold text-slate-900">{targetContacts.toLocaleString()}</span>
+                  <span className="text-sm text-slate-500 ml-1">contacts</span>
                 </div>
-                <div className="mt-3 pt-3 border-t border-slate-200 space-y-1.5">
-                  {tier.features.map(f => (
-                    <div key={f.label} className="flex justify-between text-xs">
-                      <span className="text-slate-500">{f.label}</span>
-                      <span className="font-medium">{f.value}</span>
-                    </div>
-                  ))}
+                <div className="text-right">
+                  <div className="text-sm font-semibold text-slate-700">{targetEmails.toLocaleString()}</div>
+                  <div className="text-[10px] uppercase text-slate-500">emails/mo included</div>
                 </div>
-                <ul className="mt-3 pt-3 border-t border-slate-200 space-y-1">
-                  {tier.perks.map(p => (
-                    <li key={p} className="flex items-start gap-1.5 text-xs text-slate-700">
-                      <Check className="h-3 w-3 text-emerald-600 mt-0.5 flex-shrink-0" />
-                      <span>{p}</span>
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  disabled={isCurrent}
-                  className={`mt-4 w-full spark-btn ${isCurrent ? "spark-btn-secondary cursor-default opacity-60" : "spark-btn-primary"}`}
-                  onClick={() => alert("Tier change flow connects to Stripe — coming in v2. Email support@iadm.io to change tier today.")}
-                >
-                  {isCurrent ? "Current plan" : `Switch to ${tier.name}`}
-                </button>
               </div>
-            );
-          })}
+              <input
+                type="range"
+                min={0}
+                max={CONTACT_STEPS.length - 1}
+                step={1}
+                value={contactsIdx}
+                onChange={e => setContactsIdx(Number(e.target.value))}
+                className="w-full accent-blue-600"
+              />
+              <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-mono">
+                {CONTACT_STEPS.map((s, i) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setContactsIdx(i)}
+                    className={`hover:text-slate-700 transition ${i === contactsIdx ? "text-blue-600 font-semibold" : ""}`}
+                  >
+                    {s >= 1000 ? `${s / 1000}k` : s}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 flex items-center justify-between text-sm">
+                <span className="text-slate-600">Base price</span>
+                <span className="font-semibold text-slate-900">${basePrice}/mo</span>
+              </div>
+            </div>
+          </div>
+
+          {/* TIER ADD-ONS */}
+          <div className="spark-mini-card">
+            <div className="spark-mini-card-header">
+              <span className="spark-mini-card-title flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-violet-600" /> Feature tier
+              </span>
+              <span className="text-xs text-slate-500">Adds to the base price</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <TierCard
+                title="Standard" subtitle="Just the CRM" price="+$0" active={tier === "standard"} onClick={() => setTier("standard")}
+                bullets={["Contacts, Lists, Tags, Segments", "Email + SMS campaigns", "Forms + QR codes", "Basic Insights"]}
+              />
+              <TierCard
+                title="Pro" subtitle="Add Pro features" price={`+$${PRO_ADDON}`} active={tier === "pro"} onClick={() => setTier("pro")}
+                accent="violet" bullets={PRO_FEATURES.slice(0, 4)} more={PRO_FEATURES.length - 4}
+              />
+              <TierCard
+                title="Business" subtitle="Pro + AI Writer" price={`+$${BUSINESS_ADDON}`} active={tier === "business"} onClick={() => setTier("business")}
+                accent="emerald" bullets={BUSINESS_FEATURES.slice(0, 4)} more={BUSINESS_FEATURES.length - 4}
+              />
+            </div>
+          </div>
+
+          {/* LEAD GEN SLIDER */}
+          <div className="spark-mini-card">
+            <div className="spark-mini-card-header">
+              <span className="spark-mini-card-title flex items-center gap-1.5">
+                <Briefcase className="h-3.5 w-3.5 text-amber-600" /> Lead Generation add-on
+              </span>
+              <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">Optional</span>
+            </div>
+            <div className="px-1 py-2">
+              <div className="flex items-baseline justify-between mb-2">
+                <div>
+                  <span className="text-3xl font-bold text-slate-900">{targetLeads.toLocaleString()}</span>
+                  <span className="text-sm text-slate-500 ml-1">leads/mo</span>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-semibold text-amber-700">${leadPrice}/mo</div>
+                  <div className="text-[10px] uppercase text-slate-500">add-on cost</div>
+                </div>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={LEAD_GEN_STEPS.length - 1}
+                step={1}
+                value={leadsIdx}
+                onChange={e => setLeadsIdx(Number(e.target.value))}
+                className="w-full accent-amber-600"
+              />
+              <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-mono">
+                {LEAD_GEN_STEPS.map((s, i) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setLeadsIdx(i)}
+                    className={`hover:text-slate-700 transition ${i === leadsIdx ? "text-amber-700 font-semibold" : ""}`}
+                  >
+                    {s === 0 ? "Off" : s >= 1000 ? `${s / 1000}k` : s}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-md p-2">
+                <strong>Pricing TBD —</strong> the values shown are placeholders. Final per-volume pricing will replace these once we finalize the lead-gen unit economics.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: live price summary */}
+        <div className="lg:col-span-1">
+          <div className="spark-mini-card sticky top-4">
+            <div className="spark-mini-card-header">
+              <span className="spark-mini-card-title">Your plan</span>
+              <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">Live preview</span>
+            </div>
+            <div className="space-y-2 text-sm">
+              <Line label={`Contacts (${targetContacts.toLocaleString()})`} value={basePrice} />
+              <Line label={`Emails included`} value={null} note={`${targetEmails.toLocaleString()}/mo`} />
+              {tier !== "standard" && (
+                <Line label={`${tier === "pro" ? "Pro" : "Business"} features`} value={tierPrice} />
+              )}
+              {leadPrice > 0 && (
+                <Line label={`Lead Gen (${targetLeads.toLocaleString()}/mo)`} value={leadPrice} />
+              )}
+            </div>
+            <div className="border-t border-slate-200 mt-3 pt-3 flex items-baseline justify-between">
+              <span className="text-sm text-slate-600">Total</span>
+              <span className="text-2xl font-bold text-slate-900">${totalPrice}<span className="text-sm font-normal text-slate-500">/mo</span></span>
+            </div>
+            <button
+              type="button"
+              onClick={() => alert("Stripe checkout flow ships with v2 billing. Email support@iadm.io to change your plan today.")}
+              className="mt-3 w-full spark-btn spark-btn-primary"
+              disabled={
+                usage?.tier === tier &&
+                CONTACT_STEPS.findIndex(s => s >= (usage?.limits.contacts_max || 0)) === contactsIdx
+              }
+            >
+              {usage?.tier === tier ? "Update plan" : `Switch to ${tier.toUpperCase()}`}
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+            <p className="text-[11px] text-slate-500 mt-2 text-center">Cancel or downgrade anytime · No long-term contract</p>
+          </div>
         </div>
       </div>
 
-      {/* TOP-UPS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="spark-mini-card">
-          <div className="spark-mini-card-header">
-            <span className="spark-mini-card-title">One-time top-ups</span>
-            <span className="text-xs text-slate-500">For this month only</span>
-          </div>
-          <div className="space-y-2">
-            <TopUpOption label="+1,000 emails" price={9} icon={Mail} />
-            <TopUpOption label="+100 SMS" price={5} icon={MessageSquare} />
-            <TopUpOption label="+100 leads" price={29} icon={Target} />
-          </div>
-          <p className="text-[11px] text-slate-500 mt-3">Top-ups expire at month end and don't roll over.</p>
+      {/* TIER FEATURE COMPARISON (full lists, expandable) */}
+      <div className="spark-mini-card mb-4">
+        <div className="spark-mini-card-header">
+          <span className="spark-mini-card-title">What's in each tier</span>
         </div>
-
-        <div className="spark-mini-card">
-          <div className="spark-mini-card-header">
-            <span className="spark-mini-card-title flex items-center gap-1.5">
-              <Sparkles className="h-3 w-3 text-violet-600" /> AI Credits
-            </span>
-            <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-violet-100 text-violet-700">v2</span>
-          </div>
-          <div className="space-y-2">
-            <TopUpOption label="+250 credits" price={20} icon={Coins} disabled />
-            <TopUpOption label="+700 credits" price={50} icon={Coins} disabled />
-          </div>
-          <p className="text-[11px] text-slate-500 mt-3">
-            1 credit ≈ $0.10. AI Writer email draft = 2 credits. Credits roll forward 30 days then expire.
-          </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
+          <FeatureList title="Standard ($0)" features={["Everyone gets these", "Contacts / Lists / Tags / Segments", "Email + SMS campaigns", "Forms + QR codes", "Basic heuristic Insights"]} />
+          <FeatureList title={`Pro (+$${PRO_ADDON})`} features={PRO_FEATURES} accent="violet" />
+          <FeatureList title={`Business (+$${BUSINESS_ADDON})`} features={BUSINESS_FEATURES} accent="emerald" />
         </div>
       </div>
 
       {/* INVOICE HISTORY PLACEHOLDER */}
-      <div className="spark-mini-card mt-4">
+      <div className="spark-mini-card">
         <div className="spark-mini-card-header">
           <span className="spark-mini-card-title">Billing history</span>
         </div>
         <div className="py-8 text-center text-sm text-slate-500">
-          Stripe invoice history coming with v2 billing integration.
+          Stripe invoice history connects with v2 billing.
         </div>
       </div>
     </SparkPageShell>
   );
 }
 
-function TopUpOption({ label, price, icon: Icon, disabled }: { label: string; price: number; icon: typeof Mail; disabled?: boolean }) {
+// ─ Helpers ─────────────────────────────────────────────────────────────────
+
+interface TierCardProps {
+  title: string; subtitle: string; price: string;
+  active: boolean; onClick: () => void;
+  bullets: string[]; more?: number;
+  accent?: "violet" | "emerald";
+}
+function TierCard({ title, subtitle, price, active, onClick, bullets, more, accent }: TierCardProps) {
+  const colors: Record<string, string> = {
+    violet: "ring-violet-500/30 bg-violet-50/40 border-violet-300",
+    emerald: "ring-emerald-500/30 bg-emerald-50/40 border-emerald-300",
+  };
+  const accentClass = accent ? colors[accent] : "ring-slate-500/30 bg-slate-50/40 border-slate-300";
   return (
     <button
       type="button"
-      disabled={disabled}
-      onClick={() => alert(disabled ? "AI Credits launch with v2." : "Top-up flow connects to Stripe — coming in v2. Email support@iadm.io to add capacity today.")}
-      className={`w-full flex items-center justify-between gap-3 px-3 py-2 border border-slate-200 rounded-md ${disabled ? "opacity-50 cursor-not-allowed" : "hover:bg-slate-50 hover:border-slate-300"} transition`}
+      onClick={onClick}
+      className={`text-left p-3 rounded-lg border transition-all ${active ? `ring-2 ${accentClass}` : "border-slate-200 hover:border-slate-300 bg-white"}`}
     >
-      <span className="flex items-center gap-2">
-        <Icon className="h-3.5 w-3.5 text-slate-500" />
-        <span className="text-sm font-medium">{label}</span>
-      </span>
-      <span className="text-sm font-semibold text-slate-900">${price}</span>
+      <div className="flex items-baseline justify-between">
+        <div>
+          <div className="text-sm font-semibold text-slate-900">{title}</div>
+          <div className="text-[11px] text-slate-500">{subtitle}</div>
+        </div>
+        <div className="text-base font-bold text-slate-900">{price}</div>
+      </div>
+      <ul className="mt-2 space-y-0.5">
+        {bullets.map(b => (
+          <li key={b} className="flex items-start gap-1.5 text-[11px] text-slate-700">
+            <Check className="h-3 w-3 text-emerald-600 mt-0.5 flex-shrink-0" />
+            <span className="truncate">{b}</span>
+          </li>
+        ))}
+        {more && more > 0 && (
+          <li className="text-[10px] text-slate-500 mt-1">+ {more} more</li>
+        )}
+      </ul>
     </button>
+  );
+}
+
+function Line({ label, value, note }: { label: string; value: number | null; note?: string }) {
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-slate-600">{label}</span>
+      {value != null ? (
+        <span className="font-medium text-slate-900">${value}</span>
+      ) : (
+        <span className="text-[11px] text-slate-500">{note}</span>
+      )}
+    </div>
+  );
+}
+
+function FeatureList({ title, features, accent }: { title: string; features: string[]; accent?: "violet" | "emerald" }) {
+  const headerColor = accent === "violet" ? "text-violet-700" : accent === "emerald" ? "text-emerald-700" : "text-slate-900";
+  const Icon = accent === "violet" ? Sparkles : accent === "emerald" ? Zap : Coins;
+  return (
+    <div>
+      <div className={`flex items-center gap-1.5 text-sm font-semibold mb-2 ${headerColor}`}>
+        <Icon className="h-3.5 w-3.5" /> {title}
+      </div>
+      <ul className="space-y-1.5">
+        {features.map(f => (
+          <li key={f} className="flex items-start gap-1.5 text-xs text-slate-700">
+            <Check className="h-3 w-3 text-emerald-600 mt-0.5 flex-shrink-0" />
+            <span>{f}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

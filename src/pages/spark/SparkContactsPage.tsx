@@ -1,6 +1,16 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
+import { SparkDrawer } from "../../components/spark/SparkDrawer";
+import { SparkTable, type SparkTableColumn } from "../../components/spark/SparkTable";
+import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
+import { SparkSearchBox } from "../../components/spark/SparkSearchBox";
+import {
+  Users, Plus, Upload, Download, Mail, Phone, Building2, Sparkles, Trash2,
+  Tag as TagIcon, ListPlus, Send, MoreHorizontal, AlertTriangle, ChevronUp, ChevronDown, Activity,
+} from "lucide-react";
 
 interface Contact {
   id: number;
@@ -11,161 +21,556 @@ interface Contact {
   company: string;
   source: string;
   contact_intelligence_tier: string | null;
+  contact_intelligence_score: number | null;
+  email_unsubscribed?: boolean;
+  email_invalid?: boolean;
+  sms_unsubscribed?: boolean;
+  account_name?: string | null;
+  account_domain?: string | null;
+  tag_names?: string | null;
   created_at: string;
+  updated_at?: string;
 }
+
+type SortKey = "name" | "email" | "score" | "company" | "created";
+type SortDir = "asc" | "desc";
+
+const PAGE_SIZE = 25;
 
 export function SparkContactsPage() {
   const { get, post, ready } = useSparkApi();
+  const navigate = useNavigate();
+
+  // List state
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", company: "" });
-  const [saving, setSaving] = useState(false);
-  const pageSize = 25;
+  const [sortKey, setSortKey] = useState<SortKey>("created");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
+  // Selection state (bulk actions)
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  // Drawer state
+  const [drawer, setDrawer] = useState<"add" | "import" | "detail" | null>(null);
+  const [detail, setDetail] = useState<Contact | null>(null);
+  const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", company: "", title: "" });
+  const [saving, setSaving] = useState(false);
+  const [importText, setImportText] = useState("");
+
+  // ─ Load ─────────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     if (!ready) return;
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
-      const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+      const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
       if (search) params.set("search", search);
       const raw = await get<{ data: Contact[]; meta: { total: number } }>(`/api/v1/contacts?${params}`);
       setContacts(raw.data || []);
       setTotal(raw.meta?.total || 0);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { setError(err); }
+    finally { setLoading(false); }
   }, [get, ready, page, search]);
-
   useEffect(() => { load(); }, [load]);
 
+  // ─ Filter + sort ────────────────────────────────────────────────────────
+  const filtered = useMemo(() => {
+    let rows = contacts;
+    if (filter === "subscribed") rows = rows.filter(c => !c.email_unsubscribed && !c.email_invalid);
+    else if (filter === "unsubscribed") rows = rows.filter(c => c.email_unsubscribed);
+    else if (filter === "tier_x") rows = rows.filter(c => c.contact_intelligence_tier === "X");
+    else if (filter === "tier_y") rows = rows.filter(c => c.contact_intelligence_tier === "Y");
+    else if (filter === "tier_z") rows = rows.filter(c => c.contact_intelligence_tier === "Z");
+    else if (filter === "unscored") rows = rows.filter(c => !c.contact_intelligence_tier);
+    else if (filter === "no_email") rows = rows.filter(c => !c.email);
+
+    const sorted = [...rows].sort((a, b) => {
+      const dir = sortDir === "asc" ? 1 : -1;
+      switch (sortKey) {
+        case "name": return dir * (`${a.last_name || ""} ${a.first_name || ""}`).localeCompare(`${b.last_name || ""} ${b.first_name || ""}`);
+        case "email": return dir * (a.email || "").localeCompare(b.email || "");
+        case "score": return dir * ((a.contact_intelligence_score || 0) - (b.contact_intelligence_score || 0));
+        case "company": return dir * ((a.account_name || a.company || "").localeCompare(b.account_name || b.company || ""));
+        case "created":
+        default: return dir * (new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      }
+    });
+    return sorted;
+  }, [contacts, filter, sortKey, sortDir]);
+
+  // ─ Stats ────────────────────────────────────────────────────────────────
+  const stats = useMemo(() => {
+    const tierX = contacts.filter(c => c.contact_intelligence_tier === "X").length;
+    const unsubscribed = contacts.filter(c => c.email_unsubscribed).length;
+    const invalid = contacts.filter(c => c.email_invalid).length;
+    return { total, tierX, unsubscribed, invalid };
+  }, [contacts, total]);
+
+  // ─ Actions ──────────────────────────────────────────────────────────────
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir(key === "score" ? "desc" : "asc"); }
+  }
+
+  function toggleSelected(id: number) {
+    setSelected(s => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function toggleSelectAll() {
+    if (selected.size === filtered.length) setSelected(new Set());
+    else setSelected(new Set(filtered.map(c => c.id)));
+  }
+  function clearSelection() { setSelected(new Set()); }
+
   async function handleAdd() {
+    if (!form.first_name && !form.email) return;
     setSaving(true);
     try {
       await post("/api/v1/contacts", form);
-      setShowModal(false);
-      setForm({ first_name: "", last_name: "", email: "", phone: "", company: "" });
+      setDrawer(null);
+      setForm({ first_name: "", last_name: "", email: "", phone: "", company: "", title: "" });
       await load();
-    } catch (err) {
-      setError(err);
-    } finally {
-      setSaving(false);
-    }
+    } catch (err) { setError(err); }
+    finally { setSaving(false); }
   }
 
-  function tierBadge(tier: string | null) {
-    if (!tier) return null;
-    const colors: Record<string, string> = {
-      X: "bg-emerald-100 text-emerald-700",
-      Y: "bg-blue-100 text-blue-700",
-      Z: "bg-gray-100 text-gray-600",
-    };
-    return (
-      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${colors[tier] || "bg-gray-100 text-gray-600"}`}>
-        {tier}
-      </span>
-    );
+  async function handleImport() {
+    // Parse CSV-style paste: one row per line, headers in first line
+    if (!importText.trim()) return;
+    setSaving(true);
+    try {
+      const lines = importText.trim().split(/\r?\n/);
+      const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
+      const rows = lines.slice(1).map(line => {
+        const cells = line.split(",").map(c => c.trim());
+        const obj: Record<string, string> = {};
+        headers.forEach((h, i) => { obj[h] = cells[i] || ""; });
+        return obj;
+      });
+      let count = 0;
+      for (const r of rows) {
+        if (!r.email && !r.first_name) continue;
+        await post("/api/v1/contacts", {
+          first_name: r.first_name || r["first name"] || "",
+          last_name: r.last_name || r["last name"] || "",
+          email: r.email || "",
+          phone: r.phone || "",
+          company: r.company || "",
+          title: r.title || "",
+        });
+        count++;
+      }
+      setDrawer(null);
+      setImportText("");
+      alert(`Imported ${count} contacts`);
+      await load();
+    } catch (err) { setError(err); }
+    finally { setSaving(false); }
   }
 
-  const totalPages = Math.ceil(total / pageSize);
+  function handleExport() {
+    const csv = ["first_name,last_name,email,phone,company,tier,score"]
+      .concat(filtered.map(c => [
+        c.first_name || "", c.last_name || "", c.email || "",
+        c.phone || "", c.account_name || c.company || "",
+        c.contact_intelligence_tier || "", c.contact_intelligence_score ?? "",
+      ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `contacts-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  }
 
+  // ─ Column defs ──────────────────────────────────────────────────────────
+  const columns: SparkTableColumn<Contact>[] = [
+    {
+      key: "select", header: "", width: "narrow",
+      cell: c => (
+        <input
+          type="checkbox"
+          checked={selected.has(c.id)}
+          onChange={() => toggleSelected(c.id)}
+          onClick={e => e.stopPropagation()}
+          className="cursor-pointer"
+        />
+      ),
+    },
+    {
+      key: "name", header: <SortHeader label="Name" col="name" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />,
+      cell: c => (
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+            <span className="text-[11px] font-semibold text-slate-700">
+              {(c.first_name?.[0] || "?").toUpperCase()}{(c.last_name?.[0] || "").toUpperCase()}
+            </span>
+          </div>
+          <div className="min-w-0">
+            <div className="font-medium truncate text-slate-900">{c.first_name || ""} {c.last_name || "—"}</div>
+            {c.email_unsubscribed && <div className="text-[10px] text-rose-600">Unsubscribed</div>}
+            {c.email_invalid && <div className="text-[10px] text-amber-600">Invalid email</div>}
+          </div>
+        </div>
+      ),
+      width: "wide",
+    },
+    {
+      key: "email", header: <SortHeader label="Email" col="email" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />,
+      cell: c => c.email ? <span className="text-sm text-slate-700">{c.email}</span> : <span className="text-xs text-slate-400">—</span>,
+      hideOnMobile: true,
+    },
+    {
+      key: "company", header: <SortHeader label="Company" col="company" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />,
+      cell: c => c.account_name
+        ? <span className="text-sm">{c.account_name}</span>
+        : c.company ? <span className="text-sm text-slate-600">{c.company}</span> : <span className="text-xs text-slate-400">—</span>,
+      hideOnMobile: true,
+    },
+    {
+      key: "score", header: <SortHeader label="Score" col="score" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />,
+      width: "compact",
+      cell: c => <ScoreBadge tier={c.contact_intelligence_tier} score={c.contact_intelligence_score} />,
+    },
+    {
+      key: "source", header: "Source", width: "compact",
+      cell: c => c.source ? <span className="text-xs text-slate-500 capitalize">{c.source.replace(/_/g, " ")}</span> : <span className="text-xs text-slate-400">—</span>,
+      hideOnMobile: true,
+    },
+  ];
+
+  // ─ Render ───────────────────────────────────────────────────────────────
   return (
-    <OliverPageWrapper title="Contacts" subtitle="Manage your contact database" error={error} loading={loading}>
-      <div className="p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <input
-            type="search"
-            placeholder="Search contacts..."
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            className="h-9 w-64 rounded-lg border border-gray-300 bg-white px-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-          <button
-            onClick={() => setShowModal(true)}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            Add Contact
+    <SparkPageShell
+      title="Contacts"
+      subtitle="Everyone in your CRM — auto-scored and segmented"
+      actions={
+        <>
+          <button onClick={handleExport} className="spark-btn spark-btn-secondary" disabled={!contacts.length}>
+            <Download className="h-3.5 w-3.5" /> Export
           </button>
-        </div>
-
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-gray-50 text-xs text-slate-500 uppercase tracking-wide">
-              <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Phone</th>
-                <th className="px-4 py-3">Company</th>
-                <th className="px-4 py-3">Source</th>
-                <th className="px-4 py-3">Tier</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {contacts.map((c) => (
-                <tr key={c.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-slate-900">{c.first_name} {c.last_name}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.email}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.phone || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.company || "—"}</td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">{c.source || "—"}</td>
-                  <td className="px-4 py-3">{tierBadge(c.contact_intelligence_tier)}</td>
-                </tr>
-              ))}
-              {contacts.length === 0 && !loading && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">
-                    No contacts found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between text-sm text-slate-500">
-            <span>Page {page} of {totalPages} ({total} contacts)</span>
-            <div className="flex gap-2">
-              <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="rounded-lg border px-3 py-1 disabled:opacity-40">Prev</button>
-              <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="rounded-lg border px-3 py-1 disabled:opacity-40">Next</button>
-            </div>
+          <button onClick={() => setDrawer("import")} className="spark-btn spark-btn-secondary">
+            <Upload className="h-3.5 w-3.5" /> Import
+          </button>
+          <button onClick={() => setDrawer("add")} className="spark-btn spark-btn-accent">
+            <Plus className="h-3.5 w-3.5" /> New contact
+          </button>
+        </>
+      }
+      stats={
+        <SparkStatStrip stats={[
+          { label: "Total contacts", value: stats.total.toLocaleString(), icon: Users },
+          { label: "Tier X (top)", value: stats.tierX, accent: "emerald", icon: Sparkles },
+          { label: "Unsubscribed", value: stats.unsubscribed, accent: stats.unsubscribed > 0 ? "rose" : "default" },
+          { label: "Invalid emails", value: stats.invalid, accent: stats.invalid > 0 ? "amber" : "default", icon: AlertTriangle },
+        ]} />
+      }
+      filters={
+        <SparkFilterPills
+          active={filter}
+          onChange={f => { setFilter(f); setPage(1); clearSelection(); }}
+          pills={[
+            { key: "all", label: "All", count: total },
+            { key: "subscribed", label: "Active" },
+            { key: "tier_x", label: "Tier X", count: stats.tierX },
+            { key: "tier_y", label: "Tier Y" },
+            { key: "tier_z", label: "Tier Z" },
+            { key: "unscored", label: "Unscored" },
+            { key: "unsubscribed", label: "Unsubscribed", count: stats.unsubscribed },
+            { key: "no_email", label: "No email" },
+          ]}
+          right={
+            <SparkSearchBox
+              value={search}
+              onChange={v => { setSearch(v); setPage(1); }}
+              placeholder="Search name, email, phone…"
+              width="wide"
+            />
+          }
+        />
+      }
+      loading={loading}
+      error={error}
+    >
+      {/* Bulk action toolbar */}
+      {selected.size > 0 && (
+        <div className="mb-3 flex items-center justify-between gap-3 px-3 py-2 rounded-md bg-slate-900 text-white text-sm">
+          <div className="flex items-center gap-3">
+            <span><strong>{selected.size}</strong> selected</span>
+            <button onClick={clearSelection} className="text-xs text-slate-400 hover:text-white underline">Clear</button>
           </div>
-        )}
-
-        {/* Add Contact Modal */}
-        {showModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-            <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">Add Contact</h3>
-              <div className="space-y-3">
-                {(["first_name", "last_name", "email", "phone", "company"] as const).map((field) => (
-                  <input
-                    key={field}
-                    type={field === "email" ? "email" : "text"}
-                    placeholder={field === "first_name" ? "First name" : field === "last_name" ? "Last name" : field.charAt(0).toUpperCase() + field.slice(1)}
-                    value={form[field]}
-                    onChange={(e) => setForm({ ...form, [field]: e.target.value })}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                ))}
-              </div>
-              <div className="mt-5 flex justify-end gap-2">
-                <button onClick={() => setShowModal(false)} className="rounded-lg border px-4 py-2 text-sm text-slate-600 hover:bg-gray-50">Cancel</button>
-                <button onClick={handleAdd} disabled={saving || !form.email} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-                  {saving ? "Saving..." : "Save"}
-                </button>
-              </div>
-            </div>
+          <div className="flex items-center gap-1">
+            <button onClick={() => alert("Tag flow — coming soon")} className="px-2 py-1 rounded hover:bg-white/10 text-xs flex items-center gap-1">
+              <TagIcon className="h-3 w-3" /> Tag
+            </button>
+            <button onClick={() => alert("Add to list — coming soon")} className="px-2 py-1 rounded hover:bg-white/10 text-xs flex items-center gap-1">
+              <ListPlus className="h-3 w-3" /> Add to list
+            </button>
+            <button onClick={() => navigate("/app/services/spark_campaigns")} className="px-2 py-1 rounded hover:bg-white/10 text-xs flex items-center gap-1">
+              <Send className="h-3 w-3" /> Send campaign
+            </button>
+            <button onClick={() => alert("Delete flow — coming soon")} className="px-2 py-1 rounded hover:bg-white/10 text-xs flex items-center gap-1 text-rose-300">
+              <Trash2 className="h-3 w-3" /> Delete
+            </button>
           </div>
-        )}
-      </div>
-    </OliverPageWrapper>
+        </div>
+      )}
+
+      {/* Empty state with onboarding */}
+      {contacts.length === 0 && !loading && !search ? (
+        <EmptyContactsState onAdd={() => setDrawer("add")} onImport={() => setDrawer("import")} />
+      ) : (
+        <SparkTable<Contact>
+          rows={filtered}
+          getRowKey={c => c.id}
+          onRowClick={c => { setDetail(c); setDrawer("detail"); }}
+          columns={columns}
+          totalCount={filtered.length}
+          rowActions={c => (
+            <button onClick={() => { setDetail(c); setDrawer("detail"); }} className="spark-btn-icon" title="View details">
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          )}
+          emptyState={search ? <span>No contacts match "{search}".</span> : "No contacts in this filter."}
+        />
+      )}
+
+      {/* Add contact drawer */}
+      <SparkDrawer
+        open={drawer === "add"}
+        onClose={() => setDrawer(null)}
+        title="New contact"
+        subtitle="Add one manually. Email domain auto-matches to a Company."
+        footer={
+          <>
+            <button onClick={() => setDrawer(null)} className="spark-btn spark-btn-secondary">Cancel</button>
+            <button onClick={handleAdd} disabled={saving || (!form.first_name && !form.email)} className="spark-btn spark-btn-primary">
+              {saving ? "Saving…" : "Save contact"}
+            </button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <div className="spark-field">
+            <label className="spark-field-label">First name</label>
+            <input className="spark-field-input" value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} autoFocus />
+          </div>
+          <div className="spark-field">
+            <label className="spark-field-label">Last name</label>
+            <input className="spark-field-input" value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} />
+          </div>
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">Email</label>
+          <input type="email" className="spark-field-input" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="name@company.com" />
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">Phone</label>
+          <input type="tel" className="spark-field-input" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">Company</label>
+          <input className="spark-field-input" value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} placeholder="Acme Inc." />
+          <p className="text-[11px] text-slate-500 mt-0.5">If the email domain matches an existing Company, this contact links automatically.</p>
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">Title</label>
+          <input className="spark-field-input" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="VP of Marketing" />
+        </div>
+      </SparkDrawer>
+
+      {/* Import CSV drawer */}
+      <SparkDrawer
+        open={drawer === "import"}
+        onClose={() => setDrawer(null)}
+        title="Import contacts"
+        subtitle="Paste CSV with headers, or download the template"
+        width="wide"
+        footer={
+          <>
+            <button onClick={() => setDrawer(null)} className="spark-btn spark-btn-secondary">Cancel</button>
+            <button onClick={handleImport} disabled={saving || !importText.trim()} className="spark-btn spark-btn-primary">
+              {saving ? "Importing…" : "Import"}
+            </button>
+          </>
+        }
+      >
+        <div className="spark-field">
+          <label className="spark-field-label">CSV data</label>
+          <p className="text-[11px] text-slate-500 mb-2">
+            First row must be headers. Supported columns: <code className="bg-slate-100 px-1 rounded text-[10px]">first_name, last_name, email, phone, company, title</code>
+          </p>
+          <textarea
+            value={importText}
+            onChange={e => setImportText(e.target.value)}
+            className="spark-field-textarea font-mono text-xs"
+            rows={12}
+            placeholder={`first_name,last_name,email,phone,company,title\nJane,Smith,jane@acme.com,555-1234,Acme Inc.,VP Marketing\nJohn,Doe,john@acme.com,,Acme Inc.,Engineer`}
+          />
+        </div>
+        <button
+          onClick={() => setImportText("first_name,last_name,email,phone,company,title\n")}
+          className="spark-btn spark-btn-secondary spark-btn-sm"
+        >
+          <Download className="h-3 w-3" /> Insert template headers
+        </button>
+        <div className="mt-4 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md p-3">
+          <strong>Tip:</strong> Duplicate emails will <em>merge</em> with existing contacts rather than create duplicates.
+          The contact's company will auto-link if the email domain matches an existing Company.
+        </div>
+      </SparkDrawer>
+
+      {/* Contact detail drawer */}
+      <SparkDrawer
+        open={drawer === "detail" && !!detail}
+        onClose={() => { setDrawer(null); setDetail(null); }}
+        title={detail ? `${detail.first_name || ""} ${detail.last_name || ""}`.trim() || detail.email || "Contact" : ""}
+        subtitle={detail?.email || detail?.phone || undefined}
+        width="wide"
+      >
+        {detail && <ContactDetail contact={detail} />}
+      </SparkDrawer>
+    </SparkPageShell>
   );
 }
+
+// ─ Helpers ──────────────────────────────────────────────────────────────────
+
+function SortHeader({ label, col, sortKey, sortDir, onSort }: {
+  label: string; col: SortKey; sortKey: SortKey; sortDir: SortDir; onSort: (c: SortKey) => void;
+}) {
+  const active = sortKey === col;
+  return (
+    <button onClick={() => onSort(col)} className="flex items-center gap-1 hover:text-slate-900 transition">
+      <span>{label}</span>
+      {active ? (sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : null}
+    </button>
+  );
+}
+
+function ScoreBadge({ tier, score }: { tier: string | null; score: number | null }) {
+  if (!tier) return <span className="text-xs text-slate-400">Unscored</span>;
+  const colors: Record<string, string> = {
+    X: "bg-emerald-100 text-emerald-700 ring-emerald-300",
+    Y: "bg-blue-100 text-blue-700 ring-blue-300",
+    Z: "bg-slate-100 text-slate-600 ring-slate-300",
+  };
+  return (
+    <div className="inline-flex items-center gap-1">
+      <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold ring-1 ${colors[tier] || colors.Z}`}>
+        {tier}
+      </span>
+      {score != null && <span className="text-[11px] text-slate-500 font-mono">{score}</span>}
+    </div>
+  );
+}
+
+function EmptyContactsState({ onAdd, onImport }: { onAdd: () => void; onImport: () => void }) {
+  return (
+    <div className="spark-mini-card py-12 text-center">
+      <div className="mx-auto w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mb-3">
+        <Users className="h-7 w-7 text-slate-400" />
+      </div>
+      <h3 className="text-lg font-semibold text-slate-900">No contacts yet</h3>
+      <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
+        Add your first contact manually, import a CSV, or connect a form on your website to capture leads automatically.
+      </p>
+      <div className="mt-5 flex items-center justify-center gap-2">
+        <button onClick={onAdd} className="spark-btn spark-btn-primary">
+          <Plus className="h-3.5 w-3.5" /> Add contact
+        </button>
+        <button onClick={onImport} className="spark-btn spark-btn-secondary">
+          <Upload className="h-3.5 w-3.5" /> Import CSV
+        </button>
+      </div>
+      <div className="mt-6 pt-6 border-t border-slate-100 text-xs text-slate-500">
+        <strong>Tip:</strong> Use ARION forms or SPARK forms to capture contacts automatically.
+        Email-based dedup means re-importing won't create duplicates.
+      </div>
+    </div>
+  );
+}
+
+function ContactDetail({ contact }: { contact: Contact }) {
+  return (
+    <>
+      {/* Score + Activity strip */}
+      <div className="grid grid-cols-3 gap-2 mb-4">
+        <div className="bg-slate-50 border border-slate-200 rounded-md p-2.5">
+          <div className="text-[10px] uppercase text-slate-500 font-semibold">Tier</div>
+          <div className="mt-1"><ScoreBadge tier={contact.contact_intelligence_tier} score={contact.contact_intelligence_score} /></div>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded-md p-2.5">
+          <div className="text-[10px] uppercase text-slate-500 font-semibold">Source</div>
+          <div className="mt-1 text-sm capitalize">{contact.source?.replace(/_/g, " ") || "—"}</div>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded-md p-2.5">
+          <div className="text-[10px] uppercase text-slate-500 font-semibold">Added</div>
+          <div className="mt-1 text-sm">{new Date(contact.created_at).toLocaleDateString()}</div>
+        </div>
+      </div>
+
+      {/* Profile */}
+      <h4 className="text-xs font-semibold uppercase text-slate-600 mb-2 tracking-wide">Profile</h4>
+      <div className="space-y-1.5 mb-4">
+        <DetailRow icon={Mail} label="Email" value={contact.email} />
+        <DetailRow icon={Phone} label="Phone" value={contact.phone} />
+        <DetailRow icon={Building2} label="Company" value={contact.account_name || contact.company} sub={contact.account_domain} />
+      </div>
+
+      {/* Status flags */}
+      {(contact.email_unsubscribed || contact.email_invalid || contact.sms_unsubscribed) && (
+        <>
+          <h4 className="text-xs font-semibold uppercase text-slate-600 mb-2 tracking-wide">Status flags</h4>
+          <div className="space-y-1 mb-4">
+            {contact.email_unsubscribed && <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">⚠ Email unsubscribed — will not receive campaigns</div>}
+            {contact.email_invalid && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">⚠ Email marked invalid</div>}
+            {contact.sms_unsubscribed && <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">⚠ SMS unsubscribed</div>}
+          </div>
+        </>
+      )}
+
+      {/* Tags */}
+      {contact.tag_names && (
+        <>
+          <h4 className="text-xs font-semibold uppercase text-slate-600 mb-2 tracking-wide">Tags</h4>
+          <div className="flex flex-wrap gap-1 mb-4">
+            {contact.tag_names.split(",").map(t => t.trim()).filter(Boolean).map(t => (
+              <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">{t}</span>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Activity placeholder */}
+      <h4 className="text-xs font-semibold uppercase text-slate-600 mb-2 tracking-wide flex items-center gap-1">
+        <Activity className="h-3 w-3" /> Recent activity
+      </h4>
+      <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md p-3 text-center">
+        Activity timeline coming with v2 — opens/clicks/replies will appear here.
+      </div>
+    </>
+  );
+}
+
+function DetailRow({ icon: Icon, label, value, sub }: { icon: typeof Mail; label: string; value: string | null | undefined; sub?: string | null }) {
+  if (!value) return null;
+  return (
+    <div className="flex items-start gap-2 text-sm">
+      <Icon className="h-3.5 w-3.5 text-slate-400 mt-0.5 flex-shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="text-[10px] uppercase text-slate-500">{label}</div>
+        <div className="text-slate-900 truncate">{value}</div>
+        {sub && <div className="text-[11px] text-slate-500">{sub}</div>}
+      </div>
+    </div>
+  );
+}
+
+export default SparkContactsPage;

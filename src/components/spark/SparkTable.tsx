@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 
 export interface SparkTableColumn<T> {
   key: string;
-  header: string;
+  /** Header content — string or JSX (e.g. sortable header buttons) */
+  header: ReactNode;
   /** Render cell content for a row */
   cell: (row: T) => ReactNode;
   /** Optional width: "narrow" (80px), "compact" (140px), "wide" (auto/grow), or explicit "px". Default grow. */

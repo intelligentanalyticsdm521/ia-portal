@@ -1,23 +1,25 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { SparkDrawer } from "../../components/spark/SparkDrawer";
+import { Plus, Tag as TagIcon, Users } from "lucide-react";
 
 interface Tag {
-  id: string;
+  id: number;
   name: string;
   color: string;
   contact_count: number;
 }
 
 const TAG_COLORS = [
+  { label: "Slate", value: "#64748b" },
   { label: "Blue", value: "#3b82f6" },
-  { label: "Green", value: "#22c55e" },
-  { label: "Red", value: "#ef4444" },
-  { label: "Purple", value: "#a855f7" },
+  { label: "Emerald", value: "#10b981" },
   { label: "Amber", value: "#f59e0b" },
-  { label: "Teal", value: "#14b8a6" },
+  { label: "Rose", value: "#f43f5e" },
+  { label: "Violet", value: "#8b5cf6" },
   { label: "Pink", value: "#ec4899" },
-  { label: "Gray", value: "#6b7280" },
+  { label: "Teal", value: "#14b8a6" },
 ];
 
 export function SparkTagsPage() {
@@ -25,108 +27,125 @@ export function SparkTagsPage() {
   const [tags, setTags] = useState<Tag[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [form, setForm] = useState({ name: "", color: TAG_COLORS[0].value });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!ready) return;
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
-      const raw = await get<{ data: Tag[] }>("/api/v1/tags");
-      setTags(raw.data || []);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
+      const r = await get<{ data: Tag[] }>("/api/v1/tags");
+      setTags(r.data || []);
+    } catch (err) { setError(err); } finally { setLoading(false); }
   }, [get, ready]);
-
   useEffect(() => { load(); }, [load]);
 
   async function handleAdd() {
+    if (!form.name.trim()) return;
     setSaving(true);
     try {
       await post("/api/v1/tags", form);
-      setShowModal(false);
+      setDrawerOpen(false);
       setForm({ name: "", color: TAG_COLORS[0].value });
       await load();
-    } catch (err) {
-      setError(err);
-    } finally {
-      setSaving(false);
-    }
+    } catch (err) { setError(err); } finally { setSaving(false); }
   }
 
   return (
-    <OliverPageWrapper title="Tags" subtitle="Color-coded contact tags for organization" error={error} loading={loading}>
-      <div className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-slate-500">{tags.length} tag{tags.length !== 1 ? "s" : ""}</p>
-          <button
-            onClick={() => setShowModal(true)}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            Add Tag
+    <SparkPageShell
+      title="Tags"
+      subtitle="Color-coded labels for organizing contacts"
+      actions={
+        <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
+          <Plus className="h-3.5 w-3.5" /> New tag
+        </button>
+      }
+      loading={loading}
+      error={error}
+    >
+      {tags.length === 0 && !loading ? (
+        <div className="spark-mini-card py-12 text-center">
+          <div className="mx-auto w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mb-3">
+            <TagIcon className="h-7 w-7 text-slate-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-slate-900">No tags yet</h3>
+          <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
+            Tags are color-coded labels you can apply to contacts. Use them to filter,
+            segment, and target campaigns — e.g. <em>"VIP"</em>, <em>"Hot lead"</em>, <em>"Newsletter only"</em>.
+          </p>
+          <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-primary mt-4">
+            <Plus className="h-3.5 w-3.5" /> Create your first tag
           </button>
         </div>
-
-        {tags.length === 0 && !loading ? (
-          <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center">
-            <p className="text-sm text-slate-500">No tags yet. Add one to start organizing contacts.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {tags.map((tag) => (
-              <div key={tag.id} className="rounded-xl bg-white ring-1 ring-gray-200 p-4 hover:shadow-sm transition-shadow">
-                <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full" style={{ backgroundColor: tag.color }} />
-                  <span className="font-medium text-slate-900">{tag.name}</span>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {tags.map(tag => (
+            <div key={tag.id} className="spark-mini-card hover:border-slate-300 transition cursor-pointer">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-md flex items-center justify-center flex-shrink-0" style={{ backgroundColor: tag.color + "22", color: tag.color }}>
+                  <TagIcon className="h-4 w-4" />
                 </div>
-                <p className="mt-2 text-sm text-slate-500">{tag.contact_count.toLocaleString()} contact{tag.contact_count !== 1 ? "s" : ""}</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {showModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-            <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">Add Tag</h3>
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  placeholder="Tag name"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                <div>
-                  <label className="block text-sm text-slate-600 mb-2">Color</label>
-                  <div className="flex flex-wrap gap-2">
-                    {TAG_COLORS.map((c) => (
-                      <button
-                        key={c.value}
-                        onClick={() => setForm({ ...form, color: c.value })}
-                        className={`h-8 w-8 rounded-full border-2 transition-all ${form.color === c.value ? "border-slate-900 scale-110" : "border-transparent"}`}
-                        style={{ backgroundColor: c.value }}
-                        title={c.label}
-                      />
-                    ))}
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-slate-900 truncate">{tag.name}</div>
+                  <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
+                    <Users className="h-3 w-3" /> {tag.contact_count.toLocaleString()} contact{tag.contact_count === 1 ? "" : "s"}
                   </div>
                 </div>
               </div>
-              <div className="mt-5 flex justify-end gap-2">
-                <button onClick={() => setShowModal(false)} className="rounded-lg border px-4 py-2 text-sm text-slate-600 hover:bg-gray-50">Cancel</button>
-                <button onClick={handleAdd} disabled={saving || !form.name.trim()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-                  {saving ? "Saving..." : "Save"}
-                </button>
-              </div>
             </div>
+          ))}
+        </div>
+      )}
+
+      <SparkDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title="New tag"
+        subtitle="Tags let you organize contacts beyond lists/segments — apply many tags to one contact."
+        footer={
+          <>
+            <button onClick={() => setDrawerOpen(false)} className="spark-btn spark-btn-secondary">Cancel</button>
+            <button onClick={handleAdd} disabled={saving || !form.name.trim()} className="spark-btn spark-btn-primary">
+              {saving ? "Saving…" : "Create tag"}
+            </button>
+          </>
+        }
+      >
+        <div className="spark-field">
+          <label className="spark-field-label">Name</label>
+          <input className="spark-field-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="VIP / Hot lead / Newsletter" autoFocus />
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">Color</label>
+          <div className="flex flex-wrap gap-2">
+            {TAG_COLORS.map(c => (
+              <button
+                key={c.value}
+                type="button"
+                onClick={() => setForm({ ...form, color: c.value })}
+                className={`h-9 w-9 rounded-md transition-all flex items-center justify-center ${
+                  form.color === c.value ? "ring-2 ring-offset-2 ring-slate-900 scale-105" : "hover:scale-105"
+                }`}
+                style={{ backgroundColor: c.value + "22", color: c.value }}
+                title={c.label}
+              >
+                <TagIcon className="h-4 w-4" />
+              </button>
+            ))}
           </div>
-        )}
-      </div>
-    </OliverPageWrapper>
+        </div>
+
+        {/* Preview */}
+        <div className="spark-field">
+          <label className="spark-field-label">Preview</label>
+          <div className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full" style={{ backgroundColor: form.color + "22", color: form.color }}>
+            <TagIcon className="h-3 w-3" /> {form.name || "Your tag"}
+          </div>
+        </div>
+      </SparkDrawer>
+    </SparkPageShell>
   );
 }
+
+export default SparkTagsPage;
