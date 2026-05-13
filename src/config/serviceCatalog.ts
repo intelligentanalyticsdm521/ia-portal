@@ -176,6 +176,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_audience_sync', displayName: 'Audience Sync', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_audience_sync', description: 'Export hashed audiences for Google Ads Customer Match + Meta Custom Audiences (Business).' },
   { key: 'spark_journey_builder', displayName: 'Journey Builder', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_journey_builder', description: 'Visual graph editor for branching automation journeys with yes/no edge wiring.' },
   { key: 'spark_tracking', displayName: 'Visitor Tracking', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_tracking', description: 'One-line tracking snippet for your website: visitor identification, pageview attribution, page-visit scoring triggers (Business).' },
+  { key: 'spark_sender_domains', displayName: 'Sender Domains', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_sender_domains', description: 'Register + verify custom email sending domains. SPF/DKIM/DMARC wizard with DNS auto-check (Business).' },
   {
     key: 'forge_integrations',
     displayName: 'Integrations',

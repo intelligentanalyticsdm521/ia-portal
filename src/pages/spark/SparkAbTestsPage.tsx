@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
-import { Plus, Trophy, Beaker } from "lucide-react";
+import { Plus, Trophy, Beaker, Sparkles } from "lucide-react";
 
 interface ABTest {
   id: number;
@@ -36,6 +36,9 @@ export function SparkAbTestsPage() {
   const [selected, setSelected] = useState<ABTest | null>(null);
   const [results, setResults] = useState<{ A?: VariantResults; B?: VariantResults } | null>(null);
   const [creating, setCreating] = useState(false);
+  const [aiMode, setAiMode] = useState(false);
+  const [aiSource, setAiSource] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
   const [form, setForm] = useState({ name: "", a: "", b: "", split: 50, metric: "open_rate" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -69,6 +72,27 @@ export function SparkAbTestsPage() {
     } catch { setResults({}); }
   }
 
+  async function createWithAI() {
+    if (!aiSource) return;
+    setAiBusy(true);
+    try {
+      const r = await post<{ data: { ab_test: ABTest; variants: { id: number; subject: string }[] } }>("/api/v1/ai-autopilot/subject-ab", {
+        campaign_id: Number(aiSource),
+        winner_metric: form.metric || "open_rate",
+      });
+      const v = r?.data?.variants || [];
+      const subjects = v.map(x => `"${x.subject}"`).join(" vs ");
+      alert(`AI autopilot created the A/B test with subjects: ${subjects}.`);
+      setAiMode(false);
+      setAiSource("");
+      await fetchTests();
+    } catch (err) {
+      const m = (err as Error).message;
+      if (m.includes("ai_writer_not_configured") || m.includes("503")) alert("AI Writer not configured. Set ANTHROPIC_API_KEY on LUMEN-API.");
+      else alert(`Failed: ${m}`);
+    } finally { setAiBusy(false); }
+  }
+
   async function createTest() {
     if (!form.name || !form.a || !form.b) return;
     try {
@@ -100,10 +124,16 @@ export function SparkAbTestsPage() {
       subtitle={`${tests.length} test${tests.length === 1 ? "" : "s"}`}
       help="Pit two campaign variants against each other on the same audience. Pick the winning metric (open rate, click rate, conversion) and declare a winner once enough data has come in."
       actions={
-        <button onClick={() => setCreating(true)}
-          className="text-sm px-3 py-1.5 rounded bg-[#EF6C33] hover:bg-[#d75a25] text-white flex items-center gap-1">
-          <Plus className="h-4 w-4" /> New A/B test
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setAiMode(true)}
+            className="text-sm px-3 py-1.5 rounded border border-purple-300 text-purple-700 hover:bg-purple-50 flex items-center gap-1">
+            <Sparkles className="h-4 w-4" /> AI autopilot
+          </button>
+          <button onClick={() => setCreating(true)}
+            className="text-sm px-3 py-1.5 rounded bg-[#EF6C33] hover:bg-[#d75a25] text-white flex items-center gap-1">
+            <Plus className="h-4 w-4" /> New A/B test
+          </button>
+        </div>
       }
       loading={loading}
       error={error}
@@ -127,6 +157,42 @@ export function SparkAbTestsPage() {
           </tbody>
         </table>
       </div>
+
+      {/* AI autopilot modal */}
+      {aiMode && (
+        <div className="fixed inset-0 bg-slate-900/30 z-50 flex items-center justify-center p-4" onClick={() => setAiMode(false)}>
+          <div className="bg-white rounded-xl w-full max-w-md p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-purple-600" />
+              <div className="text-base font-semibold">AI subject-line A/B autopilot</div>
+            </div>
+            <p className="text-xs text-slate-600">
+              Pick a source campaign and AI will generate 2 subject variants, clone the campaign with each subject, and create a running A/B test. You can then auto-declare a winner once enough deliveries accumulate.
+            </p>
+            <div>
+              <label className="text-[10px] uppercase text-slate-500 font-semibold">Source campaign</label>
+              <select value={aiSource} onChange={(e) => setAiSource(e.target.value)} className="w-full text-sm border border-slate-300 rounded p-1.5">
+                <option value="">Pick a campaign…</option>
+                {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] uppercase text-slate-500 font-semibold">Winner metric</label>
+              <select value={form.metric} onChange={(e) => setForm({ ...form, metric: e.target.value })} className="w-full text-sm border border-slate-300 rounded p-1.5">
+                <option value="open_rate">Open rate</option>
+                <option value="click_rate">Click rate</option>
+              </select>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setAiMode(false)} className="text-sm px-3 py-1.5 rounded border border-slate-200">Cancel</button>
+              <button disabled={!aiSource || aiBusy} onClick={createWithAI}
+                className="text-sm px-3 py-1.5 rounded bg-purple-600 text-white disabled:opacity-50 flex items-center gap-1">
+                <Sparkles className="h-3 w-3" /> {aiBusy ? "Generating…" : "Generate & launch"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create modal */}
       {creating && (

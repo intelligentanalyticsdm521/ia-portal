@@ -251,6 +251,7 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_calendar", label: "Content Calendar", route: "/app/services/spark_calendar" },
         { key: "spark_sms_inbox", label: "SMS Inbox", route: "/app/services/spark_sms_inbox" },
         { key: "spark_deliverability", label: "Deliverability", route: "/app/services/spark_deliverability" },
+        { key: "spark_sender_domains", label: "Sender Domains", route: "/app/services/spark_sender_domains" },
       ],
     },
     {
