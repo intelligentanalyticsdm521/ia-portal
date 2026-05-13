@@ -3,6 +3,8 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Monitor, Server, ShieldCheck, BarChart2, TrendingUp,
   Search as SearchIcon, MapPin, Star, ChevronDown, Settings,
+  Users, Megaphone, Briefcase, Heart, Target, Sparkles,
+  Wrench, UserCircle, CreditCard, MessageSquare, LineChart,
 } from "lucide-react";
 import type { ProductKey } from "./IconRail";
 
@@ -46,7 +48,7 @@ const OLIVER_NAV: SubNavConfig = {
       items: [{ key: "oliver_dashboard", label: "Dashboard", route: "/app/services/oliver_dashboard" }],
     },
     {
-      label: "Jobs",
+      label: "Jobs", icon: Wrench, collapsible: true, sectionId: "oliver_jobs",
       items: [
         { key: "oliver_job_board", label: "Job Board", route: "/app/services/oliver_job_board" },
         { key: "oliver_projects", label: "Projects", route: "/app/services/oliver_projects" },
@@ -55,7 +57,7 @@ const OLIVER_NAV: SubNavConfig = {
       ],
     },
     {
-      label: "Team",
+      label: "Team", icon: Users, collapsible: true, sectionId: "oliver_team",
       items: [
         { key: "oliver_workers", label: "Workers", route: "/app/services/oliver_workers" },
         { key: "oliver_crew_performance", label: "Team Performance", route: "/app/services/oliver_crew_performance", gated: true },
@@ -63,14 +65,14 @@ const OLIVER_NAV: SubNavConfig = {
       ],
     },
     {
-      label: "Customers",
+      label: "Customers", icon: UserCircle, collapsible: true, sectionId: "oliver_customers",
       items: [
         { key: "oliver_contacts", label: "Contacts", route: "/app/services/oliver_contacts" },
         { key: "oliver_service_requests", label: "Service Requests", route: "/app/services/oliver_service_requests" },
       ],
     },
     {
-      label: "Billing",
+      label: "Billing", icon: CreditCard, collapsible: true, sectionId: "oliver_billing",
       items: [
         { key: "oliver_billing_overview", label: "Overview", route: "/app/services/oliver_billing_overview" },
         { key: "oliver_catalog", label: "Service Catalog", route: "/app/services/oliver_catalog" },
@@ -85,14 +87,14 @@ const OLIVER_NAV: SubNavConfig = {
       ],
     },
     {
-      label: "Communication",
+      label: "Communication", icon: MessageSquare, collapsible: true, sectionId: "oliver_comms",
       items: [
         { key: "oliver_messages", label: "Messages", route: "/app/services/oliver_messages" },
         { key: "oliver_notifications", label: "Notifications", route: "/app/services/oliver_notifications" },
       ],
     },
     {
-      label: "Insights",
+      label: "Insights", icon: BarChart2, collapsible: true, sectionId: "oliver_insights",
       items: [
         { key: "oliver_insights", label: "Insights", route: "/app/services/oliver_insights" },
         { key: "oliver_reports", label: "Reports", route: "/app/services/oliver_reports" },
@@ -100,7 +102,7 @@ const OLIVER_NAV: SubNavConfig = {
       ],
     },
     {
-      label: "",
+      label: "", icon: Settings,
       items: [{ key: "oliver_settings", label: "Business Setup", route: "/app/services/oliver_settings" }],
     },
   ],
@@ -202,37 +204,60 @@ const SPARK_NAV: SubNavConfig = {
       ],
     },
     {
-      label: "CRM",
+      label: "CRM", icon: Users, collapsible: true, sectionId: "spark_crm",
       items: [
         { key: "spark_contacts", label: "Contacts", route: "/app/services/spark_contacts" },
+        { key: "spark_accounts", label: "B2B Accounts", route: "/app/services/spark_accounts" },
         { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
         { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags" },
         { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments" },
       ],
     },
     {
-      label: "Marketing",
+      label: "Marketing", icon: Megaphone, collapsible: true, sectionId: "spark_marketing",
       items: [
         { key: "spark_campaigns", label: "Campaigns", route: "/app/services/spark_campaigns" },
-        { key: "spark_forms", label: "Forms", route: "/app/services/spark_forms" },
         { key: "spark_automations", label: "Automations", route: "/app/services/spark_automations" },
+        { key: "spark_forms", label: "Forms", route: "/app/services/spark_forms" },
+        { key: "spark_landing_pages", label: "Landing Pages", route: "/app/services/spark_landing_pages" },
+        { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter" },
+        { key: "spark_social", label: "Social Scheduler", route: "/app/services/spark_social" },
+        { key: "spark_calendar", label: "Content Calendar", route: "/app/services/spark_calendar" },
+        { key: "spark_qr_codes", label: "QR Codes", route: "/app/services/spark_qr_codes" },
       ],
     },
     {
-      label: "Lead Generation",
+      label: "Sales", icon: Briefcase, collapsible: true, sectionId: "spark_sales",
+      items: [
+        { key: "spark_pipelines", label: "Sales Pipeline", route: "/app/services/spark_pipelines" },
+        { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals" },
+      ],
+    },
+    {
+      label: "Customer Success", icon: Heart, collapsible: true, sectionId: "spark_customer_success",
+      items: [
+        { key: "spark_nps", label: "NPS", route: "/app/services/spark_nps" },
+        { key: "spark_reviews", label: "Reputation Hub", route: "/app/services/spark_reviews" },
+        { key: "spark_referrals", label: "Referrals", route: "/app/services/spark_referrals" },
+      ],
+    },
+    {
+      label: "Lead Generation", icon: Target, collapsible: true, sectionId: "spark_leadgen",
       items: [
         { key: "spark_leads", label: "Lead Inbox", route: "/app/services/spark_leads" },
         { key: "spark_search_profiles", label: "Search Profiles", route: "/app/services/spark_search_profiles" },
       ],
     },
     {
-      label: "Intelligence",
+      label: "AI & Intelligence", icon: Sparkles, collapsible: true, sectionId: "spark_intelligence",
       items: [
+        { key: "spark_ai_writer", label: "AI Writer", route: "/app/services/spark_ai_writer" },
         { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence" },
+        { key: "spark_insights", label: "Insights", route: "/app/services/spark_insights", intelligence: true },
       ],
     },
     {
-      label: "",
+      label: "", icon: LineChart,
       items: [
         { key: "spark_usage", label: "Usage & Billing", route: "/app/services/spark_usage" },
       ],
@@ -315,8 +340,10 @@ interface SubNavProps {
   config: SubNavConfig;
 }
 
-// Determine which section should auto-expand based on current path
+// Determine which section should auto-expand based on current path.
+// Each entry maps a path predicate to a sectionId (which must match a group's sectionId).
 function getDefaultSection(path: string): string | null {
+  // ARION sections
   if (path.includes("arion_website_security") || path.includes("arion_website_performance") || path.includes("arion_website_updates")) return "security";
   if (path.includes("arion_website_")) return "website";
   if (path.includes("arion_hosting_")) return "hosting";
@@ -324,17 +351,33 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("arion_seo_")) return "seo";
   if (path.includes("arion_search_")) return "search";
   if (path.includes("arion_business_")) return "business";
+  // SPARK sections
+  if (path.includes("/spark_contacts") || path.includes("/spark_accounts") || path.includes("/spark_lists") || path.includes("/spark_tags") || path.includes("/spark_segments")) return "spark_crm";
+  if (path.includes("/spark_campaigns") || path.includes("/spark_automations") || path.includes("/spark_forms") || path.includes("/spark_landing_pages") || path.includes("/spark_newsletter") || path.includes("/spark_social") || path.includes("/spark_calendar") || path.includes("/spark_qr_codes")) return "spark_marketing";
+  if (path.includes("/spark_pipelines") || path.includes("/spark_deals")) return "spark_sales";
+  if (path.includes("/spark_nps") || path.includes("/spark_reviews") || path.includes("/spark_referrals")) return "spark_customer_success";
+  if (path.includes("/spark_leads") || path.includes("/spark_search_profiles")) return "spark_leadgen";
+  if (path.includes("/spark_ai_writer") || path.includes("/spark_intelligence") || path.includes("/spark_insights")) return "spark_intelligence";
+  // OLIVER sections
+  if (path.includes("/oliver_job_board") || path.includes("/oliver_projects") || path.includes("/oliver_schedule") || path.includes("/oliver_dispatch")) return "oliver_jobs";
+  if (path.includes("/oliver_workers") || path.includes("/oliver_crew_performance") || path.includes("/oliver_team_access")) return "oliver_team";
+  if (path.includes("/oliver_contacts") || path.includes("/oliver_service_requests")) return "oliver_customers";
+  if (path.includes("/oliver_billing_overview") || path.includes("/oliver_catalog") || path.includes("/oliver_proposals") || path.includes("/oliver_quotes") || path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_coupons") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders")) return "oliver_billing";
+  if (path.includes("/oliver_messages") || path.includes("/oliver_notifications")) return "oliver_comms";
+  if (path.includes("/oliver_insights") || path.includes("/oliver_reports") || path.includes("/oliver_activity_log")) return "oliver_insights";
   return null;
 }
 
 export function SubNav({ config }: SubNavProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const isArion = config.productName === "ARION";
+  // Single-section-expanded mode for products that opt in via sectionId on groups.
+  // ARION, SPARK, OLIVER all have sectionIds; STELLA/FORGE/ARGUS placeholders don't.
+  const hasSectionIds = config.groups.some(g => !!g.sectionId);
 
-  // Fix 3: single active section at a time (ARION only)
+  // Single active section at a time (for any product with sectionIds)
   const [activeSection, setActiveSection] = useState<string | null>(() => {
-    if (!isArion) return null;
+    if (!hasSectionIds) return null;
     return getDefaultSection(location.pathname);
   });
 
@@ -391,7 +434,7 @@ export function SubNav({ config }: SubNavProps) {
       <nav className="flex-1 overflow-y-auto px-2 py-2">
         {config.groups.map((group, gi) => {
           const sid = group.sectionId;
-          const isExpanded = isArion && sid
+          const isExpanded = hasSectionIds && sid
             ? activeSection === sid
             : !group.collapsible || expanded.has(gi);
           const hasActiveItem = group.items.some(item => location.pathname.startsWith(item.route));
