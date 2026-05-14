@@ -14,9 +14,9 @@ import { runAllReports, type AllReportScores, type ReportAnalysis } from "../../
 // IAInsightsHeader moved to the dedicated Health page (arion_ia_insights_health) in v7.0.
 // IAInsightsEmptyState moved to GetStartedCard on the Command Dashboard (v7.0).
 import { bandFromScore } from "../../../components/iainsights/types";
-import { Eye, Users, Target, Search as SearchIcon, FileText, MapPin, ShieldCheck, Award, ChevronDown, ChevronUp, Lock } from "lucide-react";
-import { Sparkline } from "../../../components/iainsights/Sparkline";
+import { Eye, Users, Target, Search as SearchIcon, FileText, MapPin, ShieldCheck, Award } from "lucide-react";
 import { MonthlyScoreBars } from "../../../components/iainsights/MonthlyScoreBars";
+import { ReportDetailModal } from "../../../components/iainsights/ReportDetailModal";
 
 const REPORT_META: Array<{
   key: keyof AllReportScores;
@@ -42,7 +42,7 @@ export function ArionIAInsightsTrendsPage() {
   const { data, loading } = useAnalyticsData(activeSiteId, 90);
   const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [openReportKey, setOpenReportKey] = useState<string | null>(null);
   const [priorScores, setPriorScores] = useState<Record<string, number>>({});
   const [searchData, setSearchData] = useState<any>(null);
   const [gbpData, setGbpData] = useState<any>(null);
@@ -248,107 +248,104 @@ export function ArionIAInsightsTrendsPage() {
           arion_ia_insights_health for the gauges/bars, and the Command
           Dashboard for the cross-product onboarding card. */}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      {/* v7.3 — 8 trend reports in a 2x4 grid (matches legacy IA Insights
+          design). Each card shows MoM score bars + "View report" button
+          that opens the deep-dive modal. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
         {REPORT_META.map((m) => {
           const report = reports[m.key];
-          const isExpanded = !!expanded[m.key];
           return (
             <ReportCard
               key={m.key}
               meta={m}
               report={report}
               history={scoreHistories[m.key] || []}
-              expanded={isExpanded}
-              onToggle={() => setExpanded((curr) => ({ ...curr, [m.key]: !curr[m.key] }))}
+              onOpen={() => setOpenReportKey(m.key as string)}
             />
           );
         })}
       </div>
+
+      {/* v7.3 — Report deep-dive modal. */}
+      {openReportKey && (() => {
+        const m = REPORT_META.find((x) => (x.key as string) === openReportKey);
+        if (!m) return null;
+        const r = reports[m.key];
+        return (
+          <ReportDetailModal
+            meta={{ key: m.key as string, label: m.label, question: m.question, icon: m.icon, weight: m.weight }}
+            report={r}
+            history={scoreHistories[m.key as string] || []}
+            accent="#1A7DB5"
+            product="ARION"
+            periodLabel={data?.dateRange?.start && data?.dateRange?.end
+              ? `${formatPeriod(data.dateRange.start)} – ${formatPeriod(data.dateRange.end)}`
+              : undefined}
+            onClose={() => setOpenReportKey(null)}
+          />
+        );
+      })()}
     </div>
   );
+}
+
+function formatPeriod(d: string): string {
+  try {
+    return new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  } catch { return d; }
 }
 
 function ReportCard({
   meta,
   report,
   history,
-  expanded,
-  onToggle,
+  onOpen,
 }: {
   meta: { key: string; label: string; question: string; icon: typeof Eye; weight: number };
   report: ReportAnalysis;
   history: Array<{ period_end: string; score: number }>;
-  expanded: boolean;
-  onToggle: () => void;
+  onOpen: () => void;
 }) {
   const band = bandFromScore(report.score);
   const bandColor = ({ green: "#16A34A", amber: "#EAB308", red: "#DC2626", unknown: "#94A3B8" } as any)[band];
-  const Icon = meta.icon;
+  const periodEnd = history[history.length - 1]?.period_end;
+  const periodStart = history[0]?.period_end;
+  const periodLabel = (periodStart && periodEnd)
+    ? `${formatPeriod(periodStart)} – ${formatPeriod(periodEnd)}`
+    : undefined;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <button onClick={onToggle} className="w-full text-left">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-2 min-w-0 flex-1">
-            <div className="flex-shrink-0 h-9 w-9 rounded-full flex items-center justify-center" style={{ background: `${bandColor}1A`, color: bandColor }}>
-              <Icon className="h-4 w-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="font-semibold text-sm text-slate-900">{meta.label}</div>
-              <div className="text-[10px] text-slate-500">{meta.question}</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <Sparkline data={history} color={bandColor} width={88} height={28} />
-            <div className="font-bold tabular-nums text-lg" style={{ color: bandColor }}>{report.score}</div>
-            {expanded ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
-          </div>
-        </div>
-      </button>
+    <div className="rounded-lg border border-slate-200 bg-white p-4 flex flex-col">
+      {/* Header — title + subtitle */}
+      <div className="mb-2">
+        <h3 className="font-semibold text-sm text-slate-900 leading-tight">{meta.label}</h3>
+        <p className="text-[11px] text-slate-500 leading-snug mt-0.5">{meta.question}</p>
+      </div>
 
-      {expanded && (
-        <div className="mt-3 space-y-3">
-          {/* v7.2 — Monthly score history visualised as bars (color-banded). */}
-          {history.length >= 2 && (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500">Score history</div>
-                <div className="text-[9px] text-slate-400">{history.length} period{history.length === 1 ? "" : "s"}</div>
-              </div>
-              <MonthlyScoreBars data={history} width={420} height={84} />
-            </div>
-          )}
-          <div>
-            <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-1">Observations</div>
-            <ul className="space-y-1.5 text-xs text-slate-700">
-              {report.observations.filter(Boolean).map((o, i) => (
-                <li key={i} className="flex items-start gap-1.5">
-                  <span className="text-slate-400 font-bold mt-0.5">·</span>
-                  <span>{o}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-1">Recommended actions</div>
-            <ol className="space-y-1 text-xs text-slate-700 list-decimal list-inside">
-              {report.actions.map((a, i) => <li key={i}>{a}</li>)}
-            </ol>
-          </div>
-          <div className="border-t border-slate-100 pt-2">
-            <div className="text-[9px] uppercase font-semibold tracking-wide text-slate-400 mb-1">Score inputs</div>
-            <div className="grid grid-cols-2 gap-1">
-              {report.scoreInputs.map((s) => (
-                <div key={s.key} className="text-[10px] text-slate-600 flex items-center justify-between bg-slate-50 rounded px-1.5 py-0.5">
-                  <span className="truncate">{s.key} ({Math.round(s.weight * 100)}%)</span>
-                  <span className="tabular-nums font-mono">{s.value ?? "—"}</span>
-                </div>
-              ))}
-            </div>
-            {report.contextNote && <div className="mt-1.5 text-[10px] italic text-amber-700">{report.contextNote}</div>}
-          </div>
-        </div>
+      {/* Status pill — "<period> · Ready" or "Collecting data" */}
+      <div className="flex items-center gap-1.5 mb-3">
+        <span className="h-2 w-2 rounded-full" style={{ background: history.length >= 2 ? bandColor : "#CBD5E1" }} />
+        <span className="text-[10px] text-slate-600">
+          {history.length >= 2 ? `Ready · score ${report.score}` : "Collecting data"}
+        </span>
+      </div>
+
+      {/* MoM score bars */}
+      <div className="flex-1 mb-2">
+        <MonthlyScoreBars data={history} width={280} height={80} />
+      </div>
+
+      {periodLabel && (
+        <div className="text-[10px] text-slate-400 mb-3">{periodLabel}</div>
       )}
+
+      {/* View report button — opens modal */}
+      <button
+        onClick={onOpen}
+        className="w-full py-2 px-3 rounded bg-slate-900 text-white text-xs font-medium hover:bg-slate-800 transition-colors"
+      >
+        View report
+      </button>
     </div>
   );
 }
