@@ -206,7 +206,7 @@ function ArionIAInsightsGlance({
           <Link to="/app/services/arion_ia_insights_trends" className="text-xs text-[#1A7DB5] hover:underline flex items-center gap-0.5">
             Open Trends <ArrowUpRight className="h-3 w-3" />
           </Link>
-          <Link to="/app/services/argus_ia_insights" className="text-xs text-slate-600 hover:underline flex items-center gap-0.5">
+          <Link to="/app/services/argus_health" className="text-xs text-slate-600 hover:underline flex items-center gap-0.5">
             ARGUS <ArrowUpRight className="h-3 w-3" />
           </Link>
         </div>

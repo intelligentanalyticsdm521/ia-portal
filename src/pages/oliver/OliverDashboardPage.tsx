@@ -617,7 +617,7 @@ function OliverIAInsightsGlance({
           <Link to="/app/services/oliver_ia_insights_trends" style={{ fontSize: 12, color: "#1A3A4A", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>
             Open Trends <ArrowUpRight className="h-3 w-3" />
           </Link>
-          <Link to="/app/services/argus_ia_insights" style={{ fontSize: 12, color: "#64748B", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>
+          <Link to="/app/services/argus_health" style={{ fontSize: 12, color: "#64748B", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>
             ARGUS <ArrowUpRight className="h-3 w-3" />
           </Link>
         </div>

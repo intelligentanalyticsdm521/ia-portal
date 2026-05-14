@@ -136,7 +136,7 @@ export function ArionIAInsightsHealthPage() {
     overall: {
       score: trendScore, previousScore: priorScores.presence, band: bandFromScore(trendScore),
       state: "ok", message: "Composite from ARGUS across active products.",
-      drillTo: "/app/services/argus_ia_insights",
+      drillTo: "/app/services/argus_health",
     },
     platform: {
       score: platformScore(trendScore, intelligenceScoreVal, intelligenceLocked),

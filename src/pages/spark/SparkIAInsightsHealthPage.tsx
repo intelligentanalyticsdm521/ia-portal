@@ -75,7 +75,7 @@ export function SparkIAInsightsHealthPage() {
     const trendScore = reports?.presence.score ?? 0;
     return {
       product: "spark",
-      overall: { score: trendScore, previousScore: priorScores.presence, band: bandFromScore(trendScore), state: reports ? "ok" : "insufficient_data", message: "Cross-product Business Pulse.", drillTo: "/app/services/argus_ia_insights" },
+      overall: { score: trendScore, previousScore: priorScores.presence, band: bandFromScore(trendScore), state: reports ? "ok" : "insufficient_data", message: "Cross-product Business Pulse.", drillTo: "/app/services/argus_health" },
       platform: { score: platformScore(trendScore, null, true), previousScore: priorScores.presence, band: bandFromScore(trendScore), state: reports ? "ok" : "insufficient_data", message: "Currently equals Trend Score; unlocks weighted blend when Intelligence is enabled." },
       trend: { score: trendScore, previousScore: priorScores.presence, band: bandFromScore(trendScore), state: reports ? "ok" : "insufficient_data", drillTo: "/app/services/spark_ia_insights_trends" },
       intelligence: { score: 0, band: "unknown", state: "locked", message: "Pro tier + 90 days of data to unlock.", drillTo: "/app/services/spark_ia_insights_intelligence" },

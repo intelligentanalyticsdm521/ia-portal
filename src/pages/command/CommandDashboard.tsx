@@ -232,12 +232,12 @@ function IAInsightsStrip({
             <Sparkles className="h-4 w-4 text-[#EF6C33]" />
             <span className="font-semibold text-slate-900 text-sm">IA Insights — Business Health</span>
           </div>
-          <Link to="/app/services/argus_ia_insights" className="text-xs text-[#EF6C33] hover:underline flex items-center gap-0.5">
+          <Link to="/app/services/argus_cross_channel" className="text-xs text-[#EF6C33] hover:underline flex items-center gap-0.5">
             ARGUS Cross-Channel <ArrowUpRight className="h-3 w-3" />
           </Link>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Link to="/app/services/argus_ia_insights" className="rounded-lg border border-slate-200 bg-gradient-to-br from-emerald-50 to-white p-3 hover:border-emerald-300">
+          <Link to="/app/services/argus_health" className="rounded-lg border border-slate-200 bg-gradient-to-br from-emerald-50 to-white p-3 hover:border-emerald-300">
             <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wide mb-1">Business Pulse</div>
             <div className="flex items-baseline gap-2">
               <div className="text-2xl font-bold tabular-nums" style={{ color: bandColor(pulseScore) }}>

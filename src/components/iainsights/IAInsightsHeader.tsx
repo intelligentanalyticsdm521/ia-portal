@@ -64,7 +64,7 @@ export function IAInsightsHeader({ data, mode = "product", activeProducts }: Pro
         ) : (
           <Gauge
             label="Cross-Channel Score"
-            gauge={data.crossChannel || { score: 0, band: "unknown", state: "insufficient_data", message: "Add a second platform to unlock cross-channel insights.", drillTo: "/app/services/argus_ia_insights" }}
+            gauge={data.crossChannel || { score: 0, band: "unknown", state: "insufficient_data", message: "Add a second platform to unlock cross-channel insights.", drillTo: "/app/services/argus_cross_channel" }}
             icon={BarChart3}
             accent={PRODUCT_COLORS.argus}
           />
