@@ -365,6 +365,7 @@ const SPARK_NAV: SubNavConfig = {
     {
       label: "", icon: LineChart,
       items: [
+        { key: "spark_realtime_metrics", label: "Real-Time Activity", route: "/app/services/spark_realtime_metrics" },
         { key: "spark_usage", label: "Usage & Billing", route: "/app/services/spark_usage" },
       ],
     },
