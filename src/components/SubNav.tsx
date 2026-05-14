@@ -232,6 +232,7 @@ const SPARK_NAV: SubNavConfig = {
       label: "CRM", icon: Users, collapsible: true, sectionId: "spark_crm",
       items: [
         { key: "spark_contacts", label: "Contacts", route: "/app/services/spark_contacts" },
+        { key: "spark_contact_import", label: "Import (CSV)", route: "/app/services/spark_contact_import" },
         // Companies (renamed from "B2B Accounts" — matches HubSpot/Salesforce/Pipedrive
         // industry convention). Auto-matched from contact email domains.
         { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts" },
