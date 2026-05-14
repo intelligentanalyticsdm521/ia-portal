@@ -5,7 +5,7 @@
 import { useMemo } from "react";
 import { IAInsightsHeader } from "../../components/iainsights/IAInsightsHeader";
 import { type IAInsightsHeaderData } from "../../components/iainsights/types";
-import { Sparkles, Lock, TrendingDown, BarChart3, DollarSign, Clock, TrendingUp } from "lucide-react";
+import { Sparkles, Lock, TrendingDown, BarChart3, DollarSign, Users, Repeat, PieChart } from "lucide-react";
 
 interface IntelReport {
   key: string;
@@ -13,14 +13,17 @@ interface IntelReport {
   question: string;
   icon: typeof Sparkles;
   modelType: string;
+  minTier: "pro" | "business";
 }
 
+// v9.0 — Aligned to Platform Intelligence & ARGUS spec §4 (May 2026).
 const SPARK_INTEL: IntelReport[] = [
-  { key: "churn_pred",       label: "Churn Prediction",         question: "Which contacts are 60 days from disengaging completely?",         icon: TrendingDown, modelType: "Logistic regression on engagement decay" },
-  { key: "ltv_cohort",       label: "LTV Cohort Analysis",      question: "What is the expected lifetime value by acquisition source?",      icon: BarChart3,    modelType: "Cohort LTV model: source → job history" },
-  { key: "campaign_roi",     label: "Campaign ROI",             question: "What is the actual revenue return on campaign spend?",            icon: DollarSign,   modelType: "Campaign → contact → job → invoice chain" },
-  { key: "optimal_send",     label: "Optimal Send Time",        question: "When should I send to maximise engagement per segment?",          icon: Clock,        modelType: "Engagement time distribution analysis" },
-  { key: "segment_forecast", label: "Segment Growth Forecast",  question: "How will my key segments change over the next quarter?",          icon: TrendingUp,   modelType: "Trend extrapolation on segment size + churn" },
+  { key: "contact_quality",  label: "Contact Quality Score",       question: "Are the contacts I'm acquiring worth acquiring?",                   icon: Users,        modelType: "Multi-dim engagement + revenue potential per acquisition source", minTier: "pro" },
+  { key: "campaign_revenue", label: "Campaign Revenue Attribution", question: "Which campaigns are actually producing revenue, not just opens?",   icon: DollarSign,   modelType: "Campaign → contact engaged → job created → invoice paid (30d window)", minTier: "business" },
+  { key: "lead_pipeline_forecast", label: "Lead Pipeline Forecast", question: "What revenue should I expect from my current pipeline in 30-60 days?", icon: TrendingDown, modelType: "Open leads × historical lead→contact→job rate × avg job value", minTier: "business" },
+  { key: "churn_risk",       label: "Churn Risk Model",            question: "Which contacts are 60 days from going permanently silent?",         icon: TrendingDown, modelType: "Logistic regression on engagement decay + job recency + LTV", minTier: "pro" },
+  { key: "automation_effectiveness", label: "Automation Effectiveness", question: "Are my automations producing outcomes or just executing?",       icon: Repeat,       modelType: "Per-automation: execution count → engagement → conversion outcome", minTier: "pro" },
+  { key: "audience_segmentation_intel", label: "Audience Segmentation Intelligence", question: "Who are my distinct customer types and what does each need?", icon: PieChart, modelType: "RFM (recency, frequency, monetary) — Champion / Loyal / At-Risk / Hibernating / Lost / New", minTier: "business" },
 ];
 
 export function SparkIAInsightsIntelligencePage() {
@@ -59,8 +62,13 @@ export function SparkIAInsightsIntelligencePage() {
               </div>
             </div>
             <div className="text-[10px] text-slate-600 italic mb-2">Model: {r.modelType}</div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${r.minTier === "business" ? "bg-violet-100 text-violet-700" : "bg-blue-100 text-blue-700"}`}>
+                {r.minTier === "business" ? "Business" : "Pro"} tier
+              </span>
+            </div>
             <div className="rounded bg-amber-50 border border-amber-200 px-2 py-1.5 text-[10px] text-amber-800 flex items-center gap-1">
-              <Lock className="h-3 w-3" /> Upgrade to Pro to unlock
+              <Lock className="h-3 w-3" /> Upgrade to {r.minTier === "business" ? "Business" : "Pro"} to unlock
             </div>
           </div>
         ))}

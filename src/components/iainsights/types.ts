@@ -49,21 +49,25 @@ export interface InsightDataGapBanner {
   action?: { label: string; route?: string };
 }
 
-/** Full payload for the 4-gauge + 2 bar-chart header. */
+/** Full payload for the 5-gauge + 3 bar-chart header (v9.0). */
 export interface IAInsightsHeaderData {
   product: ProductKey;
-  /** "Overall Business Score" — same across every product (sourced from ARGUS). */
+  /** "Business Pulse" — same across every product (sourced from ARGUS). */
   overall: GaugeValue;
-  /** "Platform Score" — weighted avg of Trend + Intelligence for this product. */
+  /** "Platform Score" — weighted: Trend 35% + Intelligence 35% + Cross-Channel 30%. */
   platform: GaugeValue;
   /** "Trend Score" — weighted composite of the Trend report scores below. */
   trend: GaugeValue;
   /** "Intelligence Score" — weighted composite of the Intelligence reports. Locked at Standard tier. */
   intelligence: GaugeValue;
+  /** "Cross-Channel Score" — composite of cross-channel reports anchored to this product (v9.0). */
+  crossChannel?: GaugeValue;
   /** Left bar chart — Trend Score breakdown by category. */
   trendBreakdown: ScoreBreakdownBar[];
-  /** Right bar chart — Intelligence Score breakdown by category. Greyed when locked. */
+  /** Centre bar chart — Intelligence Score breakdown by category. Greyed when locked. */
   intelligenceBreakdown: ScoreBreakdownBar[];
+  /** Right bar chart — Cross-Channel Score breakdown by anchored report (v9.0). */
+  crossChannelBreakdown?: ScoreBreakdownBar[];
   /** Banners surfaced above the header. */
   banners?: InsightDataGapBanner[];
   /** Generation metadata for "Generated at …" footer + period selectors. */
@@ -73,6 +77,19 @@ export interface IAInsightsHeaderData {
     periodEnd?: string;
     tier: TierKey;
   };
+}
+
+/** Cross-channel empty-state classification (v9.0 spec §1.7). */
+export type CrossChannelEmptyState = "activation" | "collecting" | "partial" | "ok";
+
+/** Platform Score fallback rules from spec §1.4. Returns weights summing to 1.0. */
+export function platformScoreWeights(opts: { hasTrend: boolean; hasIntelligence: boolean; hasCrossChannel: boolean }): { trend: number; intelligence: number; crossChannel: number } {
+  const { hasTrend, hasIntelligence, hasCrossChannel } = opts;
+  if (!hasTrend) return { trend: 0, intelligence: 0, crossChannel: 0 };  // No trend = no score
+  if (hasIntelligence && hasCrossChannel) return { trend: 0.35, intelligence: 0.35, crossChannel: 0.30 };
+  if (!hasIntelligence && hasCrossChannel) return { trend: 0.55, intelligence: 0, crossChannel: 0.45 };
+  if (hasIntelligence && !hasCrossChannel) return { trend: 0.50, intelligence: 0.50, crossChannel: 0 };
+  return { trend: 1.0, intelligence: 0, crossChannel: 0 };  // Trend only
 }
 
 /** Band thresholds — shared across all gauges/bars so colors are consistent. */

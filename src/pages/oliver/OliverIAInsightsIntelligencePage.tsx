@@ -8,13 +8,14 @@ import { TrendingUp, AlertCircle, UserMinus, DollarSign, Users, BarChart3, Lock 
 
 interface IntelReport { key: string; label: string; question: string; icon: typeof TrendingUp; modelType: string; minTier: "pro" | "business" }
 
+// v9.0 — Aligned to Platform Intelligence & ARGUS spec §5 (May 2026).
 const OLIVER_INTEL: IntelReport[] = [
-  { key: "demand_forecast",   label: "Demand Forecast",            question: "What will my job volume look like in the next 8 weeks?",       icon: TrendingUp,  modelType: "Holt-Winters on oliver.job time series",   minTier: "pro" },
-  { key: "cash_pressure",     label: "Cash Pressure Forecast",     question: "When will I next experience a cash flow gap and how large?",  icon: AlertCircle, modelType: "Holt-Winters on payment timing patterns", minTier: "pro" },
-  { key: "churn_pred",        label: "Churn Prediction",           question: "Which customers are 60 days from going silent?",               icon: UserMinus,   modelType: "Logistic regression on job frequency + recency", minTier: "pro" },
-  { key: "pipeline_rev",      label: "Pipeline Revenue Forecast",  question: "What is my expected revenue from current open quotes?",        icon: DollarSign,  modelType: "Quote acceptance rate × open quote value", minTier: "pro" },
-  { key: "crew_util",         label: "Crew Utilisation Optimisation", question: "Am I over or under-resourced for forecasted demand?",       icon: Users,       modelType: "Demand forecast × current capacity",     minTier: "pro" },
-  { key: "margin",            label: "Margin Analysis",            question: "What is my actual margin per service type? (requires STELLA)", icon: BarChart3,   modelType: "OLIVER revenue − STELLA cost data",     minTier: "business" },
+  { key: "demand_forecast",        label: "Demand Forecast",              question: "What will my job volume and revenue look like in the next 8 weeks?", icon: TrendingUp,  modelType: "Holt-Winters: 8-week forecast on job volume + revenue · 80% CI · seasonal decomposition", minTier: "business" },
+  { key: "cash_pressure",          label: "Cash Pressure Forecast",       question: "When will I next hit a cash flow gap and how large will it be?", icon: AlertCircle, modelType: "Rolling 30-day cash flow: scheduled inflows × payment timing patterns", minTier: "business" },
+  { key: "quote_win_rate_intel",   label: "Quote Win Rate Intelligence",  question: "Why am I winning and losing quotes — and what is the pattern?",     icon: DollarSign,  modelType: "Win rate by service type / value band / time-to-decision",      minTier: "pro" },
+  { key: "customer_retention_risk", label: "Customer Retention Risk",     question: "Which customers are approaching churn and what is the revenue at stake?", icon: UserMinus,   modelType: "Recency + frequency + LTV-weighted churn risk", minTier: "pro" },
+  { key: "crew_efficiency_model",  label: "Crew Efficiency Model",        question: "Which crew members perform most efficiently and am I correctly staffed?", icon: Users,       modelType: "Per-worker dispatch-to-on-site + duration + callback rate from job_status_events", minTier: "business" },
+  { key: "service_line_profit",    label: "Service Line Profitability",   question: "Which services are worth offering and which are dragging performance?", icon: BarChart3,   modelType: "Revenue per service at launch; margin post-STELLA cost integration", minTier: "business" },
 ];
 
 export function OliverIAInsightsIntelligencePage() {

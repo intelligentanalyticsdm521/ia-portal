@@ -39,18 +39,27 @@ export function IAInsightsHeader({ data }: Props) {
         </div>
       )}
 
-      {/* Four gauges */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Gauge label="Overall Business Score" gauge={data.overall} icon={Award} accent={PRODUCT_COLORS.argus} />
+      {/* v9.0 — 5 gauges (ARGUS exception: 4 gauges + active-products indicator).
+          When crossChannel is undefined the 5th gauge is rendered as the
+          activation prompt empty state per spec §1.7. */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <Gauge label="Business Pulse" gauge={data.overall} icon={Award} accent={PRODUCT_COLORS.argus} />
         <Gauge label={`${data.product.toUpperCase()} Score`} gauge={data.platform} icon={Sparkles} accent={PRODUCT_COLORS[data.product]} />
         <Gauge label="Trend Score" gauge={data.trend} icon={BarChart3} accent={PRODUCT_COLORS[data.product]} />
         <Gauge label="Intelligence Score" gauge={data.intelligence} icon={Sparkles} accent={PRODUCT_COLORS[data.product]} />
+        <Gauge
+          label="Cross-Channel Score"
+          gauge={data.crossChannel || { score: 0, band: "unknown", state: "insufficient_data", message: "Add a second platform to unlock cross-channel insights.", drillTo: "/app/services/argus_ia_insights" }}
+          icon={BarChart3}
+          accent={PRODUCT_COLORS.argus}
+        />
       </div>
 
-      {/* Two bar charts */}
-      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+      {/* v9.0 — 3 bar charts: Trend / Intelligence / Cross-Channel breakdown. */}
+      <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
         <ScoreBarChart title="Trend breakdown" bars={data.trendBreakdown} accent={PRODUCT_COLORS[data.product]} />
         <ScoreBarChart title="Intelligence breakdown" bars={data.intelligenceBreakdown} accent={PRODUCT_COLORS[data.product]} />
+        <ScoreBarChart title="Cross-Channel breakdown" bars={data.crossChannelBreakdown || []} accent={PRODUCT_COLORS.argus} emptyStateMessage="Connect a second platform to populate cross-channel reports." />
       </div>
 
       {/* Footer */}
@@ -128,13 +137,13 @@ function Gauge({ label, gauge, icon: Icon, accent }: { label: string; gauge: Gau
 
 // ── Bar chart ─────────────────────────────────────────────────────────
 
-function ScoreBarChart({ title, bars, accent }: { title: string; bars: ScoreBreakdownBar[]; accent: string }) {
+function ScoreBarChart({ title, bars, accent, emptyStateMessage }: { title: string; bars: ScoreBreakdownBar[]; accent: string; emptyStateMessage?: string }) {
   const navigate = useNavigate();
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3">
       <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wide mb-2">{title}</div>
       {bars.length === 0 ? (
-        <div className="text-[10px] text-slate-400 italic py-4 text-center">No data.</div>
+        <div className="text-[10px] text-slate-400 italic py-4 text-center px-2">{emptyStateMessage || "No data."}</div>
       ) : (
         <ul className="space-y-1.5">
           {bars.map((b) => {
@@ -199,13 +208,13 @@ function Banner({ banner }: { banner: { severity: "info" | "warn"; message: stri
 function IAInsightsHeaderSkeleton() {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 mb-4 animate-pulse">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[0, 1, 2, 3].map((i) => (
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {[0, 1, 2, 3, 4].map((i) => (
           <div key={i} className="rounded-lg border border-slate-200 bg-white p-3 h-24" />
         ))}
       </div>
-      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-        {[0, 1].map((i) => (
+      <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+        {[0, 1, 2].map((i) => (
           <div key={i} className="rounded-lg border border-slate-200 bg-white p-3 h-40" />
         ))}
       </div>
