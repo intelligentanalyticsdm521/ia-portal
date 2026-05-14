@@ -190,6 +190,7 @@ const ARION_NAV: SubNavConfig = {
         { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends" },
         { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", intelligence: true },
         { key: "argus_ia_insights", label: "Cross-Channel (ARGUS)", route: "/app/services/argus_ia_insights", intelligence: true },
+        { key: "arion_service_area", label: "Service Area Config", route: "/app/services/arion_service_area" },
       ],
     },
     {
