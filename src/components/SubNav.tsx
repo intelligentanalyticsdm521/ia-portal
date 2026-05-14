@@ -297,6 +297,7 @@ const SPARK_NAV: SubNavConfig = {
       items: [
         { key: "spark_nps", label: "NPS", route: "/app/services/spark_nps" },
         { key: "spark_reviews", label: "Reputation Hub", route: "/app/services/spark_reviews" },
+        { key: "spark_review_widget", label: "Review Widget", route: "/app/services/spark_review_widget" },
         { key: "spark_referrals", label: "Referrals", route: "/app/services/spark_referrals" },
       ],
     },

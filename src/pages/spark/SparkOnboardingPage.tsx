@@ -29,6 +29,8 @@ const ACTION_MAP: Record<string, { href: string; cta: string; help: string }> = 
   spark_import_contacts:  { href: "/app/services/spark_contacts",        cta: "Import contacts", help: "Upload your existing list — CSV import or paste emails. You need 10+ to enable campaigns." },
   spark_first_campaign:   { href: "/app/services/spark_campaigns",       cta: "Build campaign",  help: "Send a first email to your imported list. Test on yourself first using the Email Templates editor." },
   spark_first_automation: { href: "/app/services/spark_automation_builder", cta: "Build automation", help: "Set up a welcome sequence or re-engagement flow. Triggered automations run forever in the background." },
+  spark_review_destinations: { href: "/app/services/spark_review_widget", cta: "Add destinations", help: "Add at least one public review link (Google Business Profile is highest impact). Promoters see these after a 4-5 star widget review." },
+  spark_api_key_issued:      { href: "/app/services/spark_api_keys", cta: "Issue key", help: "Issue an API key for Zapier or your custom integrations." },
 };
 
 export function SparkOnboardingPage() {

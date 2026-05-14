@@ -181,6 +181,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_sender_domains', displayName: 'Sender Domains', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_sender_domains', description: 'Register + verify custom email sending domains. SPF/DKIM/DMARC wizard with DNS auto-check (Business).' },
   { key: 'spark_onboarding', displayName: 'Get Started', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_onboarding', description: 'Guided onboarding checklist — profile, sender domain, contact import, first campaign, first automation.' },
   { key: 'spark_api_keys', displayName: 'API Keys', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_api_keys', description: 'Issue API keys for Zapier / n8n / custom integrations. Scoped + revocable.' },
+  { key: 'spark_review_widget', displayName: 'Review Widget', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_review_widget', description: 'Public review widget URL + collected reviews + per-platform deep-links (Google/Yelp/Facebook). Auto-fires after every NPS promoter.' },
   {
     key: 'forge_integrations',
     displayName: 'Integrations',
