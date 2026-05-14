@@ -73,22 +73,23 @@ const OLIVER_NAV: SubNavConfig = {
       ],
     },
     {
+      // v7.1 — Billing 14 → 8. Hidden from nav (deep-links still work):
+      //   - oliver_quote_options (page-level option inside Quotes)
+      //   - oliver_disputes (filter on Payments)
+      //   - oliver_coupons (admin under Service Catalog)
+      //   - oliver_reminders (configured per Invoice)
+      //   - oliver_payouts (tab on Payments page)
+      //   - oliver_job_costing (tab on Expenses page)
       label: "Billing", icon: CreditCard, collapsible: true, sectionId: "oliver_billing",
       items: [
         { key: "oliver_billing_overview", label: "Overview", route: "/app/services/oliver_billing_overview" },
         { key: "oliver_catalog", label: "Service Catalog", route: "/app/services/oliver_catalog" },
         { key: "oliver_proposals", label: "Proposals", route: "/app/services/oliver_proposals" },
         { key: "oliver_quotes", label: "Quotes", route: "/app/services/oliver_quotes" },
-        { key: "oliver_quote_options", label: "Quote Options (good/better/best)", route: "/app/services/oliver_quote_options" },
         { key: "oliver_invoices", label: "Invoices", route: "/app/services/oliver_invoices" },
         { key: "oliver_payments", label: "Payments", route: "/app/services/oliver_payments" },
-        { key: "oliver_payouts", label: "Stripe Payouts", route: "/app/services/oliver_payouts" },
         { key: "oliver_recurring", label: "Recurring & Subscriptions", route: "/app/services/oliver_recurring" },
         { key: "oliver_expenses", label: "Expenses", route: "/app/services/oliver_expenses" },
-        { key: "oliver_job_costing", label: "Job Costing", route: "/app/services/oliver_job_costing" },
-        { key: "oliver_coupons", label: "Coupons", route: "/app/services/oliver_coupons" },
-        { key: "oliver_disputes", label: "Disputes", route: "/app/services/oliver_disputes" },
-        { key: "oliver_reminders", label: "Reminders", route: "/app/services/oliver_reminders" },
       ],
     },
     {
@@ -120,10 +121,11 @@ const OLIVER_NAV: SubNavConfig = {
       ],
     },
     {
-      label: "Insights", icon: BarChart2, collapsible: true, sectionId: "oliver_insights",
+      // v7.1 — Reporting group replaces the old "Insights" duplicate group.
+      // The old oliver_insights + oliver_argus pages are now handled by the
+      // IA Insights group (Trends + Cross-Channel). Routes preserved.
+      label: "Reporting", icon: BarChart2, collapsible: true, sectionId: "oliver_reporting",
       items: [
-        { key: "oliver_insights", label: "Insights", route: "/app/services/oliver_insights" },
-        { key: "oliver_argus", label: "ARGUS AI Insights", route: "/app/services/oliver_argus" },
         { key: "oliver_reports", label: "Reports", route: "/app/services/oliver_reports" },
         { key: "oliver_activity_log", label: "Activity Log", route: "/app/services/oliver_activity_log" },
       ],
@@ -250,40 +252,42 @@ const SPARK_NAV: SubNavConfig = {
       ],
     },
     {
+      // v7.1 — CRM 10 → 8. Bulk Ops / Contact Merge / Saved Searches /
+      // Custom Fields hidden from nav (folded into Contacts page tabs +
+      // Admin); Contact 360° and Health Score moved here from AI &
+      // Intelligence — they're contact-level views, not AI tools.
       label: "CRM", icon: Users, collapsible: true, sectionId: "spark_crm",
       items: [
         { key: "spark_contacts", label: "Contacts", route: "/app/services/spark_contacts" },
         { key: "spark_contact_import", label: "Import (CSV)", route: "/app/services/spark_contact_import" },
-        { key: "spark_contact_bulk", label: "Bulk Operations", route: "/app/services/spark_contact_bulk" },
-        { key: "spark_contact_merge", label: "Contact Merge", route: "/app/services/spark_contact_merge" },
         // Companies (renamed from "B2B Accounts" — matches HubSpot/Salesforce/Pipedrive
         // industry convention). Auto-matched from contact email domains.
         { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts" },
         { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
-        { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags" },
         { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments" },
-        { key: "spark_saved_searches", label: "Saved Searches", route: "/app/services/spark_saved_searches" },
-        { key: "spark_custom_fields", label: "Custom Fields", route: "/app/services/spark_custom_fields" },
+        { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags" },
+        { key: "spark_contact_360", label: "Contact 360°", route: "/app/services/spark_contact_360", intelligence: true },
+        { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true },
       ],
     },
     {
+      // v7.1 — Outreach consolidated 15 → 8. Hidden-from-nav items remain in
+      // serviceCatalog + ServiceRouter so existing deep links still resolve;
+      // they'll fold into their parent pages as channel toggles / tabs in a
+      // follow-up (SMS Campaigns→Campaigns, Sender Domains→Deliverability,
+      // Quiet Hours→Deliverability, Automation Builder→Automations, Content
+      // Calendar→Social, SMS Templates→Templates).
       label: "Outreach", icon: Megaphone, collapsible: true, sectionId: "spark_outreach",
       items: [
         { key: "spark_campaigns", label: "Campaigns", route: "/app/services/spark_campaigns" },
-        { key: "spark_email_templates", label: "Email Templates", route: "/app/services/spark_email_templates" },
-        { key: "spark_sms_templates", label: "SMS Templates", route: "/app/services/spark_sms_templates" },
-        { key: "spark_sms_campaigns", label: "SMS Campaigns", route: "/app/services/spark_sms_campaigns" },
-        { key: "spark_quiet_hours", label: "Quiet Hours", route: "/app/services/spark_quiet_hours" },
+        { key: "spark_email_templates", label: "Templates", route: "/app/services/spark_email_templates" },
         { key: "spark_automations", label: "Automations", route: "/app/services/spark_automations" },
-        { key: "spark_automation_builder", label: "Automation Builder", route: "/app/services/spark_automation_builder" },
-        { key: "spark_journey_builder", label: "Journey Builder (graph)", route: "/app/services/spark_journey_builder" },
+        { key: "spark_journey_builder", label: "Journeys", route: "/app/services/spark_journey_builder" },
         { key: "spark_ab_tests", label: "A/B Tests", route: "/app/services/spark_ab_tests" },
         { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter" },
-        { key: "spark_social", label: "Social Scheduler", route: "/app/services/spark_social" },
-        { key: "spark_calendar", label: "Content Calendar", route: "/app/services/spark_calendar" },
+        { key: "spark_social", label: "Social & Calendar", route: "/app/services/spark_social" },
         { key: "spark_sms_inbox", label: "SMS Inbox", route: "/app/services/spark_sms_inbox" },
         { key: "spark_deliverability", label: "Deliverability", route: "/app/services/spark_deliverability" },
-        { key: "spark_sender_domains", label: "Sender Domains", route: "/app/services/spark_sender_domains" },
       ],
     },
     {
@@ -296,39 +300,40 @@ const SPARK_NAV: SubNavConfig = {
       ],
     },
     {
+      // v7.1 — Sales 13 → 6. Rule/configuration pages (Scoring Rules,
+      // Routing Rules, Auto-Tag Rules, Audience Sync, Visitor Tracking,
+      // Competitor Watch, Search Profiles) are now hidden from nav — they
+      // remain in serviceCatalog so deep links work, and will surface as
+      // tabs on Leads/Deals/Admin pages later. Lead Inbox kept as the
+      // single primary lead-gen entry point.
       label: "Sales", icon: Briefcase, collapsible: true, sectionId: "spark_sales",
       items: [
         // Lead Gen folded into Sales — they're sequential: lead → deal → close.
         { key: "spark_leads", label: "Lead Inbox", route: "/app/services/spark_leads" },
-        { key: "spark_search_profiles", label: "Search Profiles", route: "/app/services/spark_search_profiles" },
-        { key: "spark_lead_suppression", label: "Lead Suppression", route: "/app/services/spark_lead_suppression" },
         { key: "spark_lead_territories", label: "Lead Territories", route: "/app/services/spark_lead_territories" },
-        { key: "spark_autotag_rules", label: "Auto-Tag Rules", route: "/app/services/spark_autotag_rules" },
-        { key: "spark_competitor_watch", label: "Competitor Watch", route: "/app/services/spark_competitor_watch" },
+        { key: "spark_lead_suppression", label: "Lead Suppression", route: "/app/services/spark_lead_suppression" },
         { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines" },
         { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals" },
-        { key: "spark_scoring_rules", label: "Scoring Rules", route: "/app/services/spark_scoring_rules" },
-        { key: "spark_routing_rules", label: "Routing Rules", route: "/app/services/spark_routing_rules" },
         { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution" },
-        { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync" },
-        { key: "spark_tracking", label: "Visitor Tracking", route: "/app/services/spark_tracking" },
       ],
     },
     {
+      // v7.1 — Admin 13 → 8. The three webhook pages collapse to a single
+      // "Webhooks" nav link (the page will host Outbound/Deliveries/Inbound
+      // as tabs in a follow-up). Workflow Triggers → Automations
+      // (automation event source). Translations + Calendar Sync hidden
+      // (route still works). Scheduled Reports + Anomaly Alerts moved up
+      // to the new Reporting group. Custom Fields surfaced here as
+      // tenant-config.
       label: "Admin", icon: Sparkles, collapsible: true, sectionId: "spark_admin",
       items: [
         { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals" },
-        { key: "spark_scheduled_reports", label: "Scheduled Reports", route: "/app/services/spark_scheduled_reports" },
+        { key: "spark_custom_fields", label: "Custom Fields", route: "/app/services/spark_custom_fields" },
         { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys" },
-        { key: "spark_webhooks", label: "Outbound Webhooks", route: "/app/services/spark_webhooks" },
-        { key: "spark_webhook_deliveries", label: "Webhook Deliveries", route: "/app/services/spark_webhook_deliveries" },
-        { key: "spark_inbound_webhooks", label: "Inbound Webhooks", route: "/app/services/spark_inbound_webhooks" },
+        { key: "spark_webhooks", label: "Webhooks", route: "/app/services/spark_webhooks" },
         { key: "spark_secrets", label: "Secrets Vault", route: "/app/services/spark_secrets" },
         { key: "spark_audit_log", label: "Audit Log", route: "/app/services/spark_audit_log" },
-        { key: "spark_workflow_triggers", label: "Workflow Triggers", route: "/app/services/spark_workflow_triggers", intelligence: true },
         { key: "spark_config_backup", label: "Config Backup", route: "/app/services/spark_config_backup" },
-        { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts" },
-        { key: "spark_template_i18n", label: "Translations (i18n)", route: "/app/services/spark_template_i18n" },
         { key: "spark_calendar_sync", label: "Calendar Sync", route: "/app/services/spark_calendar_sync" },
       ],
     },
@@ -348,22 +353,32 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_ia_insights_health", label: "Health", route: "/app/services/spark_ia_insights_health" },
         { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends" },
         { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", intelligence: true },
+        { key: "spark_stella", label: "STELLA Send Intelligence", route: "/app/services/spark_stella", intelligence: true },
         { key: "argus_ia_insights", label: "Cross-Channel (ARGUS)", route: "/app/services/argus_ia_insights", crossChannel: true },
         { key: "spark_service_category", label: "Service Category", route: "/app/services/spark_service_category" },
       ],
     },
     {
-      label: "AI & Intelligence", icon: Sparkles, collapsible: true, sectionId: "spark_intelligence",
+      // v7.1 — "AI & Intelligence" 9 → 5. STELLA moved up into IA Insights as
+      // a peer of Intelligence (it IS modelled analytics). Old generic
+      // "Insights" page removed from nav — IA Insights Trends replaces it.
+      // Dashboards + Analytics Reports moved out into a Reporting group.
+      // Contact 360 + Health Score moved into CRM (they're contact-level
+      // views, not AI tools). Underlying routes preserved.
+      label: "AI Tools", icon: Sparkles, collapsible: true, sectionId: "spark_intelligence",
       items: [
         { key: "spark_ai_writer", label: "AI Writer", route: "/app/services/spark_ai_writer" },
         { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence" },
-        { key: "spark_stella", label: "STELLA Send Intelligence", route: "/app/services/spark_stella", intelligence: true },
-        { key: "spark_insights", label: "Insights", route: "/app/services/spark_insights", intelligence: true },
         { key: "spark_activity_stream", label: "Activity Stream", route: "/app/services/spark_activity_stream" },
-        { key: "spark_contact_360", label: "Contact 360°", route: "/app/services/spark_contact_360", intelligence: true },
-        { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true },
+      ],
+    },
+    {
+      label: "Reporting", icon: BarChart2, collapsible: true, sectionId: "spark_reporting",
+      items: [
         { key: "spark_dashboards", label: "Dashboards", route: "/app/services/spark_dashboards" },
         { key: "spark_analytics_reports", label: "Analytics Reports", route: "/app/services/spark_analytics_reports" },
+        { key: "spark_scheduled_reports", label: "Scheduled Reports", route: "/app/services/spark_scheduled_reports" },
+        { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts" },
       ],
     },
     {
