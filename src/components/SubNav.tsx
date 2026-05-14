@@ -459,21 +459,17 @@ const PLACEHOLDER_NAV = (name: string, tagline: string): SubNavConfig => ({
   ],
 });
 
-// v9.1 — ARGUS as full product per spec §2 + §6. Single IA Insights group
-// with 4 sub-items: Health, Trends, Intelligence, Cross-Channel.
+// v9.2 — ARGUS as full product per spec §2 (uniform nav). Single IA Insights
+// group with the 4 spec sub-items: Health → Trends → Intelligence →
+// Cross-Channel. Matches the uniform pattern used by ARION/SPARK/OLIVER.
 const ARGUS_NAV: SubNavConfig = {
   productName: "ARGUS",
   tagline: "Cross-Channel Intelligence",
   groups: [
     {
-      label: "",
-      items: [
-        { key: "argus_health", label: "Health", route: "/app/services/argus_health" },
-      ],
-    },
-    {
       label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "argus_ia_insights",
       items: [
+        { key: "argus_health",        label: "Health",        route: "/app/services/argus_health" },
         { key: "argus_trends",        label: "Trends",        route: "/app/services/argus_trends" },
         { key: "argus_intelligence",  label: "Intelligence",  route: "/app/services/argus_intelligence", tag: { label: "ARGUS", color: "#84CC16" } },
         { key: "argus_cross_channel", label: "Cross-Channel", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
