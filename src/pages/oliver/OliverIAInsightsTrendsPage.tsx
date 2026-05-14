@@ -10,7 +10,7 @@ import { bandFromScore } from "../../components/iainsights/types";
 import { runAllOliverReports, type AllOliverReports, type ReportAnalysis, type OliverEngineInput } from "../../oliver/analytics/oliverTrendEngines";
 import { Wrench, DollarSign, BarChart3, Briefcase, UserCheck, Users, Layers, Sun, Award } from "lucide-react";
 import { MonthlyScoreBars } from "../../components/iainsights/MonthlyScoreBars";
-import { ReportDetailModal } from "../../components/iainsights/ReportDetailModal";
+import { OliverReportDetailModal } from "../../components/iainsights/OliverReportDetailModal";
 
 const REPORT_META: Array<{ key: keyof AllOliverReports; label: string; question: string; icon: typeof Wrench; weight: number }> = [
   { key: "ops_health",     label: "Operations Health",         question: "Are jobs being completed efficiently and on time?",                icon: Wrench,    weight: 0.18 },
@@ -139,18 +139,20 @@ export function OliverIAInsightsTrendsPage() {
         })}
       </div>
 
-      {openReportKey && reports && (() => {
+      {/* v8.4 — OLIVER rich modal with per-report content + rule-library ARGUS box. */}
+      {openReportKey && reports && inputs && (() => {
         const m = REPORT_META.find((x) => (x.key as string) === openReportKey);
         if (!m) return null;
         const r = reports[m.key];
         if (!r) return null;
         return (
-          <ReportDetailModal
+          <OliverReportDetailModal
+            reportKey={m.key as string}
             meta={{ key: m.key as string, label: m.label, question: m.question, icon: m.icon, weight: m.weight }}
             report={r}
             history={scoreHistories[m.key as string] || []}
-            accent="#FEC82C"
-            product="OLIVER"
+            inputs={inputs}
+            tenantLabel="your OLIVER workspace"
             onClose={() => setOpenReportKey(null)}
           />
         );
