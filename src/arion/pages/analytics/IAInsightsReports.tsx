@@ -28,6 +28,10 @@ import { VISIBILITY_RULES } from '../../../components/iainsights/arionVisibility
 import { AUDIENCE_RULES } from '../../../components/iainsights/arionAudienceRules';
 import { CONVERSION_RULES } from '../../../components/iainsights/arionConversionRules';
 import { SEARCH_RULES } from '../../../components/iainsights/arionSearchRules';
+import { CONTENT_RULES } from '../../../components/iainsights/arionContentRules';
+import { LOCAL_RULES } from '../../../components/iainsights/arionLocalRules';
+import { TECHNICAL_RULES } from '../../../components/iainsights/arionTechnicalRules';
+import { PRESENCE_RULES } from '../../../components/iainsights/arionPresenceRules';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip);
 
@@ -209,6 +213,24 @@ export function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpRe
     maxActions: 5,
   });
 
+  // v7.9 — Content Intelligence (23 rules) + Local (19) + Technical (19) + Presence (16).
+  const contentFired = evaluateRules(CONTENT_RULES, visibilityCtx, {
+    maxObservations: 8,
+    maxActions: 5,
+  });
+  const localFired = evaluateRules(LOCAL_RULES, visibilityCtx, {
+    maxObservations: 8,
+    maxActions: 5,
+  });
+  const technicalFired = evaluateRules(TECHNICAL_RULES, visibilityCtx, {
+    maxObservations: 8,
+    maxActions: 5,
+  });
+  const presenceFired = evaluateRules(PRESENCE_RULES, visibilityCtx, {
+    maxObservations: 8,
+    maxActions: 5,
+  });
+
   const insights: Record<string, { observations: string[]; actions: string[] }> = {
     visibility: {
       observations: visibilityFired.observations,
@@ -227,161 +249,20 @@ export function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpRe
       actions: searchFired.actions,
     },
     content: {
-      observations: [
-        `The homepage receives 60% of all pageviews (188 of 345) but has a ${bounce} bounce rate — most visitors see only this one page. The homepage is functioning as a brochure, not a funnel.`,
-        `Your /services page shows "Page not found" as its title in GA4 — this is a 404 error page that's receiving 16 views. Either the page was deleted or there's a broken link sending traffic to it.`,
-        `The /contact page receives only 14 views from 255 sessions (5.5%) — meaning 94.5% of visitors never see your primary conversion page. Content is not guiding visitors toward contact.`,
-        // v2.0.7 — plugin-driven content observations
-        (() => {
-          const age = pluginData?.age;
-          if (!age) return '';
-          const total = (age.fresh?.count || 0) + (age.current?.count || 0) + (age.aging?.count || 0) + (age.stale?.count || 0);
-          if (total === 0) return '';
-          const staleRatio = (age.stale?.count || 0) / total;
-          const freshRatio = ((age.fresh?.count || 0) + (age.current?.count || 0)) / total;
-          return `Content freshness: ${age.fresh?.count || 0} pieces are under 30 days old, ${age.current?.count || 0} are 30-90 days, ${age.aging?.count || 0} are 90d-1y, and ${age.stale?.count || 0} are over a year old. ${staleRatio > 0.5 ? `More than half your library (${Math.round(staleRatio * 100)}%) is older than a year — stale content loses rankings to fresher competitors regardless of how good the original was.` : freshRatio > 0.6 ? `${Math.round(freshRatio * 100)}% of your library is under 90 days old — this is an above-average content-freshness signal to Google.` : `${Math.round(staleRatio * 100)}% of your content is over a year old. Refresh the top-traffic aging pages first — a date bump + new section often recovers lost rankings.`}`;
-        })(),
-        (() => {
-          const wc = pluginData?.wordCount;
-          const detail = pluginData?.seoDetail;
-          if (!wc?.buckets) return '';
-          const thinRatio = (wc.buckets.thin?.count || 0) / Math.max(1, wc.posts_counted || 1);
-          const avgSeoScore = pluginData?.seoAgg?.seo?.avg_seo_score || detail?.avg_readability || null;
-          return `Avg post depth is ${wc.avg_words || 0} words across ${wc.posts_counted || 0} posts. ${thinRatio > 0.3 ? `${Math.round(thinRatio * 100)}% of posts are under 500 words (thin content) — thin articles rarely rank for competitive terms.` : thinRatio < 0.1 ? 'Depth is strong — very few thin posts in the library.' : 'Post depth is balanced.'}${avgSeoScore ? ` Rank Math average SEO score across the library is ${Math.round(Number(avgSeoScore))}/100.` : ''}`;
-        })(),
-        // Phase 3 Step 4.5 append — SE Ranking content decay observation
-        seRankingConnected
-          ? (decayingKeywords.length > 0 && biggestDecay
-              ? `${decayingKeywords.length} page${decayingKeywords.length === 1 ? '' : 's'} dropped in rankings this period. ${biggestDecay.url ? biggestDecay.url : '"' + biggestDecay.keyword + '"'} fell from position ${biggestDecay.priorPosition} to ${biggestDecay.currentPosition} — a drop of ${biggestDecay.change} places. Content decay is typically caused by newer, fresher content from competitors outranking older posts. Updating this page with current statistics, new sections, and a publish date refresh is the fastest recovery action.`
-              : 'No content decay detected this period. Your tracked pages are holding or improving their positions — continue the current content refresh cadence.')
-          : 'Connect SE Ranking (SEO Tools add-on) to detect content decay — pages losing rankings month-over-month that need a refresh before the drop becomes permanent.',
-      ],
-      actions: [
-        `Fix the /services URL immediately — it's returning a 404 error and receiving 16 views. Either restore the page or set up a 301 redirect to the correct services URL.`,
-        `Add a prominent CTA section above the fold on the homepage linking to /contact — currently only 5.5% of visitors reach the contact page.`,
-        `Create 2-3 blog posts per month targeting your top GSC queries — this will create new entry points beyond the homepage and distribute traffic across more pages.`,
-      ],
-    }, // close content
-    presence: {
-      observations: [
-        (() => {
-          // v2.0.7 — recompute presence score blending plugin data + GBP + search
-          const wfOverall = pluginData?.wfFull?.overall_score ?? null;
-          const psi = pluginData?.psi || [];
-          const latestPsi = psi.length > 0 ? psi[psi.length - 1] : null;
-          const mobilePerf = latestPsi?.mobileScore ?? latestPsi?.mobile?.performance ?? null;
-          const avgSeoScore = pluginData?.seoAgg?.seo?.avg_seo_score ?? null;
-          const localScore = gbpConnected ? Math.round((gbpAvgRating / 5) * 40 + Math.min(gbpNewReviews / 4, 1) * 30 + (gbpResponseRate / 100) * 30) : 35;
-
-          // Weighted composite
-          const parts: Array<{ label: string; score: number | null; weight: number }> = [
-            { label: 'Performance', score: mobilePerf, weight: 20 },
-            { label: 'Security', score: wfOverall, weight: 20 },
-            { label: 'SEO content', score: avgSeoScore, weight: 20 },
-            { label: 'Search visibility', score: null /* TODO: compute from GSC */, weight: 20 },
-            { label: 'Local presence', score: localScore, weight: 20 },
-          ];
-          const usable = parts.filter((p) => p.score != null);
-          const total = usable.reduce((s, p) => s + p.weight, 0);
-          const composite = total > 0 ? Math.round(usable.reduce((s, p) => s + (p.score as number) * p.weight, 0) / total) : null;
-
-          return `Your overall business presence score is ${composite != null ? `${composite}/100` : 'still computing'}. ${usable.map((p) => `${p.label} ${p.score}`).join(' · ')}${!gbpConnected ? '. Connect GBP to fill in the local-presence component.' : ''}`;
-        })(),
-        `Google Search Console shows connected status with real impression data, but Google Analytics was only recently connected — historical trend data will improve the accuracy of this score over time.`,
-        `Bing and Apple Maps are not connected, representing blind spots in your presence assessment. Bing accounts for approximately 6-8% of US search traffic.`,
-      ],
-      actions: [
-        `Connect Bing Webmaster Tools via Settings → Connected Accounts — this is the single fastest action to improve your presence score by adding a new visibility channel.`,
-        `Optimize your Google Business Profile — add business hours, services list, and 10+ photos to improve local search visibility and increase GBP impressions.`,
-        `Run a PageSpeed test on your site — Core Web Vitals directly impact both search rankings and the website performance component of your presence score.`,
-      ],
+      observations: contentFired.observations,
+      actions: contentFired.actions,
     },
-
-    // v2.0.7 — Technical & Site Health, fully plugin-driven
-    tech: (() => {
-      const wfFull = pluginData?.wfFull || null;
-      const scanIssues = pluginData?.scanIssues || null;
-      const risk = pluginData?.risk?.plugins || [];
-      const psiSnapshots = pluginData?.psi || [];
-      const latestPsi = psiSnapshots.length > 0 ? psiSnapshots[psiSnapshots.length - 1] : null;
-      const mobilePerf = latestPsi?.mobileScore ?? latestPsi?.mobile?.performance ?? null;
-      const desktopPerf = latestPsi?.desktopScore ?? latestPsi?.desktop?.performance ?? null;
-      const crux = latestPsi?.mobile?.crux_origin || null;
-      const highRisk = risk.filter((p: any) => p.risk_band === 'high');
-      const stalePlugins = risk.filter((p: any) => p.days_since_last_update != null && p.days_since_last_update > 365);
-      const criticalFindings = (scanIssues?.issues || []).filter((i: any) => i.severity === 'critical' || i.severity === 'high').length;
-
-      return {
-        observations: [
-          // Performance observation
-          mobilePerf != null
-            ? `Mobile PageSpeed score is ${mobilePerf}${desktopPerf != null ? ` (desktop ${desktopPerf})` : ''}. ${mobilePerf >= 90 ? 'Excellent — your site is faster than 90% of the web on mobile.' : mobilePerf >= 75 ? 'Good, but there\'s meaningful room to improve before you\'re in the top tier.' : mobilePerf >= 50 ? 'Needs work — Google uses mobile speed as a ranking signal, and you\'re currently in the middle of the pack.' : 'Critical — your mobile speed is actively hurting rankings. Most users abandon a page that takes >3s to load.'}${crux?.lcp ? ` Real-user LCP sits at ${(crux.lcp.percentile / 1000).toFixed(2)}s at the 75th percentile (${crux.lcp.category}) — this is what Google actually uses to rank you.` : ''}`
-            : 'PageSpeed data is not available yet. The monthly PSI timer will capture your first snapshot on the 1st of next month, or click "Run test" on the Core Web Vitals page to trigger one now.',
-
-          // Security posture observation
-          wfFull?.installed
-            ? `Wordfence protection is at ${wfFull.overall_score ?? '—'}%. Firewall coverage is ${wfFull.firewall_score}% and scan coverage is ${wfFull.scan_score}%. Wordfence blocked ${(wfFull.blocked_attacks_30d_total || 0).toLocaleString()} attacks in the last 30 days${wfFull.top_countries?.[0] ? `, most from ${wfFull.top_countries[0].country}` : ''}. ${(wfFull.admin_2fa?.coverage_pct ?? 0) >= 100 ? 'All admin accounts have 2FA enabled.' : `${wfFull.admin_2fa?.with_2fa || 0} of ${wfFull.admin_2fa?.total_admins || 0} admin accounts have 2FA enabled — this is the single highest-impact security upgrade available.`}`
-            : 'Wordfence is not installed. Install it for firewall protection, malware scanning, and attack telemetry — this is standard practice for production WordPress sites.',
-
-          // Plugin freshness / risk observation
-          risk.length > 0
-            ? `${risk.length} plugins are installed. ${highRisk.length > 0 ? `${highRisk.length} are in the high-risk band (active, outdated, and/or not maintained upstream).` : 'No plugins are in the high-risk band.'} ${stalePlugins.length > 0 ? `${stalePlugins.length} plugins haven't had an upstream release in over a year — stale plugins are the #1 vector for future vulnerabilities.` : 'All plugins have recent upstream releases — good sign for future patch availability.'}`
-            : 'Plugin inventory is still loading.',
-
-          // Cross-source: scan findings + CrUX alignment
-          criticalFindings > 0
-            ? `Wordfence has detected ${criticalFindings} critical-or-high scan finding${criticalFindings === 1 ? '' : 's'} on your site. These are file-integrity, malware-signature, or suspicious-pattern matches — different from CVE matches on outdated plugins. Review the Security Overview page modal and remediate immediately.`
-            : (scanIssues?.installed ? 'No critical scan findings. Your file integrity, malware signatures, and suspicious-pattern checks are all clean.' : ''),
-        ].filter(Boolean),
-        actions: [
-          mobilePerf != null && mobilePerf < 75
-            ? `Review the Lighthouse Opportunities on Core Web Vitals — the top 3 suggestions typically account for 70-80% of potential score improvement. Focus on render-blocking resources and image optimization first.`
-            : `Keep the monthly PSI trend clean — schedule a Core Web Vitals review if mobile drops below 80 for two months in a row.`,
-          (wfFull?.admin_2fa?.coverage_pct ?? 100) < 100
-            ? `Enable 2FA for all admin accounts this week. Go to WP Admin → Login Security and enroll every administrator — this blocks 99%+ of account takeovers even if a password leaks.`
-            : 'Rotate admin passwords quarterly and run a review of inactive admin accounts annually.',
-          highRisk.length > 0
-            ? `Update the ${highRisk.length} high-risk plugin${highRisk.length === 1 ? '' : 's'} from Website → Plugins. If any are unmaintained upstream, consider replacing them with actively-developed alternatives.`
-            : `Keep the monthly update cadence — run plugin/theme updates at least once a month, and apply security patches the week they drop.`,
-        ],
-      };
-    })(),
-
+    presence: {
+      observations: presenceFired.observations,
+      actions: presenceFired.actions,
+    },
+    tech: {
+      observations: technicalFired.observations,
+      actions: technicalFired.actions,
+    },
     local: {
-      observations: [
-        // Observation 1 — local conversion channel
-        gbpConnected
-          ? `Your Google Business Profile received ${formatNumber(gbpImpressions)} impressions this period. ${gbpWebsiteClicks} (${gbpImpressions > 0 ? Math.round((gbpWebsiteClicks / gbpImpressions) * 100) : 0}%) visited the website while ${gbpCalls} (${gbpImpressions > 0 ? Math.round((gbpCalls / gbpImpressions) * 100) : 0}%) called directly. ${gbpCalls > gbpWebsiteClicks ? 'Phone is your primary local conversion channel — more people call you from Google Maps than visit your website. Your website should prominently feature your phone number and a click-to-call button for mobile visitors.' : 'Your website is the primary destination from local search — conversion rate on the website determines how many of these ' + gbpWebsiteClicks + ' clicks become paying customers.'}`
-          : 'Connect Google Business Profile in Settings → Connected Accounts to generate local-conversion observations.',
-        // Observation 2 — review health signal
-        gbpConnected && gbpReviewsArr.length > 0
-          ? (gbpResponseRate < 75
-              ? `You have replied to ${gbpResponseRate}% of your ${gbpTotalReviews} reviews. Google factors review response rate into local ranking. Businesses replying to 80%+ of reviews consistently outrank lower-response competitors in local results.`
-              : gbpNewReviews === 0
-                ? `No new reviews this period. Your ${gbpAvgRating.toFixed(1)}-star average needs consistent new reviews to maintain its ranking signal — 1-2 new reviews per month is the minimum to stay competitive in local search.`
-                : `You received ${gbpNewReviews} new reviews this period. Maintaining this momentum is worth more for local ranking than almost any other single action.`)
-          : gbpConnected
-            ? 'No reviews on your GBP listing yet. Request reviews from your best customers — even 3-5 reviews materially improves local ranking signals.'
-            : '',
-        // Observation 3 — impression surface
-        gbpConnected && gbpImpressions > 0
-          ? `Of your ${formatNumber(gbpImpressions)} impressions, ${gbpMobileSearchPct}% came from mobile search and ${gbpMapsPct}% from Google Maps directly. ${gbpMobileSearchPct > 60 ? 'The majority of local discovery happens on mobile. Your GBP photos, description, and hours are the first impression for most people who find you — these should be optimized and kept current.' : gbpMapsPct > 40 ? 'A large share of impressions come from Maps navigation — local signals like your address accuracy, category, and citation consistency across the web may be more impactful for your business than organic SEO.' : 'Your impressions are split fairly evenly across search and maps surfaces — both need attention.'}`
-          : '',
-      ].filter(Boolean),
-      actions: [
-        gbpUnanswered > 0
-          ? `Reply to your ${gbpUnanswered} unanswered reviews this week. Start with the most recent. Keep replies under 150 words: acknowledge the reviewer by name, thank them, and add one specific detail about your service.`
-          : `You're current on review replies — keep the weekly check-in cadence to catch new ones within 48 hours, which Google weights for response-time ranking.`,
-        gbpConnected && gbpResponseRate < 80 && gbpReviewsArr.length > 0
-          ? `Set a weekly calendar reminder to check and reply to new GBP reviews. Your ${gbpResponseRate}% response rate is below the 80% threshold that positively impacts local ranking.`
-          : null,
-        gbpPostsThisMonth === 0
-          ? `Publish a GBP Post this week. A simple "What's New" update about a recent project or offer takes 5 minutes and businesses that post weekly receive significantly more profile views.`
-          : `You've posted ${gbpPostsThisMonth} time(s) in the last 30 days — maintain this cadence.`,
-        gbpUnansweredQ > 0
-          ? `Answer the ${gbpUnansweredQ} unanswered question(s) on your GBP listing today — they are visible to every potential customer viewing your listing right now.`
-          : null,
-      ].filter(Boolean) as string[],
+      observations: localFired.observations,
+      actions: localFired.actions,
     },
   };
 
