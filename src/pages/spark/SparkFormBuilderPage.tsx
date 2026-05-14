@@ -57,6 +57,7 @@ interface FormRow {
   tenant_id: string;
   name: string;
   fields_schema: string | null;
+  slug: string | null;
   is_active: boolean;
   submission_count: number;
 }
@@ -91,6 +92,7 @@ export function SparkFormBuilderPage() {
 
   const [formRow, setFormRow] = useState<FormRow | null>(null);
   const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
   const [fields, setFields] = useState<FormField[]>([]);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,6 +108,7 @@ export function SparkFormBuilderPage() {
       const r = await get<{ data: FormRow }>(`/api/v1/forms/${formId}`);
       setFormRow(r.data);
       setName(r.data.name || "");
+      setSlug(r.data.slug || "");
       let parsed: FormField[] = [];
       try { parsed = r.data.fields_schema ? JSON.parse(r.data.fields_schema) : []; } catch { parsed = []; }
       // Ensure every field has an id (older saves may not have one)
@@ -145,7 +148,7 @@ export function SparkFormBuilderPage() {
     if (!formRow) return;
     setSaving(true);
     try {
-      await put(`/api/v1/forms/${formRow.id}`, { name, fields_schema: fields });
+      await put(`/api/v1/forms/${formRow.id}`, { name, fields_schema: fields, slug: slug.trim() || null });
       setSavedAt(new Date());
     } catch (err) { alert(`Save failed: ${(err as Error).message}`); }
     finally { setSaving(false); }
@@ -156,7 +159,12 @@ export function SparkFormBuilderPage() {
   const apiBase = ((typeof window !== "undefined" && (window as any).__LUMEN_API_BASE) as string | undefined)
     || `${typeof window !== "undefined" ? window.location.origin.replace(/\/$/, "") : ""}`;
   const submitUrl = formRow ? `${apiBase}/api/v1/forms/${formRow.id}/submit` : "";
-  const hostedUrl = formRow ? `${apiBase}/api/v1/forms/${formRow.id}/hosted` : "";
+  // Prefer the slug URL when a slug is saved; otherwise fall back to /hosted.
+  const slugUrl = (formRow && formRow.slug)
+    ? `${apiBase}/api/v1/f/${encodeURIComponent(formRow.tenant_id)}/${encodeURIComponent(formRow.slug)}`
+    : null;
+  const hostedUrl = slugUrl || (formRow ? `${apiBase}/api/v1/forms/${formRow.id}/hosted` : "");
+  const qrSvgUrl = formRow ? `${apiBase}/api/v1/forms/${formRow.id}/qr.svg?size=200` : "";
   const [copyTarget, setCopyTarget] = useState<"submit" | "hosted" | null>(null);
 
   async function copyText(text: string, target: "submit" | "hosted") {
@@ -201,15 +209,29 @@ export function SparkFormBuilderPage() {
       {/* Form-level config */}
       <div className="rounded-lg border border-slate-200 bg-white p-3 mb-3">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <label className="text-xs md:col-span-1">
-            <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-1">Form name</div>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Quote Request"
-              className="w-full text-sm border border-slate-300 rounded px-2 py-1.5 focus:border-[#EF6C33]"
-            />
-          </label>
+          <div className="text-xs md:col-span-1 space-y-2">
+            <label className="block">
+              <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-1">Form name</div>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Quote Request"
+                className="w-full text-sm border border-slate-300 rounded px-2 py-1.5 focus:border-[#EF6C33]"
+              />
+            </label>
+            <label className="block">
+              <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-1">URL slug (optional)</div>
+              <input
+                value={slug}
+                onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+/, "").slice(0, 60))}
+                placeholder="quote-request"
+                className="w-full text-sm border border-slate-300 rounded px-2 py-1.5 font-mono focus:border-[#EF6C33]"
+              />
+              <div className="text-[10px] text-slate-500 mt-1">
+                Lowercase letters, numbers, dashes. Unique per tenant. Save to publish at /f/&lt;tenant&gt;/&lt;slug&gt;.
+              </div>
+            </label>
+          </div>
           <div className="md:col-span-2 text-xs space-y-2">
             <div>
               <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-1">Hosted form URL (no JS / public)</div>
@@ -237,6 +259,21 @@ export function SparkFormBuilderPage() {
             </div>
           </div>
         </div>
+        {/* QR code preview row — encodes the hosted URL so you can print, paste, or share to mobile. */}
+        {formRow && (
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-start gap-3">
+            <div className="flex-shrink-0 border border-slate-200 rounded p-1 bg-white">
+              <img src={qrSvgUrl} alt="Hosted form QR code" width={160} height={160} loading="lazy" />
+            </div>
+            <div className="text-xs text-slate-700 min-w-0 flex-1">
+              <div className="font-semibold text-slate-900 mb-1">QR code</div>
+              <div className="text-[11px] text-slate-600 mb-2">Scans to the hosted form URL above. Use it on print collateral, vehicle wraps, table tents, or SMS — anywhere a customer might want to fill out the form on their phone.</div>
+              <a href={qrSvgUrl} target="_blank" rel="noreferrer" className="text-[11px] text-[#EF6C33] underline hover:no-underline">
+                Open full-size SVG ↗
+              </a>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr_320px] gap-3">
