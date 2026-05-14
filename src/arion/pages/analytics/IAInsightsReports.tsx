@@ -25,6 +25,7 @@ import { ConsultingUpsell } from '../../components/Ui';
 // are built out.
 import { evaluateRules } from '../../../components/iainsights/insightRules';
 import { VISIBILITY_RULES } from '../../../components/iainsights/arionVisibilityRules';
+import { AUDIENCE_RULES } from '../../../components/iainsights/arionAudienceRules';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip);
 
@@ -190,22 +191,20 @@ export function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpRe
     maxActions: 5,
   });
 
+  // v7.7 — Audience Intelligence migrated to 20-rule library.
+  const audienceFired = evaluateRules(AUDIENCE_RULES, visibilityCtx, {
+    maxObservations: 8,
+    maxActions: 5,
+  });
+
   const insights: Record<string, { observations: string[]; actions: string[] }> = {
     visibility: {
       observations: visibilityFired.observations,
       actions: visibilityFired.actions,
     },
     audience: {
-      observations: [
-        `84% of visitors (215 of 255) are new — meaning the site is acquiring visitors but not retaining them. Only 6 unique users returned this quarter, a 2.8% return rate vs industry average of 15-25%.`,
-        `Thursday is the peak engagement day with 49 sessions (19% of weekly traffic). Sunday drops to 10 sessions — a 79% decline. This pattern suggests the audience is primarily professional/B2B, not consumer.`,
-        `Chrome dominates at 93% of sessions (237). The near-zero Safari traffic (2.7%) is unusual and may indicate the site doesn't render well on macOS/iOS — worth investigating.`,
-      ],
-      actions: [
-        `Set up an email capture offering (checklist, guide, or audit template) on the /services page — it has the lowest bounce rate (${formatPct(0.45)}) and highest intent but no conversion mechanism.`,
-        `Schedule social media and email campaigns for Tuesday-Thursday between 9am-2pm CT — that's when ${Math.round((49 + 45 + 44) / 255 * 100)}% of your weekly traffic concentrates.`,
-        `Test the site on Safari/iOS and fix any rendering issues — the 2.7% Safari share vs industry ~18% suggests a significant UX problem losing Apple device users.`,
-      ],
+      observations: audienceFired.observations,
+      actions: audienceFired.actions,
     },
     conversion: {
       observations: [
