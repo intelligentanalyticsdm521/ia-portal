@@ -17,6 +17,7 @@ import { ArgusObservationsBox } from "./ArgusObservationsBox";
 import { evaluateRules, type InsightRule } from "./insightRules";
 import { SPARK_CONTACT_HEALTH_RULES } from "./sparkContactHealthRules";
 import { SPARK_LEAD_PIPELINE_RULES } from "./sparkLeadPipelineRules";
+import { SPARK_CAMPAIGN_PERF_RULES } from "./sparkCampaignPerfRules";
 
 interface SparkReportAnalysis {
   score: number;
@@ -52,8 +53,8 @@ interface Props {
 const SPARK_RULES_BY_REPORT: Record<string, InsightRule[] | undefined> = {
   contact_health: SPARK_CONTACT_HEALTH_RULES,
   lead_pipeline:  SPARK_LEAD_PIPELINE_RULES,
-  // campaign_perf:    SPARK_CAMPAIGN_PERF_RULES   (next commit)
-  // marketing_attrib: SPARK_MARKETING_ATTRIB_RULES
+  campaign_perf:  SPARK_CAMPAIGN_PERF_RULES,
+  // marketing_attrib: SPARK_MARKETING_ATTRIB_RULES (next commit)
   // segmentation:     SPARK_SEGMENTATION_RULES
   // automation_eff:   SPARK_AUTOMATION_EFF_RULES
   // retention_risk:   SPARK_RETENTION_RISK_RULES
@@ -184,10 +185,143 @@ function renderSparkBody(reportKey: string, inputs: any, report: SparkReportAnal
       return <ContactHealthBody inputs={inputs} />;
     case "lead_pipeline":
       return <LeadPipelineBody inputs={inputs} />;
+    case "campaign_perf":
+      return <CampaignPerfBody inputs={inputs} />;
     default:
       // Fallback: surface engine's scoreInputs as basic KPI tiles.
       return <GenericBody report={report} />;
   }
+}
+
+// ── Campaign Performance rich body ───────────────────────────────────
+function CampaignPerfBody({ inputs }: { inputs: any }) {
+  const ev: Record<string, number> = Object.fromEntries((inputs?.email_engagement || []).map((e: any) => [e.event_type, Number(e.n || 0)]));
+  const sends = Number(inputs?.campaign_recent?.sent || 0);
+  const delivered = Math.max(0, Number(ev.delivered || sends) - Number(ev.bounced || 0));
+  const opens = Number(ev.opened || 0);
+  const clicks = Number(ev.clicked || 0);
+  const bounces = Number(ev.bounced || 0);
+  const unsubs = Number(ev.unsubscribed || 0);
+  const complaints = Number(ev.complained || ev.spam || 0);
+  const openRate = delivered > 0 ? (opens / delivered) * 100 : 0;
+  const clickRate = delivered > 0 ? (clicks / delivered) * 100 : 0;
+  const ctorRate = opens > 0 ? (clicks / opens) * 100 : 0;
+  const bounceRate = sends > 0 ? (bounces / sends) * 100 : 0;
+  const unsubRate = delivered > 0 ? (unsubs / delivered) * 100 : 0;
+  const complaintRate = delivered > 0 ? (complaints / delivered) * 100 : 0;
+  const days = Number(inputs?.period_days || 30);
+
+  // Funnel: sends → delivered → opens → clicks
+  const funnelStages: Array<{ label: string; count: number; color: string }> = [
+    { label: "Sent", count: sends, color: "#1A7DB5" },
+    { label: "Delivered", count: delivered, color: "#0E78A0" },
+    { label: "Opened", count: opens, color: "#EAB308" },
+    { label: "Clicked", count: clicks, color: "#16A34A" },
+  ];
+  const maxStage = Math.max(1, ...funnelStages.map((s) => s.count));
+
+  return (
+    <>
+      {/* Hero callout */}
+      {sends === 0 ? (
+        <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-amber-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">
+            No campaigns sent this period. Sender reputation + audience engagement signals decay after 30 days of silence — schedule at least one campaign in the next 7 days to maintain inbox-placement signals.
+          </p>
+        </div>
+      ) : bounceRate > 5 ? (
+        <div className="rounded-md border-l-4 border-rose-400 bg-rose-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-rose-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">
+            <strong>Critical deliverability issue.</strong> Bounce rate is {bounceRate.toFixed(1)}% — above the 5% threshold that triggers ISP throttling. Continued sending will cause future campaigns to land in spam folders. <strong>Pause sending</strong> and clean the list before resuming.
+          </p>
+        </div>
+      ) : openRate < 18 && sends >= 200 ? (
+        <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-amber-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">
+            Open rate is <strong>{openRate.toFixed(1)}%</strong> across {fmtN(sends)} sends — below the 20-25% benchmark. Note that Apple MPP inflates raw open rates ~20%; your true engagement is likely worse than displayed. Subject-line A/B testing is the highest-leverage fix.
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-md border-l-4 border-emerald-400 bg-emerald-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-emerald-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">
+            {fmtN(sends)} campaign sends over {days} days. Open rate <strong>{openRate.toFixed(1)}%</strong> · click rate <strong>{clickRate.toFixed(2)}%</strong>. Deliverability metrics within healthy ranges — focus optimisation on segment-specific campaigns rather than broadcast tweaks.
+          </p>
+        </div>
+      )}
+
+      {/* KPI tiles */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Kpi label={`Sent (${days}d)`} value={fmtN(sends)} sub={`${fmtN(delivered)} delivered`} accent="#EF6C33" />
+        <Kpi label="Open Rate" value={delivered > 0 ? `${openRate.toFixed(1)}%` : "—"} sub={`${fmtN(opens)} opens · vs ~22% benchmark`} accent={openRate >= 25 ? "#16A34A" : openRate >= 18 ? "#EAB308" : "#DC2626"} />
+        <Kpi label="Click Rate" value={delivered > 0 ? `${clickRate.toFixed(2)}%` : "—"} sub={`${fmtN(clicks)} clicks · CTOR ${ctorRate.toFixed(1)}%`} accent={clickRate >= 3 ? "#16A34A" : clickRate >= 2 ? "#EAB308" : "#DC2626"} />
+        <Kpi label="List Hygiene" value={sends > 0 ? `${(100 - bounceRate).toFixed(1)}%` : "—"} sub={`${bounceRate.toFixed(2)}% bounce · ${unsubRate.toFixed(2)}% unsub`} accent={bounceRate < 2 && unsubRate < 0.3 ? "#16A34A" : bounceRate < 5 ? "#EAB308" : "#DC2626"} />
+      </div>
+
+      {/* Engagement funnel */}
+      <div>
+        <h3 className="text-sm font-bold text-slate-900 mb-2">Engagement funnel</h3>
+        <div className="space-y-2">
+          {funnelStages.map((s, i) => {
+            const widthPct = (s.count / maxStage) * 100;
+            const prevCount = i > 0 ? funnelStages[i - 1].count : s.count;
+            const conversionFromPrev = prevCount > 0 && i > 0 ? Math.round((s.count / prevCount) * 100) : null;
+            return (
+              <div key={i} className="flex items-center gap-3">
+                <div className="w-24 text-xs font-medium text-slate-700 flex-shrink-0">{s.label}</div>
+                <div className="flex-1 h-6 rounded bg-slate-100 overflow-hidden relative">
+                  <div className="h-full rounded transition-all" style={{ width: `${widthPct}%`, background: s.color }} />
+                  <div className="absolute inset-0 flex items-center px-2 text-[10px] font-semibold text-slate-700">
+                    {s.count > 0 && <span>{fmtN(s.count)}{conversionFromPrev != null ? ` · ${conversionFromPrev}% from previous` : ""}</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Deliverability detail */}
+      <div>
+        <h3 className="text-sm font-bold text-slate-900 mb-2">Deliverability signals</h3>
+        <div className="rounded-md border border-slate-200 overflow-hidden">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="text-left px-3 py-2 font-semibold text-slate-600">Signal</th>
+                <th className="text-right px-3 py-2 font-semibold text-slate-600">Count</th>
+                <th className="text-right px-3 py-2 font-semibold text-slate-600">Rate</th>
+                <th className="text-left px-3 py-2 font-semibold text-slate-600">Threshold</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t border-slate-100">
+                <td className="px-3 py-2 text-slate-900">Bounces</td>
+                <td className="px-3 py-2 text-right text-slate-700 tabular-nums">{fmtN(bounces)}</td>
+                <td className="px-3 py-2 text-right tabular-nums" style={{ color: bounceRate < 2 ? "#16A34A" : bounceRate < 5 ? "#EAB308" : "#DC2626" }}>{bounceRate.toFixed(2)}%</td>
+                <td className="px-3 py-2 text-slate-500 text-[11px]">Warn at 2% · Critical at 5%</td>
+              </tr>
+              <tr className="border-t border-slate-100">
+                <td className="px-3 py-2 text-slate-900">Unsubscribes</td>
+                <td className="px-3 py-2 text-right text-slate-700 tabular-nums">{fmtN(unsubs)}</td>
+                <td className="px-3 py-2 text-right tabular-nums" style={{ color: unsubRate < 0.3 ? "#16A34A" : unsubRate < 0.5 ? "#EAB308" : "#DC2626" }}>{unsubRate.toFixed(2)}%</td>
+                <td className="px-3 py-2 text-slate-500 text-[11px]">Warn at 0.5%</td>
+              </tr>
+              <tr className="border-t border-slate-100">
+                <td className="px-3 py-2 text-slate-900">Spam complaints</td>
+                <td className="px-3 py-2 text-right text-slate-700 tabular-nums">{fmtN(complaints)}</td>
+                <td className="px-3 py-2 text-right tabular-nums" style={{ color: complaintRate < 0.05 ? "#16A34A" : complaintRate < 0.1 ? "#EAB308" : "#DC2626" }}>{complaintRate.toFixed(3)}%</td>
+                <td className="px-3 py-2 text-slate-500 text-[11px]">ISP threshold 0.1%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
 }
 
 // ── Lead Pipeline rich body ──────────────────────────────────────────
