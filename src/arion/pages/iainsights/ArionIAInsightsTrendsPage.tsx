@@ -12,6 +12,7 @@ import { useAccessToken } from "../../../auth/useAccessToken";
 import { useAppState } from "../../../app/AppState";
 import { runAllReports, type AllReportScores, type ReportAnalysis } from "../../analytics/trendEngines";
 import { IAInsightsHeader } from "../../../components/iainsights/IAInsightsHeader";
+import { IAInsightsEmptyState } from "../../../components/iainsights/IAInsightsEmptyState";
 import { bandFromScore, type IAInsightsHeaderData } from "../../../components/iainsights/types";
 import { Eye, Users, Target, Search as SearchIcon, FileText, MapPin, ShieldCheck, Award, ChevronDown, ChevronUp, Lock } from "lucide-react";
 import { Sparkline } from "../../../components/iainsights/Sparkline";
@@ -308,6 +309,27 @@ export function ArionIAInsightsTrendsPage() {
       </div>
 
       <IAInsightsHeader data={headerData} />
+
+      {(() => {
+        const hasGa4 = data?.connected === true;
+        const hasGsc = !!(searchData?.summary?.impressions);
+        const hasGbp = gbpData?.connected === true;
+        const hasServiceArea = !!(serviceArea?.city || serviceArea?.state || (serviceArea?.regions?.length ?? 0) > 0);
+        const allDone = hasGa4 && hasGsc && hasGbp && hasServiceArea;
+        if (allDone) return null;
+        return (
+          <IAInsightsEmptyState
+            product="ARION"
+            intro="Each connection below feeds one or more of the 8 trend engines. The geographic relevance check requires the service area to be configured."
+            steps={[
+              { label: "Connect Google Analytics 4", description: "Drives Visibility, Audience, and Conversion reports.", route: "/app/settings/connections", completed: hasGa4 },
+              { label: "Connect Google Search Console", description: "Search Intelligence + CTR-gap analysis depend on GSC.", route: "/app/settings/connections", completed: hasGsc },
+              { label: "Connect Google Business Profile", description: "Local Presence & Reputation report scores GBP trust signals.", route: "/app/settings/connections", completed: hasGbp },
+              { label: "Configure your service area", description: "Visibility & Reach uses this to flag traffic from outside your service area.", route: "/app/services/arion_service_area", completed: hasServiceArea },
+            ]}
+          />
+        );
+      })()}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {REPORT_META.map((m) => {

@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IAInsightsHeader } from "../../components/iainsights/IAInsightsHeader";
+import { IAInsightsEmptyState } from "../../components/iainsights/IAInsightsEmptyState";
 import { bandFromScore, type IAInsightsHeaderData } from "../../components/iainsights/types";
 import { runAllOliverReports, type AllOliverReports, type ReportAnalysis, type OliverEngineInput } from "../../oliver/analytics/oliverTrendEngines";
 import { Wrench, DollarSign, BarChart3, Briefcase, UserCheck, Users, Layers, Sun, ChevronDown, ChevronUp, Award } from "lucide-react";
@@ -140,6 +141,26 @@ export function OliverIAInsightsTrendsPage() {
         <p className="text-sm text-slate-500 mt-0.5">8 reports analysing operations, revenue, cash flow, quotes, retention, capacity, service mix, and seasonality.</p>
       </div>
       <IAInsightsHeader data={headerData} />
+      {inputs && (() => {
+        const jobCount = (inputs.job_status || []).reduce((s, r) => s + r.n, 0);
+        const hasInvoices = (inputs.revenue_recent?.invoices ?? 0) > 0;
+        const hasQuotes = (inputs.quote_funnel?.total ?? 0) > 0;
+        const hasCrew = (inputs.crew?.workers_with_assignments ?? 0) > 0;
+        const allDone = jobCount > 0 && hasInvoices && hasQuotes && hasCrew;
+        if (allDone) return null;
+        return (
+          <IAInsightsEmptyState
+            product="OLIVER"
+            intro="Each step below populates one of the 8 OLIVER trend reports. Reports need ~30 days of data to produce stable scores; counters update as you go."
+            steps={[
+              { label: "Create your first job", description: "Operations Health + Service Line reports need at least one tagged job.", route: "/app/services/oliver_job_board", completed: jobCount > 0 },
+              { label: "Issue an invoice", description: "Revenue Performance + Cash Flow reports light up after the first invoice.", route: "/app/services/oliver_invoices", completed: hasInvoices },
+              { label: "Send a quote", description: "Quote & Win Rate report tracks win/loss against accepted quotes.", route: "/app/services/oliver_quotes", completed: hasQuotes },
+              { label: "Assign work to crew", description: "Crew & Capacity report measures utilisation across assigned workers.", route: "/app/services/oliver_dispatch", completed: hasCrew },
+            ]}
+          />
+        );
+      })()}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {REPORT_META.map((m) => {
           const report = reports?.[m.key];

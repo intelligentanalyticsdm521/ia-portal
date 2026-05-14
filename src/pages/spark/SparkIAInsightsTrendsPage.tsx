@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IAInsightsHeader } from "../../components/iainsights/IAInsightsHeader";
+import { IAInsightsEmptyState } from "../../components/iainsights/IAInsightsEmptyState";
 import { bandFromScore, type IAInsightsHeaderData } from "../../components/iainsights/types";
 import { runAllSparkReports, type AllSparkReports, type ReportAnalysis, type SparkEngineInput } from "../../spark/analytics/sparkTrendEngines";
 import { Users, Activity, Mail, BarChart3, PieChart, Repeat, AlertCircle, DollarSign, ChevronDown, ChevronUp, Award } from "lucide-react";
@@ -151,6 +152,28 @@ export function SparkIAInsightsTrendsPage() {
       </div>
 
       <IAInsightsHeader data={headerData} />
+
+      {/* Empty-state: data still flowing in or low totals. Onboarding checklist hides automatically once enough is wired. */}
+      {inputs && (() => {
+        const hasContacts = (inputs.contact_totals?.active ?? 0) > 0;
+        const hasLeads = (inputs.lead_funnel?.length ?? 0) > 0;
+        const hasCampaigns = (inputs.campaign_recent?.sent ?? 0) > 0;
+        const hasSegments = (inputs.segments?.length ?? 0) > 0;
+        const allDone = hasContacts && hasLeads && hasCampaigns && hasSegments;
+        if (allDone) return null;
+        return (
+          <IAInsightsEmptyState
+            product="SPARK"
+            intro="Each step below adds data to one of the 8 trend reports. The 4-gauge header above updates as data flows in."
+            steps={[
+              { label: "Import or capture your first contacts", description: "Use the CSV import wizard or wire a form to start the contact base.", route: "/app/services/spark_contact_import", completed: hasContacts },
+              { label: "Process inbound leads", description: "Forms + inbound webhooks create leads automatically. Drives the Lead Pipeline report.", route: "/app/services/spark_leads", completed: hasLeads },
+              { label: "Send your first email campaign", description: "Open/click/CTOR engagement feeds the Campaign Performance report.", route: "/app/services/spark_campaigns", completed: hasCampaigns },
+              { label: "Define behavioral segments", description: "Engaged / dormant / high-value segments unlock the Customer Segmentation report.", route: "/app/services/spark_segments", completed: hasSegments },
+            ]}
+          />
+        );
+      })()}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {REPORT_META.map((m) => {
