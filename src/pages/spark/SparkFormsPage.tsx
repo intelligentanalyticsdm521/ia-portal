@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
@@ -8,9 +9,11 @@ interface SparkForm {
   submission_count: number;
   is_active: boolean;
   created_at: string;
+  slug?: string | null;
 }
 
 export function SparkFormsPage() {
+  const navigate = useNavigate();
   const { get, post, put, ready } = useSparkApi();
   const [forms, setForms] = useState<SparkForm[]>([]);
   const [error, setError] = useState<unknown>(null);
@@ -38,9 +41,15 @@ export function SparkFormsPage() {
   async function handleCreate() {
     setSaving(true);
     try {
-      await post("/api/v1/forms", { name });
+      const created = await post<{ data: SparkForm }>("/api/v1/forms", { name });
       setShowModal(false);
       setName("");
+      // After create, jump straight into the Form Builder so the user can
+      // design fields without an extra click.
+      if (created?.data?.id) {
+        navigate(`/app/services/spark_form_builder?id=${encodeURIComponent(String(created.data.id))}`);
+        return;
+      }
       await load();
     } catch (err) {
       setError(err);
@@ -79,27 +88,56 @@ export function SparkFormsPage() {
                 <th className="px-4 py-3">Submissions</th>
                 <th className="px-4 py-3">Active</th>
                 <th className="px-4 py-3">Created</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {forms.map((f) => (
-                <tr key={f.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-slate-900">{f.name}</td>
-                  <td className="px-4 py-3 text-slate-600">{f.submission_count.toLocaleString()}</td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => toggleActive(f)}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${f.is_active ? "bg-blue-600" : "bg-gray-300"}`}
-                    >
-                      <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${f.is_active ? "translate-x-4" : "translate-x-0.5"}`} />
-                    </button>
-                  </td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">{new Date(f.created_at).toLocaleDateString()}</td>
-                </tr>
-              ))}
+              {forms.map((f) => {
+                const hostedPath = f.slug
+                  ? `/api/v1/f/${encodeURIComponent("tenant")}/${encodeURIComponent(f.slug)}`
+                  : `/api/v1/forms/${f.id}/hosted`;
+                return (
+                  <tr key={f.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      <div>{f.name}</div>
+                      {f.slug && <div className="text-[10px] text-slate-400 font-mono mt-0.5">slug: {f.slug}</div>}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{f.submission_count.toLocaleString()}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => toggleActive(f)}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${f.is_active ? "bg-blue-600" : "bg-gray-300"}`}
+                      >
+                        <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${f.is_active ? "translate-x-4" : "translate-x-0.5"}`} />
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-slate-400 text-xs">{new Date(f.created_at).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => navigate(`/app/services/spark_form_builder?id=${encodeURIComponent(f.id)}`)}
+                          className="text-xs px-2 py-1 rounded bg-[#EF6C33] text-white hover:bg-[#d75a25]"
+                          title="Open in visual builder"
+                        >
+                          Edit in Builder
+                        </button>
+                        <a
+                          href={hostedPath}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                          title="Open the hosted form page in a new tab"
+                        >
+                          Hosted ↗
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {forms.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-400">
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-400">
                     No forms yet. Create one to start collecting submissions.
                   </td>
                 </tr>
