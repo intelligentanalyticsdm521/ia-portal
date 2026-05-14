@@ -5,9 +5,11 @@
 // Each engine reads its own data and emits a scored ReportAnalysis.
 // The page renders the 4-gauge + 2 bar-chart header at top, then the
 // 8 reports as cards below.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useArionContext } from "../../useArionContext";
 import { useAnalyticsData } from "../../analytics/useAnalyticsData";
+import { useAccessToken } from "../../../auth/useAccessToken";
+import { useAppState } from "../../../app/AppState";
 import { runAllReports, type AllReportScores, type ReportAnalysis } from "../../analytics/trendEngines";
 import { IAInsightsHeader } from "../../../components/iainsights/IAInsightsHeader";
 import { bandFromScore, type IAInsightsHeaderData } from "../../../components/iainsights/types";
@@ -35,24 +37,84 @@ export function ArionIAInsightsTrendsPage() {
   const { activeSiteId, selectedSite } = useArionContext();
   const tier = ((selectedSite?.arionTier || "standard") as "standard" | "pro" | "business");
   const { data, loading } = useAnalyticsData(activeSiteId, 90);
+  const { activeTenantId } = useAppState();
+  const { getToken } = useAccessToken();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [priorScores, setPriorScores] = useState<Record<string, number>>({});
+  const [serviceArea, setServiceArea] = useState<{ city?: string; state?: string; regions?: string[]; zips?: string[] } | undefined>(undefined);
+
+  // Fetch service area once per site.
+  useEffect(() => {
+    if (!activeSiteId || !activeTenantId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const baseUrl = import.meta.env.VITE_ARION_API_BASE_URL as string;
+        const r = await globalThis.fetch(`${baseUrl}/arion/ia-insights/service-area?siteId=${encodeURIComponent(activeSiteId)}`, {
+          headers: { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId },
+        });
+        if (r.ok && !cancelled) {
+          const body = await r.json();
+          setServiceArea(body?.data || undefined);
+        }
+      } catch { /* swallow */ }
+    })();
+    return () => { cancelled = true; };
+  }, [activeSiteId, activeTenantId, getToken]);
 
   // Run all 8 engines. Returns deterministic empty-state output when data isn't loaded yet.
   const reports: AllReportScores = useMemo(() => {
     return runAllReports({
-      domain: undefined,
+      domain: selectedSite?.primaryDomain || undefined,
       d: data || {},
+      serviceArea,
       // searchData/gbpData/seoData/pluginData not yet pulled here — they're
       // optional inputs. Plumbing those in is a follow-up patch; engines
       // produce useful output with GA4 alone.
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data]);
+  }, [data, serviceArea, selectedSite?.primaryDomain]);
 
-  // Previous-period scores would come from arion-api once the cached
-  // historical comparison endpoint is wired. For v5 launch we display
-  // current scores without ghost-bar deltas; the header component
-  // gracefully omits them when `previousScore` is undefined.
+  // Persist current scores + fetch prior period for ghost-bar comparison.
+  useEffect(() => {
+    if (!activeSiteId || !activeTenantId || loading || !data) return;
+    const periodEnd = (data?.dateRange?.end || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const periodStart = (data?.dateRange?.start || new Date(Date.now() - 90 * 86400_000).toISOString().slice(0, 10)).slice(0, 10);
+    const scoresMap: Record<string, number> = {};
+    for (const k of ["visibility", "audience", "conversion", "search", "content", "local", "technical", "presence"] as const) {
+      scoresMap[k] = reports[k].score;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const baseUrl = import.meta.env.VITE_ARION_API_BASE_URL as string;
+        const headers: HeadersInit = {
+          Authorization: `Bearer ${token.accessToken}`,
+          "x-tenant-key": activeTenantId,
+          "Content-Type": "application/json",
+        };
+        // Persist current period (fire-and-forget)
+        await globalThis.fetch(`${baseUrl}/arion/ia-insights/scores`, {
+          method: "POST", headers,
+          body: JSON.stringify({ siteId: activeSiteId, periodEnd, periodStart, scores: scoresMap }),
+        }).catch(() => {});
+        // Look up prior period scores
+        const r = await globalThis.fetch(`${baseUrl}/arion/ia-insights/prior-scores?siteId=${encodeURIComponent(activeSiteId)}&beforeDate=${encodeURIComponent(periodEnd)}`, { headers });
+        if (r.ok && !cancelled) {
+          const body = await r.json();
+          const prior: Record<string, number> = {};
+          for (const [k, v] of Object.entries(body?.data || {})) {
+            if (v && typeof (v as any).score === "number") prior[k] = (v as any).score;
+          }
+          setPriorScores(prior);
+        }
+      } catch { /* swallow */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSiteId, activeTenantId, loading, data]);
 
   const headerData: IAInsightsHeaderData = useMemo(() => {
     const trendScore = reports.presence.score;
@@ -61,6 +123,7 @@ export function ArionIAInsightsTrendsPage() {
       product: "arion",
       overall: {
         score: trendScore,
+        previousScore: priorScores.presence,
         band: bandFromScore(trendScore),
         state: "ok",
         message: "Composite from ARGUS across active products.",
@@ -68,12 +131,14 @@ export function ArionIAInsightsTrendsPage() {
       },
       platform: {
         score: trendScore,
+        previousScore: priorScores.presence,
         band: bandFromScore(trendScore),
         state: "ok",
         message: intelligenceLocked ? "Equals Trend Score — Intelligence is locked on Standard tier." : "Weighted blend of Trend + Intelligence.",
       },
       trend: {
         score: trendScore,
+        previousScore: priorScores.presence,
         band: bandFromScore(trendScore),
         state: "ok",
       },
@@ -87,6 +152,7 @@ export function ArionIAInsightsTrendsPage() {
         key: m.key,
         label: m.label,
         score: reports[m.key].score,
+        previousScore: priorScores[m.key],
         band: bandFromScore(reports[m.key].score),
         reportRoute: undefined,
       })),
