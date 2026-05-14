@@ -16,7 +16,7 @@ import { runAllReports, type AllReportScores, type ReportAnalysis } from "../../
 import { bandFromScore } from "../../../components/iainsights/types";
 import { Eye, Users, Target, Search as SearchIcon, FileText, MapPin, ShieldCheck, Award } from "lucide-react";
 import { MonthlyScoreBars } from "../../../components/iainsights/MonthlyScoreBars";
-import { ReportDetailModal } from "../../../components/iainsights/ReportDetailModal";
+import { ArionReportDetailModal } from "../../../components/iainsights/ArionReportDetailModal";
 
 const REPORT_META: Array<{
   key: keyof AllReportScores;
@@ -266,25 +266,26 @@ export function ArionIAInsightsTrendsPage() {
         })}
       </div>
 
-      {/* v7.3 — Report deep-dive modal. */}
-      {openReportKey && (() => {
-        const m = REPORT_META.find((x) => (x.key as string) === openReportKey);
-        if (!m) return null;
-        const r = reports[m.key];
-        return (
-          <ReportDetailModal
-            meta={{ key: m.key as string, label: m.label, question: m.question, icon: m.icon, weight: m.weight }}
-            report={r}
-            history={scoreHistories[m.key as string] || []}
-            accent="#1A7DB5"
-            product="ARION"
-            periodLabel={data?.dateRange?.start && data?.dateRange?.end
-              ? `${formatPeriod(data.dateRange.start)} – ${formatPeriod(data.dateRange.end)}`
-              : undefined}
-            onClose={() => setOpenReportKey(null)}
-          />
-        );
-      })()}
+      {/* v7.5 — Rich legacy report content + ARGUS Intelligence box restored. */}
+      {openReportKey && (
+        <ArionReportDetailModal
+          reportKey={openReportKey}
+          history={scoreHistories[openReportKey as string] || []}
+          data={data}
+          searchData={searchData}
+          gbpData={gbpData}
+          gbpReviews={gbpReviews}
+          gbpPosts={gbpPosts}
+          gbpQanda={gbpQanda}
+          bingData={bingData}
+          seoData={seoData}
+          pluginData={pluginData}
+          periodLabel={data?.dateRange?.start && data?.dateRange?.end
+            ? `${formatPeriod(data.dateRange.start)} – ${formatPeriod(data.dateRange.end)}`
+            : undefined}
+          onClose={() => setOpenReportKey(null)}
+        />
+      )}
     </div>
   );
 }

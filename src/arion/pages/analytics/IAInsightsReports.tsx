@@ -23,7 +23,7 @@ import { ConsultingUpsell } from '../../components/Ui';
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip);
 
 /* ── Modal title map ── */
-const MODAL_TITLES: Record<string, string> = {
+export const MODAL_TITLES: Record<string, string> = {
   visibility: 'Visibility & Reach',
   audience: 'Audience Intelligence',
   conversion: 'Conversion Intelligence',
@@ -59,7 +59,10 @@ function expectedCtrForPosition(pos: number): number {
 }
 
 /* ── ARGUS Insight Box (shared across all modals) ── */
-function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, seoData, seoDecayData, pluginData }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any; bingData?: any; seoData?: any; seoDecayData?: any; pluginData?: any }) {
+// Exported (v7.5) so the new IA Insights Trends modal can render the same
+// rich, data-driven ARGUS observations + actions that used to live only in
+// the legacy IAInsightsReports page.
+export function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, seoData, seoDecayData, pluginData }: { reportKey: string; data: any; searchData?: any; gbpData?: any; gbpReviews?: any; gbpPosts?: any; gbpQanda?: any; bingData?: any; seoData?: any; seoDecayData?: any; pluginData?: any }) {
   const sessions = d?.summary?.totalSessions || 255;
   const engaged = d?.engagement?.engagedSessions || 64;
   const engRate = formatPct(d?.engagement?.engagementRate || 0.251);
@@ -437,7 +440,10 @@ function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpReviews, 
 }
 
 /* ── Modal content renderer ── */
-function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?: { gbp?: any; reviews?: any; posts?: any; qanda?: any }, bingData?: any, seoData?: any, seoDecayData?: any, pluginData?: any) {
+// Exported (v7.5) so the new IA Insights Trends modal can render the same
+// rich per-report content (KPI tiles, tables, channel breakdowns, etc.)
+// that used to live only in the legacy IAInsightsReports page.
+export function renderModalContent(reportKey: string, d: any, searchData?: any, gbpCtx?: { gbp?: any; reviews?: any; posts?: any; qanda?: any }, bingData?: any, seoData?: any, seoDecayData?: any, pluginData?: any) {
   switch (reportKey) {
     case 'visibility': {
   const sessions = d?.summary?.totalSessions || 255;
