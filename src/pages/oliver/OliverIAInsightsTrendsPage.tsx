@@ -4,9 +4,9 @@
 // all 8 reports' inputs in one call, then runs the OLIVER trend engines.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { IAInsightsHeader } from "../../components/iainsights/IAInsightsHeader";
-import { IAInsightsEmptyState } from "../../components/iainsights/IAInsightsEmptyState";
-import { bandFromScore, type IAInsightsHeaderData } from "../../components/iainsights/types";
+// IAInsightsHeader moved to oliver_ia_insights_health (v7.0).
+// IAInsightsEmptyState moved to GetStartedCard on the Command Dashboard (v7.0).
+import { bandFromScore } from "../../components/iainsights/types";
 import { runAllOliverReports, type AllOliverReports, type ReportAnalysis, type OliverEngineInput } from "../../oliver/analytics/oliverTrendEngines";
 import { Wrench, DollarSign, BarChart3, Briefcase, UserCheck, Users, Layers, Sun, ChevronDown, ChevronUp, Award } from "lucide-react";
 import { Sparkline } from "../../components/iainsights/Sparkline";
@@ -107,29 +107,7 @@ export function OliverIAInsightsTrendsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reports]);
 
-  const headerData: IAInsightsHeaderData = useMemo(() => {
-    const trendScore = reports?.presence.score ?? 0;
-    return {
-      product: "oliver",
-      overall: { score: trendScore, previousScore: priorScores.presence, band: bandFromScore(trendScore), state: reports ? "ok" : "insufficient_data", drillTo: "/app/services/argus_ia_insights" },
-      platform: { score: trendScore, previousScore: priorScores.presence, band: bandFromScore(trendScore), state: reports ? "ok" : "insufficient_data" },
-      trend: { score: trendScore, previousScore: priorScores.presence, band: bandFromScore(trendScore), state: reports ? "ok" : "insufficient_data" },
-      intelligence: { score: 0, band: "unknown", state: "locked", message: "Pro tier + 90 days of data unlock forecasting reports." },
-      trendBreakdown: REPORT_META.filter((m) => m.key !== "presence").map((m) => ({
-        key: m.key as string, label: m.label,
-        score: reports ? reports[m.key].score : 0,
-        previousScore: priorScores[m.key as string],
-        band: bandFromScore(reports ? reports[m.key].score : 0),
-      })),
-      intelligenceBreakdown: ["demand_forecast", "cash_pressure", "churn_pred", "pipeline_rev", "crew_util", "margin"].map((k) => ({
-        key: k,
-        label: ({ demand_forecast: "Demand Forecast", cash_pressure: "Cash Pressure", churn_pred: "Churn Prediction", pipeline_rev: "Pipeline Revenue", crew_util: "Crew Utilisation", margin: "Margin Analysis" } as any)[k],
-        score: 0, band: "unknown" as const, locked: true, lockReason: "Pro tier required",
-      })),
-      banners: reports ? [] : [{ severity: "info" as const, message: "Loading OLIVER trend data… reports populate once you have 30+ days of jobs, invoices, and payments." }],
-      meta: { generatedAt: new Date().toISOString(), tier: "standard" as const },
-    };
-  }, [reports, priorScores]);
+  // v7.0 — headerData removed; gauges/bars live on oliver_ia_insights_health.
 
   if (loading && !inputs) return <div className="p-4 text-sm text-slate-500">Loading OLIVER trend data…</div>;
   if (error && !inputs) return <div className="p-4 text-sm text-red-700">Failed to load: {(error as Error).message}</div>;
@@ -140,27 +118,9 @@ export function OliverIAInsightsTrendsPage() {
         <h1 className="text-2xl font-bold text-slate-900">OLIVER IA Insights — Trends</h1>
         <p className="text-sm text-slate-500 mt-0.5">8 reports analysing operations, revenue, cash flow, quotes, retention, capacity, service mix, and seasonality.</p>
       </div>
-      <IAInsightsHeader data={headerData} />
-      {inputs && (() => {
-        const jobCount = (inputs.job_status || []).reduce((s, r) => s + r.n, 0);
-        const hasInvoices = (inputs.revenue_recent?.invoices ?? 0) > 0;
-        const hasQuotes = (inputs.quote_funnel?.total ?? 0) > 0;
-        const hasCrew = (inputs.crew?.workers_with_assignments ?? 0) > 0;
-        const allDone = jobCount > 0 && hasInvoices && hasQuotes && hasCrew;
-        if (allDone) return null;
-        return (
-          <IAInsightsEmptyState
-            product="OLIVER"
-            intro="Each step below populates one of the 8 OLIVER trend reports. Reports need ~30 days of data to produce stable scores; counters update as you go."
-            steps={[
-              { label: "Create your first job", description: "Operations Health + Service Line reports need at least one tagged job.", route: "/app/services/oliver_job_board", completed: jobCount > 0 },
-              { label: "Issue an invoice", description: "Revenue Performance + Cash Flow reports light up after the first invoice.", route: "/app/services/oliver_invoices", completed: hasInvoices },
-              { label: "Send a quote", description: "Quote & Win Rate report tracks win/loss against accepted quotes.", route: "/app/services/oliver_quotes", completed: hasQuotes },
-              { label: "Assign work to crew", description: "Crew & Capacity report measures utilisation across assigned workers.", route: "/app/services/oliver_dispatch", completed: hasCrew },
-            ]}
-          />
-        );
-      })()}
+      {/* IAInsightsHeader + Get Started checklist removed in v7.0 — see
+          oliver_ia_insights_health for the gauges/bars, and the Command
+          Dashboard for the cross-product onboarding card. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {REPORT_META.map((m) => {
           const report = reports?.[m.key];

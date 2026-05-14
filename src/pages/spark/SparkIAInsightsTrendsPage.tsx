@@ -5,9 +5,9 @@
 // that drives the Trend gauge in the 4-gauge header.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { IAInsightsHeader } from "../../components/iainsights/IAInsightsHeader";
-import { IAInsightsEmptyState } from "../../components/iainsights/IAInsightsEmptyState";
-import { bandFromScore, type IAInsightsHeaderData } from "../../components/iainsights/types";
+// IAInsightsHeader moved to spark_ia_insights_health (v7.0).
+// IAInsightsEmptyState moved to GetStartedCard on the Command Dashboard (v7.0).
+import { bandFromScore } from "../../components/iainsights/types";
 import { runAllSparkReports, type AllSparkReports, type ReportAnalysis, type SparkEngineInput } from "../../spark/analytics/sparkTrendEngines";
 import { Users, Activity, Mail, BarChart3, PieChart, Repeat, AlertCircle, DollarSign, ChevronDown, ChevronUp, Award } from "lucide-react";
 import { Sparkline } from "../../components/iainsights/Sparkline";
@@ -116,30 +116,7 @@ export function SparkIAInsightsTrendsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reports]);
 
-  const headerData: IAInsightsHeaderData = useMemo(() => {
-    const trendScore = reports?.presence.score ?? 0;
-    return {
-      product: "spark",
-      overall: { score: trendScore, previousScore: priorScores.presence, band: bandFromScore(trendScore), state: reports ? "ok" : "insufficient_data", message: "Cross-product Business Pulse — drill into ARGUS IA Insights for the composite.", drillTo: "/app/services/argus_ia_insights" },
-      platform: { score: trendScore, previousScore: priorScores.presence, band: bandFromScore(trendScore), state: reports ? "ok" : "insufficient_data" },
-      trend: { score: trendScore, previousScore: priorScores.presence, band: bandFromScore(trendScore), state: reports ? "ok" : "insufficient_data" },
-      intelligence: { score: 0, band: "unknown", state: "locked", message: "Pro tier + 90 days of data unlock Intelligence reports." },
-      trendBreakdown: REPORT_META.filter((m) => m.key !== "presence").map((m) => ({
-        key: m.key as string,
-        label: m.label,
-        score: reports ? reports[m.key].score : 0,
-        previousScore: priorScores[m.key as string],
-        band: bandFromScore(reports ? reports[m.key].score : 0),
-      })),
-      intelligenceBreakdown: ["churn_pred", "ltv_cohort", "campaign_roi", "optimal_send", "segment_forecast"].map((k) => ({
-        key: k,
-        label: ({ churn_pred: "Churn Prediction", ltv_cohort: "LTV Cohort Analysis", campaign_roi: "Campaign ROI", optimal_send: "Optimal Send Time", segment_forecast: "Segment Growth Forecast" } as any)[k],
-        score: 0, band: "unknown" as const, locked: true, lockReason: "Pro tier required",
-      })),
-      banners: reports ? [] : [{ severity: "info" as const, message: "Loading SPARK trend data… first report builds once contacts, campaigns, and leads have ~30 days of history." }],
-      meta: { generatedAt: new Date().toISOString(), tier: "standard" as const },
-    };
-  }, [reports, priorScores]);
+  // v7.0 — headerData removed; gauges/bars live on spark_ia_insights_health.
 
   if (loading && !inputs) return <div className="p-4 text-sm text-slate-500">Loading SPARK trend data…</div>;
   if (error && !inputs) return <div className="p-4 text-sm text-red-700">Failed to load: {(error as Error).message}</div>;
@@ -151,29 +128,9 @@ export function SparkIAInsightsTrendsPage() {
         <p className="text-sm text-slate-500 mt-0.5">8 reports analysing contact base, lead funnel, campaign engagement, attribution, segmentation, automation, retention, and revenue.</p>
       </div>
 
-      <IAInsightsHeader data={headerData} />
-
-      {/* Empty-state: data still flowing in or low totals. Onboarding checklist hides automatically once enough is wired. */}
-      {inputs && (() => {
-        const hasContacts = (inputs.contact_totals?.active ?? 0) > 0;
-        const hasLeads = (inputs.lead_funnel?.length ?? 0) > 0;
-        const hasCampaigns = (inputs.campaign_recent?.sent ?? 0) > 0;
-        const hasSegments = (inputs.segments?.length ?? 0) > 0;
-        const allDone = hasContacts && hasLeads && hasCampaigns && hasSegments;
-        if (allDone) return null;
-        return (
-          <IAInsightsEmptyState
-            product="SPARK"
-            intro="Each step below adds data to one of the 8 trend reports. The 4-gauge header above updates as data flows in."
-            steps={[
-              { label: "Import or capture your first contacts", description: "Use the CSV import wizard or wire a form to start the contact base.", route: "/app/services/spark_contact_import", completed: hasContacts },
-              { label: "Process inbound leads", description: "Forms + inbound webhooks create leads automatically. Drives the Lead Pipeline report.", route: "/app/services/spark_leads", completed: hasLeads },
-              { label: "Send your first email campaign", description: "Open/click/CTOR engagement feeds the Campaign Performance report.", route: "/app/services/spark_campaigns", completed: hasCampaigns },
-              { label: "Define behavioral segments", description: "Engaged / dormant / high-value segments unlock the Customer Segmentation report.", route: "/app/services/spark_segments", completed: hasSegments },
-            ]}
-          />
-        );
-      })()}
+      {/* IAInsightsHeader + Get Started checklist removed in v7.0 — see
+          spark_ia_insights_health for the gauges/bars, and the Command
+          Dashboard for the cross-product onboarding card. */}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {REPORT_META.map((m) => {

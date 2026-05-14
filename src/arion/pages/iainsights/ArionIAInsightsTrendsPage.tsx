@@ -11,9 +11,9 @@ import { useAnalyticsData } from "../../analytics/useAnalyticsData";
 import { useAccessToken } from "../../../auth/useAccessToken";
 import { useAppState } from "../../../app/AppState";
 import { runAllReports, type AllReportScores, type ReportAnalysis } from "../../analytics/trendEngines";
-import { IAInsightsHeader } from "../../../components/iainsights/IAInsightsHeader";
-import { IAInsightsEmptyState } from "../../../components/iainsights/IAInsightsEmptyState";
-import { bandFromScore, type IAInsightsHeaderData } from "../../../components/iainsights/types";
+// IAInsightsHeader moved to the dedicated Health page (arion_ia_insights_health) in v7.0.
+// IAInsightsEmptyState moved to GetStartedCard on the Command Dashboard (v7.0).
+import { bandFromScore } from "../../../components/iainsights/types";
 import { Eye, Users, Target, Search as SearchIcon, FileText, MapPin, ShieldCheck, Award, ChevronDown, ChevronUp, Lock } from "lucide-react";
 import { Sparkline } from "../../../components/iainsights/Sparkline";
 
@@ -230,72 +230,7 @@ export function ArionIAInsightsTrendsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSiteId, activeTenantId, loading, data]);
 
-  const headerData: IAInsightsHeaderData = useMemo(() => {
-    const trendScore = reports.presence.score;
-    const intelligenceLocked = (tier || "standard") === "standard";
-    return {
-      product: "arion",
-      overall: {
-        score: trendScore,
-        previousScore: priorScores.presence,
-        band: bandFromScore(trendScore),
-        state: "ok",
-        message: "Composite from ARGUS across active products.",
-        drillTo: "/app/services/argus_ia_insights",
-      },
-      platform: {
-        score: trendScore,
-        previousScore: priorScores.presence,
-        band: bandFromScore(trendScore),
-        state: "ok",
-        message: intelligenceLocked ? "Equals Trend Score — Intelligence is locked on Standard tier." : "Weighted blend of Trend + Intelligence.",
-      },
-      trend: {
-        score: trendScore,
-        previousScore: priorScores.presence,
-        band: bandFromScore(trendScore),
-        state: "ok",
-      },
-      intelligence: {
-        score: 0,
-        band: "unknown",
-        state: intelligenceLocked ? "locked" : "insufficient_data",
-        message: intelligenceLocked ? "Upgrade to Pro to unlock modelled insights." : "Collecting data — Intelligence reports populate ~90 days post-launch.",
-      },
-      trendBreakdown: REPORT_META.filter((m) => m.key !== "presence").map((m) => ({
-        key: m.key,
-        label: m.label,
-        score: reports[m.key].score,
-        previousScore: priorScores[m.key],
-        band: bandFromScore(reports[m.key].score),
-        reportRoute: undefined,
-      })),
-      intelligenceBreakdown: ["acquisition", "lead_source", "content_roi", "rep_revenue", "visibility_traj", "competitive"].map((k) => ({
-        key: k,
-        label: ({
-          acquisition: "Acquisition Efficiency",
-          lead_source: "Lead Source Quality",
-          content_roi: "Content ROI",
-          rep_revenue: "Reputation → Revenue",
-          visibility_traj: "Visibility Trajectory",
-          competitive: "Competitive Presence Gap",
-        } as any)[k],
-        score: 0,
-        band: "unknown" as const,
-        locked: true,
-        lockReason: intelligenceLocked ? "Pro tier required" : "Collecting data — 90 days minimum",
-      })),
-      banners: data?.connected === false
-        ? [{ severity: "warn", message: "Connect Google Analytics 4 in Settings → Connected Accounts to populate Trend Score and observations.", action: { label: "Open Settings", route: "/app/settings/connections" } }]
-        : [],
-      meta: {
-        generatedAt: new Date().toISOString(),
-        periodStart: data?.dateRange?.start,
-        periodEnd: data?.dateRange?.end,
-        tier: (tier as any) || "standard",
-      },
-    };
-  }, [reports, data, tier]);
+  // v7.0 — headerData removed; the dedicated Health page (arion_ia_insights_health) owns the gauges/bars.
 
   if (loading && !data) {
     return <div className="p-4 text-sm text-slate-500">Loading IA Insights…</div>;
@@ -308,28 +243,9 @@ export function ArionIAInsightsTrendsPage() {
         <p className="text-sm text-slate-500 mt-0.5">8 reports analysing how your online presence is performing across visibility, conversion, search, content, local, technical, and audience signals.</p>
       </div>
 
-      <IAInsightsHeader data={headerData} />
-
-      {(() => {
-        const hasGa4 = data?.connected === true;
-        const hasGsc = !!(searchData?.summary?.impressions);
-        const hasGbp = gbpData?.connected === true;
-        const hasServiceArea = !!(serviceArea?.city || serviceArea?.state || (serviceArea?.regions?.length ?? 0) > 0);
-        const allDone = hasGa4 && hasGsc && hasGbp && hasServiceArea;
-        if (allDone) return null;
-        return (
-          <IAInsightsEmptyState
-            product="ARION"
-            intro="Each connection below feeds one or more of the 8 trend engines. The geographic relevance check requires the service area to be configured."
-            steps={[
-              { label: "Connect Google Analytics 4", description: "Drives Visibility, Audience, and Conversion reports.", route: "/app/settings/connections", completed: hasGa4 },
-              { label: "Connect Google Search Console", description: "Search Intelligence + CTR-gap analysis depend on GSC.", route: "/app/settings/connections", completed: hasGsc },
-              { label: "Connect Google Business Profile", description: "Local Presence & Reputation report scores GBP trust signals.", route: "/app/settings/connections", completed: hasGbp },
-              { label: "Configure your service area", description: "Visibility & Reach uses this to flag traffic from outside your service area.", route: "/app/services/arion_service_area", completed: hasServiceArea },
-            ]}
-          />
-        );
-      })()}
+      {/* IAInsightsHeader + Get Started checklist removed in v7.0 — see
+          arion_ia_insights_health for the gauges/bars, and the Command
+          Dashboard for the cross-product onboarding card. */}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {REPORT_META.map((m) => {

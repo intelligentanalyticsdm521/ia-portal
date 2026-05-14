@@ -42,7 +42,7 @@ export function IAInsightsHeader({ data }: Props) {
       {/* Four gauges */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Gauge label="Overall Business Score" gauge={data.overall} icon={Award} accent={PRODUCT_COLORS.argus} />
-        <Gauge label="Platform Score" gauge={data.platform} icon={Sparkles} accent={PRODUCT_COLORS[data.product]} />
+        <Gauge label={`${data.product.toUpperCase()} Score`} gauge={data.platform} icon={Sparkles} accent={PRODUCT_COLORS[data.product]} />
         <Gauge label="Trend Score" gauge={data.trend} icon={BarChart3} accent={PRODUCT_COLORS[data.product]} />
         <Gauge label="Intelligence Score" gauge={data.intelligence} icon={Sparkles} accent={PRODUCT_COLORS[data.product]} />
       </div>

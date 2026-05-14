@@ -6,6 +6,7 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { useAccessToken } from "../../auth/useAccessToken";
 import { Sparkline } from "../../components/iainsights/Sparkline";
+import { GetStartedCard } from "../../components/command/GetStartedCard";
 
 // Each card pulls one piece of data; failures degrade gracefully (card shows "—").
 interface OliverDashboardToday {
@@ -111,6 +112,9 @@ export function CommandDashboard() {
 
   return (
     <div className="space-y-4">
+      {/* v7.0 — Get Started checklist (moved here from per-product Trends pages). */}
+      <GetStartedCard />
+
       {/* v6.10 — IA Insights cross-product strip */}
       <IAInsightsStrip
         pulse={pulse}

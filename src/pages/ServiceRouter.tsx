@@ -79,13 +79,16 @@ const BusinessBingOverview = lazyNamed(() => import('../arion/pages/business/Bus
 const BusinessAppleOverview = lazyNamed(() => import('../arion/pages/business/BusinessAppleOverview'), 'BusinessAppleOverview');
 // Brand
 const BrandPage = lazyNamed(() => import('../arion/pages/BrandPage'), 'BrandPage');
-// v5.x IA Insights architecture
+// v5.x IA Insights architecture — Health, Trends, Intelligence, Cross-Channel (ARGUS)
+const ArionIAInsightsHealthPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsHealthPage'), 'ArionIAInsightsHealthPage');
 const ArionIAInsightsTrendsPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsTrendsPage'), 'ArionIAInsightsTrendsPage');
 const ArionIAInsightsIntelligencePage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsIntelligencePage'), 'ArionIAInsightsIntelligencePage');
 const ArionServiceAreaPage = lazyNamed(() => import('../arion/pages/iainsights/ArionServiceAreaPage'), 'ArionServiceAreaPage');
 const ArgusIAInsightsPage = lazyNamed(() => import('./argus/ArgusIAInsightsPage'), 'ArgusIAInsightsPage');
+const SparkIAInsightsHealthPage = lazyNamed(() => import('./spark/SparkIAInsightsHealthPage'), 'SparkIAInsightsHealthPage');
 const SparkIAInsightsTrendsPage = lazyNamed(() => import('./spark/SparkIAInsightsTrendsPage'), 'SparkIAInsightsTrendsPage');
 const SparkIAInsightsIntelligencePage = lazyNamed(() => import('./spark/SparkIAInsightsIntelligencePage'), 'SparkIAInsightsIntelligencePage');
+const OliverIAInsightsHealthPage = lazyNamed(() => import('./oliver/OliverIAInsightsHealthPage'), 'OliverIAInsightsHealthPage');
 const OliverIAInsightsTrendsPage = lazyNamed(() => import('./oliver/OliverIAInsightsTrendsPage'), 'OliverIAInsightsTrendsPage');
 const OliverIAInsightsIntelligencePage = lazyNamed(() => import('./oliver/OliverIAInsightsIntelligencePage'), 'OliverIAInsightsIntelligencePage');
 
@@ -311,6 +314,7 @@ export function ServiceRouter() {
       case 'arion_business_apple_overview': arionPage = <BusinessAppleOverview />; break;
       case 'arion_brand': arionPage = <BrandPage />; break;
       // v5.x IA Insights architecture
+      case 'arion_ia_insights_health': arionPage = <ArionIAInsightsHealthPage />; break;
       case 'arion_ia_insights_trends': arionPage = <ArionIAInsightsTrendsPage />; break;
       case 'arion_ia_insights_intelligence': arionPage = <ArionIAInsightsIntelligencePage />; break;
       case 'arion_service_area': arionPage = <ArionServiceAreaPage />; break;
@@ -372,6 +376,7 @@ export function ServiceRouter() {
       case 'oliver_argus': oliverPage = <OliverArgusPage />; break;
       case 'oliver_payouts': oliverPage = <OliverPayoutsPage />; break;
       // v5.x IA Insights architecture
+      case 'oliver_ia_insights_health': oliverPage = <OliverIAInsightsHealthPage />; break;
       case 'oliver_ia_insights_trends': oliverPage = <OliverIAInsightsTrendsPage />; break;
       case 'oliver_ia_insights_intelligence': oliverPage = <OliverIAInsightsIntelligencePage />; break;
       // ARGUS pages also routed via OLIVER section since ARGUS doesn't have its own section yet
@@ -467,6 +472,7 @@ export function ServiceRouter() {
       case 'spark_workflow_triggers': sparkPage = <SparkWorkflowTriggersPage />; break;
       case 'spark_config_backup': sparkPage = <SparkConfigBackupPage />; break;
       // v5.x IA Insights architecture
+      case 'spark_ia_insights_health': sparkPage = <SparkIAInsightsHealthPage />; break;
       case 'spark_ia_insights_trends': sparkPage = <SparkIAInsightsTrendsPage />; break;
       case 'spark_ia_insights_intelligence': sparkPage = <SparkIAInsightsIntelligencePage />; break;
       case 'spark_service_category': sparkPage = <SparkServiceCategoryPage />; break;
