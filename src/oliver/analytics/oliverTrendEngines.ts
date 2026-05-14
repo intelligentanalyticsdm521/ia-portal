@@ -14,6 +14,13 @@ export interface OliverEngineInput {
   crew?: { workers_with_assignments: number; avg_jobs_per_worker: number } | null;
   service_line?: Array<{ service_type: string; n: number; avg_value: number; total_value: number }> | null;
   seasonal?: Array<{ month_num: number; n: number }> | null;
+  /** Per-service-category industry benchmarks. */
+  benchmarks?: Record<string, number>;
+}
+
+function bm(input: OliverEngineInput, key: string, fallback: number): number {
+  const v = input.benchmarks?.[key];
+  return v != null && isFinite(v) ? v : fallback;
 }
 
 export interface ReportAnalysis {
@@ -47,8 +54,9 @@ export function operationsHealthEngine(input: OliverEngineInput): ReportAnalysis
   const onTimeRate = (lifecycle.on_time + lifecycle.late) > 0 ? lifecycle.on_time / (lifecycle.on_time + lifecycle.late) : null;
   const cancelRate = total > 0 ? cancelled / total : null;
 
+  const onTimeBenchmark = bm(input, "on_time_completion_pct", 80) / 100;
   const completionScore = total > 0 ? clamp((completed / total) * 150, 0, 100) : 30;
-  const onTimeScore = onTimeRate != null ? clamp(onTimeRate * 110, 0, 100) : 50;
+  const onTimeScore = onTimeRate != null ? clamp((onTimeRate / onTimeBenchmark) * 80, 0, 100) : 50;
   const cancelScore = cancelRate != null ? clamp(100 - cancelRate * 400, 0, 100) : 70;
   const cycleScore = lifecycle.avg_completion_hours != null ? scoreFromBenchmark(48, lifecycle.avg_completion_hours, 24) : 50;
 
@@ -94,8 +102,9 @@ export function revenuePerformanceEngine(input: OliverEngineInput): ReportAnalys
   const paidRate = r.invoices > 0 ? r.paid / r.invoices : null;
   const overdueRate = r.invoices > 0 ? r.overdue / r.invoices : null;
 
+  const paidBenchmark = bm(input, "paid_invoice_rate_pct", 75) / 100;
   const revenueScore = scoreFromBenchmark(r.revenue, 10000, 100000);
-  const paidScore = paidRate != null ? clamp(paidRate * 110, 0, 100) : 50;
+  const paidScore = paidRate != null ? clamp((paidRate / paidBenchmark) * 80, 0, 100) : 50;
   const overdueScore = overdueRate != null ? clamp(100 - overdueRate * 300, 0, 100) : 70;
   const invoiceScore = scoreFromBenchmark(r.invoices, 10, 100);
 
@@ -184,7 +193,8 @@ export function quoteWinRateEngine(input: OliverEngineInput): ReportAnalysis {
   const winRate = decided > 0 ? q.accepted / decided : null;
   const conversionPotential = q.total > 0 ? q.accepted_value / Math.max(1, q.total) : null;
 
-  const winScore = winRate != null ? clamp(winRate * 200, 0, 100) : 40;
+  const winBenchmark = bm(input, "quote_win_rate_pct", 45) / 100;
+  const winScore = winRate != null ? clamp((winRate / winBenchmark) * 80, 0, 100) : 40;
   const volumeScore = scoreFromBenchmark(q.total, 5, 50);
   const pipelineScore = scoreFromBenchmark(q.pipeline_value, 5000, 50000);
 
@@ -224,8 +234,9 @@ export function customerRetentionEngine(input: OliverEngineInput): ReportAnalysi
   const atRiskRate = r.active_customers > 0 ? r.at_risk / r.active_customers : null;
   const repeatRate = r.avg_jobs_per_customer || 0;
 
+  const repeatBenchmark = bm(input, "repeat_jobs_per_customer", 2);
   const atRiskScore = atRiskRate != null ? clamp(100 - atRiskRate * 200, 0, 100) : 50;
-  const repeatScore = scoreFromBenchmark(repeatRate, 1.5, 4);
+  const repeatScore = scoreFromBenchmark(repeatRate, repeatBenchmark * 0.75, repeatBenchmark * 2);
 
   const score = Math.round(atRiskScore * 0.55 + repeatScore * 0.45);
   const observations: string[] = [];

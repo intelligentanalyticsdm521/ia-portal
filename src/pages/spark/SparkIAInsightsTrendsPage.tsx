@@ -37,6 +37,7 @@ export function SparkIAInsightsTrendsPage() {
   const [priorScores, setPriorScores] = useState<Record<string, number>>({});
   const [scoreHistories, setScoreHistories] = useState<Record<string, Array<{ period_end: string; score: number }>>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [benchmarks, setBenchmarks] = useState<Record<string, number>>({});
 
   const fetchInputs = useCallback(async () => {
     if (!ready) return;
@@ -49,11 +50,31 @@ export function SparkIAInsightsTrendsPage() {
   }, [get, ready]);
   useEffect(() => { fetchInputs(); }, [fetchInputs]);
 
+  // Fetch tenant service_category + matching benchmark set.
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cfg = await get<{ data: { setting_value: string | null } | null }>("/api/v1/tenant-settings/service_category").catch(() => null);
+        const category = cfg?.data?.setting_value || "home_services";
+        const bench = await get<{ data: Array<{ metric_key: string; benchmark_value: number }> }>(`/api/v1/ia-insights/benchmarks?category=${encodeURIComponent(category)}`).catch(() => ({ data: [] }));
+        if (cancelled) return;
+        const map: Record<string, number> = {};
+        for (const row of bench?.data || []) {
+          if (row.metric_key && row.benchmark_value != null) map[row.metric_key] = Number(row.benchmark_value);
+        }
+        setBenchmarks(map);
+      } catch { /* swallow */ }
+    })();
+    return () => { cancelled = true; };
+  }, [ready, get]);
+
   // Compute scores
   const reports: AllSparkReports = useMemo(() => {
     if (!inputs) return null as any;
-    return runAllSparkReports(inputs);
-  }, [inputs]);
+    return runAllSparkReports({ ...inputs, benchmarks });
+  }, [inputs, benchmarks]);
 
   // Persist current period scores + fetch prior period + score histories
   useEffect(() => {

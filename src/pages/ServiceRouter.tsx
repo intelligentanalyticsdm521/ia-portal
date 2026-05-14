@@ -165,6 +165,7 @@ const SparkNpsSchedulesPage = lazyNamed(() => import('./spark/SparkNpsSchedulesP
 const SparkCustomFieldsPage = lazyNamed(() => import('./spark/SparkCustomFieldsPage'), 'SparkCustomFieldsPage');
 const SparkWorkflowTriggersPage = lazyNamed(() => import('./spark/SparkWorkflowTriggersPage'), 'SparkWorkflowTriggersPage');
 const SparkConfigBackupPage = lazyNamed(() => import('./spark/SparkConfigBackupPage'), 'SparkConfigBackupPage');
+const SparkServiceCategoryPage = lazyNamed(() => import('./spark/SparkServiceCategoryPage'), 'SparkServiceCategoryPage');
 
 // OLIVER pages — lazy-loaded (introduced 2026-05-11)
 const OliverDashboardPage = lazyNamed(() => import('./oliver/OliverDashboardPage'), 'OliverDashboardPage');
@@ -463,6 +464,7 @@ export function ServiceRouter() {
       // v5.x IA Insights architecture
       case 'spark_ia_insights_trends': sparkPage = <SparkIAInsightsTrendsPage />; break;
       case 'spark_ia_insights_intelligence': sparkPage = <SparkIAInsightsIntelligencePage />; break;
+      case 'spark_service_category': sparkPage = <SparkServiceCategoryPage />; break;
       // Backward compat aliases for old lumen_* keys
       case 'lumen_overview': sparkPage = <SparkOverviewPage />; break;
       case 'lumen_contacts': sparkPage = <SparkContactsPage />; break;

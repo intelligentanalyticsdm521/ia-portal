@@ -22,6 +22,14 @@ export interface SparkEngineInput {
   automations?: { total: number; active: number; total_executions: number } | null;
   retention?: { scored_contacts: number; low_score: number; mid_score: number; high_score: number } | null;
   revenue_attribution?: Array<{ source: string; total_ltv: number; contacts: number }> | null;
+  /** Per-service-category industry benchmarks (sourced from arion.ia_insights_benchmark). */
+  benchmarks?: Record<string, number>;
+}
+
+/** Helper: read a benchmark with a sensible fallback. */
+function bm(input: SparkEngineInput, key: string, fallback: number): number {
+  const v = input.benchmarks?.[key];
+  return v != null && isFinite(v) ? v : fallback;
 }
 
 export interface ReportAnalysis {
@@ -55,7 +63,8 @@ export function contactHealthEngine(input: SparkEngineInput): ReportAnalysis {
   const optOutRate = withPhone > 0 ? optOuts / withPhone : 0;
   const growthRate = active > 0 ? recent / active : 0;
 
-  const growthScore = scoreFromBenchmark(growthRate * 100, 5, 15);  // 5% benchmark over period
+  const growthBenchmark = bm(input, "contact_growth_rate_pct", 5);
+  const growthScore = scoreFromBenchmark(growthRate * 100, growthBenchmark, growthBenchmark * 3);
   const coverageScore = emailCoverage != null ? clamp(emailCoverage * 100, 0, 100) : 50;
   const phoneScore = phoneCoverage != null ? clamp(phoneCoverage * 100, 0, 100) : 50;
   const cleanlinessScore = clamp(100 - optOutRate * 200, 0, 100);  // 50%+ opt-out → 0
@@ -109,8 +118,9 @@ export function leadPipelineEngine(input: SparkEngineInput): ReportAnalysis {
   const qualRate = newLeads > 0 ? qualified / Math.max(1, newLeads) : null;
   const leakRate = total > 0 ? lost / total : null;
 
+  const winBenchmark = bm(input, "lead_win_rate_pct", 30) / 100;
   const volumeScore = scoreFromBenchmark(total, 10, 50);
-  const winScore = winRate != null ? clamp(winRate * 200, 0, 100) : 40;   // 50% win = score 100
+  const winScore = winRate != null ? clamp((winRate / winBenchmark) * 60, 0, 100) : 40;
   const qualScore = qualRate != null ? clamp(qualRate * 150, 0, 100) : 40; // 66% qual = score 100
   const leakScore = leakRate != null ? clamp(100 - leakRate * 200, 0, 100) : 50;
 
@@ -165,8 +175,10 @@ export function campaignPerformanceEngine(input: SparkEngineInput): ReportAnalys
   const bounceRate = sends > 0 ? bounces / sends : null;
   const unsubRate = delivered > 0 ? unsubs / delivered : null;
 
-  const openScore = openRate != null ? clamp(openRate * 400, 0, 100) : 40;  // 25% open → score 100
-  const clickScore = clickRate != null ? clamp(clickRate * 2000, 0, 100) : 40; // 5% click → 100
+  const openBenchmark = bm(input, "email_open_rate_pct", 22) / 100;
+  const clickBenchmark = bm(input, "email_click_rate_pct", 3.5) / 100;
+  const openScore = openRate != null ? clamp((openRate / openBenchmark) * 60, 0, 100) : 40;
+  const clickScore = clickRate != null ? clamp((clickRate / clickBenchmark) * 60, 0, 100) : 40;
   const ctorScore = clickToOpen != null ? clamp(clickToOpen * 500, 0, 100) : 40;
   const cleanScore = clamp(100 - ((bounceRate || 0) * 1000 + (unsubRate || 0) * 500), 0, 100);
 

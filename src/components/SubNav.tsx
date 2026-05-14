@@ -344,6 +344,7 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends" },
         { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", intelligence: true },
         { key: "argus_ia_insights", label: "Cross-Channel (ARGUS)", route: "/app/services/argus_ia_insights", intelligence: true },
+        { key: "spark_service_category", label: "Service Category", route: "/app/services/spark_service_category" },
       ],
     },
     {
