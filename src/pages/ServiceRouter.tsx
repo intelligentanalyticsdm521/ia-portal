@@ -168,6 +168,8 @@ const SparkConfigBackupPage = lazyNamed(() => import('./spark/SparkConfigBackupP
 const SparkServiceCategoryPage = lazyNamed(() => import('./spark/SparkServiceCategoryPage'), 'SparkServiceCategoryPage');
 const SparkFormBuilderPage = lazyNamed(() => import('./spark/SparkFormBuilderPage'), 'SparkFormBuilderPage');
 const SparkRealtimeMetricsPage = lazyNamed(() => import('./spark/SparkRealtimeMetricsPage'), 'SparkRealtimeMetricsPage');
+const SparkApiReferencePage = lazyNamed(() => import('./spark/SparkApiReferencePage'), 'SparkApiReferencePage');
+const SparkEngineDocsPage = lazyNamed(() => import('./spark/SparkEngineDocsPage'), 'SparkEngineDocsPage');
 
 // OLIVER pages — lazy-loaded (introduced 2026-05-11)
 const OliverDashboardPage = lazyNamed(() => import('./oliver/OliverDashboardPage'), 'OliverDashboardPage');
@@ -469,6 +471,8 @@ export function ServiceRouter() {
       case 'spark_service_category': sparkPage = <SparkServiceCategoryPage />; break;
       case 'spark_form_builder': sparkPage = <SparkFormBuilderPage />; break;
       case 'spark_realtime_metrics': sparkPage = <SparkRealtimeMetricsPage />; break;
+      case 'spark_api_reference': sparkPage = <SparkApiReferencePage />; break;
+      case 'spark_engine_docs': sparkPage = <SparkEngineDocsPage />; break;
       // Backward compat aliases for old lumen_* keys
       case 'lumen_overview': sparkPage = <SparkOverviewPage />; break;
       case 'lumen_contacts': sparkPage = <SparkContactsPage />; break;
