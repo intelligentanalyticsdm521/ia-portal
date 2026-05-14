@@ -23,10 +23,18 @@ interface Props {
   data: IAInsightsHeaderData | null;
   /** Optional onChangePeriod handler — not wired here but reserved for future. */
   onChangePeriod?: (start: string, end: string) => void;
+  /** v9.0 — Spec §1.6 ARGUS exception: 4 gauges + active-products indicator
+   *  instead of the 5th Cross-Channel gauge. Also shows 2 bar charts (Trends
+   *  Breakdown + Intelligence Breakdown) — no Cross-Channel bar chart since
+   *  ARGUS IS the cross-channel home. */
+  mode?: "product" | "argus";
+  /** When mode='argus', the active-products indicator data. */
+  activeProducts?: Array<{ key: "arion" | "spark" | "oliver" | "stella"; active: boolean; score: number | null }>;
 }
 
-export function IAInsightsHeader({ data }: Props) {
+export function IAInsightsHeader({ data, mode = "product", activeProducts }: Props) {
   if (!data) return <IAInsightsHeaderSkeleton />;
+  const isArgus = mode === "argus";
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 mb-4">
@@ -39,27 +47,40 @@ export function IAInsightsHeader({ data }: Props) {
         </div>
       )}
 
-      {/* v9.0 — 5 gauges (ARGUS exception: 4 gauges + active-products indicator).
-          When crossChannel is undefined the 5th gauge is rendered as the
-          activation prompt empty state per spec §1.7. */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      {/* v9.0 — Gauges
+          Product mode: 5 gauges (Business Pulse, Platform Score, Trend Score,
+            Intelligence Score, Cross-Channel Score).
+          ARGUS mode (§1.6): 4 gauges (Business Pulse, ARGUS Platform Score,
+            Trend Score, Intelligence Score) + active-products indicator.
+          When crossChannel is undefined in product mode, the 5th gauge
+          renders the activation-prompt empty state per §1.7. */}
+      <div className={`grid grid-cols-2 ${isArgus ? "md:grid-cols-5" : "md:grid-cols-5"} gap-3`}>
         <Gauge label="Business Pulse" gauge={data.overall} icon={Award} accent={PRODUCT_COLORS.argus} />
-        <Gauge label={`${data.product.toUpperCase()} Score`} gauge={data.platform} icon={Sparkles} accent={PRODUCT_COLORS[data.product]} />
-        <Gauge label="Trend Score" gauge={data.trend} icon={BarChart3} accent={PRODUCT_COLORS[data.product]} />
-        <Gauge label="Intelligence Score" gauge={data.intelligence} icon={Sparkles} accent={PRODUCT_COLORS[data.product]} />
-        <Gauge
-          label="Cross-Channel Score"
-          gauge={data.crossChannel || { score: 0, band: "unknown", state: "insufficient_data", message: "Add a second platform to unlock cross-channel insights.", drillTo: "/app/services/argus_ia_insights" }}
-          icon={BarChart3}
-          accent={PRODUCT_COLORS.argus}
-        />
+        <Gauge label={isArgus ? "ARGUS Platform Score" : `${data.product.toUpperCase()} Score`} gauge={data.platform} icon={Sparkles} accent={PRODUCT_COLORS[isArgus ? "argus" : data.product]} />
+        <Gauge label="Trend Score" gauge={data.trend} icon={BarChart3} accent={PRODUCT_COLORS[isArgus ? "argus" : data.product]} />
+        <Gauge label="Intelligence Score" gauge={data.intelligence} icon={Sparkles} accent={PRODUCT_COLORS[isArgus ? "argus" : data.product]} />
+        {isArgus ? (
+          <ActiveProductsIndicator products={activeProducts || []} />
+        ) : (
+          <Gauge
+            label="Cross-Channel Score"
+            gauge={data.crossChannel || { score: 0, band: "unknown", state: "insufficient_data", message: "Add a second platform to unlock cross-channel insights.", drillTo: "/app/services/argus_ia_insights" }}
+            icon={BarChart3}
+            accent={PRODUCT_COLORS.argus}
+          />
+        )}
       </div>
 
-      {/* v9.0 — 3 bar charts: Trend / Intelligence / Cross-Channel breakdown. */}
-      <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <ScoreBarChart title="Trend breakdown" bars={data.trendBreakdown} accent={PRODUCT_COLORS[data.product]} />
-        <ScoreBarChart title="Intelligence breakdown" bars={data.intelligenceBreakdown} accent={PRODUCT_COLORS[data.product]} />
-        <ScoreBarChart title="Cross-Channel breakdown" bars={data.crossChannelBreakdown || []} accent={PRODUCT_COLORS.argus} emptyStateMessage="Connect a second platform to populate cross-channel reports." />
+      {/* v9.0 — Bar charts.
+          Product mode: 3 bars (Trend / Intelligence / Cross-Channel).
+          ARGUS mode: 2 bars (Trend / Intelligence) — no Cross-Channel bar
+          since ARGUS IS the cross-channel home. */}
+      <div className={`mt-4 grid grid-cols-1 ${isArgus ? "md:grid-cols-2" : "md:grid-cols-3"} gap-3`}>
+        <ScoreBarChart title="Trend breakdown" bars={data.trendBreakdown} accent={PRODUCT_COLORS[isArgus ? "argus" : data.product]} />
+        <ScoreBarChart title="Intelligence breakdown" bars={data.intelligenceBreakdown} accent={PRODUCT_COLORS[isArgus ? "argus" : data.product]} />
+        {!isArgus && (
+          <ScoreBarChart title="Cross-Channel breakdown" bars={data.crossChannelBreakdown || []} accent={PRODUCT_COLORS.argus} emptyStateMessage="Connect a second platform to populate cross-channel reports." />
+        )}
       </div>
 
       {/* Footer */}
@@ -132,6 +153,42 @@ function Gauge({ label, gauge, icon: Icon, accent }: { label: string; gauge: Gau
         </div>
       </div>
     </button>
+  );
+}
+
+// ── Active-products indicator (ARGUS exception) ─────────────────────
+function ActiveProductsIndicator({ products }: { products: Array<{ key: "arion" | "spark" | "oliver" | "stella"; active: boolean; score: number | null }> }) {
+  const navigate = useNavigate();
+  const labels: Record<string, string> = { arion: "ARION", spark: "SPARK", oliver: "OLIVER", stella: "STELLA" };
+  const productRoutes: Record<string, string> = {
+    arion: "/app/services/arion_ia_insights_health",
+    spark: "/app/services/spark_ia_insights_health",
+    oliver: "/app/services/oliver_ia_insights_health",
+    stella: "/app/services/stella_ia_insights_health",
+  };
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wide mb-2">Active products</div>
+      <div className="grid grid-cols-2 gap-2">
+        {products.map((p) => {
+          const color = PRODUCT_COLORS[p.key];
+          const inactive = !p.active;
+          return (
+            <button
+              key={p.key}
+              onClick={p.active ? () => navigate(productRoutes[p.key]) : undefined}
+              disabled={inactive}
+              className={`flex items-center gap-2 rounded p-2 text-xs ${p.active ? "bg-slate-50 hover:bg-slate-100" : "bg-slate-50 opacity-50 cursor-not-allowed"}`}
+              title={p.active ? `${labels[p.key]} Platform Score: ${p.score ?? "—"}` : `${labels[p.key]} not active`}
+            >
+              <div className="h-3 w-3 rounded-full" style={{ background: p.active ? color : "#CBD5E1" }} />
+              <span className="font-semibold flex-1 text-left" style={{ color: p.active ? color : "#94A3B8" }}>{labels[p.key]}</span>
+              <span className="tabular-nums text-[10px] text-slate-500">{p.active ? (p.score ?? "—") : ""}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

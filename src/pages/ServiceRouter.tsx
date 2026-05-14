@@ -85,6 +85,10 @@ const ArionIAInsightsTrendsPage = lazyNamed(() => import('../arion/pages/iainsig
 const ArionIAInsightsIntelligencePage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsIntelligencePage'), 'ArionIAInsightsIntelligencePage');
 const ArionServiceAreaPage = lazyNamed(() => import('../arion/pages/iainsights/ArionServiceAreaPage'), 'ArionServiceAreaPage');
 const ArgusIAInsightsPage = lazyNamed(() => import('./argus/ArgusIAInsightsPage'), 'ArgusIAInsightsPage');
+const ArgusHealthPage = lazyNamed(() => import('./argus/ArgusHealthPage'), 'ArgusHealthPage');
+const ArgusTrendsPage = lazyNamed(() => import('./argus/ArgusTrendsPage'), 'ArgusTrendsPage');
+const ArgusIntelligencePage = lazyNamed(() => import('./argus/ArgusIntelligencePage'), 'ArgusIntelligencePage');
+const ArgusCrossChannelPage = lazyNamed(() => import('./argus/ArgusCrossChannelPage'), 'ArgusCrossChannelPage');
 const SparkIAInsightsHealthPage = lazyNamed(() => import('./spark/SparkIAInsightsHealthPage'), 'SparkIAInsightsHealthPage');
 const SparkIAInsightsTrendsPage = lazyNamed(() => import('./spark/SparkIAInsightsTrendsPage'), 'SparkIAInsightsTrendsPage');
 const SparkIAInsightsIntelligencePage = lazyNamed(() => import('./spark/SparkIAInsightsIntelligencePage'), 'SparkIAInsightsIntelligencePage');
@@ -391,6 +395,19 @@ export function ServiceRouter() {
   // product section a tenant is currently inside.
   if (service.key === 'argus_ia_insights') {
     return <Suspense fallback={<RouteLoading />}><ArgusIAInsightsPage /></Suspense>;
+  }
+  // v9.0 — ARGUS as full product (Health/Trends/Intelligence/Cross-Channel).
+  if (service.key === 'argus_health') {
+    return <Suspense fallback={<RouteLoading />}><ArgusHealthPage /></Suspense>;
+  }
+  if (service.key === 'argus_trends') {
+    return <Suspense fallback={<RouteLoading />}><ArgusTrendsPage /></Suspense>;
+  }
+  if (service.key === 'argus_intelligence') {
+    return <Suspense fallback={<RouteLoading />}><ArgusIntelligencePage /></Suspense>;
+  }
+  if (service.key === 'argus_cross_channel') {
+    return <Suspense fallback={<RouteLoading />}><ArgusCrossChannelPage /></Suspense>;
   }
 
   if (service.section === 'LUMEN') {
