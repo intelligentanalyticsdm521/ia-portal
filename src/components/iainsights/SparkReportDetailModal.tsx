@@ -18,6 +18,13 @@ import { evaluateRules, type InsightRule } from "./insightRules";
 import { SPARK_CONTACT_HEALTH_RULES } from "./sparkContactHealthRules";
 import { SPARK_LEAD_PIPELINE_RULES } from "./sparkLeadPipelineRules";
 import { SPARK_CAMPAIGN_PERF_RULES } from "./sparkCampaignPerfRules";
+import {
+  SPARK_MARKETING_ATTRIB_RULES,
+  SPARK_SEGMENTATION_RULES,
+  SPARK_AUTOMATION_EFF_RULES,
+  SPARK_RETENTION_RISK_RULES,
+  SPARK_REVENUE_ATTRIB_RULES,
+} from "./sparkRemainingRules";
 
 interface SparkReportAnalysis {
   score: number;
@@ -51,14 +58,14 @@ interface Props {
 
 /** Per-report rule-library lookup. As each library is built, add it here. */
 const SPARK_RULES_BY_REPORT: Record<string, InsightRule[] | undefined> = {
-  contact_health: SPARK_CONTACT_HEALTH_RULES,
-  lead_pipeline:  SPARK_LEAD_PIPELINE_RULES,
-  campaign_perf:  SPARK_CAMPAIGN_PERF_RULES,
-  // marketing_attrib: SPARK_MARKETING_ATTRIB_RULES (next commit)
-  // segmentation:     SPARK_SEGMENTATION_RULES
-  // automation_eff:   SPARK_AUTOMATION_EFF_RULES
-  // retention_risk:   SPARK_RETENTION_RISK_RULES
-  // revenue_attrib:   SPARK_REVENUE_ATTRIB_RULES
+  contact_health:   SPARK_CONTACT_HEALTH_RULES,
+  lead_pipeline:    SPARK_LEAD_PIPELINE_RULES,
+  campaign_perf:    SPARK_CAMPAIGN_PERF_RULES,
+  marketing_attrib: SPARK_MARKETING_ATTRIB_RULES,
+  segmentation:     SPARK_SEGMENTATION_RULES,
+  automation_eff:   SPARK_AUTOMATION_EFF_RULES,
+  retention_risk:   SPARK_RETENTION_RISK_RULES,
+  revenue_attrib:   SPARK_REVENUE_ATTRIB_RULES,
 };
 
 function bandColor(score: number): string {
@@ -181,15 +188,15 @@ export function SparkReportDetailModal({
 // ── Per-report rich body sections ────────────────────────────────────
 function renderSparkBody(reportKey: string, inputs: any, report: SparkReportAnalysis) {
   switch (reportKey) {
-    case "contact_health":
-      return <ContactHealthBody inputs={inputs} />;
-    case "lead_pipeline":
-      return <LeadPipelineBody inputs={inputs} />;
-    case "campaign_perf":
-      return <CampaignPerfBody inputs={inputs} />;
-    default:
-      // Fallback: surface engine's scoreInputs as basic KPI tiles.
-      return <GenericBody report={report} />;
+    case "contact_health":   return <ContactHealthBody inputs={inputs} />;
+    case "lead_pipeline":    return <LeadPipelineBody inputs={inputs} />;
+    case "campaign_perf":    return <CampaignPerfBody inputs={inputs} />;
+    case "marketing_attrib": return <MarketingAttribBody inputs={inputs} />;
+    case "segmentation":     return <SegmentationBody inputs={inputs} />;
+    case "automation_eff":   return <AutomationEffBody inputs={inputs} />;
+    case "retention_risk":   return <RetentionRiskBody inputs={inputs} />;
+    case "revenue_attrib":   return <RevenueAttribBody inputs={inputs} />;
+    default:                 return <GenericBody report={report} />;
   }
 }
 
@@ -567,6 +574,340 @@ function ContactHealthBody({ inputs }: { inputs: any }) {
           <ReachBar label="SMS" pct={phonePct} count={phone} total={active} color="#EF6C33" />
         </div>
       </div>
+    </>
+  );
+}
+
+// ── Marketing Attribution rich body ──────────────────────────────────
+function MarketingAttribBody({ inputs }: { inputs: any }) {
+  const sources = (inputs?.top_sources || []).filter((s: any) => s.source);
+  const total = sources.reduce((s: number, r: any) => s + Number(r.n || 0), 0);
+  const top = sources[0];
+  const topShare = total > 0 && top ? (Number(top.n || 0) / total) * 100 : 0;
+
+  return (
+    <>
+      {sources.length === 0 ? (
+        <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-amber-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">No sourced contacts this period. Either acquisition channels stopped producing, or source attribution isn't being captured at intake. Inspect form UTM capture + inbound webhooks.</p>
+        </div>
+      ) : topShare > 60 ? (
+        <div className="rounded-md border-l-4 border-rose-400 bg-rose-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-rose-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed"><strong>{topShare.toFixed(0)}% concentration risk.</strong> Most contacts come from a single channel ({top.source}). A change in that channel's algorithm or pricing would halve your inbound flow overnight.</p>
+        </div>
+      ) : (
+        <div className="rounded-md border-l-4 border-emerald-400 bg-emerald-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-emerald-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">{sources.length} acquisition channels active. Leading source <strong>{top.source}</strong> at {topShare.toFixed(0)}% share — diversified enough that no single channel can take you out.</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Kpi label="Channels" value={String(sources.length)} sub="active sources" accent="#EF6C33" />
+        <Kpi label="Sourced Contacts" value={fmtN(total)} sub="this period" accent="#1A7DB5" />
+        <Kpi label="Top Source Share" value={total > 0 ? `${topShare.toFixed(0)}%` : "—"} sub={top?.source || "—"} accent={topShare < 40 ? "#16A34A" : topShare < 60 ? "#EAB308" : "#DC2626"} />
+        <Kpi label="Diversity Score" value={String(Math.min(100, sources.length * 12 + Math.round((1 - topShare / 100) * 50)))} sub="0-100 channel mix health" accent="#0E78A0" />
+      </div>
+
+      {sources.length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-slate-900 mb-2">Acquisition channel breakdown</h3>
+          <div className="rounded-md border border-slate-200 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="text-left px-3 py-2 font-semibold text-slate-600">Source</th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-600">Contacts</th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-600">Share</th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-600">Active rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sources.slice(0, 10).map((s: any, i: number) => {
+                  const n = Number(s.n || 0);
+                  const act = Number(s.active_count || 0);
+                  const share = total > 0 ? (n / total) * 100 : 0;
+                  const rate = n > 0 ? (act / n) * 100 : 0;
+                  return (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-2 text-slate-900">{s.source}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtN(n)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{share.toFixed(0)}%</td>
+                      <td className="px-3 py-2 text-right tabular-nums" style={{ color: rate >= 70 ? "#16A34A" : rate >= 40 ? "#EAB308" : "#DC2626" }}>{rate.toFixed(0)}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Segmentation rich body ───────────────────────────────────────────
+function SegmentationBody({ inputs }: { inputs: any }) {
+  const segs = inputs?.segments || [];
+  const tags = inputs?.top_tags || [];
+  const active = Number(inputs?.contact_totals?.active || 0);
+  const totalMembers = segs.reduce((s: number, r: any) => s + Number(r.members || 0), 0);
+  const coverage = active > 0 ? Math.min(1, totalMembers / active) * 100 : 0;
+
+  return (
+    <>
+      {segs.length === 0 ? (
+        <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-amber-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">No segments defined. Without segmentation every campaign goes to every contact — engagement falls and unsubscribes rise. Segments are the foundation of every lifecycle marketing capability.</p>
+        </div>
+      ) : coverage < 40 ? (
+        <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-amber-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">Segment coverage is <strong>{coverage.toFixed(0)}%</strong>. Most contacts fall outside any defined segment — the majority of your audience can't be reached by targeted campaigns.</p>
+        </div>
+      ) : (
+        <div className="rounded-md border-l-4 border-emerald-400 bg-emerald-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-emerald-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">{segs.length} segments cover <strong>{coverage.toFixed(0)}%</strong> of active contacts ({fmtN(totalMembers)} memberships across {fmtN(active)} active). Solid targeting foundation.</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Kpi label="Segments" value={String(segs.length)} sub="defined" accent="#EF6C33" />
+        <Kpi label="Coverage" value={active > 0 ? `${coverage.toFixed(0)}%` : "—"} sub="of active contacts" accent={coverage >= 70 ? "#16A34A" : coverage >= 40 ? "#EAB308" : "#DC2626"} />
+        <Kpi label="Tag Library" value={String(tags.length)} sub="unique tags" accent={tags.length >= 8 ? "#16A34A" : tags.length >= 3 ? "#EAB308" : "#DC2626"} />
+        <Kpi label="Top Segment" value={segs[0]?.name || "—"} sub={segs[0] ? `${fmtN(Number(segs[0].members))} members` : ""} accent="#1A7DB5" />
+      </div>
+
+      {segs.length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-slate-900 mb-2">Segments</h3>
+          <div className="space-y-1.5">
+            {segs.slice(0, 10).map((s: any, i: number) => {
+              const members = Number(s.members || 0);
+              const share = active > 0 ? (members / active) * 100 : 0;
+              return (
+                <div key={i} className="flex items-center gap-3">
+                  <div className="w-40 text-xs text-slate-700 truncate">{s.name}</div>
+                  <div className="flex-1 h-5 rounded bg-slate-100 overflow-hidden relative">
+                    <div className="h-full rounded" style={{ width: `${Math.min(100, share)}%`, background: "#1A7DB5" }} />
+                    <div className="absolute inset-0 flex items-center px-2 text-[10px] font-semibold text-slate-700">{fmtN(members)} · {share.toFixed(0)}%</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {tags.length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-slate-900 mb-2">Top tags ({tags.length} total)</h3>
+          <div className="flex flex-wrap gap-2">
+            {tags.slice(0, 16).map((t: any, i: number) => (
+              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs">
+                <span className="font-medium">{t.name}</span>
+                <span className="text-[10px] text-slate-500">{fmtN(Number(t.n))}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Automation Effectiveness rich body ───────────────────────────────
+function AutomationEffBody({ inputs }: { inputs: any }) {
+  const a = inputs?.automations || { total: 0, active: 0, total_executions: 0 };
+  const total = Number(a.total || 0);
+  const active = Number(a.active || 0);
+  const execs = Number(a.total_executions || 0);
+  const activeRate = total > 0 ? (active / total) * 100 : 0;
+  const perAuto = active > 0 ? execs / active : 0;
+
+  return (
+    <>
+      {total === 0 ? (
+        <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-amber-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">No automations defined. The single biggest SPARK value-add is replacing manual follow-up with deterministic automation — start with a new-lead welcome sequence.</p>
+        </div>
+      ) : activeRate < 50 ? (
+        <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-amber-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">Only <strong>{active} of {total}</strong> automations are active. Paused automations add cognitive load without producing value — audit and either fix or delete.</p>
+        </div>
+      ) : perAuto < 5 && active >= 3 ? (
+        <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-amber-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">{active} active automations averaging <strong>{perAuto.toFixed(1)} executions each</strong> — running but rarely firing. Trigger conditions likely don't match real events.</p>
+        </div>
+      ) : (
+        <div className="rounded-md border-l-4 border-emerald-400 bg-emerald-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-emerald-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">{active} active automations, <strong>{fmtN(execs)} total executions</strong> ({perAuto.toFixed(0)} avg each). Automations are doing real work.</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Kpi label="Total Automations" value={String(total)} sub={`${active} active`} accent="#EF6C33" />
+        <Kpi label="Active Rate" value={total > 0 ? `${activeRate.toFixed(0)}%` : "—"} sub="of total defined" accent={activeRate >= 80 ? "#16A34A" : activeRate >= 50 ? "#EAB308" : "#DC2626"} />
+        <Kpi label="Total Executions" value={fmtN(execs)} sub="across all automations" accent="#1A7DB5" />
+        <Kpi label="Execs/Automation" value={active > 0 ? perAuto.toFixed(1) : "—"} sub="avg activity per active" accent={perAuto >= 50 ? "#16A34A" : perAuto >= 5 ? "#EAB308" : "#DC2626"} />
+      </div>
+
+      <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-xs text-slate-700 space-y-2">
+        <div className="font-bold text-slate-900 text-sm mb-2">Recommended starter automations</div>
+        <div>• New-contact welcome sequence (3-message, 14-day arc)</div>
+        <div>• Form-abandoned recovery (single message, 24-hour delay)</div>
+        <div>• Post-job thank-you + review request (2-message, fired by completed event)</div>
+        <div>• 30-day non-engagement check-in (fires when score drops below threshold)</div>
+        <div>• 90-day dormancy re-engagement (multi-step win-back with incentive)</div>
+      </div>
+    </>
+  );
+}
+
+// ── Retention Risk rich body ─────────────────────────────────────────
+function RetentionRiskBody({ inputs }: { inputs: any }) {
+  const r = inputs?.retention || { scored_contacts: 0, low_score: 0, mid_score: 0, high_score: 0 };
+  const total = Number(r.scored_contacts || 0);
+  const high = Number(r.high_score || 0);
+  const mid = Number(r.mid_score || 0);
+  const low = Number(r.low_score || 0);
+  const highPct = total > 0 ? (high / total) * 100 : 0;
+  const midPct = total > 0 ? (mid / total) * 100 : 0;
+  const lowPct = total > 0 ? (low / total) * 100 : 0;
+
+  return (
+    <>
+      {total === 0 ? (
+        <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-amber-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">No scored contacts. Behavioural lead scoring is the foundation for retention risk identification — without scores, churn happens before you see it.</p>
+        </div>
+      ) : lowPct > 40 ? (
+        <div className="rounded-md border-l-4 border-rose-400 bg-rose-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-rose-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed"><strong>{lowPct.toFixed(0)}% retention risk.</strong> {fmtN(low)} of {fmtN(total)} scored contacts are low-engagement — your churn pool. Plan a structured win-back now, not after they churn.</p>
+        </div>
+      ) : highPct >= 25 ? (
+        <div className="rounded-md border-l-4 border-emerald-400 bg-emerald-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-emerald-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed"><strong>{highPct.toFixed(0)}% high-engagement</strong> ({fmtN(high)} champions). Protect them with exclusive offers, early access, or a referral incentive — champions are 2-3x more likely to refer than mid-tier contacts.</p>
+        </div>
+      ) : (
+        <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-amber-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">Score distribution: {highPct.toFixed(0)}% high · {midPct.toFixed(0)}% mid · {lowPct.toFixed(0)}% low. Mid-tier is where activation campaigns produce the most lift.</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Kpi label="Scored Contacts" value={fmtN(total)} sub="in scoring system" accent="#EF6C33" />
+        <Kpi label="High Tier (≥70)" value={total > 0 ? `${highPct.toFixed(0)}%` : "—"} sub={`${fmtN(high)} champions`} accent={highPct >= 20 ? "#16A34A" : "#EAB308"} />
+        <Kpi label="Mid Tier (30-69)" value={total > 0 ? `${midPct.toFixed(0)}%` : "—"} sub={`${fmtN(mid)} active but not deeply engaged`} accent="#1A7DB5" />
+        <Kpi label="Low Tier (<30)" value={total > 0 ? `${lowPct.toFixed(0)}%` : "—"} sub={`${fmtN(low)} retention-risk pool`} accent={lowPct < 25 ? "#16A34A" : lowPct < 40 ? "#EAB308" : "#DC2626"} />
+      </div>
+
+      {total > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-slate-900 mb-2">Score distribution</h3>
+          <div className="space-y-2">
+            {[
+              { label: "High (≥70)", count: high, pct: highPct, color: "#16A34A" },
+              { label: "Mid (30-69)", count: mid, pct: midPct, color: "#EAB308" },
+              { label: "Low (<30)", count: low, pct: lowPct, color: "#DC2626" },
+            ].map((tier, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <div className="w-28 text-xs text-slate-700">{tier.label}</div>
+                <div className="flex-1 h-6 rounded bg-slate-100 overflow-hidden relative">
+                  <div className="h-full rounded" style={{ width: `${tier.pct}%`, background: tier.color }} />
+                  <div className="absolute inset-0 flex items-center px-2 text-[10px] font-semibold text-slate-700">{fmtN(tier.count)} · {tier.pct.toFixed(0)}%</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Revenue Attribution rich body ────────────────────────────────────
+function RevenueAttribBody({ inputs }: { inputs: any }) {
+  const sources = inputs?.revenue_attribution || [];
+  const totalLtv = sources.reduce((s: number, r: any) => s + Number(r.total_ltv || 0), 0);
+  const totalContacts = sources.reduce((s: number, r: any) => s + Number(r.contacts || 0), 0);
+  const avgLtv = totalContacts > 0 ? totalLtv / totalContacts : 0;
+  const top = sources[0];
+  const topShare = totalLtv > 0 && top ? Number(top.total_ltv || 0) / totalLtv * 100 : 0;
+
+  return (
+    <>
+      {totalLtv === 0 ? (
+        <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-amber-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">No revenue attribution data yet. Either lifetime_value isn't populating on contact records (check OLIVER → SPARK sync) or no jobs have completed this period.</p>
+        </div>
+      ) : topShare > 65 ? (
+        <div className="rounded-md border-l-4 border-rose-400 bg-rose-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-rose-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed"><strong>{topShare.toFixed(0)}% revenue concentration risk.</strong> {top.source} produces ${fmtN(Number(top.total_ltv || 0))} — most of your LTV. A change to that channel would halve revenue overnight.</p>
+        </div>
+      ) : (
+        <div className="rounded-md border-l-4 border-emerald-400 bg-emerald-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-emerald-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">${fmtN(totalLtv)} attributed lifetime value across <strong>{fmtN(totalContacts)} customers</strong> from {sources.length} sources. Average LTV: ${fmtN(avgLtv)}.</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Kpi label="Total Attributed LTV" value={`$${fmtN(totalLtv)}`} sub={`${fmtN(totalContacts)} customers`} accent="#16A34A" />
+        <Kpi label="Avg LTV / Customer" value={avgLtv > 0 ? `$${fmtN(avgLtv)}` : "—"} sub="across all sources" accent={avgLtv >= 2000 ? "#16A34A" : avgLtv >= 500 ? "#EAB308" : "#DC2626"} />
+        <Kpi label="Revenue Sources" value={String(sources.length)} sub="actively producing" accent="#EF6C33" />
+        <Kpi label="Top Source Share" value={totalLtv > 0 ? `${topShare.toFixed(0)}%` : "—"} sub={top?.source || "—"} accent={topShare < 40 ? "#16A34A" : topShare < 65 ? "#EAB308" : "#DC2626"} />
+      </div>
+
+      {sources.length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-slate-900 mb-2">Revenue by source</h3>
+          <div className="rounded-md border border-slate-200 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="text-left px-3 py-2 font-semibold text-slate-600">Source</th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-600">LTV</th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-600">Customers</th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-600">Avg LTV</th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-600">Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sources.slice(0, 10).map((s: any, i: number) => {
+                  const ltv = Number(s.total_ltv || 0);
+                  const ct = Number(s.contacts || 0);
+                  const avg = ct > 0 ? ltv / ct : 0;
+                  const share = totalLtv > 0 ? (ltv / totalLtv) * 100 : 0;
+                  return (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-2 text-slate-900">{s.source || "(unknown)"}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-900">${fmtN(ltv)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtN(ct)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">${fmtN(avg)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums" style={{ color: share > 50 ? "#DC2626" : share > 30 ? "#EAB308" : "#16A34A" }}>{share.toFixed(0)}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </>
   );
 }
