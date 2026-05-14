@@ -110,6 +110,14 @@ const OLIVER_NAV: SubNavConfig = {
       ],
     },
     {
+      label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "oliver_ia_insights",
+      items: [
+        { key: "oliver_ia_insights_trends", label: "Trends", route: "/app/services/oliver_ia_insights_trends" },
+        { key: "oliver_ia_insights_intelligence", label: "Intelligence", route: "/app/services/oliver_ia_insights_intelligence", intelligence: true },
+        { key: "argus_ia_insights", label: "Cross-Channel (ARGUS)", route: "/app/services/argus_ia_insights", intelligence: true },
+      ],
+    },
+    {
       label: "Insights", icon: BarChart2, collapsible: true, sectionId: "oliver_insights",
       items: [
         { key: "oliver_insights", label: "Insights", route: "/app/services/oliver_insights" },
@@ -164,15 +172,24 @@ const ARION_NAV: SubNavConfig = {
       ],
     },
     {
-      label: "Analytics & Intelligence", icon: BarChart2, collapsible: true, sectionId: "analytics",
+      // v5.x — renamed from "Analytics & Intelligence" to "Search Engine Analytics"
+      // to clarify the section is external data (GA4 / GSC / GBP / Bing), not
+      // platform analytics. IA Insights is now its own top-level section below.
+      label: "Search Engine Analytics", icon: BarChart2, collapsible: true, sectionId: "analytics",
       items: [
         { key: "arion_analytics_overview", label: "Overview", route: "/app/services/arion_analytics_overview" },
         { key: "arion_analytics_traffic", label: "Traffic", route: "/app/services/arion_analytics_traffic" },
         { key: "arion_analytics_audience", label: "Audience", route: "/app/services/arion_analytics_audience" },
         { key: "arion_analytics_content", label: "Content", route: "/app/services/arion_analytics_content" },
         { key: "arion_analytics_conversions", label: "Conversions", route: "/app/services/arion_analytics_conversions" },
-        { key: "arion_analytics_ia_cross_channel", label: "IA: Cross-Channel", route: "/app/services/arion_analytics_ia_cross_channel", intelligence: true },
-        { key: "arion_analytics_ia_reports", label: "IA: Insights", route: "/app/services/arion_analytics_ia_reports", intelligence: true },
+      ],
+    },
+    {
+      label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "ia_insights",
+      items: [
+        { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends" },
+        { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", intelligence: true },
+        { key: "argus_ia_insights", label: "Cross-Channel (ARGUS)", route: "/app/services/argus_ia_insights", intelligence: true },
       ],
     },
     {
@@ -318,6 +335,14 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_reviews", label: "Reputation Hub", route: "/app/services/spark_reviews" },
         { key: "spark_review_widget", label: "Review Widget", route: "/app/services/spark_review_widget" },
         { key: "spark_referrals", label: "Referrals", route: "/app/services/spark_referrals" },
+      ],
+    },
+    {
+      label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "spark_ia_insights",
+      items: [
+        { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends" },
+        { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", intelligence: true },
+        { key: "argus_ia_insights", label: "Cross-Channel (ARGUS)", route: "/app/services/argus_ia_insights", intelligence: true },
       ],
     },
     {

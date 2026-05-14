@@ -79,6 +79,14 @@ const BusinessBingOverview = lazyNamed(() => import('../arion/pages/business/Bus
 const BusinessAppleOverview = lazyNamed(() => import('../arion/pages/business/BusinessAppleOverview'), 'BusinessAppleOverview');
 // Brand
 const BrandPage = lazyNamed(() => import('../arion/pages/BrandPage'), 'BrandPage');
+// v5.x IA Insights architecture
+const ArionIAInsightsTrendsPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsTrendsPage'), 'ArionIAInsightsTrendsPage');
+const ArionIAInsightsIntelligencePage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsIntelligencePage'), 'ArionIAInsightsIntelligencePage');
+const ArgusIAInsightsPage = lazyNamed(() => import('./argus/ArgusIAInsightsPage'), 'ArgusIAInsightsPage');
+const SparkIAInsightsTrendsPage = lazyNamed(() => import('./spark/SparkIAInsightsTrendsPage'), 'SparkIAInsightsTrendsPage');
+const SparkIAInsightsIntelligencePage = lazyNamed(() => import('./spark/SparkIAInsightsIntelligencePage'), 'SparkIAInsightsIntelligencePage');
+const OliverIAInsightsTrendsPage = lazyNamed(() => import('./oliver/OliverIAInsightsTrendsPage'), 'OliverIAInsightsTrendsPage');
+const OliverIAInsightsIntelligencePage = lazyNamed(() => import('./oliver/OliverIAInsightsIntelligencePage'), 'OliverIAInsightsIntelligencePage');
 
 // SPARK / LUMEN pages — lazy-loaded
 const SparkOverviewPage = lazyNamed(() => import('./spark/SparkOverviewPage'), 'SparkOverviewPage');
@@ -295,6 +303,9 @@ export function ServiceRouter() {
       case 'arion_business_bing_overview': arionPage = <BusinessBingOverview />; break;
       case 'arion_business_apple_overview': arionPage = <BusinessAppleOverview />; break;
       case 'arion_brand': arionPage = <BrandPage />; break;
+      // v5.x IA Insights architecture
+      case 'arion_ia_insights_trends': arionPage = <ArionIAInsightsTrendsPage />; break;
+      case 'arion_ia_insights_intelligence': arionPage = <ArionIAInsightsIntelligencePage />; break;
       case 'arion_usage': arionPage = <ArionUsagePage service={service} status={status} />; break;
       case 'arion_plugin_provisioning': arionPage = <ArionPluginProvisioningPage service={service} status={status} />; break;
       default: break;
@@ -352,10 +363,21 @@ export function ServiceRouter() {
       case 'oliver_job_costing': oliverPage = <OliverJobCostingPage />; break;
       case 'oliver_argus': oliverPage = <OliverArgusPage />; break;
       case 'oliver_payouts': oliverPage = <OliverPayoutsPage />; break;
+      // v5.x IA Insights architecture
+      case 'oliver_ia_insights_trends': oliverPage = <OliverIAInsightsTrendsPage />; break;
+      case 'oliver_ia_insights_intelligence': oliverPage = <OliverIAInsightsIntelligencePage />; break;
+      // ARGUS pages also routed via OLIVER section since ARGUS doesn't have its own section yet
+      case 'argus_ia_insights': oliverPage = <ArgusIAInsightsPage />; break;
     }
     if (oliverPage) {
       return <Suspense fallback={<RouteLoading />}>{oliverPage}</Suspense>;
     }
+  }
+
+  // ARGUS routes — handled here so the page is reachable regardless of which
+  // product section a tenant is currently inside.
+  if (service.key === 'argus_ia_insights') {
+    return <Suspense fallback={<RouteLoading />}><ArgusIAInsightsPage /></Suspense>;
   }
 
   if (service.section === 'LUMEN') {
@@ -436,6 +458,9 @@ export function ServiceRouter() {
       case 'spark_custom_fields': sparkPage = <SparkCustomFieldsPage />; break;
       case 'spark_workflow_triggers': sparkPage = <SparkWorkflowTriggersPage />; break;
       case 'spark_config_backup': sparkPage = <SparkConfigBackupPage />; break;
+      // v5.x IA Insights architecture
+      case 'spark_ia_insights_trends': sparkPage = <SparkIAInsightsTrendsPage />; break;
+      case 'spark_ia_insights_intelligence': sparkPage = <SparkIAInsightsIntelligencePage />; break;
       // Backward compat aliases for old lumen_* keys
       case 'lumen_overview': sparkPage = <SparkOverviewPage />; break;
       case 'lumen_contacts': sparkPage = <SparkContactsPage />; break;
