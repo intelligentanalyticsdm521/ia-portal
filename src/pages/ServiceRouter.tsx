@@ -148,6 +148,14 @@ const SparkCalendarSyncPage = lazyNamed(() => import('./spark/SparkCalendarSyncP
 const SparkAnomalyAlertsPage = lazyNamed(() => import('./spark/SparkAnomalyAlertsPage'), 'SparkAnomalyAlertsPage');
 const SparkTemplateI18nPage = lazyNamed(() => import('./spark/SparkTemplateI18nPage'), 'SparkTemplateI18nPage');
 const SparkContact360Page = lazyNamed(() => import('./spark/SparkContact360Page'), 'SparkContact360Page');
+const SparkContactMergePage = lazyNamed(() => import('./spark/SparkContactMergePage'), 'SparkContactMergePage');
+const SparkWebhookDeliveriesPage = lazyNamed(() => import('./spark/SparkWebhookDeliveriesPage'), 'SparkWebhookDeliveriesPage');
+const SparkSavedSearchesPage = lazyNamed(() => import('./spark/SparkSavedSearchesPage'), 'SparkSavedSearchesPage');
+const SparkQuietHoursPage = lazyNamed(() => import('./spark/SparkQuietHoursPage'), 'SparkQuietHoursPage');
+const SparkNpsSchedulesPage = lazyNamed(() => import('./spark/SparkNpsSchedulesPage'), 'SparkNpsSchedulesPage');
+const SparkCustomFieldsPage = lazyNamed(() => import('./spark/SparkCustomFieldsPage'), 'SparkCustomFieldsPage');
+const SparkWorkflowTriggersPage = lazyNamed(() => import('./spark/SparkWorkflowTriggersPage'), 'SparkWorkflowTriggersPage');
+const SparkConfigBackupPage = lazyNamed(() => import('./spark/SparkConfigBackupPage'), 'SparkConfigBackupPage');
 
 // OLIVER pages — lazy-loaded (introduced 2026-05-11)
 const OliverDashboardPage = lazyNamed(() => import('./oliver/OliverDashboardPage'), 'OliverDashboardPage');
@@ -420,6 +428,14 @@ export function ServiceRouter() {
       case 'spark_anomaly_alerts': sparkPage = <SparkAnomalyAlertsPage />; break;
       case 'spark_template_i18n': sparkPage = <SparkTemplateI18nPage />; break;
       case 'spark_contact_360': sparkPage = <SparkContact360Page />; break;
+      case 'spark_contact_merge': sparkPage = <SparkContactMergePage />; break;
+      case 'spark_webhook_deliveries': sparkPage = <SparkWebhookDeliveriesPage />; break;
+      case 'spark_saved_searches': sparkPage = <SparkSavedSearchesPage />; break;
+      case 'spark_quiet_hours': sparkPage = <SparkQuietHoursPage />; break;
+      case 'spark_nps_schedules': sparkPage = <SparkNpsSchedulesPage />; break;
+      case 'spark_custom_fields': sparkPage = <SparkCustomFieldsPage />; break;
+      case 'spark_workflow_triggers': sparkPage = <SparkWorkflowTriggersPage />; break;
+      case 'spark_config_backup': sparkPage = <SparkConfigBackupPage />; break;
       // Backward compat aliases for old lumen_* keys
       case 'lumen_overview': sparkPage = <SparkOverviewPage />; break;
       case 'lumen_contacts': sparkPage = <SparkContactsPage />; break;
