@@ -4,9 +4,14 @@
 // IA Insights "Cross-Channel" link routes here. June 1 launch: shell
 // with Business Pulse gauge + 6 cross-channel report cards rendering
 // in collecting-data states.
-import { useMemo } from "react";
+//
+// v5.12 — wired to platform-api GET /argus/business-pulse for the
+// composite cross-platform score.
+import { useEffect, useMemo, useState } from "react";
+import { useAccessToken } from "../../auth/useAccessToken";
+import { useAppState } from "../../app/AppState";
 import { IAInsightsHeader } from "../../components/iainsights/IAInsightsHeader";
-import { bandFromScore, type IAInsightsHeaderData } from "../../components/iainsights/types";
+import { bandFromScore, type IAInsightsHeaderData, type InsightDataGapBanner } from "../../components/iainsights/types";
 import { Sparkles, Lock, TrendingUp, Users, Activity, DollarSign, Repeat, BarChart3 } from "lucide-react";
 
 interface CrossChannelReport {
@@ -27,22 +32,61 @@ const CC_REPORTS: CrossChannelReport[] = [
   { key: "growth_composite", label: "Growth Composite", question: "Where is the business growing and where is it stalling across all dimensions?", icon: BarChart3, productsRequired: ["ARION", "SPARK", "OLIVER"], level: "intelligence" },
 ];
 
+interface BusinessPulse {
+  pulse: number | null;
+  previous_pulse: number | null;
+  components: { arion: number | null; spark: number | null; oliver: number | null };
+  prior_components: { arion: number | null; spark: number | null; oliver: number | null };
+  weights: { arion: number; spark: number; oliver: number };
+}
+
 export function ArgusIAInsightsPage() {
-  const headerData: IAInsightsHeaderData = useMemo(() => ({
-    product: "argus",
-    overall: { score: 0, band: "unknown", state: "insufficient_data", message: "Business Pulse populates as ARGUS receives data from active products." },
-    platform: { score: 0, band: "unknown", state: "insufficient_data" },
-    trend: { score: 0, band: "unknown", state: "insufficient_data" },
-    intelligence: { score: 0, band: "unknown", state: "insufficient_data" },
-    trendBreakdown: [
-      { key: "arion_trend", label: "ARION", score: 0, band: "unknown", locked: true, lockReason: "Connect ARION", reportRoute: "/app/services/arion_ia_insights_trends" },
-      { key: "spark_trend", label: "SPARK", score: 0, band: "unknown", locked: true, lockReason: "Connect SPARK", reportRoute: "/app/services/spark_ia_insights_trends" },
-      { key: "oliver_trend", label: "OLIVER", score: 0, band: "unknown", locked: true, lockReason: "Connect OLIVER", reportRoute: "/app/services/oliver_ia_insights_trends" },
-    ],
-    intelligenceBreakdown: CC_REPORTS.map((r) => ({ key: r.key, label: r.label, score: 0, band: "unknown" as const, locked: true, lockReason: `Requires ${r.productsRequired.join(" + ")}` })),
-    banners: [{ severity: "info", message: "ARGUS Business Pulse is the composite cross-platform score shown in every product's IA Insights header. It populates as your active products accumulate 90+ days of data." }],
-    meta: { generatedAt: new Date().toISOString(), tier: "business" },
-  }), []);
+  const { activeTenantId } = useAppState();
+  const { getToken } = useAccessToken();
+  const [pulse, setPulse] = useState<BusinessPulse | null>(null);
+  const [serverBanners, setServerBanners] = useState<InsightDataGapBanner[]>([]);
+
+  useEffect(() => {
+    if (!activeTenantId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const base = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string).replace(/\/$/, "");
+        const r = await globalThis.fetch(`${base}/argus/business-pulse`, {
+          headers: { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId },
+        });
+        if (r.ok && !cancelled) {
+          const body = await r.json();
+          setPulse(body?.data || null);
+          setServerBanners(body?.banners || []);
+        }
+      } catch { /* swallow — banners cover the gap */ }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTenantId, getToken]);
+
+  const headerData: IAInsightsHeaderData = useMemo(() => {
+    const score = pulse?.pulse ?? 0;
+    const prev = pulse?.previous_pulse ?? null;
+    const components = pulse?.components || { arion: null, spark: null, oliver: null };
+    const priorComponents = pulse?.prior_components || { arion: null, spark: null, oliver: null };
+    return {
+      product: "argus",
+      overall: { score, previousScore: prev, band: bandFromScore(score), state: pulse?.pulse != null ? "ok" : "insufficient_data", message: pulse?.pulse != null ? "Business Pulse — weighted blend across active products." : "Business Pulse populates as ARGUS receives data from active products." },
+      platform: { score, previousScore: prev, band: bandFromScore(score), state: pulse?.pulse != null ? "ok" : "insufficient_data" },
+      trend: { score, previousScore: prev, band: bandFromScore(score), state: pulse?.pulse != null ? "ok" : "insufficient_data" },
+      intelligence: { score: 0, band: "unknown", state: "insufficient_data", message: "Cross-channel intelligence reports populate ~90 days post-launch." },
+      trendBreakdown: [
+        { key: "arion_trend",  label: "ARION",  score: components.arion ?? 0,  previousScore: priorComponents.arion ?? undefined,  band: bandFromScore(components.arion ?? 0),  locked: components.arion == null,  lockReason: components.arion == null ? "Connect ARION"  : undefined, reportRoute: "/app/services/arion_ia_insights_trends" },
+        { key: "spark_trend",  label: "SPARK",  score: components.spark ?? 0,  previousScore: priorComponents.spark ?? undefined,  band: bandFromScore(components.spark ?? 0),  locked: components.spark == null,  lockReason: components.spark == null ? "SPARK Trend data not yet wired"  : undefined, reportRoute: "/app/services/spark_ia_insights_trends" },
+        { key: "oliver_trend", label: "OLIVER", score: components.oliver ?? 0, previousScore: priorComponents.oliver ?? undefined, band: bandFromScore(components.oliver ?? 0), locked: components.oliver == null, lockReason: components.oliver == null ? "OLIVER Trend data not yet wired" : undefined, reportRoute: "/app/services/oliver_ia_insights_trends" },
+      ],
+      intelligenceBreakdown: CC_REPORTS.map((r) => ({ key: r.key, label: r.label, score: 0, band: "unknown" as const, locked: true, lockReason: `Requires ${r.productsRequired.join(" + ")}` })),
+      banners: serverBanners.length > 0 ? serverBanners : [{ severity: "info", message: "ARGUS Business Pulse is the composite cross-platform score shown in every product's IA Insights header. It populates as your active products accumulate 90+ days of data." }],
+      meta: { generatedAt: new Date().toISOString(), tier: "business" },
+    };
+  }, [pulse, serverBanners]);
 
   return (
     <div className="p-4 max-w-7xl mx-auto">

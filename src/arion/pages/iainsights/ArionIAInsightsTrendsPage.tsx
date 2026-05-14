@@ -34,13 +34,64 @@ const REPORT_META: Array<{
 ];
 
 export function ArionIAInsightsTrendsPage() {
-  const { activeSiteId, selectedSite } = useArionContext();
+  const { activeSiteId, selectedSite, arionApi } = useArionContext();
   const tier = ((selectedSite?.arionTier || "standard") as "standard" | "pro" | "business");
   const { data, loading } = useAnalyticsData(activeSiteId, 90);
   const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [priorScores, setPriorScores] = useState<Record<string, number>>({});
+  const [searchData, setSearchData] = useState<any>(null);
+  const [gbpData, setGbpData] = useState<any>(null);
+  const [gbpReviews, setGbpReviews] = useState<any>(null);
+  const [gbpPosts, setGbpPosts] = useState<any>(null);
+  const [gbpQanda, setGbpQanda] = useState<any>(null);
+  const [bingData, setBingData] = useState<any>(null);
+  const [pluginData, setPluginData] = useState<any>(null);
+  const [seoData, setSeoData] = useState<any>(null);
+
+  // Pull the additional data sources the engines accept.
+  useEffect(() => {
+    if (!activeSiteId) return;
+    let cancelled = false;
+    arionApi.getSearchPerformance('google', activeSiteId, { period: 90, groupBy: 'all' })
+      .then((r: any) => { if (!cancelled) setSearchData(r); })
+      .catch(() => { if (!cancelled) setSearchData(null); });
+    Promise.all([
+      (arionApi as any).getGbpBusiness?.(activeSiteId).catch(() => null),
+      (arionApi as any).getGbpReviewsLive?.(activeSiteId).catch(() => null),
+      (arionApi as any).getGbpPostsLive?.(activeSiteId).catch(() => null),
+      (arionApi as any).getGbpQanda?.(activeSiteId).catch(() => null),
+    ]).then(([b, r, p, q]) => {
+      if (cancelled) return;
+      setGbpData(b); setGbpReviews(r); setGbpPosts(p); setGbpQanda(q);
+    });
+    (arionApi as any).getBingPerformance?.(activeSiteId, 90)
+      .then((r: any) => { if (!cancelled) setBingData(r); })
+      .catch(() => { if (!cancelled) setBingData(null); });
+    return () => { cancelled = true; };
+  }, [activeSiteId, arionApi]);
+
+  // Plugin + SE Ranking — best-effort.
+  useEffect(() => {
+    if (!activeSiteId) return;
+    let cancelled = false;
+    Promise.all([
+      (arionApi as any).getPluginWordfenceFull?.(activeSiteId).catch(() => null),
+      (arionApi as any).getPluginContentAgeDist?.(activeSiteId).catch(() => null),
+      (arionApi as any).getPluginContentWordCountDist?.(activeSiteId).catch(() => null),
+      (arionApi as any).getPagespeedHistory?.(activeSiteId).catch(() => null),
+    ]).then(([wf, age, wc, psi]) => {
+      if (cancelled) return;
+      setPluginData({
+        wfFull: (wf as any)?.data || null,
+        age: (age as any)?.data || null,
+        wordCount: (wc as any)?.data || null,
+        psi: (psi as any)?.data?.snapshots || [],
+      });
+    });
+    return () => { cancelled = true; };
+  }, [activeSiteId, arionApi]);
   const [serviceArea, setServiceArea] = useState<{ city?: string; state?: string; regions?: string[]; zips?: string[] } | undefined>(undefined);
 
   // Fetch service area once per site.
@@ -68,13 +119,18 @@ export function ArionIAInsightsTrendsPage() {
     return runAllReports({
       domain: selectedSite?.primaryDomain || undefined,
       d: data || {},
+      searchData,
+      gbpData,
+      gbpReviews,
+      gbpPosts,
+      gbpQanda,
+      bingData,
+      seoData,
+      pluginData,
       serviceArea,
-      // searchData/gbpData/seoData/pluginData not yet pulled here — they're
-      // optional inputs. Plumbing those in is a follow-up patch; engines
-      // produce useful output with GA4 alone.
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, serviceArea, selectedSite?.primaryDomain]);
+  }, [data, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, seoData, pluginData, serviceArea, selectedSite?.primaryDomain]);
 
   // Persist current scores + fetch prior period for ghost-bar comparison.
   useEffect(() => {
