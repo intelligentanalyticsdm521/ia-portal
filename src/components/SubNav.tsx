@@ -224,6 +224,7 @@ const SPARK_NAV: SubNavConfig = {
     {
       label: "",
       items: [
+        { key: "spark_onboarding", label: "Get Started", route: "/app/services/spark_onboarding" },
         { key: "spark_overview", label: "Overview", route: "/app/services/spark_overview" },
       ],
     },
@@ -288,6 +289,7 @@ const SPARK_NAV: SubNavConfig = {
       items: [
         { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals" },
         { key: "spark_scheduled_reports", label: "Scheduled Reports", route: "/app/services/spark_scheduled_reports" },
+        { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys" },
       ],
     },
     {

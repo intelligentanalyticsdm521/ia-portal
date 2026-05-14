@@ -129,6 +129,8 @@ const SparkAudienceSyncPage = lazyNamed(() => import('./spark/SparkAudienceSyncP
 const SparkJourneyBuilderPage = lazyNamed(() => import('./spark/SparkJourneyBuilderPage'), 'SparkJourneyBuilderPage');
 const SparkTrackingPage = lazyNamed(() => import('./spark/SparkTrackingPage'), 'SparkTrackingPage');
 const SparkSenderDomainsPage = lazyNamed(() => import('./spark/SparkSenderDomainsPage'), 'SparkSenderDomainsPage');
+const SparkOnboardingPage = lazyNamed(() => import('./spark/SparkOnboardingPage'), 'SparkOnboardingPage');
+const SparkApiKeysPage = lazyNamed(() => import('./spark/SparkApiKeysPage'), 'SparkApiKeysPage');
 
 // OLIVER pages — lazy-loaded (introduced 2026-05-11)
 const OliverDashboardPage = lazyNamed(() => import('./oliver/OliverDashboardPage'), 'OliverDashboardPage');
@@ -382,6 +384,8 @@ export function ServiceRouter() {
       case 'spark_journey_builder': sparkPage = <SparkJourneyBuilderPage />; break;
       case 'spark_tracking': sparkPage = <SparkTrackingPage />; break;
       case 'spark_sender_domains': sparkPage = <SparkSenderDomainsPage />; break;
+      case 'spark_onboarding': sparkPage = <SparkOnboardingPage />; break;
+      case 'spark_api_keys': sparkPage = <SparkApiKeysPage />; break;
       // Backward compat aliases for old lumen_* keys
       case 'lumen_overview': sparkPage = <SparkOverviewPage />; break;
       case 'lumen_contacts': sparkPage = <SparkContactsPage />; break;

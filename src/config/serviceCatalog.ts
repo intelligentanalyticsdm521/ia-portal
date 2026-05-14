@@ -179,6 +179,8 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_journey_builder', displayName: 'Journey Builder', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_journey_builder', description: 'Visual graph editor for branching automation journeys with yes/no edge wiring.' },
   { key: 'spark_tracking', displayName: 'Visitor Tracking', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_tracking', description: 'One-line tracking snippet for your website: visitor identification, pageview attribution, page-visit scoring triggers (Business).' },
   { key: 'spark_sender_domains', displayName: 'Sender Domains', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_sender_domains', description: 'Register + verify custom email sending domains. SPF/DKIM/DMARC wizard with DNS auto-check (Business).' },
+  { key: 'spark_onboarding', displayName: 'Get Started', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_onboarding', description: 'Guided onboarding checklist — profile, sender domain, contact import, first campaign, first automation.' },
+  { key: 'spark_api_keys', displayName: 'API Keys', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_api_keys', description: 'Issue API keys for Zapier / n8n / custom integrations. Scoped + revocable.' },
   {
     key: 'forge_integrations',
     displayName: 'Integrations',
