@@ -294,6 +294,7 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys" },
         { key: "spark_webhooks", label: "Outbound Webhooks", route: "/app/services/spark_webhooks" },
         { key: "spark_inbound_webhooks", label: "Inbound Webhooks", route: "/app/services/spark_inbound_webhooks" },
+        { key: "spark_secrets", label: "Secrets Vault", route: "/app/services/spark_secrets" },
       ],
     },
     {
@@ -312,6 +313,9 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence" },
         { key: "spark_stella", label: "STELLA Send Intelligence", route: "/app/services/spark_stella", intelligence: true },
         { key: "spark_insights", label: "Insights", route: "/app/services/spark_insights", intelligence: true },
+        { key: "spark_activity_stream", label: "Activity Stream", route: "/app/services/spark_activity_stream" },
+        { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true },
+        { key: "spark_dashboards", label: "Dashboards", route: "/app/services/spark_dashboards" },
       ],
     },
     {

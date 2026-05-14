@@ -109,6 +109,9 @@ const SparkAccountsPage = lazyNamed(() => import('./spark/SparkAccountsPage'), '
 const SparkAiWriterPage = lazyNamed(() => import('./spark/SparkAiWriterPage'), 'SparkAiWriterPage');
 // SPARK Insights
 const SparkInsightsPage = lazyNamed(() => import('./spark/SparkInsightsPage'), 'SparkInsightsPage');
+const SparkActivityStreamPage = lazyNamed(() => import('./spark/SparkActivityStreamPage'), 'SparkActivityStreamPage');
+const SparkHealthScorePage = lazyNamed(() => import('./spark/SparkHealthScorePage'), 'SparkHealthScorePage');
+const SparkDashboardsPage = lazyNamed(() => import('./spark/SparkDashboardsPage'), 'SparkDashboardsPage');
 // SPARK v1.0 additions
 const SparkApprovalsPage = lazyNamed(() => import('./spark/SparkApprovalsPage'), 'SparkApprovalsPage');
 const SparkSmsInboxPage = lazyNamed(() => import('./spark/SparkSmsInboxPage'), 'SparkSmsInboxPage');
@@ -136,6 +139,7 @@ const SparkWebhooksPage = lazyNamed(() => import('./spark/SparkWebhooksPage'), '
 const SparkSmsTemplatesPage = lazyNamed(() => import('./spark/SparkSmsTemplatesPage'), 'SparkSmsTemplatesPage');
 const SparkContactImportPage = lazyNamed(() => import('./spark/SparkContactImportPage'), 'SparkContactImportPage');
 const SparkInboundWebhooksPage = lazyNamed(() => import('./spark/SparkInboundWebhooksPage'), 'SparkInboundWebhooksPage');
+const SparkSecretsPage = lazyNamed(() => import('./spark/SparkSecretsPage'), 'SparkSecretsPage');
 
 // OLIVER pages — lazy-loaded (introduced 2026-05-11)
 const OliverDashboardPage = lazyNamed(() => import('./oliver/OliverDashboardPage'), 'OliverDashboardPage');
@@ -369,6 +373,9 @@ export function ServiceRouter() {
       case 'spark_ai_writer': sparkPage = <SparkAiWriterPage />; break;
       // Insights
       case 'spark_insights': sparkPage = <SparkInsightsPage />; break;
+      case 'spark_activity_stream': sparkPage = <SparkActivityStreamPage />; break;
+      case 'spark_health_score': sparkPage = <SparkHealthScorePage />; break;
+      case 'spark_dashboards': sparkPage = <SparkDashboardsPage />; break;
       // v1.0 additions
       case 'spark_approvals': sparkPage = <SparkApprovalsPage />; break;
       case 'spark_sms_inbox': sparkPage = <SparkSmsInboxPage />; break;
@@ -396,6 +403,7 @@ export function ServiceRouter() {
       case 'spark_sms_templates': sparkPage = <SparkSmsTemplatesPage />; break;
       case 'spark_contact_import': sparkPage = <SparkContactImportPage />; break;
       case 'spark_inbound_webhooks': sparkPage = <SparkInboundWebhooksPage />; break;
+      case 'spark_secrets': sparkPage = <SparkSecretsPage />; break;
       // Backward compat aliases for old lumen_* keys
       case 'lumen_overview': sparkPage = <SparkOverviewPage />; break;
       case 'lumen_contacts': sparkPage = <SparkContactsPage />; break;

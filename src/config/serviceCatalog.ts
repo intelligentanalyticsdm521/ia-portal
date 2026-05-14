@@ -159,6 +159,9 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_ai_writer', displayName: 'AI Writer', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_ai_writer', description: 'Anthropic-powered marketing copy assistant (Business).' },
   // Cross-channel
   { key: 'spark_insights', displayName: 'Insights', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_insights', description: 'Cross-channel SPARK insights — 7 categories with ARGUS observation boxes.' },
+  { key: 'spark_activity_stream', displayName: 'Activity Stream', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_activity_stream', description: 'Unified contact activity timeline across SPARK, OLIVER, and ARION with filterable feed and 30-day summary.' },
+  { key: 'spark_health_score', displayName: 'Health Score', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_health_score', description: 'Customer health score 0-100 from engagement, recency, tenure, behavioral score, and negative signals. Distribution + per-contact breakdown.' },
+  { key: 'spark_dashboards', displayName: 'Dashboards', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_dashboards', description: 'Saved widget layouts you can return to. Pin a default; share with the whole tenant.' },
   // v1.0 additions — shared platform + Business-tier admin
   { key: 'spark_approvals', displayName: 'Approvals', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_approvals', description: 'Business-tier approval workflow queue (campaigns, posts, large sends).' },
   { key: 'spark_sms_inbox', displayName: 'SMS Inbox', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_sms_inbox', description: '2-way SMS inbox — replies from shared IADM toll-free number, with auto-STOP handling.' },
@@ -186,6 +189,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_sms_templates', displayName: 'SMS Templates', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_sms_templates', description: 'Reusable SMS templates with {{vars}}. System templates (review request, appointment reminder, etc.) included.' },
   { key: 'spark_contact_import', displayName: 'Import Contacts', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_contact_import', description: '4-step CSV import wizard: upload, map columns, preview, commit with optional list + tags.' },
   { key: 'spark_inbound_webhooks', displayName: 'Inbound Webhooks', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_inbound_webhooks', description: 'Publish URLs that accept inbound POSTs (Stripe, Typeform, Zapier) and auto-create/merge contacts or fire events.' },
+  { key: 'spark_secrets', displayName: 'Secrets Vault', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_secrets', description: 'AES-256-GCM encrypted vault for tenant-supplied API tokens. Reveal is audit-logged.' },
   {
     key: 'forge_integrations',
     displayName: 'Integrations',
