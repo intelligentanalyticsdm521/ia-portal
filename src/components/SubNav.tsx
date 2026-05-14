@@ -124,7 +124,7 @@ const OLIVER_NAV: SubNavConfig = {
         { key: "oliver_ia_insights_health", label: "Health", route: "/app/services/oliver_ia_insights_health" },
         { key: "oliver_ia_insights_trends", label: "Trends", route: "/app/services/oliver_ia_insights_trends", tag: { label: "OLIVER", color: "#FEC82C" } },
         { key: "oliver_ia_insights_intelligence", label: "Intelligence", route: "/app/services/oliver_ia_insights_intelligence", tag: { label: "OLIVER", color: "#FEC82C" } },
-        { key: "argus_ia_insights", label: "Cross-Channel", route: "/app/services/argus_ia_insights", tag: { label: "ARGUS", color: "#84CC16" } },
+        { key: "argus_cross_channel", label: "Cross-Channel", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
       ],
     },
     {
@@ -201,7 +201,7 @@ const ARION_NAV: SubNavConfig = {
         { key: "arion_ia_insights_health", label: "Health", route: "/app/services/arion_ia_insights_health" },
         { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends", tag: { label: "ARION", color: "#1A7DB5" } },
         { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#1A7DB5" } },
-        { key: "argus_ia_insights", label: "Cross-Channel", route: "/app/services/argus_ia_insights", tag: { label: "ARGUS", color: "#84CC16" } },
+        { key: "argus_cross_channel", label: "Cross-Channel", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
         { key: "arion_service_area", label: "Service Area Config", route: "/app/services/arion_service_area" },
       ],
     },
@@ -361,7 +361,7 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends", tag: { label: "SPARK", color: "#EF6C33" } },
         { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" } },
         { key: "spark_stella", label: "STELLA Send Intelligence", route: "/app/services/spark_stella", tag: { label: "STELLA", color: "#EF6C33" } },
-        { key: "argus_ia_insights", label: "Cross-Channel", route: "/app/services/argus_ia_insights", tag: { label: "ARGUS", color: "#84CC16" } },
+        { key: "argus_cross_channel", label: "Cross-Channel", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
         { key: "spark_service_category", label: "Service Category", route: "/app/services/spark_service_category" },
       ],
     },
@@ -459,6 +459,29 @@ const PLACEHOLDER_NAV = (name: string, tagline: string): SubNavConfig => ({
   ],
 });
 
+// v9.1 — ARGUS as full product per spec §2 + §6. Single IA Insights group
+// with 4 sub-items: Health, Trends, Intelligence, Cross-Channel.
+const ARGUS_NAV: SubNavConfig = {
+  productName: "ARGUS",
+  tagline: "Cross-Channel Intelligence",
+  groups: [
+    {
+      label: "",
+      items: [
+        { key: "argus_health", label: "Health", route: "/app/services/argus_health" },
+      ],
+    },
+    {
+      label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "argus_ia_insights",
+      items: [
+        { key: "argus_trends",        label: "Trends",        route: "/app/services/argus_trends" },
+        { key: "argus_intelligence",  label: "Intelligence",  route: "/app/services/argus_intelligence", tag: { label: "ARGUS", color: "#84CC16" } },
+        { key: "argus_cross_channel", label: "Cross-Channel", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
+      ],
+    },
+  ],
+};
+
 export const SUB_NAV_CONFIGS: Record<ProductKey, SubNavConfig | null> = {
   overview: null, // overview uses the flat Overview page, no sub-nav
   arion: ARION_NAV,
@@ -467,7 +490,7 @@ export const SUB_NAV_CONFIGS: Record<ProductKey, SubNavConfig | null> = {
   consulting: CONSULTING_NAV,
   stella: PLACEHOLDER_NAV("STELLA", "Reporting & BI"),
   forge: PLACEHOLDER_NAV("FORGE", "Integrations"),
-  argus: PLACEHOLDER_NAV("ARGUS", "Orchestration"),
+  argus: ARGUS_NAV,
 };
 
 // ── Component ────────────────────────────────────────────────
