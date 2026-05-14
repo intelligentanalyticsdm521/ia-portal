@@ -16,6 +16,7 @@ import { MonthlyScoreBars } from "./MonthlyScoreBars";
 import { ArgusObservationsBox } from "./ArgusObservationsBox";
 import { evaluateRules, type InsightRule } from "./insightRules";
 import { SPARK_CONTACT_HEALTH_RULES } from "./sparkContactHealthRules";
+import { SPARK_LEAD_PIPELINE_RULES } from "./sparkLeadPipelineRules";
 
 interface SparkReportAnalysis {
   score: number;
@@ -50,7 +51,7 @@ interface Props {
 /** Per-report rule-library lookup. As each library is built, add it here. */
 const SPARK_RULES_BY_REPORT: Record<string, InsightRule[] | undefined> = {
   contact_health: SPARK_CONTACT_HEALTH_RULES,
-  // lead_pipeline:    SPARK_LEAD_PIPELINE_RULES   (next commit)
+  lead_pipeline:  SPARK_LEAD_PIPELINE_RULES,
   // campaign_perf:    SPARK_CAMPAIGN_PERF_RULES   (next commit)
   // marketing_attrib: SPARK_MARKETING_ATTRIB_RULES
   // segmentation:     SPARK_SEGMENTATION_RULES
@@ -181,10 +182,138 @@ function renderSparkBody(reportKey: string, inputs: any, report: SparkReportAnal
   switch (reportKey) {
     case "contact_health":
       return <ContactHealthBody inputs={inputs} />;
+    case "lead_pipeline":
+      return <LeadPipelineBody inputs={inputs} />;
     default:
       // Fallback: surface engine's scoreInputs as basic KPI tiles.
       return <GenericBody report={report} />;
   }
+}
+
+// ── Lead Pipeline rich body ──────────────────────────────────────────
+function LeadPipelineBody({ inputs }: { inputs: any }) {
+  const funnel = inputs?.lead_funnel || [];
+  const byStatus: Record<string, number> = Object.fromEntries(funnel.map((r: any) => [r.status, Number(r.n || 0)]));
+  const total = funnel.reduce((s: number, r: any) => s + Number(r.n || 0), 0);
+  const newLeads = (Number(byStatus.new || 0)) + (Number(byStatus.open || 0));
+  const qualified = Number(byStatus.qualified || 0);
+  const proposal = Number(byStatus.proposal_sent || byStatus.proposal || 0);
+  const won = Number(byStatus.won || byStatus.converted || 0);
+  const lost = Number(byStatus.lost || byStatus.disqualified || 0);
+  const decisions = won + lost;
+  const winRate = decisions > 0 ? (won / decisions) * 100 : 0;
+  const qualRate = newLeads > 0 ? (qualified / newLeads) * 100 : 0;
+  const days = Number(inputs?.period_days || 30);
+
+  // Funnel stages, in order
+  const stages: Array<{ label: string; count: number; color: string }> = [
+    { label: "New / Open", count: newLeads, color: "#94A3B8" },
+    { label: "Contacted", count: Number(byStatus.contacted || 0), color: "#1A7DB5" },
+    { label: "Qualified", count: qualified, color: "#0E78A0" },
+    { label: "Proposal", count: proposal, color: "#EAB308" },
+    { label: "Won", count: won, color: "#16A34A" },
+    { label: "Lost", count: lost, color: "#DC2626" },
+  ];
+  const maxStage = Math.max(1, ...stages.map((s) => s.count));
+
+  return (
+    <>
+      {/* Hero callout */}
+      {total === 0 ? (
+        <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-amber-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">
+            No leads in the pipeline this period. Either no forms are mapping to lead creation, or every visitor is landing directly in your contact database without a qualifying lead stage. Inspect form-mapping + inbound-webhook deliveries.
+          </p>
+        </div>
+      ) : winRate < 25 && decisions >= 5 ? (
+        <div className="rounded-md border-l-4 border-rose-400 bg-rose-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-rose-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">
+            Win rate is <strong>{winRate.toFixed(0)}%</strong> ({won} won of {decisions} decisions) — below the 25% floor most service businesses see. Either lead quality is weak, response time is too slow, or your discovery process isn't surfacing fit issues before quoting.
+          </p>
+        </div>
+      ) : qualRate < 40 && newLeads >= 10 ? (
+        <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-amber-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">
+            Only <strong>{qualRate.toFixed(0)}%</strong> of new leads make it to qualified — the biggest funnel leak is at lead → qualification. Auto-assign new leads and require a same-day response SLA to compress this stage.
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-md border-l-4 border-emerald-400 bg-emerald-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase text-emerald-800 tracking-wide mb-1">The insight</div>
+          <p className="text-sm text-slate-800 leading-relaxed">
+            Pipeline this period: <strong>{fmtN(total)} leads</strong> · {qualified} qualified · {won} won{decisions > 0 ? ` (${winRate.toFixed(0)}% win rate)` : ""}. The funnel is moving — focus optimisation on whichever stage is dragging your composite score.
+          </p>
+        </div>
+      )}
+
+      {/* KPI tiles */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Kpi label={`Leads (${days}d)`} value={fmtN(total)} sub={`${(total / Math.max(days, 1)).toFixed(1)}/day`} accent="#EF6C33" />
+        <Kpi label="Win Rate" value={decisions > 0 ? `${winRate.toFixed(0)}%` : "—"} sub={`${won} won of ${decisions} decisions`} accent={winRate >= 35 ? "#16A34A" : winRate >= 20 ? "#EAB308" : "#DC2626"} />
+        <Kpi label="Qualification Rate" value={newLeads > 0 ? `${qualRate.toFixed(0)}%` : "—"} sub={`${qualified} qual of ${newLeads} new`} accent={qualRate >= 50 ? "#16A34A" : qualRate >= 30 ? "#EAB308" : "#DC2626"} />
+        <Kpi label="Loss Share" value={total > 0 ? `${((lost / total) * 100).toFixed(0)}%` : "—"} sub={`${lost} of ${total} marked lost`} accent={(lost / Math.max(total, 1)) < 0.2 ? "#16A34A" : (lost / Math.max(total, 1)) < 0.35 ? "#EAB308" : "#DC2626"} />
+      </div>
+
+      {/* Funnel stage visualization */}
+      <div>
+        <h3 className="text-sm font-bold text-slate-900 mb-2">Funnel by stage</h3>
+        <div className="space-y-2">
+          {stages.map((s, i) => {
+            const widthPct = (s.count / maxStage) * 100;
+            const sharePct = total > 0 ? Math.round((s.count / total) * 100) : 0;
+            return (
+              <div key={i} className="flex items-center gap-3">
+                <div className="w-28 text-xs font-medium text-slate-700 flex-shrink-0">{s.label}</div>
+                <div className="flex-1 h-6 rounded bg-slate-100 overflow-hidden relative">
+                  <div className="h-full rounded transition-all" style={{ width: `${widthPct}%`, background: s.color }} />
+                  <div className="absolute inset-0 flex items-center px-2 text-[10px] font-semibold text-slate-700">
+                    {s.count > 0 && <span>{fmtN(s.count)} · {sharePct}%</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Sources (if any) */}
+      {Array.isArray(inputs?.top_sources) && inputs.top_sources.length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-slate-900 mb-2">Lead sources</h3>
+          <div className="rounded-md border border-slate-200 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="text-left px-3 py-2 font-semibold text-slate-600">Source</th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-600">Volume</th>
+                  <th className="text-right px-3 py-2 font-semibold text-slate-600">Active rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {inputs.top_sources.slice(0, 8).map((s: any, i: number) => {
+                  const n = Number(s.n || 0);
+                  const act = Number(s.active_count || 0);
+                  const rate = n > 0 ? (act / n) * 100 : 0;
+                  return (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-2 text-slate-900">{s.source || "(unknown)"}</td>
+                      <td className="px-3 py-2 text-right text-slate-700 tabular-nums">{fmtN(n)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums" style={{ color: rate >= 70 ? "#16A34A" : rate >= 40 ? "#EAB308" : "#DC2626" }}>
+                        {rate.toFixed(0)}%
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 // ── Contact Health rich body ─────────────────────────────────────────
