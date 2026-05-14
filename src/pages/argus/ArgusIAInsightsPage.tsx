@@ -46,12 +46,22 @@ interface WebToRevenue {
   present_stages: number;
 }
 
+interface MarketingOpsLoop {
+  stages: Array<{ key: string; label: string; score: number | null; side: "marketing" | "operations" }>;
+  marketing_avg: number | null;
+  operations_avg: number | null;
+  gap: number | null;
+  loop_efficiency: number | null;
+  advisory: string | null;
+}
+
 export function ArgusIAInsightsPage() {
   const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
   const [pulse, setPulse] = useState<BusinessPulse | null>(null);
   const [serverBanners, setServerBanners] = useState<InsightDataGapBanner[]>([]);
   const [webToRevenue, setWebToRevenue] = useState<WebToRevenue | null>(null);
+  const [marketingOps, setMarketingOps] = useState<MarketingOpsLoop | null>(null);
 
   useEffect(() => {
     if (!activeTenantId) return;
@@ -69,16 +79,22 @@ export function ArgusIAInsightsPage() {
           setServerBanners(body?.banners || []);
         }
       } catch { /* swallow — banners cover the gap */ }
-      // Also fetch the Trends-level Web-to-Revenue funnel.
+      // Also fetch the Trends-level cross-channel reports.
       try {
         const token = await getToken();
         const base = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string).replace(/\/$/, "");
-        const r2 = await globalThis.fetch(`${base}/argus/cross-channel/web-to-revenue`, {
-          headers: { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId },
-        });
+        const headers = { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId };
+        const [r2, r3] = await Promise.all([
+          globalThis.fetch(`${base}/argus/cross-channel/web-to-revenue`, { headers }),
+          globalThis.fetch(`${base}/argus/cross-channel/marketing-ops-loop`, { headers }),
+        ]);
         if (r2.ok && !cancelled) {
           const body = await r2.json();
           setWebToRevenue(body?.data || null);
+        }
+        if (r3.ok && !cancelled) {
+          const body = await r3.json();
+          setMarketingOps(body?.data || null);
         }
       } catch { /* swallow */ }
     })();
@@ -119,6 +135,8 @@ export function ArgusIAInsightsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {CC_REPORTS.map((r) => r.key === "web_to_revenue"
           ? <WebToRevenueCard key={r.key} report={r} data={webToRevenue} />
+          : r.key === "marketing_ops_loop"
+          ? <MarketingOpsLoopCard key={r.key} report={r} data={marketingOps} />
           : <CrossChannelCard key={r.key} report={r} />
         )}
       </div>
@@ -201,6 +219,86 @@ function WebToRevenueCard({ report, data }: { report: CrossChannelReport; data: 
           Weakest funnel stage: <strong>{data.weakest_link.label}</strong> ({data.weakest_link.score}/100). Fix this stage first to compound improvements through every downstream step.
         </div>
       )}
+    </div>
+  );
+}
+
+function MarketingOpsLoopCard({ report, data }: { report: CrossChannelReport; data: MarketingOpsLoop | null }) {
+  const Icon = report.icon;
+  const hasData = data && data.stages.some((s) => s.score != null);
+  if (!hasData) {
+    return <CrossChannelCard report={report} />;
+  }
+  const marketing = data!.stages.filter((s) => s.side === "marketing");
+  const operations = data!.stages.filter((s) => s.side === "operations");
+  const gap = data!.gap;
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex items-start gap-2 mb-3">
+        <div className="flex-shrink-0 h-9 w-9 rounded-full flex items-center justify-center bg-emerald-50 text-emerald-700">
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-sm text-slate-900">{report.label}</span>
+            <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">live</span>
+          </div>
+          <div className="text-[10px] text-slate-500">{report.question}</div>
+        </div>
+        {data?.loop_efficiency != null && (
+          <div className="flex-shrink-0 text-right">
+            <div className="text-[9px] uppercase font-semibold tracking-wide text-slate-500">Loop</div>
+            <div className="font-bold tabular-nums text-base" style={{ color: data.loop_efficiency >= 70 ? "#16A34A" : data.loop_efficiency >= 50 ? "#EAB308" : "#DC2626" }}>
+              {data.loop_efficiency}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mb-2">
+        <div>
+          <div className="text-[9px] uppercase font-semibold tracking-wide text-slate-500 mb-1">Marketing (SPARK)</div>
+          {marketing.map((s) => (
+            <ScoreRow key={s.key} label={s.label} score={s.score} />
+          ))}
+          {data?.marketing_avg != null && (
+            <div className="text-[10px] text-slate-700 mt-1">Avg: <strong>{data.marketing_avg}</strong></div>
+          )}
+        </div>
+        <div>
+          <div className="text-[9px] uppercase font-semibold tracking-wide text-slate-500 mb-1">Operations (OLIVER)</div>
+          {operations.map((s) => (
+            <ScoreRow key={s.key} label={s.label} score={s.score} />
+          ))}
+          {data?.operations_avg != null && (
+            <div className="text-[10px] text-slate-700 mt-1">Avg: <strong>{data.operations_avg}</strong></div>
+          )}
+        </div>
+      </div>
+
+      {gap != null && (
+        <div className="rounded bg-slate-50 border border-slate-200 px-2 py-1.5 text-[10px] text-slate-700">
+          Gap: <strong className={Math.abs(gap) > 15 ? "text-amber-700" : "text-emerald-700"}>
+            {gap > 0 ? `+${gap}` : gap} pts
+          </strong> ({gap > 0 ? "marketing > operations" : gap < 0 ? "operations > marketing" : "balanced"}).
+          {data?.advisory && <div className="mt-1 text-slate-600">{data.advisory}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScoreRow({ label, score }: { label: string; score: number | null }) {
+  const color = score == null ? "#94A3B8" : score >= 70 ? "#16A34A" : score >= 50 ? "#EAB308" : "#DC2626";
+  return (
+    <div className="text-[10px] mb-0.5">
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-slate-700 truncate">{label}</span>
+        <span className="tabular-nums" style={{ color }}>{score ?? "—"}</span>
+      </div>
+      <div className="h-1 w-full rounded-full bg-slate-100 overflow-hidden">
+        <div className="h-full rounded-full" style={{ width: `${score == null ? 0 : Math.max(5, score)}%`, background: color }} />
+      </div>
     </div>
   );
 }

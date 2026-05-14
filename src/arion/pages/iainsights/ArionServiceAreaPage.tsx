@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useArionContext } from "../../useArionContext";
 import { useAccessToken } from "../../../auth/useAccessToken";
 import { useAppState } from "../../../app/AppState";
-import { MapPin, Save, Check, Trash2 } from "lucide-react";
+import { MapPin, Save, Check, Trash2, Briefcase } from "lucide-react";
 
 interface ServiceArea {
   city?: string;
@@ -17,11 +17,20 @@ interface ServiceArea {
   zips?: string[];
 }
 
+const SERVICE_CATEGORIES: Array<{ value: string; label: string; description: string }> = [
+  { value: "home_services", label: "Home Services", description: "Plumbing, HVAC, roofing, landscaping, cleaning, etc." },
+  { value: "legal", label: "Legal Services", description: "Law firms, attorneys, paralegal services." },
+  { value: "health", label: "Healthcare", description: "Dental, chiropractic, physical therapy, clinics." },
+  { value: "b2b", label: "B2B Services", description: "SaaS, professional services, consulting." },
+  { value: "default", label: "Generic / Other", description: "Use generic baseline benchmarks." },
+];
+
 export function ArionServiceAreaPage() {
   const { activeSiteId } = useArionContext();
   const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
   const [form, setForm] = useState<ServiceArea>({ city: "", state: "", regions: [], zips: [] });
+  const [serviceCategory, setServiceCategory] = useState<string>("home_services");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -43,6 +52,7 @@ export function ArionServiceAreaPage() {
         setForm(cur);
         setRegionsInput((cur.regions || []).join(", "));
         setZipsInput((cur.zips || []).join(", "));
+        if (body?.service_category) setServiceCategory(body.service_category);
       }
     } catch { /* swallow */ }
     finally { setLoading(false); }
@@ -63,6 +73,7 @@ export function ArionServiceAreaPage() {
           regions: regionsInput.split(/[,;]/).map((s) => s.trim()).filter(Boolean),
           zips: zipsInput.split(/[,;\s]/).map((s) => s.trim()).filter(Boolean),
         },
+        serviceCategory,
       };
       const r = await globalThis.fetch(`${base}/arion/ia-insights/service-area`, {
         method: "PUT",
@@ -108,6 +119,25 @@ export function ArionServiceAreaPage() {
         <p className="text-sm text-slate-500 mt-1">
           Where your business actually serves customers. The Visibility &amp; Reach trend engine uses this to flag traffic from outside your service area — that traffic doesn't convert for a local service business, so its presence inflates impression counts without contributing real opportunity.
         </p>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-4 mb-3">
+        <div className="flex items-center gap-2 mb-2">
+          <Briefcase className="h-4 w-4 text-[#1A7DB5]" />
+          <h2 className="text-sm font-bold text-slate-900">Service Category</h2>
+        </div>
+        <p className="text-xs text-slate-500 mb-2">Drives which industry benchmarks the IA Insights engines compare your performance against (e.g. typical impression-to-visit %, mobile share, form-conversion rate).</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+          {SERVICE_CATEGORIES.map((c) => (
+            <label key={c.value} className={`flex items-start gap-2 cursor-pointer rounded border p-2 text-xs ${serviceCategory === c.value ? "border-[#1A7DB5] bg-blue-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+              <input type="radio" name="service_category" value={c.value} checked={serviceCategory === c.value} onChange={() => setServiceCategory(c.value)} className="mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-slate-900">{c.label}</div>
+                <div className="text-[10px] text-slate-500">{c.description}</div>
+              </div>
+            </label>
+          ))}
+        </div>
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">

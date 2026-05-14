@@ -14,6 +14,7 @@ import { runAllReports, type AllReportScores, type ReportAnalysis } from "../../
 import { IAInsightsHeader } from "../../../components/iainsights/IAInsightsHeader";
 import { bandFromScore, type IAInsightsHeaderData } from "../../../components/iainsights/types";
 import { Eye, Users, Target, Search as SearchIcon, FileText, MapPin, ShieldCheck, Award, ChevronDown, ChevronUp, Lock } from "lucide-react";
+import { Sparkline } from "../../../components/iainsights/Sparkline";
 
 const REPORT_META: Array<{
   key: keyof AllReportScores;
@@ -50,6 +51,8 @@ export function ArionIAInsightsTrendsPage() {
   const [pluginData, setPluginData] = useState<any>(null);
   const [seoData, setSeoData] = useState<any>(null);
   const [benchmarks, setBenchmarks] = useState<Record<string, number>>({});
+  const [scoreHistories, setScoreHistories] = useState<Record<string, Array<{ period_end: string; score: number }>>>({});
+  const [serviceCategory, setServiceCategory] = useState<string>("home_services");
 
   // Pull the additional data sources the engines accept.
   useEffect(() => {
@@ -95,17 +98,15 @@ export function ArionIAInsightsTrendsPage() {
   }, [activeSiteId, arionApi]);
   const [serviceArea, setServiceArea] = useState<{ city?: string; state?: string; regions?: string[]; zips?: string[] } | undefined>(undefined);
 
-  // Fetch industry benchmarks once. Service category defaults to home_services
-  // for now — future patch reads the tenant's actual service_category attribute.
+  // Fetch industry benchmarks once we know the site's service category.
   useEffect(() => {
-    if (!activeTenantId) return;
+    if (!activeTenantId || !serviceCategory) return;
     let cancelled = false;
     (async () => {
       try {
         const token = await getToken();
         const baseUrl = import.meta.env.VITE_ARION_API_BASE_URL as string;
-        const category = "home_services";  // TODO: derive from tenant config
-        const r = await globalThis.fetch(`${baseUrl}/arion/ia-insights/benchmarks?category=${encodeURIComponent(category)}`, {
+        const r = await globalThis.fetch(`${baseUrl}/arion/ia-insights/benchmarks?category=${encodeURIComponent(serviceCategory)}`, {
           headers: { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId },
         });
         if (r.ok && !cancelled) {
@@ -121,7 +122,7 @@ export function ArionIAInsightsTrendsPage() {
       } catch { /* swallow */ }
     })();
     return () => { cancelled = true; };
-  }, [activeTenantId, getToken]);
+  }, [activeTenantId, getToken, serviceCategory]);
 
   // Fetch service area once per site.
   useEffect(() => {
@@ -137,6 +138,7 @@ export function ArionIAInsightsTrendsPage() {
         if (r.ok && !cancelled) {
           const body = await r.json();
           setServiceArea(body?.data || undefined);
+          if (body?.service_category) setServiceCategory(body.service_category);
         }
       } catch { /* swallow */ }
     })();
@@ -161,6 +163,31 @@ export function ArionIAInsightsTrendsPage() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, seoData, pluginData, serviceArea, benchmarks, selectedSite?.primaryDomain]);
+
+  // Fetch 12-period score history per report once we have a site context.
+  // Used by the inline sparklines on each report card.
+  useEffect(() => {
+    if (!activeSiteId || !activeTenantId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const baseUrl = import.meta.env.VITE_ARION_API_BASE_URL as string;
+        const headers = { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId };
+        const keys = ["visibility", "audience", "conversion", "search", "content", "local", "technical", "presence"];
+        const results = await Promise.all(keys.map((k) =>
+          globalThis.fetch(`${baseUrl}/arion/ia-insights/score-history?siteId=${encodeURIComponent(activeSiteId)}&reportKey=${k}&limit=12`, { headers })
+            .then(async (r) => r.ok ? { k, rows: ((await r.json()).data || []) as Array<{ period_end: string; score: number }> } : { k, rows: [] })
+            .catch(() => ({ k, rows: [] }))
+        ));
+        if (cancelled) return;
+        const map: Record<string, Array<{ period_end: string; score: number }>> = {};
+        for (const { k, rows } of results) map[k] = rows;
+        setScoreHistories(map);
+      } catch { /* swallow */ }
+    })();
+    return () => { cancelled = true; };
+  }, [activeSiteId, activeTenantId, getToken]);
 
   // Persist current scores + fetch prior period for ghost-bar comparison.
   useEffect(() => {
@@ -291,6 +318,7 @@ export function ArionIAInsightsTrendsPage() {
               key={m.key}
               meta={m}
               report={report}
+              history={scoreHistories[m.key] || []}
               expanded={isExpanded}
               onToggle={() => setExpanded((curr) => ({ ...curr, [m.key]: !curr[m.key] }))}
             />
@@ -304,11 +332,13 @@ export function ArionIAInsightsTrendsPage() {
 function ReportCard({
   meta,
   report,
+  history,
   expanded,
   onToggle,
 }: {
   meta: { key: string; label: string; question: string; icon: typeof Eye; weight: number };
   report: ReportAnalysis;
+  history: Array<{ period_end: string; score: number }>;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -330,6 +360,7 @@ function ReportCard({
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            <Sparkline data={history} color={bandColor} width={88} height={28} />
             <div className="font-bold tabular-nums text-lg" style={{ color: bandColor }}>{report.score}</div>
             {expanded ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
           </div>

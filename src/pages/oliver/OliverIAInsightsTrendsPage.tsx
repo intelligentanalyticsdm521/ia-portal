@@ -8,6 +8,7 @@ import { IAInsightsHeader } from "../../components/iainsights/IAInsightsHeader";
 import { bandFromScore, type IAInsightsHeaderData } from "../../components/iainsights/types";
 import { runAllOliverReports, type AllOliverReports, type ReportAnalysis, type OliverEngineInput } from "../../oliver/analytics/oliverTrendEngines";
 import { Wrench, DollarSign, BarChart3, Briefcase, UserCheck, Users, Layers, Sun, ChevronDown, ChevronUp, Award } from "lucide-react";
+import { Sparkline } from "../../components/iainsights/Sparkline";
 
 const REPORT_META: Array<{ key: keyof AllOliverReports; label: string; question: string; icon: typeof Wrench; weight: number }> = [
   { key: "ops_health",     label: "Operations Health",         question: "Are jobs being completed efficiently and on time?",                icon: Wrench,    weight: 0.18 },
@@ -27,6 +28,7 @@ export function OliverIAInsightsTrendsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [priorScores, setPriorScores] = useState<Record<string, number>>({});
+  const [scoreHistories, setScoreHistories] = useState<Record<string, Array<{ period_end: string; score: number }>>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const fetchInputs = useCallback(async () => {
@@ -45,7 +47,7 @@ export function OliverIAInsightsTrendsPage() {
     return runAllOliverReports(inputs);
   }, [inputs]);
 
-  // Persist current + fetch prior period
+  // Persist current + fetch prior period + score histories
   useEffect(() => {
     if (!reports || !inputs) return;
     let cancelled = false;
@@ -53,9 +55,8 @@ export function OliverIAInsightsTrendsPage() {
       const periodEnd = new Date().toISOString().slice(0, 10);
       const periodStart = new Date(Date.now() - inputs.period_days * 86400_000).toISOString().slice(0, 10);
       const scoresMap: Record<string, number> = {};
-      for (const k of ["ops_health", "revenue_perf", "cash_flow", "quote_win_rate", "retention", "crew_capacity", "service_line", "seasonal", "presence"] as const) {
-        scoresMap[k] = reports[k].score;
-      }
+      const keys = ["ops_health", "revenue_perf", "cash_flow", "quote_win_rate", "retention", "crew_capacity", "service_line", "seasonal", "presence"] as const;
+      for (const k of keys) scoresMap[k] = reports[k].score;
       try {
         await post("/api/v1/ia-insights/scores?product=oliver", { periodStart, periodEnd, scores: scoresMap });
       } catch { /* swallow */ }
@@ -65,6 +66,18 @@ export function OliverIAInsightsTrendsPage() {
           const prior: Record<string, number> = {};
           for (const [k, v] of Object.entries(r.data)) if (v?.score != null) prior[k] = v.score;
           setPriorScores(prior);
+        }
+      } catch { /* swallow */ }
+      try {
+        const results = await Promise.all(keys.map((k) =>
+          get<{ data: Array<{ period_end: string; score: number }> }>(`/api/v1/ia-insights/score-history?product=oliver&reportKey=${k}&limit=12`)
+            .then((r) => ({ k, rows: r?.data || [] }))
+            .catch(() => ({ k, rows: [] }))
+        ));
+        if (!cancelled) {
+          const map: Record<string, Array<{ period_end: string; score: number }>> = {};
+          for (const { k, rows } of results) map[k] = rows;
+          setScoreHistories(map);
         }
       } catch { /* swallow */ }
     })();
@@ -110,7 +123,7 @@ export function OliverIAInsightsTrendsPage() {
         {REPORT_META.map((m) => {
           const report = reports?.[m.key];
           if (!report) return null;
-          return <ReportCard key={m.key} meta={m} report={report} expanded={!!expanded[m.key]} onToggle={() => setExpanded((c) => ({ ...c, [m.key]: !c[m.key] }))} />;
+          return <ReportCard key={m.key} meta={m} report={report} history={scoreHistories[m.key as string] || []} expanded={!!expanded[m.key]} onToggle={() => setExpanded((c) => ({ ...c, [m.key]: !c[m.key] }))} />;
         })}
       </div>
     </div>
@@ -118,10 +131,11 @@ export function OliverIAInsightsTrendsPage() {
 }
 
 function ReportCard({
-  meta, report, expanded, onToggle,
+  meta, report, history, expanded, onToggle,
 }: {
   meta: { key: string; label: string; question: string; icon: typeof Wrench; weight: number };
   report: ReportAnalysis;
+  history: Array<{ period_end: string; score: number }>;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -140,6 +154,7 @@ function ReportCard({
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            <Sparkline data={history} color={bandColor} width={88} height={28} />
             <div className="font-bold tabular-nums text-lg" style={{ color: bandColor }}>{report.score}</div>
             {expanded ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
           </div>
