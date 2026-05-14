@@ -19,6 +19,12 @@ import { useArionContext } from '../../useArionContext';
 import { useAnalyticsData } from '../../analytics/useAnalyticsData';
 import { ARION_COLORS, ARION_PALETTE, CHART_FILLS, formatNumber, formatPct, formatDuration, bounceColor } from '../../analytics/chartConfig';
 import { ConsultingUpsell } from '../../components/Ui';
+// v7.6 — Rule-library system for IA Insights observations. Visibility &
+// Reach has been migrated to the library (26 conditional rules); other
+// reports still use the hardcoded short list below until their libraries
+// are built out.
+import { evaluateRules } from '../../../components/iainsights/insightRules';
+import { VISIBILITY_RULES } from '../../../components/iainsights/arionVisibilityRules';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip);
 
@@ -162,26 +168,32 @@ export function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpRe
     ? Number((desktop.ctr - mobile.ctr).toFixed(2))
     : 0;
 
+  // v7.6 — Visibility & Reach now uses the 26-rule conditional library.
+  // Every rule's appliesWhen() is data-driven; the library returns 0-8
+  // observations + 0-5 actions ranked by priority, based on what data
+  // sources are connected and what conditions they meet.
+  const visibilityCtx = {
+    ga4: d,
+    gsc: searchData,
+    gbp: gbpData,
+    gbpReviews,
+    gbpPosts,
+    gbpQanda,
+    bing: bingData,
+    seo: seoData,
+    seoDecay: seoDecayData,
+    plugin: pluginData,
+    domain,
+  };
+  const visibilityFired = evaluateRules(VISIBILITY_RULES, visibilityCtx, {
+    maxObservations: 8,
+    maxActions: 5,
+  });
+
   const insights: Record<string, { observations: string[]; actions: string[] }> = {
     visibility: {
-      observations: [
-        `${domain} received ${formatNumber(impressions)} search impressions this quarter but only ${sessions} website visits — a ${Math.round(impressions / sessions)}:1 impression-to-visit ratio. For every ${Math.round(impressions / sessions)} people who saw the business in search, only 1 visited the website.`,
-        `Direct traffic accounts for 53% of all sessions (136), suggesting strong brand awareness in the local market. However, organic search only converts 0.6% of impressions to visits — well below the 2-3% industry average for position 22.`,
-        `87% of traffic is desktop-only. With mobile search now exceeding 60% of all Google searches, the 13% mobile traffic share suggests either a mobile UX problem or missed mobile-first indexing opportunities.`,
-        // Phase 1 Step 2.7 append — GBP contribution to total Google visibility
-        gbpConnected
-          ? `Your Google Business Profile contributed ${formatNumber(gbpImpressions)} impressions to your total Google visibility this period. Combined with ${formatNumber(gscImpressions)} search impressions and ${sessions} website visits, your total Google touch points were approximately ${formatNumber(gbpImpressions + gscImpressions + sessions)}. GBP accounts for ${gbpImpressions + gscImpressions > 0 ? Math.round((gbpImpressions / (gbpImpressions + gscImpressions)) * 100) : 0}% of total Google surface area — ${gbpImpressions > gscImpressions ? 'your local listing is actually more visible than your search presence, which is common for service-area businesses' : 'your search presence outweighs your local listing, which suggests room to optimize GBP categories, photos, and posting cadence'}.`
-          : 'Connect your Google Business Profile in Settings → Connected Accounts to surface local-listing impressions alongside search impressions for a complete Google visibility picture.',
-        // Phase 2 Step 3.7 append — Bing visibility
-        bingConnected
-          ? `Bing search delivered ${formatNumber(bingImpressions)} impressions and ${bingClicks} clicks this period${bingCtr > 0 ? ` (${bingCtr.toFixed(2)}% CTR)` : ''}. ${bingImpressions > 0 && bingCtr > gscCtr && gscCtr > 0 ? `Your Bing CTR (${bingCtr.toFixed(2)}%) outperforms your Google CTR (${gscCtr.toFixed(2)}%) — Bing searchers are finding your results more relevant. This often indicates an underserved audience on a less competitive platform.` : bingImpressions > 0 && bingAvgPosition != null && gscAvgPos != null && bingAvgPosition < gscAvgPos ? `You rank better on Bing (avg position ${bingAvgPosition.toFixed(1)}) than on Google (${gscAvgPos.toFixed(1)}) — Bing represents a lower-competition opportunity worth maintaining.` : bingImpressions === 0 ? 'Bing is connected but has not yet collected enough data to analyze — check back in 30 days.' : 'Bing and Google performance are comparable; continue optimizing both equally.'}`
-          : 'Connect Bing Webmaster Tools in Settings → Connected Accounts to see Bing impressions, CTR, and ranking alongside Google search.',
-      ],
-      actions: [
-        `Rewrite the title tag on the homepage to include "Des Moines" — your top GSC query "intelligent analytics des moines" has 489 impressions but 0 clicks, likely because the title doesn't match the search intent.`,
-        `Add click-to-call and a sticky mobile CTA to reduce bounce from 88.5% on mobile direct traffic — these visitors already know you but leave immediately.`,
-        `Submit your sitemap to Bing Webmaster Tools — with 0 Bing visibility currently, even basic indexing could add 10-15% additional search traffic.`,
-      ],
+      observations: visibilityFired.observations,
+      actions: visibilityFired.actions,
     },
     audience: {
       observations: [
