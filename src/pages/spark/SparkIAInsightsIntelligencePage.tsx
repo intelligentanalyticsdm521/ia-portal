@@ -1,14 +1,23 @@
-// SparkIAInsightsIntelligencePage — SPARK Intelligence shell (v5.x).
+// SparkIAInsightsIntelligencePage — v9.5 LIVE.
 //
-// June 1 scope: section shell with all reports locked. Unlocks at Pro+
-// tier with sufficient data history.
-import { useMemo } from "react";
-import { IAInsightsHeader } from "../../components/iainsights/IAInsightsHeader";
-import { type IAInsightsHeaderData } from "../../components/iainsights/types";
-import { Sparkles, Lock, TrendingDown, BarChart3, DollarSign, Users, Repeat, PieChart } from "lucide-react";
+// All 6 SPARK Intelligence reports now run on real engines, reading from
+// the same /api/v1/ia-insights/inputs?product=spark feed the Trends page
+// uses. Each engine returns a ReportAnalysis with a score + headline.
+//
+// Pages are clickable cards that open a deep-dive modal with the full
+// observations + actions from the engine output. State decorations:
+//   - "ok"                → green border, score shown
+//   - "partial"           → amber border, data-gap callout
+//   - "insufficient_data" → grey border, threshold-needed callout
+//   - "locked"            → tier upgrade gate
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSparkApi } from "../../hooks/useSparkApi";
+import { Sparkles, Lock, TrendingDown, BarChart3, DollarSign, Users, Repeat, PieChart, ArrowRight, X } from "lucide-react";
+import { runAllSparkIntelligence, type IntelligenceReport, type SparkIntelKey } from "../../spark/analytics/sparkIntelligenceEngines";
+import type { SparkEngineInput } from "../../spark/analytics/sparkTrendEngines";
 
-interface IntelReport {
-  key: string;
+interface IntelReportMeta {
+  key: SparkIntelKey;
   label: string;
   question: string;
   icon: typeof Sparkles;
@@ -16,62 +25,238 @@ interface IntelReport {
   minTier: "pro" | "business";
 }
 
-// v9.0 — Aligned to Platform Intelligence & ARGUS spec §4 (May 2026).
-const SPARK_INTEL: IntelReport[] = [
-  { key: "contact_quality",  label: "Contact Quality Score",       question: "Are the contacts I'm acquiring worth acquiring?",                   icon: Users,        modelType: "Multi-dim engagement + revenue potential per acquisition source", minTier: "pro" },
-  { key: "campaign_revenue", label: "Campaign Revenue Attribution", question: "Which campaigns are actually producing revenue, not just opens?",   icon: DollarSign,   modelType: "Campaign → contact engaged → job created → invoice paid (30d window)", minTier: "business" },
-  { key: "lead_pipeline_forecast", label: "Lead Pipeline Forecast", question: "What revenue should I expect from my current pipeline in 30-60 days?", icon: TrendingDown, modelType: "Open leads × historical lead→contact→job rate × avg job value", minTier: "business" },
-  { key: "churn_risk",       label: "Churn Risk Model",            question: "Which contacts are 60 days from going permanently silent?",         icon: TrendingDown, modelType: "Logistic regression on engagement decay + job recency + LTV", minTier: "pro" },
-  { key: "automation_effectiveness", label: "Automation Effectiveness", question: "Are my automations producing outcomes or just executing?",       icon: Repeat,       modelType: "Per-automation: execution count → engagement → conversion outcome", minTier: "pro" },
-  { key: "audience_segmentation_intel", label: "Audience Segmentation Intelligence", question: "Who are my distinct customer types and what does each need?", icon: PieChart, modelType: "RFM (recency, frequency, monetary) — Champion / Loyal / At-Risk / Hibernating / Lost / New", minTier: "business" },
+// v9.0 — Aligned to spec §4.
+const SPARK_INTEL: IntelReportMeta[] = [
+  { key: "contact_quality",            label: "Contact Quality Score",            question: "Are the contacts I'm acquiring worth acquiring?",                   icon: Users,        modelType: "Multi-dim engagement + coverage + source quality + revenue", minTier: "pro" },
+  { key: "campaign_revenue",           label: "Campaign Revenue Attribution",     question: "Which campaigns are actually producing revenue, not just opens?",   icon: DollarSign,   modelType: "Campaign → engagement → job → invoice chain (30d window)",   minTier: "business" },
+  { key: "lead_pipeline_forecast",     label: "Lead Pipeline Forecast",           question: "What revenue should I expect from my current pipeline in 30-60 days?", icon: TrendingDown, modelType: "Open leads × historical win rate × avg job value",            minTier: "business" },
+  { key: "churn_risk",                 label: "Churn Risk Model",                 question: "Which contacts are 60 days from going permanently silent?",         icon: TrendingDown, modelType: "Engagement decay + job recency + LTV weighting",              minTier: "pro" },
+  { key: "automation_effectiveness",   label: "Automation Effectiveness",         question: "Are my automations producing outcomes or just executing?",          icon: Repeat,       modelType: "Per-automation: executions → engagement → downstream conversion", minTier: "pro" },
+  { key: "audience_segmentation",      label: "Audience Segmentation Intelligence", question: "Who are my distinct customer types and what does each need?",     icon: PieChart,     modelType: "RFM (Recency × Frequency × Monetary) — 6 lifecycle segments",  minTier: "business" },
 ];
 
+function stateColor(state: IntelligenceReport["state"]): string {
+  switch (state) {
+    case "ok": return "#16A34A";
+    case "partial": return "#EAB308";
+    case "insufficient_data": return "#94A3B8";
+    case "locked": return "#94A3B8";
+  }
+}
+
+function stateBg(state: IntelligenceReport["state"]): string {
+  switch (state) {
+    case "ok": return "border-emerald-200 bg-white";
+    case "partial": return "border-amber-200 bg-amber-50/30";
+    case "insufficient_data": return "border-slate-200 bg-slate-50";
+    case "locked": return "border-slate-200 bg-slate-50";
+  }
+}
+
+function stateLabel(state: IntelligenceReport["state"]): string {
+  switch (state) {
+    case "ok": return "Live";
+    case "partial": return "Partial · OLIVER needed";
+    case "insufficient_data": return "Collecting data";
+    case "locked": return "Tier locked";
+  }
+}
+
 export function SparkIAInsightsIntelligencePage() {
-  const headerData: IAInsightsHeaderData = useMemo(() => ({
-    product: "spark",
-    overall: { score: 0, band: "unknown", state: "insufficient_data" },
-    platform: { score: 0, band: "unknown", state: "insufficient_data" },
-    trend: { score: 0, band: "unknown", state: "insufficient_data" },
-    intelligence: { score: 0, band: "unknown", state: "locked", message: "Pro tier + cross-product data unlock these reports." },
-    trendBreakdown: [],
-    intelligenceBreakdown: SPARK_INTEL.map((r) => ({ key: r.key, label: r.label, score: 0, band: "unknown" as const, locked: true, lockReason: "Pro tier + data threshold" })),
-    banners: [{ severity: "info", message: "SPARK Intelligence reports are shells at launch. They go live in two steps: (1) the iadm-intelligence rule engine has to be built per report (post-launch v2 work), then (2) the data must accumulate to the gate (90+ days of campaign + contact history). Trends keep running today and aren't affected." }],
-    meta: { generatedAt: new Date().toISOString(), tier: "standard" },
-  }), []);
+  const { get, ready } = useSparkApi();
+  const [inputs, setInputs] = useState<SparkEngineInput | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<unknown>(null);
+  const [open, setOpen] = useState<SparkIntelKey | null>(null);
+
+  const fetchInputs = useCallback(async () => {
+    if (!ready) return;
+    setLoading(true); setError(null);
+    try {
+      const r = await get<SparkEngineInput>("/api/v1/ia-insights/inputs?product=spark&days=90");
+      setInputs(r);
+    } catch (err) { setError(err); }
+    finally { setLoading(false); }
+  }, [get, ready]);
+
+  useEffect(() => { fetchInputs(); }, [fetchInputs]);
+
+  const reports = useMemo(() => {
+    if (!inputs) return null;
+    return runAllSparkIntelligence(inputs);
+  }, [inputs]);
 
   return (
     <div className="p-4 max-w-7xl mx-auto">
       <div className="mb-3">
         <h1 className="text-2xl font-bold text-slate-900">SPARK IA Insights — Intelligence</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Modelled, scored insights. Pro tier unlocks; Business tier adds cross-product reports.</p>
+        <p className="text-sm text-slate-500 mt-0.5">Modelled, scored reports. Engines run on live data; reports auto-upgrade from "insufficient data" → "partial" → "live" as your data accumulates.</p>
       </div>
 
-      <IAInsightsHeader data={headerData} />
+      <div className="mb-4 rounded-md border-l-4 border-blue-400 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+        <strong>How reports unlock:</strong> Each engine has its own data threshold (typically 20-50 records of the right type). When data is below the threshold, the card shows "Collecting data" with the exact gap. When OLIVER cross-product data is missing, the card shows "Partial" and scores what it can. When all data is present, the card shows "Live" with the full report.
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {SPARK_INTEL.map((r) => (
-          <div key={r.key} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-start gap-2 mb-2">
-              <div className="flex-shrink-0 h-9 w-9 rounded-full flex items-center justify-center bg-slate-200 text-slate-500"><r.icon className="h-4 w-4" /></div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-semibold text-sm text-slate-900">{r.label}</span>
-                  <Lock className="h-3.5 w-3.5 text-slate-400" />
+      {loading && !reports && <div className="text-sm text-slate-500 py-8 text-center">Loading SPARK intelligence engines…</div>}
+      {Boolean(error) && !loading && <div className="rounded-md border-l-4 border-rose-400 bg-rose-50 px-4 py-3 text-sm text-rose-900">Failed to load engine inputs: {String((error as Error)?.message || "unknown error")}</div>}
+
+      {reports && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {SPARK_INTEL.map((m) => {
+            const r = reports[m.key];
+            const Icon = m.icon;
+            const color = stateColor(r.state);
+            const bg = stateBg(r.state);
+            return (
+              <button
+                key={m.key}
+                onClick={() => setOpen(m.key)}
+                className={`text-left rounded-lg border-2 p-4 transition-shadow hover:shadow-md ${bg}`}
+              >
+                <div className="flex items-start gap-2 mb-2">
+                  <div className="flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center" style={{ background: `${color}1A`, color }}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-semibold text-sm text-slate-900">{m.label}</span>
+                      <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${m.minTier === "business" ? "bg-violet-100 text-violet-700" : "bg-blue-100 text-blue-700"}`}>{m.minTier}</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-2">{m.question}</p>
+                  </div>
                 </div>
-                <div className="text-[10px] text-slate-500">{r.question}</div>
-              </div>
+
+                <div className="flex items-center justify-between mt-3 mb-2">
+                  <div className="flex items-center gap-2">
+                    {r.state === "ok" ? (
+                      <span className="text-3xl font-bold tabular-nums" style={{ color }}>{r.score}</span>
+                    ) : r.state === "partial" ? (
+                      <span className="text-3xl font-bold tabular-nums" style={{ color }}>{r.score}</span>
+                    ) : (
+                      <span className="text-2xl font-bold text-slate-300">—</span>
+                    )}
+                    <span className="flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ background: `${color}1A`, color }}>
+                      {r.state === "ok" && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
+                      {r.state === "partial" && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
+                      {(r.state === "insufficient_data" || r.state === "locked") && <Lock className="h-3 w-3" />}
+                      {stateLabel(r.state)}
+                    </span>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-slate-400" />
+                </div>
+
+                <p className="text-xs text-slate-700 leading-snug line-clamp-2">{r.headline}</p>
+
+                {r.dataGap && (
+                  <div className="mt-2 text-[10px] text-amber-800 italic">→ {r.dataGap}</div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {open && reports && (() => {
+        const m = SPARK_INTEL.find((x) => x.key === open);
+        if (!m) return null;
+        const r = reports[open];
+        return <IntelligenceModal meta={m} report={r} onClose={() => setOpen(null)} />;
+      })()}
+    </div>
+  );
+}
+
+// ── Modal ────────────────────────────────────────────────────────────
+function IntelligenceModal({ meta, report, onClose }: { meta: IntelReportMeta; report: IntelligenceReport; onClose: () => void }) {
+  const Icon = meta.icon;
+  const color = stateColor(report.state);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-6 py-4 flex-shrink-0">
+          <div className="flex items-start gap-3 min-w-0 flex-1">
+            <div className="flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center" style={{ background: `${color}1A`, color }}>
+              <Icon className="h-5 w-5" />
             </div>
-            <div className="text-[10px] text-slate-600 italic mb-2">Model: {r.modelType}</div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${r.minTier === "business" ? "bg-violet-100 text-violet-700" : "bg-blue-100 text-blue-700"}`}>
-                {r.minTier === "business" ? "Business" : "Pro"} tier
-              </span>
-            </div>
-            <div className="rounded bg-amber-50 border border-amber-200 px-2 py-1.5 text-[10px] text-amber-800 flex items-center gap-1">
-              <Lock className="h-3 w-3" /> Upgrade to {r.minTier === "business" ? "Business" : "Pro"} to unlock
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold text-slate-900">{meta.label}</h2>
+              <p className="text-xs text-slate-500 mt-0.5">{meta.question}</p>
+              <p className="text-[10px] text-slate-400 mt-1 italic">Model: {meta.modelType}</p>
             </div>
           </div>
-        ))}
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="text-right">
+              {report.state === "ok" || report.state === "partial" ? (
+                <div className="text-2xl font-bold tabular-nums" style={{ color }}>{report.score}</div>
+              ) : (
+                <div className="text-xl text-slate-300">—</div>
+              )}
+              <div className="text-[9px] uppercase text-slate-400">{stateLabel(report.state)}</div>
+            </div>
+            <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded text-slate-500" aria-label="Close"><X className="h-5 w-5" /></button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          {/* Data gap callout (if any) */}
+          {report.dataGap && (
+            <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
+              <div className="text-xs font-semibold uppercase text-amber-800 tracking-wide mb-1">Data gap</div>
+              <p className="text-sm text-slate-800">{report.dataGap}</p>
+            </div>
+          )}
+
+          {/* Score inputs (numeric tiles) */}
+          {report.scoreInputs.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {report.scoreInputs.filter((i) => i.value !== null && i.value !== undefined).slice(0, 4).map((k) => (
+                <div key={k.key} className="rounded-md border border-slate-200 bg-white px-3 py-2" style={{ borderTopWidth: 3, borderTopColor: color }}>
+                  <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wide">{k.key.replace(/_/g, " ")}</div>
+                  <div className="text-lg font-bold text-slate-900 tabular-nums mt-0.5">{String(k.value)}</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{k.weight > 0 ? `${Math.round(k.weight * 100)}% of score` : (k.note || "")}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Observations */}
+          {report.observations.length > 0 && (
+            <div className="rounded-lg bg-slate-900 text-slate-100 p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded" style={{ background: "#84CC1620", color: "#A3E635" }}>ARGUS</span>
+                <span className="text-sm">Intelligence · {meta.label}</span>
+              </div>
+              <ol className="space-y-3">
+                {report.observations.map((obs, i) => (
+                  <li key={i} className="flex items-start gap-3 text-xs leading-relaxed text-slate-200">
+                    <span className="flex-shrink-0 mt-0.5 h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold" style={{ background: "#EA580C", color: "white" }}>{i + 1}</span>
+                    <span>{obs}</span>
+                  </li>
+                ))}
+              </ol>
+              {report.actions.length > 0 && (
+                <div className="border-t border-slate-700 mt-4 pt-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: "#A3E635" }}>Recommended actions</div>
+                  <ul className="space-y-2">
+                    {report.actions.map((act, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs leading-relaxed text-slate-200">
+                        <span className="flex-shrink-0 mt-1 h-1.5 w-1.5 rounded-full" style={{ background: "#EA580C" }} />
+                        <span>{act}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between border-t border-slate-200 px-6 py-3 bg-slate-50 rounded-b-lg flex-shrink-0">
+          <div className="text-[11px] text-slate-500">
+            Generated by <span className="font-semibold" style={{ color: "#A3E635" }}>ARGUS</span>
+          </div>
+          <button onClick={onClose} className="px-4 py-1.5 text-xs bg-slate-900 text-white rounded hover:bg-slate-800">Close</button>
+        </div>
       </div>
     </div>
   );
