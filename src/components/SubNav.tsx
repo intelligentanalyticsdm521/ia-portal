@@ -245,6 +245,7 @@ const SPARK_NAV: SubNavConfig = {
       items: [
         { key: "spark_campaigns", label: "Campaigns", route: "/app/services/spark_campaigns" },
         { key: "spark_email_templates", label: "Email Templates", route: "/app/services/spark_email_templates" },
+        { key: "spark_sms_templates", label: "SMS Templates", route: "/app/services/spark_sms_templates" },
         { key: "spark_automations", label: "Automations", route: "/app/services/spark_automations" },
         { key: "spark_automation_builder", label: "Automation Builder", route: "/app/services/spark_automation_builder" },
         { key: "spark_journey_builder", label: "Journey Builder (graph)", route: "/app/services/spark_journey_builder" },

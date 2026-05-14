@@ -183,6 +183,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_api_keys', displayName: 'API Keys', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_api_keys', description: 'Issue API keys for Zapier / n8n / custom integrations. Scoped + revocable.' },
   { key: 'spark_review_widget', displayName: 'Review Widget', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_review_widget', description: 'Public review widget URL + collected reviews + per-platform deep-links (Google/Yelp/Facebook). Auto-fires after every NPS promoter.' },
   { key: 'spark_webhooks', displayName: 'Webhooks', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_webhooks', description: 'Outbound webhook subscriptions with HMAC-signed delivery, retries, and delivery log.' },
+  { key: 'spark_sms_templates', displayName: 'SMS Templates', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_sms_templates', description: 'Reusable SMS templates with {{vars}}. System templates (review request, appointment reminder, etc.) included.' },
   {
     key: 'forge_integrations',
     displayName: 'Integrations',
