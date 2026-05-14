@@ -287,6 +287,7 @@ const SPARK_NAV: SubNavConfig = {
       label: "Capture", icon: Target, collapsible: true, sectionId: "spark_capture",
       items: [
         { key: "spark_forms", label: "Forms", route: "/app/services/spark_forms" },
+        { key: "spark_form_builder", label: "Form Builder", route: "/app/services/spark_form_builder" },
         { key: "spark_landing_pages", label: "Landing Pages", route: "/app/services/spark_landing_pages" },
         { key: "spark_qr_codes", label: "QR Codes", route: "/app/services/spark_qr_codes" },
       ],
