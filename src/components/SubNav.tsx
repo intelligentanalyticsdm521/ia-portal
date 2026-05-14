@@ -199,8 +199,8 @@ const ARION_NAV: SubNavConfig = {
       label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "ia_insights",
       items: [
         { key: "arion_ia_insights_health", label: "Health", route: "/app/services/arion_ia_insights_health" },
-        { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends", tag: { label: "ARION", color: "#1A7DB5" } },
-        { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#1A7DB5" } },
+        { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends", tag: { label: "ARION", color: "#38BDF8" } },
+        { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#38BDF8" } },
         { key: "argus_cross_channel", label: "Cross-Channel", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
         { key: "arion_service_area", label: "Service Area Config", route: "/app/services/arion_service_area" },
       ],
