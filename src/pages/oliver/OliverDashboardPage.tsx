@@ -4,8 +4,11 @@ import {
   ResponsiveContainer, AreaChart, Area, Tooltip,
 } from "recharts";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useSparkApi } from "../../hooks/useSparkApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button, StatusBadge } from "../../components/oliver/ui";
+import { Sparkline } from "../../components/iainsights/Sparkline";
+import { Sparkles, ArrowUpRight } from "lucide-react";
 
 interface TodaySummary {
   jobs_today: number;
@@ -98,6 +101,7 @@ function fmtRelative(d?: string) {
 
 export function OliverDashboardPage() {
   const { get, ready } = useOliverApi();
+  const spark = useSparkApi();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [billing, setBilling] = useState<BillingOverview | null>(null);
@@ -106,8 +110,31 @@ export function OliverDashboardPage() {
   const [stripeStatus, setStripeStatus] = useState<StripeStatus | null>(null);
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null);
   const [today, setToday] = useState<TodaySummary | null>(null);
+  const [iaTrendScore, setIaTrendScore] = useState<number | null>(null);
+  const [iaTrendHistory, setIaTrendHistory] = useState<Array<{ period_end: string; score: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
+
+  // v6.8 — Pull OLIVER IA Insights summary from LUMEN-API (presence score + 12-period history)
+  useEffect(() => {
+    if (!spark.ready) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const ps = await spark.get<{ data: Record<string, { score: number; periodEnd: string }> }>(
+          `/api/v1/ia-insights/prior-scores?product=oliver&beforeDate=${today}`
+        ).catch(() => null);
+        const hist = await spark.get<{ data: Array<{ period_end: string; score: number }> }>(
+          `/api/v1/ia-insights/score-history?product=oliver&reportKey=presence&limit=12`
+        ).catch(() => null);
+        if (cancelled) return;
+        setIaTrendScore(ps?.data?.presence?.score ?? null);
+        setIaTrendHistory((hist?.data || []).filter((r) => r && r.period_end));
+      } catch { /* swallow */ }
+    })();
+    return () => { cancelled = true; };
+  }, [spark]);
 
   useEffect(() => {
     if (!ready) return;
@@ -202,6 +229,9 @@ export function OliverDashboardPage() {
       />
 
       {topBanner}
+
+      {/* v6.8 — IA Insights at-a-glance strip (links to Trends + ARGUS) */}
+      <OliverIAInsightsGlance trendScore={iaTrendScore} trendHistory={iaTrendHistory} />
 
       {/* Hero "Today" narrative + sparkline — ARION-style headline card */}
       {today && (
@@ -551,6 +581,70 @@ function TodayHero({ today }: { today: TodaySummary }) {
               No revenue in the last 7 days
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─ OLIVER IA Insights at-a-glance (v6.8) ───────────────────────────────────
+function OliverIAInsightsGlance({
+  trendScore,
+  trendHistory,
+}: {
+  trendScore: number | null;
+  trendHistory: Array<{ period_end: string; score: number }>;
+}) {
+  const score = trendScore ?? 0;
+  const band = score >= 70 ? "green" : score >= 50 ? "amber" : score > 0 ? "red" : "gray";
+  const bandColor = ({ green: "#16A34A", amber: "#EAB308", red: "#DC2626", gray: "#94A3B8" } as const)[band];
+  return (
+    <div
+      style={{
+        background: "linear-gradient(90deg, rgba(254,200,44,0.15), #ffffff)",
+        border: "1px solid #E5E7EB",
+        borderRadius: 12,
+        padding: 14,
+        margin: "16px 0",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Sparkles className="h-4 w-4" style={{ color: "#FEC82C" }} />
+          <span style={{ fontWeight: 600, fontSize: 14, color: "#0F172A" }}>OLIVER IA Insights at a glance</span>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Link to="/app/services/oliver_ia_insights_trends" style={{ fontSize: 12, color: "#1A3A4A", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>
+            Open Trends <ArrowUpRight className="h-3 w-3" />
+          </Link>
+          <Link to="/app/services/argus_ia_insights" style={{ fontSize: 12, color: "#64748B", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>
+            ARGUS <ArrowUpRight className="h-3 w-3" />
+          </Link>
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 8, padding: "10px 14px", flex: 1, maxWidth: 280 }}>
+          <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, color: "#64748B", fontWeight: 600, marginBottom: 2 }}>
+            OLIVER Trend Score
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: bandColor }}>
+              {trendScore != null ? trendScore : "—"}
+            </div>
+            {trendHistory.length > 1 && (
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Sparkline data={trendHistory} color={bandColor} width={100} height={26} showBands={false} />
+              </div>
+            )}
+          </div>
+          <div style={{ fontSize: 9, color: "#94A3B8", marginTop: 2 }}>
+            {trendScore != null ? `Band: ${band}` : "Reports populate after 30 days of jobs/invoices/payments"}
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: "#475569", flex: 1 }}>
+          Composite across Operations Health, Revenue Performance, Cash Flow, Quote Win Rate,
+          Customer Retention, Crew Capacity, Service Line, and Seasonal Planning.
+          See the 8-report breakdown for specific observations and recommended actions.
         </div>
       </div>
     </div>
