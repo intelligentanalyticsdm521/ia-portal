@@ -148,8 +148,11 @@ export function ArgusCrossChannelPage() {
       </div>
 
       <div className="mb-4 rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        <strong>v2 — all reports require 90+ days of cross-product data.</strong> Cards below show the data chain
-        each report uses. Reports populate automatically as the underlying data accumulates.
+        <strong>v2 — all 8 reports are shells at launch.</strong> Two things have to happen before any
+        report goes live: (1) the rendering engine for the cross-product join has to be built (post-launch
+        work), and (2) the underlying multi-product data must accumulate to the 90+ day threshold. Cards
+        show the data chain each report depends on. Reports do <em>not</em> auto-populate from data alone
+        — the engine has to ship first.
       </div>
 
       <div className="space-y-6">

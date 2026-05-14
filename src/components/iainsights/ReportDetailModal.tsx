@@ -16,7 +16,7 @@
 // labelling), and optional product accent color.
 
 import { X } from "lucide-react";
-import { MonthlyScoreBars } from "./MonthlyScoreBars";
+import { MonthlyScoreBars, MIN_HISTORY_PERIODS } from "./MonthlyScoreBars";
 
 // Local type — identical across ARION / SPARK / OLIVER trendEngines modules.
 // We re-declare it here so the modal doesn't bind to any one product's
@@ -168,7 +168,7 @@ export function ReportDetailModal({
           )}
 
           {/* Score history bars */}
-          {history.length >= 2 && (
+          {history.length >= MIN_HISTORY_PERIODS && (
             <div>
               <div className="flex items-center justify-between mb-1">
                 <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500">

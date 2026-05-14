@@ -5,7 +5,7 @@
 // drive the dark ARGUS section observations + actions.
 
 import { X } from "lucide-react";
-import { MonthlyScoreBars } from "./MonthlyScoreBars";
+import { MonthlyScoreBars, MIN_HISTORY_PERIODS } from "./MonthlyScoreBars";
 import { ArgusObservationsBox } from "./ArgusObservationsBox";
 import { evaluateRules, type InsightRule } from "./insightRules";
 import {
@@ -104,7 +104,7 @@ export function OliverReportDetailModal({
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {history.length >= 2 && (
+          {history.length >= MIN_HISTORY_PERIODS && (
             <div>
               <div className="flex items-center justify-between mb-1">
                 <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500">Score history</div>

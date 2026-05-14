@@ -44,7 +44,7 @@ export function ArionIAInsightsIntelligencePage() {
     intelligence: { score: 0, band: "unknown", state: (tier === "pro" || tier === "business") ? "insufficient_data" : "locked", message: (tier === "pro" || tier === "business") ? "Collecting data — Intelligence reports populate ~90 days post-launch." : "Upgrade to Pro to unlock modelled insights." },
     trendBreakdown: [],
     intelligenceBreakdown: INTEL_REPORTS.map((r) => ({ key: r.key, label: r.label, score: 0, band: "unknown" as const, locked: true, lockReason: lockReason(r, tier as any) })),
-    banners: [{ severity: "info", message: "Intelligence reports run on the iadm-intelligence rule engine and require modelled inputs. Trends keep running today — Intelligence reports unlock as your data history and product mix accumulate." }],
+    banners: [{ severity: "info", message: "Intelligence reports are shells at launch. They go live in two steps: (1) the iadm-intelligence rule engine has to be built per report (post-launch v2 work), then (2) the data must accumulate to the gate. Trends keep running today and aren't affected by this." }],
     meta: { generatedAt: new Date().toISOString(), tier: (tier as any) || "standard" },
   }), [tier]);
 

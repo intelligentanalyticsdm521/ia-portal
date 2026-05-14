@@ -1,6 +1,15 @@
 // MonthlyScoreBars — small SVG bar chart for the "how has this trended over
 // the last N months" view in IA Insights report cards (v7.2).
 //
+// v9.3 — Threshold bumped from 2 → 3 periods. A real chart needs at least
+// 3 months of scoring history before it's meaningful directionally; below
+// that we show a placeholder chart so visitors aren't reading noise as
+// signal.
+
+/** Minimum score-history periods before a real visual is shown.
+ *  Used by every Trends card + modal to render placeholder bars vs real. */
+export const MIN_HISTORY_PERIODS = 3;
+//
 // Renders one bar per period (typically 12 months). Each bar is colored by
 // its score band:
 //   - green (≥ 70)
@@ -71,7 +80,7 @@ export function MonthlyScoreBars({
   showLabels = true,
   showPlaceholder = true,
 }: Props) {
-  if (!data || data.length < 2) {
+  if (!data || data.length < MIN_HISTORY_PERIODS) {
     if (!showPlaceholder) return null;
     // Faint placeholder bar chart — same dimensions as a real chart so the
     // card never reflows when data starts flowing in. Bars are rendered
@@ -110,7 +119,9 @@ export function MonthlyScoreBars({
           fill="#94A3B8"
           fontStyle="italic"
         >
-          Awaiting data
+          {data && data.length > 0
+            ? `${data.length} of ${MIN_HISTORY_PERIODS} periods · need ${MIN_HISTORY_PERIODS - data.length} more`
+            : `Building score history · ${MIN_HISTORY_PERIODS} periods needed`}
         </text>
       </svg>
     );

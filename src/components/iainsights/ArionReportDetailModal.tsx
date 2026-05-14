@@ -12,7 +12,7 @@
 // until per-product rich content is built out.
 
 import { X } from "lucide-react";
-import { MonthlyScoreBars } from "./MonthlyScoreBars";
+import { MonthlyScoreBars, MIN_HISTORY_PERIODS } from "./MonthlyScoreBars";
 import {
   renderModalContent,
   ArgusInsightBox,
@@ -99,7 +99,7 @@ export function ArionReportDetailModal({
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           {/* MoM score history strip at the top (matches v7.3 modal pattern). */}
-          {history.length >= 2 && (
+          {history.length >= MIN_HISTORY_PERIODS && (
             <div>
               <div className="flex items-center justify-between mb-1">
                 <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500">

@@ -72,8 +72,11 @@ export function ArgusIntelligencePage() {
       </div>
 
       <div className="mb-4 rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        <strong>v2 — all reports locked at launch.</strong> ARGUS Intelligence requires 90+ days of platform_events history
-        before patterns become statistically meaningful. Reports auto-unlock as data accumulates.
+        <strong>v2 — all reports are shells at launch.</strong> Two things have to happen before any of
+        these go live: (1) the rendering engine for the report has to be built (post-launch work), and
+        (2) the underlying data must accumulate to the gate (typically 90+ days of platform_events history).
+        Each card's "Data gate" row lists the specific threshold. Reports do <em>not</em> auto-populate
+        from data alone — the engine has to ship first.
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">

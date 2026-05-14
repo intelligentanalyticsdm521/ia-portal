@@ -27,7 +27,7 @@ export function OliverIAInsightsIntelligencePage() {
     intelligence: { score: 0, band: "unknown", state: "locked", message: "Pro tier + cross-product data unlock these reports." },
     trendBreakdown: [],
     intelligenceBreakdown: OLIVER_INTEL.map((r) => ({ key: r.key, label: r.label, score: 0, band: "unknown" as const, locked: true, lockReason: r.minTier === "business" ? "Business tier" : "Pro tier" })),
-    banners: [{ severity: "info", message: "OLIVER Intelligence reports run on the iadm-intelligence rule engine. Forecasting reports need 90+ days of history. Margin analysis requires STELLA cost data." }],
+    banners: [{ severity: "info", message: "OLIVER Intelligence reports are shells at launch. They go live in two steps: (1) the iadm-intelligence rule engine has to be built per report (post-launch v2 work — Demand Forecast + Cash Pressure are the highest-priority), then (2) the data must accumulate (60-90 days of jobs + invoices). Margin analysis additionally requires STELLA cost data." }],
     meta: { generatedAt: new Date().toISOString(), tier: "standard" },
   }), []);
 

@@ -10,7 +10,7 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { bandFromScore } from "../../components/iainsights/types";
 import { runAllSparkReports, type AllSparkReports, type ReportAnalysis, type SparkEngineInput } from "../../spark/analytics/sparkTrendEngines";
 import { Users, Activity, Mail, BarChart3, PieChart, Repeat, AlertCircle, DollarSign, Award } from "lucide-react";
-import { MonthlyScoreBars } from "../../components/iainsights/MonthlyScoreBars";
+import { MonthlyScoreBars, MIN_HISTORY_PERIODS } from "../../components/iainsights/MonthlyScoreBars";
 import { SparkReportDetailModal } from "../../components/iainsights/SparkReportDetailModal";
 
 const REPORT_META: Array<{
@@ -201,9 +201,11 @@ function ReportCard({
         <p className="text-[11px] text-slate-500 leading-snug mt-0.5">{meta.question}</p>
       </div>
       <div className="flex items-center gap-1.5 mb-3">
-        <span className="h-2 w-2 rounded-full" style={{ background: history.length >= 2 ? bandColor : "#CBD5E1" }} />
+        <span className="h-2 w-2 rounded-full" style={{ background: history.length >= MIN_HISTORY_PERIODS ? bandColor : "#CBD5E1" }} />
         <span className="text-[10px] text-slate-600">
-          {history.length >= 2 ? `Ready · score ${report.score}` : "Collecting data"}
+          {history.length >= MIN_HISTORY_PERIODS
+            ? `Ready · score ${report.score}`
+            : `Collecting · ${history.length}/${MIN_HISTORY_PERIODS} periods`}
         </span>
       </div>
       <div className="flex-1 mb-2">

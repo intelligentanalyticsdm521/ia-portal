@@ -13,7 +13,11 @@ interface TrendReport {
   question: string;
   icon: typeof Activity;
   source: string;
-  status: "live" | "shell";
+  /**
+   * - wireable: backing data table exists; rendering engine pending
+   * - shell:    backing data table doesn't exist yet (Level 2 ARGUS work)
+   */
+  status: "wireable" | "shell";
   june1Note: string;
 }
 
@@ -24,8 +28,8 @@ const ARGUS_TRENDS: TrendReport[] = [
     question: "Are my automations running reliably?",
     icon: Activity,
     source: "argus.platform_events (status, error_detail, processed_at, event_type)",
-    status: "live",
-    june1Note: "Live with platform_events data",
+    status: "wireable",
+    june1Note: "Data source exists (argus.platform_events) — UI rendering engine not yet wired",
   },
   {
     key: "event_flow",
@@ -33,8 +37,8 @@ const ARGUS_TRENDS: TrendReport[] = [
     question: "How many platform events are flowing and where are they going?",
     icon: Network,
     source: "argus.platform_events (event_type, source_product, volume by period)",
-    status: "live",
-    june1Note: "Live with platform_events data",
+    status: "wireable",
+    june1Note: "Data source exists (argus.platform_events) — UI rendering engine not yet wired",
   },
   {
     key: "workflow_perf",
@@ -65,30 +69,33 @@ export function ArgusTrendsPage() {
       </div>
 
       <div className="mb-4 rounded-md border-l-4 border-blue-400 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-        <strong>June 1 status:</strong> Automation Health + Event Flow are live with argus.platform_events data.
-        Workflow Performance + Cross-Product Trigger Chains require Level 2 ARGUS tables (workflow_registry,
-        workflow_run_log) which are slated for 30-60 days post-launch.
+        <strong>June 1 status:</strong> All 4 cards render as shells today. Automation Health + Event Flow
+        have the backing data source (<code className="text-xs">argus.platform_events</code>) but the UI
+        rendering engines aren't wired yet — both auto-populate once their renderers are built (post-launch
+        work). Workflow Performance + Cross-Product Trigger Chains additionally require Level 2 ARGUS
+        tables (<code className="text-xs">workflow_registry</code>, <code className="text-xs">workflow_run_log</code>)
+        which are 30-60 days post-launch.
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {ARGUS_TRENDS.map((r) => (
-          <div key={r.key} className={`rounded-lg border p-4 ${r.status === "live" ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50"}`}>
+          <div key={r.key} className={`rounded-lg border p-4 ${r.status === "wireable" ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50"}`}>
             <div className="flex items-start gap-2 mb-2">
-              <div className="flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center" style={{ background: r.status === "live" ? "#84CC1620" : "#94A3B820", color: r.status === "live" ? "#A3E635" : "#94A3B8" }}>
+              <div className="flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center" style={{ background: r.status === "wireable" ? "#84CC1620" : "#94A3B820", color: r.status === "wireable" ? "#A3E635" : "#94A3B8" }}>
                 <r.icon className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-semibold text-sm text-slate-900">{r.label}</h3>
-                  <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${r.status === "live" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}>
-                    {r.status === "live" ? "Live" : "Shell"}
+                  <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${r.status === "wireable" ? "bg-amber-100 text-amber-800" : "bg-slate-200 text-slate-600"}`}>
+                    {r.status === "wireable" ? "Data ready · engine pending" : "Shell · awaiting tables"}
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-0.5">{r.question}</p>
               </div>
             </div>
             <div className="text-[10px] text-slate-600 italic mb-2 font-mono break-all">{r.source}</div>
-            <div className={`rounded px-2 py-1.5 text-[10px] ${r.status === "live" ? "bg-emerald-50 border border-emerald-200 text-emerald-800" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
+            <div className="rounded px-2 py-1.5 text-[10px] bg-amber-50 border border-amber-200 text-amber-800">
               {r.june1Note}
             </div>
           </div>

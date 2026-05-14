@@ -35,7 +35,7 @@ export function SparkIAInsightsIntelligencePage() {
     intelligence: { score: 0, band: "unknown", state: "locked", message: "Pro tier + cross-product data unlock these reports." },
     trendBreakdown: [],
     intelligenceBreakdown: SPARK_INTEL.map((r) => ({ key: r.key, label: r.label, score: 0, band: "unknown" as const, locked: true, lockReason: "Pro tier + data threshold" })),
-    banners: [{ severity: "info", message: "SPARK Intelligence reports run on the iadm-intelligence rule engine. Unlock at Pro tier with 90+ days of campaign and contact history." }],
+    banners: [{ severity: "info", message: "SPARK Intelligence reports are shells at launch. They go live in two steps: (1) the iadm-intelligence rule engine has to be built per report (post-launch v2 work), then (2) the data must accumulate to the gate (90+ days of campaign + contact history). Trends keep running today and aren't affected." }],
     meta: { generatedAt: new Date().toISOString(), tier: "standard" },
   }), []);
 
