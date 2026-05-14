@@ -1,8 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
+import { Sparkles, ArrowUpRight } from "lucide-react";
 import { useAppState } from "../../app/AppState";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { useAccessToken } from "../../auth/useAccessToken";
+import { Sparkline } from "../../components/iainsights/Sparkline";
 
 // Each card pulls one piece of data; failures degrade gracefully (card shows "—").
 interface OliverDashboardToday {
@@ -25,10 +28,17 @@ interface OliverDashboardStats {
 interface SparkNpsSummary { nps: number; total: number; }
 interface SparkGrowth { growth_velocity_score: number; new_contacts: number; deals_won: number; }
 
+interface PulseData {
+  pulse: number | null;
+  previous_pulse: number | null;
+  components: { arion: number | null; spark: number | null; oliver: number | null };
+}
+
 export function CommandDashboard() {
-  const { enabledServices } = useAppState();
+  const { enabledServices, activeTenantId } = useAppState();
   const oliver = useOliverApi();
   const spark = useSparkApi();
+  const { getToken } = useAccessToken();
 
   const hasOliver = enabledServices.has("oliver_dashboard") || enabledServices.has("oliver_jobs");
   const hasSpark = enabledServices.has("spark_overview") || enabledServices.has("spark_contacts");
@@ -37,6 +47,10 @@ export function CommandDashboard() {
   const [oliverStats, setOliverStats] = useState<OliverDashboardStats | null>(null);
   const [sparkNps, setSparkNps] = useState<SparkNpsSummary | null>(null);
   const [sparkGrowth, setSparkGrowth] = useState<SparkGrowth | null>(null);
+  const [pulse, setPulse] = useState<PulseData | null>(null);
+  const [arionHist, setArionHist] = useState<Array<{ period_end: string; score: number }>>([]);
+  const [sparkHist, setSparkHist] = useState<Array<{ period_end: string; score: number }>>([]);
+  const [oliverHist, setOliverHist] = useState<Array<{ period_end: string; score: number }>>([]);
 
   const load = useCallback(async () => {
     if (hasOliver && oliver.ready) {
@@ -57,8 +71,54 @@ export function CommandDashboard() {
 
   useEffect(() => { load(); }, [load]);
 
+  // v6.10 — IA Insights composite scores across products + per-product
+  // 12-period history for the sparkline cards. Business Pulse from
+  // platform-api, per-product history from LUMEN-API.
+  useEffect(() => {
+    if (!activeTenantId || !spark.ready) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const platformBase = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string).replace(/\/$/, "");
+        const headers: HeadersInit = {
+          Authorization: `Bearer ${token.accessToken}`,
+          "x-tenant-key": activeTenantId,
+        };
+        const pulseRes = await globalThis.fetch(`${platformBase}/argus/business-pulse`, { headers });
+        if (pulseRes.ok && !cancelled) {
+          const body = await pulseRes.json();
+          setPulse(body?.data || null);
+        }
+        // Per-product histories — SPARK + OLIVER live in LUMEN-API; ARION
+        // lives in arion-api. All three accept the same shape.
+        const [sH, oH] = await Promise.all([
+          spark.get<{ data: Array<{ period_end: string; score: number }> }>("/api/v1/ia-insights/score-history?product=spark&reportKey=presence&limit=12").catch(() => null),
+          spark.get<{ data: Array<{ period_end: string; score: number }> }>("/api/v1/ia-insights/score-history?product=oliver&reportKey=presence&limit=12").catch(() => null),
+        ]);
+        if (!cancelled) {
+          setSparkHist((sH?.data || []).filter((r) => r && r.period_end));
+          setOliverHist((oH?.data || []).filter((r) => r && r.period_end));
+        }
+        // ARION history requires a siteId we don't have at the platform level;
+        // skip for now — the score card still shows the composite value from
+        // pulse.components.arion.
+        setArionHist([]);
+      } catch { /* swallow */ }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTenantId, spark, getToken]);
+
   return (
     <div className="space-y-4">
+      {/* v6.10 — IA Insights cross-product strip */}
+      <IAInsightsStrip
+        pulse={pulse}
+        arionHist={arionHist}
+        sparkHist={sparkHist}
+        oliverHist={oliverHist}
+      />
+
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
         {/* OLIVER cards */}
         {hasOliver && (
@@ -131,6 +191,109 @@ function Card({ label, value, accent = "gray", href }: { label: string; value: s
       <div className="iadm-card-body p-3">
         <div className="text-xs uppercase text-gray-500">{label}</div>
         <div className={`text-2xl font-semibold mt-1 ${colors[accent]}`}>{value}</div>
+      </div>
+    </Link>
+  );
+}
+
+// ─ v6.10 — Cross-product IA Insights strip ────────────────────────────────
+function IAInsightsStrip({
+  pulse,
+  arionHist,
+  sparkHist,
+  oliverHist,
+}: {
+  pulse: { pulse: number | null; previous_pulse: number | null; components: { arion: number | null; spark: number | null; oliver: number | null } } | null;
+  arionHist: Array<{ period_end: string; score: number }>;
+  sparkHist: Array<{ period_end: string; score: number }>;
+  oliverHist: Array<{ period_end: string; score: number }>;
+}) {
+  function bandColor(s: number | null) {
+    if (s == null) return "#94A3B8";
+    if (s >= 70) return "#16A34A";
+    if (s >= 50) return "#EAB308";
+    return "#DC2626";
+  }
+  function delta(curr: number | null, prev: number | null): number | null {
+    if (curr == null || prev == null) return null;
+    return curr - prev;
+  }
+  const pulseScore = pulse?.pulse ?? null;
+  const pulseDelta = delta(pulseScore, pulse?.previous_pulse ?? null);
+  return (
+    <div className="iadm-card">
+      <div className="iadm-card-body p-3">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-[#EF6C33]" />
+            <span className="font-semibold text-slate-900 text-sm">IA Insights — Business Health</span>
+          </div>
+          <Link to="/app/services/argus_ia_insights" className="text-xs text-[#EF6C33] hover:underline flex items-center gap-0.5">
+            ARGUS Cross-Channel <ArrowUpRight className="h-3 w-3" />
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Link to="/app/services/argus_ia_insights" className="rounded-lg border border-slate-200 bg-gradient-to-br from-emerald-50 to-white p-3 hover:border-emerald-300">
+            <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wide mb-1">Business Pulse</div>
+            <div className="flex items-baseline gap-2">
+              <div className="text-2xl font-bold tabular-nums" style={{ color: bandColor(pulseScore) }}>
+                {pulseScore ?? "—"}
+              </div>
+              {pulseDelta != null && (
+                <div className={`text-[10px] ${pulseDelta > 0 ? "text-emerald-600" : pulseDelta < 0 ? "text-red-600" : "text-slate-400"}`}>
+                  {pulseDelta > 0 ? `+${pulseDelta}` : pulseDelta} vs prior
+                </div>
+              )}
+            </div>
+            <div className="text-[9px] text-slate-400 mt-0.5">ARGUS composite across active products</div>
+          </Link>
+          <ProductScoreCard
+            label="ARION Trend"
+            score={pulse?.components.arion ?? null}
+            history={arionHist}
+            bandColor={bandColor(pulse?.components.arion ?? null)}
+            href="/app/services/arion_ia_insights_trends"
+          />
+          <ProductScoreCard
+            label="SPARK Trend"
+            score={pulse?.components.spark ?? null}
+            history={sparkHist}
+            bandColor={bandColor(pulse?.components.spark ?? null)}
+            href="/app/services/spark_ia_insights_trends"
+          />
+          <ProductScoreCard
+            label="OLIVER Trend"
+            score={pulse?.components.oliver ?? null}
+            history={oliverHist}
+            bandColor={bandColor(pulse?.components.oliver ?? null)}
+            href="/app/services/oliver_ia_insights_trends"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductScoreCard({
+  label, score, history, bandColor, href,
+}: {
+  label: string; score: number | null;
+  history: Array<{ period_end: string; score: number }>;
+  bandColor: string; href: string;
+}) {
+  return (
+    <Link to={href} className="rounded-lg border border-slate-200 bg-white p-3 hover:bg-slate-50">
+      <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wide mb-1">{label}</div>
+      <div className="flex items-center gap-2">
+        <div className="text-2xl font-bold tabular-nums" style={{ color: bandColor }}>
+          {score ?? "—"}
+        </div>
+        {history.length > 1 && (
+          <Sparkline data={history} color={bandColor} width={80} height={24} showBands={false} />
+        )}
+      </div>
+      <div className="text-[9px] text-slate-400 mt-0.5">
+        {score != null ? "Last computed period" : "Connect product to populate"}
       </div>
     </Link>
   );
