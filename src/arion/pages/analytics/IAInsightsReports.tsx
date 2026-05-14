@@ -26,6 +26,8 @@ import { ConsultingUpsell } from '../../components/Ui';
 import { evaluateRules } from '../../../components/iainsights/insightRules';
 import { VISIBILITY_RULES } from '../../../components/iainsights/arionVisibilityRules';
 import { AUDIENCE_RULES } from '../../../components/iainsights/arionAudienceRules';
+import { CONVERSION_RULES } from '../../../components/iainsights/arionConversionRules';
+import { SEARCH_RULES } from '../../../components/iainsights/arionSearchRules';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip);
 
@@ -197,6 +199,16 @@ export function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpRe
     maxActions: 5,
   });
 
+  // v7.8 — Conversion Intelligence (20 rules) + Search Intelligence (21 rules).
+  const conversionFired = evaluateRules(CONVERSION_RULES, visibilityCtx, {
+    maxObservations: 8,
+    maxActions: 5,
+  });
+  const searchFired = evaluateRules(SEARCH_RULES, visibilityCtx, {
+    maxObservations: 8,
+    maxActions: 5,
+  });
+
   const insights: Record<string, { observations: string[]; actions: string[] }> = {
     visibility: {
       observations: visibilityFired.observations,
@@ -207,62 +219,12 @@ export function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpRe
       actions: audienceFired.actions,
     },
     conversion: {
-      observations: [
-        `Of ${sessions} monthly visitors, ${engaged} engaged meaningfully (${engRate} engagement rate) but 0 submitted a form. The engagement-to-conversion rate is 0%, meaning engaged visitors see value but find no path to act on it.`,
-        `45 users scrolled past 90% of a page — these are the most interested visitors. Yet with 0 form submissions, there's either no form visible at the scroll point, or the form asks for too much.`,
-        `The average session duration is 42 seconds with 1.35 pages per session. Visitors are reading one page and leaving — the site isn't guiding them to a next step.`,
-        // Phase 1 Step 2.7 append — GBP phone vs form channel
-        gbpConnected
-          ? `GBP generated ${gbpCalls} phone calls vs ${formSubmissions} website form submissions this period. ${gbpCalls > formSubmissions * 2 ? 'Phone is clearly your primary conversion channel — the website is driving awareness, but the actual buyer handoff happens on a call. Track phone calls in GA4 with a dedicated conversion event so you can measure the full funnel.' : formSubmissions > gbpCalls * 2 ? 'Forms are the primary conversion channel. Keep your website\'s phone number prominent anyway — click-to-call is the highest-intent mobile action.' : 'Phone and form volumes are comparable. Both deserve equal weight in lead-source reporting.'}`
-          : 'Connect Google Business Profile to compare GBP phone calls against website form submissions — local businesses typically get significant lead volume from the phone channel that isn\'t visible in GA4 alone.',
-      ],
-      actions: [
-        `Add a short contact form (name + email + phone, 3 fields max) to the bottom of every service page — currently, 45 users scroll to the bottom and find nothing to do.`,
-        `Add internal links from the homepage to /services and /contact — with 156 homepage views but only 14 /contact views, visitors aren't finding the conversion path.`,
-        `Install Gravity Forms or WPForms and connect it to the IA Plugin — form submissions will automatically flow into SPARK as contacts with full source attribution.`,
-      ],
+      observations: conversionFired.observations,
+      actions: conversionFired.actions,
     },
     search: {
-      observations: [
-        // Observation 1: CTR gap at avg position, using real numbers
-        `At an average position of ${gscAvgPos.toFixed(1)}, industry benchmark CTR is ~${expCtr}%. Your actual CTR is ${gscCtr.toFixed(2)}% across ${formatNumber(impressions)} impressions (${gscClicks} clicks). ${
-          ctrGap > 0
-            ? `This ${ctrGap.toFixed(2)}-point gap represents approximately ${missedClicks} additional monthly clicks you're not getting — all recoverable by rewriting the title tags and meta descriptions on your top-impression pages.`
-            : `You are matching or exceeding expected CTR for your average position — maintain your current snippet strategy and focus optimization on moving positions up.`
-        }`,
-        // Observation 2: Mobile vs desktop (if data present)
-        mobileCtrGap > 0.3 && desktop && mobile
-          ? `Your mobile CTR (${Number(mobile.ctr).toFixed(2)}%) is ${mobileCtrGap.toFixed(2)} points lower than desktop (${Number(desktop.ctr).toFixed(2)}%) at similar positions. Mobile searchers are seeing your titles in results and choosing not to click — mobile truncates titles earlier, so shorter, benefit-forward titles tend to close this gap.`
-          : (gscDevices.length >= 2
-              ? `Device CTR is consistent across desktop, mobile, and tablet — your snippets are performing uniformly. Focus on raising overall CTR through title tag optimization on the highest-impression queries rather than device-specific tests.`
-              : `Device breakdown data will appear once GSC returns at least 28 days of device-dimension data for this property.`),
-        // Observation 3: Top opportunity query by name
-        topOpp
-          ? `Your highest-opportunity query is "${topOpp.query}" with ${formatNumber(topOpp.impressions)} impressions and only ${topOpp.clicks} clicks (${topOpp.ctr.toFixed(2)}% CTR) at position ${Math.round(topOpp.position)}. Expected CTR at that position is ~${topOpp.expectedCtr}% — a more compelling title tag targeting this query could generate an estimated ${Math.round(((topOpp.expectedCtr - topOpp.ctr) / 100) * topOpp.impressions)} additional monthly clicks.`
-          : `Query-level opportunity scoring will populate once GSC has 28+ days of query data. Currently ${gscQueries.length} queries are tracked.`,
-        // Phase 3 Step 4.5 append — SE Ranking quick-win keyword observation
-        seRankingConnected
-          ? (quickWinKeywords.length > 0 && topQuickWin
-              ? `Your ${quickWinKeywords.length} tracked keyword${quickWinKeywords.length === 1 ? '' : 's'} in position 11-20 represent your fastest path to page-1 rankings. "${topQuickWin.keyword}" has ${formatNumber(topQuickWin.searchVolume || 0)} monthly searches and currently ranks ${topQuickWin.currentPosition}. A focused content update and 2-3 internal links from your homepage and /services page could move it into the top 10, generating an estimated ${estimatedQuickWinClicks} additional monthly visits.`
-              : `All ${seoKeywords.length} tracked keywords are either already on page 1 or deeper than position 20. Expand your tracked keyword set to surface new page-2 opportunities that would benefit from focused optimization.`)
-          : 'Connect SE Ranking (SEO Tools add-on) to surface quick-win keywords — keywords ranking 11-20 that a focused content update can push onto page 1.',
-      ],
-      actions: [
-        // Action 1: specific page rewrite
-        topOpp
-          ? `Rewrite the title tag on the page ranking for "${topOpp.query}" to include that exact phrase. This is your single largest recoverable-clicks opportunity — ~${Math.round(((topOpp.expectedCtr - topOpp.ctr) / 100) * topOpp.impressions)} additional clicks per month at current impression volume.`
-          : `Once 28 days of GSC data has accumulated, ARGUS will identify the specific title tag to rewrite.`,
-        // Action 2: mobile title test if gap exists
-        mobileCtrGap > 0.3
-          ? `Test shorter title tags (under 55 characters) for your top 5 pages — mobile SERPs truncate titles earlier than desktop, and closing the ${mobileCtrGap.toFixed(2)}-point mobile CTR gap would recover real clicks.`
-          : `Keep current title lengths — device CTRs are balanced. Focus recovery on position movement via content and internal linking.`,
-        // Action 3: brand vs non-brand check
-        `${
-          gscQueries.filter(q => q.query && !/intelligent|analytics/i.test(q.query)).length === 0
-            ? `Your top queries are dominated by brand terms — build dedicated landing pages for your top 3 non-branded service queries so each one has a page optimized to rank.`
-            : `Build dedicated landing pages for your top 3 non-branded service queries — each page gets its own focus keyword, meta description, and content tailored to searcher intent.`
-        }`,
-      ],
+      observations: searchFired.observations,
+      actions: searchFired.actions,
     },
     content: {
       observations: [
