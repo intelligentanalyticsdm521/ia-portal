@@ -135,6 +135,7 @@ const SparkReviewWidgetPage = lazyNamed(() => import('./spark/SparkReviewWidgetP
 const SparkWebhooksPage = lazyNamed(() => import('./spark/SparkWebhooksPage'), 'SparkWebhooksPage');
 const SparkSmsTemplatesPage = lazyNamed(() => import('./spark/SparkSmsTemplatesPage'), 'SparkSmsTemplatesPage');
 const SparkContactImportPage = lazyNamed(() => import('./spark/SparkContactImportPage'), 'SparkContactImportPage');
+const SparkInboundWebhooksPage = lazyNamed(() => import('./spark/SparkInboundWebhooksPage'), 'SparkInboundWebhooksPage');
 
 // OLIVER pages — lazy-loaded (introduced 2026-05-11)
 const OliverDashboardPage = lazyNamed(() => import('./oliver/OliverDashboardPage'), 'OliverDashboardPage');
@@ -394,6 +395,7 @@ export function ServiceRouter() {
       case 'spark_webhooks': sparkPage = <SparkWebhooksPage />; break;
       case 'spark_sms_templates': sparkPage = <SparkSmsTemplatesPage />; break;
       case 'spark_contact_import': sparkPage = <SparkContactImportPage />; break;
+      case 'spark_inbound_webhooks': sparkPage = <SparkInboundWebhooksPage />; break;
       // Backward compat aliases for old lumen_* keys
       case 'lumen_overview': sparkPage = <SparkOverviewPage />; break;
       case 'lumen_contacts': sparkPage = <SparkContactsPage />; break;
