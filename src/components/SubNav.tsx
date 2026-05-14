@@ -290,6 +290,7 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals" },
         { key: "spark_scheduled_reports", label: "Scheduled Reports", route: "/app/services/spark_scheduled_reports" },
         { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys" },
+        { key: "spark_webhooks", label: "Webhooks", route: "/app/services/spark_webhooks" },
       ],
     },
     {
