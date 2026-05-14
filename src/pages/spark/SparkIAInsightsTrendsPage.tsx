@@ -11,6 +11,7 @@ import { bandFromScore } from "../../components/iainsights/types";
 import { runAllSparkReports, type AllSparkReports, type ReportAnalysis, type SparkEngineInput } from "../../spark/analytics/sparkTrendEngines";
 import { Users, Activity, Mail, BarChart3, PieChart, Repeat, AlertCircle, DollarSign, ChevronDown, ChevronUp, Award } from "lucide-react";
 import { Sparkline } from "../../components/iainsights/Sparkline";
+import { MonthlyScoreBars } from "../../components/iainsights/MonthlyScoreBars";
 
 const REPORT_META: Array<{
   key: keyof AllSparkReports;
@@ -187,6 +188,16 @@ function ReportCard({
       </button>
       {expanded && (
         <div className="mt-3 space-y-3">
+          {/* v7.2 — Monthly score history visualised as bars (color-banded). */}
+          {history.length >= 2 && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500">Score history</div>
+                <div className="text-[9px] text-slate-400">{history.length} period{history.length === 1 ? "" : "s"}</div>
+              </div>
+              <MonthlyScoreBars data={history} width={420} height={84} />
+            </div>
+          )}
           <div>
             <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-1">Observations</div>
             <ul className="space-y-1.5 text-xs text-slate-700">

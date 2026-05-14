@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { EmbeddedReportChart, type ReportSeriesResponse } from "../../components/reporting/EmbeddedReportChart";
 
 interface Campaign {
   id: string;
@@ -43,6 +44,21 @@ export function SparkCampaignsPage() {
 
   const filtered = campaigns.filter((c) => c.channel === tab);
 
+  // v7.2 — Embedded campaign performance chart. Fetcher closes over the
+  // current tab (email vs sms) so toggling the tab refreshes the chart.
+  const fetchPerf = useCallback(async (days: number): Promise<ReportSeriesResponse> => {
+    const channel = tab; // "email" | "sms"
+    const r = await get<{ data: { totals: any; series: any[] } }>(`/api/v1/campaigns/perf?days=${days}&channel=${channel}`);
+    return { totals: r.data?.totals || {}, series: r.data?.series || [] };
+  }, [get, tab]);
+
+  const perfMetrics = useMemo(() => ([
+    { key: "sends",   label: "Sends",   color: "#1A7DB5" },
+    { key: "opens",   label: "Opens",   color: "#16A34A" },
+    { key: "clicks",  label: "Clicks",  color: "#EAB308" },
+    { key: "bounces", label: "Bounces", color: "#DC2626", bars: true },
+  ]), []);
+
   function statusBadge(status: string) {
     const colors: Record<string, string> = {
       draft: "bg-gray-100 text-gray-600",
@@ -61,6 +77,19 @@ export function SparkCampaignsPage() {
   return (
     <OliverPageWrapper title="Campaigns" subtitle="Email and SMS campaign management" error={error} loading={loading}>
       <div className="p-6 space-y-4">
+        {/* v7.2 — Embedded Campaign Performance from the IA Insights Trends
+            engine. Date toggles + "View full report" link to the full
+            Campaign Performance trend on the SPARK Trends page. */}
+        <EmbeddedReportChart
+          title="Campaign performance"
+          subtitle={`Daily engagement for ${tab.toUpperCase()} campaigns. Toggle date range or open the full IA Insights report.`}
+          fetcher={fetchPerf}
+          metrics={perfMetrics}
+          fullReportRoute="/app/services/spark_ia_insights_trends"
+          accent="#EF6C33"
+          initialRange="last30"
+        />
+
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
             {(["email", "sms"] as const).map((t) => (
