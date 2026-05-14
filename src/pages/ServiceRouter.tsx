@@ -115,6 +115,7 @@ const SparkDashboardsPage = lazyNamed(() => import('./spark/SparkDashboardsPage'
 // SPARK v1.0 additions
 const SparkApprovalsPage = lazyNamed(() => import('./spark/SparkApprovalsPage'), 'SparkApprovalsPage');
 const SparkSmsInboxPage = lazyNamed(() => import('./spark/SparkSmsInboxPage'), 'SparkSmsInboxPage');
+const SparkSmsCampaignsPage = lazyNamed(() => import('./spark/SparkSmsCampaignsPage'), 'SparkSmsCampaignsPage');
 const SparkEmailTemplatesPage = lazyNamed(() => import('./spark/SparkEmailTemplatesPage'), 'SparkEmailTemplatesPage');
 const SparkAutomationBuilderPage = lazyNamed(() => import('./spark/SparkAutomationBuilderPage'), 'SparkAutomationBuilderPage');
 const SparkDeliverabilityPage = lazyNamed(() => import('./spark/SparkDeliverabilityPage'), 'SparkDeliverabilityPage');
@@ -140,6 +141,11 @@ const SparkSmsTemplatesPage = lazyNamed(() => import('./spark/SparkSmsTemplatesP
 const SparkContactImportPage = lazyNamed(() => import('./spark/SparkContactImportPage'), 'SparkContactImportPage');
 const SparkInboundWebhooksPage = lazyNamed(() => import('./spark/SparkInboundWebhooksPage'), 'SparkInboundWebhooksPage');
 const SparkSecretsPage = lazyNamed(() => import('./spark/SparkSecretsPage'), 'SparkSecretsPage');
+const SparkAuditLogPage = lazyNamed(() => import('./spark/SparkAuditLogPage'), 'SparkAuditLogPage');
+const SparkCalendarSyncPage = lazyNamed(() => import('./spark/SparkCalendarSyncPage'), 'SparkCalendarSyncPage');
+const SparkAnomalyAlertsPage = lazyNamed(() => import('./spark/SparkAnomalyAlertsPage'), 'SparkAnomalyAlertsPage');
+const SparkTemplateI18nPage = lazyNamed(() => import('./spark/SparkTemplateI18nPage'), 'SparkTemplateI18nPage');
+const SparkContact360Page = lazyNamed(() => import('./spark/SparkContact360Page'), 'SparkContact360Page');
 
 // OLIVER pages — lazy-loaded (introduced 2026-05-11)
 const OliverDashboardPage = lazyNamed(() => import('./oliver/OliverDashboardPage'), 'OliverDashboardPage');
@@ -401,9 +407,15 @@ export function ServiceRouter() {
       case 'spark_review_widget': sparkPage = <SparkReviewWidgetPage />; break;
       case 'spark_webhooks': sparkPage = <SparkWebhooksPage />; break;
       case 'spark_sms_templates': sparkPage = <SparkSmsTemplatesPage />; break;
+      case 'spark_sms_campaigns': sparkPage = <SparkSmsCampaignsPage />; break;
       case 'spark_contact_import': sparkPage = <SparkContactImportPage />; break;
       case 'spark_inbound_webhooks': sparkPage = <SparkInboundWebhooksPage />; break;
       case 'spark_secrets': sparkPage = <SparkSecretsPage />; break;
+      case 'spark_audit_log': sparkPage = <SparkAuditLogPage />; break;
+      case 'spark_calendar_sync': sparkPage = <SparkCalendarSyncPage />; break;
+      case 'spark_anomaly_alerts': sparkPage = <SparkAnomalyAlertsPage />; break;
+      case 'spark_template_i18n': sparkPage = <SparkTemplateI18nPage />; break;
+      case 'spark_contact_360': sparkPage = <SparkContact360Page />; break;
       // Backward compat aliases for old lumen_* keys
       case 'lumen_overview': sparkPage = <SparkOverviewPage />; break;
       case 'lumen_contacts': sparkPage = <SparkContactsPage />; break;
