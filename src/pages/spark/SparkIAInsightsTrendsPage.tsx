@@ -11,7 +11,7 @@ import { bandFromScore } from "../../components/iainsights/types";
 import { runAllSparkReports, type AllSparkReports, type ReportAnalysis, type SparkEngineInput } from "../../spark/analytics/sparkTrendEngines";
 import { Users, Activity, Mail, BarChart3, PieChart, Repeat, AlertCircle, DollarSign, Award } from "lucide-react";
 import { MonthlyScoreBars } from "../../components/iainsights/MonthlyScoreBars";
-import { ReportDetailModal } from "../../components/iainsights/ReportDetailModal";
+import { SparkReportDetailModal } from "../../components/iainsights/SparkReportDetailModal";
 
 const REPORT_META: Array<{
   key: keyof AllSparkReports;
@@ -150,18 +150,20 @@ export function SparkIAInsightsTrendsPage() {
         })}
       </div>
 
-      {openReportKey && reports && (() => {
+      {/* v8.0 — SPARK rich modal with per-report content + rule-library-driven ARGUS box. */}
+      {openReportKey && reports && inputs && (() => {
         const m = REPORT_META.find((x) => (x.key as string) === openReportKey);
         if (!m) return null;
         const r = reports[m.key];
         if (!r) return null;
         return (
-          <ReportDetailModal
+          <SparkReportDetailModal
+            reportKey={m.key as string}
             meta={{ key: m.key as string, label: m.label, question: m.question, icon: m.icon, weight: m.weight }}
             report={r}
             history={scoreHistories[m.key as string] || []}
-            accent="#EF6C33"
-            product="SPARK"
+            inputs={inputs}
+            tenantLabel="your SPARK workspace"
             onClose={() => setOpenReportKey(null)}
           />
         );
