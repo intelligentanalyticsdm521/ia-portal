@@ -12,6 +12,7 @@ import {
   X,
   Plus,
   Trash2,
+  Mail,
 } from "lucide-react";
 
 type Severity = "info" | "warn" | "critical";
@@ -66,7 +67,10 @@ export function SparkAnomalyAlertsPage() {
   const { get, post, patch, del, ready } = useSparkApi();
   const [rules, setRules] = useState<Rule[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [tab, setTab] = useState<"alerts" | "rules">("alerts");
+  const [subs, setSubs] = useState<Array<{ id: number; email: string; min_severity: Severity; created_at: string }>>([]);
+  const [tab, setTab] = useState<"alerts" | "rules" | "subs">("alerts");
+  const [subEmail, setSubEmail] = useState("");
+  const [subMinSev, setSubMinSev] = useState<Severity>("warn");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [alertStatus, setAlertStatus] = useState<"open" | "acknowledged" | "resolved" | "muted" | "all">("open");
@@ -86,16 +90,33 @@ export function SparkAnomalyAlertsPage() {
     if (!ready) return;
     setLoading(true); setError(null);
     try {
-      const [r, a] = await Promise.all([
+      const [r, a, s] = await Promise.all([
         get<{ data: Rule[] }>("/api/v1/anomaly-rules"),
         get<{ data: Alert[] }>(`/api/v1/anomaly-alerts?status=${alertStatus}`),
+        get<{ data: typeof subs }>("/api/v1/anomaly-subscribers").catch(() => ({ data: [] })),
       ]);
       setRules(r?.data || []);
       setAlerts(a?.data || []);
+      setSubs(s?.data || []);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [get, ready, alertStatus]);
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  async function addSubscriber() {
+    if (!/^[^@]+@[^@]+\.[^@]+$/.test(subEmail.trim())) return;
+    try {
+      await post("/api/v1/anomaly-subscribers", { email: subEmail.trim(), min_severity: subMinSev });
+      setSubEmail("");
+      await fetchAll();
+    } catch (err) { alert(`Failed: ${(err as Error).message}`); }
+  }
+  async function removeSubscriber(id: number) {
+    if (!confirm("Remove this subscriber?")) return;
+    try { await del(`/api/v1/anomaly-subscribers/${id}`); await fetchAll(); }
+    catch (err) { alert(`Failed: ${(err as Error).message}`); }
+  }
 
   async function createRule() {
     if (!form.name.trim()) return;
@@ -145,9 +166,63 @@ export function SparkAnomalyAlertsPage() {
         <button onClick={() => setTab("rules")} className={`px-3 py-2 text-sm border-b-2 -mb-px ${tab === "rules" ? "border-[#EF6C33] text-[#EF6C33] font-semibold" : "border-transparent text-slate-600"}`}>
           Rules ({rules.length})
         </button>
+        <button onClick={() => setTab("subs")} className={`px-3 py-2 text-sm border-b-2 -mb-px ${tab === "subs" ? "border-[#EF6C33] text-[#EF6C33] font-semibold" : "border-transparent text-slate-600"}`}>
+          <Mail className="inline h-4 w-4 mr-1" /> Notifications ({subs.length})
+        </button>
       </div>
 
-      {tab === "alerts" ? (
+      {tab === "subs" ? (
+        <>
+          <div className="rounded-lg border border-slate-200 bg-white p-4 mb-4">
+            <div className="text-sm font-semibold text-slate-900 mb-2">Subscribe an email to anomaly notifications</div>
+            <div className="text-xs text-slate-600 mb-2">When a rule fires that meets or exceeds the chosen severity, this address receives an email.</div>
+            <div className="flex gap-2">
+              <input
+                value={subEmail}
+                onChange={(e) => setSubEmail(e.target.value)}
+                placeholder="alerts@example.com"
+                type="email"
+                className="flex-1 text-sm border border-slate-300 rounded px-2 py-1.5 focus:border-[#EF6C33]"
+              />
+              <select value={subMinSev} onChange={(e) => setSubMinSev(e.target.value as Severity)} className="text-sm border border-slate-300 rounded px-2 py-1.5">
+                <option value="info">≥ info</option>
+                <option value="warn">≥ warn</option>
+                <option value="critical">≥ critical</option>
+              </select>
+              <button onClick={addSubscriber} disabled={!/^[^@]+@[^@]+\.[^@]+$/.test(subEmail.trim())} className="text-sm px-3 py-1.5 rounded bg-[#EF6C33] text-white disabled:opacity-50 flex items-center gap-1">
+                <Plus className="h-4 w-4" /> Add
+              </button>
+            </div>
+          </div>
+
+          {subs.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 py-10 text-center">
+              <Mail className="h-8 w-8 mx-auto text-slate-300 mb-2" />
+              <div className="text-sm font-medium text-slate-700">No subscribers yet.</div>
+              <div className="text-xs text-slate-500 mt-1">Anomaly alerts will still be recorded — they just won't send email.</div>
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {subs.map((s) => {
+                const meta = SEV_META[s.min_severity];
+                return (
+                  <li key={s.id} className="rounded-lg border border-slate-200 bg-white p-3 flex items-center justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-mono text-sm text-slate-900 truncate">{s.email}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        Receives alerts at <span className="font-semibold" style={{ color: meta.color }}>{meta.label}</span> and above · added {new Date(s.created_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <button onClick={() => removeSubscriber(s.id)} className="text-[10px] px-2 py-1 rounded border border-red-200 bg-white text-red-600 hover:bg-red-50 flex items-center gap-1">
+                      <Trash2 className="h-3 w-3" /> Remove
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
+      ) : tab === "alerts" ? (
         <>
           <div className="flex items-center gap-2 mb-3">
             <span className="text-[10px] uppercase font-semibold text-slate-500 tracking-wide">Show</span>

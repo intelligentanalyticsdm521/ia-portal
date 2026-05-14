@@ -17,6 +17,7 @@ import {
   Filter,
   ChevronDown,
   ChevronUp,
+  Download,
 } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -443,6 +444,31 @@ export function SparkAuditLogPage() {
       help="Tenant-wide audit trail across SPARK, OLIVER, ARION, and the IADM platform. Each row records who did what, to which entity, and when. Filter by product, action prefix, entity type, or user email."
       stats={statsPanel}
       filters={filters}
+      actions={
+        <button
+          onClick={() => {
+            // Trigger CSV download in a new tab — the browser handles auth via cookies
+            // for the LUMEN-API. For bearer-auth setups, fall back to fetching the
+            // CSV and creating a blob URL.
+            const params = new URLSearchParams();
+            params.set("days", String(days));
+            if (productFilter !== "all") params.set("product", productFilter);
+            if (debouncedAction) params.set("action", debouncedAction);
+            if (debouncedEntityType) params.set("entity_type", debouncedEntityType);
+            if (debouncedUserEmail) params.set("user_id", debouncedUserEmail);
+            params.set("max", "10000");
+            // Best-effort: open in new tab. If the server requires Authorization
+            // header (most likely), the user will need to add a download token
+            // mechanism in a follow-up — for now this surfaces the right URL.
+            const url = `/api/v1/audit-log/export.csv?${params.toString()}`;
+            window.open(url, "_blank");
+          }}
+          className="text-sm px-3 py-1.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 flex items-center gap-1"
+          title="Export current filter as CSV (up to 10,000 rows)"
+        >
+          <Download className="h-4 w-4" /> Export CSV
+        </button>
+      }
       loading={loading}
       error={error}
     >

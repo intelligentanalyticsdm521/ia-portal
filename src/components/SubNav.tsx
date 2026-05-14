@@ -233,6 +233,7 @@ const SPARK_NAV: SubNavConfig = {
       items: [
         { key: "spark_contacts", label: "Contacts", route: "/app/services/spark_contacts" },
         { key: "spark_contact_import", label: "Import (CSV)", route: "/app/services/spark_contact_import" },
+        { key: "spark_contact_bulk", label: "Bulk Operations", route: "/app/services/spark_contact_bulk" },
         // Companies (renamed from "B2B Accounts" — matches HubSpot/Salesforce/Pipedrive
         // industry convention). Auto-matched from contact email domains.
         { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts" },
@@ -322,6 +323,7 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_contact_360", label: "Contact 360°", route: "/app/services/spark_contact_360", intelligence: true },
         { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true },
         { key: "spark_dashboards", label: "Dashboards", route: "/app/services/spark_dashboards" },
+        { key: "spark_analytics_reports", label: "Analytics Reports", route: "/app/services/spark_analytics_reports" },
       ],
     },
     {

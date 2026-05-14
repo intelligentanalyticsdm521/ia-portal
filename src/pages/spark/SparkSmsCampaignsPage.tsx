@@ -349,6 +349,18 @@ export function SparkSmsCampaignsPage() {
     }
   }
 
+  async function retryFailed() {
+    if (!detail) return;
+    if (!confirm(`Re-send to the ${detail.failed_count} contacts that previously failed?`)) return;
+    try {
+      await post(`/api/v1/sms-campaigns/${detail.id}/retry-failed`, {});
+      await fetchList();
+      await fetchDetail(detail.id);
+    } catch (err) {
+      alert(`Failed to retry: ${(err as Error).message}`);
+    }
+  }
+
   function startEdit() {
     if (!detail) return;
     setForm({
@@ -492,6 +504,7 @@ export function SparkSmsCampaignsPage() {
                   onCancel={cancelCampaign}
                   onEdit={startEdit}
                   onDelete={deleteCampaign}
+                  onRetryFailed={retryFailed}
                 />
                 <SendLog
                   sends={sends}
@@ -551,17 +564,20 @@ function CampaignDetailCard({
   onCancel,
   onEdit,
   onDelete,
+  onRetryFailed,
 }: {
   c: Campaign;
   onSendNow: () => void;
   onCancel: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onRetryFailed: () => void;
 }) {
   const canSendNow = c.status === "draft" || c.status === "scheduled";
   const canCancel = c.status === "scheduled";
   const canEdit = c.status === "draft" || c.status === "scheduled";
   const canDelete = c.status !== "sending" && c.status !== "sent";
+  const canRetryFailed = (c.status === "sent" || c.status === "failed") && c.failed_count > 0;
 
   const progressPct =
     c.total_targets > 0
@@ -616,6 +632,15 @@ function CampaignDetailCard({
               className="text-xs flex items-center gap-1 px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
             >
               <Pencil className="h-3 w-3" /> Edit
+            </button>
+          )}
+          {canRetryFailed && (
+            <button
+              onClick={onRetryFailed}
+              className="text-xs flex items-center gap-1 px-2 py-1 rounded border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+              title={`Re-send to the ${c.failed_count} contacts that previously failed`}
+            >
+              <Send className="h-3 w-3" /> Retry failed ({c.failed_count})
             </button>
           )}
           {canDelete && (

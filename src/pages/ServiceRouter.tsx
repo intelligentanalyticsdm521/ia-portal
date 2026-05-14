@@ -112,6 +112,8 @@ const SparkInsightsPage = lazyNamed(() => import('./spark/SparkInsightsPage'), '
 const SparkActivityStreamPage = lazyNamed(() => import('./spark/SparkActivityStreamPage'), 'SparkActivityStreamPage');
 const SparkHealthScorePage = lazyNamed(() => import('./spark/SparkHealthScorePage'), 'SparkHealthScorePage');
 const SparkDashboardsPage = lazyNamed(() => import('./spark/SparkDashboardsPage'), 'SparkDashboardsPage');
+const SparkAnalyticsReportsPage = lazyNamed(() => import('./spark/SparkAnalyticsReportsPage'), 'SparkAnalyticsReportsPage');
+const SparkContactBulkPage = lazyNamed(() => import('./spark/SparkContactBulkPage'), 'SparkContactBulkPage');
 // SPARK v1.0 additions
 const SparkApprovalsPage = lazyNamed(() => import('./spark/SparkApprovalsPage'), 'SparkApprovalsPage');
 const SparkSmsInboxPage = lazyNamed(() => import('./spark/SparkSmsInboxPage'), 'SparkSmsInboxPage');
@@ -382,6 +384,8 @@ export function ServiceRouter() {
       case 'spark_activity_stream': sparkPage = <SparkActivityStreamPage />; break;
       case 'spark_health_score': sparkPage = <SparkHealthScorePage />; break;
       case 'spark_dashboards': sparkPage = <SparkDashboardsPage />; break;
+      case 'spark_analytics_reports': sparkPage = <SparkAnalyticsReportsPage />; break;
+      case 'spark_contact_bulk': sparkPage = <SparkContactBulkPage />; break;
       // v1.0 additions
       case 'spark_approvals': sparkPage = <SparkApprovalsPage />; break;
       case 'spark_sms_inbox': sparkPage = <SparkSmsInboxPage />; break;
