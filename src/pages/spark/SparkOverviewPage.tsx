@@ -12,6 +12,7 @@ import {
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { ArgusInsightBox } from "../../components/oliver/ArgusInsightBox";
+import { Sparkline } from "../../components/iainsights/Sparkline";
 
 // ─ Types ──────────────────────────────────────────────────────────────────────
 interface UsageResponse {
@@ -39,6 +40,11 @@ interface CommPerf {
 interface NpsSummary { nps: number; total: number; promoters: number; passives: number; detractors: number; }
 interface LeadRoi { total_leads: number; accepted: number; hot: number; avg_score: number; }
 interface PipelineFunnel { stage_name: string; deal_count: number; total_value: number; }
+interface PriorScores { data: Record<string, { score: number; periodEnd: string }> }
+interface RealtimeData {
+  today?: { emails_today?: number; sms_today?: number; form_submissions_today?: number; new_contacts_today?: number; alerts_today?: number };
+  open_alerts?: Array<{ severity: string; n: number }>;
+}
 
 const TIER_COLORS = { X: "#10b981", Y: "#3b82f6", Z: "#94a3b8" } as const;
 
@@ -51,6 +57,9 @@ export function SparkOverviewPage() {
   const [nps, setNps] = useState<NpsSummary | null>(null);
   const [leads, setLeads] = useState<LeadRoi | null>(null);
   const [funnel, setFunnel] = useState<PipelineFunnel[]>([]);
+  const [trendScore, setTrendScore] = useState<number | null>(null);
+  const [trendHistory, setTrendHistory] = useState<Array<{ period_end: string; score: number }>>([]);
+  const [realtime, setRealtime] = useState<RealtimeData | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 
@@ -64,13 +73,17 @@ export function SparkOverviewPage() {
       const safe = async <T,>(p: Promise<T>): Promise<T | null> => {
         try { return await p; } catch { return null; }
       };
-      const [u, c, g, cp, n, l] = await Promise.all([
+      const [u, c, g, cp, n, l, ps, th, rt] = await Promise.all([
         safe(get<UsageResponse>("/api/v1/usage")),
         safe(get<{ data: Contact[] }>("/api/v1/contacts?limit=5")),
         safe(get<{ data: GrowthVelocity }>("/api/v1/insights/growth-velocity?days=30")),
         safe(get<{ data: CommPerf }>("/api/v1/insights/communication-performance?days=30")),
         safe(get<{ data: NpsSummary }>("/api/v1/nps/summary?days=90")),
         safe(get<{ data: LeadRoi }>("/api/v1/insights/lead-gen-roi")),
+        // v6.7 — IA Insights cross-page summary fetch
+        safe(get<PriorScores>(`/api/v1/ia-insights/prior-scores?product=spark&beforeDate=${new Date(Date.now() + 86400_000).toISOString().slice(0,10)}`)),
+        safe(get<{ data: Array<{ period_end: string; score: number }> }>("/api/v1/ia-insights/score-history?product=spark&reportKey=presence&limit=12")),
+        safe(get<RealtimeData>("/api/v1/usage/realtime?minutes=60")),
       ]);
       // pipelines → if any pipeline exists, pull the first one's funnel
       let f: PipelineFunnel[] = [];
@@ -88,6 +101,10 @@ export function SparkOverviewPage() {
         setNps(n?.data || null);
         setLeads(l?.data || null);
         setFunnel(f);
+        // v6.7 — IA Insights at-a-glance state
+        setTrendScore(ps?.data?.presence?.score ?? null);
+        setTrendHistory((th?.data || []).filter((row) => row && row.period_end));
+        setRealtime(rt || null);
         setLoading(false);
       }
     }
@@ -160,6 +177,13 @@ export function SparkOverviewPage() {
   return (
     <OliverPageWrapper title="SPARK Overview" subtitle="Your marketing + sales command center" error={error} loading={loading}>
       <div className="p-6 space-y-6">
+
+        {/* ── IA INSIGHTS AT A GLANCE (v6.7) ───────────────────────────── */}
+        <IAInsightsGlance
+          trendScore={trendScore}
+          trendHistory={trendHistory}
+          realtime={realtime}
+        />
 
         {/* ── HERO STATS ────────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -456,6 +480,89 @@ function QuickAction({ to, icon: Icon, label }: QuickActionProps) {
       <Icon className="h-4 w-4 text-gray-500" />
       <span className="text-sm font-medium">{label}</span>
     </Link>
+  );
+}
+
+// ─ IA Insights at-a-glance (v6.7) ──────────────────────────────────────────
+function IAInsightsGlance({
+  trendScore, trendHistory, realtime,
+}: {
+  trendScore: number | null;
+  trendHistory: Array<{ period_end: string; score: number }>;
+  realtime: RealtimeData | null;
+}) {
+  const score = trendScore ?? 0;
+  const band = score >= 70 ? "green" : score >= 50 ? "amber" : score > 0 ? "red" : "gray";
+  const bandColor = ({ green: "#16A34A", amber: "#EAB308", red: "#DC2626", gray: "#94A3B8" } as const)[band];
+  const openAlerts = (realtime?.open_alerts || []).reduce((s, a) => s + (a.n || 0), 0);
+  const t = realtime?.today || {};
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gradient-to-r from-orange-50 to-white p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-[#EF6C33]" />
+          <span className="font-semibold text-slate-900 text-sm">IA Insights at a glance</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link to="/app/services/spark_ia_insights_trends" className="text-xs text-[#EF6C33] hover:underline flex items-center gap-0.5">
+            Open Trends <ArrowUpRight className="h-3 w-3" />
+          </Link>
+          <Link to="/app/services/spark_realtime_metrics" className="text-xs text-slate-600 hover:underline flex items-center gap-0.5">
+            Real-time <ArrowUpRight className="h-3 w-3" />
+          </Link>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {/* Trend score */}
+        <div className="bg-white rounded-lg border border-gray-200 p-3">
+          <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wide mb-1">SPARK Trend Score</div>
+          <div className="flex items-center gap-2">
+            <div className="text-2xl font-bold tabular-nums" style={{ color: bandColor }}>
+              {trendScore != null ? trendScore : "—"}
+            </div>
+            {trendHistory.length > 1 && (
+              <div className="flex-1 min-w-0">
+                <Sparkline data={trendHistory} color={bandColor} width={80} height={24} showBands={false} />
+              </div>
+            )}
+          </div>
+          <div className="text-[9px] text-slate-400 mt-0.5">
+            {trendScore != null ? `Band: ${band}` : "No data yet"}
+          </div>
+        </div>
+        {/* Today's emails */}
+        <RealtimeTile label="Emails today" value={t.emails_today || 0} color="#2563EB" />
+        {/* Today's SMS */}
+        <RealtimeTile label="SMS today" value={t.sms_today || 0} color="#0EA5E9" />
+        {/* New contacts today */}
+        <RealtimeTile label="New contacts" value={t.new_contacts_today || 0} color="#EF6C33" />
+        {/* Open anomaly alerts */}
+        <Link
+          to="/app/services/spark_anomaly_alerts"
+          className={`block bg-white rounded-lg border p-3 hover:border-amber-300 transition-colors ${openAlerts > 0 ? "border-amber-300" : "border-gray-200"}`}
+        >
+          <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wide mb-1">Open alerts</div>
+          <div className="text-2xl font-bold tabular-nums" style={{ color: openAlerts > 0 ? "#DC2626" : "#94A3B8" }}>
+            {openAlerts}
+          </div>
+          <div className="text-[9px] text-slate-400 mt-0.5">
+            {openAlerts > 0 ? "Click to review" : "All clear"}
+          </div>
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function RealtimeTile({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-3">
+      <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wide mb-1">{label}</div>
+      <div className="text-2xl font-bold tabular-nums" style={{ color }}>
+        {value.toLocaleString()}
+      </div>
+      <div className="text-[9px] text-slate-400 mt-0.5">Today (UTC midnight)</div>
+    </div>
   );
 }
 
