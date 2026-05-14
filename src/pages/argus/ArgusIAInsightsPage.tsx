@@ -134,18 +134,61 @@ export function ArgusIAInsightsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {CC_REPORTS.map((r) => r.key === "web_to_revenue"
-          ? <WebToRevenueCard key={r.key} report={r} data={webToRevenue} />
+          ? <WebToRevenueCard key={r.key} report={r} data={webToRevenue} pulse={pulse} />
           : r.key === "marketing_ops_loop"
-          ? <MarketingOpsLoopCard key={r.key} report={r} data={marketingOps} />
-          : <CrossChannelCard key={r.key} report={r} />
+          ? <MarketingOpsLoopCard key={r.key} report={r} data={marketingOps} pulse={pulse} />
+          : <CrossChannelCard key={r.key} report={r} pulse={pulse} />
         )}
       </div>
     </div>
   );
 }
 
-function CrossChannelCard({ report }: { report: CrossChannelReport }) {
+// v5.24 — Per-report metric inventory shown in the locked-state card so
+// users see exactly what each report will analyze + which data points
+// each connected product contributes.
+const REPORT_METRICS: Record<string, { product: "ARION" | "SPARK" | "OLIVER"; metric: string }[]> = {
+  acquisition_quality: [
+    { product: "ARION", metric: "Source channel attribution from GA4 sessions" },
+    { product: "ARION", metric: "Search query → landing page conversion paths" },
+    { product: "SPARK", metric: "Contact.source field by acquisition channel" },
+    { product: "SPARK", metric: "Lifetime value per acquisition source" },
+  ],
+  clv: [
+    { product: "SPARK", metric: "Contact lifetime_value + job_count aggregates" },
+    { product: "SPARK", metric: "Segment membership over time" },
+    { product: "OLIVER", metric: "Revenue per customer across all jobs" },
+    { product: "OLIVER", metric: "Repeat-job intervals and frequency" },
+  ],
+  retention_revenue: [
+    { product: "SPARK", metric: "Contact last_job_date + engagement decay signals" },
+    { product: "OLIVER", metric: "Dormant-customer count (60+ days since last job)" },
+    { product: "OLIVER", metric: "Historical reactivation conversion rate" },
+  ],
+  growth_composite: [
+    { product: "ARION", metric: "Web visibility trend (impressions, position, CTR)" },
+    { product: "SPARK", metric: "Contact growth rate + campaign performance trend" },
+    { product: "OLIVER", metric: "Revenue trend + job volume trend" },
+  ],
+};
+
+function CrossChannelCard({ report, pulse }: { report: CrossChannelReport; pulse: BusinessPulse | null }) {
   const Icon = report.icon;
+  const metrics = REPORT_METRICS[report.key] || [];
+  // Determine connection status per product based on pulse.components.
+  function connectionFor(p: "ARION" | "SPARK" | "OLIVER"): "connected" | "missing" | "unknown" {
+    if (!pulse) return "unknown";
+    const key = p.toLowerCase() as "arion" | "spark" | "oliver";
+    const score = pulse.components[key];
+    return score == null ? "missing" : "connected";
+  }
+  const productStatus = report.productsRequired.map((p) => ({
+    product: p as "ARION" | "SPARK" | "OLIVER",
+    status: connectionFor(p as "ARION" | "SPARK" | "OLIVER"),
+  }));
+  const missingProducts = productStatus.filter((p) => p.status === "missing").map((p) => p.product);
+  const allConnected = productStatus.every((p) => p.status === "connected");
+
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
       <div className="flex items-start gap-2 mb-2">
@@ -163,20 +206,58 @@ function CrossChannelCard({ report }: { report: CrossChannelReport }) {
           <div className="text-[10px] text-slate-500">{report.question}</div>
         </div>
       </div>
-      <div className="text-xs text-slate-600 mb-2">
-        <span className="font-semibold">Products required:</span> {report.productsRequired.join(" + ")}
+
+      {/* Per-product connection status */}
+      <div className="flex items-center gap-1 mb-2 flex-wrap">
+        {productStatus.map((p) => {
+          const colors = p.status === "connected"
+            ? { bg: "bg-emerald-100", text: "text-emerald-800", icon: "✓" }
+            : p.status === "missing"
+            ? { bg: "bg-red-100", text: "text-red-800", icon: "✗" }
+            : { bg: "bg-slate-200", text: "text-slate-600", icon: "?" };
+          return (
+            <span key={p.product} className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${colors.bg} ${colors.text}`}>
+              {colors.icon} {p.product}
+            </span>
+          );
+        })}
       </div>
-      <div className="rounded bg-amber-50 border border-amber-200 px-2 py-1.5 text-[10px] text-amber-800 flex items-center gap-1">
-        <Lock className="h-3 w-3" /> Collecting data — populates ~90 days post-launch
+
+      {/* Metric inventory */}
+      {metrics.length > 0 && (
+        <div className="mb-2">
+          <div className="text-[9px] uppercase font-semibold text-slate-500 tracking-wide mb-1">What this report will analyze</div>
+          <ul className="space-y-0.5">
+            {metrics.map((m, i) => (
+              <li key={i} className="text-[10px] text-slate-600 flex items-start gap-1">
+                <span className="text-[9px] uppercase font-bold px-1 rounded bg-slate-200 text-slate-700 mt-0.5 flex-shrink-0">{m.product}</span>
+                <span className="flex-1">{m.metric}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Tailored unlock advisory */}
+      <div className={`rounded px-2 py-1.5 text-[10px] flex items-start gap-1 ${allConnected ? "bg-blue-50 border border-blue-200 text-blue-800" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
+        <Lock className="h-3 w-3 flex-shrink-0 mt-0.5" />
+        <span>
+          {missingProducts.length > 0
+            ? <>Connect <strong>{missingProducts.join(" and ")}</strong> to start collecting data for this report.</>
+            : allConnected
+            ? <>All required products are connected. Report populates after 90 days of historical data — first analysis expected by {new Date(Date.now() + 90 * 86400_000).toLocaleDateString()}.</>
+            : <>Collecting data — populates ~90 days post-launch.</>
+          }
+        </span>
       </div>
     </div>
   );
 }
 
-function WebToRevenueCard({ report, data }: { report: CrossChannelReport; data: WebToRevenue | null }) {
+function WebToRevenueCard({ report, data, pulse }: { report: CrossChannelReport; data: WebToRevenue | null; pulse?: BusinessPulse | null }) {
   const Icon = report.icon;
   if (!data || data.present_stages === 0) {
-    return <CrossChannelCard report={report} />;
+    return <CrossChannelCard report={report} pulse={pulse ?? null} />;
   }
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -223,11 +304,11 @@ function WebToRevenueCard({ report, data }: { report: CrossChannelReport; data: 
   );
 }
 
-function MarketingOpsLoopCard({ report, data }: { report: CrossChannelReport; data: MarketingOpsLoop | null }) {
+function MarketingOpsLoopCard({ report, data, pulse }: { report: CrossChannelReport; data: MarketingOpsLoop | null; pulse?: BusinessPulse | null }) {
   const Icon = report.icon;
   const hasData = data && data.stages.some((s) => s.score != null);
   if (!hasData) {
-    return <CrossChannelCard report={report} />;
+    return <CrossChannelCard report={report} pulse={pulse ?? null} />;
   }
   const marketing = data!.stages.filter((s) => s.side === "marketing");
   const operations = data!.stages.filter((s) => s.side === "operations");

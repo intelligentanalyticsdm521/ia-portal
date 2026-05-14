@@ -151,11 +151,21 @@ export function SparkFormBuilderPage() {
     finally { setSaving(false); }
   }
 
-  const submitUrl = formRow ? `${window.location.origin.replace(/\/$/, "")}/api/v1/forms/${formRow.id}/submit` : "";
+  // Submit URL uses LUMEN-API base (read from window for now; the env var
+  // can override). Hosted page renders an HTML form at /api/v1/forms/:id/hosted.
+  const apiBase = ((typeof window !== "undefined" && (window as any).__LUMEN_API_BASE) as string | undefined)
+    || `${typeof window !== "undefined" ? window.location.origin.replace(/\/$/, "") : ""}`;
+  const submitUrl = formRow ? `${apiBase}/api/v1/forms/${formRow.id}/submit` : "";
+  const hostedUrl = formRow ? `${apiBase}/api/v1/forms/${formRow.id}/hosted` : "";
+  const [copyTarget, setCopyTarget] = useState<"submit" | "hosted" | null>(null);
 
-  async function copySubmitUrl() {
-    try { await navigator.clipboard.writeText(submitUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); }
-    catch (e) { alert(`Copy failed: ${(e as Error).message}`); }
+  async function copyText(text: string, target: "submit" | "hosted") {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyTarget(target);
+      setCopied(true);
+      setTimeout(() => { setCopied(false); setCopyTarget(null); }, 1500);
+    } catch (e) { alert(`Copy failed: ${(e as Error).message}`); }
   }
 
   if (!formId) {
@@ -200,18 +210,30 @@ export function SparkFormBuilderPage() {
               className="w-full text-sm border border-slate-300 rounded px-2 py-1.5 focus:border-[#EF6C33]"
             />
           </label>
-          <div className="md:col-span-2 text-xs">
-            <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-1">Submit URL</div>
-            <div className="flex gap-1">
-              <code className="flex-1 font-mono text-[10px] bg-slate-50 border border-slate-200 rounded px-2 py-1.5 truncate">
-                {submitUrl}
-              </code>
-              <button onClick={copySubmitUrl} className="text-xs px-2 py-1.5 rounded bg-slate-700 text-white flex items-center gap-1">
-                {copied ? <><Check className="h-3 w-3" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
-              </button>
+          <div className="md:col-span-2 text-xs space-y-2">
+            <div>
+              <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-1">Hosted form URL (no JS / public)</div>
+              <div className="flex gap-1">
+                <code className="flex-1 font-mono text-[10px] bg-slate-50 border border-slate-200 rounded px-2 py-1.5 truncate">{hostedUrl}</code>
+                <button onClick={() => copyText(hostedUrl, "hosted")} className="text-xs px-2 py-1.5 rounded bg-slate-700 text-white flex items-center gap-1">
+                  {copied && copyTarget === "hosted" ? <><Check className="h-3 w-3" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
+                </button>
+              </div>
+              <div className="text-[10px] text-slate-500 mt-1">
+                Link to or iframe this URL. Renders a complete HTML form with self-submit and a thank-you screen on success.
+              </div>
             </div>
-            <div className="text-[10px] text-slate-500 mt-1">
-              POST a JSON body with field names matching your <code className="font-mono">name</code> values. Built-in contact fields (first_name, last_name, email, phone, company) auto-merge into <code className="font-mono">lumen.contact</code>.
+            <div>
+              <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-1">Direct submit URL (for embedded widgets)</div>
+              <div className="flex gap-1">
+                <code className="flex-1 font-mono text-[10px] bg-slate-50 border border-slate-200 rounded px-2 py-1.5 truncate">{submitUrl}</code>
+                <button onClick={() => copyText(submitUrl, "submit")} className="text-xs px-2 py-1.5 rounded bg-slate-700 text-white flex items-center gap-1">
+                  {copied && copyTarget === "submit" ? <><Check className="h-3 w-3" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
+                </button>
+              </div>
+              <div className="text-[10px] text-slate-500 mt-1">
+                POST a JSON body with field names matching your <code className="font-mono">name</code> values. Built-in contact fields (first_name, last_name, email, phone, company) auto-merge into <code className="font-mono">lumen.contact</code>.
+              </div>
             </div>
           </div>
         </div>
