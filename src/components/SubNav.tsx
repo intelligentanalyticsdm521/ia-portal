@@ -13,8 +13,15 @@ export interface SubNavItem {
   label: string;
   route: string;
   gated?: boolean;
-  intelligence?: boolean; // ARGUS-powered intelligence item — lime color + badge
-  crossChannel?: boolean; // ARGUS Cross-Channel link — teal color (#0F766E) + badge
+  intelligence?: boolean; // (legacy) — no longer changes the label color; harmless if set.
+  crossChannel?: boolean; // (legacy) — no longer changes the label color; harmless if set.
+  /**
+   * v7.4 — Optional platform/brand tag rendered to the right of the label.
+   * The label text always uses the standard sidebar color; only the tag
+   * pill carries the brand color. Use this for ARION/SPARK/OLIVER trend +
+   * intelligence items, ARGUS Cross-Channel links, STELLA, etc.
+   */
+  tag?: { label: string; color: string };
 }
 
 export interface SubNavGroup {
@@ -115,9 +122,9 @@ const OLIVER_NAV: SubNavConfig = {
       label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "oliver_ia_insights",
       items: [
         { key: "oliver_ia_insights_health", label: "Health", route: "/app/services/oliver_ia_insights_health" },
-        { key: "oliver_ia_insights_trends", label: "Trends", route: "/app/services/oliver_ia_insights_trends" },
-        { key: "oliver_ia_insights_intelligence", label: "Intelligence", route: "/app/services/oliver_ia_insights_intelligence", intelligence: true },
-        { key: "argus_ia_insights", label: "Cross-Channel (ARGUS)", route: "/app/services/argus_ia_insights", crossChannel: true },
+        { key: "oliver_ia_insights_trends", label: "Trends", route: "/app/services/oliver_ia_insights_trends", tag: { label: "OLIVER", color: "#FEC82C" } },
+        { key: "oliver_ia_insights_intelligence", label: "Intelligence", route: "/app/services/oliver_ia_insights_intelligence", tag: { label: "OLIVER", color: "#FEC82C" } },
+        { key: "argus_ia_insights", label: "Cross-Channel", route: "/app/services/argus_ia_insights", tag: { label: "ARGUS", color: "#84CC16" } },
       ],
     },
     {
@@ -192,9 +199,9 @@ const ARION_NAV: SubNavConfig = {
       label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "ia_insights",
       items: [
         { key: "arion_ia_insights_health", label: "Health", route: "/app/services/arion_ia_insights_health" },
-        { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends" },
-        { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", intelligence: true },
-        { key: "argus_ia_insights", label: "Cross-Channel (ARGUS)", route: "/app/services/argus_ia_insights", crossChannel: true },
+        { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends", tag: { label: "ARION", color: "#1A7DB5" } },
+        { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#1A7DB5" } },
+        { key: "argus_ia_insights", label: "Cross-Channel", route: "/app/services/argus_ia_insights", tag: { label: "ARGUS", color: "#84CC16" } },
         { key: "arion_service_area", label: "Service Area Config", route: "/app/services/arion_service_area" },
       ],
     },
@@ -351,10 +358,10 @@ const SPARK_NAV: SubNavConfig = {
       label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "spark_ia_insights",
       items: [
         { key: "spark_ia_insights_health", label: "Health", route: "/app/services/spark_ia_insights_health" },
-        { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends" },
-        { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", intelligence: true },
-        { key: "spark_stella", label: "STELLA Send Intelligence", route: "/app/services/spark_stella", intelligence: true },
-        { key: "argus_ia_insights", label: "Cross-Channel (ARGUS)", route: "/app/services/argus_ia_insights", crossChannel: true },
+        { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends", tag: { label: "SPARK", color: "#EF6C33" } },
+        { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" } },
+        { key: "spark_stella", label: "STELLA Send Intelligence", route: "/app/services/spark_stella", tag: { label: "STELLA", color: "#EF6C33" } },
+        { key: "argus_ia_insights", label: "Cross-Channel", route: "/app/services/argus_ia_insights", tag: { label: "ARGUS", color: "#84CC16" } },
         { key: "spark_service_category", label: "Service Category", route: "/app/services/spark_service_category" },
       ],
     },
@@ -600,9 +607,6 @@ export function SubNav({ config }: SubNavProps) {
                 <ul className="space-y-0.5">
                   {group.items.map((item, itemIdx) => (
                     <li key={item.key}>
-                      {(item.intelligence || item.crossChannel) && (itemIdx === 0 || !(group.items[itemIdx - 1]?.intelligence || group.items[itemIdx - 1]?.crossChannel)) && (
-                        <div style={{ borderTop: '1px solid rgba(168,205,216,0.15)', margin: '6px 8px 4px' }} />
-                      )}
                       <NavLink
                         to={item.route}
                         className={({ isActive }) =>
@@ -614,21 +618,23 @@ export function SubNav({ config }: SubNavProps) {
                         }
                       >
                         <span className="h-1 w-1 flex-shrink-0 rounded-full bg-current opacity-50" />
-                        <span
-                          className="truncate"
-                          style={
-                            item.crossChannel ? { color: '#0F766E' }
-                            : item.intelligence ? { color: '#6B9402' }
-                            : undefined
-                          }
-                        >
-                          {item.label}
-                        </span>
-                        {item.crossChannel && (
-                          <span style={{ background: 'rgba(15,118,110,0.14)', color: '#0F766E', fontSize: 9, padding: '1px 5px', borderRadius: 99, flexShrink: 0, marginLeft: 'auto' }}>ARGUS</span>
-                        )}
-                        {item.intelligence && !item.crossChannel && (
-                          <span style={{ background: 'rgba(151,204,4,0.12)', color: '#6B9402', fontSize: 9, padding: '1px 5px', borderRadius: 99, flexShrink: 0, marginLeft: 'auto' }}>Intelligence</span>
+                        <span className="truncate">{item.label}</span>
+                        {item.tag && (
+                          <span
+                            style={{
+                              background: `${item.tag.color}22`,
+                              color: item.tag.color,
+                              fontSize: 9,
+                              fontWeight: 700,
+                              letterSpacing: '0.04em',
+                              padding: '1px 5px',
+                              borderRadius: 99,
+                              flexShrink: 0,
+                              marginLeft: 'auto',
+                            }}
+                          >
+                            {item.tag.label}
+                          </span>
                         )}
                         {item.gated && (
                           <svg className="ml-auto h-3 w-3 flex-shrink-0 text-[#A8CDD8]/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

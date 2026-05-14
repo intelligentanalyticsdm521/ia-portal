@@ -57,6 +57,13 @@ function formatPeriodFull(periodEnd: string): string {
   }
 }
 
+// Placeholder bar heights (0-1 normalized) shaped like a typical monthly
+// trend — gentle climb with one dip. Renders behind a "Awaiting data"
+// caption when no real history exists, so the card visual stays consistent.
+const PLACEHOLDER_BAR_HEIGHTS = [
+  0.35, 0.42, 0.5, 0.48, 0.58, 0.55, 0.62, 0.68, 0.6, 0.72, 0.75, 0.8,
+];
+
 export function MonthlyScoreBars({
   data,
   width = 320,
@@ -66,13 +73,46 @@ export function MonthlyScoreBars({
 }: Props) {
   if (!data || data.length < 2) {
     if (!showPlaceholder) return null;
+    // Faint placeholder bar chart — same dimensions as a real chart so the
+    // card never reflows when data starts flowing in. Bars are rendered
+    // light gray with low opacity, and a subtle "Awaiting data" caption
+    // sits at center.
+    const labelHeight = showLabels ? 10 : 0;
+    const axisHeight  = 12;
+    const innerHeight = Math.max(20, height - labelHeight - axisHeight);
+    const gap = 2;
+    const n = PLACEHOLDER_BAR_HEIGHTS.length;
+    const barWidth = Math.max(4, (width - gap * (n - 1)) / n);
     return (
-      <div
-        style={{ width, height }}
-        className="rounded bg-slate-50 border border-slate-200 flex items-center justify-center"
-      >
-        <span className="text-[10px] text-slate-400 italic">Score history populates after 2+ periods</span>
-      </div>
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="block" aria-label="No score history yet">
+        {PLACEHOLDER_BAR_HEIGHTS.map((p, i) => {
+          const x = i * (barWidth + gap);
+          const barHeight = Math.max(1, p * innerHeight);
+          const y = labelHeight + innerHeight - barHeight;
+          return (
+            <rect
+              key={i}
+              x={x}
+              y={y}
+              width={barWidth}
+              height={barHeight}
+              fill="#CBD5E1"
+              fillOpacity={0.45}
+              rx={1}
+            />
+          );
+        })}
+        <text
+          x={width / 2}
+          y={height / 2 + 3}
+          textAnchor="middle"
+          fontSize="10"
+          fill="#94A3B8"
+          fontStyle="italic"
+        >
+          Awaiting data
+        </text>
+      </svg>
     );
   }
 
