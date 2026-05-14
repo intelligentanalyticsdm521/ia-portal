@@ -40,11 +40,18 @@ interface BusinessPulse {
   weights: { arion: number; spark: number; oliver: number };
 }
 
+interface WebToRevenue {
+  stages: Array<{ key: string; label: string; score: number | null; period_end: string | null }>;
+  weakest_link: { key: string; label: string; score: number } | null;
+  present_stages: number;
+}
+
 export function ArgusIAInsightsPage() {
   const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
   const [pulse, setPulse] = useState<BusinessPulse | null>(null);
   const [serverBanners, setServerBanners] = useState<InsightDataGapBanner[]>([]);
+  const [webToRevenue, setWebToRevenue] = useState<WebToRevenue | null>(null);
 
   useEffect(() => {
     if (!activeTenantId) return;
@@ -62,6 +69,18 @@ export function ArgusIAInsightsPage() {
           setServerBanners(body?.banners || []);
         }
       } catch { /* swallow — banners cover the gap */ }
+      // Also fetch the Trends-level Web-to-Revenue funnel.
+      try {
+        const token = await getToken();
+        const base = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string).replace(/\/$/, "");
+        const r2 = await globalThis.fetch(`${base}/argus/cross-channel/web-to-revenue`, {
+          headers: { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId },
+        });
+        if (r2.ok && !cancelled) {
+          const body = await r2.json();
+          setWebToRevenue(body?.data || null);
+        }
+      } catch { /* swallow */ }
     })();
     return () => { cancelled = true; };
   }, [activeTenantId, getToken]);
@@ -98,7 +117,10 @@ export function ArgusIAInsightsPage() {
       <IAInsightsHeader data={headerData} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {CC_REPORTS.map((r) => <CrossChannelCard key={r.key} report={r} />)}
+        {CC_REPORTS.map((r) => r.key === "web_to_revenue"
+          ? <WebToRevenueCard key={r.key} report={r} data={webToRevenue} />
+          : <CrossChannelCard key={r.key} report={r} />
+        )}
       </div>
     </div>
   );
@@ -129,6 +151,56 @@ function CrossChannelCard({ report }: { report: CrossChannelReport }) {
       <div className="rounded bg-amber-50 border border-amber-200 px-2 py-1.5 text-[10px] text-amber-800 flex items-center gap-1">
         <Lock className="h-3 w-3" /> Collecting data — populates ~90 days post-launch
       </div>
+    </div>
+  );
+}
+
+function WebToRevenueCard({ report, data }: { report: CrossChannelReport; data: WebToRevenue | null }) {
+  const Icon = report.icon;
+  if (!data || data.present_stages === 0) {
+    return <CrossChannelCard report={report} />;
+  }
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex items-start gap-2 mb-2">
+        <div className="flex-shrink-0 h-9 w-9 rounded-full flex items-center justify-center bg-emerald-50 text-emerald-700">
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-sm text-slate-900">{report.label}</span>
+            <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">live</span>
+          </div>
+          <div className="text-[10px] text-slate-500">{report.question}</div>
+        </div>
+      </div>
+
+      <ul className="space-y-1.5 mb-2">
+        {data.stages.map((s, i) => {
+          const isWeakest = data.weakest_link?.key === s.key;
+          const color = s.score == null ? "#94A3B8" : s.score >= 70 ? "#16A34A" : s.score >= 50 ? "#EAB308" : "#DC2626";
+          const pct = s.score == null ? 0 : Math.max(5, s.score);
+          return (
+            <li key={s.key} className="text-xs">
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="text-slate-700 truncate">{i + 1}. {s.label}</span>
+                <span className="text-[10px] tabular-nums" style={{ color }}>
+                  {s.score == null ? "—" : `${s.score}/100`}
+                  {isWeakest && <span className="ml-1 text-[9px] uppercase font-bold text-amber-700">weakest</span>}
+                </span>
+              </div>
+              <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {data.weakest_link && (
+        <div className="rounded bg-amber-50 border border-amber-200 px-2 py-1.5 text-[10px] text-amber-800">
+          Weakest funnel stage: <strong>{data.weakest_link.label}</strong> ({data.weakest_link.score}/100). Fix this stage first to compound improvements through every downstream step.
+        </div>
+      )}
     </div>
   );
 }

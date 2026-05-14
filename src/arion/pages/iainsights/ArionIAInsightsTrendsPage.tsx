@@ -49,6 +49,7 @@ export function ArionIAInsightsTrendsPage() {
   const [bingData, setBingData] = useState<any>(null);
   const [pluginData, setPluginData] = useState<any>(null);
   const [seoData, setSeoData] = useState<any>(null);
+  const [benchmarks, setBenchmarks] = useState<Record<string, number>>({});
 
   // Pull the additional data sources the engines accept.
   useEffect(() => {
@@ -94,6 +95,34 @@ export function ArionIAInsightsTrendsPage() {
   }, [activeSiteId, arionApi]);
   const [serviceArea, setServiceArea] = useState<{ city?: string; state?: string; regions?: string[]; zips?: string[] } | undefined>(undefined);
 
+  // Fetch industry benchmarks once. Service category defaults to home_services
+  // for now — future patch reads the tenant's actual service_category attribute.
+  useEffect(() => {
+    if (!activeTenantId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const baseUrl = import.meta.env.VITE_ARION_API_BASE_URL as string;
+        const category = "home_services";  // TODO: derive from tenant config
+        const r = await globalThis.fetch(`${baseUrl}/arion/ia-insights/benchmarks?category=${encodeURIComponent(category)}`, {
+          headers: { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId },
+        });
+        if (r.ok && !cancelled) {
+          const body = await r.json();
+          const map: Record<string, number> = {};
+          for (const row of body?.data || []) {
+            if (row.metric_key && row.benchmark_value != null) {
+              map[row.metric_key] = Number(row.benchmark_value);
+            }
+          }
+          setBenchmarks(map);
+        }
+      } catch { /* swallow */ }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTenantId, getToken]);
+
   // Fetch service area once per site.
   useEffect(() => {
     if (!activeSiteId || !activeTenantId) return;
@@ -128,9 +157,10 @@ export function ArionIAInsightsTrendsPage() {
       seoData,
       pluginData,
       serviceArea,
+      benchmarks,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, seoData, pluginData, serviceArea, selectedSite?.primaryDomain]);
+  }, [data, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, seoData, pluginData, serviceArea, benchmarks, selectedSite?.primaryDomain]);
 
   // Persist current scores + fetch prior period for ghost-bar comparison.
   useEffect(() => {

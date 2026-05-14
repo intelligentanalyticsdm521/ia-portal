@@ -41,6 +41,16 @@ export interface EngineInput {
   sparkConnected?: boolean;
   /** Form → contact match rate when SPARK is wired. */
   formToContactRate?: number | null;
+  /** Per-category industry benchmarks (sourced from arion.ia_insights_benchmark).
+   *  Keyed by metric_key — e.g. benchmarks.impression_to_visit = 1.5 means
+   *  the home-services typical impression-to-visit is 1.5%. */
+  benchmarks?: Record<string, number>;
+}
+
+/** Look up a benchmark with a sensible fallback. */
+function bm(input: EngineInput, key: string, fallback: number): number {
+  const v = input.benchmarks?.[key];
+  return v != null && isFinite(v) ? v : fallback;
 }
 
 export interface ReportAnalysis {
@@ -157,9 +167,11 @@ export function visibilityReachEngine(input: EngineInput): ReportAnalysis {
   const localSessions = geo.localShare != null ? sessions * geo.localShare : sessions;
   const effectiveImpressionToVisit = gscImpressions > 0 ? localSessions / gscImpressions : null;
 
-  // Score: weighted blend
+  // Score: weighted blend. Benchmarks default to the home-services baseline
+  // and are overridden by per-category values from arion.ia_insights_benchmark.
+  const impToVisitBenchmark = bm(input, "impression_to_visit", 1.5);
   const impToVisitScore = effectiveImpressionToVisit != null
-    ? scoreFromBenchmark(effectiveImpressionToVisit * 100, 1.5, 5)  // 1.5% benchmark for avg pos 15-20
+    ? scoreFromBenchmark(effectiveImpressionToVisit * 100, impToVisitBenchmark, impToVisitBenchmark * 3.3)
     : 35;
   const localTrafficScore = geo.localShare != null ? clamp(geo.localShare * 100, 0, 100) : 50;
   const channelDiversityScore = topChannelShare > 0 ? clamp((1 - Math.min(1, topChannelShare)) * 100, 0, 100) : 50;
@@ -251,11 +263,14 @@ export function audienceIntelligenceEngine(input: EngineInput): ReportAnalysis {
   const newRatio = totalUsers > 0 ? newUsers / totalUsers : null;
   const returningRatio = newRatio != null ? 1 - newRatio : null;
 
-  // Score components
-  const qualityScore = scoreFromBenchmark((avgSessionDuration * pagesPerSession) || 0, 100, 300);  // 100s × 1.5 pages baseline
+  // Score components — durations + mobile share use industry benchmarks.
+  const sessionBenchmark = bm(input, "avg_session_duration", 90);  // seconds
+  const qualityScore = scoreFromBenchmark((avgSessionDuration * pagesPerSession) || 0, sessionBenchmark * 1.1, sessionBenchmark * 3);
   const bounceScore = scoreFromBenchmark((1 - bounceRate) * 100, 30, 60);
+  const mobileBenchmark = bm(input, "mobile_share", 60) / 100;  // benchmark is stored as percent
   const mobileScore = mobileShare != null
-    ? (mobileShare >= 0.4 && mobileShare <= 0.7 ? 85 : mobileShare >= 0.3 && mobileShare <= 0.8 ? 65 : 40)
+    ? (mobileShare >= mobileBenchmark - 0.2 && mobileShare <= mobileBenchmark + 0.1 ? 85
+       : mobileShare >= mobileBenchmark - 0.3 && mobileShare <= mobileBenchmark + 0.2 ? 65 : 40)
     : 50;
   const balanceScore = returningRatio != null
     ? (returningRatio >= 0.15 && returningRatio <= 0.4 ? 90 : returningRatio >= 0.10 && returningRatio <= 0.5 ? 65 : 35)
@@ -327,7 +342,8 @@ export function conversionIntelligenceEngine(input: EngineInput): ReportAnalysis
   ];
   const biggestDrop = steps.filter((s) => s.lost > 0).sort((a, b) => b.lost - a.lost)[0];
 
-  const conversionScore = scoreFromBenchmark(visitToSubmit * 100, 1.5, 4);  // 1.5% benchmark
+  const formBenchmark = bm(input, "form_conversion_rate", 1.5);
+  const conversionScore = scoreFromBenchmark(visitToSubmit * 100, formBenchmark, formBenchmark * 2.5);
   const formCompletionScore = scoreFromBenchmark(formStartToSubmit * 100, 50, 80);
   const ctaPlacementScore = scoreFromBenchmark(visitToFormView * 100, 8, 25);
   const closedLoopScore = sparkConnected && formToContactRate != null
@@ -601,11 +617,17 @@ export function localPresenceEngine(input: EngineInput): ReportAnalysis {
   const recentPosts = (gbpPosts?.posts || []).filter((p: any) => p.createTime && (now - new Date(p.createTime).getTime()) / 86400_000 <= 30).length;
   const unansweredQuestions = (gbpQanda?.questions || []).filter((q: any) => q.needsReply).length;
 
-  // Score
+  // Score (uses per-category review-related benchmarks when present)
+  const ratingBenchmark = bm(input, "gbp_avg_rating", 4.5);
+  const responseBenchmark = bm(input, "gbp_response_rate", 75) / 100;
+  const velocityBenchmark = bm(input, "review_velocity_per_month", 4);
   const completenessScore = clamp(completeness, 0, 100) || (postsCount > 0 ? 70 : 50);
-  const velocityScore = velocityTrend === "accelerating" ? 90 : velocityTrend === "flat" ? 60 : 30;
-  const responseRateScore = clamp(responseRate * 100, 0, 100);
-  const ratingScore = avgRating > 0 ? clamp(((avgRating - 3) / 2) * 100, 0, 100) : 50;
+  const velocityScore = velocityTrend === "accelerating" ? 95
+                      : last30 >= velocityBenchmark ? 80
+                      : last30 >= velocityBenchmark * 0.5 ? 60 : 30;
+  const responseRateScore = clamp((responseRate / responseBenchmark) * 100, 0, 100);
+  // Rating score: 5★ = 100, ratingBenchmark = 70 baseline, 3★ = 0
+  const ratingScore = avgRating > 0 ? clamp(((avgRating - 3) / Math.max(0.1, ratingBenchmark - 3)) * 70 + Math.max(0, avgRating - ratingBenchmark) * 30, 0, 100) : 50;
   const score = Math.round(
     completenessScore * 0.20 +
     velocityScore * 0.25 +
@@ -663,7 +685,8 @@ export function technicalHealthEngine(input: EngineInput): ReportAnalysis {
   const performanceScore = (mobilePerf + desktopPerf) / 2;
   const securityScore = wfOverall != null ? clamp(Number(wfOverall), 0, 100) : (vulnerabilities === 0 ? 80 : 50);
   const updatesScore = pluginsOutdated === 0 ? 100 : clamp(100 - pluginsOutdated * 10, 0, 100);
-  const cwvScore = (lcpMobile > 0 && lcpMobile < 2500 ? 100 : lcpMobile < 4000 ? 60 : 30) * 0.5
+  const lcpBenchmark = bm(input, "cwv_mobile_lcp_ms", 2500);
+  const cwvScore = (lcpMobile > 0 && lcpMobile < lcpBenchmark ? 100 : lcpMobile < lcpBenchmark * 1.6 ? 60 : 30) * 0.5
                  + (cls > 0 && cls < 0.1 ? 100 : cls < 0.25 ? 60 : 30) * 0.5;
 
   const score = Math.round(
