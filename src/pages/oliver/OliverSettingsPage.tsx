@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button } from "../../components/oliver/ui";
+import { LogoPicker } from "../../components/oliver/LogoPicker";
 
 interface TenantSettings {
   tenantName?: string;
@@ -22,6 +23,9 @@ interface TenantSettings {
     phone?: boolean;
     website?: boolean;
     address?: boolean;
+    tenantFullName?: boolean;
+    logoUrl?: boolean;
+    brandColor?: boolean;
   };
 }
 
@@ -513,7 +517,7 @@ export function OliverSettingsPage() {
         )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 16px", marginTop: 8 }}>
-          <Field label="Business name">
+          <Field label="Business name" shared={!!settings?.inherited?.tenantFullName}>
             <input
               type="text"
               style={inputStyle}
@@ -567,16 +571,17 @@ export function OliverSettingsPage() {
               onChange={(e) => setBizDraft({ ...bizDraft, supportEmail: e.target.value })}
             />
           </Field>
-          <Field label="Logo URL">
-            <input
-              type="text"
-              style={inputStyle}
-              placeholder="https://… (PNG/SVG used on invoices + customer portal)"
-              value={bizDraft?.logoUrl || ""}
-              onChange={(e) => setBizDraft({ ...bizDraft, logoUrl: e.target.value })}
-            />
-          </Field>
-          <Field label="Brand accent color">
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Field label="Logo" shared={!!settings?.inherited?.logoUrl}>
+              <LogoPicker
+                value={bizDraft?.logoUrl || null}
+                onChange={(u) => setBizDraft({ ...bizDraft, logoUrl: u })}
+                api={{ get, post }}
+                website={bizDraft?.website}
+              />
+            </Field>
+          </div>
+          <Field label="Brand accent color" shared={!!settings?.inherited?.brandColor}>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input
                 type="color"
@@ -791,10 +796,13 @@ const inputStyle: React.CSSProperties = {
   background: "#fff", color: "#0B1C24",
 };
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, shared }: { label: string; children: React.ReactNode; shared?: boolean }) {
   return (
     <label style={{ display: "block" }}>
-      <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>{label}</span>
+      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>
+        {label}
+        {shared && <SharedPill />}
+      </span>
       {children}
     </label>
   );

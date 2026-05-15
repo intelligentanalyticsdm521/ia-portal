@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button } from "../../components/oliver/ui";
+import { OliverOnboardingWizard } from "../../components/oliver/OliverOnboardingWizard";
 
 interface OnboardingStep {
   key: string;
@@ -37,12 +38,13 @@ const STEP_CTA: Record<string, string> = {
 };
 
 export function OliverOnboardingPage() {
-  const { get, post, ready } = useOliverApi();
+  const { get, post, patch, ready } = useOliverApi();
   const navigate = useNavigate();
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState<"complete" | "skip" | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
@@ -73,13 +75,18 @@ export function OliverOnboardingPage() {
         title="Welcome to OLIVER"
         subtitle="A guided checklist to get your business running. You can revisit any step from this page."
         actions={
-          alreadyDone ? (
-            <Button variant="secondary" onClick={() => navigate("/app/services/oliver_dashboard")}>Back to dashboard</Button>
-          ) : (
-            <Button variant="ghost" onClick={() => finish("skip")} disabled={busy === "skip"}>
-              {busy === "skip" ? "Skipping…" : "Skip for now"}
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button variant="primary" onClick={() => setWizardOpen(true)}>
+              {alreadyDone ? "Re-run guided setup" : "Start guided setup"}
             </Button>
-          )
+            {alreadyDone ? (
+              <Button variant="secondary" onClick={() => navigate("/app/services/oliver_dashboard")}>Back to dashboard</Button>
+            ) : (
+              <Button variant="ghost" onClick={() => finish("skip")} disabled={busy === "skip"}>
+                {busy === "skip" ? "Skipping…" : "Skip for now"}
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -170,6 +177,14 @@ export function OliverOnboardingPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {wizardOpen && (
+        <OliverOnboardingWizard
+          api={{ get, post, patch }}
+          onClose={() => { setWizardOpen(false); reload(); }}
+          onFinished={() => { setWizardOpen(false); navigate("/app/services/oliver_dashboard"); }}
+        />
       )}
     </OliverPageWrapper>
   );

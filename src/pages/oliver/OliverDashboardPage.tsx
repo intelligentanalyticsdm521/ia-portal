@@ -8,6 +8,7 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button, StatusBadge } from "../../components/oliver/ui";
 import { Sparkline } from "../../components/iainsights/Sparkline";
+import { OliverSetupCard } from "../../components/command/OliverSetupCard";
 import { Sparkles, ArrowUpRight } from "lucide-react";
 
 interface TodaySummary {
@@ -161,32 +162,9 @@ export function OliverDashboardPage() {
   // Falls back to the original Stripe-only banner if /onboarding/status fails.
   let topBanner: React.ReactNode = null;
   if (onboarding && !onboarding.onboarding_completed_at) {
-    const pct = Math.round((onboarding.completed_count / onboarding.total_steps) * 100);
-    topBanner = (
-      <div className="card" style={{
-        background: "linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)",
-        border: "1px solid #F59E0B",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 260 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#92400E", marginBottom: 4 }}>
-              Welcome to OLIVER — let's finish setting up
-            </div>
-            <div style={{ fontSize: 12, color: "#78350F", lineHeight: 1.5 }}>
-              You've completed {onboarding.completed_count} of {onboarding.total_steps} setup steps ({pct}%).
-              The guided wizard walks you through Stripe, your invoice template, and your service catalog so you can start sending invoices today.
-            </div>
-            {/* mini progress bar */}
-            <div style={{ marginTop: 8, height: 4, background: "rgba(120,53,15,0.15)", borderRadius: 999, overflow: "hidden", maxWidth: 360 }}>
-              <div style={{ width: `${pct}%`, height: "100%", background: "#92400E" }} />
-            </div>
-          </div>
-          <Link to="/app/services/oliver_onboarding" style={{ flexShrink: 0 }}>
-            <Button variant="primary">Open setup wizard</Button>
-          </Link>
-        </div>
-      </div>
-    );
+    // Inline guided-setup card — opens the wizard modal in place (no nav away).
+    // Same component used on the Home Command Center for one consistent flow.
+    topBanner = <OliverSetupCard />;
   } else if (stripeStatus && !stripeStatus.readyToCharge) {
     // Onboarding marked done, but Stripe regressed — still surface Stripe-only nag.
     topBanner = (

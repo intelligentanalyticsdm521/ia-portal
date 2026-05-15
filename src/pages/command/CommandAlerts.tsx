@@ -30,6 +30,27 @@ export function CommandAlerts() {
 
     // OLIVER signals
     if (hasOliver && oliver.ready) {
+      // Onboarding nudge — surfaced here too so tenants have multiple paths
+      // back to the guided setup wizard until it's done.
+      try {
+        type OnboardingStatus = {
+          onboarding_completed_at: string | null;
+          all_required_complete: boolean;
+          completed_count: number;
+          total_steps: number;
+        };
+        const r = await oliver.get<{ data: OnboardingStatus }>("/onboarding/status");
+        const ob = r.data;
+        if (ob && !ob.onboarding_completed_at && !ob.all_required_complete) {
+          next.push({
+            id: "oliver-onboarding-incomplete", severity: "warning", source: "oliver",
+            title: `Finish setting up OLIVER (${ob.completed_count}/${ob.total_steps})`,
+            description: "Complete guided setup — business profile, Stripe, invoice template, catalog — so you can send your first paid invoice.",
+            href: "/app/services/oliver_onboarding",
+          });
+        }
+      } catch { /* skip */ }
+
       try {
         type OliverToday = { overdue_invoices: number; overdue_amount: number; open_requests: number; disputes_open: number; };
         const r = await oliver.get<{ data: OliverToday }>("/dashboard/today");
