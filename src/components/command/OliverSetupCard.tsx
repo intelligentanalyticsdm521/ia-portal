@@ -38,8 +38,10 @@ export function OliverSetupCard() {
   useEffect(() => { reload(); }, [reload]);
 
   if (!hasOliver || !status) return null;
-  // Done = explicitly marked complete, or every required step satisfied.
-  if (status.onboarding_completed_at || status.all_required_complete) return null;
+  // Show until onboarding is GENUINELY 100% (every required step satisfied).
+  // We deliberately ignore onboarding_completed_at / "skip" — a stale flag
+  // from a prior session should never blank the setup entry point.
+  if (status.all_required_complete) return null;
 
   const pct = status.total_steps > 0
     ? Math.round((status.completed_count / status.total_steps) * 100)

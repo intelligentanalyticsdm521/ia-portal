@@ -1,20 +1,18 @@
-// OliverOnboardingWizard — guided modal that gets a tenant from "just signed
-// up" to "can send a paid invoice".
-//
-// Business profile is the SHARED platform profile (core.tenants) captured at
-// account setup and reused by ARION/SPARK/OLIVER/STELLA. This wizard does NOT
-// re-collect it — step 1 is a read-only COMPLETENESS CHECK that deep-links to
-// the shared profile editor for any gaps. The remaining steps are the genuinely
-// OLIVER-specific setup: Stripe (Express), invoice/quote template, catalog.
+// OliverOnboardingWizard — the guided modal that gets a tenant from signup to
+// "can send a paid invoice". Everything that needs connecting/configuring is
+// here so a client understands all their settings in one pass.
 //
 // Steps:
-//   1. Business profile  — completeness check vs shared profile (no re-entry)
-//   2. Connect Stripe    — Express hosted onboarding
-//   3. Invoice template  — prefix / terms / footer / review link
-//   4. First offerings   — catalog quick-add
+//   1. Business Profile — editable; pulls the SHARED profile (core.tenants),
+//      lets them fill/update, saves back to it (same data Organization
+//      Settings shows). Flags incomplete if required fields missing.
+//   2. Connect Stripe — Express hosted onboarding.
+//   3. Templates — invoice/quote/proposal; branding pulled from the profile.
+//   4. Customer Portal — what the customer sees; branding per tier.
+//   5. Product Catalog — first offerings.
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Button } from "./ui";
+import { LogoPicker } from "./LogoPicker";
 
 interface Api {
   get: <T>(p: string) => Promise<T>;
@@ -42,8 +40,7 @@ interface Template {
 }
 interface OfferingDraft { name: string; price: string; }
 
-const STEPS = ["Business profile", "Payments", "Template", "Catalog"] as const;
-const PROFILE_EDITOR_ROUTE = "/app/services/oliver_settings";
+const STEPS = ["Business Profile", "Payments", "Templates", "Customer Portal", "Catalog"] as const;
 
 export function OliverOnboardingWizard({
   api, onClose, onFinished,
@@ -52,7 +49,6 @@ export function OliverOnboardingWizard({
   onClose: () => void;
   onFinished: () => void;
 }) {
-  const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -90,30 +86,35 @@ export function OliverOnboardingWizard({
 
   useEffect(() => { load(); }, [load]);
 
+  const setS = (patch: Partial<Settings>) => setSettings((p) => p ? { ...p, ...patch } : p);
   const setT = (patch: Partial<Template>) => setTpl((p) => p ? { ...p, ...patch } : p);
 
-  // Completeness of the SHARED profile. Required gates the step; recommended
-  // is surfaced but doesn't block.
-  const profileChecklist = settings ? [
-    { label: "Business name", value: settings.tenantFullName, required: true },
-    { label: "Contact email", value: settings.email, required: true },
-    { label: "Phone", value: settings.phone, required: true },
-    { label: "Address", value: settings.address, required: true },
-    { label: "Website", value: settings.website, required: false },
-    { label: "Logo", value: settings.logoUrl || "", required: false },
-    { label: "Brand color", value: settings.brandColor || "", required: false },
-  ].map((f) => ({ ...f, ok: !!(f.value && String(f.value).trim()) })) : [];
-  const requiredMissing = profileChecklist.filter((f) => f.required && !f.ok);
-  const profileComplete = requiredMissing.length === 0;
+  const requiredMissing = settings ? [
+    !settings.tenantFullName?.trim() && "Business name",
+    !settings.email?.trim() && "Contact email",
+    !settings.phone?.trim() && "Phone",
+    !settings.address?.trim() && "Address",
+  ].filter(Boolean) as string[] : [];
 
   async function persistStep(i: number): Promise<boolean> {
     setErr(null);
     try {
       setSaving(true);
-      // Step 0 (profile) is read-only — nothing to persist; it's a check.
-      if (i === 2 && tpl) {
+      if (i === 0 && settings) {
+        // Writes to the SHARED profile (core.tenants) — same record
+        // Organization Settings edits.
+        await api.patch("/settings", {
+          tenantFullName: settings.tenantFullName ?? "",
+          email: settings.email ?? "",
+          phone: settings.phone ?? "",
+          website: settings.website ?? "",
+          address: settings.address ?? "",
+          logoUrl: settings.logoUrl ?? "",
+          brandColor: settings.brandColor ?? "",
+        });
+      } else if (i === 2 && tpl) {
         await api.patch("/settings/invoice-template", tpl);
-      } else if (i === 3) {
+      } else if (i === 4) {
         const valid = offerings.filter((o) => o.name.trim());
         for (const o of valid) {
           const r = await api.post<{ offering_id: string }>("/catalog/offerings", {
@@ -123,7 +124,7 @@ export function OliverOnboardingWizard({
           if (r.offering_id && amt > 0) {
             await api.post(`/catalog/offerings/${r.offering_id}/prices`, {
               pricingModel: "one_time", unitAmount: amt, currency: "USD", isDefault: true,
-            }).catch(() => { /* offering still created; price best-effort */ });
+            }).catch(() => { /* offering created; price best-effort */ });
           }
         }
       }
@@ -152,11 +153,6 @@ export function OliverOnboardingWizard({
       setErr((e as Error).message || "Could not mark onboarding complete");
       setSaving(false);
     }
-  }
-
-  function goEditProfile() {
-    onClose();
-    navigate(PROFILE_EDITOR_ROUTE);
   }
 
   async function connectStripe() {
@@ -207,134 +203,120 @@ export function OliverOnboardingWizard({
               )}
 
               {step === 0 && settings && (
-                <Section
-                  title="Business profile"
-                  blurb="This is your shared profile — set once at account level and reused across ARION, SPARK, and your customer portal. We just confirm it's complete here; nothing to re-enter."
-                >
-                  <div style={{ border: "1px solid #E2E8F0", borderRadius: 8, overflow: "hidden" }}>
-                    {profileChecklist.map((f, i) => (
-                      <div key={f.label} style={{
-                        display: "flex", alignItems: "center", justifyContent: "space-between",
-                        padding: "9px 12px", fontSize: 12,
-                        borderBottom: i < profileChecklist.length - 1 ? "1px solid #F1F5F9" : "none",
-                        background: f.ok ? "#fff" : f.required ? "#FEF2F2" : "#FFFBEB",
-                      }}>
-                        <span style={{ color: "#0B1C24" }}>
-                          {f.label}
-                          {!f.required && <span style={{ color: "#94A3B8", fontSize: 10 }}> · recommended</span>}
-                        </span>
-                        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          {f.ok ? (
-                            <span style={{ fontSize: 11, color: "#5A7A8A", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {String(f.value)}
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: 11, fontWeight: 600, color: f.required ? "#B91C1C" : "#B45309" }}>
-                              {f.required ? "Missing" : "Not set"}
-                            </span>
-                          )}
-                          <span style={{
-                            width: 18, height: 18, borderRadius: "50%", display: "inline-flex",
-                            alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700,
-                            background: f.ok ? "#059669" : f.required ? "#FCA5A5" : "#FCD34D",
-                            color: f.ok ? "#fff" : "#7C2D12",
-                          }}>{f.ok ? "✓" : "!"}</span>
-                        </span>
-                      </div>
-                    ))}
+                <Section title="Your business profile"
+                  blurb="This is shared everywhere — invoices, quotes, your customer portal, and other Intelligent Analytics products. Set it once; you can edit it anytime under Organization Settings.">
+                  <Grid>
+                    <FieldRow label="Business name" req missing={!settings.tenantFullName?.trim()}>
+                      <input style={inp} value={settings.tenantFullName || ""} onChange={(e) => setS({ tenantFullName: e.target.value })} placeholder="Your customer-facing name" />
+                    </FieldRow>
+                    <FieldRow label="Website">
+                      <input style={inp} value={settings.website || ""} onChange={(e) => setS({ website: e.target.value })} placeholder="https://yourbusiness.com" />
+                    </FieldRow>
+                    <FieldRow label="Contact email" req missing={!settings.email?.trim()}>
+                      <input style={inp} type="email" value={settings.email || ""} onChange={(e) => setS({ email: e.target.value })} placeholder="hello@yourbusiness.com" />
+                    </FieldRow>
+                    <FieldRow label="Phone" req missing={!settings.phone?.trim()}>
+                      <input style={inp} value={settings.phone || ""} onChange={(e) => setS({ phone: e.target.value })} placeholder="(555) 123-4567" />
+                    </FieldRow>
+                  </Grid>
+                  <FieldRow label="Address" req missing={!settings.address?.trim()}>
+                    <textarea style={{ ...inp, resize: "vertical" }} rows={2} value={settings.address || ""} onChange={(e) => setS({ address: e.target.value })} placeholder="123 Main St, Springfield IL 62701" />
+                  </FieldRow>
+                  <div style={{ marginTop: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 6 }}>Logo & brand color</div>
+                    <LogoPicker
+                      value={settings.logoUrl ?? null}
+                      onChange={(url) => { setS({ logoUrl: url }); setT({ logoUrl: url }); }}
+                      api={api}
+                      website={settings.website}
+                    />
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
+                      <input type="color" value={settings.brandColor || "#1A3A4A"}
+                        onChange={(e) => { setS({ brandColor: e.target.value }); setT({ accentColor: e.target.value }); }}
+                        style={{ width: 40, height: 30, padding: 0, border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6, background: "#fff" }} />
+                      <input style={{ ...inp, flex: 1, fontFamily: "monospace" }} value={settings.brandColor || ""}
+                        onChange={(e) => { setS({ brandColor: e.target.value }); setT({ accentColor: e.target.value }); }} placeholder="#1A3A4A" />
+                    </div>
                   </div>
-
-                  <div style={{ marginTop: 14 }}>
-                    {profileComplete ? (
-                      <Callout tone="ok">
-                        <strong>Profile complete.</strong> Everything OLIVER needs is on file — invoices, quotes,
-                        and your portal will use it automatically.
-                      </Callout>
-                    ) : (
-                      <Callout tone="warn">
-                        <strong>{requiredMissing.length} required field{requiredMissing.length === 1 ? "" : "s"} missing</strong>
-                        {" "}({requiredMissing.map((f) => f.label).join(", ")}). Complete your business profile once
-                        and it's done for every product.
-                        <div style={{ marginTop: 10 }}>
-                          <Button variant="primary" onClick={goEditProfile}>Complete business profile →</Button>
-                        </div>
-                      </Callout>
-                    )}
-                  </div>
+                  {requiredMissing.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <Callout tone="warn">Required: {requiredMissing.join(", ")}. You can continue and finish later, but invoices need these.</Callout>
+                    </div>
+                  )}
                 </Section>
               )}
 
               {step === 1 && (
-                <Section
-                  title="Connect Stripe to get paid"
-                  blurb="Money flows directly from your customers to your bank — it never touches Intelligent Analytics."
-                >
+                <Section title="Connect Stripe to get paid"
+                  blurb="Money flows directly from your customers to your bank — it never touches Intelligent Analytics.">
                   {stripe?.connected && stripe?.readyToCharge ? (
                     <Callout tone="ok"><strong>Stripe is connected and ready.</strong> Invoices route straight to your bank.</Callout>
                   ) : stripe?.connected ? (
                     <Callout tone="warn">
                       <strong>Almost there.</strong> Your Stripe account exists but onboarding isn't finished.
-                      <div style={{ marginTop: 10 }}>
-                        <Button variant="primary" onClick={connectStripe} loading={saving}>Continue Stripe setup</Button>
-                      </div>
+                      <div style={{ marginTop: 10 }}><Button variant="primary" onClick={connectStripe} loading={saving}>Continue Stripe setup</Button></div>
                     </Callout>
                   ) : (
                     <div>
                       <p style={{ fontSize: 12, color: "#0B1C24", lineHeight: 1.6, marginTop: 0 }}>
-                        Setup takes about 5 minutes — business name, EIN, bank account, and an ID photo.
-                        Stripe creates and manages the account for you; you stay the merchant of record and
-                        your customers stay yours.
+                        Setup takes about 5 minutes — business name, EIN, bank account, ID photo. Stripe creates
+                        and manages the account for you; you stay merchant of record and your customers stay yours.
                       </p>
-                      <Button variant="primary" onClick={connectStripe} loading={saving}>
-                        Connect Stripe (opens Stripe)
-                      </Button>
-                      <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 10 }}>
-                        You can also skip this and connect before sending your first invoice.
-                      </p>
+                      <Button variant="primary" onClick={connectStripe} loading={saving}>Connect Stripe (opens Stripe)</Button>
+                      <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 10 }}>You can skip and connect before sending your first invoice.</p>
                     </div>
                   )}
                 </Section>
               )}
 
               {step === 2 && tpl && (
-                <Section
-                  title="Customize your invoice & quote template"
-                  blurb="Your logo and brand color carry over automatically from your business profile. These show on every invoice, quote, and proposal."
-                >
+                <Section title="Your document template"
+                  blurb="One branded template powers your invoices, quotes, and proposals. Logo & color come from your business profile above.">
                   <Grid>
                     <FieldRow label="Invoice number prefix">
-                      <input style={{ ...inp, fontFamily: "monospace" }} value={tpl.invoiceNumberPrefix}
-                        onChange={(e) => setT({ invoiceNumberPrefix: e.target.value })} placeholder="INV-" />
+                      <input style={{ ...inp, fontFamily: "monospace" }} value={tpl.invoiceNumberPrefix} onChange={(e) => setT({ invoiceNumberPrefix: e.target.value })} placeholder="INV-" />
                     </FieldRow>
-                    <FieldRow label="Payment terms">
-                      <input style={inp} value={tpl.terms}
-                        onChange={(e) => setT({ terms: e.target.value })} placeholder="Due upon receipt" />
+                    <FieldRow label="Payment / acceptance terms">
+                      <input style={inp} value={tpl.terms} onChange={(e) => setT({ terms: e.target.value })} placeholder="Due upon receipt" />
                     </FieldRow>
                   </Grid>
                   <FieldRow label="Footer note">
-                    <textarea style={{ ...inp, resize: "vertical" }} rows={2} value={tpl.footerNote}
-                      onChange={(e) => setT({ footerNote: e.target.value })} placeholder="Thank you for your business!" />
+                    <textarea style={{ ...inp, resize: "vertical" }} rows={2} value={tpl.footerNote} onChange={(e) => setT({ footerNote: e.target.value })} placeholder="Thank you for your business!" />
                   </FieldRow>
-                  <FieldRow label="Google review link (used by review-request automation)">
-                    <input style={inp} value={tpl.googleReviewUrl ?? ""}
-                      onChange={(e) => setT({ googleReviewUrl: e.target.value || null })}
-                      placeholder="https://g.page/r/.../review" />
+                  <FieldRow label="Google review link (review-request automation)">
+                    <input style={inp} value={tpl.googleReviewUrl ?? ""} onChange={(e) => setT({ googleReviewUrl: e.target.value || null })} placeholder="https://g.page/r/.../review" />
                   </FieldRow>
                   <div style={{ marginTop: 14, padding: 12, borderRadius: 8, background: accent, color: "#fff" }}>
-                    <div style={{ fontSize: 11, opacity: 0.85 }}>Preview</div>
+                    <div style={{ fontSize: 11, opacity: 0.85 }}>Preview — applies to invoices, quotes & proposals</div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
                       <strong style={{ fontSize: 14 }}>{settings?.tenantFullName || "Your Business"}</strong>
                       <span style={{ fontFamily: "monospace", fontSize: 12 }}>{tpl.invoiceNumberPrefix || "INV-"}00042</span>
                     </div>
                   </div>
+                  <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 10 }}>
+                    Manage these anytime under <strong>Template Library</strong>.
+                  </p>
                 </Section>
               )}
 
               {step === 3 && (
-                <Section
-                  title="Add your first services or products"
-                  blurb="This makes quotes and invoices one-click. You can add more (and recurring pricing) later in the Catalog."
-                >
+                <Section title="Your customer portal"
+                  blurb="Customers get a portal to view jobs, accept quotes, and pay invoices online.">
+                  <Callout tone="ok">
+                    Your customer portal is live automatically. Customers see jobs, quotes (accept/decline),
+                    and pay invoices via Stripe.
+                  </Callout>
+                  <div style={{ marginTop: 12, fontSize: 12, color: "#0B1C24", lineHeight: 1.6 }}>
+                    <strong>Branding:</strong> on Lite the portal uses Intelligent Analytics styling with a
+                    "Powered by" footer. On Standard and above it uses your logo and brand color from your
+                    business profile. On Pro the Intelligent Analytics attribution is removed entirely.
+                  </div>
+                </Section>
+              )}
+
+              {step === 4 && (
+                <Section title="Add your first services or products"
+                  blurb="Makes quotes and invoices one-click. Add more (and recurring pricing) later in the Catalog.">
                   {offerings.map((o, i) => (
                     <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 130px 32px", gap: 8, marginBottom: 8, alignItems: "center" }}>
                       <input style={inp} value={o.name} placeholder="e.g. Standard House Cleaning"
@@ -344,8 +326,7 @@ export function OliverOnboardingWizard({
                         <input style={{ ...inp, paddingLeft: 18 }} type="number" min="0" step="0.01" value={o.price} placeholder="0.00"
                           onChange={(e) => setOfferings((p) => p.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} />
                       </div>
-                      <button onClick={() => setOfferings((p) => p.filter((_, j) => j !== i))}
-                        disabled={offerings.length === 1}
+                      <button onClick={() => setOfferings((p) => p.filter((_, j) => j !== i))} disabled={offerings.length === 1}
                         style={{ background: "none", border: 0, color: "#94A3B8", cursor: offerings.length === 1 ? "not-allowed" : "pointer", fontSize: 17 }}>×</button>
                     </div>
                   ))}
@@ -355,9 +336,7 @@ export function OliverOnboardingWizard({
                       + Add another
                     </button>
                   )}
-                  <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 12 }}>
-                    No catalog items yet? You can skip — quotes still let you type free-form line items.
-                  </p>
+                  <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 12 }}>Optional — quotes still let you type free-form line items.</p>
                 </Section>
               )}
             </>
@@ -365,15 +344,12 @@ export function OliverOnboardingWizard({
         </div>
 
         <div style={{ padding: "14px 22px", borderTop: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <button onClick={onClose}
-            style={{ background: "none", border: 0, fontSize: 12, color: "#5A7A8A", cursor: "pointer" }}>
+          <button onClick={onClose} style={{ background: "none", border: 0, fontSize: 12, color: "#5A7A8A", cursor: "pointer" }}>
             Save & finish later
           </button>
           <div style={{ display: "flex", gap: 8 }}>
             {step > 0 && (
-              <Button variant="secondary" onClick={() => { setErr(null); setStep(step - 1); }} disabled={saving}>
-                Back
-              </Button>
+              <Button variant="secondary" onClick={() => { setErr(null); setStep(step - 1); }} disabled={saving}>Back</Button>
             )}
             <Button variant="primary" onClick={next} loading={saving} disabled={loading}>
               {step === STEPS.length - 1 ? "Finish setup" : "Save & continue"}
@@ -397,10 +373,13 @@ function Section({ title, blurb, children }: { title: string; blurb: string; chi
 function Grid({ children }: { children: React.ReactNode }) {
   return <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 14px", marginBottom: 12 }}>{children}</div>;
 }
-function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
+function FieldRow({ label, req, missing, children }: { label: string; req?: boolean; missing?: boolean; children: React.ReactNode }) {
   return (
     <label style={{ display: "block", marginBottom: 12 }}>
-      <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>{label}</span>
+      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>
+        {label}
+        {req && missing && <span style={{ fontSize: 9, fontWeight: 700, color: "#B91C1C" }}>REQUIRED</span>}
+      </span>
       {children}
     </label>
   );

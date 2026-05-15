@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { useAccessToken } from '../../auth/useAccessToken';
 import { connectGoogle, getGoogleProperties, selectGoogleProperties, listArionSites, listGbpLocations, selectGbpLocation, disconnectGbp } from '../../lib/arionApi';
+import { useOliverApi } from '../../hooks/useOliverApi';
+import { LogoPicker } from '../../components/oliver/LogoPicker';
 
 /* ------------------------------------------------------------------ */
 /*  Types & constants                                                  */
@@ -86,75 +88,134 @@ function SectionLabel({ title, description }: { title: string; description?: str
 /*  Tab: Organization                                                  */
 /* ------------------------------------------------------------------ */
 
+interface OrgProfile {
+  tenantFullName?: string;
+  website?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  logoUrl?: string | null;
+  brandColor?: string | null;
+  billingEmail?: string | null;
+  supportEmail?: string | null;
+}
+
+// Canonical shared business profile (core.tenants) — the single record reused
+// by OLIVER invoices/quotes/portal, ARION, SPARK, STELLA. Read/write via the
+// shared /settings API (served by oliver-api, which owns core.tenants R/W).
 function OrganizationTab() {
-  const [companyName, setCompanyName] = useState(() => lsGet('org.name'));
-  const [website, setWebsite] = useState(() => lsGet('org.website'));
-  const [phone, setPhone] = useState(() => lsGet('org.phone'));
-  const [logoFile, setLogoFile] = useState<string | null>(null);
+  const { get, post, patch, ready } = useOliverApi();
+  const [profile, setProfile] = useState<OrgProfile | null>(null);
+  const [draft, setDraft] = useState<OrgProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
   const [toast, setToast] = useState('');
 
-  const handleSave = useCallback(() => {
-    lsSet('org.name', companyName);
-    lsSet('org.website', website);
-    lsSet('org.phone', phone);
-    setToast('Organization details saved');
-  }, [companyName, website, phone]);
+  const load = useCallback(async () => {
+    setLoading(true); setErrMsg(null);
+    try {
+      const s = await get<OrgProfile>('/settings');
+      setProfile(s); setDraft(s);
+    } catch (e) {
+      setErrMsg((e as Error).message || 'Failed to load your business profile');
+    } finally {
+      setLoading(false);
+    }
+  }, [get]);
+
+  useEffect(() => { if (ready) load(); }, [ready, load]);
+
+  const set = (p: Partial<OrgProfile>) => setDraft((d) => d ? { ...d, ...p } : d);
+  const changed = !!profile && !!draft && JSON.stringify(profile) !== JSON.stringify(draft);
+
+  const handleSave = useCallback(async () => {
+    if (!draft) return;
+    setSaving(true); setErrMsg(null);
+    try {
+      const updated = await patch<OrgProfile>('/settings', {
+        tenantFullName: draft.tenantFullName ?? '',
+        website: draft.website ?? '',
+        email: draft.email ?? '',
+        phone: draft.phone ?? '',
+        address: draft.address ?? '',
+        logoUrl: draft.logoUrl ?? '',
+        brandColor: draft.brandColor ?? '',
+        billingEmail: draft.billingEmail ?? '',
+        supportEmail: draft.supportEmail ?? '',
+      });
+      setProfile(updated); setDraft(updated);
+      setToast('Business profile saved — shared across all products');
+    } catch (e) {
+      setErrMsg(`Save failed: ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  }, [draft, patch]);
+
+  if (loading || !draft) {
+    return <div className="py-10 text-center text-sm text-gray-500">{errMsg || 'Loading business profile…'}</div>;
+  }
+
+  const cls = 'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black';
 
   return (
     <div className="space-y-6">
-      <div>
-        <label htmlFor="ts-company" className="block text-sm font-medium text-gray-700">Company name</label>
-        <input
-          id="ts-company"
-          type="text"
-          value={companyName}
-          onChange={(e) => setCompanyName(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
-          placeholder="Acme Corp"
-        />
+      <p className="text-xs text-gray-500">
+        This profile is shared everywhere — OLIVER invoices/quotes/portal, ARION, SPARK. Set it once here.
+      </p>
+
+      {errMsg && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errMsg}</div>}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Business name</label>
+          <input type="text" value={draft.tenantFullName || ''} onChange={(e) => set({ tenantFullName: e.target.value })} className={cls} placeholder="Acme Corp" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Website</label>
+          <input type="url" value={draft.website || ''} onChange={(e) => set({ website: e.target.value })} className={cls} placeholder="https://example.com" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Contact email</label>
+          <input type="email" value={draft.email || ''} onChange={(e) => set({ email: e.target.value })} className={cls} placeholder="hello@example.com" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Phone</label>
+          <input type="tel" value={draft.phone || ''} onChange={(e) => set({ phone: e.target.value })} className={cls} placeholder="+1 (555) 000-0000" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Billing email <span className="text-gray-400">(optional)</span></label>
+          <input type="email" value={draft.billingEmail || ''} onChange={(e) => set({ billingEmail: e.target.value })} className={cls} placeholder="Defaults to contact email" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Support email <span className="text-gray-400">(optional)</span></label>
+          <input type="email" value={draft.supportEmail || ''} onChange={(e) => set({ supportEmail: e.target.value })} className={cls} placeholder="Defaults to contact email" />
+        </div>
       </div>
 
       <div>
-        <label htmlFor="ts-website" className="block text-sm font-medium text-gray-700">Website URL</label>
-        <input
-          id="ts-website"
-          type="url"
-          value={website}
-          onChange={(e) => setWebsite(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
-          placeholder="https://example.com"
-        />
+        <label className="block text-sm font-medium text-gray-700">Address</label>
+        <textarea rows={2} value={draft.address || ''} onChange={(e) => set({ address: e.target.value })} className={cls} placeholder="123 Main St, Springfield IL 62701" />
       </div>
 
       <div>
-        <label htmlFor="ts-phone" className="block text-sm font-medium text-gray-700">Phone</label>
-        <input
-          id="ts-phone"
-          type="tel"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
-          placeholder="+1 (555) 000-0000"
-        />
-      </div>
-
-      {/* Logo upload placeholder */}
-      <div>
-        <label htmlFor="ts-logo" className="block text-sm font-medium text-gray-700">Company logo</label>
-        <input
-          id="ts-logo"
-          type="file"
-          accept="image/*"
-          onChange={(e) => setLogoFile(e.target.files?.[0]?.name || null)}
-          className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-medium file:text-gray-700 hover:file:bg-gray-200"
-        />
-        {logoFile && <p className="mt-1 text-xs text-gray-500">Selected: {logoFile}</p>}
-        <p className="mt-1 text-xs text-gray-400">Logo upload processing will be available in a future release.</p>
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">Logo</label>
+        <LogoPicker value={draft.logoUrl ?? null} onChange={(u) => set({ logoUrl: u })} api={{ get, post }} website={draft.website} />
       </div>
 
       <div>
-        <button type="button" onClick={handleSave} className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800">
-          Save organization
+        <label className="block text-sm font-medium text-gray-700">Brand color</label>
+        <div className="mt-1 flex items-center gap-3">
+          <input type="color" value={draft.brandColor || '#1A3A4A'} onChange={(e) => set({ brandColor: e.target.value })} className="h-9 w-12 cursor-pointer rounded border border-gray-300" />
+          <input type="text" value={draft.brandColor || ''} onChange={(e) => set({ brandColor: e.target.value })} className="w-40 rounded-md border border-gray-300 px-3 py-2 text-sm font-mono" placeholder="#1A3A4A" />
+        </div>
+      </div>
+
+      <div>
+        <button type="button" onClick={handleSave} disabled={saving || !changed}
+          className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50">
+          {saving ? 'Saving…' : 'Save business profile'}
         </button>
       </div>
 
@@ -877,6 +938,12 @@ function ConnectedAccountsTab() {
           gaConnecting={gaConnecting}
           onConnectGoogle={handleGoogleConnect}
         />
+
+        {/* OLIVER payment + lead-intake connections — moved here from the
+            deprecated "Business Setup" page so every connection lives in one
+            place. */}
+        <OliverStripeConnectCard />
+        <OliverLeadIntakeCard />
       </div>
 
       {/* Google property selector modal */}
@@ -1086,6 +1153,124 @@ function GbpIntegrationCard({ siteId, gaConnected, gaConnecting, onConnectGoogle
         </div>
       )}
     </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  OLIVER connections — Stripe Connect + Lead Intake                   */
+/* ------------------------------------------------------------------ */
+
+function OliverStripeConnectCard() {
+  const { get, post, ready } = useOliverApi();
+  const [st, setSt] = useState<{ connected: boolean; type?: string; stripeAccountId?: string; chargesEnabled?: boolean; payoutsEnabled?: boolean; readyToCharge?: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try { setSt(await get<NonNullable<typeof st>>('/settings/stripe')); }
+    catch { setSt({ connected: false }); }
+  }, [get]);
+  useEffect(() => { if (ready) load(); }, [ready, load]);
+
+  async function connect() {
+    setBusy(true); setErr(null);
+    try {
+      const r = await post<{ onboardingUrl: string }>('/settings/stripe/connect');
+      if (r?.onboardingUrl) window.location.href = r.onboardingUrl;
+      else setErr('No onboarding link returned. Try again shortly.');
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  const connected = !!st?.connected;
+  const ready2 = !!st?.readyToCharge;
+
+  return (
+    <div className="rounded-lg border bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-gray-900">Stripe (Payments)</div>
+          <div className="mt-1 flex items-center gap-1.5">
+            <span className={`h-2 w-2 rounded-full ${ready2 ? 'bg-green-500' : connected ? 'bg-amber-500' : 'bg-gray-300'}`} />
+            <span className="text-xs text-gray-500">
+              {ready2 ? 'Connected — ready to charge' : connected ? 'Connected — finish onboarding' : 'Not connected'}
+            </span>
+          </div>
+          {connected && st?.stripeAccountId && (
+            <div className="mt-1 text-[10px] text-gray-400">{st.type === 'express' ? 'Express' : 'Standard'} · {st.stripeAccountId}</div>
+          )}
+        </div>
+        <button type="button" onClick={connect} disabled={busy}
+          className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50">
+          {busy ? 'Opening…' : ready2 ? 'Manage' : connected ? 'Continue setup' : 'Connect'}
+        </button>
+      </div>
+      {err && <div className="mt-2 rounded border-l-2 border-red-400 bg-red-50 px-3 py-2 text-[11px] text-red-700">{err}</div>}
+    </div>
+  );
+}
+
+interface LeadIntake { intake_key: string; post_url: string; header_name: string }
+
+function OliverLeadIntakeCard() {
+  const { get, post, ready } = useOliverApi();
+  const [data, setData] = useState<LeadIntake | null>(null);
+  const [shown, setShown] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    try { setData(await get<LeadIntake>('/settings/lead-intake')); setShown(true); }
+    catch { /* ignore */ }
+    finally { setBusy(false); }
+  }, [get]);
+
+  async function rotate() {
+    if (!confirm('Rotate the lead intake key? Existing integrations must be updated.')) return;
+    setBusy(true);
+    try { setData(await post<LeadIntake>('/settings/lead-intake/rotate')); }
+    catch { /* ignore */ }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="rounded-lg border bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-gray-900">Lead Intake (forms / Zapier)</div>
+          <div className="mt-1 flex items-center gap-1.5">
+            <span className={`h-2 w-2 rounded-full ${data ? 'bg-green-500' : 'bg-gray-300'}`} />
+            <span className="text-xs text-gray-500">{data ? 'Endpoint active' : 'Reveal endpoint'}</span>
+          </div>
+          <div className="mt-1 text-[10px] text-gray-400">External form submissions create OLIVER service requests.</div>
+        </div>
+        {!shown ? (
+          <button type="button" onClick={load} disabled={busy}
+            className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50">
+            {busy ? 'Loading…' : 'Show'}
+          </button>
+        ) : (
+          <button type="button" onClick={rotate} disabled={busy}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+            {busy ? '…' : 'Rotate key'}
+          </button>
+        )}
+      </div>
+      {data && (
+        <div className="mt-3 space-y-2">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">POST URL</div>
+            <input readOnly value={data.post_url} onClick={(e) => (e.target as HTMLInputElement).select()}
+              className="mt-0.5 w-full rounded border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-[11px] text-gray-700" />
+          </div>
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{data.header_name}</div>
+            <input readOnly value={data.intake_key} onClick={(e) => (e.target as HTMLInputElement).select()}
+              className="mt-0.5 w-full rounded border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-[11px] text-gray-700" />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

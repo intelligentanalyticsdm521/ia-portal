@@ -140,7 +140,7 @@ const OLIVER_NAV: SubNavConfig = {
     {
       label: "", icon: Settings,
       items: [
-        { key: "oliver_settings", label: "Business Setup", route: "/app/services/oliver_settings" },
+        { key: "oliver_templates", label: "Template Library", route: "/app/services/oliver_templates" },
         { key: "oliver_usage", label: "Plan & Pricing", route: "/app/services/oliver_usage" },
       ],
     },
