@@ -30,6 +30,7 @@ export const SERVICE_CATALOG: PortalService[] = [
     description: 'High-level account overview and shortcuts into each Intelligence Layer.'
   },
   // ARION — Full Web & Digital Presence suite (46 pages)
+  { key: 'arion_onboarding', displayName: 'Get Started', section: 'ARION', defaultStatus: 'not_subscribed', route: '/app/services/arion_onboarding', description: 'Guided onboarding — site, GA4, Search Console, Business Profile, Bing, SEO add-on.' },
   { key: 'arion_dashboard', displayName: 'Dashboard', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_dashboard', description: 'High-level ARION dashboard with website, hosting, SEO, and business profile status.' },
   { key: 'arion_website_overview', displayName: 'Website Overview', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_overview', description: 'Website health summary — uptime, WordPress version, plugin status, and quick actions.' },
   { key: 'arion_website_content', displayName: 'Website Content', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_content', description: 'Page and post content inventory with last-modified dates and publish status.' },

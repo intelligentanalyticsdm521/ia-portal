@@ -9,6 +9,7 @@ import { Sparkline } from "../../components/iainsights/Sparkline";
 import { GetStartedCard } from "../../components/command/GetStartedCard";
 import { OliverSetupCard } from "../../components/command/OliverSetupCard";
 import { SparkSetupCard } from "../../components/command/SparkSetupCard";
+import { ArionSetupCard } from "../../components/command/ArionSetupCard";
 
 // Each card pulls one piece of data; failures degrade gracefully (card shows "—").
 interface OliverDashboardToday {
@@ -117,6 +118,7 @@ export function CommandDashboard() {
       {/* Product onboarding nudges — fail-open, hide only when genuinely done. */}
       <OliverSetupCard />
       <SparkSetupCard />
+      <ArionSetupCard />
 
       {/* v7.0 — Get Started checklist (moved here from per-product Trends pages). */}
       <GetStartedCard />

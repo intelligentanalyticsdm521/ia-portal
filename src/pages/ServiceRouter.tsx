@@ -26,6 +26,7 @@ import { ArionPageWrapper } from '../arion/ArionPageWrapper';
 
 // ARION pages — lazy-loaded; each becomes its own chunk
 const ArionOverviewPage = lazyNamed(() => import('./arion/ArionOverviewPage'), 'ArionOverviewPage');
+const ArionOnboardingPage = lazyNamed(() => import('./arion/ArionOnboardingPage'), 'ArionOnboardingPage');
 // Website
 const WebsiteOverview = lazyNamed(() => import('../arion/pages/website/WebsiteOverview'), 'WebsiteOverview');
 const WebsiteContent = lazyNamed(() => import('../arion/pages/website/WebsiteContent'), 'WebsiteContent');
@@ -263,6 +264,7 @@ export function ServiceRouter() {
     let arionPage: React.ReactNode = null;
     switch (service.key) {
       case 'arion_dashboard': arionPage = <ArionOverviewPage service={service} status={status} />; break;
+      case 'arion_onboarding': arionPage = <ArionOnboardingPage />; break;
       case 'arion_website_overview': arionPage = <WebsiteOverview />; break;
       case 'arion_website_content': arionPage = <WebsiteContent />; break;
       case 'arion_website_content_seo_overview': arionPage = <ContentSeoOverview />; break;

@@ -153,7 +153,10 @@ const ARION_NAV: SubNavConfig = {
   groups: [
     {
       label: "",
-      items: [{ key: "arion_dashboard", label: "Dashboard", route: "/app/services/arion_dashboard" }],
+      items: [
+        { key: "arion_onboarding", label: "Get Started", route: "/app/services/arion_onboarding" },
+        { key: "arion_dashboard", label: "Dashboard", route: "/app/services/arion_dashboard" },
+      ],
     },
     {
       label: "Website", icon: Monitor, collapsible: true, sectionId: "website",
