@@ -8,6 +8,7 @@ import { useAccessToken } from "../../auth/useAccessToken";
 import { Sparkline } from "../../components/iainsights/Sparkline";
 import { GetStartedCard } from "../../components/command/GetStartedCard";
 import { OliverSetupCard } from "../../components/command/OliverSetupCard";
+import { SparkSetupCard } from "../../components/command/SparkSetupCard";
 
 // Each card pulls one piece of data; failures degrade gracefully (card shows "—").
 interface OliverDashboardToday {
@@ -113,8 +114,9 @@ export function CommandDashboard() {
 
   return (
     <div className="space-y-4">
-      {/* OLIVER account/billing setup nudge — opens the guided wizard. */}
+      {/* Product onboarding nudges — fail-open, hide only when genuinely done. */}
       <OliverSetupCard />
+      <SparkSetupCard />
 
       {/* v7.0 — Get Started checklist (moved here from per-product Trends pages). */}
       <GetStartedCard />

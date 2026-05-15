@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
-import { Check, Circle, ArrowRight, Sparkles } from "lucide-react";
+import { Check, Circle, ArrowRight, Sparkles, Lock } from "lucide-react";
 
 interface Step {
   key: string;
@@ -16,6 +16,8 @@ interface Step {
   label: string;
   required: boolean;
   done: boolean;
+  locked?: boolean;
+  requiredTier?: string | null;
 }
 interface Progress {
   done: number; total: number;
@@ -91,10 +93,17 @@ export function SparkOnboardingPage() {
       <div className="space-y-2">
         {steps.map((s, i) => {
           const a = ACTION_MAP[s.key] || { href: "#", cta: "Open", help: "" };
+          const locked = !!s.locked;
           return (
-            <div key={s.key} className={`flex items-start gap-3 p-4 rounded-lg border-2 ${s.done ? "border-emerald-200 bg-emerald-50/30" : "border-slate-200 bg-white"}`}>
+            <div key={s.key} className={`flex items-start gap-3 p-4 rounded-lg border-2 ${
+              locked ? "border-slate-200 bg-slate-50 opacity-60"
+                : s.done ? "border-emerald-200 bg-emerald-50/30" : "border-slate-200 bg-white"}`}>
               <div className="flex-shrink-0 mt-0.5">
-                {s.done ? (
+                {locked ? (
+                  <div className="rounded-full border-2 border-slate-300 text-slate-400 w-7 h-7 flex items-center justify-center" title="Locked — upgrade required">
+                    <Lock className="h-3.5 w-3.5" />
+                  </div>
+                ) : s.done ? (
                   <div className="rounded-full bg-emerald-600 text-white w-7 h-7 flex items-center justify-center">
                     <Check className="h-4 w-4" />
                   </div>
@@ -107,15 +116,22 @@ export function SparkOnboardingPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <div className="font-semibold text-slate-900">{s.label}</div>
-                  {s.required && !s.done && <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">required</span>}
-                  {s.done && <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">complete</span>}
+                  {locked && <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">{s.requiredTier} plan</span>}
+                  {!locked && s.required && !s.done && <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">required</span>}
+                  {!locked && s.done && <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">complete</span>}
                 </div>
                 <div className="text-sm text-slate-600">{a.help}</div>
               </div>
               <div className="flex-shrink-0">
-                <Link to={a.href} className="text-sm px-3 py-1.5 rounded bg-[#EF6C33] hover:bg-[#d75a25] text-white inline-flex items-center gap-1">
-                  {s.done ? "Review" : a.cta} <ArrowRight className="h-3 w-3" />
-                </Link>
+                {locked ? (
+                  <Link to="/app/spark/pricing" className="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100 inline-flex items-center gap-1">
+                    Upgrade to {s.requiredTier} <ArrowRight className="h-3 w-3" />
+                  </Link>
+                ) : (
+                  <Link to={a.href} className="text-sm px-3 py-1.5 rounded bg-[#EF6C33] hover:bg-[#d75a25] text-white inline-flex items-center gap-1">
+                    {s.done ? "Review" : a.cta} <ArrowRight className="h-3 w-3" />
+                  </Link>
+                )}
               </div>
             </div>
           );
