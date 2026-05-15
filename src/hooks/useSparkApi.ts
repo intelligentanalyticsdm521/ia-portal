@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useMsal } from "@azure/msal-react";
 import { sparkGet, sparkPost, sparkPut, sparkPatch, sparkDelete } from "../lib/sparkApi";
 
@@ -12,5 +12,11 @@ export function useSparkApi() {
   const patch = useCallback(<T>(path: string, body: unknown) => sparkPatch<T>(instance, account, path, body), [instance, account]);
   const del = useCallback(<T>(path: string) => sparkDelete<T>(instance, account, path), [instance, account]);
 
-  return { get, post, put, patch, del, ready: !!account };
+  // Stable object identity — without this every consumer that lists the hook
+  // result (or a spread of it) in a useEffect/useCallback dep array re-fetches
+  // on EVERY render instead of once per page. That's wasted API spend.
+  return useMemo(
+    () => ({ get, post, put, patch, del, ready: !!account }),
+    [get, post, put, patch, del, account]
+  );
 }

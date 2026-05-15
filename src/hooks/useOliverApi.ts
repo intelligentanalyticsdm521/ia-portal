@@ -3,7 +3,7 @@
  * bound to the current MSAL account. Parses tier-gate 403s.
  */
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useMsal } from "@azure/msal-react";
 import { oliverGet, oliverPost, oliverPatch, oliverDelete } from "../lib/oliverApi";
 
@@ -46,5 +46,10 @@ export function useOliverApi() {
     [instance, account]
   );
 
-  return { get, post, patch, del, ready: !!account };
+  // Stable object identity — prevents consumers keyed on this hook's result
+  // from re-fetching on every render (fetch once per page, not per render).
+  return useMemo(
+    () => ({ get, post, patch, del, ready: !!account }),
+    [get, post, patch, del, account]
+  );
 }
