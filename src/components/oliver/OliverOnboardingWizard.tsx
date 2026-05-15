@@ -43,6 +43,14 @@ interface Template {
 }
 interface OfferingDraft { name: string; price: string; }
 interface PortalCfg { welcomeMessage: string; showRequestWork: boolean; showMessaging: boolean; showReschedule: boolean; }
+interface PortalDomain {
+  canUseCustomDomain: boolean;
+  fallbackUrl: string;
+  customDomain: string | null;
+  status: string;
+  canonicalUrl: string;
+  dns: { type: string; host: string; value: string } | null;
+}
 
 const STEPS = ["Business Profile", "Payments", "Templates", "Customer Portal", "Catalog"] as const;
 
@@ -65,6 +73,10 @@ export function OliverOnboardingWizard({
   const [tplAssign, setTplAssign] = useState<string[]>(["invoice", "quote", "proposal"]);
   const [tplCreatedId, setTplCreatedId] = useState<string | null>(null);
   const [portal, setPortal] = useState<PortalCfg>({ welcomeMessage: "", showRequestWork: true, showMessaging: true, showReschedule: true });
+  const [pd, setPd] = useState<PortalDomain | null>(null);
+  const [domainInput, setDomainInput] = useState("");
+  const [domainBusy, setDomainBusy] = useState<"save" | "verify" | null>(null);
+  const [domainMsg, setDomainMsg] = useState<string | null>(null);
   const [offerings, setOfferings] = useState<OfferingDraft[]>([{ name: "", price: "" }]);
 
   // Load ONCE on mount. Deliberately NOT keyed on `api`/props: the parent
@@ -82,15 +94,17 @@ export function OliverOnboardingWizard({
       setLoading(true); setErr(null);
       try {
         const a = apiRef.current;
-        const [s, st, t, p] = await Promise.all([
+        const [s, st, t, p, dm] = await Promise.all([
           a.get<Settings>("/settings"),
           a.get<StripeStatus>("/settings/stripe").catch(() => ({ connected: false })),
           a.get<Template>("/settings/invoice-template").catch(() => null),
           a.get<PortalCfg>("/settings/portal").catch(() => null),
+          a.get<PortalDomain>("/settings/portal-domain").catch(() => null),
         ]);
         setSettings(s);
         setStripe(st);
         if (p) setPortal(p);
+        if (dm) { setPd(dm); setDomainInput(dm.customDomain || ""); }
         setTpl(t || {
           logoUrl: s.logoUrl ?? null,
           accentColor: s.brandColor || "#1A3A4A",
@@ -218,6 +232,30 @@ export function OliverOnboardingWizard({
     } finally {
       setSaving(false);
     }
+  }
+
+  async function reloadDomain() {
+    try { setPd(await api.get<PortalDomain>("/settings/portal-domain")); } catch { /* ignore */ }
+  }
+  async function saveDomain() {
+    setDomainBusy("save"); setDomainMsg(null);
+    try {
+      await api.patch("/settings/portal-domain", { domain: domainInput.trim() });
+      await reloadDomain();
+      setDomainMsg(domainInput.trim() ? "Saved. Add the DNS record below, then verify." : "Custom domain cleared.");
+    } catch (e) {
+      setDomainMsg((e as Error).message || "Could not save domain");
+    } finally { setDomainBusy(null); }
+  }
+  async function verifyDomain() {
+    setDomainBusy("verify"); setDomainMsg(null);
+    try {
+      const r = await api.post<{ cnameOk: boolean; status: string; next: string }>("/settings/portal-domain/verify");
+      await reloadDomain();
+      setDomainMsg(r.next || (r.cnameOk ? "DNS verified." : "DNS not found yet — give it a few minutes."));
+    } catch (e) {
+      setDomainMsg((e as Error).message || "Verification failed");
+    } finally { setDomainBusy(null); }
   }
 
   const accent = tpl?.accentColor || settings?.brandColor || "#1A3A4A";
@@ -391,6 +429,57 @@ export function OliverOnboardingWizard({
                     Intelligent Analytics attribution entirely. Some optional features above are also
                     plan-gated and won't show on lower tiers even if enabled here.
                   </div>
+
+                  {pd && (
+                    <div style={{ marginTop: 16, padding: 14, border: "1px solid #E2E8F0", borderRadius: 8 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#1A3A4A", marginBottom: 4 }}>Portal address</div>
+                      <div style={{ fontSize: 12, color: "#0B1C24", marginBottom: 10 }}>
+                        Your portal is live now at{" "}
+                        <a href={pd.fallbackUrl} target="_blank" rel="noreferrer" style={{ color: "#0C4A60", fontWeight: 600 }}>{pd.fallbackUrl.replace(/^https:\/\//, "")}</a>.
+                      </div>
+
+                      {!pd.canUseCustomDomain ? (
+                        <Callout tone="warn">
+                          <strong>Use your own domain</strong> (e.g. portal.yourbusiness.com) — a Standard
+                          feature. Upgrade to connect your domain; we handle the SSL automatically.
+                          <div style={{ marginTop: 8 }}>
+                            <a href="/app/services/oliver_usage" style={{ fontSize: 12, fontWeight: 700, color: "#0C4A60", textDecoration: "underline" }}>Upgrade plan →</a>
+                          </div>
+                        </Callout>
+                      ) : (
+                        <>
+                          <FieldRow label="Your portal subdomain">
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <input style={inp} value={domainInput} onChange={(e) => setDomainInput(e.target.value)} placeholder="portal.yourbusiness.com" />
+                              <Button variant="secondary" onClick={saveDomain} loading={domainBusy === "save"}>Save</Button>
+                            </div>
+                          </FieldRow>
+                          {pd.customDomain && pd.dns && pd.status !== "active" && (
+                            <div style={{ marginTop: 8, padding: 10, background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 6, fontSize: 11, color: "#0B1C24" }}>
+                              <div style={{ marginBottom: 6 }}>Add this DNS record at your domain host, then verify:</div>
+                              <div style={{ fontFamily: "monospace", fontSize: 11, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 4, padding: "6px 8px" }}>
+                                {pd.dns.type} &nbsp; {pd.dns.host} &nbsp;→&nbsp; {pd.dns.value}
+                              </div>
+                              <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
+                                <Button variant="primary" onClick={verifyDomain} loading={domainBusy === "verify"}>Verify DNS</Button>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: pd.status === "provisioning" ? "#B45309" : "#5A7A8A" }}>
+                                  Status: {pd.status}
+                                </span>
+                              </div>
+                              <div style={{ marginTop: 6, fontSize: 11, color: "#5A7A8A" }}>
+                                On ARION? We add this record for you automatically — nothing to do here.
+                                Once verified we provision the SSL and switch your portal URL over automatically.
+                              </div>
+                            </div>
+                          )}
+                          {pd.status === "active" && pd.customDomain && (
+                            <Callout tone="ok"><strong>{pd.customDomain}</strong> is live with SSL — your portal now uses your domain.</Callout>
+                          )}
+                          {domainMsg && <div style={{ marginTop: 8, fontSize: 11, color: "#5A7A8A" }}>{domainMsg}</div>}
+                        </>
+                      )}
+                    </div>
+                  )}
                 </Section>
               )}
 
