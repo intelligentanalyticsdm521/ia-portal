@@ -7,7 +7,7 @@
 //     is complete, OR there's no OLIVER for this tenant at all.
 //   - if the status call fails or is slow, but OLIVER is active, STILL show
 //     it (onboarding is presumably outstanding) rather than disappear.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { useAppState } from "../../app/AppState";
 import { useOliverApi } from "../../hooks/useOliverApi";
@@ -25,6 +25,8 @@ export function OliverSetupCard() {
   const { enabledServices } = useAppState();
   const { get, post, patch, ready } = useOliverApi();
   const hasOliver = enabledServices.has("oliver_dashboard") || enabledServices.has("oliver_jobs");
+  // Stable api object so the wizard never re-mounts/reloads from prop churn.
+  const api = useMemo(() => ({ get, post, patch }), [get, post, patch]);
 
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   // null = unknown yet, true/false once we've tried.
@@ -96,7 +98,7 @@ export function OliverSetupCard() {
 
       {open && (
         <OliverOnboardingWizard
-          api={{ get, post, patch }}
+          api={api}
           onClose={() => { setOpen(false); reload(); }}
           onFinished={() => { setOpen(false); reload(); }}
         />

@@ -10,7 +10,7 @@
 //   3. Templates — invoice/quote/proposal; branding pulled from the profile.
 //   4. Customer Portal — what the customer sees; branding per tier.
 //   5. Product Catalog — first offerings.
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "./ui";
 import { LogoPicker } from "./LogoPicker";
 
@@ -59,32 +59,43 @@ export function OliverOnboardingWizard({
   const [tpl, setTpl] = useState<Template | null>(null);
   const [offerings, setOfferings] = useState<OfferingDraft[]>([{ name: "", price: "" }]);
 
-  const load = useCallback(async () => {
-    setLoading(true); setErr(null);
-    try {
-      const [s, st, t] = await Promise.all([
-        api.get<Settings>("/settings"),
-        api.get<StripeStatus>("/settings/stripe").catch(() => ({ connected: false })),
-        api.get<Template>("/settings/invoice-template").catch(() => null),
-      ]);
-      setSettings(s);
-      setStripe(st);
-      setTpl(t || {
-        logoUrl: s.logoUrl ?? null,
-        accentColor: s.brandColor || "#1A3A4A",
-        invoiceNumberPrefix: "INV-",
-        terms: "Due upon receipt",
-        footerNote: "",
-        googleReviewUrl: null,
-      });
-    } catch (e) {
-      setErr((e as Error).message || "Failed to load your business profile");
-    } finally {
-      setLoading(false);
-    }
-  }, [api]);
+  // Load ONCE on mount. Deliberately NOT keyed on `api`/props: the parent
+  // passes a fresh api object every render and something on the dashboard
+  // polls, so a prop-keyed effect would re-fetch every ~15s and wipe whatever
+  // the user is typing. apiRef keeps the latest funcs without retriggering.
+  const apiRef = useRef(api);
+  apiRef.current = api;
+  const loadedRef = useRef(false);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
+    (async () => {
+      setLoading(true); setErr(null);
+      try {
+        const a = apiRef.current;
+        const [s, st, t] = await Promise.all([
+          a.get<Settings>("/settings"),
+          a.get<StripeStatus>("/settings/stripe").catch(() => ({ connected: false })),
+          a.get<Template>("/settings/invoice-template").catch(() => null),
+        ]);
+        setSettings(s);
+        setStripe(st);
+        setTpl(t || {
+          logoUrl: s.logoUrl ?? null,
+          accentColor: s.brandColor || "#1A3A4A",
+          invoiceNumberPrefix: "INV-",
+          terms: "Due upon receipt",
+          footerNote: "",
+          googleReviewUrl: null,
+        });
+      } catch (e) {
+        setErr((e as Error).message || "Failed to load your business profile");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   const setS = (patch: Partial<Settings>) => setSettings((p) => p ? { ...p, ...patch } : p);
   const setT = (patch: Partial<Template>) => setTpl((p) => p ? { ...p, ...patch } : p);
