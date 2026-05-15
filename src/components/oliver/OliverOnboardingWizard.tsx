@@ -42,6 +42,7 @@ interface Template {
   googleReviewUrl: string | null;
 }
 interface OfferingDraft { name: string; price: string; }
+interface PortalCfg { welcomeMessage: string; showRequestWork: boolean; showMessaging: boolean; showReschedule: boolean; }
 
 const STEPS = ["Business Profile", "Payments", "Templates", "Customer Portal", "Catalog"] as const;
 
@@ -60,6 +61,10 @@ export function OliverOnboardingWizard({
   const [settings, setSettings] = useState<Settings | null>(null);
   const [stripe, setStripe] = useState<StripeStatus | null>(null);
   const [tpl, setTpl] = useState<Template | null>(null);
+  const [tplName, setTplName] = useState("Standard Template");
+  const [tplAssign, setTplAssign] = useState<string[]>(["invoice", "quote", "proposal"]);
+  const [tplCreatedId, setTplCreatedId] = useState<string | null>(null);
+  const [portal, setPortal] = useState<PortalCfg>({ welcomeMessage: "", showRequestWork: true, showMessaging: true, showReschedule: true });
   const [offerings, setOfferings] = useState<OfferingDraft[]>([{ name: "", price: "" }]);
 
   // Load ONCE on mount. Deliberately NOT keyed on `api`/props: the parent
@@ -77,13 +82,15 @@ export function OliverOnboardingWizard({
       setLoading(true); setErr(null);
       try {
         const a = apiRef.current;
-        const [s, st, t] = await Promise.all([
+        const [s, st, t, p] = await Promise.all([
           a.get<Settings>("/settings"),
           a.get<StripeStatus>("/settings/stripe").catch(() => ({ connected: false })),
           a.get<Template>("/settings/invoice-template").catch(() => null),
+          a.get<PortalCfg>("/settings/portal").catch(() => null),
         ]);
         setSettings(s);
         setStripe(st);
+        if (p) setPortal(p);
         setTpl(t || {
           logoUrl: s.logoUrl ?? null,
           accentColor: s.brandColor || "#1A3A4A",
@@ -129,7 +136,36 @@ export function OliverOnboardingWizard({
           brandColorAccent: settings.brandColorAccent ?? "",
         });
       } else if (i === 2 && tpl) {
-        await api.patch("/settings/invoice-template", tpl);
+        // Create (or update, if revisited) a real document template and
+        // assign it to the chosen document types.
+        const body = {
+          name: tplName.trim() || "Standard Template",
+          numberPrefix: tpl.invoiceNumberPrefix || "INV-",
+          terms: tpl.terms || "Due upon receipt",
+          footerNote: tpl.footerNote || "",
+          accentColor: settings?.brandColor || "",
+          logoUrl: settings?.logoUrl || "",
+          assignTo: tplAssign,
+        };
+        try {
+          if (tplCreatedId) {
+            await api.patch(`/templates/${tplCreatedId}`, body);
+          } else {
+            const r = await api.post<{ template_id: string }>("/templates", body);
+            if (r?.template_id) setTplCreatedId(r.template_id);
+          }
+        } catch (e) {
+          // Tier cap reached (e.g. Lite already has its 1 template) — not
+          // fatal for onboarding; keep going.
+          if (!/tier_limit_reached|402/.test((e as Error).message || "")) throw e;
+        }
+        // Google review link still lives on the legacy invoice-template row
+        // (review-request automation reads it there).
+        if (tpl.googleReviewUrl) {
+          await api.patch("/settings/invoice-template", { googleReviewUrl: tpl.googleReviewUrl }).catch(() => {});
+        }
+      } else if (i === 3) {
+        await api.patch("/settings/portal", portal);
       } else if (i === 4) {
         const valid = offerings.filter((o) => o.name.trim());
         for (const o of valid) {
@@ -286,46 +322,74 @@ export function OliverOnboardingWizard({
               )}
 
               {step === 2 && tpl && (
-                <Section title="Your document template"
-                  blurb="One branded template powers your invoices, quotes, and proposals. Logo & color come from your business profile above.">
+                <Section title="Create your first template"
+                  blurb="Build a branded document template, then choose which documents use it. Logo & color come from your business profile. Manage more anytime in the Template Library.">
                   <Grid>
-                    <FieldRow label="Invoice number prefix">
+                    <FieldRow label="Template name">
+                      <input style={inp} value={tplName} onChange={(e) => setTplName(e.target.value)} placeholder="Standard Template" />
+                    </FieldRow>
+                    <FieldRow label="Document number prefix">
                       <input style={{ ...inp, fontFamily: "monospace" }} value={tpl.invoiceNumberPrefix} onChange={(e) => setT({ invoiceNumberPrefix: e.target.value })} placeholder="INV-" />
                     </FieldRow>
-                    <FieldRow label="Payment / acceptance terms">
-                      <input style={inp} value={tpl.terms} onChange={(e) => setT({ terms: e.target.value })} placeholder="Due upon receipt" />
-                    </FieldRow>
                   </Grid>
+                  <FieldRow label="Terms">
+                    <input style={inp} value={tpl.terms} onChange={(e) => setT({ terms: e.target.value })} placeholder="Due upon receipt" />
+                  </FieldRow>
                   <FieldRow label="Footer note">
                     <textarea style={{ ...inp, resize: "vertical" }} rows={2} value={tpl.footerNote} onChange={(e) => setT({ footerNote: e.target.value })} placeholder="Thank you for your business!" />
                   </FieldRow>
                   <FieldRow label="Google review link (review-request automation)">
-                    <input style={inp} value={tpl.googleReviewUrl ?? ""} onChange={(e) => setT({ googleReviewUrl: e.target.value || null })} placeholder="https://g.page/r/.../review" />
+                    <input style={inp} value={tpl.googleReviewUrl ?? ""} onChange={(e) => setT({ googleReviewUrl: e.target.value || null })} placeholder="Auto-fills from ARION if GBP is connected" />
                   </FieldRow>
+                  <div style={{ marginTop: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#5A7A8A", marginBottom: 6 }}>Use this template for</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                      {(["invoice", "quote", "proposal", "recurring"] as const).map((d) => (
+                        <label key={d} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#0B1C24", border: "1px solid #E2E8F0", borderRadius: 6, padding: "7px 10px", cursor: "pointer", textTransform: "capitalize" }}>
+                          <input type="checkbox" checked={tplAssign.includes(d)}
+                            onChange={() => setTplAssign((a) => a.includes(d) ? a.filter((x) => x !== d) : [...a, d])} />
+                          {d === "recurring" ? "Recurring subscriptions" : d}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                   <div style={{ marginTop: 14, padding: 12, borderRadius: 8, background: accent, color: "#fff" }}>
-                    <div style={{ fontSize: 11, opacity: 0.85 }}>Preview — applies to invoices, quotes & proposals</div>
+                    <div style={{ fontSize: 11, opacity: 0.85 }}>Preview</div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
                       <strong style={{ fontSize: 14 }}>{settings?.tenantFullName || "Your Business"}</strong>
                       <span style={{ fontFamily: "monospace", fontSize: 12 }}>{tpl.invoiceNumberPrefix || "INV-"}00042</span>
                     </div>
                   </div>
-                  <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 10 }}>
-                    Manage these anytime under <strong>Template Library</strong>.
-                  </p>
                 </Section>
               )}
 
               {step === 3 && (
-                <Section title="Your customer portal"
-                  blurb="Customers get a portal to view jobs, accept quotes, and pay invoices online.">
-                  <Callout tone="ok">
-                    Your customer portal is live automatically. Customers see jobs, quotes (accept/decline),
-                    and pay invoices via Stripe.
-                  </Callout>
-                  <div style={{ marginTop: 12, fontSize: 12, color: "#0B1C24", lineHeight: 1.6 }}>
-                    <strong>Branding:</strong> on Lite the portal uses Intelligent Analytics styling with a
-                    "Powered by" footer. On Standard and above it uses your logo and brand color from your
-                    business profile. On Pro the Intelligent Analytics attribution is removed entirely.
+                <Section title="Configure your customer portal"
+                  blurb="Customers always get jobs, quote accept/decline, and online invoice payment. Customize the welcome message and which optional features they see — these save to your portal.">
+                  <FieldRow label="Portal welcome message">
+                    <textarea style={{ ...inp, resize: "vertical" }} rows={2}
+                      value={portal.welcomeMessage}
+                      onChange={(e) => setPortal((p) => ({ ...p, welcomeMessage: e.target.value }))}
+                      placeholder="Welcome! Track your jobs, approve quotes, and pay invoices here." />
+                  </FieldRow>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+                    {([
+                      ["showRequestWork", "Let customers request new work from the portal"],
+                      ["showMessaging", "Enable 2-way messaging with customers"],
+                      ["showReschedule", "Allow customers to request reschedules"],
+                    ] as [keyof PortalCfg, string][]).map(([k, label]) => (
+                      <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#0B1C24" }}>
+                        <input type="checkbox" checked={portal[k] as boolean}
+                          onChange={(e) => setPortal((p) => ({ ...p, [k]: e.target.checked }))} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 14, padding: "10px 12px", fontSize: 11, color: "#5A7A8A", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 6, lineHeight: 1.5 }}>
+                    <strong>Branding</strong> follows your plan: Lite uses Intelligent Analytics styling
+                    with a "Powered by" footer; Standard+ uses your logo and brand color; Pro removes the
+                    Intelligent Analytics attribution entirely. Some optional features above are also
+                    plan-gated and won't show on lower tiers even if enabled here.
                   </div>
                 </Section>
               )}
