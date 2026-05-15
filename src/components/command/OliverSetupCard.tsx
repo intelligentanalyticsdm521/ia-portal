@@ -1,11 +1,12 @@
-// OliverSetupCard — Command-center banner that nudges a tenant to finish the
-// OLIVER billing/branding/payments setup. Distinct from GetStartedCard (which
-// tracks product *usage* steps like "create your first job") — this one is
-// about getting the account ready to send a paid invoice, and it opens the
-// guided OliverOnboardingWizard inline.
+// OliverSetupCard — the "onboarding is outstanding" spot on the Command
+// Center and the OLIVER dashboard. Clicking it opens the guided modal that
+// walks each setup section and writes to the right tables.
 //
-// Auto-hides once /onboarding/status reports completion (explicit completion
-// flag OR all required steps done).
+// Visibility rule (deliberately fail-OPEN so it never silently vanishes):
+//   - hide ONLY when we have a definitive status saying every required step
+//     is complete, OR there's no OLIVER for this tenant at all.
+//   - if the status call fails or is slow, but OLIVER is active, STILL show
+//     it (onboarding is presumably outstanding) rather than disappear.
 import { useCallback, useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { useAppState } from "../../app/AppState";
@@ -26,27 +27,37 @@ export function OliverSetupCard() {
   const hasOliver = enabledServices.has("oliver_dashboard") || enabledServices.has("oliver_jobs");
 
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
+  // null = unknown yet, true/false once we've tried.
+  const [oliverReachable, setOliverReachable] = useState<boolean | null>(null);
   const [open, setOpen] = useState(false);
 
   const reload = useCallback(async () => {
-    if (!hasOliver || !ready) return;
+    if (!ready) return;
     try {
-      setStatus(await get<OnboardingStatus>("/onboarding/status"));
-    } catch { /* degrade silently — card just won't show */ }
-  }, [get, hasOliver, ready]);
+      const s = await get<OnboardingStatus>("/onboarding/status");
+      setStatus(s);
+      setOliverReachable(true); // the call succeeding proves OLIVER is provisioned
+    } catch {
+      // Status unavailable. Don't blank the card — fail open if we have any
+      // other signal that OLIVER is active for this tenant.
+      setStatus(null);
+      setOliverReachable(hasOliver ? true : false);
+    }
+  }, [get, ready, hasOliver]);
 
   useEffect(() => { reload(); }, [reload]);
 
-  if (!hasOliver || !status) return null;
-  // Show until onboarding is GENUINELY 100% (every required step satisfied).
-  // We deliberately ignore onboarding_completed_at / "skip" — a stale flag
-  // from a prior session should never blank the setup entry point.
-  if (status.all_required_complete) return null;
+  // Still figuring out whether OLIVER applies — render nothing transiently.
+  if (oliverReachable === null && !hasOliver) return null;
+  // Genuinely no OLIVER for this tenant.
+  if (oliverReachable === false && !hasOliver) return null;
+  // The ONLY "hide because done" case: a definitive all-complete status.
+  if (status && status.all_required_complete) return null;
 
-  const pct = status.total_steps > 0
-    ? Math.round((status.completed_count / status.total_steps) * 100)
-    : 0;
-  const nextStep = status.steps.find((s) => !s.complete && !s.optional);
+  const total = status?.total_steps ?? 5;
+  const done = status?.completed_count ?? 0;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const nextStep = status?.steps.find((s) => !s.complete && !s.optional);
 
   return (
     <>
@@ -60,7 +71,7 @@ export function OliverSetupCard() {
                 <p className="text-[11px] text-slate-500 mt-0.5">
                   {nextStep
                     ? `Next: ${nextStep.title} — get ready to send your first paid invoice.`
-                    : "A few steps left before you can send a paid invoice."}
+                    : "Walk through business profile, payments, templates, portal & catalog."}
                 </p>
               </div>
             </div>
@@ -69,17 +80,17 @@ export function OliverSetupCard() {
               className="text-xs px-3 py-1.5 rounded font-medium text-white flex-shrink-0"
               style={{ background: "#0C4A60" }}
             >
-              {status.completed_count > 0 ? "Continue setup" : "Start guided setup"}
+              {done > 0 ? "Continue setup" : "Start guided setup"}
             </button>
           </div>
-          <div className="mt-3 flex items-center gap-2 text-[10px] text-slate-500">
-            <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
-              <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: "#FEC82C" }} />
+          {status && (
+            <div className="mt-3 flex items-center gap-2 text-[10px] text-slate-500">
+              <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: "#FEC82C" }} />
+              </div>
+              <span className="font-semibold tabular-nums">{done}/{total}</span>
             </div>
-            <span className="font-semibold tabular-nums">
-              {status.completed_count}/{status.total_steps}
-            </span>
-          </div>
+          )}
         </div>
       </div>
 

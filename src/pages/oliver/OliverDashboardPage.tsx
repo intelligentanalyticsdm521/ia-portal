@@ -160,14 +160,15 @@ export function OliverDashboardPage() {
 
   // Prefer the guided onboarding banner when wizard hasn't been completed.
   // Falls back to the original Stripe-only banner if /onboarding/status fails.
-  let topBanner: React.ReactNode = null;
-  if (onboarding && !onboarding.onboarding_completed_at) {
-    // Inline guided-setup card — opens the wizard modal in place (no nav away).
-    // Same component used on the Home Command Center for one consistent flow.
-    topBanner = <OliverSetupCard />;
-  } else if (stripeStatus && !stripeStatus.readyToCharge) {
-    // Onboarding marked done, but Stripe regressed — still surface Stripe-only nag.
-    topBanner = (
+  // Always render the inline setup card — it self-decides visibility
+  // (fail-open: shows whenever onboarding is outstanding, hides only when
+  // genuinely 100% complete). Plus a Stripe-only nag for the edge case where
+  // onboarding completed but the Stripe account later regressed.
+  const stripeRegressed = !!onboarding?.all_required_complete && !!stripeStatus && !stripeStatus.readyToCharge;
+  const topBanner: React.ReactNode = (
+    <>
+      <OliverSetupCard />
+      {stripeRegressed && (
       <div className="card" style={{
         background: "linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)",
         border: "1px solid #F59E0B",
@@ -190,8 +191,9 @@ export function OliverDashboardPage() {
           </Link>
         </div>
       </div>
-    );
-  }
+      )}
+    </>
+  );
 
   return (
     <OliverPageWrapper title="Dashboard" subtitle="Overview" error={error} loading={loading}>
