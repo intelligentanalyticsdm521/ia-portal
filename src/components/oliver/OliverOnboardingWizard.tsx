@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "./ui";
 import { LogoPicker } from "./LogoPicker";
+import { formatPhone } from "../../lib/formatPhone";
 
 interface Api {
   get: <T>(p: string) => Promise<T>;
@@ -28,6 +29,8 @@ interface Settings {
   address?: string;
   logoUrl?: string | null;
   brandColor?: string | null;
+  brandColorSecondary?: string | null;
+  brandColorAccent?: string | null;
 }
 interface StripeStatus { connected: boolean; chargesEnabled?: boolean; readyToCharge?: boolean; }
 interface Template {
@@ -122,6 +125,8 @@ export function OliverOnboardingWizard({
           address: settings.address ?? "",
           logoUrl: settings.logoUrl ?? "",
           brandColor: settings.brandColor ?? "",
+          brandColorSecondary: settings.brandColorSecondary ?? "",
+          brandColorAccent: settings.brandColorAccent ?? "",
         });
       } else if (i === 2 && tpl) {
         await api.patch("/settings/invoice-template", tpl);
@@ -227,27 +232,27 @@ export function OliverOnboardingWizard({
                       <input style={inp} type="email" value={settings.email || ""} onChange={(e) => setS({ email: e.target.value })} placeholder="hello@yourbusiness.com" />
                     </FieldRow>
                     <FieldRow label="Phone" req missing={!settings.phone?.trim()}>
-                      <input style={inp} value={settings.phone || ""} onChange={(e) => setS({ phone: e.target.value })} placeholder="(555) 123-4567" />
+                      <input style={inp} value={settings.phone || ""} onChange={(e) => setS({ phone: formatPhone(e.target.value) })} placeholder="+1 (555) 555-5555" />
                     </FieldRow>
                   </Grid>
                   <FieldRow label="Address" req missing={!settings.address?.trim()}>
                     <textarea style={{ ...inp, resize: "vertical" }} rows={2} value={settings.address || ""} onChange={(e) => setS({ address: e.target.value })} placeholder="123 Main St, Springfield IL 62701" />
                   </FieldRow>
                   <div style={{ marginTop: 6 }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 6 }}>Logo & brand color</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 6 }}>Logo</div>
                     <LogoPicker
                       value={settings.logoUrl ?? null}
                       onChange={(url) => { setS({ logoUrl: url }); setT({ logoUrl: url }); }}
                       api={api}
                       website={settings.website}
                     />
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
-                      <input type="color" value={settings.brandColor || "#1A3A4A"}
-                        onChange={(e) => { setS({ brandColor: e.target.value }); setT({ accentColor: e.target.value }); }}
-                        style={{ width: 40, height: 30, padding: 0, border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6, background: "#fff" }} />
-                      <input style={{ ...inp, flex: 1, fontFamily: "monospace" }} value={settings.brandColor || ""}
-                        onChange={(e) => { setS({ brandColor: e.target.value }); setT({ accentColor: e.target.value }); }} placeholder="#1A3A4A" />
-                    </div>
+                    <div style={{ marginTop: 10, fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 6 }}>Brand colors</div>
+                    <ColorRow label="Primary" value={settings.brandColor || ""} fallback="#1A3A4A"
+                      onChange={(v) => { setS({ brandColor: v }); setT({ accentColor: v }); }} />
+                    <ColorRow label="Secondary" value={settings.brandColorSecondary || ""} fallback="#FEC82C"
+                      onChange={(v) => setS({ brandColorSecondary: v })} />
+                    <ColorRow label="Accent" optional value={settings.brandColorAccent || ""} fallback="#1A7DB5"
+                      onChange={(v) => setS({ brandColorAccent: v })} />
                   </div>
                   {requiredMissing.length > 0 && (
                     <div style={{ marginTop: 12 }}>
@@ -395,6 +400,22 @@ function FieldRow({ label, req, missing, children }: { label: string; req?: bool
     </label>
   );
 }
+function ColorRow({ label, value, fallback, optional, onChange }: {
+  label: string; value: string; fallback: string; optional?: boolean; onChange: (v: string) => void;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+      <span style={{ width: 78, fontSize: 11, color: "#5A7A8A" }}>
+        {label}{optional && <span style={{ color: "#94A3B8" }}> (opt)</span>}
+      </span>
+      <input type="color" value={value || fallback} onChange={(e) => onChange(e.target.value)}
+        style={{ width: 38, height: 28, padding: 0, border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6, background: "#fff" }} />
+      <input style={{ ...inp, flex: 1, fontFamily: "monospace" }} value={value}
+        onChange={(e) => onChange(e.target.value)} placeholder={fallback} />
+    </div>
+  );
+}
+
 function Callout({ tone, children }: { tone: "ok" | "warn"; children: React.ReactNode }) {
   const c = tone === "ok"
     ? { bg: "#D1FAE5", bd: "#6EE7B7", fg: "#065F46" }

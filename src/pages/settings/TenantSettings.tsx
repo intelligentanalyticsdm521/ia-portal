@@ -5,6 +5,7 @@ import { useAccessToken } from '../../auth/useAccessToken';
 import { connectGoogle, getGoogleProperties, selectGoogleProperties, listArionSites, listGbpLocations, selectGbpLocation, disconnectGbp } from '../../lib/arionApi';
 import { useOliverApi } from '../../hooks/useOliverApi';
 import { LogoPicker } from '../../components/oliver/LogoPicker';
+import { formatPhone } from '../../lib/formatPhone';
 
 /* ------------------------------------------------------------------ */
 /*  Types & constants                                                  */
@@ -96,6 +97,8 @@ interface OrgProfile {
   address?: string;
   logoUrl?: string | null;
   brandColor?: string | null;
+  brandColorSecondary?: string | null;
+  brandColorAccent?: string | null;
   billingEmail?: string | null;
   supportEmail?: string | null;
 }
@@ -141,6 +144,8 @@ function OrganizationTab() {
         address: draft.address ?? '',
         logoUrl: draft.logoUrl ?? '',
         brandColor: draft.brandColor ?? '',
+        brandColorSecondary: draft.brandColorSecondary ?? '',
+        brandColorAccent: draft.brandColorAccent ?? '',
         billingEmail: draft.billingEmail ?? '',
         supportEmail: draft.supportEmail ?? '',
       });
@@ -182,7 +187,7 @@ function OrganizationTab() {
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700">Phone</label>
-          <input type="tel" value={draft.phone || ''} onChange={(e) => set({ phone: e.target.value })} className={cls} placeholder="+1 (555) 000-0000" />
+          <input type="tel" value={draft.phone || ''} onChange={(e) => set({ phone: formatPhone(e.target.value) })} className={cls} placeholder="+1 (555) 555-5555" />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700">Billing email <span className="text-gray-400">(optional)</span></label>
@@ -205,10 +210,20 @@ function OrganizationTab() {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700">Brand color</label>
-        <div className="mt-1 flex items-center gap-3">
-          <input type="color" value={draft.brandColor || '#1A3A4A'} onChange={(e) => set({ brandColor: e.target.value })} className="h-9 w-12 cursor-pointer rounded border border-gray-300" />
-          <input type="text" value={draft.brandColor || ''} onChange={(e) => set({ brandColor: e.target.value })} className="w-40 rounded-md border border-gray-300 px-3 py-2 text-sm font-mono" placeholder="#1A3A4A" />
+        <label className="block text-sm font-medium text-gray-700">Brand Colors</label>
+        <p className="mt-0.5 text-xs text-gray-500">Used across invoices, quotes, portals, and other products. Primary &amp; secondary always apply; accent is optional (portal highlights).</p>
+        <div className="mt-2 space-y-2">
+          {([
+            ['Primary', 'brandColor', '#1A3A4A', false],
+            ['Secondary', 'brandColorSecondary', '#FEC82C', false],
+            ['Accent', 'brandColorAccent', '#1A7DB5', true],
+          ] as [string, 'brandColor' | 'brandColorSecondary' | 'brandColorAccent', string, boolean][]).map(([label, key, fb, opt]) => (
+            <div key={key} className="flex items-center gap-3">
+              <span className="w-24 text-sm text-gray-700">{label}{opt && <span className="text-gray-400"> (opt)</span>}</span>
+              <input type="color" value={draft[key] || fb} onChange={(e) => set({ [key]: e.target.value } as Partial<OrgProfile>)} className="h-9 w-12 cursor-pointer rounded border border-gray-300" />
+              <input type="text" value={draft[key] || ''} onChange={(e) => set({ [key]: e.target.value } as Partial<OrgProfile>)} className="w-40 rounded-md border border-gray-300 px-3 py-2 text-sm font-mono" placeholder={fb} />
+            </div>
+          ))}
         </div>
       </div>
 

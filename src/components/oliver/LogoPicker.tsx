@@ -7,7 +7,7 @@
 // same value OLIVER invoices, ARION, and the customer portal all read. The
 // parent decides when/if to persist via PATCH /settings; upload persists
 // immediately server-side and returns the hosted URL.
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Button } from "./ui";
 
 interface Api {
@@ -49,6 +49,7 @@ export function LogoPicker({ value, onChange, api, website }: Props) {
   const [urlDraft, setUrlDraft] = useState(value || "");
   const [candidates, setCandidates] = useState<Array<{ url: string; label: string }> | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
 
   async function handleFile(file: File) {
     setErr(null);
@@ -151,29 +152,37 @@ export function LogoPicker({ value, onChange, api, website }: Props) {
 
       {tab === "upload" && (
         <div>
+          {/* Native <label htmlFor> opens the file dialog with zero JS — the
+              previous div+programmatic .click() didn't fire reliably inside
+              the modal. Drag/drop kept on the same label. */}
           <input
+            id={inputId}
             ref={fileRef}
             type="file"
             accept={ACCEPT}
-            style={{ display: "none" }}
+            style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden", clip: "rect(0 0 0 0)" }}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
           />
-          <div
-            onClick={() => !busy && fileRef.current?.click()}
+          <label
+            htmlFor={inputId}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f && !busy) handleFile(f); }}
             style={{
-              border: "1.5px dashed #CBD8DE", borderRadius: 8, padding: "22px 16px",
+              display: "block", border: "1.5px dashed #CBD8DE", borderRadius: 8, padding: "20px 16px",
               textAlign: "center", cursor: busy ? "wait" : "pointer", background: "#F8FAFC",
             }}
           >
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>
-              {busy ? "Uploading…" : "Click to choose, or drag a file here"}
-            </div>
-            <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 3 }}>
+            <span style={{
+              display: "inline-block", marginBottom: 8, padding: "6px 14px", borderRadius: 6,
+              background: "#0C4A60", color: "#fff", fontSize: 12, fontWeight: 600,
+            }}>
+              {busy ? "Uploading…" : "Choose file"}
+            </span>
+            <div style={{ fontSize: 11, color: "#5A7A8A" }}>…or drag &amp; drop here</div>
+            <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 3 }}>
               PNG, JPG, SVG, WEBP or GIF · up to 1.5MB
             </div>
-          </div>
+          </label>
         </div>
       )}
 
