@@ -40,6 +40,7 @@ interface Offering {
   is_active: boolean;
   is_self_bookable: boolean;
   requires_quote: boolean;
+  offering_type?: "product" | "service";
   stripe_product_id?: string | null;
   image_url?: string | null;
   prices?: PriceVariant[];
@@ -61,6 +62,7 @@ export function OliverServiceCatalogPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [activeCategoryId, setActiveCategoryId] = useState<string>("");
+  const [typeFilter, setTypeFilter] = useState<"all" | "service" | "product">("all");
   const [search, setSearch] = useState("");
 
   const [editingOffering, setEditingOffering] = useState<Offering | null>(null);
@@ -110,6 +112,7 @@ export function OliverServiceCatalogPage() {
 
   const filteredOfferings = useMemo(() => {
     let list = offerings;
+    if (typeFilter !== "all") list = list.filter((o) => (o.offering_type || "service") === typeFilter);
     if (activeCategoryId) {
       if (activeCategoryId === "__uncategorized__") list = list.filter((o) => !o.category_id);
       else list = list.filter((o) => o.category_id === activeCategoryId);
@@ -119,7 +122,7 @@ export function OliverServiceCatalogPage() {
       list = list.filter((o) => o.name.toLowerCase().includes(q) || o.description?.toLowerCase().includes(q));
     }
     return list;
-  }, [offerings, activeCategoryId, search]);
+  }, [offerings, activeCategoryId, search, typeFilter]);
 
   const pills = useMemo(() => {
     const all = { key: "", label: "All", count: offerings.length };
@@ -144,6 +147,7 @@ export function OliverServiceCatalogPage() {
       is_active: true,
       is_self_bookable: false,
       requires_quote: false,
+      offering_type: "service",
       prices: [],
     });
   }
@@ -156,7 +160,12 @@ export function OliverServiceCatalogPage() {
       sortAccessor: (o) => o.name.toLowerCase(),
       render: (o) => (
         <div>
-          <div className="font-medium text-oliver-teal">{o.name}</div>
+          <div className="font-medium text-oliver-teal flex items-center gap-2">
+            {o.name}
+            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ring-1 ${(o.offering_type || "service") === "product" ? "bg-indigo-50 text-indigo-700 ring-indigo-200" : "bg-sky-50 text-sky-700 ring-sky-200"}`}>
+              {(o.offering_type || "service") === "product" ? "Product" : "Service"}
+            </span>
+          </div>
           {o.description && (
             <div className="text-xs text-slate-500 mt-0.5 line-clamp-1">{o.description}</div>
           )}
@@ -265,13 +274,22 @@ export function OliverServiceCatalogPage() {
         />
       ) : (
         <>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs font-medium text-slate-500">Show:</span>
+            {(["all", "service", "product"] as const).map((t) => (
+              <button key={t} type="button" onClick={() => setTypeFilter(t)}
+                className={`px-3 py-1 text-xs font-medium rounded-full ring-1 ${typeFilter === t ? "bg-oliver-teal text-white ring-oliver-teal" : "bg-white text-slate-600 ring-gray-300 hover:ring-oliver-teal"}`}>
+                {t === "all" ? "All" : t === "service" ? "Services" : "Products"}
+              </button>
+            ))}
+          </div>
           <FilterBar
             pills={pills}
             activePill={activeCategoryId}
             onPillChange={setActiveCategoryId}
             search={search}
             onSearchChange={setSearch}
-            searchPlaceholder="Search services…"
+            searchPlaceholder="Search products & services…"
           />
           <DataTable
             rows={filteredOfferings}
@@ -654,6 +672,7 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
         name: draft.name.trim(),
         description: draft.description ?? null,
         categoryId: draft.category_id || null,
+        offeringType: draft.offering_type || "service",
         defaultDurationMinutes: draft.default_duration_minutes ?? null,
         isSelfBookable: draft.is_self_bookable,
         requiresQuote: draft.requires_quote,
@@ -776,13 +795,37 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
 
       <div className="space-y-5">
         <div className="space-y-4">
-          <Field label="Product / service name" required>
+          <Field label={`${(draft.offering_type || "service") === "product" ? "Product" : "Service"} name`} required>
             <input
               type="text" value={draft.name}
               placeholder="e.g. Website Maintenance Plan"
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
               className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
           </Field>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Type">
+              <div className="inline-flex rounded-lg ring-1 ring-gray-300 overflow-hidden">
+                {(["service", "product"] as const).map((t) => (
+                  <button key={t} type="button"
+                    onClick={() => setDraft({ ...draft, offering_type: t })}
+                    className={`px-4 py-2 text-sm font-medium ${(draft.offering_type || "service") === t ? "bg-oliver-teal text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
+                    {t === "service" ? "Service" : "Product"}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <Field label="Category">
+              <select
+                value={draft.category_id ?? ""}
+                onChange={(e) => setDraft({ ...draft, category_id: e.target.value || null })}
+                className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm">
+                <option value="">— Uncategorized —</option>
+                {categories.map((c) => <option key={c.category_id} value={c.category_id}>{c.name}</option>)}
+              </select>
+            </Field>
+          </div>
+
           <Field label="Description">
             <textarea
               rows={2} value={draft.description ?? ""}
@@ -804,21 +847,12 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
             type="button"
             onClick={() => setShowAdvanced((v) => !v)}
             className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-slate-600 hover:text-oliver-teal">
-            <span>Field-service & booking options (optional)</span>
+            <span>Additional details (optional)</span>
             <span>{showAdvanced ? "▲" : "▼"}</span>
           </button>
           {showAdvanced && (
             <div className="px-3 pb-3 space-y-4 border-t border-gray-100 pt-3">
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Category">
-                  <select
-                    value={draft.category_id ?? ""}
-                    onChange={(e) => setDraft({ ...draft, category_id: e.target.value || null })}
-                    className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm">
-                    <option value="">— Uncategorized —</option>
-                    {categories.map((c) => <option key={c.category_id} value={c.category_id}>{c.name}</option>)}
-                  </select>
-                </Field>
                 <Field label="Default job duration (minutes)">
                   <input
                     type="number" min="0" step="5"
