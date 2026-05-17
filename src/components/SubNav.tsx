@@ -80,22 +80,34 @@ const OLIVER_NAV: SubNavConfig = {
       ],
     },
     {
-      // v7.1 — Billing 14 → 8. Hidden from nav (deep-links still work):
-      //   - oliver_quote_options (page-level option inside Quotes)
-      //   - oliver_disputes (filter on Payments)
-      //   - oliver_coupons (admin under Service Catalog)
-      //   - oliver_reminders (configured per Invoice)
-      //   - oliver_payouts (tab on Payments page)
-      //   - oliver_job_costing (tab on Expenses page)
+      // Products — what you sell + how it's discounted. Categories are
+      // managed inside the Products & Services page.
+      label: "Products", icon: Briefcase, collapsible: true, sectionId: "oliver_products",
+      items: [
+        { key: "oliver_catalog", label: "Products & Services", route: "/app/services/oliver_catalog" },
+        { key: "oliver_coupons", label: "Coupons", route: "/app/services/oliver_coupons" },
+      ],
+    },
+    {
+      // Billing — invoices, quotes/proposals, payments, subscriptions, and
+      // the document templates that drive them. Hidden-but-deep-linked:
+      // oliver_quote_options, oliver_disputes, oliver_reminders,
+      // oliver_payouts, oliver_job_costing.
       label: "Billing", icon: CreditCard, collapsible: true, sectionId: "oliver_billing",
       items: [
         { key: "oliver_billing_overview", label: "Overview", route: "/app/services/oliver_billing_overview" },
-        { key: "oliver_catalog", label: "Service Catalog", route: "/app/services/oliver_catalog" },
-        { key: "oliver_proposals", label: "Proposals", route: "/app/services/oliver_proposals" },
-        { key: "oliver_quotes", label: "Quotes", route: "/app/services/oliver_quotes" },
         { key: "oliver_invoices", label: "Invoices", route: "/app/services/oliver_invoices" },
-        { key: "oliver_payments", label: "Payments", route: "/app/services/oliver_payments" },
+        { key: "oliver_quotes", label: "Quotes", route: "/app/services/oliver_quotes" },
+        { key: "oliver_proposals", label: "Proposals", route: "/app/services/oliver_proposals" },
         { key: "oliver_recurring", label: "Recurring & Subscriptions", route: "/app/services/oliver_recurring" },
+        { key: "oliver_payments", label: "Payments", route: "/app/services/oliver_payments" },
+        { key: "oliver_templates", label: "Template Library", route: "/app/services/oliver_templates" },
+      ],
+    },
+    {
+      // Expenses — money going out. Receipts/payroll/tax tools land here later.
+      label: "Expenses", icon: TrendingUp, collapsible: true, sectionId: "oliver_expenses",
+      items: [
         { key: "oliver_expenses", label: "Expenses", route: "/app/services/oliver_expenses" },
       ],
     },
@@ -140,7 +152,6 @@ const OLIVER_NAV: SubNavConfig = {
     {
       label: "", icon: Settings,
       items: [
-        { key: "oliver_templates", label: "Template Library", route: "/app/services/oliver_templates" },
         { key: "oliver_usage", label: "Plan & Pricing", route: "/app/services/oliver_usage" },
       ],
     },
@@ -520,7 +531,9 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/oliver_job_board") || path.includes("/oliver_projects") || path.includes("/oliver_schedule") || path.includes("/oliver_dispatch")) return "oliver_jobs";
   if (path.includes("/oliver_workers") || path.includes("/oliver_crew_performance") || path.includes("/oliver_team_access")) return "oliver_team";
   if (path.includes("/oliver_contacts") || path.includes("/oliver_service_requests")) return "oliver_customers";
-  if (path.includes("/oliver_billing_overview") || path.includes("/oliver_catalog") || path.includes("/oliver_proposals") || path.includes("/oliver_quotes") || path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_coupons") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders")) return "oliver_billing";
+  if (path.includes("/oliver_catalog") || path.includes("/oliver_coupons")) return "oliver_products";
+  if (path.includes("/oliver_expenses") || path.includes("/oliver_job_costing")) return "oliver_expenses";
+  if (path.includes("/oliver_billing_overview") || path.includes("/oliver_proposals") || path.includes("/oliver_quotes") || path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_templates") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders")) return "oliver_billing";
   if (path.includes("/oliver_messages") || path.includes("/oliver_notifications")) return "oliver_comms";
   if (path.includes("/oliver_insights") || path.includes("/oliver_reports") || path.includes("/oliver_activity_log")) return "oliver_insights";
   return null;
