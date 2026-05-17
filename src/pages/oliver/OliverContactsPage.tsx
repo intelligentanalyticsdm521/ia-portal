@@ -54,6 +54,7 @@ interface Activity {
   quotes: Array<{ quote_id: string; status: string; total: number; valid_until?: string | null; created_at: string }>;
   invoices: Array<{ invoice_id: string; invoice_number: string; status: string; total: number; amount_paid: number; balance_due: number; paid_at?: string | null; created_at: string; source: string }>;
   payments: Array<{ payment_id: string; amount: number; type: string; status: string; paid_at?: string | null; invoice_number?: string | null }>;
+  subscriptions: Array<{ subscription_id: string; service_name: string; line_items?: string | null; amount: number; currency?: string; billing_interval: string; billing_interval_count: number; status: string; current_period_end?: string | null; cancel_at_period_end?: boolean; coupon_name?: string | null; discount_percent?: number | null; discount_amount?: number | null }>;
 }
 
 function fmtMoney(n?: number | null) {
@@ -364,7 +365,7 @@ function ContactDetailModal({ contactId, onClose, api }: { contactId: string; on
   const navigate = useNavigate();
   const [detail, setDetail] = useState<ContactDetail | null>(null);
   const [activity, setActivity] = useState<Activity | null>(null);
-  const [tab, setTab] = useState<"overview" | "jobs" | "quotes" | "invoices" | "payments">("overview");
+  const [tab, setTab] = useState<"overview" | "jobs" | "quotes" | "invoices" | "payments" | "subscriptions">("overview");
   const [showAddAddress, setShowAddAddress] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
@@ -466,6 +467,7 @@ function ContactDetailModal({ contactId, onClose, api }: { contactId: string; on
         <button className={`ptab${tab === "quotes" ? " active" : ""}`} onClick={() => setTab("quotes")}>Quotes ({activity.quotes.length})</button>
         <button className={`ptab${tab === "invoices" ? " active" : ""}`} onClick={() => setTab("invoices")}>Invoices ({activity.invoices.length})</button>
         <button className={`ptab${tab === "payments" ? " active" : ""}`} onClick={() => setTab("payments")}>Payments ({activity.payments.length})</button>
+        <button className={`ptab${tab === "subscriptions" ? " active" : ""}`} onClick={() => setTab("subscriptions")}>Subscriptions ({activity.subscriptions?.length ?? 0})</button>
       </div>
 
       {tab === "overview" && snap && (
@@ -612,6 +614,34 @@ function ContactDetailModal({ contactId, onClose, api }: { contactId: string; on
               </tr>
             ))}
             {!activity.payments.length && <tr><td colSpan={5} style={{ textAlign: "center", padding: "20px 0", color: "#5A7A8A" }}>No payments yet</td></tr>}
+          </tbody>
+        </table>
+      )}
+
+      {tab === "subscriptions" && (
+        <table className="tbl">
+          <thead><tr>
+            <th>Service</th><th style={{ textAlign: "right" }}>Amount</th><th>Cycle</th><th>Discount</th><th>Renews</th><th>Status</th>
+          </tr></thead>
+          <tbody>
+            {(activity.subscriptions ?? []).map((s) => (
+              <tr key={s.subscription_id}>
+                <td>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: "#0B1C24" }}>{s.service_name}</div>
+                  {s.line_items && s.line_items !== s.service_name && (
+                    <div style={{ fontSize: 11, color: "#5A7A8A" }}>{s.line_items}</div>
+                  )}
+                </td>
+                <td style={{ textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(s.amount)}</td>
+                <td>{s.billing_interval_count > 1 ? `every ${s.billing_interval_count} ${s.billing_interval}s` : `/${s.billing_interval}`}</td>
+                <td>{s.coupon_name
+                  ? <span style={{ fontSize: 11, color: "#9333EA" }}>{s.coupon_name}{s.discount_percent ? ` (${s.discount_percent}% off)` : s.discount_amount ? ` ($${s.discount_amount} off)` : ""}</span>
+                  : "—"}</td>
+                <td>{s.cancel_at_period_end ? <span style={{ color: "#B45309" }}>ends {fmtDate(s.current_period_end)}</span> : fmtDate(s.current_period_end)}</td>
+                <td><StatusBadge status={s.status} /></td>
+              </tr>
+            ))}
+            {!(activity.subscriptions ?? []).length && <tr><td colSpan={6} style={{ textAlign: "center", padding: "20px 0", color: "#5A7A8A" }}>No subscriptions yet</td></tr>}
           </tbody>
         </table>
       )}

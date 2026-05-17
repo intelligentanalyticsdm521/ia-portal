@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader, FilterBar, DataTable, EmptyState,
-  StatusBadge, Button, type Column,
+  StatusBadge, Button, DetailDrawer, type Column,
 } from "../../components/oliver/ui";
 
 interface Subscription {
@@ -26,7 +26,29 @@ interface Subscription {
   contactName?: string;
   accountName?: string;
   contactEmail?: string;
+  contactId?: string;
+  lineItems?: string | null;
+  couponName?: string | null;
+  discountPercent?: number | null;
+  discountAmount?: number | null;
 }
+
+interface SubItem {
+  item_id: string;
+  product_name: string;
+  unit_amount: number;
+  quantity: number;
+  recurring_interval?: string | null;
+  recurring_interval_count?: number | null;
+  stripe_price_id?: string | null;
+  stripe_subscription_item_id?: string | null;
+}
+interface CatalogOffering {
+  offering_id: string;
+  name: string;
+  prices?: Array<{ price_id: string; stripe_price_id?: string | null; unit_amount: number; recurring_interval?: string | null; recurring_interval_count?: number | null; pricing_model?: string | null; label?: string | null }>;
+}
+interface ContactLite { contact_id: string; first_name?: string; last_name?: string; company_name?: string; email?: string }
 
 interface RecurringJob {
   id: string;
@@ -56,8 +78,9 @@ function fmtDate(d?: string) {
 }
 
 export function OliverRecurringPage() {
-  const { get, post, ready } = useOliverApi();
+  const { get, post, patch, ready } = useOliverApi();
   const [tab, setTab] = useState<Tab>("subscriptions");
+  const [drawer, setDrawer] = useState<{ mode: "new" } | { mode: "edit"; id: string } | null>(null);
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [recurring, setRecurring] = useState<RecurringJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,7 +182,9 @@ export function OliverRecurringPage() {
       render: (s) => (
         <div>
           <div style={{ fontSize: 12, fontWeight: 500, color: "#0B1C24" }}>{s.serviceName}</div>
-          {s.description && <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 1 }}>{s.description.slice(0, 60)}{s.description.length > 60 ? "…" : ""}</div>}
+          {s.lineItems && s.lineItems !== s.serviceName
+            ? <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 1 }}>{s.lineItems}</div>
+            : s.description && <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 1 }}>{s.description.slice(0, 60)}{s.description.length > 60 ? "…" : ""}</div>}
         </div>
       ),
     },
@@ -183,6 +208,11 @@ export function OliverRecurringPage() {
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 12, fontWeight: 600, fontFamily: "monospace", color: "#0B1C24" }}>{fmtMoney(s.amount)}</div>
           <div style={{ fontSize: 10, color: "#5A7A8A" }}>per {s.billingInterval}</div>
+          {s.couponName && (
+            <div style={{ fontSize: 10, color: "#9333EA" }}>
+              {s.couponName}{s.discountPercent ? ` (${s.discountPercent}% off)` : s.discountAmount ? ` ($${s.discountAmount} off)` : ""}
+            </div>
+          )}
         </div>
       ),
     },
@@ -220,11 +250,24 @@ export function OliverRecurringPage() {
         title="Recurring & Subscriptions"
         subtitle="Sync, monitor, and cancel customer subscriptions backed by Stripe"
         actions={
-          <Button variant="secondary" onClick={handleSync} disabled={syncing}>
-            {syncing ? "Syncing…" : "Sync from Stripe"}
-          </Button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button variant="secondary" onClick={handleSync} disabled={syncing}>
+              {syncing ? "Syncing…" : "Sync from Stripe"}
+            </Button>
+            <Button variant="primary" onClick={() => setDrawer({ mode: "new" })}>+ New subscription</Button>
+          </div>
         }
       />
+
+      {drawer && (
+        <SubscriptionDrawer
+          mode={drawer.mode}
+          subId={drawer.mode === "edit" ? drawer.id : undefined}
+          api={{ get, post, patch }}
+          onClose={() => setDrawer(null)}
+          onSaved={() => { setDrawer(null); reload(); }}
+        />
+      )}
 
       {syncMsg && (
         <div className="card" style={{ background: "#E8F4FB", borderColor: "rgba(45,156,219,0.3)" }}>
@@ -331,6 +374,7 @@ export function OliverRecurringPage() {
               rows={filteredSubs}
               columns={subColumns}
               rowKey={(s) => s.id}
+              onRowClick={(s) => setDrawer({ mode: "edit", id: s.id })}
               initialSort={{ key: "service", direction: "asc" }}
               emptyMessage="No subscriptions match these filters."
             />
@@ -354,5 +398,236 @@ export function OliverRecurringPage() {
         )
       )}
     </OliverPageWrapper>
+  );
+}
+
+const inS: CSSProperties = { display: "block", width: "100%", borderRadius: 8, border: "1px solid #cbd5e1", padding: "8px 10px", fontSize: 13 };
+function Lbl({ children }: { children: ReactNode }) {
+  return <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.4 }}>{children}</div>;
+}
+
+interface NewLine { key: string; price_id: string; label: string; unit_amount: number; quantity: number }
+
+function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
+  mode: "new" | "edit";
+  subId?: string;
+  api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T>; patch: <T>(p: string, b: unknown) => Promise<T> };
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  // new
+  const [contacts, setContacts] = useState<ContactLite[]>([]);
+  const [offerings, setOfferings] = useState<CatalogOffering[]>([]);
+  const [contactId, setContactId] = useState("");
+  const [lines, setLines] = useState<NewLine[]>([]);
+  const [trialDays, setTrialDays] = useState("");
+  // shared coupon
+  const [couponType, setCouponType] = useState<"none" | "percent" | "amount" | "code">("none");
+  const [couponVal, setCouponVal] = useState("");
+  // edit
+  const [sub, setSub] = useState<(Subscription & { items?: SubItem[]; coupon_name?: string | null; discount_percent?: number | null; discount_amount?: number | null; cancel_at_period_end?: boolean; service_name?: string; status?: string }) | null>(null);
+  const [editItems, setEditItems] = useState<Array<SubItem & { _deleted?: boolean }>>([]);
+  const [removeCoupon, setRemoveCoupon] = useState(false);
+  const [cancelAtEnd, setCancelAtEnd] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        if (mode === "new") {
+          const [cs, os] = await Promise.all([
+            api.get<ContactLite[]>("/contacts").catch(() => []),
+            api.get<CatalogOffering[]>("/catalog/offerings?include_prices=1").catch(() => []),
+          ]);
+          setContacts(cs || []);
+          setOfferings(os || []);
+        } else if (subId) {
+          const s = await api.get<typeof sub>(`/subscriptions/${subId}`);
+          setSub(s);
+          setEditItems((s?.items ?? []).map((i) => ({ ...i })));
+          setCancelAtEnd(!!s?.cancel_at_period_end);
+        }
+      } catch (e) { setErr((e as Error).message); }
+    })();
+  }, [mode, subId, api]);
+
+  const allPrices = useMemo(() => offerings.flatMap((o) =>
+    (o.prices ?? [])
+      .filter((p) => p.pricing_model === "recurring" || p.recurring_interval)
+      .map((p) => ({
+        offering: o.name, price_id: p.price_id,
+        label: `${o.name} · $${Number(p.unit_amount).toFixed(2)}/${p.recurring_interval_count && p.recurring_interval_count > 1 ? `${p.recurring_interval_count} ` : ""}${p.recurring_interval}${p.label ? ` (${p.label})` : ""}`,
+        unit_amount: Number(p.unit_amount),
+      }))
+  ), [offerings]);
+
+  function couponBody(): Record<string, unknown> {
+    if (couponType === "percent" && couponVal) return { discount_percent: Number(couponVal) };
+    if (couponType === "amount" && couponVal) return { discount_amount: Number(couponVal) };
+    if (couponType === "code" && couponVal) return { coupon_id: couponVal.trim() };
+    return {};
+  }
+
+  async function save() {
+    setErr(null); setBusy(true);
+    try {
+      if (mode === "new") {
+        if (!contactId) throw new Error("Pick a customer.");
+        if (!lines.length) throw new Error("Add at least one recurring item.");
+        await api.post("/subscriptions", {
+          contact_id: contactId,
+          items: lines.map((l) => ({ price_id: l.price_id, quantity: l.quantity })),
+          trial_days: trialDays ? Number(trialDays) : undefined,
+          ...couponBody(),
+        });
+      } else if (subId) {
+        await api.patch(`/subscriptions/${subId}`, {
+          items: editItems
+            .filter((i) => i._deleted || i.quantity != null)
+            .map((i) => ({
+              stripe_subscription_item_id: i.stripe_subscription_item_id,
+              quantity: i.quantity, deleted: !!i._deleted,
+            })),
+          ...(removeCoupon ? { remove_coupon: true } : couponBody()),
+          cancel_at_period_end: cancelAtEnd,
+        });
+      }
+      onSaved();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <DetailDrawer
+      open onClose={onClose} width="lg"
+      title={mode === "new" ? "New subscription" : (sub?.service_name || "Edit subscription")}
+      subtitle={mode === "new" ? "Created in Stripe + OLIVER in one step — no Stripe trip" : "Changes sync to Stripe immediately"}
+      footer={<>
+        <div style={{ flex: 1 }} />
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" loading={busy} onClick={save}>{mode === "new" ? "Create subscription" : "Save changes"}</Button>
+      </>}
+    >
+      {err && <div style={{ background: "#FEE2E2", color: "#991B1B", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 14 }}>{err}</div>}
+
+      {mode === "new" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <Lbl>Customer</Lbl>
+            <select style={inS} value={contactId} onChange={(e) => setContactId(e.target.value)}>
+              <option value="">— Select a customer —</option>
+              {contacts.map((c) => (
+                <option key={c.contact_id} value={c.contact_id}>
+                  {c.company_name || `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || c.email}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Lbl>Add recurring item (from catalog)</Lbl>
+            <select style={inS} value="" onChange={(e) => {
+              const p = allPrices.find((x) => x.price_id === e.target.value);
+              if (p) setLines((prev) => [...prev, { key: crypto.randomUUID(), price_id: p.price_id, label: p.label, unit_amount: p.unit_amount, quantity: 1 }]);
+            }}>
+              <option value="">— Add a recurring price —</option>
+              {allPrices.map((p) => <option key={p.price_id} value={p.price_id}>{p.label}</option>)}
+            </select>
+            {!allPrices.length && <div style={{ fontSize: 11, color: "#B45309", marginTop: 4 }}>No recurring prices in your catalog yet — add monthly/annual prices to a product first.</div>}
+          </div>
+          {lines.length > 0 && (
+            <div style={{ border: "1px solid #eef2f4", borderRadius: 8 }}>
+              {lines.map((l, i) => (
+                <div key={l.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderBottom: i < lines.length - 1 ? "1px solid #f0f4f6" : "none" }}>
+                  <div style={{ flex: 1, fontSize: 12 }}>{l.label}</div>
+                  <input type="number" min={1} value={l.quantity} style={{ ...inS, width: 64 }}
+                    onChange={(e) => setLines((prev) => prev.map((x) => x.key === l.key ? { ...x, quantity: Math.max(1, Number(e.target.value) || 1) } : x))} />
+                  <button onClick={() => setLines((prev) => prev.filter((x) => x.key !== l.key))} style={{ color: "#dc2626", fontSize: 12, background: "none", border: "none", cursor: "pointer" }}>Remove</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div>
+            <Lbl>Discount (optional)</Lbl>
+            <div style={{ display: "flex", gap: 8 }}>
+              <select style={{ ...inS, width: 160 }} value={couponType} onChange={(e) => setCouponType(e.target.value as never)}>
+                <option value="none">No discount</option>
+                <option value="percent">% off</option>
+                <option value="amount">$ off</option>
+                <option value="code">Existing coupon ID</option>
+              </select>
+              {couponType !== "none" && (
+                <input style={inS} value={couponVal} onChange={(e) => setCouponVal(e.target.value)}
+                  placeholder={couponType === "percent" ? "e.g. 30" : couponType === "amount" ? "e.g. 25" : "coupon_xxx"} />
+              )}
+            </div>
+          </div>
+          <div>
+            <Lbl>Free trial days (optional)</Lbl>
+            <input style={{ ...inS, width: 120 }} type="number" min={0} value={trialDays} onChange={(e) => setTrialDays(e.target.value)} />
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {!sub ? <div style={{ color: "#5A7A8A" }}>Loading…</div> : (
+            <>
+              <div style={{ fontSize: 12, color: "#5A7A8A" }}>
+                {sub.accountName || sub.contactName} · <StatusBadge status={sub.status || "active"} /> · renews {fmtDate(sub.currentPeriodEnd)}
+              </div>
+              <div>
+                <Lbl>Line items</Lbl>
+                <div style={{ border: "1px solid #eef2f4", borderRadius: 8 }}>
+                  {editItems.map((it, i) => (
+                    <div key={it.item_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderBottom: i < editItems.length - 1 ? "1px solid #f0f4f6" : "none", opacity: it._deleted ? 0.4 : 1 }}>
+                      <div style={{ flex: 1, fontSize: 12 }}>
+                        {it.product_name} · ${Number(it.unit_amount).toFixed(2)}{it.recurring_interval ? `/${it.recurring_interval}` : ""}
+                      </div>
+                      <input type="number" min={1} value={it.quantity} disabled={it._deleted} style={{ ...inS, width: 64 }}
+                        onChange={(e) => setEditItems((prev) => prev.map((x) => x.item_id === it.item_id ? { ...x, quantity: Math.max(1, Number(e.target.value) || 1) } : x))} />
+                      <button onClick={() => setEditItems((prev) => prev.map((x) => x.item_id === it.item_id ? { ...x, _deleted: !x._deleted } : x))}
+                        style={{ color: it._deleted ? "#0C4A60" : "#dc2626", fontSize: 12, background: "none", border: "none", cursor: "pointer" }}>
+                        {it._deleted ? "Undo" : "Remove"}
+                      </button>
+                    </div>
+                  ))}
+                  {!editItems.length && <div style={{ padding: 12, fontSize: 12, color: "#5A7A8A" }}>No line items synced. Run “Sync from Stripe”.</div>}
+                </div>
+              </div>
+              <div>
+                <Lbl>Discount</Lbl>
+                <div style={{ fontSize: 12, marginBottom: 6 }}>
+                  {sub.coupon_name
+                    ? <>Current: <span style={{ color: "#9333EA" }}>{sub.coupon_name}{sub.discount_percent ? ` (${sub.discount_percent}% off)` : sub.discount_amount ? ` ($${sub.discount_amount} off)` : ""}</span></>
+                    : "No discount applied"}
+                </div>
+                {sub.coupon_name && (
+                  <label style={{ display: "flex", gap: 8, fontSize: 12, marginBottom: 6 }}>
+                    <input type="checkbox" checked={removeCoupon} onChange={(e) => setRemoveCoupon(e.target.checked)} /> Remove current discount
+                  </label>
+                )}
+                {!removeCoupon && (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <select style={{ ...inS, width: 160 }} value={couponType} onChange={(e) => setCouponType(e.target.value as never)}>
+                      <option value="none">Keep / no change</option>
+                      <option value="percent">Set % off</option>
+                      <option value="amount">Set $ off</option>
+                      <option value="code">Apply coupon ID</option>
+                    </select>
+                    {couponType !== "none" && (
+                      <input style={inS} value={couponVal} onChange={(e) => setCouponVal(e.target.value)}
+                        placeholder={couponType === "percent" ? "e.g. 30" : couponType === "amount" ? "e.g. 25" : "coupon_xxx"} />
+                    )}
+                  </div>
+                )}
+              </div>
+              <label style={{ display: "flex", gap: 8, fontSize: 13 }}>
+                <input type="checkbox" checked={cancelAtEnd} onChange={(e) => setCancelAtEnd(e.target.checked)} />
+                Cancel at period end (stops billing after {fmtDate(sub.currentPeriodEnd)})
+              </label>
+            </>
+          )}
+        </div>
+      )}
+    </DetailDrawer>
   );
 }
