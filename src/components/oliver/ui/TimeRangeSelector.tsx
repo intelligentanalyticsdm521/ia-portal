@@ -14,13 +14,23 @@ export type RangePreset =
   | "yesterday"
   | "last_7_days"
   | "last_30_days"
+  | "last_90_days"
   | "this_month"
   | "last_month"
+  | "this_quarter"
+  | "last_quarter"
   | "this_year"
   | "last_12_months"
   | "last_year"
+  | "last_365_days"
   | "all_time"
-  | "custom";
+  | "custom"
+  // Forward-looking (forecast) presets
+  | "next_7_days"
+  | "next_30_days"
+  | "next_quarter"
+  | "next_90_days"
+  | "next_year";
 
 export interface TimeRange {
   fromISO: string | null;
@@ -34,13 +44,22 @@ const PRESET_LABELS: Record<RangePreset, string> = {
   yesterday:       "Yesterday",
   last_7_days:     "Last 7 days",
   last_30_days:    "Last 30 days",
+  last_90_days:    "Last 90 days",
   this_month:      "This month",
   last_month:      "Last month",
+  this_quarter:    "This quarter",
+  last_quarter:    "Last quarter",
   this_year:       "This year",
   last_12_months:  "Last 12 months",
   last_year:       "Last year",
+  last_365_days:   "Last 365 days",
   all_time:        "All time",
   custom:          "Custom range",
+  next_7_days:     "Next 7 days",
+  next_30_days:    "Next 30 days",
+  next_quarter:    "Next quarter",
+  next_90_days:    "Next 90 days",
+  next_year:       "Next year",
 };
 
 export function rangeForPreset(preset: RangePreset, fromISO?: string, toISO?: string): TimeRange {
@@ -62,11 +81,24 @@ export function rangeForPreset(preset: RangePreset, fromISO?: string, toISO?: st
       from = startOfDay(new Date(now.getTime() - 6 * 86400000)); break;
     case "last_30_days":
       from = startOfDay(new Date(now.getTime() - 29 * 86400000)); break;
+    case "last_90_days":
+      from = startOfDay(new Date(now.getTime() - 89 * 86400000)); break;
+    case "last_365_days":
+      from = startOfDay(new Date(now.getTime() - 364 * 86400000)); break;
     case "this_month":
       from = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0); break;
     case "last_month": {
       from = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
       to   = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999); break;
+    }
+    case "this_quarter": {
+      const q = Math.floor(now.getMonth() / 3);
+      from = new Date(now.getFullYear(), q * 3, 1, 0, 0, 0, 0); break;
+    }
+    case "last_quarter": {
+      const q = Math.floor(now.getMonth() / 3);
+      from = new Date(now.getFullYear(), (q - 1) * 3, 1, 0, 0, 0, 0);
+      to   = new Date(now.getFullYear(), q * 3, 0, 23, 59, 59, 999); break;
     }
     case "this_year":
       from = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0); break;
@@ -80,6 +112,21 @@ export function rangeForPreset(preset: RangePreset, fromISO?: string, toISO?: st
     case "custom":
       from = fromISO ? new Date(fromISO) : null;
       to   = toISO   ? new Date(toISO)   : null; break;
+    // Forward-looking
+    case "next_7_days":
+      from = startOfDay(now); to = endOfDay(new Date(now.getTime() + 6 * 86400000)); break;
+    case "next_30_days":
+      from = startOfDay(now); to = endOfDay(new Date(now.getTime() + 29 * 86400000)); break;
+    case "next_90_days":
+      from = startOfDay(now); to = endOfDay(new Date(now.getTime() + 89 * 86400000)); break;
+    case "next_quarter": {
+      from = startOfDay(now);
+      to = endOfDay(new Date(now.getFullYear(), now.getMonth() + 3, now.getDate())); break;
+    }
+    case "next_year": {
+      from = startOfDay(now);
+      to = endOfDay(new Date(now.getFullYear() + 1, now.getMonth(), now.getDate())); break;
+    }
   }
 
   return {
@@ -90,18 +137,37 @@ export function rangeForPreset(preset: RangePreset, fromISO?: string, toISO?: st
   };
 }
 
-const PRESETS: RangePreset[] = [
-  "today", "yesterday", "last_7_days", "last_30_days",
-  "this_month", "last_month", "this_year", "last_12_months",
-  "last_year", "all_time",
+const HISTORY_PRESETS: RangePreset[] = [
+  "today", "yesterday", "last_7_days", "last_30_days", "last_90_days",
+  "this_month", "last_month", "this_quarter", "last_quarter",
+  "this_year", "last_12_months", "last_year", "last_365_days", "all_time",
 ];
+const FORECAST_PRESETS: RangePreset[] = [
+  "next_7_days", "next_30_days", "next_quarter", "next_90_days", "next_year",
+];
+
+/** The equal-length window immediately BEFORE a range — for prev-period
+ * comparison. Returns nulls for open-ended ranges. */
+export function previousPeriod(r: TimeRange): { fromISO: string | null; toISO: string | null } {
+  if (!r.fromISO || !r.toISO) return { fromISO: null, toISO: null };
+  const from = new Date(r.fromISO).getTime();
+  const to = new Date(r.toISO).getTime();
+  const span = to - from;
+  return {
+    fromISO: new Date(from - span - 1).toISOString(),
+    toISO: new Date(from - 1).toISOString(),
+  };
+}
 
 interface Props {
   value: TimeRange;
   onChange: (r: TimeRange) => void;
+  /** "history" (default) shows backward presets; "forecast" shows next-N. */
+  mode?: "history" | "forecast";
 }
 
-export function TimeRangeSelector({ value, onChange }: Props) {
+export function TimeRangeSelector({ value, onChange, mode = "history" }: Props) {
+  const presetList = mode === "forecast" ? FORECAST_PRESETS : HISTORY_PRESETS;
   const [open, setOpen] = useState(false);
   const [showCustom, setShowCustom] = useState(false);
   const [customFrom, setCustomFrom] = useState("");
@@ -161,7 +227,7 @@ export function TimeRangeSelector({ value, onChange }: Props) {
         }}>
           {!showCustom ? (
             <>
-              {PRESETS.map((p) => (
+              {presetList.map((p) => (
                 <button
                   key={p}
                   onClick={() => pick(p)}

@@ -3,10 +3,10 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader, FilterBar, DataTable, EmptyState,
-  StatusBadge, Button, DetailDrawer, type Column,
+  StatusBadge, Button, DetailDrawer, TimeRangeSelector, rangeForPreset, type Column,
 } from "../../components/oliver/ui";
 import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, Legend,
 } from "recharts";
 
 interface Subscription {
@@ -162,39 +162,53 @@ export function OliverRecurringPage() {
   const pastDue = subs.filter((s) => s.status === "past_due").length;
   const cancelingSoon = subs.filter((s) => s.cancelAtPeriodEnd && s.status === "active").length;
 
-  // Renewals in the next 30 days — drives the timeline visualization
-  const nextRenewals = useMemo(() => {
-    const now = Date.now();
-    const cutoff = now + 30 * 86400000;
-    return subs
-      .filter((s) => s.status === "active" && s.currentPeriodEnd)
-      .filter((s) => {
-        const t = new Date(s.currentPeriodEnd!).getTime();
-        return t >= now && t <= cutoff;
-      })
-      .sort((a, b) => new Date(a.currentPeriodEnd!).getTime() - new Date(b.currentPeriodEnd!).getTime());
-  }, [subs]);
-  const next30Total = nextRenewals.reduce((s, x) => s + Number(x.amount || 0), 0);
 
-  // Expected renewal revenue bucketed by week for the next 90 days — gives a
-  // real bar chart instead of a sparse 3-dot line.
+  // Adjustable forecast window (ARION standard) + previous-period comparison.
+  const [forecastRange, setForecastRange] = useState(() => rangeForPreset("next_90_days"));
+
+  function cycleDays(s: Subscription): number {
+    const n = s.billingIntervalCount || 1;
+    if (s.billingInterval === "year") return 365 * n;
+    if (s.billingInterval === "week") return 7 * n;
+    return 30.44 * n; // month default
+  }
+
   const renewalChart = useMemo(() => {
     const now = Date.now();
-    const weeks = Array.from({ length: 13 }, (_, i) => ({
-      label: i === 0 ? "This wk" : `wk ${i + 1}`,
-      amount: 0, count: 0,
+    const end = forecastRange.toISO ? new Date(forecastRange.toISO).getTime() : now + 90 * 86400000;
+    const windowMs = Math.max(86400000, end - now);
+    const windowDays = windowMs / 86400000;
+    const bucketDays = windowDays <= 35 ? 7 : windowDays <= 110 ? 7 : windowDays <= 210 ? 14 : 30;
+    const buckets = Math.max(1, Math.ceil(windowDays / bucketDays));
+    const fmtLbl = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
+    const rows = Array.from({ length: buckets }, (_, i) => ({
+      label: fmtLbl(now + i * bucketDays * 86400000),
+      upcoming: 0, previous: 0, count: 0,
     }));
     for (const s of subs) {
       if (s.status !== "active" || !s.currentPeriodEnd) continue;
-      const days = Math.floor((new Date(s.currentPeriodEnd).getTime() - now) / 86400000);
-      if (days < 0 || days > 90) continue;
-      const wk = Math.min(12, Math.floor(days / 7));
-      weeks[wk].amount += Number(s.amount || 0);
-      weeks[wk].count += 1;
+      const amt = Number(s.amount || 0);
+      const renewMs = new Date(s.currentPeriodEnd).getTime();
+      // Upcoming: this renewal falls inside the forecast window.
+      const off = (renewMs - now) / 86400000;
+      if (off >= 0 && off <= windowDays) {
+        const b = Math.min(buckets - 1, Math.floor(off / bucketDays));
+        rows[b].upcoming += amt; rows[b].count += 1;
+      }
+      // Previous period: the prior billing cycle of this same sub, mapped to
+      // the equivalent bucket (real cadence, not invented data).
+      const priorMs = renewMs - cycleDays(s) * 86400000;
+      const poff = (priorMs - (now - windowMs)) / 86400000;
+      if (poff >= 0 && poff <= windowDays) {
+        const b = Math.min(buckets - 1, Math.floor(poff / bucketDays));
+        rows[b].previous += amt;
+      }
     }
-    return weeks;
-  }, [subs]);
-  const renewalChartHasData = renewalChart.some((w) => w.count > 0);
+    return rows;
+  }, [subs, forecastRange]);
+  const renewalChartHasData = renewalChart.some((w) => w.count > 0 || w.previous > 0);
+  const forecastTotal = renewalChart.reduce((s, r) => s + r.upcoming, 0);
+  const priorTotal = renewalChart.reduce((s, r) => s + r.previous, 0);
 
   // Subscription mix by status — always renders bars.
   const statusMix = useMemo(() => {
@@ -341,11 +355,19 @@ export function OliverRecurringPage() {
       {/* Renewal forecast + status mix — real charts */}
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
         <div className="card">
-          <div className="card-hdr">
+          <div className="card-hdr" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
             <div>
-              <div className="card-ttl">Renewal forecast — next 90 days</div>
-              <div className="card-sub">{fmtMoney(next30Total)} expected in the next 30 days · {nextRenewals.length} renewal{nextRenewals.length === 1 ? "" : "s"}</div>
+              <div className="card-ttl">Renewal forecast — {forecastRange.label}</div>
+              <div className="card-sub">
+                {fmtMoney(forecastTotal)} expected · prior period {fmtMoney(priorTotal)}
+                {priorTotal > 0 && (
+                  <span style={{ color: forecastTotal >= priorTotal ? "#059669" : "#DC2626", marginLeft: 6 }}>
+                    ({forecastTotal >= priorTotal ? "+" : ""}{Math.round(((forecastTotal - priorTotal) / priorTotal) * 100)}%)
+                  </span>
+                )}
+              </div>
             </div>
+            <TimeRangeSelector value={forecastRange} onChange={setForecastRange} mode="forecast" />
           </div>
           {renewalChartHasData ? (
             <ResponsiveContainer width="100%" height={240}>
@@ -355,14 +377,16 @@ export function OliverRecurringPage() {
                 <YAxis stroke="#64748B" fontSize={11} tickLine={false} axisLine={false}
                   tickFormatter={(v) => `$${v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v}`} />
                 <Tooltip
-                  formatter={(v, _n, p) => [`${fmtMoney(Number(v) || 0)} · ${(p?.payload?.count as number) || 0} sub`, "Renewing"]}
+                  formatter={(v, n) => [`${fmtMoney(Number(v) || 0)}`, n === "previous" ? "Prior period" : "Upcoming"]}
                   contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #E5E7EB" }} />
-                <Bar dataKey="amount" radius={[4, 4, 0, 0]} fill="#1A7DB5" maxBarSize={40} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar name="Prior period" dataKey="previous" radius={[4, 4, 0, 0]} fill="#CBD5E1" maxBarSize={28} />
+                <Bar name="Upcoming" dataKey="upcoming" radius={[4, 4, 0, 0]} fill="#1A7DB5" maxBarSize={28} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
             <div style={{ padding: "48px 0", textAlign: "center", color: "#5A7A8A", fontSize: 13 }}>
-              No active subscriptions renewing in the next 90 days.
+              No active subscriptions renewing in {forecastRange.label.toLowerCase()}.
             </div>
           )}
         </div>
