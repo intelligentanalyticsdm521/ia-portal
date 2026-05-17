@@ -366,17 +366,36 @@ function ContactDetailModal({ contactId, onClose, api }: { contactId: string; on
   const [activity, setActivity] = useState<Activity | null>(null);
   const [tab, setTab] = useState<"overview" | "jobs" | "quotes" | "invoices" | "payments">("overview");
   const [showAddAddress, setShowAddAddress] = useState(false);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
 
   const reload = async () => {
-    const [d, a] = await Promise.all([
-      api.get<ContactDetail>(`/contacts/${contactId}`),
-      api.get<Activity>(`/contacts/${contactId}/activity`),
-    ]);
-    setDetail(d);
-    setActivity(a);
+    setLoadErr(null);
+    try {
+      const [d, a] = await Promise.all([
+        api.get<ContactDetail>(`/contacts/${contactId}`),
+        api.get<Activity>(`/contacts/${contactId}/activity`),
+      ]);
+      setDetail(d);
+      setActivity(a);
+    } catch (e) {
+      setLoadErr((e as Error)?.message || "Failed to load this customer.");
+    }
   };
 
   useEffect(() => { reload(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [contactId]);
+
+  if (loadErr) {
+    return (
+      <DetailDrawer open onClose={onClose} title="Couldn’t load customer" width="xl">
+        <div style={{ padding: 20 }}>
+          <div style={{ color: "#991B1B", background: "#FEE2E2", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 14 }}>
+            {loadErr}
+          </div>
+          <Button variant="primary" onClick={reload}>Retry</Button>
+        </div>
+      </DetailDrawer>
+    );
+  }
 
   if (!detail || !activity) {
     return <DetailDrawer open onClose={onClose} title="Loading…" width="xl"><div style={{ padding: 20, color: "#5A7A8A" }}>Loading customer…</div></DetailDrawer>;
