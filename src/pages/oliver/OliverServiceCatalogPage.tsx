@@ -140,7 +140,7 @@ export function OliverServiceCatalogPage() {
       category_id: null,
       name: "",
       description: "",
-      default_duration_minutes: 60,
+      default_duration_minutes: null,
       is_active: true,
       is_self_bookable: false,
       requires_quote: false,
@@ -605,11 +605,44 @@ interface OfferingDrawerProps {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 type _OfferingDrawerHasArchive = OfferingDrawerProps;
 
+/** A price the user is building (before the product exists in the API). */
+interface DraftPrice {
+  key: string;
+  pricing_model: "one_time" | "recurring";
+  unit_amount: number;
+  recurring_interval?: string | null;
+  recurring_interval_count?: number | null;
+  trial_days?: number | null;
+  label?: string | null;
+  is_default?: boolean;
+}
+
+/** One-click billing cadences (Stripe parity, easier). "Custom" reveals raw interval+count. */
+const PRICE_PRESETS: Array<{ id: string; label: string; model: "one_time" | "recurring"; interval?: string; count?: number }> = [
+  { id: "one_time", label: "One-time", model: "one_time" },
+  { id: "weekly", label: "Weekly", model: "recurring", interval: "week", count: 1 },
+  { id: "biweekly", label: "Bi-weekly", model: "recurring", interval: "week", count: 2 },
+  { id: "monthly", label: "Monthly", model: "recurring", interval: "month", count: 1 },
+  { id: "quarterly", label: "Quarterly", model: "recurring", interval: "month", count: 3 },
+  { id: "semiannual", label: "Every 6 months", model: "recurring", interval: "month", count: 6 },
+  { id: "annual", label: "Annual", model: "recurring", interval: "year", count: 1 },
+  { id: "custom", label: "Custom…", model: "recurring", interval: "month", count: 1 },
+];
+
+function draftPriceSummary(p: DraftPrice): string {
+  const amt = `$${Number(p.unit_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (p.pricing_model === "one_time") return `${amt} one-time`;
+  const n = p.recurring_interval_count && p.recurring_interval_count > 1 ? `every ${p.recurring_interval_count} ${p.recurring_interval}s` : `/${p.recurring_interval}`;
+  return `${amt} ${n}`;
+}
+
 function OfferingDrawer({ offering, categories, onClose, onSaved, api }: OfferingDrawerProps) {
   const [draft, setDraft] = useState(offering);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showAddPrice, setShowAddPrice] = useState(false);
+  const [draftPrices, setDraftPrices] = useState<DraftPrice[]>([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const isNew = !draft.offering_id;
 
   async function save() {
@@ -627,8 +660,22 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
         imageUrl: draft.image_url ?? null,
         isActive: draft.is_active,
       };
-      if (isNew) await api.post("/catalog/offerings", body);
-      else await api.patch(`/catalog/offerings/${draft.offering_id}`, body);
+      if (isNew) {
+        await api.post("/catalog/offerings", {
+          ...body,
+          prices: draftPrices.map((p) => ({
+            pricingModel: p.pricing_model,
+            unitAmount: p.unit_amount,
+            recurringInterval: p.pricing_model === "recurring" ? p.recurring_interval : undefined,
+            recurringIntervalCount: p.pricing_model === "recurring" ? p.recurring_interval_count : undefined,
+            trialDays: p.trial_days ?? undefined,
+            label: p.label || undefined,
+            isDefault: !!p.is_default,
+          })),
+        });
+      } else {
+        await api.patch(`/catalog/offerings/${draft.offering_id}`, body);
+      }
       onSaved();
     } catch (e) {
       setErr((e as Error).message);
@@ -666,10 +713,30 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
   }
 
   async function addPrice(p: { pricingModel: "one_time" | "recurring"; unitAmount: number; recurringInterval?: string; recurringIntervalCount?: number; trialDays?: number; label?: string; isDefault?: boolean; }) {
-    if (isNew) { setErr("Save the offering first, then add prices"); return; }
+    if (isNew) {
+      // Buffer locally; created with the product in one call on Save.
+      setDraftPrices((prev) => [
+        ...(p.isDefault ? prev.map((x) => ({ ...x, is_default: false })) : prev),
+        {
+          key: crypto.randomUUID(),
+          pricing_model: p.pricingModel,
+          unit_amount: p.unitAmount,
+          recurring_interval: p.recurringInterval ?? null,
+          recurring_interval_count: p.recurringIntervalCount ?? null,
+          trial_days: p.trialDays ?? null,
+          label: p.label ?? null,
+          is_default: !!p.isDefault || prev.length === 0,
+        },
+      ]);
+      setShowAddPrice(false);
+      return;
+    }
     await api.post(`/catalog/offerings/${draft.offering_id}/prices`, p);
     setShowAddPrice(false);
     onSaved();
+  }
+  function removeDraftPrice(key: string) {
+    setDraftPrices((prev) => prev.filter((x) => x.key !== key));
   }
 
   async function togglePriceDefault(price: PriceVariant) {
@@ -686,8 +753,8 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
     <DetailDrawer
       open
       onClose={onClose}
-      title={isNew ? "New offering" : draft.name}
-      subtitle={isNew ? "Add a service your business sells" : "Edit details and pricing"}
+      title={isNew ? "New product / service" : draft.name}
+      subtitle={isNew ? "Name it, then add one or more prices (e.g. monthly + annual)" : "Edit details and pricing"}
       width="xl"
       footer={
         <>
@@ -700,7 +767,7 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
           <div style={{ flex: 1 }} />
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button variant="primary" loading={saving} onClick={save}>
-            {isNew ? "Create service" : "Save changes"}
+            {isNew ? "Create product" : "Save changes"}
           </Button>
         </>
       }
@@ -708,101 +775,143 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
       {err && <div className="mb-4 rounded-lg bg-red-50 ring-1 ring-red-200 px-4 py-2 text-sm text-red-800">{err}</div>}
 
       <div className="space-y-5">
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Service name" required>
+        <div className="space-y-4">
+          <Field label="Product / service name" required>
             <input
               type="text" value={draft.name}
+              placeholder="e.g. Website Maintenance Plan"
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
               className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
           </Field>
-          <Field label="Category">
-            <select
-              value={draft.category_id ?? ""}
-              onChange={(e) => setDraft({ ...draft, category_id: e.target.value || null })}
-              className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm">
-              <option value="">— Uncategorized —</option>
-              {categories.map((c) => <option key={c.category_id} value={c.category_id}>{c.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Default duration (minutes)">
-            <input
-              type="number" min="0" step="5"
-              value={draft.default_duration_minutes ?? ""}
-              onChange={(e) => setDraft({ ...draft, default_duration_minutes: e.target.value ? Number(e.target.value) : null })}
+          <Field label="Description">
+            <textarea
+              rows={2} value={draft.description ?? ""}
+              placeholder="Shown to customers on invoices, quotes and the portal."
+              onChange={(e) => setDraft({ ...draft, description: e.target.value })}
               className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
           </Field>
-          <Field label="Image URL">
+          <Field label="Image URL (optional)">
             <input
               type="url" value={draft.image_url ?? ""}
               onChange={(e) => setDraft({ ...draft, image_url: e.target.value || null })}
               placeholder="https://…"
               className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
           </Field>
-          <Field label="Description" full>
-            <textarea
-              rows={3} value={draft.description ?? ""}
-              onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-              className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
-          </Field>
         </div>
 
-        <div className="flex flex-wrap gap-4">
-          <Toggle label="Self-bookable by customers" checked={draft.is_self_bookable}
-            onChange={(v) => setDraft({ ...draft, is_self_bookable: v })} />
-          <Toggle label="Requires quote first" checked={draft.requires_quote}
-            onChange={(v) => setDraft({ ...draft, requires_quote: v })} />
-          <Toggle label="Active" checked={draft.is_active}
+        <div className="rounded-lg ring-1 ring-gray-200">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-slate-600 hover:text-oliver-teal">
+            <span>Field-service & booking options (optional)</span>
+            <span>{showAdvanced ? "▲" : "▼"}</span>
+          </button>
+          {showAdvanced && (
+            <div className="px-3 pb-3 space-y-4 border-t border-gray-100 pt-3">
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Category">
+                  <select
+                    value={draft.category_id ?? ""}
+                    onChange={(e) => setDraft({ ...draft, category_id: e.target.value || null })}
+                    className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm">
+                    <option value="">— Uncategorized —</option>
+                    {categories.map((c) => <option key={c.category_id} value={c.category_id}>{c.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Default job duration (minutes)">
+                  <input
+                    type="number" min="0" step="5"
+                    value={draft.default_duration_minutes ?? ""}
+                    placeholder="Only for scheduled services"
+                    onChange={(e) => setDraft({ ...draft, default_duration_minutes: e.target.value ? Number(e.target.value) : null })}
+                    className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
+                </Field>
+              </div>
+              <div className="flex flex-wrap gap-4">
+                <Toggle label="Self-bookable by customers" checked={draft.is_self_bookable}
+                  onChange={(v) => setDraft({ ...draft, is_self_bookable: v })} />
+                <Toggle label="Requires quote first" checked={draft.requires_quote}
+                  onChange={(v) => setDraft({ ...draft, requires_quote: v })} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex">
+          <Toggle label="Active (available to sell)" checked={draft.is_active}
             onChange={(v) => setDraft({ ...draft, is_active: v })} />
         </div>
 
-        {!isNew && (
-          <section className="pt-4 border-t border-gray-200">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h3 className="text-sm font-semibold text-oliver-teal">Pricing variants</h3>
-                <p className="text-xs text-slate-500 mt-0.5">One-time or recurring. Stripe Prices are immutable — to change an amount, archive the old and add a new.</p>
-              </div>
-              <Button size="sm" variant="secondary" onClick={() => setShowAddPrice(true)}>+ Add price</Button>
+        <section className="pt-4 border-t border-gray-200">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-oliver-teal">Pricing</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Add as many prices as you want — e.g. a monthly <em>and</em> an annual rate.
+                {isNew ? " They’re created in Stripe when you save." : " Stripe Prices are immutable — to change an amount, archive the old one and add a new one."}
+              </p>
             </div>
+            <Button size="sm" variant="secondary" onClick={() => setShowAddPrice(true)}>+ Add price</Button>
+          </div>
 
-            {(draft.prices ?? []).length === 0 ? (
-              <div className="text-sm text-slate-500 italic py-3">No price variants yet — add one to enable selling this service.</div>
+          {isNew ? (
+            draftPrices.length === 0 ? (
+              <div className="text-sm text-slate-500 italic py-3">No prices yet — add at least one (e.g. Monthly, then Annual).</div>
             ) : (
               <div className="rounded-lg ring-1 ring-gray-200 divide-y divide-gray-100">
-                {(draft.prices ?? []).map((p) => (
-                  <div key={p.price_id} className={`px-3 py-2 flex items-center gap-3 ${!p.is_active ? "opacity-50" : ""}`}>
+                {draftPrices.map((p) => (
+                  <div key={p.key} className="px-3 py-2 flex items-center gap-3">
                     <div className="flex-1">
                       <div className="text-sm font-medium text-slate-800">
-                        {fmtPrice(p)}
+                        {draftPriceSummary(p)}
                         {p.label && <span className="ml-2 text-xs text-slate-500">({p.label})</span>}
                       </div>
                       {p.trial_days ? <div className="text-xs text-slate-500">{p.trial_days}-day trial</div> : null}
                     </div>
                     {p.is_default && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-oliver-gold-100 text-oliver-gold-700 ring-1 ring-oliver-gold-300">DEFAULT</span>}
-                    {p.stripe_price_id && <span className="text-[10px] font-mono text-slate-400">{p.stripe_price_id}</span>}
-                    {!p.is_default && p.is_active && (
-                      <button onClick={() => togglePriceDefault(p)} className="text-xs text-slate-500 hover:text-oliver-teal">Make default</button>
-                    )}
-                    {p.is_active && (
-                      <button onClick={() => archivePrice(p)} className="text-xs text-red-500 hover:text-red-700">Archive</button>
-                    )}
+                    <button onClick={() => removeDraftPrice(p.key)} className="text-xs text-red-500 hover:text-red-700">Remove</button>
                   </div>
                 ))}
               </div>
-            )}
+            )
+          ) : (draft.prices ?? []).length === 0 ? (
+            <div className="text-sm text-slate-500 italic py-3">No price variants yet — add one to enable selling this service.</div>
+          ) : (
+            <div className="rounded-lg ring-1 ring-gray-200 divide-y divide-gray-100">
+              {(draft.prices ?? []).map((p) => (
+                <div key={p.price_id} className={`px-3 py-2 flex items-center gap-3 ${!p.is_active ? "opacity-50" : ""}`}>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-slate-800">
+                      {fmtPrice(p)}
+                      {p.label && <span className="ml-2 text-xs text-slate-500">({p.label})</span>}
+                    </div>
+                    {p.trial_days ? <div className="text-xs text-slate-500">{p.trial_days}-day trial</div> : null}
+                  </div>
+                  {p.is_default && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-oliver-gold-100 text-oliver-gold-700 ring-1 ring-oliver-gold-300">DEFAULT</span>}
+                  {p.stripe_price_id && <span className="text-[10px] font-mono text-slate-400">{p.stripe_price_id}</span>}
+                  {!p.is_default && p.is_active && (
+                    <button onClick={() => togglePriceDefault(p)} className="text-xs text-slate-500 hover:text-oliver-teal">Make default</button>
+                  )}
+                  {p.is_active && (
+                    <button onClick={() => archivePrice(p)} className="text-xs text-red-500 hover:text-red-700">Archive</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
-            {showAddPrice && (
-              <AddPriceForm onSubmit={addPrice} onCancel={() => setShowAddPrice(false)} />
-            )}
-          </section>
-        )}
+          {showAddPrice && (
+            <AddPriceForm onSubmit={addPrice} onCancel={() => setShowAddPrice(false)} />
+          )}
+        </section>
       </div>
     </DetailDrawer>
   );
 }
 
 function AddPriceForm({ onSubmit, onCancel }: { onSubmit: (p: { pricingModel: "one_time" | "recurring"; unitAmount: number; recurringInterval?: string; recurringIntervalCount?: number; trialDays?: number; label?: string; isDefault?: boolean; }) => void; onCancel: () => void; }) {
-  const [model, setModel] = useState<"one_time" | "recurring">("one_time");
+  const [presetId, setPresetId] = useState<string>("monthly");
   const [amount, setAmount] = useState("");
   const [interval, setInterval] = useState<"day" | "week" | "month" | "year">("month");
   const [intervalCount, setIntervalCount] = useState("1");
@@ -810,33 +919,55 @@ function AddPriceForm({ onSubmit, onCancel }: { onSubmit: (p: { pricingModel: "o
   const [label, setLabel] = useState("");
   const [setDefault, setSetDefault] = useState(false);
 
+  const preset = PRICE_PRESETS.find((p) => p.id === presetId) ?? PRICE_PRESETS[3];
+  const isCustom = presetId === "custom";
+  const isRecurring = preset.model === "recurring";
+
+  function submit() {
+    const amt = Number(amount);
+    if (!(amt >= 0) || amount === "") return;
+    onSubmit({
+      pricingModel: preset.model,
+      unitAmount: amt,
+      recurringInterval: isRecurring ? (isCustom ? interval : preset.interval) : undefined,
+      recurringIntervalCount: isRecurring ? (isCustom ? Number(intervalCount) || 1 : preset.count) : undefined,
+      trialDays: isRecurring && trial ? Number(trial) : undefined,
+      label: label || undefined,
+      isDefault: setDefault,
+    });
+  }
+
   return (
     <div className="mt-3 rounded-lg ring-1 ring-oliver-gold-300 bg-oliver-gold-50 p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <button onClick={() => setModel("one_time")}
-          className={`px-3 py-1 text-xs rounded-full font-medium ${model === "one_time" ? "bg-oliver-teal text-white" : "bg-white text-slate-600 ring-1 ring-gray-300"}`}>
-          One-time
-        </button>
-        <button onClick={() => setModel("recurring")}
-          className={`px-3 py-1 text-xs rounded-full font-medium ${model === "recurring" ? "bg-oliver-teal text-white" : "bg-white text-slate-600 ring-1 ring-gray-300"}`}>
-          Recurring
-        </button>
+      <div>
+        <div className="text-xs font-medium text-slate-600 mb-1.5">Billing cadence</div>
+        <div className="flex flex-wrap gap-1.5">
+          {PRICE_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => setPresetId(p.id)}
+              className={`px-3 py-1 text-xs rounded-full font-medium ${presetId === p.id ? "bg-oliver-teal text-white" : "bg-white text-slate-600 ring-1 ring-gray-300 hover:ring-oliver-teal"}`}>
+              {p.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="Amount (USD)" required>
-          <input type="number" min="0" step="0.01" value={amount}
+          <input type="number" min="0" step="0.01" value={amount} autoFocus
             onChange={(e) => setAmount(e.target.value)}
             className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
         </Field>
         <Field label="Label (optional)">
           <input type="text" value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. Monthly Pro" className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
+            placeholder="e.g. Pro plan" className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
         </Field>
-        {model === "recurring" && (
+        {isCustom && (
           <>
-            <Field label="Billing interval">
+            <Field label="Interval">
               <select value={interval} onChange={(e) => setInterval(e.target.value as never)}
                 className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm">
                 <option value="day">Day</option>
@@ -850,31 +981,25 @@ function AddPriceForm({ onSubmit, onCancel }: { onSubmit: (p: { pricingModel: "o
                 onChange={(e) => setIntervalCount(e.target.value)}
                 className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
             </Field>
-            <Field label="Trial days (optional)">
-              <input type="number" min="0" value={trial}
-                onChange={(e) => setTrial(e.target.value)}
-                className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
-            </Field>
           </>
+        )}
+        {isRecurring && (
+          <Field label="Free trial days (optional)">
+            <input type="number" min="0" value={trial}
+              onChange={(e) => setTrial(e.target.value)}
+              className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
+          </Field>
         )}
       </div>
 
       <label className="flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" checked={setDefault} onChange={(e) => setSetDefault(e.target.checked)} />
-        Set as default price for this offering
+        Set as the default price for this product
       </label>
 
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={() => onSubmit({
-          pricingModel: model,
-          unitAmount: Number(amount),
-          recurringInterval: model === "recurring" ? interval : undefined,
-          recurringIntervalCount: model === "recurring" ? Number(intervalCount) : undefined,
-          trialDays: trial ? Number(trial) : undefined,
-          label: label || undefined,
-          isDefault: setDefault,
-        })}>Add price</Button>
+        <Button size="sm" variant="primary" onClick={submit}>Add price</Button>
       </div>
     </div>
   );
