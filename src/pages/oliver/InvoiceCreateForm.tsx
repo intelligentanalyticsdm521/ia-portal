@@ -66,7 +66,6 @@ interface CreateInvoiceProps {
 }
 
 const blankItem: LineItemDraft = { description: "", quantity: 1, unit_price: 0, is_tax: false };
-const blankTaxItem: LineItemDraft = { description: "Sales Tax", quantity: 1, unit_price: 0, is_tax: true };
 
 function contactName(c: ContactListItem) {
   return c.company_name || `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || c.email || "(no name)";
@@ -82,6 +81,9 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
   const [selectedContactId, setSelectedContactId] = useState<string>(initialContactId || "");
   const [items, setItems] = useState<LineItemDraft[]>([{ ...blankItem }]);
   const [dueDate, setDueDate] = useState<string>("");
+  const [taxRate, setTaxRate] = useState<string>("");          // % e.g. "6"
+  const [discountType, setDiscountType] = useState<"percent" | "amount">("percent");
+  const [discountValue, setDiscountValue] = useState<string>(""); // % or $
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -104,16 +106,20 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
     })();
   }, [get, ready]);
 
+  // Stripe-style math: discount applies to subtotal, tax applies AFTER the
+  // discount (matches Stripe invoicing).
   const totals = useMemo(() => {
-    let subtotal = 0;
-    let tax = 0;
-    for (const it of items) {
-      const lineTotal = Number(it.quantity || 0) * Number(it.unit_price || 0);
-      if (it.is_tax) tax += lineTotal;
-      else subtotal += lineTotal;
-    }
-    return { subtotal, tax, total: subtotal + tax };
-  }, [items]);
+    const subtotal = items.reduce(
+      (s, it) => s + Number(it.quantity || 0) * Number(it.unit_price || 0), 0);
+    const dv = Number(discountValue) || 0;
+    const discount = discountType === "percent"
+      ? subtotal * (dv / 100)
+      : Math.min(dv, subtotal);
+    const taxable = Math.max(0, subtotal - discount);
+    const rate = Number(taxRate) || 0;
+    const tax = taxable * (rate / 100);
+    return { subtotal, discount, tax, total: taxable + tax };
+  }, [items, discountValue, discountType, taxRate]);
 
   function updateItem(idx: number, patch: Partial<LineItemDraft>) {
     setItems((prev) => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
@@ -122,7 +128,6 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
     setItems((prev) => prev.filter((_, i) => i !== idx));
   }
   function addLine() { setItems((prev) => [...prev, { ...blankItem }]); }
-  function addTaxLine() { setItems((prev) => [...prev, { ...blankTaxItem }]); }
 
   // Value is "offeringId::priceId" so multi-price products (e.g. monthly vs
   // annual) each add the EXACT price the user picked.
@@ -154,8 +159,19 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
     if (!cleanedItems.length) { setError("Add at least one line item."); return; }
     setSubmitting(true);
     try {
+      // Derive a discount line (negative) and a tax line so the existing
+      // backend subtotal/tax/total math produces Stripe-style numbers.
+      const lineOut: LineItemDraft[] = [...cleanedItems];
+      if (totals.discount > 0) {
+        const lbl = discountType === "percent"
+          ? `Discount (${Number(discountValue)}%)` : "Discount";
+        lineOut.push({ description: lbl, quantity: 1, unit_price: -Number(totals.discount.toFixed(2)), is_tax: false });
+      }
+      if (totals.tax > 0) {
+        lineOut.push({ description: `Sales Tax (${Number(taxRate)}%)`, quantity: 1, unit_price: Number(totals.tax.toFixed(2)), is_tax: true });
+      }
       const body: Record<string, unknown> = {
-        line_items: cleanedItems,
+        line_items: lineOut,
         due_date: dueDate || null,
       };
       if (mode === "job") body.job_id = selectedJobId;
@@ -261,41 +277,41 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
       )}
 
       <div style={{ marginTop: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4 }}>Line items</div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <Button variant="secondary" onClick={addLine}>+ Line</Button>
-            <Button variant="secondary" onClick={addTaxLine}>+ Tax line</Button>
-          </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 110px 92px 28px", gap: 8, padding: "0 10px 6px", fontSize: 10, fontWeight: 600, color: "#94A3B8", textTransform: "uppercase", letterSpacing: 0.4 }}>
+          <div>Description</div>
+          <div style={{ textAlign: "right" }}>Qty</div>
+          <div style={{ textAlign: "right" }}>Unit price</div>
+          <div style={{ textAlign: "right" }}>Amount</div>
+          <div />
         </div>
-
         <div style={{ border: "1px solid #eef2f4", borderRadius: 6 }}>
           {items.map((it, i) => (
             <div key={i} style={{
-              display: "grid", gridTemplateColumns: "1fr 80px 110px 32px", gap: 8,
+              display: "grid", gridTemplateColumns: "1fr 70px 110px 92px 28px", gap: 8,
               padding: "8px 10px", alignItems: "center",
               borderBottom: i < items.length - 1 ? "1px solid #f0f4f6" : "none",
-              background: it.is_tax ? "#FFFBEB" : "transparent",
             }}>
               <input
-                type="text"
-                placeholder={it.is_tax ? "e.g. Iowa Sales Tax 6%" : "Description"}
+                type="text" placeholder="Description"
                 value={it.description}
                 onChange={(e) => updateItem(i, { description: e.target.value })}
                 style={inputStyle}
               />
               <input
-                type="number" step="0.001" min="0" placeholder="Qty"
+                type="number" step="0.001" min="0"
                 value={it.quantity}
                 onChange={(e) => updateItem(i, { quantity: Number(e.target.value) })}
                 style={{ ...inputStyle, textAlign: "right" }}
               />
               <input
-                type="number" step="0.01" min="0" placeholder="Unit $"
+                type="number" step="0.01" min="0"
                 value={it.unit_price}
                 onChange={(e) => updateItem(i, { unit_price: Number(e.target.value) })}
                 style={{ ...inputStyle, textAlign: "right" }}
               />
+              <div style={{ textAlign: "right", fontSize: 12, fontFamily: "monospace", color: "#0B1C24" }}>
+                ${(Number(it.quantity || 0) * Number(it.unit_price || 0)).toFixed(2)}
+              </div>
               <button
                 type="button" onClick={() => removeItem(i)} title="Remove"
                 style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: 18, padding: 0 }}
@@ -303,12 +319,48 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
             </div>
           ))}
         </div>
+        <div style={{ marginTop: 8 }}>
+          <button type="button" onClick={addLine}
+            style={{ background: "none", border: "none", color: "#1A7DB5", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>
+            + Add line item
+          </button>
+        </div>
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
-        <div style={{ width: 240, fontSize: 12 }}>
+        <div style={{ width: 300, fontSize: 12 }}>
           <Row label="Subtotal" value={`$${totals.subtotal.toFixed(2)}`} />
-          {totals.tax > 0 && <Row label="Tax" value={`$${totals.tax.toFixed(2)}`} color="#B45309" />}
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0" }}>
+            <span style={{ color: "#5A7A8A" }}>Discount</span>
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <input type="number" min="0" step="0.01" placeholder="0"
+                value={discountValue} onChange={(e) => setDiscountValue(e.target.value)}
+                style={{ ...inputStyle, width: 70, textAlign: "right" }} />
+              <select value={discountType} onChange={(e) => setDiscountType(e.target.value as "percent" | "amount")}
+                style={{ ...inputStyle, width: 56, padding: "4px 2px" }}>
+                <option value="percent">%</option>
+                <option value="amount">$</option>
+              </select>
+              <span style={{ width: 70, textAlign: "right", color: "#059669" }}>
+                {totals.discount > 0 ? `−$${totals.discount.toFixed(2)}` : "—"}
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0" }}>
+            <span style={{ color: "#5A7A8A" }}>Sales tax</span>
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <input type="number" min="0" step="0.001" placeholder="0"
+                value={taxRate} onChange={(e) => setTaxRate(e.target.value)}
+                style={{ ...inputStyle, width: 70, textAlign: "right" }} />
+              <span style={{ width: 18, color: "#5A7A8A" }}>%</span>
+              <span style={{ width: 78, textAlign: "right", color: "#B45309" }}>
+                {totals.tax > 0 ? `$${totals.tax.toFixed(2)}` : "—"}
+              </span>
+            </div>
+          </div>
+
           <div style={{ borderTop: "1px solid #eef2f4", marginTop: 4, paddingTop: 6 }}>
             <Row label="Total" value={`$${totals.total.toFixed(2)}`} bold />
           </div>
