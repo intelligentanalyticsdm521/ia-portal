@@ -17,11 +17,31 @@ interface ContactListItem {
   company_name?: string;
 }
 
+interface OfferingPrice {
+  price_id: string;
+  unit_amount: number;
+  currency?: string | null;
+  pricing_model?: string | null;
+  recurring_interval?: string | null;
+  recurring_interval_count?: number | null;
+  is_default?: boolean;
+  label?: string | null;
+}
 interface Offering {
   offering_id: string;
   name: string;
   description?: string;
-  prices?: Array<{ price_id: string; amount: number; recurring_interval?: string | null }>;
+  prices?: OfferingPrice[];
+}
+
+function fmtPrice(p: OfferingPrice): string {
+  const amt = `$${Number(p.unit_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (p.recurring_interval) {
+    const n = p.recurring_interval_count && p.recurring_interval_count > 1 ? `${p.recurring_interval_count} ` : "";
+    const unit = p.recurring_interval === "month" ? "mo" : p.recurring_interval === "year" ? "yr" : p.recurring_interval;
+    return `${amt}/${n}${unit}`;
+  }
+  return p.label ? `${amt} (${p.label})` : amt;
 }
 
 interface LineItemDraft {
@@ -68,7 +88,7 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
       try {
         const [c, o, j1, j2, j3] = await Promise.all([
           get<ContactListItem[]>("/contacts"),
-          get<Offering[]>("/catalog/offerings").catch(() => [] as Offering[]),
+          get<Offering[]>("/catalog/offerings?include_prices=1").catch(() => [] as Offering[]),
           get<JobListItem[]>("/jobs?status=inquiry&per_page=50").catch(() => [] as JobListItem[]),
           get<JobListItem[]>("/jobs?status=quoted&per_page=50").catch(() => [] as JobListItem[]),
           get<JobListItem[]>("/jobs?status=scheduled&per_page=50").catch(() => [] as JobListItem[]),
@@ -95,18 +115,21 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
   }
   function addLine() { setItems((prev) => [...prev, { ...blankItem }]); }
 
-  function addOfferingLine(offeringId: string) {
+  function addPriceLine(value: string) {
+    const [offeringId, priceId] = value.split("::");
     const off = offerings.find((o) => o.offering_id === offeringId);
     if (!off) return;
-    const oneTimePrice = off.prices?.find((p) => !p.recurring_interval);
+    const price = off.prices?.find((p) => p.price_id === priceId);
     setItems((prev) => [
       ...prev.filter((it) => it.description.trim() || it.unit_price > 0),
       {
-        description: off.name,
+        description: price?.recurring_interval
+          ? `${off.name} (${fmtPrice(price)})`
+          : (price?.label ? `${off.name} — ${price.label}` : off.name),
         quantity: 1,
-        unit_price: oneTimePrice ? Number(oneTimePrice.amount) : 0,
+        unit_price: price ? Number(price.unit_amount) : 0,
         service_offering_id: off.offering_id,
-        service_price_id: oneTimePrice?.price_id,
+        service_price_id: price?.price_id,
       },
     ]);
   }
@@ -192,17 +215,24 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
       {offerings.length > 0 && (
         <Field label="Add from your service catalog (optional)">
           <select
-            onChange={(e) => { if (e.target.value) { addOfferingLine(e.target.value); e.target.value = ""; } }}
+            onChange={(e) => { if (e.target.value) { addPriceLine(e.target.value); e.target.value = ""; } }}
             style={selectStyle}
             defaultValue=""
           >
             <option value="">— Add offering as line item —</option>
             {offerings.map((o) => {
-              const oneTime = o.prices?.find((p) => !p.recurring_interval);
+              const ps = o.prices ?? [];
+              if (!ps.length) {
+                return <option key={o.offering_id} value={`${o.offering_id}::`}>{o.name} (no price set)</option>;
+              }
               return (
-                <option key={o.offering_id} value={o.offering_id}>
-                  {o.name}{oneTime ? ` · $${Number(oneTime.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : ""}
-                </option>
+                <optgroup key={o.offering_id} label={o.name}>
+                  {ps.map((p) => (
+                    <option key={p.price_id} value={`${o.offering_id}::${p.price_id}`}>
+                      {o.name} · {fmtPrice(p)}
+                    </option>
+                  ))}
+                </optgroup>
               );
             })}
           </select>
