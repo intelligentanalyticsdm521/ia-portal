@@ -44,10 +44,28 @@ function fmtPrice(p: OfferingPrice): string {
   return p.label ? `${amt} (${p.label})` : amt;
 }
 
+interface Disc { mode: "none" | "percent" | "amount" | "coupon"; value: string; couponId: string; }
+const NO_DISC: Disc = { mode: "none", value: "", couponId: "" };
+interface CouponLite { coupon_id: string; code: string; name?: string | null; percent_off?: number | null; amount_off?: number | null; }
+function discountAmount(d: Disc | undefined, base: number, coupons: CouponLite[]): number {
+  if (!d || d.mode === "none" || base <= 0) return 0;
+  if (d.mode === "percent") return Math.max(0, base * (Number(d.value) || 0) / 100);
+  if (d.mode === "amount") return Math.min(base, Math.max(0, Number(d.value) || 0));
+  if (d.mode === "coupon") {
+    const c = coupons.find((x) => x.coupon_id === d.couponId);
+    if (!c) return 0;
+    if (c.percent_off != null) return base * Number(c.percent_off) / 100;
+    if (c.amount_off != null) return Math.min(base, Number(c.amount_off));
+  }
+  return 0;
+}
+
 interface LineItemDraft {
   description: string;
   quantity: number;
   unit_price: number;
+  is_tax?: boolean;
+  discount?: Disc;
   /** Set when this line came from the service catalog dropdown. */
   service_offering_id?: string;
   service_price_id?: string;
@@ -79,6 +97,12 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
   const [items, setItems] = useState<LineItemDraft[]>([{ ...blankItem }]);
   const [validUntil, setValidUntil] = useState("");
   const [notes, setNotes] = useState("");
+  const [docType, setDocType] = useState<"quote" | "proposal">("quote");
+  const [coupons, setCoupons] = useState<CouponLite[]>([]);
+  const [taxMode, setTaxMode] = useState<"percent" | "amount">("percent");
+  const [taxRate, setTaxRate] = useState("");
+  const [taxManual, setTaxManual] = useState("");
+  const [invDisc, setInvDisc] = useState<Disc>({ ...NO_DISC });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,26 +110,39 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
     if (!ready) return;
     (async () => {
       try {
-        const [c, o, j1, j2, j3] = await Promise.all([
+        const [c, o, j1, j2, j3, cp] = await Promise.all([
           get<ContactListItem[]>("/contacts"),
           get<Offering[]>("/catalog/offerings?include_prices=1").catch(() => [] as Offering[]),
           get<JobListItem[]>("/jobs?status=inquiry&per_page=50").catch(() => [] as JobListItem[]),
           get<JobListItem[]>("/jobs?status=quoted&per_page=50").catch(() => [] as JobListItem[]),
           get<JobListItem[]>("/jobs?status=scheduled&per_page=50").catch(() => [] as JobListItem[]),
+          get<CouponLite[]>("/coupons").catch(() => [] as CouponLite[]),
         ]);
         setContacts(c || []);
         setOfferings(o || []);
         setJobs([...(j1 || []), ...(j2 || []), ...(j3 || [])]);
+        setCoupons(cp || []);
       } catch (e) {
         setError(`Failed to load data: ${(e as Error).message}`);
       }
     })();
   }, [get, ready]);
 
-  const total = useMemo(
-    () => items.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price || 0), 0),
-    [items]
-  );
+  const totals = useMemo(() => {
+    let gross = 0, lineDiscounts = 0;
+    for (const it of items) {
+      const lt = Number(it.quantity || 0) * Number(it.unit_price || 0);
+      gross += lt;
+      lineDiscounts += discountAmount(it.discount, lt, coupons);
+    }
+    const afterLine = Math.max(0, gross - lineDiscounts);
+    const invDiscount = discountAmount(invDisc, afterLine, coupons);
+    const taxable = Math.max(0, gross - lineDiscounts - invDiscount);
+    const tax = taxMode === "amount"
+      ? Math.max(0, Number(taxManual) || 0)
+      : taxable * ((Number(taxRate) || 0) / 100);
+    return { subtotal: gross, lineDiscounts, invDiscount, tax, total: taxable + tax };
+  }, [items, invDisc, coupons, taxMode, taxRate, taxManual]);
 
   function updateItem(idx: number, patch: Partial<LineItemDraft>) {
     setItems((prev) => prev.map((it, i) => i === idx ? { ...it, ...patch } : it));
@@ -142,14 +179,27 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
     if (!cleaned.length) { setError("Add at least one line item."); return; }
     setSubmitting(true);
     try {
+      const couponLabel = (d: Disc) => {
+        if (d.mode === "coupon") { const c = coupons.find((x) => x.coupon_id === d.couponId); return c ? `Coupon ${c.code}` : "Coupon"; }
+        return d.mode === "percent" ? `Discount (${Number(d.value)}%)` : "Discount";
+      };
+      const lineOut: LineItemDraft[] = [];
+      for (const it of cleaned) {
+        lineOut.push({ description: it.description, quantity: it.quantity, unit_price: it.unit_price, is_tax: false, service_offering_id: it.service_offering_id, service_price_id: it.service_price_id });
+        const lt = Number(it.quantity || 0) * Number(it.unit_price || 0);
+        const da = discountAmount(it.discount, lt, coupons);
+        if (da > 0 && it.discount) lineOut.push({ description: `${couponLabel(it.discount)} — ${it.description}`, quantity: 1, unit_price: -Number(da.toFixed(2)), is_tax: false });
+      }
+      if (totals.invDiscount > 0) lineOut.push({ description: couponLabel(invDisc), quantity: 1, unit_price: -Number(totals.invDiscount.toFixed(2)), is_tax: false });
+      if (totals.tax > 0) lineOut.push({ description: taxMode === "amount" ? "Sales Tax" : `Sales Tax (${Number(taxRate)}%)`, quantity: 1, unit_price: Number(totals.tax.toFixed(2)), is_tax: true });
       const body: Record<string, unknown> = {
-        line_items: cleaned,
+        line_items: lineOut,
         valid_until: validUntil || null,
         notes: notes.trim() || null,
       };
       if (mode === "job") body.job_id = selectedJobId;
       else body.contact_id = selectedContactId;
-      await post("/quotes", body);
+      await post(docType === "proposal" ? "/proposals" : "/quotes", body);
       onCreated();
     } catch (e) {
       setError(`Create failed: ${(e as Error).message}`);
@@ -162,10 +212,15 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
     <div className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
         <div>
-          <div className="card-ttl">New quote</div>
-          <div className="card-sub">Send a proposal to a customer with itemized pricing</div>
+          <div className="card-ttl">New {docType}</div>
+          <div className="card-sub">{docType === "proposal" ? "A proposal is a quote with narrative + notes — same line items & pricing." : "Itemized pricing the customer can accept; convert to an invoice."}</div>
         </div>
         <button onClick={onCancel} style={{ background: "none", border: "none", color: "#5A7A8A", cursor: "pointer", fontSize: 12 }}>Cancel</button>
+      </div>
+
+      <div className="ptabs" style={{ marginBottom: 12 }}>
+        <button className={`ptab${docType === "quote" ? " active" : ""}`} onClick={() => setDocType("quote")}>Quote</button>
+        <button className={`ptab${docType === "proposal" ? " active" : ""}`} onClick={() => setDocType("proposal")}>Proposal</button>
       </div>
 
       {error && (
@@ -240,39 +295,36 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
       )}
 
       <div style={{ marginTop: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4 }}>Line items</div>
-          <Button variant="secondary" onClick={addLine}>+ Line</Button>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 110px 92px 28px", gap: 8, padding: "0 10px 6px", fontSize: 10, fontWeight: 600, color: "#94A3B8", textTransform: "uppercase", letterSpacing: 0.4 }}>
+          <div>Description</div><div style={{ textAlign: "right" }}>Qty</div><div style={{ textAlign: "right" }}>Unit price</div><div style={{ textAlign: "right" }}>Amount</div><div />
         </div>
-
         <div style={{ border: "1px solid #eef2f4", borderRadius: 6 }}>
-          {items.map((it, i) => (
-            <div key={i} style={{
-              display: "grid", gridTemplateColumns: "1fr 80px 110px 32px", gap: 8,
-              padding: "8px 10px", alignItems: "center",
-              borderBottom: i < items.length - 1 ? "1px solid #f0f4f6" : "none",
-            }}>
-              <input
-                type="text" placeholder="Description"
-                value={it.description} onChange={(e) => updateItem(i, { description: e.target.value })}
-                style={inputStyle}
-              />
-              <input
-                type="number" step="0.001" min="0" placeholder="Qty"
-                value={it.quantity} onChange={(e) => updateItem(i, { quantity: Number(e.target.value) })}
-                style={{ ...inputStyle, textAlign: "right" }}
-              />
-              <input
-                type="number" step="0.01" min="0" placeholder="Unit $"
-                value={it.unit_price} onChange={(e) => updateItem(i, { unit_price: Number(e.target.value) })}
-                style={{ ...inputStyle, textAlign: "right" }}
-              />
-              <button
-                type="button" onClick={() => removeItem(i)} title="Remove"
-                style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: 18, padding: 0 }}
-              >×</button>
+          {items.map((it, i) => {
+            const lt = Number(it.quantity || 0) * Number(it.unit_price || 0);
+            const ld = discountAmount(it.discount, lt, coupons);
+            return (
+            <div key={i} style={{ padding: "8px 10px", borderBottom: i < items.length - 1 ? "1px solid #f0f4f6" : "none" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 110px 92px 28px", gap: 8, alignItems: "center" }}>
+                <input type="text" placeholder="Description" value={it.description}
+                  onChange={(e) => updateItem(i, { description: e.target.value })} style={inputStyle} />
+                <input type="number" step="0.001" min="0" value={it.quantity}
+                  onChange={(e) => updateItem(i, { quantity: Number(e.target.value) })} style={{ ...inputStyle, textAlign: "right" }} />
+                <input type="number" step="0.01" min="0" value={it.unit_price}
+                  onChange={(e) => updateItem(i, { unit_price: Number(e.target.value) })} style={{ ...inputStyle, textAlign: "right" }} />
+                <div style={{ textAlign: "right", fontSize: 12, fontFamily: "monospace", color: "#0B1C24" }}>${lt.toFixed(2)}</div>
+                <button type="button" onClick={() => removeItem(i)} title="Remove"
+                  style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: 18, padding: 0 }}>×</button>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                <span style={{ fontSize: 10, color: "#94A3B8", textTransform: "uppercase", letterSpacing: 0.4 }}>Line discount</span>
+                <DiscountPicker d={it.discount || NO_DISC} coupons={coupons} onChange={(d) => updateItem(i, { discount: d })} />
+                {ld > 0 && <span style={{ fontSize: 11, color: "#059669" }}>−${ld.toFixed(2)}</span>}
+              </div>
             </div>
-          ))}
+          ); })}
+        </div>
+        <div style={{ marginTop: 8 }}>
+          <button type="button" onClick={addLine} style={{ background: "none", border: "none", color: "#1A7DB5", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: 0 }}>+ Add line item</button>
         </div>
       </div>
 
@@ -287,12 +339,36 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
       </Field>
 
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
-        <div style={{ width: 240, fontSize: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: "1px solid #eef2f4", fontWeight: 600 }}>
-            <span>Total</span>
-            <span style={{ fontFamily: "monospace", color: "#0B1C24" }}>
-              ${total.toFixed(2)}
-            </span>
+        <div style={{ width: 360, fontSize: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", color: "#5A7A8A" }}>
+            <span>Subtotal</span><span style={{ fontFamily: "monospace", color: "#0B1C24" }}>${totals.subtotal.toFixed(2)}</span>
+          </div>
+          {totals.lineDiscounts > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", color: "#059669" }}>
+              <span>Line discounts</span><span style={{ fontFamily: "monospace" }}>−${totals.lineDiscounts.toFixed(2)}</span>
+            </div>
+          )}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0", gap: 8 }}>
+            <span style={{ color: "#5A7A8A", whiteSpace: "nowrap" }}>{docType === "proposal" ? "Proposal" : "Quote"} discount</span>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <DiscountPicker d={invDisc} coupons={coupons} onChange={setInvDisc} />
+              <span style={{ width: 64, textAlign: "right", color: "#059669" }}>{totals.invDiscount > 0 ? `−$${totals.invDiscount.toFixed(2)}` : "—"}</span>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0", gap: 8 }}>
+            <span style={{ color: "#5A7A8A" }}>Sales tax</span>
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <select value={taxMode} onChange={(e) => setTaxMode(e.target.value as "percent" | "amount")} style={{ ...inputStyle, width: 76, padding: "4px 2px" }}>
+                <option value="percent">Rate %</option><option value="amount">Manual $</option>
+              </select>
+              {taxMode === "percent"
+                ? <input type="number" min="0" step="0.001" placeholder="0" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} style={{ ...inputStyle, width: 60, textAlign: "right" }} />
+                : <input type="number" min="0" step="0.01" placeholder="0.00" value={taxManual} onChange={(e) => setTaxManual(e.target.value)} style={{ ...inputStyle, width: 60, textAlign: "right" }} />}
+              <span style={{ width: 64, textAlign: "right", color: "#B45309" }}>{totals.tax > 0 ? `$${totals.tax.toFixed(2)}` : "—"}</span>
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0 0", borderTop: "1px solid #eef2f4", fontWeight: 600 }}>
+            <span>Total</span><span style={{ fontFamily: "monospace", color: "#0B1C24" }}>${totals.total.toFixed(2)}</span>
           </div>
         </div>
       </div>
@@ -304,7 +380,7 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
           onClick={submit}
           disabled={submitting || (mode === "job" ? !selectedJobId : !selectedContactId) || !items.length}
         >
-          {submitting ? "Creating…" : "Create quote (draft)"}
+          {submitting ? "Creating…" : `Create ${docType} (draft)`}
         </Button>
       </div>
     </div>
@@ -329,5 +405,27 @@ function Field({ label, children, style }: { label: string; children: React.Reac
       <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>{label}</span>
       {children}
     </label>
+  );
+}
+
+function DiscountPicker({ d, coupons, onChange }: { d: Disc; coupons: CouponLite[]; onChange: (d: Disc) => void }) {
+  const mini: React.CSSProperties = { padding: "4px 6px", fontSize: 11, border: "1px solid rgba(45,156,219,0.22)", borderRadius: 4, background: "#fff", color: "#0B1C24" };
+  return (
+    <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+      <select value={d.mode} style={{ ...mini, width: 78 }} onChange={(e) => onChange({ ...d, mode: e.target.value as Disc["mode"] })}>
+        <option value="none">None</option><option value="percent">% off</option><option value="amount">$ off</option>
+        {coupons.length > 0 && <option value="coupon">Coupon</option>}
+      </select>
+      {(d.mode === "percent" || d.mode === "amount") && (
+        <input type="number" min="0" step="0.01" placeholder={d.mode === "percent" ? "%" : "$"} value={d.value}
+          onChange={(e) => onChange({ ...d, value: e.target.value })} style={{ ...mini, width: 56, textAlign: "right" }} />
+      )}
+      {d.mode === "coupon" && (
+        <select value={d.couponId} style={{ ...mini, width: 150 }} onChange={(e) => onChange({ ...d, couponId: e.target.value })}>
+          <option value="">— pick coupon —</option>
+          {coupons.map((c) => <option key={c.coupon_id} value={c.coupon_id}>{c.code}{c.percent_off != null ? ` (${c.percent_off}%)` : c.amount_off != null ? ` ($${c.amount_off})` : ""}</option>)}
+        </select>
+      )}
+    </span>
   );
 }
