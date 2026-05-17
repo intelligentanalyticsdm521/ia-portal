@@ -5,6 +5,9 @@ import {
   PageHeader, FilterBar, DataTable, EmptyState,
   StatusBadge, Button, DetailDrawer, type Column,
 } from "../../components/oliver/ui";
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
+} from "recharts";
 
 interface Subscription {
   id: string;
@@ -173,6 +176,43 @@ export function OliverRecurringPage() {
   }, [subs]);
   const next30Total = nextRenewals.reduce((s, x) => s + Number(x.amount || 0), 0);
 
+  // Expected renewal revenue bucketed by week for the next 90 days — gives a
+  // real bar chart instead of a sparse 3-dot line.
+  const renewalChart = useMemo(() => {
+    const now = Date.now();
+    const weeks = Array.from({ length: 13 }, (_, i) => ({
+      label: i === 0 ? "This wk" : `wk ${i + 1}`,
+      amount: 0, count: 0,
+    }));
+    for (const s of subs) {
+      if (s.status !== "active" || !s.currentPeriodEnd) continue;
+      const days = Math.floor((new Date(s.currentPeriodEnd).getTime() - now) / 86400000);
+      if (days < 0 || days > 90) continue;
+      const wk = Math.min(12, Math.floor(days / 7));
+      weeks[wk].amount += Number(s.amount || 0);
+      weeks[wk].count += 1;
+    }
+    return weeks;
+  }, [subs]);
+  const renewalChartHasData = renewalChart.some((w) => w.count > 0);
+
+  // Subscription mix by status — always renders bars.
+  const statusMix = useMemo(() => {
+    const order: Array<{ key: string; label: string; color: string }> = [
+      { key: "active", label: "Active", color: "#1A7DB5" },
+      { key: "trialing", label: "Trialing", color: "#10B981" },
+      { key: "past_due", label: "Past due", color: "#F59E0B" },
+      { key: "canceled", label: "Canceled", color: "#94A3B8" },
+    ];
+    return order.map((o) => ({
+      ...o,
+      count: o.key === "canceled"
+        ? subs.filter((s) => s.status === "canceled" || s.cancelAtPeriodEnd).length
+        : subs.filter((s) => s.status === o.key).length,
+    }));
+  }, [subs]);
+  const statusMixHasData = statusMix.some((s) => s.count > 0);
+
   const subColumns: Column<Subscription>[] = [
     {
       key: "service",
@@ -298,56 +338,63 @@ export function OliverRecurringPage() {
         </div>
       </div>
 
-      {/* Renewal timeline — only meaningful with subscriptions due in next 30 days */}
-      {nextRenewals.length > 0 && (
+      {/* Renewal forecast + status mix — real charts */}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
         <div className="card">
           <div className="card-hdr">
             <div>
-              <div className="card-ttl">Renewals — next 30 days</div>
-              <div className="card-sub">{fmtMoney(next30Total)} expected · {nextRenewals.length} subscription{nextRenewals.length === 1 ? "" : "s"}</div>
+              <div className="card-ttl">Renewal forecast — next 90 days</div>
+              <div className="card-sub">{fmtMoney(next30Total)} expected in the next 30 days · {nextRenewals.length} renewal{nextRenewals.length === 1 ? "" : "s"}</div>
             </div>
           </div>
-          {/* Visual timeline — each subscription as a dot positioned by % offset */}
-          <div style={{ position: "relative", height: 60, marginTop: 6 }}>
-            <div style={{ position: "absolute", top: 28, left: 0, right: 0, height: 3, background: "#E5E7EB", borderRadius: 99 }} />
-            <div style={{ position: "absolute", top: 24, left: 0, width: 8, height: 8, borderRadius: "50%", background: "#1A3A4A", transform: "translateX(-50%)" }} />
-            <div style={{ position: "absolute", top: 38, left: 0, transform: "translateX(-50%)", fontSize: 10, color: "#5A7A8A", whiteSpace: "nowrap" }}>Today</div>
-            <div style={{ position: "absolute", top: 24, right: 0, width: 8, height: 8, borderRadius: "50%", background: "#5A7A8A", transform: "translateX(50%)" }} />
-            <div style={{ position: "absolute", top: 38, right: 0, transform: "translateX(50%)", fontSize: 10, color: "#5A7A8A", whiteSpace: "nowrap" }}>+30 days</div>
-            {nextRenewals.map((s) => {
-              if (!s.currentPeriodEnd) return null;
-              const daysOut = Math.max(0, Math.min(30, Math.floor((new Date(s.currentPeriodEnd).getTime() - Date.now()) / 86400000)));
-              const pct = (daysOut / 30) * 100;
-              const isCanceling = s.cancelAtPeriodEnd;
-              return (
-                <div key={s.id}
-                  title={`${s.accountName || s.contactName || s.serviceName} · ${fmtMoney(s.amount)} · ${fmtDate(s.currentPeriodEnd)}${isCanceling ? " · canceling" : ""}`}
-                  style={{
-                    position: "absolute", top: 18, left: `${pct}%`,
-                    width: 16, height: 16, borderRadius: "50%",
-                    background: isCanceling ? "#9333EA" : "#1A7DB5",
-                    border: "2px solid #fff",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-                    transform: "translateX(-50%)",
-                    cursor: "pointer",
-                    zIndex: isCanceling ? 2 : 1,
-                  }}
-                />
-              );
-            })}
-          </div>
-          <div style={{ display: "flex", gap: 16, marginTop: 12, fontSize: 11 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ width: 12, height: 12, borderRadius: "50%", background: "#1A7DB5", border: "2px solid #fff", boxShadow: "0 1px 2px rgba(0,0,0,0.15)" }} />
-              <span style={{ color: "#0B1C24" }}>Auto-renewing</span>
+          {renewalChartHasData ? (
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={renewalChart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
+                <XAxis dataKey="label" stroke="#64748B" fontSize={11} tickLine={false} />
+                <YAxis stroke="#64748B" fontSize={11} tickLine={false} axisLine={false}
+                  tickFormatter={(v) => `$${v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v}`} />
+                <Tooltip
+                  formatter={(v, _n, p) => [`${fmtMoney(Number(v) || 0)} · ${(p?.payload?.count as number) || 0} sub`, "Renewing"]}
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #E5E7EB" }} />
+                <Bar dataKey="amount" radius={[4, 4, 0, 0]} fill="#1A7DB5" maxBarSize={40} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ padding: "48px 0", textAlign: "center", color: "#5A7A8A", fontSize: 13 }}>
+              No active subscriptions renewing in the next 90 days.
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ width: 12, height: 12, borderRadius: "50%", background: "#9333EA", border: "2px solid #fff", boxShadow: "0 1px 2px rgba(0,0,0,0.15)" }} />
-              <span style={{ color: "#0B1C24" }}>Canceling at period end</span>
-            </div>
-          </div>
+          )}
         </div>
-      )}
+
+        <div className="card">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">Subscription mix</div>
+              <div className="card-sub">{subs.length} total · {fmtMoney(mrr)} MRR</div>
+            </div>
+          </div>
+          {statusMixHasData ? (
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={statusMix} layout="vertical" margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" horizontal={false} />
+                <XAxis type="number" allowDecimals={false} stroke="#64748B" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis type="category" dataKey="label" stroke="#64748B" fontSize={11} width={64} tickLine={false} axisLine={false} />
+                <Tooltip
+                  formatter={(v) => [`${Number(v) || 0}`, "Subscriptions"]}
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #E5E7EB" }} />
+                <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={28}>
+                  {statusMix.map((s) => <Cell key={s.key} fill={s.color} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ padding: "48px 0", textAlign: "center", color: "#5A7A8A", fontSize: 13 }}>
+              No subscriptions yet.
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="ptabs" style={{ marginBottom: 12 }}>
         <button className={`ptab${tab === "subscriptions" ? " active" : ""}`} onClick={() => setTab("subscriptions")}>Subscriptions ({subs.length})</button>
