@@ -477,7 +477,50 @@ function Lbl({ children }: { children: ReactNode }) {
   return <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.4 }}>{children}</div>;
 }
 
-interface NewLine { key: string; price_id: string; label: string; unit_amount: number; quantity: number }
+interface CouponLite { coupon_id: string; code: string; name?: string | null; percent_off?: number | null; amount_off?: number | null }
+interface LineDisc { mode: "none" | "coupon" | "percent" | "amount"; couponId: string; value: string }
+const NO_LD: LineDisc = { mode: "none", couponId: "", value: "" };
+interface NewLine {
+  key: string; price_id: string; label: string;
+  unit_amount: number;        // editable custom price for THIS subscription
+  catalog_amount: number;     // original catalog price (to detect override)
+  recurring_interval: string; recurring_interval_count: number;
+  quantity: number; discount: LineDisc;
+}
+
+// Real-coupon dropdown (+ optional manual % / $). Used per-line and whole-sub.
+function CouponPick({ d, coupons, onChange, mini }: {
+  d: LineDisc; coupons: CouponLite[]; onChange: (d: LineDisc) => void; mini?: boolean;
+}) {
+  const st: React.CSSProperties = { padding: mini ? "4px 6px" : "8px 10px", fontSize: mini ? 11 : 13, borderRadius: 6, border: "1px solid #cbd5e1", background: "#fff" };
+  return (
+    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      <select style={{ ...st, width: mini ? 92 : 150 }} value={d.mode}
+        onChange={(e) => onChange({ ...d, mode: e.target.value as LineDisc["mode"] })}>
+        <option value="none">No discount</option>
+        <option value="coupon">Coupon</option>
+        <option value="percent">% off</option>
+        <option value="amount">$ off</option>
+      </select>
+      {d.mode === "coupon" && (
+        <select style={{ ...st, width: mini ? 170 : 220 }} value={d.couponId}
+          onChange={(e) => onChange({ ...d, couponId: e.target.value })}>
+          <option value="">— pick a coupon —</option>
+          {coupons.map((c) => (
+            <option key={c.coupon_id} value={c.coupon_id}>
+              {c.code}{c.percent_off != null ? ` (${c.percent_off}% off)` : c.amount_off != null ? ` ($${c.amount_off} off)` : ""}
+            </option>
+          ))}
+        </select>
+      )}
+      {(d.mode === "percent" || d.mode === "amount") && (
+        <input type="number" min={0} step="0.01" style={{ ...st, width: 70, textAlign: "right" }}
+          placeholder={d.mode === "percent" ? "%" : "$"} value={d.value}
+          onChange={(e) => onChange({ ...d, value: e.target.value })} />
+      )}
+    </span>
+  );
+}
 
 function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
   mode: "new" | "edit";
@@ -491,12 +534,12 @@ function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
   // new
   const [contacts, setContacts] = useState<ContactLite[]>([]);
   const [offerings, setOfferings] = useState<CatalogOffering[]>([]);
+  const [coupons, setCoupons] = useState<CouponLite[]>([]);
   const [contactId, setContactId] = useState("");
   const [lines, setLines] = useState<NewLine[]>([]);
   const [trialDays, setTrialDays] = useState("");
-  // shared coupon
-  const [couponType, setCouponType] = useState<"none" | "percent" | "amount" | "code">("none");
-  const [couponVal, setCouponVal] = useState("");
+  // whole-subscription discount
+  const [subDisc, setSubDisc] = useState<LineDisc>({ ...NO_LD });
   // edit
   const [sub, setSub] = useState<(Subscription & { items?: SubItem[]; coupon_name?: string | null; discount_percent?: number | null; discount_amount?: number | null; cancel_at_period_end?: boolean; service_name?: string; status?: string }) | null>(null);
   const [editItems, setEditItems] = useState<Array<SubItem & { _deleted?: boolean }>>([]);
@@ -507,15 +550,21 @@ function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
     (async () => {
       try {
         if (mode === "new") {
-          const [cs, os] = await Promise.all([
+          const [cs, os, cp] = await Promise.all([
             api.get<ContactLite[]>("/contacts").catch(() => []),
             api.get<CatalogOffering[]>("/catalog/offerings?include_prices=1").catch(() => []),
+            api.get<CouponLite[]>("/coupons").catch(() => []),
           ]);
           setContacts(cs || []);
           setOfferings(os || []);
+          setCoupons(cp || []);
         } else if (subId) {
-          const s = await api.get<typeof sub>(`/subscriptions/${subId}`);
+          const [s, cp] = await Promise.all([
+            api.get<typeof sub>(`/subscriptions/${subId}`),
+            api.get<CouponLite[]>("/coupons").catch(() => []),
+          ]);
           setSub(s);
+          setCoupons(cp || []);
           setEditItems((s?.items ?? []).map((i) => ({ ...i })));
           setCancelAtEnd(!!s?.cancel_at_period_end);
         }
@@ -530,13 +579,16 @@ function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
         offering: o.name, price_id: p.price_id,
         label: `${o.name} · $${Number(p.unit_amount).toFixed(2)}/${p.recurring_interval_count && p.recurring_interval_count > 1 ? `${p.recurring_interval_count} ` : ""}${p.recurring_interval}${p.label ? ` (${p.label})` : ""}`,
         unit_amount: Number(p.unit_amount),
+        recurring_interval: p.recurring_interval || "month",
+        recurring_interval_count: p.recurring_interval_count || 1,
       }))
   ), [offerings]);
 
-  function couponBody(): Record<string, unknown> {
-    if (couponType === "percent" && couponVal) return { discount_percent: Number(couponVal) };
-    if (couponType === "amount" && couponVal) return { discount_amount: Number(couponVal) };
-    if (couponType === "code" && couponVal) return { coupon_id: couponVal.trim() };
+  // Map a LineDisc to the API discount fields.
+  function discBody(d: LineDisc): Record<string, unknown> {
+    if (d.mode === "coupon" && d.couponId) return { coupon_id: d.couponId };
+    if (d.mode === "percent" && d.value) return { discount_percent: Number(d.value) };
+    if (d.mode === "amount" && d.value) return { discount_amount: Number(d.value) };
     return {};
   }
 
@@ -548,9 +600,17 @@ function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
         if (!lines.length) throw new Error("Add at least one recurring item.");
         await api.post("/subscriptions", {
           contact_id: contactId,
-          items: lines.map((l) => ({ price_id: l.price_id, quantity: l.quantity })),
+          items: lines.map((l) => {
+            const overridden = Number(l.unit_amount) !== Number(l.catalog_amount);
+            const base: Record<string, unknown> = overridden
+              // custom price for THIS subscription → ad-hoc price, not the catalog one
+              ? { product_name: l.label.split(" · ")[0], unit_amount: Number(l.unit_amount),
+                  recurring_interval: l.recurring_interval, recurring_interval_count: l.recurring_interval_count }
+              : { price_id: l.price_id };
+            return { ...base, quantity: l.quantity, ...discBody(l.discount) };
+          }),
           trial_days: trialDays ? Number(trialDays) : undefined,
-          ...couponBody(),
+          ...discBody(subDisc),
         });
       } else if (subId) {
         await api.patch(`/subscriptions/${subId}`, {
@@ -560,7 +620,7 @@ function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
               stripe_subscription_item_id: i.stripe_subscription_item_id,
               quantity: i.quantity, deleted: !!i._deleted,
             })),
-          ...(removeCoupon ? { remove_coupon: true } : couponBody()),
+          ...(removeCoupon ? { remove_coupon: true } : discBody(subDisc)),
           cancel_at_period_end: cancelAtEnd,
         });
       }
@@ -599,7 +659,12 @@ function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
             <Lbl>Add recurring item (from catalog)</Lbl>
             <select style={inS} value="" onChange={(e) => {
               const p = allPrices.find((x) => x.price_id === e.target.value);
-              if (p) setLines((prev) => [...prev, { key: crypto.randomUUID(), price_id: p.price_id, label: p.label, unit_amount: p.unit_amount, quantity: 1 }]);
+              if (p) setLines((prev) => [...prev, {
+                key: crypto.randomUUID(), price_id: p.price_id, label: p.label,
+                unit_amount: p.unit_amount, catalog_amount: p.unit_amount,
+                recurring_interval: p.recurring_interval, recurring_interval_count: p.recurring_interval_count,
+                quantity: 1, discount: { ...NO_LD },
+              }]);
             }}>
               <option value="">— Add a recurring price —</option>
               {allPrices.map((p) => <option key={p.price_id} value={p.price_id}>{p.label}</option>)}
@@ -609,29 +674,34 @@ function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
           {lines.length > 0 && (
             <div style={{ border: "1px solid #eef2f4", borderRadius: 8 }}>
               {lines.map((l, i) => (
-                <div key={l.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderBottom: i < lines.length - 1 ? "1px solid #f0f4f6" : "none" }}>
-                  <div style={{ flex: 1, fontSize: 12 }}>{l.label}</div>
-                  <input type="number" min={1} value={l.quantity} style={{ ...inS, width: 64 }}
-                    onChange={(e) => setLines((prev) => prev.map((x) => x.key === l.key ? { ...x, quantity: Math.max(1, Number(e.target.value) || 1) } : x))} />
-                  <button onClick={() => setLines((prev) => prev.filter((x) => x.key !== l.key))} style={{ color: "#dc2626", fontSize: 12, background: "none", border: "none", cursor: "pointer" }}>Remove</button>
+                <div key={l.key} style={{ padding: "10px", borderBottom: i < lines.length - 1 ? "1px solid #f0f4f6" : "none" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 64px 60px", gap: 8, alignItems: "center" }}>
+                    <div style={{ fontSize: 12, color: "#0B1C24" }}>{l.label.split(" · ")[0]}
+                      <span style={{ color: "#94A3B8" }}> · /{l.recurring_interval_count > 1 ? `${l.recurring_interval_count} ` : ""}{l.recurring_interval}</span>
+                    </div>
+                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ fontSize: 11, color: "#94A3B8" }}>$</span>
+                      <input type="number" min={0} step="0.01" value={l.unit_amount} title="Custom price for this subscription"
+                        style={{ ...inS, width: 90, textAlign: "right" }}
+                        onChange={(e) => setLines((prev) => prev.map((x) => x.key === l.key ? { ...x, unit_amount: Number(e.target.value) } : x))} />
+                    </span>
+                    <input type="number" min={1} value={l.quantity} title="Qty" style={{ ...inS, width: 56, textAlign: "right" }}
+                      onChange={(e) => setLines((prev) => prev.map((x) => x.key === l.key ? { ...x, quantity: Math.max(1, Number(e.target.value) || 1) } : x))} />
+                    <button onClick={() => setLines((prev) => prev.filter((x) => x.key !== l.key))} style={{ color: "#dc2626", fontSize: 12, background: "none", border: "none", cursor: "pointer" }}>Remove</button>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                    <span style={{ fontSize: 10, color: "#94A3B8", textTransform: "uppercase", letterSpacing: 0.4 }}>Line discount</span>
+                    <CouponPick mini d={l.discount} coupons={coupons}
+                      onChange={(d) => setLines((prev) => prev.map((x) => x.key === l.key ? { ...x, discount: d } : x))} />
+                    {l.unit_amount !== l.catalog_amount && <span style={{ fontSize: 10, color: "#1A7DB5" }}>custom price</span>}
+                  </div>
                 </div>
               ))}
             </div>
           )}
           <div>
-            <Lbl>Discount (optional)</Lbl>
-            <div style={{ display: "flex", gap: 8 }}>
-              <select style={{ ...inS, width: 160 }} value={couponType} onChange={(e) => setCouponType(e.target.value as never)}>
-                <option value="none">No discount</option>
-                <option value="percent">% off</option>
-                <option value="amount">$ off</option>
-                <option value="code">Existing coupon ID</option>
-              </select>
-              {couponType !== "none" && (
-                <input style={inS} value={couponVal} onChange={(e) => setCouponVal(e.target.value)}
-                  placeholder={couponType === "percent" ? "e.g. 30" : couponType === "amount" ? "e.g. 25" : "coupon_xxx"} />
-              )}
-            </div>
+            <Lbl>Whole-subscription discount (optional)</Lbl>
+            <CouponPick d={subDisc} coupons={coupons} onChange={setSubDisc} />
           </div>
           <div>
             <Lbl>Free trial days (optional)</Lbl>
@@ -677,18 +747,7 @@ function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
                   </label>
                 )}
                 {!removeCoupon && (
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <select style={{ ...inS, width: 160 }} value={couponType} onChange={(e) => setCouponType(e.target.value as never)}>
-                      <option value="none">Keep / no change</option>
-                      <option value="percent">Set % off</option>
-                      <option value="amount">Set $ off</option>
-                      <option value="code">Apply coupon ID</option>
-                    </select>
-                    {couponType !== "none" && (
-                      <input style={inS} value={couponVal} onChange={(e) => setCouponVal(e.target.value)}
-                        placeholder={couponType === "percent" ? "e.g. 30" : couponType === "amount" ? "e.g. 25" : "coupon_xxx"} />
-                    )}
-                  </div>
+                  <CouponPick d={subDisc} coupons={coupons} onChange={setSubDisc} />
                 )}
               </div>
               <label style={{ display: "flex", gap: 8, fontSize: 13 }}>
