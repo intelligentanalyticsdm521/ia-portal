@@ -538,6 +538,7 @@ function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
   const [contactId, setContactId] = useState("");
   const [lines, setLines] = useState<NewLine[]>([]);
   const [trialDays, setTrialDays] = useState("");
+  const [taxRate, setTaxRate] = useState(""); // % applied to the subscription
   // whole-subscription discount
   const [subDisc, setSubDisc] = useState<LineDisc>({ ...NO_LD });
   // edit
@@ -592,6 +593,39 @@ function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
     return {};
   }
 
+  // $ off a base for a LineDisc (real coupon, % or $).
+  function discAmt(d: LineDisc | undefined, base: number): number {
+    if (!d || d.mode === "none" || base <= 0) return 0;
+    if (d.mode === "percent") return Math.max(0, base * (Number(d.value) || 0) / 100);
+    if (d.mode === "amount") return Math.min(base, Math.max(0, Number(d.value) || 0));
+    if (d.mode === "coupon") {
+      const c = coupons.find((x) => x.coupon_id === d.couponId);
+      if (!c) return 0;
+      if (c.percent_off != null) return base * Number(c.percent_off) / 100;
+      if (c.amount_off != null) return Math.min(base, Number(c.amount_off));
+    }
+    return 0;
+  }
+
+  // Live totals per billing period — new mode (lines) and edit mode (editItems).
+  const totals = useMemo(() => {
+    const src = mode === "new"
+      ? lines.map((l) => ({ amt: Number(l.unit_amount) * Number(l.quantity || 1), disc: l.discount }))
+      : editItems.filter((i) => !i._deleted).map((i) => ({ amt: Number(i.unit_amount) * Number(i.quantity || 1), disc: undefined as LineDisc | undefined }));
+    let gross = 0, lineDiscounts = 0;
+    for (const r of src) { gross += r.amt; lineDiscounts += discAmt(r.disc, r.amt); }
+    const afterLine = Math.max(0, gross - lineDiscounts);
+    const subDiscount = discAmt(subDisc, afterLine);
+    const taxable = Math.max(0, gross - lineDiscounts - subDiscount);
+    const tax = taxable * ((Number(taxRate) || 0) / 100);
+    return { gross, lineDiscounts, subDiscount, tax, total: taxable + tax };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, lines, editItems, subDisc, taxRate, coupons]);
+
+  const period = mode === "new"
+    ? (lines[0]?.recurring_interval_count > 1 ? `every ${lines[0]?.recurring_interval_count} ${lines[0]?.recurring_interval}s` : `/${lines[0]?.recurring_interval || "mo"}`)
+    : (sub?.billingInterval ? `/${sub.billingInterval}` : "");
+
   async function save() {
     setErr(null); setBusy(true);
     try {
@@ -610,6 +644,7 @@ function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
             return { ...base, quantity: l.quantity, ...discBody(l.discount) };
           }),
           trial_days: trialDays ? Number(trialDays) : undefined,
+          tax_percent: taxRate ? Number(taxRate) : undefined,
           ...discBody(subDisc),
         });
       } else if (subId) {
@@ -620,6 +655,7 @@ function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
               stripe_subscription_item_id: i.stripe_subscription_item_id,
               quantity: i.quantity, deleted: !!i._deleted,
             })),
+          tax_percent: taxRate ? Number(taxRate) : undefined,
           ...(removeCoupon ? { remove_coupon: true } : discBody(subDisc)),
           cancel_at_period_end: cancelAtEnd,
         });
@@ -627,6 +663,33 @@ function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
       onSaved();
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
+  }
+
+  const TR = ({ label, val, color }: { label: string; val: string; color?: string }) => (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 12, color: color || "#5A7A8A" }}>
+      <span>{label}</span><span style={{ fontFamily: "monospace", color: color || "#0B1C24" }}>{val}</span>
+    </div>
+  );
+  function TotalsBlock() {
+    return (
+      <div style={{ borderTop: "1px solid #eef2f4", paddingTop: 10 }}>
+        <Lbl>Tax</Lbl>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+          <input type="number" min={0} step="0.001" placeholder="0" value={taxRate}
+            onChange={(e) => setTaxRate(e.target.value)} style={{ ...inS, width: 80, textAlign: "right" }} />
+          <span style={{ fontSize: 12, color: "#5A7A8A" }}>% sales tax</span>
+        </div>
+        <div style={{ maxWidth: 320, marginLeft: "auto" }}>
+          <TR label="Subtotal" val={`$${totals.gross.toFixed(2)}`} />
+          {totals.lineDiscounts > 0 && <TR label="Line discounts" val={`−$${totals.lineDiscounts.toFixed(2)}`} color="#059669" />}
+          {totals.subDiscount > 0 && <TR label="Subscription discount" val={`−$${totals.subDiscount.toFixed(2)}`} color="#059669" />}
+          {totals.tax > 0 && <TR label={`Tax (${Number(taxRate)}%)`} val={`$${totals.tax.toFixed(2)}`} color="#B45309" />}
+          <div style={{ borderTop: "1px solid #eef2f4", marginTop: 4, paddingTop: 6, fontWeight: 700 }}>
+            <TR label={`Total ${period}`} val={`$${totals.total.toFixed(2)}`} color="#0B1C24" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -707,6 +770,7 @@ function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
             <Lbl>Free trial days (optional)</Lbl>
             <input style={{ ...inS, width: 120 }} type="number" min={0} value={trialDays} onChange={(e) => setTrialDays(e.target.value)} />
           </div>
+          <TotalsBlock />
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -750,6 +814,7 @@ function SubscriptionDrawer({ mode, subId, api, onClose, onSaved }: {
                   <CouponPick d={subDisc} coupons={coupons} onChange={setSubDisc} />
                 )}
               </div>
+              <TotalsBlock />
               <label style={{ display: "flex", gap: 8, fontSize: 13 }}>
                 <input type="checkbox" checked={cancelAtEnd} onChange={(e) => setCancelAtEnd(e.target.checked)} />
                 Cancel at period end (stops billing after {fmtDate(sub.currentPeriodEnd)})
