@@ -285,8 +285,8 @@ export function SparkUsagePage() {
   // ─ Render ────────────────────────────────────────────────────────────────
   return (
     <SparkPageShell
-      title="Usage & Billing"
-      subtitle="Build your plan — drag the slider, pick a tier, add Lead Gen"
+      title="Plan & Pricing"
+      subtitle="Build your plan — drag the slider, pick a tier, add Lead Gen. Current usage shown at top for reference; full usage on the Usage page."
       help={
         <>
           <strong className="block mb-1">How pricing works:</strong>

@@ -110,6 +110,7 @@ const SparkLeadsPage = lazyNamed(() => import('./spark/SparkLeadsPage'), 'SparkL
 const SparkSearchProfilesPage = lazyNamed(() => import('./spark/SparkSearchProfilesPage'), 'SparkSearchProfilesPage');
 const SparkIntelligencePage = lazyNamed(() => import('./spark/SparkIntelligencePage'), 'SparkIntelligencePage');
 const SparkUsagePage = lazyNamed(() => import('./spark/SparkUsagePage'), 'SparkUsagePage');
+const SparkUsageReportPage = lazyNamed(() => import('./spark/SparkUsageReportPage'), 'SparkUsageReportPage');
 // SPARK Pro
 const SparkPipelinesPage = lazyNamed(() => import('./spark/SparkPipelinesPage'), 'SparkPipelinesPage');
 const SparkDealsPage = lazyNamed(() => import('./spark/SparkDealsPage'), 'SparkDealsPage');
@@ -443,6 +444,7 @@ export function ServiceRouter() {
       case 'spark_search_profiles': sparkPage = <SparkSearchProfilesPage />; break;
       case 'spark_intelligence': sparkPage = <SparkIntelligencePage />; break;
       case 'spark_usage': sparkPage = <SparkUsagePage />; break;
+      case 'spark_usage_report': sparkPage = <SparkUsageReportPage />; break;
       // SPARK Pro
       case 'spark_pipelines': sparkPage = <SparkPipelinesPage />; break;
       case 'spark_deals': sparkPage = <SparkDealsPage />; break;

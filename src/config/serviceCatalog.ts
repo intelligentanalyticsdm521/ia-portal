@@ -173,7 +173,8 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_leads', displayName: 'Lead Inbox', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_leads', description: 'B2B lead inbox with Hot/Warm/Cold scoring.' },
   { key: 'spark_search_profiles', displayName: 'Search Profiles', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_search_profiles', description: 'Saved lead search configurations.' },
   { key: 'spark_intelligence', displayName: 'Contact Scoring', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_intelligence', description: 'X/Y/Z contact intelligence with OLIVER cross-platform signals.' },
-  { key: 'spark_usage', displayName: 'Usage & Billing', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_usage', description: 'Email, SMS, contact, and lead usage vs tier limits.' },
+  { key: 'spark_usage', displayName: 'Plan & Pricing', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_usage', description: 'SPARK volume + feature tier + Lead Gen picker with live total. Current usage shown at top for reference.' },
+  { key: 'spark_usage_report', displayName: 'Usage', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_usage_report', description: 'Email, SMS, contact, and lead usage vs your plan limits.' },
   // SPARK Pro tier
   { key: 'spark_pipelines', displayName: 'Sales Pipeline', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_pipelines', description: 'Multi-stage sales pipelines with Kanban board (Pro).' },
   { key: 'spark_deals', displayName: 'Deals', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_deals', description: 'Opportunity tracking, value forecasting, win/loss analysis (Pro).' },
