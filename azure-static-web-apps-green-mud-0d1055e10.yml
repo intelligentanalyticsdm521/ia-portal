@@ -20,16 +20,25 @@ jobs:
   steps:
   - checkout: self
     submodules: true
+  # Build OURSELVES, then hand the SWA task ONLY the small dist/. The old
+  # setup (app_location:"/", Oryx build) zipped/uploaded the whole repo
+  # incl. node_modules -> "Upload Timed Out" after 600s. Pre-building +
+  # skip_app_build uploads ~a few MB of static files and is reliable.
+  - task: NodeTool@0
+    displayName: "Use Node 22"
+    inputs:
+      versionSpec: "22.x"
   - script: |
+      set -e
+      npm ci
       echo "{\"commit\":\"$(Build.SourceVersion)\",\"builtAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"buildId\":\"$(Build.BuildId)\"}" > public/version.json
       cat public/version.json
-    displayName: 'Stamp public/version.json (Vite copies public/ -> dist)'
-  - task: AzureStaticWebApp@0
-    inputs:
-      azure_static_web_apps_api_token: $(AZURE_STATIC_WEB_APPS_API_TOKEN_GREEN_MUD_0D1055E10)
-      app_location: "/"
-      api_location: ""
-      output_location: "dist"
+      npm run build
+      # staticwebapp.config.json lives at repo root; it MUST ship inside the
+      # deployed folder or SPA fallback/headers are lost when we deploy dist/.
+      cp staticwebapp.config.json dist/ 2>/dev/null || true
+      ls -lh dist | head
+    displayName: "npm ci + stamp version.json + vite build"
     env:
       VITE_AUTH_CLIENT_ID: $(VITE_AUTH_CLIENT_ID)
       VITE_AUTH_AUTHORITY: $(VITE_AUTH_AUTHORITY)
@@ -42,6 +51,14 @@ jobs:
       VITE_DEFAULT_PORTAL_CONTEXT: $(VITE_DEFAULT_PORTAL_CONTEXT)
       VITE_ARION_API_BASE_URL: $(VITE_ARION_API_BASE_URL)
       VITE_ARION_CLIENT_URL: $(VITE_ARION_CLIENT_URL)
+  - task: AzureStaticWebApp@0
+    displayName: "Deploy prebuilt dist to SWA"
+    inputs:
+      azure_static_web_apps_api_token: $(AZURE_STATIC_WEB_APPS_API_TOKEN_GREEN_MUD_0D1055E10)
+      app_location: "dist"
+      api_location: ""
+      output_location: ""
+      skip_app_build: true
+      skip_api_build: true
 
 ###### End of Repository/Build Configurations ######
-
