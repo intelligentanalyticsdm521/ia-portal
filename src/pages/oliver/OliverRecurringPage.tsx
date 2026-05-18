@@ -15,6 +15,9 @@ interface Subscription {
   serviceName: string;
   description?: string;
   amount: number;
+  discountTotal?: number | null;
+  taxTotal?: number | null;
+  netAmount?: number | null;
   currency: string;
   billingInterval: string;
   billingIntervalCount?: number;
@@ -150,10 +153,14 @@ export function OliverRecurringPage() {
     return list;
   }, [subs, filter, search]);
 
-  // Subscription KPIs
+  // NET revenue per period (post-coupon, ex-tax). Falls back to gross only
+  // when net hasn't been computed yet (pre-resync rows).
+  const netOf = (s: Subscription) => Number(s.netAmount != null ? s.netAmount : s.amount || 0);
+
+  // Subscription KPIs — MRR off NET, not list price.
   const active = subs.filter((s) => s.status === "active");
   const mrr = active.reduce((sum, s) => {
-    const amt = Number(s.amount || 0);
+    const amt = netOf(s);
     if (s.billingInterval === "year") return sum + amt / 12;
     if (s.billingInterval === "week") return sum + amt * 4.33;
     return sum + amt;
@@ -187,7 +194,7 @@ export function OliverRecurringPage() {
     }));
     for (const s of subs) {
       if (s.status !== "active" || !s.currentPeriodEnd) continue;
-      const amt = Number(s.amount || 0);
+      const amt = netOf(s); // forecast actual net revenue, not list price
       const renewMs = new Date(s.currentPeriodEnd).getTime();
       // Upcoming: this renewal falls inside the forecast window.
       const off = (renewMs - now) / 86400000;
@@ -253,20 +260,40 @@ export function OliverRecurringPage() {
       ),
     },
     {
-      key: "amount",
-      header: "Amount",
-      align: "right",
-      sortable: true,
-      sortAccessor: (s) => Number(s.amount),
+      key: "listprice", header: "List price", align: "right",
       render: (s) => (
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 12, fontWeight: 600, fontFamily: "monospace", color: "#0B1C24" }}>{fmtMoney(s.amount)}</div>
-          <div style={{ fontSize: 10, color: "#5A7A8A" }}>per {s.billingInterval}</div>
-          {s.couponName && (
-            <div style={{ fontSize: 10, color: "#9333EA" }}>
-              {s.couponName}{s.discountPercent ? ` (${s.discountPercent}% off)` : s.discountAmount ? ` ($${s.discountAmount} off)` : ""}
-            </div>
-          )}
+          <div style={{ fontSize: 12, fontFamily: "monospace", color: "#5A7A8A" }}>{fmtMoney(s.amount)}</div>
+          <div style={{ fontSize: 10, color: "#94A3B8" }}>per {s.billingInterval}</div>
+        </div>
+      ),
+    },
+    {
+      key: "discount", header: "Discount", align: "right",
+      render: (s) => (
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 12, fontFamily: "monospace", color: Number(s.discountTotal) > 0 ? "#059669" : "#94A3B8" }}>
+            {Number(s.discountTotal) > 0 ? `−${fmtMoney(s.discountTotal)}` : "—"}
+          </div>
+          {s.couponName && <div style={{ fontSize: 10, color: "#9333EA" }}>{s.couponName}</div>}
+        </div>
+      ),
+    },
+    {
+      key: "tax", header: "Tax", align: "right",
+      render: (s) => (
+        <div style={{ fontSize: 12, fontFamily: "monospace", textAlign: "right", color: Number(s.taxTotal) > 0 ? "#B45309" : "#94A3B8" }}>
+          {Number(s.taxTotal) > 0 ? fmtMoney(s.taxTotal) : "—"}
+        </div>
+      ),
+    },
+    {
+      key: "net", header: "Net /period", align: "right", sortable: true,
+      sortAccessor: (s) => netOf(s),
+      render: (s) => (
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, fontFamily: "monospace", color: "#0B1C24" }}>{fmtMoney(netOf(s))}</div>
+          <div style={{ fontSize: 10, color: "#94A3B8" }}>actually billed</div>
         </div>
       ),
     },
