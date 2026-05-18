@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { TimeRangeSelector, rangeForPreset } from "../../components/oliver/ui";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { Mail, AlertCircle, Shield, Check, X, RefreshCw } from "lucide-react";
 
@@ -37,7 +38,12 @@ export function SparkDeliverabilityPage() {
   const [suppressions, setSuppressions] = useState<Suppression[]>([]);
   const [verify, setVerify] = useState<VerifyResp | null>(null);
   const [domain, setDomain] = useState("");
-  const [days, setDays] = useState(30);
+  const [range, setRange] = useState(() => rangeForPreset("last_30_days"));
+  const days = useMemo(() => {
+    if (!range.fromISO || !range.toISO) return 3650; // all-time
+    const d = Math.round((new Date(range.toISO).getTime() - new Date(range.fromISO).getTime()) / 86400000);
+    return Math.max(1, d);
+  }, [range]);
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -122,17 +128,12 @@ export function SparkDeliverabilityPage() {
   return (
     <SparkPageShell
       title="Deliverability"
-      subtitle={`Last ${days} days · ${dash?.overall.sent.toLocaleString() || 0} sent`}
+      subtitle={`${range.label} · ${dash?.overall.sent.toLocaleString() || 0} sent`}
       help="Track how your emails are landing. Bounce, complaint, and unsubscribe rates feed back into the auto-suppression list. Keep complaint rate under 0.1% and hard bounce rate under 2% to maintain sender reputation."
       stats={stats || undefined}
       filters={
         <div className="flex items-center gap-2">
-          {[7, 14, 30, 90].map(d => (
-            <button key={d} onClick={() => setDays(d)}
-              className={`text-xs px-3 py-1 rounded-full border ${days === d ? "bg-[#0B1C24] text-white border-[#0B1C24]" : "border-slate-200"}`}>
-              Last {d} days
-            </button>
-          ))}
+          <TimeRangeSelector value={range} onChange={setRange} />
           <button onClick={fetchData} className="text-xs px-3 py-1 rounded-full border border-slate-200 flex items-center gap-1">
             <RefreshCw className="h-3 w-3" /> Refresh
           </button>

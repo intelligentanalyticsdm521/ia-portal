@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { TimeRangeSelector, rangeForPreset } from "../../components/oliver/ui";
 import { ArgusInsightBox } from "../../components/oliver/ArgusInsightBox";
 import { Sparkline } from "../../components/iainsights/Sparkline";
 
@@ -62,6 +63,11 @@ export function SparkOverviewPage() {
   const [realtime, setRealtime] = useState<RealtimeData | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
+  const [range, setRange] = useState(() => rangeForPreset("last_30_days"));
+  const days = useMemo(() => {
+    if (!range.fromISO || !range.toISO) return 365;
+    return Math.max(1, Math.round((new Date(range.toISO).getTime() - new Date(range.fromISO).getTime()) / 86400000));
+  }, [range]);
 
   useEffect(() => {
     if (!ready) return;
@@ -76,13 +82,13 @@ export function SparkOverviewPage() {
       const [u, c, g, cp, n, l, ps, th, rt] = await Promise.all([
         safe(get<UsageResponse>("/api/v1/usage")),
         safe(get<{ data: Contact[] }>("/api/v1/contacts?limit=5")),
-        safe(get<{ data: GrowthVelocity }>("/api/v1/insights/growth-velocity?days=30")),
-        safe(get<{ data: CommPerf }>("/api/v1/insights/communication-performance?days=30")),
-        safe(get<{ data: NpsSummary }>("/api/v1/nps/summary?days=90")),
+        safe(get<{ data: GrowthVelocity }>(`/api/v1/insights/growth-velocity?days=${days}`)),
+        safe(get<{ data: CommPerf }>(`/api/v1/insights/communication-performance?days=${days}`)),
+        safe(get<{ data: NpsSummary }>(`/api/v1/nps/summary?days=${days}`)),
         safe(get<{ data: LeadRoi }>("/api/v1/insights/lead-gen-roi")),
         // v6.7 — IA Insights cross-page summary fetch
         safe(get<PriorScores>(`/api/v1/ia-insights/prior-scores?product=spark&beforeDate=${new Date(Date.now() + 86400_000).toISOString().slice(0,10)}`)),
-        safe(get<{ data: Array<{ period_end: string; score: number }> }>("/api/v1/ia-insights/score-history?product=spark&reportKey=presence&limit=12")),
+        safe(get<{ data: Array<{ period_end: string; score: number }> }>(`/api/v1/ia-insights/score-history?product=spark&reportKey=presence&limit=${Math.min(36, Math.max(3, Math.ceil(days / 30)))}`)),
         safe(get<RealtimeData>("/api/v1/usage/realtime?minutes=60")),
       ]);
       // pipelines → if any pipeline exists, pull the first one's funnel
@@ -110,7 +116,7 @@ export function SparkOverviewPage() {
     }
     load();
     return () => { cancelled = true; };
-  }, [get, ready]);
+  }, [get, ready, days]);
 
   // ─ Computed ────────────────────────────────────────────────────────────────
   const usageBars = useMemo(() => usage ? [
@@ -177,6 +183,10 @@ export function SparkOverviewPage() {
   return (
     <OliverPageWrapper title="SPARK Overview" subtitle="Your marketing + sales command center" error={error} loading={loading}>
       <div className="p-6 space-y-6">
+
+        <div className="flex justify-end">
+          <TimeRangeSelector value={range} onChange={setRange} />
+        </div>
 
         {/* ── IA INSIGHTS AT A GLANCE (v6.7) ───────────────────────────── */}
         <IAInsightsGlance
@@ -247,7 +257,7 @@ export function SparkOverviewPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
           {/* Communication performance */}
-          <Card title="Communication (30d)" className="lg:col-span-2" right={comm ? (
+          <Card title={`Communication · ${range.label}`} className="lg:col-span-2" right={comm ? (
             <div className="flex gap-4 text-xs text-gray-500">
               <span><b className="text-emerald-600">{comm.open_rate}%</b> open</span>
               <span><b className="text-blue-600">{comm.click_rate}%</b> click</span>
