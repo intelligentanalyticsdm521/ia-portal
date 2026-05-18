@@ -663,6 +663,11 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
   const [editAmt, setEditAmt] = useState("");
+  // Cadence is editable on reprice (backend archives old + creates new with
+  // the new interval — Stripe's only correct way to change a frequency).
+  const [editPreset, setEditPreset] = useState<string>("monthly");
+  const [editInterval, setEditInterval] = useState<"day" | "week" | "month" | "year">("month");
+  const [editIntervalCount, setEditIntervalCount] = useState("1");
   const isNew = !draft.offering_id;
 
   async function save() {
@@ -772,13 +777,38 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
   function startEdit(p: PriceVariant) {
     setEditingPriceId(p.price_id);
     setEditAmt(String(p.unit_amount ?? ""));
+    // Derive the matching cadence preset from the current price.
+    if (p.pricing_model === "one_time") {
+      setEditPreset("one_time");
+    } else {
+      const iv = p.recurring_interval || "month";
+      const cnt = p.recurring_interval_count || 1;
+      const match = PRICE_PRESETS.find(
+        (x) => x.model === "recurring" && x.interval === iv && (x.count || 1) === cnt && x.id !== "custom"
+      );
+      setEditPreset(match ? match.id : "custom");
+      setEditInterval((["day", "week", "month", "year"].includes(iv) ? iv : "month") as "day" | "week" | "month" | "year");
+      setEditIntervalCount(String(cnt));
+    }
   }
   async function saveReprice(p: PriceVariant) {
     const amt = Number(editAmt);
     if (!(amt >= 0)) return;
+    const preset = PRICE_PRESETS.find((x) => x.id === editPreset) ?? PRICE_PRESETS[3];
+    const isCustom = editPreset === "custom";
+    const pricingModel = preset.model;
+    const recurringInterval = pricingModel === "recurring"
+      ? (isCustom ? editInterval : preset.interval) : undefined;
+    const recurringIntervalCount = pricingModel === "recurring"
+      ? (isCustom ? (Number(editIntervalCount) || 1) : preset.count) : undefined;
     // Stripe Prices are immutable — backend archives the old & creates a new
-    // one, then updates this row in place. Feels editable; stays correct.
-    await api.post(`/catalog/prices/${p.price_id}/reprice`, { unitAmount: amt });
+    // one (new interval included), then updates this row in place.
+    await api.post(`/catalog/prices/${p.price_id}/reprice`, {
+      unitAmount: amt,
+      pricingModel,
+      recurringInterval,
+      recurringIntervalCount,
+    });
     setEditingPriceId(null);
     onSaved();
   }
@@ -898,7 +928,7 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
               <h3 className="text-sm font-semibold text-oliver-teal">Pricing</h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 Add as many prices as you want — e.g. a monthly <em>and</em> an annual rate.
-                {isNew ? " They’re created in Stripe when you save." : " Stripe Prices are immutable — to change an amount, archive the old one and add a new one."}
+                {isNew ? " They’re created in Stripe when you save." : " Edit a price’s amount or frequency and we archive the old Stripe Price and create the corrected one automatically (Stripe’s required pattern)."}
               </p>
             </div>
             <Button size="sm" variant="secondary" onClick={() => setShowAddPrice(true)}>+ Add price</Button>
@@ -932,14 +962,34 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
                 <div key={p.price_id} className={`px-3 py-2 flex items-center gap-3 ${!p.is_active ? "opacity-50" : ""}`}>
                   {editingPriceId === p.price_id ? (
                     <>
-                      <div className="flex items-center gap-2 flex-1">
+                      <div className="flex items-center gap-2 flex-1 flex-wrap">
                         <span className="text-sm text-slate-500">$</span>
                         <input type="number" min="0" step="0.01" autoFocus value={editAmt}
                           onChange={(e) => setEditAmt(e.target.value)}
-                          className="w-28 rounded ring-1 ring-gray-300 px-2 py-1 text-sm" />
-                        <span className="text-xs text-slate-500">
-                          {p.recurring_interval ? `/ ${p.recurring_interval_count && p.recurring_interval_count > 1 ? p.recurring_interval_count + " " : ""}${p.recurring_interval}` : "one-time"}
-                        </span>
+                          className="w-24 rounded ring-1 ring-gray-300 px-2 py-1 text-sm" />
+                        <select value={editPreset}
+                          onChange={(e) => setEditPreset(e.target.value)}
+                          className="rounded ring-1 ring-gray-300 px-2 py-1 text-sm">
+                          {PRICE_PRESETS.map((pr) => (
+                            <option key={pr.id} value={pr.id}>{pr.label}</option>
+                          ))}
+                        </select>
+                        {editPreset === "custom" && (
+                          <span className="flex items-center gap-1">
+                            <span className="text-xs text-slate-500">every</span>
+                            <input type="number" min="1" value={editIntervalCount}
+                              onChange={(e) => setEditIntervalCount(e.target.value)}
+                              className="w-14 rounded ring-1 ring-gray-300 px-2 py-1 text-sm" />
+                            <select value={editInterval}
+                              onChange={(e) => setEditInterval(e.target.value as "day" | "week" | "month" | "year")}
+                              className="rounded ring-1 ring-gray-300 px-2 py-1 text-sm">
+                              <option value="day">day(s)</option>
+                              <option value="week">week(s)</option>
+                              <option value="month">month(s)</option>
+                              <option value="year">year(s)</option>
+                            </select>
+                          </span>
+                        )}
                       </div>
                       <button onClick={() => saveReprice(p)} className="text-xs font-semibold text-oliver-teal">Save</button>
                       <button onClick={() => setEditingPriceId(null)} className="text-xs text-slate-500">Cancel</button>
