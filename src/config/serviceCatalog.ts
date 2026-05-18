@@ -125,7 +125,8 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_notifications', displayName: 'Notifications', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_notifications', description: 'ACS email notification history.' },
   { key: 'oliver_reports', displayName: 'Reports', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_reports', description: 'Revenue, job volume, and completion analytics with charts.' },
   { key: 'oliver_activity_log', displayName: 'Activity Log', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_activity_log', description: 'Full audit trail of all job status transitions.' },
-  { key: 'oliver_catalog', displayName: 'Service Catalog', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_catalog', description: 'Define your services and pricing. Each offering syncs to Stripe.' },
+  { key: 'oliver_catalog', displayName: 'Products & Services', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_catalog', description: 'Define your products and services and pricing. Each offering syncs to Stripe.' },
+  { key: 'oliver_categories', displayName: 'Categories', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_categories', description: 'Create and manage product/service categories.' },
   { key: 'oliver_billing_overview', displayName: 'Billing Overview', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_billing_overview', description: 'Stripe-style billing dashboard: gross volume, outstanding, MRR, and recent payments.' },
   { key: 'oliver_usage', displayName: 'Plan & Pricing', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_usage', description: 'OLIVER tier comparison + live plan total. See your current seats/jobs usage and switch tiers.' },
   // OLIVER v1.0 additions
