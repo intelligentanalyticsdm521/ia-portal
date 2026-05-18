@@ -406,7 +406,8 @@ const SPARK_NAV: SubNavConfig = {
       label: "", icon: LineChart,
       items: [
         { key: "spark_realtime_metrics", label: "Real-Time Activity", route: "/app/services/spark_realtime_metrics" },
-        { key: "spark_usage", label: "Usage & Billing", route: "/app/services/spark_usage" },
+        { key: "spark_usage", label: "Plan & Pricing", route: "/app/services/spark_usage" },
+        { key: "spark_usage_report", label: "Usage", route: "/app/services/spark_usage_report" },
         { key: "spark_api_reference", label: "API Reference", route: "/app/services/spark_api_reference" },
         { key: "spark_engine_docs", label: "IA Insights Engine Docs", route: "/app/services/spark_engine_docs" },
         { key: "spark_smoke_test", label: "Tenant Smoke Test", route: "/app/services/spark_smoke_test" },
