@@ -38,7 +38,6 @@ interface TierDef {
   key: TierKey;
   name: string;
   monthly: number;
-  setup: number;
   badge?: string;
   highlight?: boolean;
   oneLiner: string;
@@ -61,7 +60,6 @@ const TIERS: TierDef[] = [
     key: "lite",
     name: "Lite",
     monthly: 29,
-    setup: 99,
     oneLiner: "You do the steps",
     caps: { seats: 1, active_jobs: 9999, jobs_per_month: 50, active_recurring: 0, pricebook_items: 25, workflow_templates: 0 },
     bullets: [
@@ -76,7 +74,6 @@ const TIERS: TierDef[] = [
     key: "standard",
     name: "Standard",
     monthly: 39,
-    setup: 149,
     oneLiner: "Standard does it for you",
     caps: { seats: 5, active_jobs: 9999, jobs_per_month: 9999, active_recurring: 25, pricebook_items: 100, workflow_templates: 25 },
     bullets: [
@@ -92,7 +89,6 @@ const TIERS: TierDef[] = [
     key: "pro",
     name: "Pro",
     monthly: 69,
-    setup: 299,
     badge: "Most Popular",
     highlight: true,
     oneLiner: "Growing operation",
@@ -111,7 +107,6 @@ const TIERS: TierDef[] = [
     key: "business",
     name: "Business",
     monthly: 129,
-    setup: 499,
     oneLiner: "Multi-location operators",
     caps: { seats: 25, active_jobs: 9999, jobs_per_month: 9999, active_recurring: 500, pricebook_items: 9999, workflow_templates: 9999 },
     bullets: [
@@ -426,10 +421,6 @@ export function OliverUsagePage() {
                   <span>−10% applied</span>
                 </div>
               )}
-              <div className="flex items-center justify-between text-[11px] pt-1 text-white/60">
-                <span>One-time setup</span>
-                <span>${tierDef.setup}</span>
-              </div>
               {feeLine(tier) && (
                 <div className="flex items-center justify-between text-[11px] pt-1 text-white/60">
                   <span>Card processing</span>
