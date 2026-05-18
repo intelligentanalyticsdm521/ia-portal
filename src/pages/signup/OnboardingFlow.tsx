@@ -17,6 +17,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { fetchSessionInfo, type SignupSessionInfo } from '../../lib/onboardingApi';
+import { fetchSignupSession, createSignupComplete } from '../../lib/signupCheckout';
 import {
   StepIndicator,
   DomainStep,
@@ -33,7 +34,9 @@ import {
 const API_BASE = (import.meta.env.VITE_ARION_API_BASE_URL as string)
   || 'https://app-arion-api-prod-e6fuc9gzd8f3hqfe.centralus-01.azurewebsites.net';
 
-export function OnboardingFlow() {
+// Legacy ARION website-build wizard (domain/questionnaire/branding) —
+// unchanged. Reached only when the session is NOT an OLIVER/SPARK signup.
+function ArionOnboardingFlow() {
   const sessionId = useMemo(() => new URLSearchParams(window.location.search).get('session_id') || '', []);
 
   const [step, setStep] = useState<WizardStep>('domain');
@@ -184,5 +187,142 @@ export function OnboardingFlow() {
         )}
       </main>
     </div>
+  );
+}
+
+// ── Dispatcher ────────────────────────────────────────────────────────────
+// OLIVER/SPARK self-serve = simple post-payment flow (the single Stripe
+// account / oliver-api). ARION self-serve = the legacy website wizard above.
+export function OnboardingFlow() {
+  const sessionId = useMemo(() => new URLSearchParams(window.location.search).get('session_id') || '', []);
+  const [kind, setKind] = useState<'loading' | 'product' | 'arion'>('loading');
+  const [sess, setSess] = useState<{ email: string; product: string; plan: string } | null>(null);
+
+  useEffect(() => {
+    if (!sessionId) { setKind('arion'); return; }
+    let cancelled = false;
+    let tries = 0;
+    (async function poll() {
+      while (!cancelled && tries < 8) {
+        try {
+          const s = await fetchSignupSession(sessionId);
+          if ('product' in s && (s.product === 'oliver' || s.product === 'spark')) {
+            if (!cancelled) { setSess({ email: s.email, product: s.product, plan: s.plan }); setKind('product'); }
+            return;
+          }
+          if ('status' in s && (s as { status: string }).status === 'pending') {
+            tries += 1; await new Promise((r) => setTimeout(r, 2000)); continue;
+          }
+          if (!cancelled) setKind('arion'); // not an oliver/spark intent
+          return;
+        } catch {
+          // 404 / not a unified-signup session → it's the ARION flow.
+          if (!cancelled) setKind('arion');
+          return;
+        }
+      }
+      if (!cancelled && kind === 'loading') setKind('product'); // webhook slow; still product
+    })();
+    return () => { cancelled = true; };
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (kind === 'loading') {
+    return <div className="min-h-screen flex items-center justify-center text-gray-500">Activating your account…</div>;
+  }
+  if (kind === 'arion') return <ArionOnboardingFlow />;
+  return <ProductSignupFlow sessionId={sessionId} email={sess?.email || ''} product={sess?.product || 'oliver'} />;
+}
+
+// ── OLIVER/SPARK post-payment: company profile → create tenant → sign in ──
+function ProductSignupFlow({ sessionId, email, product }: { sessionId: string; email: string; product: string }) {
+  const [businessName, setBusinessName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [website, setWebsite] = useState('');
+  const [city, setCity] = useState('');
+  const [stateProv, setStateProv] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function submit() {
+    setErr(null);
+    if (!businessName.trim()) { setErr('Business name is required.'); return; }
+    setBusy(true);
+    try {
+      await createSignupComplete(sessionId, {
+        businessName: businessName.trim(),
+        primaryContactPhone: phone || undefined,
+        websiteUrl: website || undefined,
+        city: city || undefined,
+        stateProvince: stateProv || undefined,
+      });
+      setDone(true);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally { setBusy(false); }
+  }
+
+  const productLabel = product === 'spark' ? 'SPARK' : 'OLIVER';
+
+  if (done) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6">
+        <div className="max-w-md text-center bg-white rounded-2xl shadow p-8">
+          <div className="text-3xl mb-3">🎉</div>
+          <h1 className="text-2xl font-bold text-gray-900">You're all set</h1>
+          <p className="mt-2 text-gray-600">
+            Your {productLabel} account is ready. Sign in with <strong>{email}</strong> to finish setup —
+            you'll be prompted to create your password.
+          </p>
+          <a href="/" className="inline-block mt-6 rounded-lg bg-[#EF6C33] px-6 py-3 text-white font-semibold hover:bg-[#d75a25]">
+            Sign in to your account →
+          </a>
+          <p className="mt-3 text-xs text-gray-500">Use the same email you paid with so we link your subscription.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="border-b border-gray-200 bg-white">
+        <div className="mx-auto max-w-3xl px-6 py-4 text-xl font-bold text-gray-900">Intelligent Analytics</div>
+      </header>
+      <main className="mx-auto max-w-xl px-6 py-12">
+        <div className="text-center mb-8">
+          <div className="text-xs uppercase tracking-wide text-[#EF6C33] font-bold">Payment received · {productLabel}</div>
+          <h1 className="mt-2 text-3xl font-bold text-gray-900">Tell us about your business</h1>
+          <p className="mt-2 text-gray-600">This sets up your account. You enter it once — it's shared across every product.</p>
+        </div>
+        <div className="bg-white rounded-2xl shadow p-6 space-y-4">
+          <Field label="Business name *">
+            <input value={businessName} onChange={(e) => setBusinessName(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Rolling In It LLC" />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Phone"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></Field>
+            <Field label="Website"><input value={website} onChange={(e) => setWebsite(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="https://" /></Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="City"><input value={city} onChange={(e) => setCity(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></Field>
+            <Field label="State / Region"><input value={stateProv} onChange={(e) => setStateProv(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></Field>
+          </div>
+          {err && <div className="text-sm text-red-600">{err}</div>}
+          <button disabled={busy} onClick={submit}
+            className="w-full rounded-lg bg-[#EF6C33] px-6 py-3 text-white font-semibold disabled:opacity-50 hover:bg-[#d75a25]">
+            {busy ? 'Setting up your account…' : 'Finish setup →'}
+          </button>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="block text-xs font-semibold text-gray-600 mb-1">{label}</span>
+      {children}
+    </label>
   );
 }

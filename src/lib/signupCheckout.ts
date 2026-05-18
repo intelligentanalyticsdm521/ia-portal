@@ -64,3 +64,16 @@ export interface SignupSession {
 export function fetchSignupSession(sessionId: string) {
   return j<SignupSession | { status: "pending" }>(`/signup/session?session_id=${encodeURIComponent(sessionId)}`);
 }
+
+export interface SignupProfileInput {
+  businessName: string;
+  primaryContactPhone?: string;
+  addressLine1?: string; city?: string; stateProvince?: string;
+  postalCode?: string; countryRegion?: string; websiteUrl?: string;
+}
+export function createSignupComplete(sessionId: string, profile: SignupProfileInput) {
+  return j<{ tenant_id: string; product: string; email?: string; already?: boolean }>(
+    "/signup/complete",
+    { method: "POST", body: JSON.stringify({ session_id: sessionId, profile }) },
+  );
+}
