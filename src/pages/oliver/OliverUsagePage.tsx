@@ -211,6 +211,7 @@ export function OliverUsagePage() {
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
   const [showFullFeatures, setShowFullFeatures] = useState(false);
   const [pricing, setPricing] = useState<Record<string, PlanPricingRow>>({});
+  const [cx, setCx] = useState<{ cxTier: string; pricing: Record<string, { price: number; label: string }> } | null>(null);
 
   // ─ Derived ─────────────────────────────────────────────────────────────
   const tierDef = useMemo(() => TIERS.find(t => t.key === tier) || TIERS[1], [tier]);
@@ -228,15 +229,17 @@ export function OliverUsagePage() {
       setLoading(true); setError(null);
       try {
         // /tier-limits/usage returns { data: { tier, usage: { seats: {used, limit}, … } } }
-        const [raw, priceRes] = await Promise.all([
+        const [raw, priceRes, cxRes] = await Promise.all([
           get<UsageResponse>("/tier-limits/usage"),
           get<{ data: PlanPricingRow[] }>("/tier-limits/plan-pricing").catch(() => ({ data: [] as PlanPricingRow[] })),
+          get<{ data: { cxTier: string; pricing: Record<string, { price: number; label: string }> } }>("/client-experience").catch(() => null),
         ]);
         if (!cancelled) {
           setUsage(raw?.data || null);
           const pmap: Record<string, PlanPricingRow> = {};
           (priceRes?.data || []).forEach((r) => { pmap[r.tier] = r; });
           setPricing(pmap);
+          if (cxRes?.data) setCx({ cxTier: cxRes.data.cxTier, pricing: cxRes.data.pricing });
           const live = raw?.data?.tier?.toLowerCase();
           if (live === "lite" || live === "standard" || live === "pro" || live === "business") setTier(live);
         }
@@ -260,7 +263,7 @@ export function OliverUsagePage() {
   }
 
   return (
-    <OliverPageWrapper title="Usage & Plan" subtitle="Pick your tier — usage tracked live" error={error} loading={loading}>
+    <OliverPageWrapper title="Plan & Pricing" subtitle={usage?.tier ? `You're on the ${String(usage.tier).replace(/^\w/, c => c.toUpperCase())} plan` : "Pick your tier — usage tracked live"} error={error} loading={loading}>
       {/* ── CURRENT USAGE STRIP ─────────────────────────────────────────── */}
       {usage && (
         <div className="card mb-4">
@@ -310,7 +313,9 @@ export function OliverUsagePage() {
               {TIERS.map(t => (
                 <button key={t.key} type="button" onClick={() => setTier(t.key)}
                   className={`text-left rounded-lg p-3 transition border-2 ${tier === t.key ? "border-[#FEC82C] bg-white/10" : "border-white/10 bg-white/5 hover:bg-white/10"}`}>
-                  {t.badge && <div className="text-[9px] uppercase font-bold text-[#FEC82C] mb-1">{t.badge}</div>}
+                  {usage?.tier?.toLowerCase() === t.key
+                    ? <div className="text-[9px] uppercase font-bold text-emerald-300 mb-1">✓ Current plan</div>
+                    : t.badge && <div className="text-[9px] uppercase font-bold text-[#FEC82C] mb-1">{t.badge}</div>}
                   <div className="font-bold text-base">{t.name}</div>
                   <div className="text-[11px] text-white/60 mb-2">{t.oneLiner}</div>
                   <div className="text-xl font-bold">${billingCycle === "annual" ? annualPrice(baseMonthly(t.key)) : baseMonthly(t.key)}<span className="text-xs font-normal text-white/60">/mo</span></div>
@@ -372,21 +377,38 @@ export function OliverUsagePage() {
             </div>
           </div>
 
-          {/* Add-ons + fee transparency */}
+          {/* Client Experience add-on — real cards */}
           <div className="card">
             <div className="card-hdr">
               <div>
-                <div className="card-ttl">Add-ons & fees</div>
-                <div className="card-sub">Extend OLIVER and see exactly what you pay</div>
+                <div className="card-ttl">Client Experience add-on</div>
+                <div className="card-sub">
+                  {cx && cx.cxTier !== "none"
+                    ? <>Active: <strong className="text-emerald-600">{(cx.pricing[cx.cxTier]?.label) || cx.cxTier}</strong></>
+                    : "Optional — white-label portal, automations & retention tools"}
+                </div>
               </div>
+              <a href="/app/services/oliver_client_experience" className="text-xs text-[#1A7DB5] font-medium hover:underline">Manage →</a>
             </div>
-            <div className="px-4 pb-4 text-sm text-slate-600 space-y-2">
-              <a href="/app/services/oliver_client_experience" className="flex items-start gap-2 text-[#1A7DB5] hover:underline">
-                <Check className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-                <span>Client Experience add-on — Essentials $19.99 · Growth $49.99 · Authority $99.99/mo</span>
-              </a>
-              <a href="/app/services/oliver_fees" className="flex items-start gap-2 text-[#1A7DB5] hover:underline">
-                <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-4 pb-4">
+              {(["essentials", "growth", "authority"] as const).map((k) => {
+                const p = cx?.pricing?.[k];
+                const active = cx?.cxTier === k;
+                return (
+                  <div key={k} className={`rounded-lg border-2 p-3 ${active ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-white"}`}>
+                    {active && <div className="text-[9px] uppercase font-bold text-emerald-600 mb-1">✓ Current</div>}
+                    <div className="text-sm font-bold text-slate-800 capitalize">{k}</div>
+                    <div className="text-lg font-bold text-slate-900">
+                      ${p ? p.price.toFixed(2) : (k === "essentials" ? "19.99" : k === "growth" ? "49.99" : "99.99")}
+                      <span className="text-xs font-normal text-slate-400">/mo</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="px-4 pb-4">
+              <a href="/app/services/oliver_fees" className="flex items-center gap-2 text-xs text-[#1A7DB5] hover:underline">
+                <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
                 <span>See the full fee breakdown (Stripe + platform, including caps) →</span>
               </a>
             </div>
