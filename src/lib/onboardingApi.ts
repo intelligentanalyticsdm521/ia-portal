@@ -11,9 +11,11 @@ const API_BASE = (import.meta.env.VITE_ARION_API_BASE_URL as string)
 
 export type BillingCycle = 'monthly' | 'annual';
 export type DomainMode = 'purchase' | 'byod';
+export type SignupProduct = 'arion' | 'oliver' | 'spark';
 
 export interface PlanCatalogEntry {
-  key: 'starter' | 'essentials' | 'growth' | 'authority';
+  key: string; // arion: starter|essentials|growth|authority · oliver: lite|standard|pro|business · spark: standard|pro|business
+  product?: SignupProduct;
   name: string;
   description: string;
   features: string[];
@@ -67,14 +69,16 @@ async function getJson<T>(path: string): Promise<T> {
 // ---------------------------------------------------------------------------
 // Plan catalog + checkout
 // ---------------------------------------------------------------------------
-export async function fetchPlanCatalog(): Promise<PlanCatalogEntry[]> {
-  const data = await getJson<{ plans: PlanCatalogEntry[] }>('/onboarding/checkout/catalog');
+export async function fetchPlanCatalog(product: SignupProduct = 'arion'): Promise<PlanCatalogEntry[]> {
+  const data = await getJson<{ plans: PlanCatalogEntry[] }>(
+    `/onboarding/checkout/catalog?product=${encodeURIComponent(product)}`);
   return data.plans;
 }
 
 export interface CheckoutSessionInput {
   email: string;
   name?: string;
+  product?: SignupProduct;
   plan: PlanCatalogEntry['key'];
   billing_cycle: BillingCycle;
   domain: { mode: DomainMode; name?: string; registration_price_usd?: number };
@@ -120,6 +124,7 @@ export async function pollByodStatus(domain: string) {
 // ---------------------------------------------------------------------------
 export interface SignupSessionInfo {
   email: string;
+  product?: SignupProduct;
   plan: { key: string; name: string; description: string | null };
   billing_cycle: BillingCycle;
   tenant_status: string;

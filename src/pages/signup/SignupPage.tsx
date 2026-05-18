@@ -18,10 +18,28 @@
  *     (b) avoiding domain choice before payment reduces drop-off.
  */
 
-import { useEffect, useState } from 'react';
-import { fetchPlanCatalog, createCheckoutSession, type PlanCatalogEntry, type BillingCycle } from '../../lib/onboardingApi';
+import { useEffect, useMemo, useState } from 'react';
+import { fetchPlanCatalog, createCheckoutSession, type PlanCatalogEntry, type BillingCycle, type SignupProduct } from '../../lib/onboardingApi';
+
+const PRODUCT_COPY: Record<SignupProduct, { title: string; sub: string; footer: string }> = {
+  arion:  { title: 'Get your AI-built website live in minutes', sub: "Pick a plan. Pay. Answer a few questions. We'll handle everything else.", footer: "You'll pick your domain on the next step." },
+  oliver: { title: 'Start running your field service on OLIVER', sub: 'Pick a plan and pay — then a quick setup and you can send your first invoice.', footer: "You'll set up your business profile next." },
+  spark:  { title: 'Start growing with SPARK CRM & marketing', sub: 'Pick a plan and pay — then a quick setup and you can import contacts and send.', footer: "You'll set up your business profile next." },
+};
+
+function readParams(): { product: SignupProduct; plan: string | null; billing: BillingCycle } {
+  const q = new URLSearchParams(window.location.search);
+  const p = (q.get('product') || 'arion').toLowerCase();
+  const product: SignupProduct = (p === 'oliver' || p === 'spark') ? p : 'arion';
+  const billing = q.get('billing') === 'monthly' ? 'monthly' : 'annual';
+  return { product, plan: q.get('plan'), billing };
+}
 
 export function SignupPage() {
+  const params = useMemo(readParams, []);
+  const product = params.product;
+  const copy = PRODUCT_COPY[product];
+
   const [plans, setPlans] = useState<PlanCatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -29,15 +47,23 @@ export function SignupPage() {
 
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
-  const [cycle, setCycle] = useState<BillingCycle>('annual');
-  const [selectedPlan, setSelectedPlan] = useState<PlanCatalogEntry['key']>('growth');
+  const [cycle, setCycle] = useState<BillingCycle>(params.billing);
+  const [selectedPlan, setSelectedPlan] = useState<string>(params.plan || '');
 
   useEffect(() => {
-    fetchPlanCatalog()
-      .then((data) => setPlans(data))
+    fetchPlanCatalog(product)
+      .then((data) => {
+        setPlans(data);
+        // Honor ?plan= if valid, else default to a sensible plan per product.
+        const valid = data.some((d) => d.key === params.plan);
+        if (!valid) {
+          const fallback = product === 'arion' ? 'growth' : product === 'oliver' ? 'standard' : 'standard';
+          setSelectedPlan(data.some((d) => d.key === fallback) ? fallback : (data[0]?.key || ''));
+        }
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [product, params.plan]);
 
   async function handleContinue() {
     setError(null);
@@ -50,11 +76,12 @@ export function SignupPage() {
       const session = await createCheckoutSession({
         email,
         name: name || undefined,
+        product,
         plan: selectedPlan,
         billing_cycle: cycle,
-        // Domain decision is deferred until after Stripe success.
-        // We send a "byod" placeholder so the API doesn't reject the request;
-        // the real domain step happens in OnboardingFlow.
+        // Domain decision is ARION-only and deferred until after Stripe
+        // success. The byod placeholder keeps the API happy for every product
+        // (OLIVER/SPARK have no domain step at all).
         domain: { mode: 'byod' },
       });
       window.location.href = session.checkout_url;
@@ -75,8 +102,8 @@ export function SignupPage() {
 
       <main className="mx-auto max-w-6xl px-6 py-12">
         <div className="text-center mb-10">
-          <h1 className="text-4xl font-bold text-gray-900">Get your AI-built website live in minutes</h1>
-          <p className="mt-3 text-lg text-gray-600">Pick a plan. Pay. Answer a few questions. We'll handle everything else.</p>
+          <h1 className="text-4xl font-bold text-gray-900">{copy.title}</h1>
+          <p className="mt-3 text-lg text-gray-600">{copy.sub}</p>
         </div>
 
         {/* Email */}
@@ -152,8 +179,8 @@ export function SignupPage() {
           </div>
         )}
 
-        {/* Free first year on annual notice */}
-        {cycle === 'annual' && (
+        {/* Free first year on annual notice — ARION only (it registers a domain) */}
+        {cycle === 'annual' && product === 'arion' && (
           <div className="mx-auto max-w-2xl mt-8 rounded-lg bg-green-50 border border-green-200 p-4 text-sm text-green-900 text-center">
             <strong>Annual plan bonus:</strong> Your first year of domain registration is on us when you choose to buy a new domain.
           </div>
@@ -169,7 +196,7 @@ export function SignupPage() {
           >
             {submitting ? 'Redirecting to checkout…' : 'Continue to checkout →'}
           </button>
-          <p className="text-xs text-gray-500">You'll pick your domain on the next step.</p>
+          <p className="text-xs text-gray-500">{copy.footer}</p>
         </div>
       </main>
     </div>
