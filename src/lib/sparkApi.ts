@@ -4,6 +4,7 @@
 
 import type { IPublicClientApplication, AccountInfo } from "@azure/msal-browser";
 import { authScopes } from "../auth/msalConfig";
+import { consultingHeaders } from "./consultingSession";
 
 const SPARK_API_BASE =
   (import.meta.env.VITE_SPARK_API_BASE as string) ||
@@ -39,6 +40,7 @@ async function sparkFetch<T>(
       Authorization: `Bearer ${token}`,
       "x-tenant-id": tenantId,
       "Content-Type": "application/json",
+      ...consultingHeaders(),
       ...(init?.headers as Record<string, string>),
     },
   });
