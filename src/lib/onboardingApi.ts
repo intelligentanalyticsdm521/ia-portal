@@ -132,6 +132,10 @@ export interface SignupSessionInfo {
   saved_questionnaire: Record<string, unknown> | null;
   saved_domain: { mode: DomainMode; domain: string; pricePerYear?: number } | null;
   already_submitted: boolean;
+  // Canonical org fields from the SHARED platform profile (core.tenants).
+  // Used to prefill the wizard so the customer doesn't re-type what the
+  // operator already entered. Null when there's no shared record yet.
+  shared_profile?: { businessName?: string; primaryColor?: string } | null;
 }
 
 export async function fetchSessionInfo(sessionId: string): Promise<SignupSessionInfo> {

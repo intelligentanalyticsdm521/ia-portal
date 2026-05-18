@@ -26,7 +26,7 @@ interface Progress {
 }
 
 const ACTION_MAP: Record<string, { href: string; cta: string; help: string }> = {
-  spark_account_profile:  { href: "/app/services/spark_overview",        cta: "Set up profile",  help: "Add your business name and From email so people know who's emailing them." },
+  spark_account_profile:  { href: "/app/services/spark_account_profile",  cta: "Review profile",  help: "Your shared business profile (name, contact, address, branding) is reused across every product. Review what's prefilled and save — no re-entry." },
   spark_sender_domain:    { href: "/app/services/spark_sender_domains",  cta: "Verify domain",   help: "Send from your own domain to dramatically improve deliverability and trust." },
   spark_import_contacts:  { href: "/app/services/spark_contacts",        cta: "Import contacts", help: "Upload your existing list — CSV import or paste emails. You need 10+ to enable campaigns." },
   spark_first_campaign:   { href: "/app/services/spark_campaigns",       cta: "Build campaign",  help: "Send a first email to your imported list. Test on yourself first using the Email Templates editor." },

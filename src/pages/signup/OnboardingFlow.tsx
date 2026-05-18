@@ -56,6 +56,19 @@ export function OnboardingFlow() {
             setSessionInfo(info);
             if (info.saved_questionnaire) {
               setAnswers((a) => ({ ...a, ...(info.saved_questionnaire as Partial<QuestionnaireAnswers>) }));
+            } else if (info.shared_profile) {
+              // No resumed progress — prefill canonical fields from the
+              // SHARED platform profile so the customer reviews instead of
+              // re-typing. Only fill fields the user hasn't already set.
+              const sp = info.shared_profile;
+              setAnswers((a) => ({
+                ...a,
+                businessName: a.businessName || sp.businessName || a.businessName,
+                primaryColor:
+                  a.primaryColor && a.primaryColor !== DEFAULT_ANSWERS.primaryColor
+                    ? a.primaryColor
+                    : sp.primaryColor || a.primaryColor,
+              }));
             }
             if (info.saved_domain) {
               setDomain(info.saved_domain as DomainSelection);
