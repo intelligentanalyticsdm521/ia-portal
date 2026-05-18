@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { useAppState } from "../../app/AppState";
 import { isPlatformOwner } from "../../lib/currentPlan";
+import { changePlan } from "../../lib/billingApi";
+import { useAccessToken } from "../../auth/useAccessToken";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import {
   Mail, MessageSquare, Users, Target, Check, AlertCircle, ChevronDown, ChevronUp,
@@ -219,7 +221,10 @@ const LEAD_GEN_TIERS: LeadGenTier[] = [
 // ─ Page ──────────────────────────────────────────────────────────────────────
 
 export function SparkUsagePage() {
-  const { get, post, ready } = useSparkApi();
+  const { get, ready } = useSparkApi();
+  const { getToken } = useAccessToken();
+  const [acting, setActing] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
   const [usage, setUsage] = useState<UsageResponse["data"] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
@@ -493,38 +498,38 @@ export function SparkUsagePage() {
 
             <button
               type="button"
+              disabled={acting || owner}
               onClick={async () => {
+                if (!activeTenantId) return;
+                setActing(true); setMsg(null);
                 try {
-                  const lineItems: { tier: string; cycle: typeof billingCycle }[] = [];
-                  // Map slider to a per-volume key like "5k","10k","25k" via the basePrice
-                  // Use the email step as the "tier" identifier — backend env should declare
-                  // STRIPE_PRICE_SPARK_<TIER>_<CYCLE> with names like SPARK_5K, SPARK_10K, etc.
+                  const tk = await getToken();
                   const volumeKey = targetEmails >= 1000 ? `${targetEmails / 1000}k` : `${targetEmails}`;
-                  lineItems.push({ tier: `volume_${volumeKey}`, cycle: billingCycle });
-                  if (tier !== "standard") lineItems.push({ tier, cycle: billingCycle });
-                  if (lgTierObj) lineItems.push({ tier: `leadgen_${lgTierObj.key}`, cycle: billingCycle });
-                  const r = await post<{ url: string }>("/api/v1/billing/checkout", {
-                    product: "spark",
-                    line_items: lineItems,
-                    success_url: `${window.location.origin}/app/services/spark_usage?checkout=success`,
-                    cancel_url: `${window.location.origin}/app/services/spark_usage?checkout=cancel`,
-                    metadata: { volume: targetEmails, tier, lead_gen: lgTierObj?.key || null },
+                  const includedMap: Record<string, number> = { essentials: 50, growth: 100, authority: 150 };
+                  const leadsKey = lgTierObj?.key || null;
+                  const leadsSelected = leadsKey
+                    ? (includedMap[leadsKey] ?? 0) + (lgExtras || 0) : undefined;
+                  const r = await changePlan({
+                    token: tk.accessToken, tenantId: activeTenantId,
+                    body: {
+                      product: "spark", billing_cycle: billingCycle,
+                      volume: volumeKey,
+                      featureAddon: tier !== "standard" ? tier : null,
+                      leads: leadsKey, leadsSelected,
+                    },
                   });
-                  if (r?.url) { window.location.href = r.url; }
-                } catch (err) {
-                  const msg = err instanceof Error ? err.message : String(err);
-                  if (msg.includes("503") || msg.toLowerCase().includes("not configured")) {
-                    alert("Stripe is not yet wired up in this environment. Email support@iadm.io to change your plan.");
-                  } else {
-                    alert(`Checkout failed: ${msg}`);
-                  }
-                }
+                  if (r.mode === "checkout" && r.url) { window.location.href = r.url; return; }
+                  setMsg(r.message || "Done.");
+                } catch (e) {
+                  setMsg(e instanceof Error ? e.message : "Could not process the change.");
+                } finally { setActing(false); }
               }}
-              className="mt-4 w-full py-2.5 rounded-md bg-[#EF6C33] hover:bg-[#d75a25] font-semibold text-white transition"
+              className={`mt-4 w-full py-2.5 rounded-md font-semibold transition ${(acting || owner) ? "bg-white/10 text-white/50 cursor-default" : "bg-[#EF6C33] hover:bg-[#d75a25] text-white"}`}
             >
-              {usage?.tier === tier ? "Update plan" : `Switch to ${tier.toUpperCase()}`}
+              {owner ? "Platform account — included" : acting ? "Working…" : usage?.tier === tier ? "Update plan" : `Purchase ${tier.toUpperCase()}`}
             </button>
-            <p className="text-[10px] text-white/50 mt-2 text-center">Cancel or downgrade anytime · No long-term contract</p>
+            {msg && <div className="mt-2 text-[11px] text-emerald-300 text-center">{msg}</div>}
+            <p className="text-[10px] text-white/50 mt-2 text-center">Cancel or downgrade anytime · No long-term contract · No setup fee</p>
           </div>
         </div>
       </div>

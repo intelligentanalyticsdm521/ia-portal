@@ -204,7 +204,7 @@ function fmtNum(n: number | null | undefined): string {
 }
 
 export function OliverUsagePage() {
-  const { get, ready } = useOliverApi();
+  const { get, post, ready } = useOliverApi();
   const [usage, setUsage] = useState<UsageResponse["data"] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
@@ -212,6 +212,8 @@ export function OliverUsagePage() {
   const [tier, setTier] = useState<TierKey>("standard");
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
   const [showFullFeatures, setShowFullFeatures] = useState(false);
+  const [acting, setActing] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
   const [pricing, setPricing] = useState<Record<string, PlanPricingRow>>({});
   const [cx, setCx] = useState<{ cxTier: string; pricing: Record<string, { price: number; label: string }> } | null>(null);
 
@@ -242,6 +244,7 @@ export function OliverUsagePage() {
   const selCxPrice = currentCx && currentCx !== "none" ? cxPx(currentCx) : 0; // CX not changed on this page
   const selTotal = monthlyPrice + selCxPrice;
   const changed = tier !== currentTier;
+  const hasCurrent = owner || !!(usage && usage.tier);
 
   // ─ Load usage ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -499,14 +502,22 @@ export function OliverUsagePage() {
 
             <button
               type="button"
-              disabled={!changed}
-              onClick={() => {
-                window.location.href = "mailto:support@iadm.io?subject=OLIVER plan change&body=Please change my OLIVER tier to " + tierDef.name + " (" + billingCycle + ").";
+              disabled={(!changed && hasCurrent) || acting}
+              onClick={async () => {
+                setActing(true); setMsg(null);
+                try {
+                  const r = await post<{ mode: string; url?: string; message?: string }>(
+                    "/billing/change", { product: "oliver", billing_cycle: billingCycle, plan: tier });
+                  if (r?.mode === "checkout" && r.url) { window.location.href = r.url; return; }
+                  setMsg(r?.message || "Done.");
+                } catch (e) { setMsg(e instanceof Error ? e.message : "Could not process the change."); }
+                finally { setActing(false); }
               }}
-              className={`mt-4 w-full py-2.5 rounded-md font-semibold transition ${changed ? "bg-[#FEC82C] hover:bg-[#e3b424] text-[#1A3A4A]" : "bg-white/10 text-white/50 cursor-default"}`}
+              className={`mt-4 w-full py-2.5 rounded-md font-semibold transition ${((!changed && hasCurrent) || acting) ? "bg-white/10 text-white/50 cursor-default" : "bg-[#FEC82C] hover:bg-[#e3b424] text-[#1A3A4A]"}`}
             >
-              {changed ? `Upgrade to ${tierDef.name.toUpperCase()}` : "This is your current plan"}
+              {acting ? "Working…" : (!changed && hasCurrent) ? "This is your current plan" : hasCurrent ? `Upgrade to ${tierDef.name.toUpperCase()}` : `Purchase ${tierDef.name.toUpperCase()}`}
             </button>
+            {msg && <div className="mt-2 text-[11px] text-emerald-300 text-center">{msg}</div>}
             <p className="text-[10px] text-white/50 mt-2 text-center">Cancel or downgrade anytime · No long-term contract · No setup fee</p>
           </div>
         </div>

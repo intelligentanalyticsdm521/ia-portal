@@ -11,7 +11,8 @@ import { Check, AlertCircle, ChevronDown, ChevronUp, Search } from "lucide-react
 import { useAppState } from "../../app/AppState";
 import { useAccessToken } from "../../auth/useAccessToken";
 import { getArionOverview } from "../../lib/arionApi";
-import { isPlatformOwner, OWNER_DEFAULTS } from "../../lib/currentPlan";
+import { isPlatformOwner } from "../../lib/currentPlan";
+import { changePlan } from "../../lib/billingApi";
 
 interface Props { service?: PortalService; status?: ServiceStatus; }
 
@@ -102,6 +103,24 @@ export function ArionUsagePage(_: Props) {
   const [seo, setSeo] = useState<SeoKey | null>(owner ? "authority" : null);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
   const [showFullFeatures, setShowFullFeatures] = useState(false);
+  const [acting, setActing] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function purchase() {
+    if (!activeTenantId) return;
+    setActing(true); setMsg(null);
+    try {
+      const t = await getToken();
+      const r = await changePlan({
+        token: t.accessToken, tenantId: activeTenantId,
+        body: { product: "arion", billing_cycle: billingCycle, plan: base, seo: seo || null },
+      });
+      if (r.mode === "checkout" && r.url) { window.location.href = r.url; return; }
+      setMsg(r.message || "Done.");
+    } catch (e) {
+      setMsg((e as Error).message || "Could not process the change.");
+    } finally { setActing(false); }
+  }
 
   useEffect(() => {
     if (owner) {
@@ -299,14 +318,12 @@ export function ArionUsagePage(_: Props) {
 
             <button
               type="button"
-              disabled={!changed && hasCurrent}
-              onClick={() => {
-                window.location.href = "mailto:support@iadm.io?subject=ARION plan change&body=" + encodeURIComponent(
-                  `Please change my ARION plan to ${baseDef.name} (${billingCycle})${seoDef ? ` with ${seoDef.name}` : ""}.`);
-              }}
-              className={`mt-4 w-full py-2.5 rounded-md font-semibold transition ${(!changed && hasCurrent) ? "bg-white/10 text-white/50 cursor-default" : "bg-[#FFD166] hover:bg-[#e6bb5c] text-[#0C4A60]"}`}>
-              {(!changed && hasCurrent) ? "This is your current plan" : hasCurrent ? `Upgrade to ${baseDef.name}${seoDef ? ` + ${seoDef.name.replace("SEO ", "")}` : ""}` : `Get ${baseDef.name}${seoDef ? ` + ${seoDef.name.replace("SEO ", "")}` : ""}`}
+              disabled={(!changed && hasCurrent) || acting}
+              onClick={purchase}
+              className={`mt-4 w-full py-2.5 rounded-md font-semibold transition ${((!changed && hasCurrent) || acting) ? "bg-white/10 text-white/50 cursor-default" : "bg-[#FFD166] hover:bg-[#e6bb5c] text-[#0C4A60]"}`}>
+              {acting ? "Working…" : (!changed && hasCurrent) ? "This is your current plan" : hasCurrent ? `Upgrade to ${baseDef.name}${seoDef ? ` + ${seoDef.name.replace("SEO ", "")}` : ""}` : `Purchase ${baseDef.name}${seoDef ? ` + ${seoDef.name.replace("SEO ", "")}` : ""}`}
             </button>
+            {msg && <div className="mt-2 text-[11px] text-emerald-300 text-center">{msg}</div>}
             <p className="text-[10px] text-white/50 mt-2 text-center">Cancel or downgrade anytime · No long-term contract · No setup fee</p>
           </div>
         </div>
