@@ -20,6 +20,10 @@ jobs:
   steps:
   - checkout: self
     submodules: true
+  - script: |
+      echo "{\"commit\":\"$(Build.SourceVersion)\",\"builtAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"buildId\":\"$(Build.BuildId)\"}" > public/version.json
+      cat public/version.json
+    displayName: 'Stamp public/version.json (Vite copies public/ -> dist)'
   - task: AzureStaticWebApp@0
     inputs:
       azure_static_web_apps_api_token: $(AZURE_STATIC_WEB_APPS_API_TOKEN_GREEN_MUD_0D1055E10)
