@@ -98,8 +98,7 @@ const OLIVER_NAV: SubNavConfig = {
       items: [
         { key: "oliver_billing_overview", label: "Overview", route: "/app/services/oliver_billing_overview" },
         { key: "oliver_invoices", label: "Invoices", route: "/app/services/oliver_invoices" },
-        { key: "oliver_quotes", label: "Quotes", route: "/app/services/oliver_quotes" },
-        { key: "oliver_proposals", label: "Proposals", route: "/app/services/oliver_proposals" },
+        { key: "oliver_quotes", label: "Quotes & Proposals", route: "/app/services/oliver_quotes" },
         { key: "oliver_recurring", label: "Recurring & Subscriptions", route: "/app/services/oliver_recurring" },
         { key: "oliver_payments", label: "Payments", route: "/app/services/oliver_payments" },
         { key: "oliver_templates", label: "Template Library", route: "/app/services/oliver_templates" },
