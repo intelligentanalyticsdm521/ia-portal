@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { useAppState } from "../../app/AppState";
+import { isPlatformOwner } from "../../lib/currentPlan";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import {
   Mail, MessageSquare, Users, Target, Check, AlertCircle, ChevronDown, ChevronUp,
@@ -231,6 +233,16 @@ export function SparkUsagePage() {
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
   const [showFullFeatures, setShowFullFeatures] = useState(false);
 
+  // Founder/platform-owner = always the top of SPARK (max volume + Business
+  // feature tier + Authority Lead Gen), full access, never charged. Everyone
+  // else shows their real current tier.
+  const { activeTenantId } = useAppState();
+  const owner = isPlatformOwner(activeTenantId);
+  const currentTier: "standard" | "pro" | "business" = owner
+    ? "business"
+    : (usage?.tier === "pro" || usage?.tier === "business" ? usage.tier : "standard");
+  const currentLeadGen: LeadGenTier["key"] | null = owner ? "authority" : null;
+
   // ─ Derived ───────────────────────────────────────────────────────────────
   const targetEmails = EMAIL_STEPS[emailsIdx];
   const targetContacts = contactsForEmails(targetEmails);
@@ -261,7 +273,12 @@ export function SparkUsagePage() {
         const raw = await get<UsageResponse>("/api/v1/usage");
         if (!cancelled) {
           setUsage(raw.data || null);
-          if (raw.data?.tier === "pro") setTier("pro");
+          if (isPlatformOwner(activeTenantId)) {
+            // Founder: max everything.
+            setEmailsIdx(EMAIL_STEPS.length - 1);
+            setTier("business");
+            setLeadGenTier("authority");
+          } else if (raw.data?.tier === "pro") setTier("pro");
           else if (raw.data?.tier === "business") setTier("business");
         }
       } catch (err) { if (!cancelled) setError(err); }
@@ -399,17 +416,19 @@ export function SparkUsagePage() {
               <TierCard
                 title="Standard" subtitle="The CRM essentials" addOn={0}
                 active={tier === "standard"} onClick={() => setTier("standard")}
+                current={currentTier === "standard"}
                 bullets={["Contacts / Lists / Tags / Segments", "Email + SMS campaigns", "Forms + UTM tracking", "Basic Insights"]}
               />
               <TierCard
                 title="Pro" subtitle="Marketing power tools" addOn={tierAddOn("pro", billingCycle)}
-                active={tier === "pro"} onClick={() => setTier("pro")} accent
+                active={tier === "pro"} onClick={() => setTier("pro")} accent current={currentTier === "pro"}
                 bullets={["Sales Pipeline + Deals (Kanban)", "Newsletter Studio + WP auto-publish", "Social Scheduler + Calendar", "Landing Pages, NPS, Referrals", "Reputation Hub"]}
                 more={2}
               />
               <TierCard
                 title="Business" subtitle="Pro + AI + B2B" addOn={tierAddOn("business", billingCycle)}
                 active={tier === "business"} onClick={() => setTier("business")}
+                current={currentTier === "business"}
                 bullets={["Everything in Pro", "B2B Companies + account reporting", "AI Writer (full access)", "IA Intelligence monthly + on-demand", "Annual deep-dive AI report"]}
                 more={2}
               />
@@ -533,6 +552,7 @@ export function SparkUsagePage() {
               key={lt.key}
               tier={lt}
               active={leadGenTier === lt.key}
+              current={currentLeadGen === lt.key}
               extras={leadExtras[lt.key]}
               onActivate={() => setLeadGenTier(lt.key)}
               onExtrasChange={(n) => setLeadExtras(e => ({ ...e, [lt.key]: n }))}
@@ -560,9 +580,9 @@ export function SparkUsagePage() {
 
 // ─ Sub-components ────────────────────────────────────────────────────────────
 
-function TierCard({ title, subtitle, addOn, active, onClick, bullets, accent, more }: {
+function TierCard({ title, subtitle, addOn, active, onClick, bullets, accent, more, current }: {
   title: string; subtitle: string; addOn: number; active: boolean; onClick: () => void;
-  bullets: string[]; accent?: boolean; more?: number;
+  bullets: string[]; accent?: boolean; more?: number; current?: boolean;
 }) {
   return (
     <button
@@ -576,6 +596,7 @@ function TierCard({ title, subtitle, addOn, active, onClick, bullets, accent, mo
             : "border-slate-200 hover:border-slate-300 bg-white"
       }`}
     >
+      {current && <div className="text-[9px] uppercase font-bold text-emerald-600 mb-1">✓ Current plan</div>}
       <div className="flex items-baseline justify-between">
         <div>
           <div className={`text-sm font-bold ${active ? "text-[#EF6C33]" : "text-slate-900"}`}>{title}</div>
@@ -670,14 +691,15 @@ function Line({ label, value, accent, discount, sub }: { label: string; value: n
   );
 }
 
-function LeadGenCard({ tier, active, extras, onActivate, onExtrasChange }: {
+function LeadGenCard({ tier, active, extras, onActivate, onExtrasChange, current }: {
   tier: LeadGenTier; active: boolean; extras: number;
-  onActivate: () => void; onExtrasChange: (n: number) => void;
+  onActivate: () => void; onExtrasChange: (n: number) => void; current?: boolean;
 }) {
   return (
     <div className={`rounded-xl bg-[#0B1C24] text-white p-5 shadow-lg ring-1 transition-all ${
       active ? "ring-2 ring-[#EF6C33]" : "ring-white/10 hover:ring-white/20"
     }`}>
+      {current && <div className="text-[9px] uppercase font-bold text-emerald-300 mb-1">✓ Current plan</div>}
       <div className="flex items-baseline justify-between">
         <div>
           <div className="text-[10px] uppercase tracking-wider font-bold text-[#EF6C33]">{tier.name.split(" ")[1]}</div>

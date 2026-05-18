@@ -12,6 +12,8 @@
 // live only on the standalone Fees page (owner decision 2026-05-18).
 import { useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useAppState } from "../../app/AppState";
+import { isPlatformOwner } from "../../lib/currentPlan";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { Check, AlertCircle, ChevronDown, ChevronUp, Users, Briefcase, RotateCw } from "lucide-react";
 
@@ -219,7 +221,27 @@ export function OliverUsagePage() {
   const baseMonthly = (k: TierKey) => pricing[k]?.monthly ?? (TIERS.find(t => t.key === k)?.monthly ?? 0);
   const feeLine = (k: TierKey) => pricing[k]?.processingFee || "";
   const monthlyPrice = billingCycle === "annual" ? annualPrice(baseMonthly(tier)) : baseMonthly(tier);
-  const annualBilled = monthlyPrice * 12;
+
+  // Current subscription. Founder/platform-owner = always Business + CX
+  // Authority (full access, never charged). Everyone else = their real tier.
+  const { activeTenantId } = useAppState();
+  const owner = isPlatformOwner(activeTenantId);
+  const currentTier: TierKey = owner
+    ? "business"
+    : ((["lite", "standard", "pro", "business"] as TierKey[]).includes(
+        String(usage?.tier || "").toLowerCase() as TierKey)
+        ? (String(usage?.tier).toLowerCase() as TierKey) : "lite");
+  const currentCx = owner ? "authority" : (cx?.cxTier || "none");
+  const cxPx = (k: string) => {
+    const p = cx?.pricing?.[k]?.price ?? 0;
+    return billingCycle === "annual" ? annualPrice(p) : p;
+  };
+  const curBasePrice = billingCycle === "annual" ? annualPrice(baseMonthly(currentTier)) : baseMonthly(currentTier);
+  const curCxPrice = currentCx && currentCx !== "none" ? cxPx(currentCx) : 0;
+  const curTotal = curBasePrice + curCxPrice;
+  const selCxPrice = currentCx && currentCx !== "none" ? cxPx(currentCx) : 0; // CX not changed on this page
+  const selTotal = monthlyPrice + selCxPrice;
+  const changed = tier !== currentTier;
 
   // ─ Load usage ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -241,7 +263,8 @@ export function OliverUsagePage() {
           setPricing(pmap);
           if (cxRes?.data) setCx({ cxTier: cxRes.data.cxTier, pricing: cxRes.data.pricing });
           const live = raw?.data?.tier?.toLowerCase();
-          if (live === "lite" || live === "standard" || live === "pro" || live === "business") setTier(live);
+          if (isPlatformOwner(activeTenantId)) setTier("business");
+          else if (live === "lite" || live === "standard" || live === "pro" || live === "business") setTier(live);
         }
       } catch (err) { if (!cancelled) setError(err); }
       finally { if (!cancelled) setLoading(false); }
@@ -313,7 +336,7 @@ export function OliverUsagePage() {
               {TIERS.map(t => (
                 <button key={t.key} type="button" onClick={() => setTier(t.key)}
                   className={`text-left rounded-lg p-3 transition border-2 ${tier === t.key ? "border-[#FEC82C] bg-white/10" : "border-white/10 bg-white/5 hover:bg-white/10"}`}>
-                  {usage?.tier?.toLowerCase() === t.key
+                  {currentTier === t.key
                     ? <div className="text-[9px] uppercase font-bold text-emerald-300 mb-1">✓ Current plan</div>
                     : t.badge && <div className="text-[9px] uppercase font-bold text-[#FEC82C] mb-1">{t.badge}</div>}
                   <div className="font-bold text-base">{t.name}</div>
@@ -393,7 +416,7 @@ export function OliverUsagePage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-4 pb-4">
               {(["essentials", "growth", "authority"] as const).map((k) => {
                 const p = cx?.pricing?.[k];
-                const active = cx?.cxTier === k;
+                const active = currentCx === k;
                 return (
                   <div key={k} className={`rounded-lg border-2 p-3 ${active ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-white"}`}>
                     {active && <div className="text-[9px] uppercase font-bold text-emerald-600 mb-1">✓ Current</div>}
@@ -435,48 +458,56 @@ export function OliverUsagePage() {
               </button>
             </div>
 
+            {/* Current plan line items */}
             <div className="space-y-1.5 text-sm">
-              <Line label={`${tierDef.name} base`} value={monthlyPrice} />
-              {billingCycle === "annual" && (
-                <div className="flex items-center justify-between text-[11px] pt-1 text-emerald-300">
-                  <span>Annual billing</span>
-                  <span>−10% applied</span>
+              <div className="text-[10px] uppercase tracking-wider text-white/50 mb-1">Current</div>
+              <Line label={`OLIVER ${TIERS.find(t => t.key === currentTier)?.name || currentTier}`} value={curBasePrice} struck={changed} />
+              {currentCx !== "none" && cx?.pricing?.[currentCx] && (
+                <Line label={`Client Experience ${cx.pricing[currentCx].label?.replace(/^Client Experience /, "") || currentCx}`} value={curCxPrice} accent struck={changed} />
+              )}
+              {feeLine(currentTier) && !changed && (
+                <div className="flex items-center justify-between text-[11px] pt-1 text-white/60">
+                  <span>Card processing</span><span>{feeLine(currentTier)}</span>
                 </div>
               )}
-              {feeLine(tier) && (
-                <div className="flex items-center justify-between text-[11px] pt-1 text-white/60">
-                  <span>Card processing</span>
-                  <span>{feeLine(tier)}</span>
+              {!changed && (
+                <div className="mt-2 pt-2 border-t border-white/15 flex items-baseline justify-between">
+                  <span className="text-sm text-white/70">Total</span>
+                  <div className="text-right"><span className="text-3xl font-bold">${curTotal.toFixed(2)}</span><span className="text-xs text-white/60 ml-1">/mo</span></div>
                 </div>
               )}
             </div>
 
-            <div className="mt-4 pt-4 border-t border-white/15 flex items-baseline justify-between">
-              <span className="text-sm text-white/70">Total</span>
-              <div className="text-right">
-                <span className="text-3xl font-bold">${monthlyPrice.toFixed(2)}</span>
-                <span className="text-xs text-white/60 ml-1">/mo</span>
+            {/* Upgrade preview */}
+            {changed && (
+              <div className="space-y-1.5 text-sm mt-3">
+                <div className="text-[10px] uppercase tracking-wider text-[#FEC82C] mb-1">New plan</div>
+                <Line label={`OLIVER ${tierDef.name}`} value={monthlyPrice} />
+                {currentCx !== "none" && cx?.pricing?.[currentCx] && (
+                  <Line label={`Client Experience ${cx.pricing[currentCx].label?.replace(/^Client Experience /, "") || currentCx}`} value={selCxPrice} accent />
+                )}
+                {feeLine(tier) && (
+                  <div className="flex items-center justify-between text-[11px] pt-1 text-white/60"><span>Card processing</span><span>{feeLine(tier)}</span></div>
+                )}
+                <div className="mt-2 pt-2 border-t border-white/15 flex items-baseline justify-between">
+                  <span className="text-sm text-white/70">New total</span>
+                  <div className="text-right"><span className="text-3xl font-bold">${selTotal.toFixed(2)}</span><span className="text-xs text-white/60 ml-1">/mo</span></div>
+                </div>
+                {billingCycle === "annual" && <p className="text-[11px] text-white/50 text-right mt-0.5">Billed as ${(selTotal * 12).toFixed(2)}/yr</p>}
               </div>
-            </div>
-            {billingCycle === "annual" && (
-              <p className="text-[11px] text-white/50 text-right mt-0.5">Billed as ${annualBilled.toFixed(2)}/yr</p>
             )}
 
             <button
               type="button"
+              disabled={!changed}
               onClick={() => {
-                // v1.0: OLIVER tier change goes through manual support to avoid double
-                // Stripe customer creation. Tenant-level Stripe customer is established
-                // via SPARK billing (one customer = all products) and OLIVER is added as
-                // a separate subscription item to the same customer. v1.1 will surface
-                // this via a direct Stripe Checkout session here.
-                window.location.href = "mailto:support@iadm.io?subject=OLIVER plan change&body=Please switch my OLIVER tier to " + tierDef.name + " (" + billingCycle + ").";
+                window.location.href = "mailto:support@iadm.io?subject=OLIVER plan change&body=Please change my OLIVER tier to " + tierDef.name + " (" + billingCycle + ").";
               }}
-              className="mt-4 w-full py-2.5 rounded-md bg-[#FEC82C] hover:bg-[#e3b424] font-semibold text-[#1A3A4A] transition"
+              className={`mt-4 w-full py-2.5 rounded-md font-semibold transition ${changed ? "bg-[#FEC82C] hover:bg-[#e3b424] text-[#1A3A4A]" : "bg-white/10 text-white/50 cursor-default"}`}
             >
-              {usage?.tier === tier ? "Update plan" : `Switch to ${tierDef.name.toUpperCase()}`}
+              {changed ? `Upgrade to ${tierDef.name.toUpperCase()}` : "This is your current plan"}
             </button>
-            <p className="text-[10px] text-white/50 mt-2 text-center">Cancel or downgrade anytime · No long-term contract</p>
+            <p className="text-[10px] text-white/50 mt-2 text-center">Cancel or downgrade anytime · No long-term contract · No setup fee</p>
           </div>
         </div>
       </div>
@@ -493,11 +524,11 @@ function CapPill({ label, value }: { label: string; value: number }) {
   );
 }
 
-function Line({ label, value, accent, sub }: { label: string; value: number; accent?: boolean; sub?: boolean }) {
+function Line({ label, value, accent, sub, struck }: { label: string; value: number; accent?: boolean; sub?: boolean; struck?: boolean }) {
   return (
     <div className={`flex items-center justify-between ${sub ? "text-[11px] text-white/60 pl-3" : "text-sm"}`}>
-      <span className={accent ? "text-[#FEC82C]" : "text-white/80"}>{label}</span>
-      <span className={`font-semibold ${accent ? "text-[#FEC82C]" : ""}`}>${value.toFixed(2)}</span>
+      <span className={`${accent ? "text-[#FEC82C]" : "text-white/80"} ${struck ? "line-through opacity-50" : ""}`}>{label}</span>
+      <span className={`font-semibold ${accent ? "text-[#FEC82C]" : ""} ${struck ? "line-through opacity-50" : ""}`}>${value.toFixed(2)}</span>
     </div>
   );
 }
