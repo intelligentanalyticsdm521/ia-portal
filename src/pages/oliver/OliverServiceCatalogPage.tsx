@@ -661,6 +661,8 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
   const [showAddPrice, setShowAddPrice] = useState(false);
   const [draftPrices, setDraftPrices] = useState<DraftPrice[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
+  const [editAmt, setEditAmt] = useState("");
   const isNew = !draft.offering_id;
 
   async function save() {
@@ -765,6 +767,19 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
   async function archivePrice(price: PriceVariant) {
     if (!confirm("Archive this price? Stripe Prices can't be deleted — this hides it from new sales.")) return;
     await api.patch(`/catalog/prices/${price.price_id}`, { isActive: false });
+    onSaved();
+  }
+  function startEdit(p: PriceVariant) {
+    setEditingPriceId(p.price_id);
+    setEditAmt(String(p.unit_amount ?? ""));
+  }
+  async function saveReprice(p: PriceVariant) {
+    const amt = Number(editAmt);
+    if (!(amt >= 0)) return;
+    // Stripe Prices are immutable — backend archives the old & creates a new
+    // one, then updates this row in place. Feels editable; stays correct.
+    await api.post(`/catalog/prices/${p.price_id}/reprice`, { unitAmount: amt });
+    setEditingPriceId(null);
     onSaved();
   }
 
@@ -915,20 +930,40 @@ function OfferingDrawer({ offering, categories, onClose, onSaved, api }: Offerin
             <div className="rounded-lg ring-1 ring-gray-200 divide-y divide-gray-100">
               {(draft.prices ?? []).map((p) => (
                 <div key={p.price_id} className={`px-3 py-2 flex items-center gap-3 ${!p.is_active ? "opacity-50" : ""}`}>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-slate-800">
-                      {fmtPrice(p)}
-                      {p.label && <span className="ml-2 text-xs text-slate-500">({p.label})</span>}
-                    </div>
-                    {p.trial_days ? <div className="text-xs text-slate-500">{p.trial_days}-day trial</div> : null}
-                  </div>
-                  {p.is_default && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-oliver-gold-100 text-oliver-gold-700 ring-1 ring-oliver-gold-300">DEFAULT</span>}
-                  {p.stripe_price_id && <span className="text-[10px] font-mono text-slate-400">{p.stripe_price_id}</span>}
-                  {!p.is_default && p.is_active && (
-                    <button onClick={() => togglePriceDefault(p)} className="text-xs text-slate-500 hover:text-oliver-teal">Make default</button>
-                  )}
-                  {p.is_active && (
-                    <button onClick={() => archivePrice(p)} className="text-xs text-red-500 hover:text-red-700">Archive</button>
+                  {editingPriceId === p.price_id ? (
+                    <>
+                      <div className="flex items-center gap-2 flex-1">
+                        <span className="text-sm text-slate-500">$</span>
+                        <input type="number" min="0" step="0.01" autoFocus value={editAmt}
+                          onChange={(e) => setEditAmt(e.target.value)}
+                          className="w-28 rounded ring-1 ring-gray-300 px-2 py-1 text-sm" />
+                        <span className="text-xs text-slate-500">
+                          {p.recurring_interval ? `/ ${p.recurring_interval_count && p.recurring_interval_count > 1 ? p.recurring_interval_count + " " : ""}${p.recurring_interval}` : "one-time"}
+                        </span>
+                      </div>
+                      <button onClick={() => saveReprice(p)} className="text-xs font-semibold text-oliver-teal">Save</button>
+                      <button onClick={() => setEditingPriceId(null)} className="text-xs text-slate-500">Cancel</button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-slate-800">
+                          {fmtPrice(p)}
+                          {p.label && <span className="ml-2 text-xs text-slate-500">({p.label})</span>}
+                        </div>
+                        {p.trial_days ? <div className="text-xs text-slate-500">{p.trial_days}-day trial</div> : null}
+                      </div>
+                      {p.is_default && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-oliver-gold-100 text-oliver-gold-700 ring-1 ring-oliver-gold-300">DEFAULT</span>}
+                      {p.is_active && (
+                        <button onClick={() => startEdit(p)} className="text-xs text-slate-500 hover:text-oliver-teal">Edit price</button>
+                      )}
+                      {!p.is_default && p.is_active && (
+                        <button onClick={() => togglePriceDefault(p)} className="text-xs text-slate-500 hover:text-oliver-teal">Make default</button>
+                      )}
+                      {p.is_active && (
+                        <button onClick={() => archivePrice(p)} className="text-xs text-red-500 hover:text-red-700">Archive</button>
+                      )}
+                    </>
                   )}
                 </div>
               ))}
