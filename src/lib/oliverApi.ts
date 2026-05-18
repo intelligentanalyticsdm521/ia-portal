@@ -7,6 +7,7 @@
 
 import type { IPublicClientApplication, AccountInfo } from "@azure/msal-browser";
 import { authScopes } from "../auth/msalConfig";
+import { consultingHeaders } from "./consultingSession";
 
 const OLIVER_API_BASE =
   (import.meta.env.VITE_OLIVER_API_BASE as string) ||
@@ -41,6 +42,7 @@ async function oliverFetch<T>(
       Authorization: `Bearer ${token}`,
       "x-tenant-key": tenantId,
       "Content-Type": "application/json",
+      ...consultingHeaders(),
       ...(init?.headers as Record<string, string>),
     },
   });

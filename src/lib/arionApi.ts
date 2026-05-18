@@ -1,3 +1,5 @@
+import { consultingHeaders } from './consultingSession';
+
 export type SetupMode = 'ARION_AUTO_SETUP' | 'EXISTING_INTEGRATION';
 
 export interface ArionSiteSummary {
@@ -256,7 +258,8 @@ async function requestJson<T>(params: {
     headers: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json',
-      'x-tenant-key': params.tenantId
+      'x-tenant-key': params.tenantId,
+      ...consultingHeaders()
     },
     body: params.body === undefined ? undefined : JSON.stringify(params.body)
   }, params.timeoutMs || defaultTimeout);

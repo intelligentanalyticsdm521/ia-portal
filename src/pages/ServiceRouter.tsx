@@ -212,6 +212,10 @@ const OliverProjectsPage = lazyNamed(() => import('./oliver/OliverProjectsPage')
 const OliverDisputesPage = lazyNamed(() => import('./oliver/OliverDisputesPage'), 'OliverDisputesPage');
 const OliverProposalsPage = lazyNamed(() => import('./oliver/OliverProposalsPage'), 'OliverProposalsPage');
 const OliverUsagePage = lazyNamed(() => import('./oliver/OliverUsagePage'), 'OliverUsagePage');
+const OliverFeesPage = lazyNamed(() => import('./oliver/OliverFeesPage'), 'OliverFeesPage');
+const OliverClientExperiencePage = lazyNamed(() => import('./oliver/OliverClientExperiencePage'), 'OliverClientExperiencePage');
+const OliverPortalDesignerPage = lazyNamed(() => import('./oliver/OliverPortalDesignerPage'), 'OliverPortalDesignerPage');
+const OliverAutomationsPage = lazyNamed(() => import('./oliver/OliverAutomationsPage'), 'OliverAutomationsPage');
 // OLIVER v1.0 additions
 const OliverWorkflowTemplatesPage = lazyNamed(() => import('./oliver/OliverWorkflowTemplatesPage'), 'OliverWorkflowTemplatesPage');
 const OliverJobOffersPage = lazyNamed(() => import('./oliver/OliverJobOffersPage'), 'OliverJobOffersPage');
@@ -232,6 +236,8 @@ const ArionPluginProvisioningPage = lazyNamed(() => import('./arion/ArionPluginP
 const ConsultingOverviewPage = lazyNamed(() => import('./consulting/ConsultingOverviewPage'), 'ConsultingOverviewPage');
 const ConsultingEngagementWrapper = lazyNamed(() => import('./consulting/ConsultingEngagementWrapper'), 'ConsultingEngagementWrapper');
 const ConsultingCalendarPage = lazyNamed(() => import('./consulting/ConsultingCalendarPage'), 'ConsultingCalendarPage');
+const ConsultingWorkspacePage = lazyNamed(() => import('./consulting/ConsultingWorkspacePage'), 'ConsultingWorkspacePage');
+const ConsultingAccessLogPage = lazyNamed(() => import('./consulting/ConsultingAccessLogPage'), 'ConsultingAccessLogPage');
 
 // Shared loading fallback used by every Suspense boundary in this router.
 function RouteLoading() {
@@ -373,6 +379,10 @@ export function ServiceRouter() {
       case 'oliver_disputes': oliverPage = <OliverDisputesPage />; break;
       case 'oliver_proposals': oliverPage = <OliverProposalsPage />; break;
       case 'oliver_usage': oliverPage = <OliverUsagePage />; break;
+      case 'oliver_fees': oliverPage = <OliverFeesPage />; break;
+      case 'oliver_client_experience': oliverPage = <OliverClientExperiencePage />; break;
+      case 'oliver_portal_designer': oliverPage = <OliverPortalDesignerPage />; break;
+      case 'oliver_automations': oliverPage = <OliverAutomationsPage />; break;
       // v1.0 additions
       case 'oliver_workflow_templates': oliverPage = <OliverWorkflowTemplatesPage />; break;
       case 'oliver_job_offers': oliverPage = <OliverJobOffersPage />; break;
@@ -530,6 +540,8 @@ export function ServiceRouter() {
       case 'consulting_engine_tasks': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_engine" view="tasks" />; break;
       case 'consulting_engine_deliverables': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_engine" view="deliverables" />; break;
       case 'consulting_calendar': consultingPage = <ConsultingCalendarPage />; break;
+      case 'consulting_workspace': consultingPage = <ConsultingWorkspacePage />; break;
+      case 'consulting_access_log': consultingPage = <ConsultingAccessLogPage />; break;
       default: break;
     }
     if (consultingPage) {

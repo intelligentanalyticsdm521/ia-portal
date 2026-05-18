@@ -468,3 +468,83 @@ export async function updateProfile(params: {
 
   return body as ProfileResponse;
 }
+
+/* ── Consulting Access ──────────────────────────────────────────────────── */
+
+export interface ConsultingClient {
+  tenant_id: string;
+  name: string | null;
+  full_name: string | null;
+  managed?: boolean;
+  scope?: string;
+  expires_at?: string | null;
+  via: 'platform_admin' | 'grant';
+}
+export interface ConsultingAccessEntry {
+  user_email: string | null;
+  action: string;
+  summary: string | null;
+  metadata_json: string | null;
+  occurred_at: string;
+}
+
+async function consultingGet<T>(params: {
+  baseUrl: string; bearerToken: string; tenantId: string; path: string;
+}): Promise<T> {
+  const url = `${normalizeBaseUrl(params.baseUrl)}${params.path}`;
+  const res = await fetchWithTimeout(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${params.bearerToken}`,
+      'Content-Type': 'application/json',
+      'x-tenant-key': params.tenantId
+    }
+  });
+  const body = safeJsonParse(await res.text());
+  if (!res.ok) {
+    const msg = typeof body === 'object' && body && 'error' in body
+      ? String((body as any).error) : `Request failed (${res.status})`;
+    throw new PlatformApiError(msg, res.status, body);
+  }
+  return body as T;
+}
+
+export function getConsultingClients(params: {
+  baseUrl: string; bearerToken: string; tenantId: string;
+}): Promise<{ operatorRole: string; clients: ConsultingClient[] }> {
+  return consultingGet({ ...params, path: '/consulting/clients' });
+}
+
+export function getConsultingManaged(params: {
+  baseUrl: string; bearerToken: string; tenantId: string;
+}): Promise<{ managed: boolean; activeGrants: number }> {
+  return consultingGet({ ...params, path: '/consulting/managed' });
+}
+
+export function getConsultingAccessLog(params: {
+  baseUrl: string; bearerToken: string; tenantId: string;
+}): Promise<{ entries: ConsultingAccessEntry[] }> {
+  return consultingGet({ ...params, path: '/consulting/access-log' });
+}
+
+export async function setConsultingManaged(params: {
+  baseUrl: string; bearerToken: string; tenantId: string; enabled: boolean;
+}): Promise<{ managed: boolean }> {
+  const url = `${normalizeBaseUrl(params.baseUrl)}/consulting/managed`;
+  const res = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${params.bearerToken}`,
+      'Content-Type': 'application/json',
+      'x-tenant-key': params.tenantId
+    },
+    body: JSON.stringify({ enabled: params.enabled })
+  });
+  const body = safeJsonParse(await res.text());
+  if (!res.ok) {
+    const msg = typeof body === 'object' && body && 'error' in body
+      ? String((body as any).error) : `Request failed (${res.status})`;
+    throw new PlatformApiError(msg, res.status, body);
+  }
+  return body as { managed: boolean };
+}

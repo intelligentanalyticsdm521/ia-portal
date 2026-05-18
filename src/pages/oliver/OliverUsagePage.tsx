@@ -5,14 +5,11 @@
 // driven. Public pricing reference:
 //   https://intelligentanalyticsdm.com/platforms/oliver/oliver-pricing
 //
-// Tiers + monthly prices (annual = 10% off):
-//   Lite       $39    1 seat   · 50 jobs/mo · 25 active
-//   Standard   $79    3 seats  · 250 jobs/mo · 100 active
-//   Pro        $149   10 seats · 1,000 jobs/mo · 500 active
-//   Business   $299   50 seats · 10,000 jobs/mo · 5,000 active
-//   Enterprise Custom · Unlimited
-//
-// Add-ons (Client Experience Pack, Microsoft IT Management) are deferred to v2.
+// Tiers + monthly prices come LIVE from oliver-api GET /tier-limits/plan-pricing
+// (canonical source: lib/tierFeatures.js PLAN_PRICING — Lite $29 / Standard $39
+// / Pro $69 / Business $129 / Enterprise $249). Each card also shows ONE
+// combined processing-fee line (Stripe + IA blended); the cap + full split
+// live only on the standalone Fees page (owner decision 2026-05-18).
 import { useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
@@ -56,32 +53,35 @@ interface TierDef {
   bullets: string[];
 }
 
+// Caps mirror oliver-api/lib/tierFeatures.js TIER_CAPS (9999 sentinel renders
+// as "Unlimited"). Monthly price is overlaid live from the API; the `monthly`
+// here is only a pre-load fallback.
 const TIERS: TierDef[] = [
   {
     key: "lite",
     name: "Lite",
-    monthly: 39,
+    monthly: 29,
     setup: 99,
-    oneLiner: "Solo operator essentials",
-    caps: { seats: 1, active_jobs: 25, jobs_per_month: 50, active_recurring: 5, pricebook_items: 25, workflow_templates: 5 },
+    oneLiner: "You do the steps",
+    caps: { seats: 1, active_jobs: 9999, jobs_per_month: 50, active_recurring: 0, pricebook_items: 25, workflow_templates: 0 },
     bullets: [
-      "Full job lifecycle (draft → completed)",
+      "Full job lifecycle (manual)",
       "Calendar + scheduling",
       "Invoices + Stripe Connect payments",
-      "Customer portal + 2-way messaging",
+      "View & pay customer portal",
       "Service catalog + price book",
     ],
   },
   {
     key: "standard",
     name: "Standard",
-    monthly: 79,
+    monthly: 39,
     setup: 149,
-    oneLiner: "Small team ready",
-    caps: { seats: 3, active_jobs: 100, jobs_per_month: 250, active_recurring: 25, pricebook_items: 100, workflow_templates: 25 },
+    oneLiner: "Standard does it for you",
+    caps: { seats: 5, active_jobs: 9999, jobs_per_month: 9999, active_recurring: 25, pricebook_items: 100, workflow_templates: 25 },
     bullets: [
       "Everything in Lite",
-      "Recurring jobs + subscriptions",
+      "Recurring jobs (approval queue)",
       "Worker dispatch + assignments",
       "Workflow template library",
       "Support tickets + job offers",
@@ -91,29 +91,29 @@ const TIERS: TierDef[] = [
   {
     key: "pro",
     name: "Pro",
-    monthly: 149,
+    monthly: 69,
     setup: 299,
     badge: "Most Popular",
     highlight: true,
     oneLiner: "Growing operation",
-    caps: { seats: 10, active_jobs: 500, jobs_per_month: 1000, active_recurring: 100, pricebook_items: 500, workflow_templates: 100 },
+    caps: { seats: 10, active_jobs: 9999, jobs_per_month: 9999, active_recurring: 100, pricebook_items: 500, workflow_templates: 100 },
     bullets: [
       "Everything in Standard",
+      "Auto-scheduled recurring (no approval)",
       "Multi-option (good/better/best) quoting",
       "Time tracking — timer + billable rollup",
       "Expense tracking + reimbursements",
       "Customer self-service reschedule",
       "Branded proposals + e-signatures",
-      "Projects (multi-job engagements)",
     ],
   },
   {
     key: "business",
     name: "Business",
-    monthly: 299,
+    monthly: 129,
     setup: 499,
     oneLiner: "Multi-location operators",
-    caps: { seats: 50, active_jobs: 5000, jobs_per_month: 10000, active_recurring: 500, pricebook_items: 9999, workflow_templates: 9999 },
+    caps: { seats: 25, active_jobs: 9999, jobs_per_month: 9999, active_recurring: 500, pricebook_items: 9999, workflow_templates: 9999 },
     bullets: [
       "Everything in Pro",
       "Job costing + margin reporting",
@@ -128,6 +128,16 @@ const TIERS: TierDef[] = [
 
 function annualPrice(monthly: number): number {
   return +(monthly * 0.9).toFixed(2);
+}
+
+// Live pricing from the API (single source of truth).
+interface PlanPricingRow {
+  tier: string;
+  label: string;
+  monthly: number | null;
+  processingFee: string;
+  processingFeePercent: number;
+  processingFeeFlat: number;
 }
 
 // ─ Feature comparison table ──────────────────────────────────────────────────
@@ -162,7 +172,7 @@ const FEATURE_SECTIONS: { section: string; rows: FeatureRow[] }[] = [
   {
     section: "Team & operations",
     rows: [
-      { label: "User seats", desc: "Lite 1 · Std 3 · Pro 10 · Business 50", lite: true, std: true, pro: true, biz: true, status: "built" },
+      { label: "User seats", desc: "Lite 1 · Std 5 · Pro 10 · Business 25", lite: true, std: true, pro: true, biz: true, status: "built" },
       { label: "Worker dispatch + assignments", lite: false, std: true, pro: true, biz: true, status: "built" },
       { label: "Roles + permissions (Admin / Accountant)", lite: false, std: true, pro: true, biz: true, status: "built" },
       { label: "Time tracking (timer + billable)", lite: false, std: false, pro: true, biz: true, status: "built" },
@@ -205,10 +215,14 @@ export function OliverUsagePage() {
   const [tier, setTier] = useState<TierKey>("standard");
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
   const [showFullFeatures, setShowFullFeatures] = useState(false);
+  const [pricing, setPricing] = useState<Record<string, PlanPricingRow>>({});
 
   // ─ Derived ─────────────────────────────────────────────────────────────
   const tierDef = useMemo(() => TIERS.find(t => t.key === tier) || TIERS[1], [tier]);
-  const monthlyPrice = billingCycle === "annual" ? annualPrice(tierDef.monthly) : tierDef.monthly;
+  // Live price wins; static `monthly` is only a pre-load fallback.
+  const baseMonthly = (k: TierKey) => pricing[k]?.monthly ?? (TIERS.find(t => t.key === k)?.monthly ?? 0);
+  const feeLine = (k: TierKey) => pricing[k]?.processingFee || "";
+  const monthlyPrice = billingCycle === "annual" ? annualPrice(baseMonthly(tier)) : baseMonthly(tier);
   const annualBilled = monthlyPrice * 12;
 
   // ─ Load usage ──────────────────────────────────────────────────────────
@@ -219,9 +233,15 @@ export function OliverUsagePage() {
       setLoading(true); setError(null);
       try {
         // /tier-limits/usage returns { data: { tier, usage: { seats: {used, limit}, … } } }
-        const raw = await get<UsageResponse>("/tier-limits/usage");
+        const [raw, priceRes] = await Promise.all([
+          get<UsageResponse>("/tier-limits/usage"),
+          get<{ data: PlanPricingRow[] }>("/tier-limits/plan-pricing").catch(() => ({ data: [] as PlanPricingRow[] })),
+        ]);
         if (!cancelled) {
           setUsage(raw?.data || null);
+          const pmap: Record<string, PlanPricingRow> = {};
+          (priceRes?.data || []).forEach((r) => { pmap[r.tier] = r; });
+          setPricing(pmap);
           const live = raw?.data?.tier?.toLowerCase();
           if (live === "lite" || live === "standard" || live === "pro" || live === "business") setTier(live);
         }
@@ -298,8 +318,9 @@ export function OliverUsagePage() {
                   {t.badge && <div className="text-[9px] uppercase font-bold text-[#FEC82C] mb-1">{t.badge}</div>}
                   <div className="font-bold text-base">{t.name}</div>
                   <div className="text-[11px] text-white/60 mb-2">{t.oneLiner}</div>
-                  <div className="text-xl font-bold">${billingCycle === "annual" ? annualPrice(t.monthly) : t.monthly}<span className="text-xs font-normal text-white/60">/mo</span></div>
+                  <div className="text-xl font-bold">${billingCycle === "annual" ? annualPrice(baseMonthly(t.key)) : baseMonthly(t.key)}<span className="text-xs font-normal text-white/60">/mo</span></div>
                   {billingCycle === "annual" && <div className="text-[10px] text-emerald-300 mt-0.5">−10% saved</div>}
+                  {feeLine(t.key) && <div className="text-[10px] text-white/55 mt-1 leading-tight">+ {feeLine(t.key)}</div>}
                 </button>
               ))}
             </div>
@@ -356,17 +377,23 @@ export function OliverUsagePage() {
             </div>
           </div>
 
-          {/* Deferred add-ons */}
+          {/* Add-ons + fee transparency */}
           <div className="card">
             <div className="card-hdr">
               <div>
-                <div className="card-ttl">Coming in v2</div>
-                <div className="card-sub">Add-on packs deferred for post-launch</div>
+                <div className="card-ttl">Add-ons & fees</div>
+                <div className="card-sub">Extend OLIVER and see exactly what you pay</div>
               </div>
             </div>
-            <div className="px-4 pb-4 text-sm text-slate-600 space-y-1">
-              <div className="flex items-start gap-2"><AlertCircle className="h-3.5 w-3.5 text-slate-400 mt-0.5" /> Client Experience Pack (Essentials / Growth / Authority)</div>
-              <div className="flex items-start gap-2"><AlertCircle className="h-3.5 w-3.5 text-slate-400 mt-0.5" /> Microsoft IT Management add-on</div>
+            <div className="px-4 pb-4 text-sm text-slate-600 space-y-2">
+              <a href="/app/services/oliver_client_experience" className="flex items-start gap-2 text-[#1A7DB5] hover:underline">
+                <Check className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                <span>Client Experience add-on — Essentials $19.99 · Growth $49.99 · Authority $99.99/mo</span>
+              </a>
+              <a href="/app/services/oliver_fees" className="flex items-start gap-2 text-[#1A7DB5] hover:underline">
+                <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                <span>See the full fee breakdown (Stripe + platform, including caps) →</span>
+              </a>
             </div>
           </div>
         </div>
@@ -403,6 +430,12 @@ export function OliverUsagePage() {
                 <span>One-time setup</span>
                 <span>${tierDef.setup}</span>
               </div>
+              {feeLine(tier) && (
+                <div className="flex items-center justify-between text-[11px] pt-1 text-white/60">
+                  <span>Card processing</span>
+                  <span>{feeLine(tier)}</span>
+                </div>
+              )}
             </div>
 
             <div className="mt-4 pt-4 border-t border-white/15 flex items-baseline justify-between">
