@@ -5,6 +5,7 @@ import { isPlatformOwner } from "../../lib/currentPlan";
 import { changePlan } from "../../lib/billingApi";
 import { useAccessToken } from "../../auth/useAccessToken";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { PendingChangeBanner } from "../../components/PendingChangeBanner";
 import {
   Mail, MessageSquare, Users, Target, Check, AlertCircle, ChevronDown, ChevronUp,
 } from "lucide-react";
@@ -324,6 +325,7 @@ export function SparkUsagePage() {
       loading={loading}
       error={error}
     >
+      <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} />
       {/* CURRENT USAGE STRIP */}
       {usage && (
         <div className="spark-mini-card mb-4">

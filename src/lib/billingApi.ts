@@ -41,3 +41,47 @@ export async function changePlan(params: {
   if (!res.ok) throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
   return (j?.data ?? j) as BillingChangeResult;
 }
+
+/** A scheduled subscription change that has been mirrored to
+ *  core.tenants.pending_*. Drives the "Downgrading on [date]" banner
+ *  on every Plan & Pricing page. */
+export interface PendingChange {
+  pendingTier: string | null;
+  pendingCxTier: string | null;
+  pendingSeoAddonTier: string | null;
+  effectiveAt: string;            // ISO timestamp
+  scheduleId: string;
+  requestedAt: string;            // ISO timestamp
+  requestedByEmail: string | null;
+}
+
+export async function fetchPendingChange(params: {
+  token: string; tenantId: string;
+}): Promise<PendingChange | null> {
+  const res = await fetch(`${OLIVER_API_BASE}/billing/pending-change`, {
+    headers: {
+      Authorization: `Bearer ${params.token}`,
+      "x-tenant-key": params.tenantId,
+    },
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
+  return (j?.data ?? null) as PendingChange | null;
+}
+
+/** Releases the Stripe Subscription Schedule and clears pending_*.
+ *  The customer keeps their current (higher) tier indefinitely. */
+export async function cancelPendingChange(params: {
+  token: string; tenantId: string;
+}): Promise<{ mode: string; message: string }> {
+  const res = await fetch(`${OLIVER_API_BASE}/billing/pending-change`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${params.token}`,
+      "x-tenant-key": params.tenantId,
+    },
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
+  return (j?.data ?? j) as { mode: string; message: string };
+}

@@ -12,9 +12,11 @@
 // live only on the standalone Fees page (owner decision 2026-05-18).
 import { useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useAccessToken } from "../../auth/useAccessToken";
 import { useAppState } from "../../app/AppState";
 import { isPlatformOwner } from "../../lib/currentPlan";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { PendingChangeBanner } from "../../components/PendingChangeBanner";
 import { Check, AlertCircle, ChevronDown, ChevronUp, Users, Briefcase, RotateCw } from "lucide-react";
 
 interface UsageResponse {
@@ -227,6 +229,7 @@ export function OliverUsagePage() {
   // Current subscription. Founder/platform-owner = always Business + CX
   // Authority (full access, never charged). Everyone else = their real tier.
   const { activeTenantId } = useAppState();
+  const { getToken } = useAccessToken();
   const owner = isPlatformOwner(activeTenantId);
   const currentTier: TierKey = owner
     ? "business"
@@ -290,6 +293,7 @@ export function OliverUsagePage() {
 
   return (
     <OliverPageWrapper title="Plan & Pricing" subtitle={usage?.tier ? `You're on the ${String(usage.tier).replace(/^\w/, c => c.toUpperCase())} plan` : "Pick your tier — usage tracked live"} error={error} loading={loading}>
+      <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} />
       {/* ── CURRENT USAGE STRIP ─────────────────────────────────────────── */}
       {usage && (
         <div className="card mb-4">

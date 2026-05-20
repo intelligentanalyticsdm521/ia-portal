@@ -2,7 +2,7 @@
  * AddSiteFlow — in-app wizard for EXISTING tenants adding a 2nd+ site.
  *
  * Pairs with POST /arion/sites/provision on the backend (tenant JWT auth).
- * For new-customer signup, see OnboardingFlow at /signup/onboarding.
+ * For new-customer signup, see OnboardingFlow at /pricing/onboarding.
  *
  * Routes:
  *   /app/sites/new
@@ -11,7 +11,7 @@
  *   - Authenticated via tenant JWT + activeTenantId (no session_id)
  *   - No Stripe checkout — site is added under the existing subscription
  *     (with site-limit enforcement server-side)
- *   - Submit redirects to /app/sites/:siteId/provisioning instead of /signup/status
+ *   - Submit redirects to /app/sites/:siteId/provisioning instead of /pricing/status
  *   - Header shows "Add another site" instead of plan name
  */
 

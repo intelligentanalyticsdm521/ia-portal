@@ -2,7 +2,7 @@
  * ProvisioningStatus — live progress page shown after onboarding submit.
  *
  * Routes:
- *   /signup/status?session_id=cs_test_...
+ *   /pricing/status?session_id=cs_test_... (was /signup/status pre-2026-05-20)
  *
  * Polls /onboarding/status?session_id=... every 5 seconds and renders a
  * step-by-step progress UI. The states map to the worker's progress callbacks:

@@ -1,7 +1,7 @@
 /**
  * Onboarding wizard — shared step components for both signup and add-site flows.
  *
- * The new-customer signup at /signup/onboarding and the existing-customer
+ * The new-customer signup at /pricing/onboarding and the existing-customer
  * add-site at /app/sites/new use IDENTICAL forms — only the surrounding page
  * shell, auth model, and submit endpoint differ. This module exposes the
  * step components (DomainStep, QuestionnaireStep, BrandingStep, WhoisForm)

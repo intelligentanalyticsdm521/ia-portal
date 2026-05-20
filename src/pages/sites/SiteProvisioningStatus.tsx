@@ -3,7 +3,7 @@
  * --------------------------------------------------------------------------
  * Routes: /app/sites/:siteId/provisioning
  *
- * The signup-time equivalent is ProvisioningStatus at /signup/status. This
+ * The signup-time equivalent is ProvisioningStatus at /pricing/status. This
  * version uses the tenant-authenticated /arion/sites/:siteId/provisioning-status
  * endpoint so the user has to be logged in.
  *

@@ -5,14 +5,14 @@
  * For existing customers adding a 2nd site, see AddSiteFlow at /app/sites/new.
  *
  * Routes:
- *   /signup/onboarding?session_id=cs_test_...
+ *   /pricing/onboarding?session_id=cs_test_... (was /signup/onboarding pre-2026-05-20)
  *
  * The actual form steps are shared via components/onboardingWizard.tsx.
  * This page handles only:
  *   - Reading session_id from URL
  *   - Hydrating from /onboarding/session-info
  *   - localStorage persistence keyed by session_id
- *   - Submit → POST /onboarding/submit, redirect to /signup/status
+ *   - Submit → POST /onboarding/submit, redirect to /pricing/status
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -77,7 +77,7 @@ function ArionOnboardingFlow() {
               setDomain(info.saved_domain as DomainSelection);
             }
             if (info.already_submitted) {
-              window.location.href = `/signup/status?session_id=${encodeURIComponent(sessionId)}`;
+              window.location.href = `/pricing/status?session_id=${encodeURIComponent(sessionId)}`;
               return;
             }
           }
@@ -174,7 +174,7 @@ function ArionOnboardingFlow() {
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ session_id: sessionId, domain, answers, whois }),
                 });
-                window.location.href = `/signup/status?session_id=${encodeURIComponent(sessionId)}`;
+                window.location.href = `/pricing/status?session_id=${encodeURIComponent(sessionId)}`;
               } catch (err) {
                 alert('Submit failed: ' + (err as Error).message);
                 setStep('branding');

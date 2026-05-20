@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppStateProvider } from './app/AppState';
 
 import { LandingPage } from './pages/LandingPage';
@@ -24,14 +24,24 @@ import { SparkPricingPage } from './pages/spark/SparkPricingPage';
 // Platform admin: team access (role + product gating)
 import { PlatformTeamAccess } from './pages/settings/PlatformTeamAccess';
 
-// Public signup flow
-import { SignupPage } from './pages/signup/SignupPage';
+// Public pricing / signup flow (was /signup, renamed to /pricing 2026-05-20)
+import { SignupPage as PricingPage } from './pages/signup/SignupPage';
 import { OnboardingFlow } from './pages/signup/OnboardingFlow';
 import { ProvisioningStatus } from './pages/signup/ProvisioningStatus';
 
 // In-app add-site flow
 import { AddSiteFlow } from './pages/sites/AddSiteFlow';
 import { SiteProvisioningStatus } from './pages/sites/SiteProvisioningStatus';
+
+/** Redirect that preserves the original query string + hash. Used for the
+ *  /signup → /pricing 301-style redirects so Stripe Checkout completion
+ *  links like /signup/onboarding?session_id=cs_test_… still land on the
+ *  onboarding flow with the session_id intact.
+ */
+function RedirectPreservingSearch({ to }: { to: string }) {
+  const { search, hash } = useLocation();
+  return <Navigate to={`${to}${search}${hash}`} replace />;
+}
 
 export function App() {
   return (
@@ -42,10 +52,29 @@ export function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
-          {/* Public signup flow — unauthenticated end-to-end */}
-          <Route path="/signup" element={<SignupPage />} />
-          <Route path="/signup/onboarding" element={<OnboardingFlow />} />
-          <Route path="/signup/status" element={<ProvisioningStatus />} />
+          {/* Public pricing / signup flow — unauthenticated end-to-end.
+              Renamed from /signup to /pricing on 2026-05-20 per spec
+              IA_Portal_GetStarted_PlanManagement_Spec_v1_0. Old /signup
+              paths redirect to /pricing for any cached links. */}
+          <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/pricing/onboarding" element={<OnboardingFlow />} />
+          <Route path="/pricing/status" element={<ProvisioningStatus />} />
+
+          {/* 301-style redirects from the old /signup URLs.
+              RedirectPreservingSearch keeps ?session_id=… so Stripe Checkout
+              completion links continue to work. */}
+          <Route
+            path="/signup"
+            element={<RedirectPreservingSearch to="/pricing" />}
+          />
+          <Route
+            path="/signup/onboarding"
+            element={<RedirectPreservingSearch to="/pricing/onboarding" />}
+          />
+          <Route
+            path="/signup/status"
+            element={<RedirectPreservingSearch to="/pricing/status" />}
+          />
 
           {/* Authenticated app shell */}
           <Route
