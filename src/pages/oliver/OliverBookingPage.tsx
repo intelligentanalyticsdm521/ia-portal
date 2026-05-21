@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
-import { Copy, ExternalLink, Calendar as CalendarIcon, Link2, Globe } from "lucide-react";
+import { Copy, ExternalLink, Calendar as CalendarIcon, Link2, Globe, RefreshCw } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types — match the oliver-api responses
@@ -72,7 +72,7 @@ const JOB_CATEGORIES = [
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 export function OliverBookingPage() {
-  const { get, post, patch } = useOliverApi();
+  const { get, post, patch, del } = useOliverApi();
 
   const [orgSettings, setOrgSettings] = useState<OrgSettings | null>(null);
   const [bookingPage, setBookingPage] = useState<BookingPage | null>(null);
@@ -84,6 +84,10 @@ export function OliverBookingPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // M365 calendar sync status (Pro tier feature)
+  const [calStatus, setCalStatus] = useState<{ connected: boolean; account_email?: string; last_refreshed_at?: string } | null>(null);
+  const [calConnecting, setCalConnecting] = useState(false);
+
   // ── Load both settings + first booking page ─────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -91,6 +95,11 @@ export function OliverBookingPage() {
       const settings = await get<OrgSettings>("/settings");
       setOrgSettings(settings);
       setSlugDraft(settings.slug || "");
+
+      // Fetch calendar sync status in parallel — non-fatal if it 404s.
+      get<{ connected: boolean; account_email?: string; last_refreshed_at?: string }>("/booking/calendar/status")
+        .then((s) => setCalStatus(s))
+        .catch(() => setCalStatus({ connected: false }));
 
       // List booking pages — we pick the first (Standard tier = one).
       // If none exist, leave bookingPage null and present a "Start" form.
@@ -204,6 +213,32 @@ export function OliverBookingPage() {
     navigator.clipboard.writeText(bookingUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  }
+
+  // Open the Microsoft consent screen in a new tab. After consent the
+  // callback redirects back to this page with ?calendar=connected.
+  async function connectM365() {
+    setCalConnecting(true); setError(null);
+    try {
+      const r = await post<{ auth_url: string }>("/booking/calendar/microsoft365/connect", {});
+      window.location.href = r.auth_url;
+    } catch (e) {
+      setError((e as Error).message);
+      setCalConnecting(false);
+    }
+  }
+
+  async function disconnectM365() {
+    if (!window.confirm("Disconnect your Microsoft 365 calendar? Future bookings won't avoid your Outlook busy time.")) return;
+    setCalConnecting(true); setError(null);
+    try {
+      await del("/booking/calendar/microsoft365");
+      setCalStatus({ connected: false });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setCalConnecting(false);
+    }
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -467,6 +502,57 @@ export function OliverBookingPage() {
             Edit business profile →
           </a>
         </div>
+      </SectionCard>
+
+      {/* ─── Section: Calendar sync (Pro tier) ──────────────────────────────── */}
+      <SectionCard
+        icon={<RefreshCw className="h-4 w-4" />}
+        title="Calendar sync"
+        subtitle="Connect your Microsoft 365 calendar so OLIVER automatically hides times you're already busy."
+      >
+        {calStatus?.connected ? (
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-emerald-700 flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+                Connected
+              </div>
+              <div className="mt-1 text-xs text-slate-600">
+                {calStatus.account_email}
+                {calStatus.last_refreshed_at && (
+                  <span className="ml-2 text-slate-400">
+                    · last synced {new Date(calStatus.last_refreshed_at).toLocaleString()}
+                  </span>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={disconnectM365}
+              disabled={calConnecting}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+            >
+              {calConnecting ? "Disconnecting…" : "Disconnect"}
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-700">Not connected</div>
+              <div className="mt-1 text-xs text-slate-600 max-w-md">
+                Without calendar sync, OLIVER doesn't know when you have existing meetings. Connecting takes 30 seconds and read-only access — OLIVER never creates or modifies events on your calendar.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={connectM365}
+              disabled={calConnecting}
+              className="rounded-md bg-[#0078D4] text-white px-4 py-2 text-sm font-semibold hover:bg-[#106EBE] disabled:opacity-50 whitespace-nowrap"
+            >
+              {calConnecting ? "Connecting…" : "Connect Microsoft 365"}
+            </button>
+          </div>
+        )}
       </SectionCard>
 
       {/* ─── Section: Preview ───────────────────────────────────────────────── */}
