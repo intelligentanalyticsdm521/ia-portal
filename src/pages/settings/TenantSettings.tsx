@@ -91,6 +91,13 @@ function SectionLabel({ title, description }: { title: string; description?: str
 
 interface OrgProfile {
   tenantFullName?: string;
+  /** Optional shorthand used on customer-facing surfaces (booking pages,
+   *  email From display name, customer portal). Falls back to
+   *  tenantFullName when blank. */
+  preferredBusinessName?: string;
+  /** Tenant URL slug — drives subdomains on *.book.ia-dm.com,
+   *  *.customer.ia-dm.com, *.crew.ia-dm.com. 1-63 chars, a-z 0-9 hyphens. */
+  slug?: string;
   website?: string;
   email?: string;
   phone?: string;
@@ -138,6 +145,8 @@ function OrganizationTab() {
     try {
       const updated = await patch<OrgProfile>('/settings', {
         tenantFullName: draft.tenantFullName ?? '',
+        preferredBusinessName: draft.preferredBusinessName ?? '',
+        slug: draft.slug ?? '',
         website: draft.website ?? '',
         email: draft.email ?? '',
         phone: draft.phone ?? '',
@@ -174,8 +183,18 @@ function OrganizationTab() {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="block text-sm font-medium text-gray-700">Business name</label>
+          <label className="block text-sm font-medium text-gray-700">
+            Business name <span className="text-red-500">*</span>
+          </label>
           <input type="text" value={draft.tenantFullName || ''} onChange={(e) => set({ tenantFullName: e.target.value })} className={cls} placeholder="Acme Corp" />
+          <p className="mt-1 text-xs text-gray-500">Your full legal/registered name. Used on invoices, Stripe, and contracts.</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Preferred business name <span className="text-gray-400">(optional)</span>
+          </label>
+          <input type="text" value={draft.preferredBusinessName || ''} onChange={(e) => set({ preferredBusinessName: e.target.value })} className={cls} placeholder="e.g. Acme" />
+          <p className="mt-1 text-xs text-gray-500">Shorter brand name shown on booking pages, customer portal, and emails. Defaults to your full business name.</p>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700">Website</label>

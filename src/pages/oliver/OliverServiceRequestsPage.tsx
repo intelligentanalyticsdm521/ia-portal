@@ -61,8 +61,20 @@ export function OliverServiceRequestsPage() {
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const data = await get<ServiceRequest[]>("/jobs?status=inquiry");
-      setRequests(data || []);
+      // Two sources of pending work:
+      //   1. /jobs?status=inquiry → traditional service requests from portal/ARION/Zapier/etc.
+      //   2. /booking/pending → Standard-tier booking submissions awaiting tenant confirmation.
+      // Both flow into the same inbox so staff has one place to triage incoming demand.
+      const [jobs, bookings] = await Promise.all([
+        get<ServiceRequest[]>("/jobs?status=inquiry").catch(() => [] as ServiceRequest[]),
+        get<ServiceRequest[]>("/booking/pending").catch(() => [] as ServiceRequest[]),
+      ]);
+      const merged = [...(jobs || []), ...(bookings || [])].sort((a, b) => {
+        const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tb - ta; // newest first
+      });
+      setRequests(merged);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
   }, [get]);
@@ -108,6 +120,7 @@ export function OliverServiceRequestsPage() {
     if (key === "zapier") return { label: "Zapier", bg: "#FEF3C7", color: "#92400E" };
     if (key === "lead_intake") return { label: "External intake", bg: "#DBEAFE", color: "#1E40AF" };
     if (key === "manual" || key === "admin") return { label: "Manual", bg: "#F1F5F9", color: "#5A7A8A" };
+    if (key === "booking") return { label: "Booking Request", bg: "#FEF3C7", color: "#A16207" };
     if (key === "lead_intake") return { label: "External", bg: "#F1F5F9", color: "#5A7A8A" };
     return { label: key.charAt(0).toUpperCase() + key.slice(1), bg: "#F1F5F9", color: "#5A7A8A" };
   }
@@ -340,7 +353,24 @@ export function OliverServiceRequestsPage() {
         </>
       )}
 
-      {pickedId && <RequestDetailModal jobId={pickedId} onClose={() => setPickedId(null)} api={{ get }} navigate={navigate} />}
+      {pickedId && (() => {
+        // Route to the right detail drawer based on source. Booking rows
+        // have source='booking' and need the booking-specific confirm /
+        // reschedule / decline actions (vs. the regular job inquiry flow
+        // which routes to job board + quote conversion).
+        const picked = requests.find((r) => (r.id || r.job_id) === pickedId);
+        if (picked?.source === "booking") {
+          return (
+            <BookingDetailDrawer
+              row={picked}
+              onClose={() => setPickedId(null)}
+              api={{ get, patch }}
+              onActionComplete={reload}
+            />
+          );
+        }
+        return <RequestDetailModal jobId={pickedId} onClose={() => setPickedId(null)} api={{ get }} navigate={navigate} />;
+      })()}
     </OliverPageWrapper>
   );
 }
@@ -402,6 +432,165 @@ function RequestDetailModal({ jobId, onClose, api, navigate }: { jobId: string; 
           Convert to quote
         </Button>
       </div>
+    </DetailDrawer>
+  );
+}
+
+/**
+ * BookingDetailDrawer — replaces RequestDetailModal when the picked row is
+ * a booking (source='booking'). Standard tier surfaces Confirm / Reschedule /
+ * Decline actions; the underlying booking_slot row already has everything
+ * needed, so no GET is required (we already fetched it as part of /booking/pending).
+ */
+interface BookingRow extends ServiceRequest {
+  slot_end_utc?: string;
+  guest_timezone?: string;
+  booking_page_id?: string;
+  confirmation_token?: string;
+}
+
+function BookingDetailDrawer({
+  row, onClose, api, onActionComplete,
+}: {
+  row: BookingRow;
+  onClose: () => void;
+  api: { get: <T>(p: string) => Promise<T>; patch: <T>(p: string, b: unknown) => Promise<T> };
+  onActionComplete: () => void;
+}) {
+  const [busy, setBusy] = useState<"confirm" | "cancel" | "reschedule" | null>(null);
+  const [rescheduleMode, setRescheduleMode] = useState(false);
+  const [newStart, setNewStart] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function doConfirm() {
+    if (!confirm("Confirm this booking? The guest will receive a confirmation email.")) return;
+    setBusy("confirm"); setError(null);
+    try {
+      await api.patch(`/booking/slots/${row.id}/confirm`, {});
+      onActionComplete();
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function doCancel() {
+    if (!confirm("Decline this booking? The guest will be notified.")) return;
+    setBusy("cancel"); setError(null);
+    try {
+      await api.patch(`/booking/slots/${row.id}/cancel`, {});
+      onActionComplete();
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function doReschedule() {
+    if (!newStart) { setError("Pick a new start time."); return; }
+    setBusy("reschedule"); setError(null);
+    try {
+      // Compute end from start + same duration as original.
+      const start = new Date(newStart);
+      const originalDuration = row.scheduledDate && row.slot_end_utc
+        ? new Date(row.slot_end_utc).getTime() - new Date(row.scheduledDate).getTime()
+        : 30 * 60_000;
+      const end = new Date(start.getTime() + originalDuration);
+      await api.patch(`/booking/slots/${row.id}/reschedule`, {
+        slot_start_utc: start.toISOString(),
+        slot_end_utc: end.toISOString(),
+      });
+      onActionComplete();
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Parse the form_data JSON the guest submitted (custom fields beyond name/email/phone)
+  let formData: Record<string, unknown> | null = null;
+  if (typeof row.customerNotes === "string" && row.customerNotes.trim()) {
+    try { formData = JSON.parse(row.customerNotes); } catch { /* not JSON, leave as text */ }
+  }
+
+  const localTime = row.scheduledDate
+    ? new Date(row.scheduledDate).toLocaleString(undefined, { dateStyle: "full", timeStyle: "short" })
+    : "—";
+
+  return (
+    <DetailDrawer
+      open onClose={onClose}
+      title={row.title || "Booking request"}
+      subtitle={`From ${row.customerName || "—"} · ${fmtRelative(row.createdAt)}`}
+      width="lg"
+    >
+      <div className="card">
+        <div className="card-ttl">Requested time</div>
+        <Row label="When" value={localTime} />
+        {row.guest_timezone && <Row label="Guest timezone" value={row.guest_timezone} />}
+      </div>
+
+      <div className="card">
+        <div className="card-ttl">Customer</div>
+        <Row label="Name" value={row.customerName || "—"} />
+        {row.customerEmail && <Row label="Email" value={<a href={`mailto:${row.customerEmail}`} style={{ color: "#1A7DB5" }}>{row.customerEmail}</a>} />}
+        {row.customerPhone && <Row label="Phone" value={row.customerPhone} />}
+      </div>
+
+      {formData && Object.keys(formData).length > 0 && (
+        <div className="card">
+          <div className="card-ttl">Form responses</div>
+          {Object.entries(formData).map(([k, v]) => (
+            <Row key={k} label={k.replace(/_/g, " ")} value={String(v)} />
+          ))}
+        </div>
+      )}
+
+      {error && (
+        <div style={{ background: "#FEE2E2", color: "#991B1B", padding: 10, borderRadius: 6, fontSize: 12, marginTop: 8 }}>
+          {error}
+        </div>
+      )}
+
+      {rescheduleMode ? (
+        <div className="card" style={{ background: "#FEF3C7" }}>
+          <div className="card-ttl">Reschedule</div>
+          <Row label="New start time" value={
+            <input
+              type="datetime-local"
+              value={newStart}
+              onChange={(e) => setNewStart(e.target.value)}
+              style={{ padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13 }}
+            />
+          } />
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <Button variant="primary" onClick={doReschedule} disabled={busy === "reschedule" || !newStart}>
+              {busy === "reschedule" ? "Saving…" : "Send new time"}
+            </Button>
+            <Button variant="secondary" onClick={() => { setRescheduleMode(false); setError(null); }}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <Button variant="primary" onClick={doConfirm} disabled={!!busy}>
+            {busy === "confirm" ? "Confirming…" : "Confirm booking"}
+          </Button>
+          <Button variant="secondary" onClick={() => setRescheduleMode(true)} disabled={!!busy}>
+            Reschedule
+          </Button>
+          <Button variant="secondary" onClick={doCancel} disabled={!!busy}>
+            {busy === "cancel" ? "Cancelling…" : "Decline"}
+          </Button>
+        </div>
+      )}
     </DetailDrawer>
   );
 }
