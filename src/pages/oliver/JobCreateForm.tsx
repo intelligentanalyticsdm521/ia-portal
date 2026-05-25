@@ -106,13 +106,16 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
       source: "manual",
     };
 
+    // Service address is OPTIONAL — consulting/agency/SaaS work doesn't
+    // happen at a customer location. Service businesses (HVAC, cleaning,
+    // etc.) want it; the new business-type setting (Task #33) will gate
+    // this per-tenant. Until then, never block job creation on address.
     if (mode === "existing") {
       if (!contactId) { setError("Pick a customer."); return; }
-      if (!addressId) { setError("Pick a service address (or add one to this customer first)."); return; }
-      body = { ...body, contact_id: contactId, service_address_id: addressId };
+      body = { ...body, contact_id: contactId };
+      if (addressId) body.service_address_id = addressId;
     } else {
       if (!first.trim() || !last.trim()) { setError("First and last name are required."); return; }
-      if (!addrLine1.trim() || !city.trim() || !state.trim() || !zip.trim()) { setError("Street, city, state, and ZIP are required for the service address."); return; }
       body = {
         ...body,
         contact: {
@@ -121,11 +124,14 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
           phone: phone.trim() || undefined,
           company_name: company.trim() || undefined,
         },
-        address: {
+      };
+      // Address is optional. Only include if all four core fields are filled.
+      if (addrLine1.trim() && city.trim() && state.trim() && zip.trim()) {
+        body.address = {
           address_line_1: addrLine1.trim(),
           city: city.trim(), state: state.trim(), postal_code: zip.trim(),
-        },
-      };
+        };
+      }
     }
 
     setSubmitting(true);
@@ -144,10 +150,11 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
     }
   }
 
+  // Address optional — only customer + title are required.
   const submitDisabled = submitting
     || !title.trim()
-    || (mode === "existing" ? (!contactId || !addressId)
-                            : (!first.trim() || !last.trim() || !addrLine1.trim() || !city.trim() || !state.trim() || !zip.trim()));
+    || (mode === "existing" ? !contactId
+                            : (!first.trim() || !last.trim()));
 
   return (
     <div className="card">
@@ -185,7 +192,7 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
               ))}
             </select>
           </Field>
-          <Field label="Service address">
+          <Field label="Service address (optional)">
             <select
               value={addressId}
               onChange={(e) => setAddressId(e.target.value)}
@@ -193,7 +200,7 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
               disabled={!contactId || loadingAddrs}
             >
               <option value="">
-                {!contactId ? "Pick a customer first" : loadingAddrs ? "Loading…" : addresses.length ? "— Pick an address —" : "(no addresses on file)"}
+                {!contactId ? "Pick a customer first" : loadingAddrs ? "Loading…" : addresses.length ? "— Pick an address (optional) —" : "(no addresses — leave blank if not needed)"}
               </option>
               {addresses.map((a) => (
                 <option key={a.address_id} value={a.address_id}>
@@ -202,8 +209,10 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
               ))}
             </select>
             {contactId && !loadingAddrs && !addresses.length && (
-              <div style={{ fontSize: 10, color: "#B45309", marginTop: 4 }}>
-                This customer has no address on file. Switch to "New customer" mode to add one, or add it from the customer's detail page first.
+              <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 4 }}>
+                No address on file. Leave blank if this job doesn't need one (e.g. consulting),
+                or add one from the customer's detail page. Service businesses will be able to
+                require an address per the upcoming business-type setting.
               </div>
             )}
           </Field>
