@@ -113,7 +113,12 @@ interface OrgProfile {
 // Canonical shared business profile (core.tenants) — the single record reused
 // by OLIVER invoices/quotes/portal, ARION, SPARK, STELLA. Read/write via the
 // shared /settings API (served by oliver-api, which owns core.tenants R/W).
-function OrganizationTab() {
+//
+// Exported so per-route page wrappers in pages/settings/SettingsRoutes.tsx
+// can render this single tab standalone (Phase 1A — hamburger menu = one
+// route per setting). The original tabbed TenantSettings page still works
+// at /app/settings for back-compat + deep links.
+export function OrganizationTab() {
   const { get, post, patch, ready } = useOliverApi();
   const [profile, setProfile] = useState<OrgProfile | null>(null);
   const [draft, setDraft] = useState<OrgProfile | null>(null);
@@ -268,7 +273,7 @@ const PRODUCTS = [
   { name: 'SPARK', desc: 'Marketing automation', tier: 'Free' },
 ] as const;
 
-function SubscriptionBillingTab() {
+export function SubscriptionBillingTab() {
   return (
     <div className="space-y-6">
       <SectionLabel title="Current subscriptions" />
@@ -327,7 +332,7 @@ function SubscriptionBillingTab() {
 /*  Tab: Team                                                          */
 /* ------------------------------------------------------------------ */
 
-function TeamTab() {
+export function TeamTab() {
   const [modalOpen, setModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('viewer');
@@ -533,7 +538,7 @@ function GooglePropertyModal({ ga4Properties, gscSites, currentGa4PropertyId, lo
   );
 }
 
-function ConnectedAccountsTab() {
+export function ConnectedAccountsTab() {
   const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1316,7 +1321,7 @@ const NOTIF_RULES: NotifRule[] = [
   { key: 'security', label: 'Security Scan' },
 ];
 
-function NotificationRulesTab() {
+export function NotificationRulesTab() {
   const [rules, setRules] = useState<Record<string, { enabled: boolean; email: string }>>(() => {
     const stored = localStorage.getItem(LS_PREFIX + 'notifRules');
     if (stored) {
@@ -1388,7 +1393,7 @@ function NotificationRulesTab() {
 /*  Tab: Security & Compliance                                         */
 /* ------------------------------------------------------------------ */
 
-function SecurityComplianceTab() {
+export function SecurityComplianceTab() {
   const [minLen, setMinLen] = useState(() => lsGet('sec.minLen', '8'));
   const [specialChars, setSpecialChars] = useState(() => lsBool('sec.specialChars', true));
   const [sessionTimeout, setSessionTimeout] = useState(() => lsGet('sec.sessionTimeout', '4'));
@@ -1461,7 +1466,7 @@ function SecurityComplianceTab() {
 /*  Tab: Data & Privacy                                                */
 /* ------------------------------------------------------------------ */
 
-function DataPrivacyTab() {
+export function DataPrivacyTab() {
   const [toast, setToast] = useState('');
 
   const handleExport = useCallback(() => {

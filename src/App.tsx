@@ -17,6 +17,17 @@ import { SettingsViewPage } from './pages/SettingsViewPage';
 import { SettingsEditPage } from './pages/SettingsEditPage';
 import { TenantSettings } from './pages/settings/TenantSettings';
 import { PersonalSettings } from './pages/settings/PersonalSettings';
+import {
+  SettingsHubPage,
+  BusinessProfileSettingsPage,
+  PlanPricingSettingsPage,
+  TeamMembersSettingsPage,
+  IntegrationsSettingsPage,
+  NotificationsSettingsPage,
+  SecuritySettingsPage,
+  DataPrivacySettingsPage,
+} from './pages/settings/SettingsRoutes';
+import { PlatformAdminPage } from './pages/PlatformAdminPage';
 
 // NEW: SPARK pricing page route
 import { SparkPricingPage } from './pages/spark/SparkPricingPage';
@@ -95,9 +106,26 @@ export function App() {
             <Route path="profile" element={<ProfileViewPage />} />
             <Route path="profile/edit" element={<ProfilePage />} />
 
-            {/* Settings — tenant-level (icon rail gear) */}
-            <Route path="settings" element={<TenantSettings />} />
+            {/* Settings — tenant-level. 2026-05-25: every setting now has
+                its own URL (Phase 1A nav split). The hub page at /app/settings
+                lists every setting as a tile; per-setting routes deep-link
+                from the hamburger menu. /app/settings/all keeps the original
+                tabbed UI reachable for back-compat. */}
+            <Route path="settings" element={<SettingsHubPage />} />
+            <Route path="settings/all" element={<TenantSettings />} />
             <Route path="settings/edit" element={<SettingsEditPage />} />
+            <Route path="settings/business-profile" element={<BusinessProfileSettingsPage />} />
+            <Route path="settings/plan-pricing" element={<PlanPricingSettingsPage />} />
+            <Route path="settings/team-members" element={<TeamMembersSettingsPage />} />
+            <Route path="settings/integrations" element={<IntegrationsSettingsPage />} />
+            <Route path="settings/notifications" element={<NotificationsSettingsPage />} />
+            <Route path="settings/security" element={<SecuritySettingsPage />} />
+            <Route path="settings/data-privacy" element={<DataPrivacySettingsPage />} />
+
+            {/* Platform admin (SUPER_ADMIN only — gear icon target).
+                Stub for now; founder-only UI for cross-tenant ops, dead-tenant
+                cleanup, schema migrations, etc. */}
+            <Route path="admin" element={<PlatformAdminPage />} />
 
             {/* Personal account settings (hamburger menu items) */}
             <Route path="account" element={<PersonalSettings />} />

@@ -1,11 +1,38 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { User, CreditCard, Bell, Users, Link2, LogOut } from 'lucide-react';
+import {
+  User,
+  Bell,
+  LogOut,
+  Building2,
+  CreditCard,
+  Users,
+  Plug,
+  ShieldCheck,
+  DatabaseZap,
+  KeyRound,
+  Calendar,
+  MapPin,
+  Clock,
+  FileText,
+  ChevronRight,
+} from 'lucide-react';
 
+/**
+ * AccountMenu — the hamburger ☰ at the top right of every page.
+ *
+ * Phase 1A (2026-05-25): every tenant setting is exposed as its own menu item
+ * with its own URL. Each item navigates directly to the per-setting page
+ * (defined in pages/settings/SettingsRoutes.tsx for platform settings,
+ * /app/services/oliver_* for OLIVER-specific settings).
+ *
+ * The gear icon at the bottom of the IconRail is now SUPER_ADMIN-only and
+ * targets /admin — it is NOT the same as Settings.
+ */
 export function AccountMenu({
   userLabel,
   userEmail,
-  onSignOut
+  onSignOut,
 }: {
   userLabel: string;
   userEmail?: string;
@@ -35,6 +62,8 @@ export function AccountMenu({
     };
   }, [open]);
 
+  const close = () => setOpen(false);
+
   return (
     <div ref={rootRef} className="relative">
       <button
@@ -54,7 +83,7 @@ export function AccountMenu({
         <div
           role="menu"
           aria-label="Account menu"
-          className="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg"
+          className="absolute right-0 z-50 mt-2 max-h-[calc(100vh-6rem)] w-72 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"
         >
           {/* User header */}
           <div className="border-b border-gray-100 px-4 py-3">
@@ -62,50 +91,65 @@ export function AccountMenu({
             {userEmail && <div className="mt-0.5 text-xs text-gray-500">{userEmail}</div>}
           </div>
 
-          {/* Menu items */}
+          {/* Personal */}
+          <MenuSection label="My account">
+            <MenuItem to="/app/account" icon={<User className="h-4 w-4" />} label="Profile & Personal Info" onClick={close} />
+            <MenuItem to="/app/account" icon={<Bell className="h-4 w-4" />} label="Notification Preferences" onClick={close} />
+          </MenuSection>
+
+          {/* Business — applies to whole organization */}
+          <MenuSection label="Business settings">
+            <MenuItem to="/app/settings/business-profile" icon={<Building2 className="h-4 w-4" />} label="Business Profile" onClick={close} />
+            <MenuItem to="/app/settings/plan-pricing" icon={<CreditCard className="h-4 w-4" />} label="Plan & Pricing" onClick={close} />
+            <MenuItem to="/app/settings/team-members" icon={<Users className="h-4 w-4" />} label="Team Members" onClick={close} />
+            <MenuItem to="/app/settings/integrations" icon={<Plug className="h-4 w-4" />} label="Connected Accounts" onClick={close} />
+          </MenuSection>
+
+          {/* OLIVER-specific settings — reuse the existing OLIVER feature pages
+              so we don't duplicate UI. Pro-tier ones (Territories, SLA) are
+              shown for everyone here; the page itself enforces the gate. */}
+          <MenuSection label="OLIVER settings">
+            <MenuItem to="/app/services/oliver_team_access" icon={<KeyRound className="h-4 w-4" />} label="Team Access" onClick={close} />
+            <MenuItem to="/app/services/oliver_templates" icon={<FileText className="h-4 w-4" />} label="Templates" onClick={close} />
+            <MenuItem to="/app/services/oliver_booking" icon={<Calendar className="h-4 w-4" />} label="Booking Page" onClick={close} />
+            <MenuItem to="/app/services/oliver_territories" icon={<MapPin className="h-4 w-4" />} label="Territories" pill="Pro" onClick={close} />
+            <MenuItem to="/app/services/oliver_sla_policies" icon={<Clock className="h-4 w-4" />} label="SLA Policies" pill="Pro" onClick={close} />
+          </MenuSection>
+
+          {/* Platform */}
+          <MenuSection label="Platform">
+            <MenuItem to="/app/settings/notifications" icon={<Bell className="h-4 w-4" />} label="Notification Rules" onClick={close} />
+            <MenuItem to="/app/settings/security" icon={<ShieldCheck className="h-4 w-4" />} label="Security & Compliance" onClick={close} />
+            <MenuItem to="/app/settings/data-privacy" icon={<DatabaseZap className="h-4 w-4" />} label="Data & Privacy" onClick={close} />
+          </MenuSection>
+
+          {/* All settings shortcut */}
+          <ul className="px-1.5 pb-1.5">
+            <li>
+              <Link
+                to="/app/settings"
+                role="menuitem"
+                onClick={close}
+                className="flex items-center justify-between rounded-md px-3 py-2 text-xs font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+              >
+                <span>All settings</span>
+                <ChevronRight className="h-3 w-3" />
+              </Link>
+            </li>
+          </ul>
+
+          {/* Divider */}
+          <div className="border-t border-gray-100" aria-hidden="true" />
+
+          {/* Sign out */}
           <ul className="p-1.5">
-            <MenuItem
-              to="/app/account"
-              icon={<User className="h-4 w-4" />}
-              label="Profile & Personal Info"
-              onClick={() => setOpen(false)}
-            />
-            <MenuItem
-              to="/app/settings"
-              icon={<CreditCard className="h-4 w-4" />}
-              label="Subscription & Billing"
-              onClick={() => setOpen(false)}
-            />
-            <MenuItem
-              to="/app/account"
-              icon={<Bell className="h-4 w-4" />}
-              label="Notification Preferences"
-              onClick={() => setOpen(false)}
-            />
-            <MenuItem
-              to="/app/settings"
-              icon={<Users className="h-4 w-4" />}
-              label="Team & User Management"
-              onClick={() => setOpen(false)}
-            />
-            <MenuItem
-              to="/app/settings"
-              icon={<Link2 className="h-4 w-4" />}
-              label="Connected Accounts"
-              onClick={() => setOpen(false)}
-            />
-
-            {/* Divider */}
-            <li className="my-1.5 border-t border-gray-100" aria-hidden="true" />
-
-            {/* Sign out */}
             <li>
               <button
                 type="button"
                 role="menuitem"
                 className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-red-600 hover:bg-red-50"
                 onClick={() => {
-                  setOpen(false);
+                  close();
                   onSignOut();
                 }}
               >
@@ -120,7 +164,30 @@ export function AccountMenu({
   );
 }
 
-function MenuItem({ to, icon, label, onClick }: { to: string; icon: React.ReactNode; label: string; onClick: () => void }) {
+function MenuSection({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="border-t border-gray-100 pt-1.5 first:border-t-0 first:pt-0">
+      <div className="px-3 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+        {label}
+      </div>
+      <ul className="px-1.5 pb-1.5">{children}</ul>
+    </div>
+  );
+}
+
+function MenuItem({
+  to,
+  icon,
+  label,
+  onClick,
+  pill,
+}: {
+  to: string;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  pill?: string;
+}) {
   return (
     <li>
       <Link
@@ -130,7 +197,12 @@ function MenuItem({ to, icon, label, onClick }: { to: string; icon: React.ReactN
         onClick={onClick}
       >
         <span className="text-gray-400">{icon}</span>
-        {label}
+        <span className="flex-1 truncate">{label}</span>
+        {pill && (
+          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
+            {pill}
+          </span>
+        )}
       </Link>
     </li>
   );

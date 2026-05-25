@@ -47,30 +47,29 @@ export interface SubNavConfig {
 
 // ── Navigation configs per product ────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// OLIVER navigation — simplified per founder decision 2026-05-25.
+//
+// SHAPE:
+//   - 9 top-level sections (down from 11)
+//   - ~18 sub-pages (down from ~30)
+//   - Operations + Communication index pages removed entirely
+//   - Communications now live in Job + Customer modals (contextual, not global)
+//   - All settings (Team Access, Templates, Booking, Territories, SLA,
+//     Plan & Pricing, etc.) moved to the hamburger menu (one route per setting)
+//   - Gear icon reserved for SUPER_ADMIN platform admin (separate concern)
+//
+// Recurring jobs surface as a filter/tag inside the Job Board, not a
+// separate page. Subscriptions stay in Billing because they're a billing
+// concern (when do I get paid).
+// ─────────────────────────────────────────────────────────────────────────────
 const OLIVER_NAV: SubNavConfig = {
   productName: "OLIVER",
-  tagline: "Universal Job & Project Lifecycle Platform",
+  tagline: "Field Service & Job Lifecycle",
   groups: [
     {
       label: "",
       items: [{ key: "oliver_dashboard", label: "Dashboard", route: "/app/services/oliver_dashboard" }],
-    },
-    {
-      label: "Jobs", icon: Wrench, collapsible: true, sectionId: "oliver_jobs",
-      items: [
-        { key: "oliver_job_board", label: "Job Board", route: "/app/services/oliver_job_board" },
-        { key: "oliver_projects", label: "Projects", route: "/app/services/oliver_projects" },
-        { key: "oliver_schedule", label: "Schedule", route: "/app/services/oliver_schedule" },
-        { key: "oliver_dispatch", label: "Dispatch", route: "/app/services/oliver_dispatch" },
-      ],
-    },
-    {
-      label: "Team", icon: Users, collapsible: true, sectionId: "oliver_team",
-      items: [
-        { key: "oliver_workers", label: "Workers", route: "/app/services/oliver_workers" },
-        { key: "oliver_crew_performance", label: "Team Performance", route: "/app/services/oliver_crew_performance", gated: true },
-        { key: "oliver_team_access", label: "Team Access", route: "/app/services/oliver_team_access" },
-      ],
     },
     {
       label: "Customers", icon: UserCircle, collapsible: true, sectionId: "oliver_customers",
@@ -81,9 +80,19 @@ const OLIVER_NAV: SubNavConfig = {
       ],
     },
     {
-      // Products — what you sell + how it's discounted. Categories are
-      // managed inside the Products & Services page.
-      label: "Products", icon: Briefcase, collapsible: true, sectionId: "oliver_products",
+      // Single Jobs page with the 5-bucket board (Quotes, Scheduled, In Progress,
+      // Job Completed, Job Closed) + tag/substatus filters + Recurring filter.
+      // Schedule/Dispatch/Projects/Quotes-as-page absorbed into this board's
+      // filters + the unified job modal (Phase 2). Archive lives as a
+      // sub-page reached via a link from the board.
+      label: "Jobs", icon: Wrench, collapsible: true, sectionId: "oliver_jobs",
+      items: [
+        { key: "oliver_job_board", label: "Job Board", route: "/app/services/oliver_job_board" },
+        { key: "oliver_jobs_archive", label: "Archive", route: "/app/services/oliver_jobs_archive" },
+      ],
+    },
+    {
+      label: "Products & Services", icon: Briefcase, collapsible: true, sectionId: "oliver_products",
       items: [
         { key: "oliver_catalog", label: "Products & Services", route: "/app/services/oliver_catalog" },
         { key: "oliver_categories", label: "Categories", route: "/app/services/oliver_categories" },
@@ -91,44 +100,26 @@ const OLIVER_NAV: SubNavConfig = {
       ],
     },
     {
-      // Billing — invoices, quotes/proposals, payments, subscriptions, and
-      // the document templates that drive them. Hidden-but-deep-linked:
-      // oliver_quote_options, oliver_disputes, oliver_reminders,
-      // oliver_payouts, oliver_job_costing.
+      // Billing — money in. Quotes & Recurring/Templates handled in the Job flow.
       label: "Billing", icon: CreditCard, collapsible: true, sectionId: "oliver_billing",
       items: [
-        { key: "oliver_billing_overview", label: "Overview", route: "/app/services/oliver_billing_overview" },
         { key: "oliver_invoices", label: "Invoices", route: "/app/services/oliver_invoices" },
-        { key: "oliver_quotes", label: "Quotes & Proposals", route: "/app/services/oliver_quotes" },
-        { key: "oliver_recurring", label: "Recurring & Subscriptions", route: "/app/services/oliver_recurring" },
+        { key: "oliver_recurring", label: "Subscriptions", route: "/app/services/oliver_recurring" },
         { key: "oliver_payments", label: "Payments", route: "/app/services/oliver_payments" },
-        { key: "oliver_templates", label: "Template Library", route: "/app/services/oliver_templates" },
       ],
     },
     {
-      // Expenses — money going out. Receipts/payroll/tax tools land here later.
+      label: "Team", icon: Users, collapsible: true, sectionId: "oliver_team",
+      items: [
+        { key: "oliver_workers", label: "Workers", route: "/app/services/oliver_workers" },
+        { key: "oliver_time_tracking", label: "Time Tracking", route: "/app/services/oliver_time_tracking" },
+        { key: "oliver_crew_performance", label: "Performance", route: "/app/services/oliver_crew_performance", gated: true },
+      ],
+    },
+    {
       label: "Expenses", icon: TrendingUp, collapsible: true, sectionId: "oliver_expenses",
       items: [
         { key: "oliver_expenses", label: "Expenses", route: "/app/services/oliver_expenses" },
-      ],
-    },
-    {
-      label: "Communication", icon: MessageSquare, collapsible: true, sectionId: "oliver_comms",
-      items: [
-        { key: "oliver_messages", label: "Messages", route: "/app/services/oliver_messages" },
-        { key: "oliver_notifications", label: "Notifications", route: "/app/services/oliver_notifications" },
-        { key: "oliver_support_tickets", label: "Support Tickets", route: "/app/services/oliver_support_tickets" },
-      ],
-    },
-    {
-      label: "Operations", icon: Wrench, collapsible: true, sectionId: "oliver_ops",
-      items: [
-        { key: "oliver_workflow_templates", label: "Workflow Templates", route: "/app/services/oliver_workflow_templates" },
-        { key: "oliver_job_offers", label: "Job Offers", route: "/app/services/oliver_job_offers" },
-        { key: "oliver_reschedule_requests", label: "Reschedule Queue", route: "/app/services/oliver_reschedule_requests" },
-        { key: "oliver_time_tracking", label: "Time Tracking", route: "/app/services/oliver_time_tracking" },
-        { key: "oliver_territories", label: "Territories", route: "/app/services/oliver_territories" },
-        { key: "oliver_sla_policies", label: "SLA Policies", route: "/app/services/oliver_sla_policies" },
       ],
     },
     {
@@ -141,19 +132,10 @@ const OLIVER_NAV: SubNavConfig = {
       ],
     },
     {
-      // v7.1 — Reporting group replaces the old "Insights" duplicate group.
-      // The old oliver_insights + oliver_argus pages are now handled by the
-      // IA Insights group (Trends + Cross-Channel). Routes preserved.
-      label: "Reporting", icon: BarChart2, collapsible: true, sectionId: "oliver_reporting",
+      label: "Reports", icon: BarChart2, collapsible: true, sectionId: "oliver_reporting",
       items: [
         { key: "oliver_reports", label: "Reports", route: "/app/services/oliver_reports" },
         { key: "oliver_activity_log", label: "Activity Log", route: "/app/services/oliver_activity_log" },
-      ],
-    },
-    {
-      label: "", icon: Settings,
-      items: [
-        { key: "oliver_usage", label: "Plan & Pricing", route: "/app/services/oliver_usage" },
       ],
     },
   ],
@@ -529,15 +511,20 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/spark_leads") || path.includes("/spark_search_profiles") || path.includes("/spark_pipelines") || path.includes("/spark_deals")) return "spark_sales";
   if (path.includes("/spark_nps") || path.includes("/spark_reviews") || path.includes("/spark_referrals")) return "spark_customer_success";
   if (path.includes("/spark_ai_writer") || path.includes("/spark_intelligence") || path.includes("/spark_insights")) return "spark_intelligence";
-  // OLIVER sections
-  if (path.includes("/oliver_job_board") || path.includes("/oliver_projects") || path.includes("/oliver_schedule") || path.includes("/oliver_dispatch")) return "oliver_jobs";
-  if (path.includes("/oliver_workers") || path.includes("/oliver_crew_performance") || path.includes("/oliver_team_access")) return "oliver_team";
+  // OLIVER sections (simplified nav 2026-05-25 — see OLIVER_NAV comment)
+  //   - Removed entries for retired nav items (Projects, Schedule, Dispatch,
+  //     Quotes-page, Billing Overview, Template Library, Operations *, Comms)
+  //     so the auto-expand picks the correct collapsed section when a deep
+  //     link is opened. Their underlying routes still load (legacy pages
+  //     reachable via /app/services/<key>) but new nav doesn't expose them.
+  if (path.includes("/oliver_job_board") || path.includes("/oliver_jobs_archive")) return "oliver_jobs";
+  if (path.includes("/oliver_workers") || path.includes("/oliver_crew_performance") || path.includes("/oliver_time_tracking")) return "oliver_team";
   if (path.includes("/oliver_contacts") || path.includes("/oliver_service_requests") || path.includes("/oliver_booking")) return "oliver_customers";
   if (path.includes("/oliver_catalog") || path.includes("/oliver_categories") || path.includes("/oliver_coupons")) return "oliver_products";
   if (path.includes("/oliver_expenses") || path.includes("/oliver_job_costing")) return "oliver_expenses";
-  if (path.includes("/oliver_billing_overview") || path.includes("/oliver_proposals") || path.includes("/oliver_quotes") || path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_templates") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders")) return "oliver_billing";
-  if (path.includes("/oliver_messages") || path.includes("/oliver_notifications")) return "oliver_comms";
-  if (path.includes("/oliver_insights") || path.includes("/oliver_reports") || path.includes("/oliver_activity_log")) return "oliver_insights";
+  if (path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders")) return "oliver_billing";
+  if (path.includes("/oliver_ia_insights") || path.includes("/argus_cross_channel")) return "oliver_ia_insights";
+  if (path.includes("/oliver_reports") || path.includes("/oliver_activity_log")) return "oliver_reporting";
   return null;
 }
 

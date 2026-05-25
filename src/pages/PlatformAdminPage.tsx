@@ -1,0 +1,81 @@
+/**
+ * PlatformAdminPage — SUPER_ADMIN only.
+ *
+ * Routed at /admin. Reached via the gear icon at the bottom of the IconRail
+ * (which is hidden for non-SUPER_ADMIN users). For now a stub landing — will
+ * grow into cross-tenant ops, dead-tenant cleanup, migration runners, etc.
+ *
+ * Tenant settings are NOT here — those live under the hamburger menu at
+ * /app/settings/*.
+ */
+import { Link } from 'react-router-dom';
+import { Shield, Database, Users as UsersIcon, Settings as SettingsIcon } from 'lucide-react';
+
+export function PlatformAdminPage() {
+  return (
+    <div className="mx-auto max-w-5xl space-y-6 p-6">
+      <section className="rounded-lg border bg-white p-5">
+        <div className="flex items-center gap-3">
+          <div className="rounded-lg bg-amber-100 p-2 text-amber-800">
+            <Shield className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-semibold">Platform Admin</h1>
+            <p className="mt-0.5 text-sm text-gray-500">
+              Cross-tenant operations restricted to platform administrators.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        Looking for your business settings, billing, or integrations? Those live in the{' '}
+        <Link to="/app/settings" className="font-semibold underline">
+          hamburger menu (top-right) → Settings
+        </Link>
+        . This page is reserved for platform-level operations.
+      </section>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <PlaceholderTile
+          icon={<UsersIcon className="h-4 w-4" />}
+          title="Tenants"
+          description="Browse, switch into, or suspend tenants"
+        />
+        <PlaceholderTile
+          icon={<Database className="h-4 w-4" />}
+          title="Schema & Migrations"
+          description="Run pending migrations + view migration log"
+        />
+        <PlaceholderTile
+          icon={<SettingsIcon className="h-4 w-4" />}
+          title="Feature Flags"
+          description="Per-tenant feature flag overrides"
+        />
+      </div>
+    </div>
+  );
+}
+
+function PlaceholderTile({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="rounded-lg border bg-white p-4 opacity-60">
+      <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+        <span className="text-gray-400">{icon}</span>
+        {title}
+      </div>
+      <div className="mt-1 text-xs text-gray-500">{description}</div>
+      <div className="mt-3 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600">
+        Coming soon
+      </div>
+    </div>
+  );
+}

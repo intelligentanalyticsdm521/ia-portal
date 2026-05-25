@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { Settings } from "lucide-react";
+import { Shield } from "lucide-react";
 import { useAppState } from "../app/AppState";
+import { useIsSuperAdmin } from "../hooks/useIsSuperAdmin";
 import { resolveServiceStatus, SERVICE_CATALOG } from "../config/serviceCatalog";
 
 export type ProductKey = "overview" | "arion" | "oliver" | "spark" | "stella" | "forge" | "argus" | "consulting";
@@ -78,8 +79,13 @@ interface IconRailProps {
 export function IconRail({ activeProduct, onSelect }: IconRailProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const isSettingsActive = location.pathname.startsWith("/app/settings");
+  // Gear at the bottom of the rail is reserved for platform-level admin tools
+  // (cross-tenant ops). Tenant settings now live in the hamburger menu — see
+  // AccountMenu. Hide the gear entirely for non-super-admin users so they
+  // aren't tempted into a /admin page they can't use.
+  const isAdminActive = location.pathname.startsWith("/admin");
   const { enabledServices } = useAppState();
+  const isSuperAdmin = useIsSuperAdmin();
 
   const products: ProductDef[] = PRODUCTS.map((p) => {
     // Check if any service in this product's section is enabled
@@ -127,19 +133,23 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
         })}
       </div>
 
-      {/* Global Settings gear — pinned at bottom */}
-      <button
-        onClick={() => navigate("/app/settings")}
-        title="Settings"
-        className={`mt-auto flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
-          isSettingsActive ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white/80"
-        }`}
-      >
-        <span className="flex h-6 w-6 items-center justify-center">
-          <Settings className="h-5 w-5" />
-        </span>
-        <span className="text-[9px] font-medium leading-tight">Settings</span>
-      </button>
+      {/* Platform Admin gear — pinned at bottom. SUPER_ADMIN-only.
+          Tenant settings moved to the hamburger menu (top-right of HeaderBar)
+          so non-admin users no longer see this gear at all. */}
+      {isSuperAdmin && (
+        <button
+          onClick={() => navigate("/admin")}
+          title="Platform Admin (SUPER_ADMIN)"
+          className={`mt-auto flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
+            isAdminActive ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white/80"
+          }`}
+        >
+          <span className="flex h-6 w-6 items-center justify-center">
+            <Shield className="h-5 w-5" />
+          </span>
+          <span className="text-[9px] font-medium leading-tight">Admin</span>
+        </button>
+      )}
     </div>
   );
 }
