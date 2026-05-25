@@ -1,36 +1,24 @@
 /**
- * JobModal — Phase 2 unified Job view/edit surface.
+ * JobDetailPanel — the body of the (now-deprecated) standalone JobModal,
+ * extracted so it can render inside the unified CustomerModal's Jobs section.
  *
- * Founder spec LOCKED 2026-05-25: "Yes the job modal will incredibly simply
- * everything." Quote → job → invoice is ONE record from the user's
- * perspective; this modal owns the full job lifecycle in one place.
- *
- * Sections (all inside a single side drawer):
- *   - Header  : customer, status badge, scheduled, total
- *   - Details : title, scheduled start/end, team notes
- *   - Line Items (Phase 3) : CatalogLineItemPicker — auto-fills price +
- *                            duration from /catalog/offerings; recomputes
- *                            job.total server-side on save
- *   - Workers : same assignment UI as the old JobDetailDrawer
- *   - Profitability : revenue vs labor cost summary
- *   - Quotes & Invoices : list of linked artifacts + create buttons
- *   - Activity : status_history timeline
- *   - Footer  : status transitions (Advance to X / Cancel)
- *
- * Used by OliverJobBoardPage in place of the old JobDetailDrawer.
+ * Same content as the old JobModal: editable details, catalog line items,
+ * workers + status history, profitability, quotes + invoices. The
+ * difference: there's no DetailDrawer chrome here — the parent CustomerModal
+ * owns the drawer. Status-transition actions live in the footer slot so the
+ * CustomerModal can render them at the bottom.
  */
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  DetailDrawer, Button, StatusBadge,
-} from "../../components/oliver/ui";
-import { CatalogLineItemPicker, type LineItem } from "../../components/oliver/CatalogLineItemPicker";
+import { Button, StatusBadge } from "../ui";
+import { CatalogLineItemPicker, type LineItem } from "../CatalogLineItemPicker";
 
 interface JobDetail {
   id: string;
   title?: string;
   customerName?: string;
   customerEmail?: string;
+  contactId?: string;
   status: string;
   description?: string;
   scheduledDate?: string;
@@ -59,10 +47,6 @@ interface PersistedLineItem {
   durationMinutes?: number | null;
 }
 
-// Status transitions — same machine the backend enforces. Keep in sync with
-// oliver-api/lib/jobStateMachine.js. Buckets in the JobBoard collapse
-// several of these into the same column; transitions stay raw because
-// the underlying state model is unchanged.
 const VALID_NEXT: Record<string, string[]> = {
   inquiry: ["quoted", "cancelled"],
   quoted: ["scheduled", "cancelled"],
@@ -79,7 +63,6 @@ const VALID_NEXT: Record<string, string[]> = {
 function fmtMoney(n?: number | null) {
   return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
-
 function toLocalDtInput(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -88,21 +71,20 @@ function toLocalDtInput(iso?: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function JobModal({
-  jobId,
-  onClose,
-  onChanged,
-  api,
-}: {
+export interface JobDetailPanelProps {
   jobId: string;
-  onClose: () => void;
-  onChanged: () => void;
   api: {
     get: <T>(p: string) => Promise<T>;
     post: <T>(p: string, b?: unknown) => Promise<T>;
     patch: <T>(p: string, b: unknown) => Promise<T>;
   };
-}) {
+  onChanged?: () => void;
+  /** Render this above the panel — used by CustomerModal for the
+   *  "← back to all jobs" link. */
+  topSlot?: React.ReactNode;
+}
+
+export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPanelProps) {
   const navigate = useNavigate();
   const [job, setJob] = useState<JobDetail | null>(null);
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
@@ -122,10 +104,11 @@ export function JobModal({
     setLoading(true); setErr(null);
     try {
       const [j, items] = await Promise.all([
-        api.get<JobDetail>(`/jobs/${jobId}`),
+        api.get<JobDetail | { data: JobDetail }>(`/jobs/${jobId}`),
         api.get<{ data: PersistedLineItem[] }>(`/jobs/${jobId}/line-items`).catch(() => ({ data: [] })),
       ]);
-      setJob(j);
+      const jobData = (j as any)?.data ?? j;
+      setJob(jobData);
       const itemRows = (items?.data || []).map((it) => ({
         id: it.id,
         description: it.description,
@@ -165,10 +148,9 @@ export function JobModal({
       setEditingDetails(false);
       setToast("Details saved");
       await reload();
-      onChanged();
-    } catch (e) {
-      setErr(`Save failed: ${(e as Error).message}`);
-    } finally { setBusy(null); }
+      onChanged?.();
+    } catch (e) { setErr(`Save failed: ${(e as Error).message}`); }
+    finally { setBusy(null); }
   }
 
   async function saveLineItems() {
@@ -187,10 +169,9 @@ export function JobModal({
       setOriginalLineItems(lineItems);
       setToast("Line items saved — job total recomputed");
       await reload();
-      onChanged();
-    } catch (e) {
-      setErr(`Line items save failed: ${(e as Error).message}`);
-    } finally { setBusy(null); }
+      onChanged?.();
+    } catch (e) { setErr(`Line items save failed: ${(e as Error).message}`); }
+    finally { setBusy(null); }
   }
 
   async function advanceTo(newStatus: string) {
@@ -200,17 +181,17 @@ export function JobModal({
       await api.patch(`/jobs/${jobId}/status`, { status: newStatus });
       setToast(`Status: ${newStatus.replace(/_/g, " ")}`);
       await reload();
-      onChanged();
-    } catch (e) {
-      setErr(`Status update failed: ${(e as Error).message}`);
-    } finally { setBusy(null); }
+      onChanged?.();
+    } catch (e) { setErr(`Status update failed: ${(e as Error).message}`); }
+    finally { setBusy(null); }
   }
 
   if (loading || !job) {
     return (
-      <DetailDrawer open onClose={onClose} title="Loading…" width="xl">
+      <div>
+        {topSlot}
         <div style={{ padding: 20, color: "#5A7A8A" }}>Loading job…</div>
-      </DetailDrawer>
+      </div>
     );
   }
 
@@ -221,78 +202,38 @@ export function JobModal({
   const isTerminal = job.status === "paid" || job.status === "cancelled";
 
   return (
-    <DetailDrawer
-      open
-      onClose={onClose}
-      title={job.title || "(untitled job)"}
-      subtitle={`${job.customerName || "—"}${job.customerEmail ? ` · ${job.customerEmail}` : ""}`}
-      width="xl"
-      headerActions={
-        !editingDetails && !isTerminal ? (
-          <button
-            onClick={startEditDetails}
-            style={{ background: "none", border: "none", color: "#1A7DB5", cursor: "pointer", fontSize: 12, fontWeight: 500 }}
-          >
+    <div>
+      {topSlot}
+
+      {/* Job header strip */}
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+        gap: 12, padding: "8px 12px", background: "#F8FAFC", borderRadius: 8, marginBottom: 12,
+      }}>
+        <div>
+          <div style={{ fontSize: 11, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.5 }}>Job</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#0B1C24", marginTop: 2 }}>{job.title || "(untitled job)"}</div>
+          <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <StatusBadge status={job.status} />
+            {job.scheduledDate && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Scheduled {new Date(job.scheduledDate).toLocaleString()}</span>}
+            {Number(job.total) > 0 && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Total: <strong>{fmtMoney(job.total)}</strong></span>}
+          </div>
+        </div>
+        {!editingDetails && !isTerminal && (
+          <button onClick={startEditDetails}
+            style={{ background: "none", border: "none", color: "#1A7DB5", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
             Edit details
           </button>
-        ) : undefined
-      }
-      footer={
-        <>
-          <div style={{ flex: 1, display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <Button variant="ghost" onClick={() => navigate(`/app/services/oliver_invoices?from_job=${jobId}`)}>
-              + Invoice
-            </Button>
-            <Button variant="ghost" onClick={() => navigate(`/app/services/oliver_quotes?from_job=${jobId}`)}>
-              + Quote
-            </Button>
-          </div>
-          {nonTerminal.map((s) => (
-            <Button
-              key={s}
-              variant="primary"
-              onClick={() => advanceTo(s)}
-              disabled={busy === `status:${s}`}
-            >
-              {busy === `status:${s}` ? "Updating…" : `Advance to ${s.replace(/_/g, " ")}`}
-            </Button>
-          ))}
-          {nextStates.includes("cancelled") && (
-            <Button
-              variant="danger"
-              onClick={() => advanceTo("cancelled")}
-              disabled={busy === "status:cancelled"}
-            >
-              {busy === "status:cancelled" ? "Cancelling…" : "Cancel job"}
-            </Button>
-          )}
-          <Button variant="ghost" onClick={onClose}>Close</Button>
-        </>
-      }
-    >
-      {err && (
-        <div style={{ marginBottom: 12, background: "#FEE2E2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 6, padding: "8px 12px", fontSize: 12 }}>
-          {err}
-        </div>
-      )}
-      {toast && (
-        <div style={{ marginBottom: 12, background: "#DCFCE7", border: "1px solid #BBF7D0", color: "#166534", borderRadius: 6, padding: "8px 12px", fontSize: 12 }}>
-          {toast}
-        </div>
-      )}
-
-      {/* Status strip */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-        <StatusBadge status={job.status} />
-        {job.scheduledDate && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Scheduled {new Date(job.scheduledDate).toLocaleString()}</span>}
-        {Number(job.total) > 0 && (
-          <span style={{ fontSize: 11, color: "#5A7A8A" }}>
-            Total: <strong>{fmtMoney(job.total)}</strong>
-          </span>
         )}
       </div>
 
-      {/* ── Details section ──────────────────────────────────────────────── */}
+      {err && (
+        <div style={{ marginBottom: 12, background: "#FEE2E2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 6, padding: "8px 12px", fontSize: 12 }}>{err}</div>
+      )}
+      {toast && (
+        <div style={{ marginBottom: 12, background: "#DCFCE7", border: "1px solid #BBF7D0", color: "#166534", borderRadius: 6, padding: "8px 12px", fontSize: 12 }}>{toast}</div>
+      )}
+
       {editingDetails ? (
         <div className="card">
           <div className="card-ttl">Edit details</div>
@@ -329,7 +270,7 @@ export function JobModal({
         </div>
       ) : null}
 
-      {/* ── Line Items section (catalog-driven, Phase 3) ─────────────────── */}
+      {/* Line items */}
       <div className="card">
         <div className="card-hdr">
           <div>
@@ -345,14 +286,10 @@ export function JobModal({
             </Button>
           )}
         </div>
-        <CatalogLineItemPicker
-          items={lineItems}
-          onChange={setLineItems}
-          disabled={isTerminal}
-        />
+        <CatalogLineItemPicker items={lineItems} onChange={setLineItems} disabled={isTerminal} />
       </div>
 
-      {/* ── Workers + Status history (existing two-col layout) ───────────── */}
+      {/* Workers + Status history */}
       <div className="two-col">
         <div className="card">
           <div className="card-hdr">
@@ -374,7 +311,7 @@ export function JobModal({
                   if (!w.assignmentId) return;
                   await api.patch(`/jobs/${jobId}/assignments/${w.assignmentId}`, { actual_hours: hours });
                   await reload();
-                  onChanged();
+                  onChanged?.();
                 }}
               />
             ))
@@ -391,9 +328,7 @@ export function JobModal({
           {(job.statusHistory ?? []).map((h, i) => (
             <div key={i} className="hrow" style={{ display: "flex", alignItems: "center", gap: 9 }}>
               <StatusBadge status={h.status} />
-              <div style={{ flex: 1, fontSize: 11, color: "#5A7A8A" }}>
-                {new Date(h.timestamp).toLocaleString()}
-              </div>
+              <div style={{ flex: 1, fontSize: 11, color: "#5A7A8A" }}>{new Date(h.timestamp).toLocaleString()}</div>
               {h.note && <div style={{ fontSize: 11, color: "#0B1C24", fontStyle: "italic" }}>{h.note}</div>}
             </div>
           ))}
@@ -403,12 +338,8 @@ export function JobModal({
         </div>
       </div>
 
-      <JobProfitabilityCard
-        workers={job.assignedWorkers ?? []}
-        invoices={job.invoices ?? []}
-      />
+      <JobProfitabilityCard workers={job.assignedWorkers ?? []} invoices={job.invoices ?? []} />
 
-      {/* Quotes + Invoices */}
       <div className="two-col">
         <div className="card">
           <div className="card-hdr">
@@ -450,31 +381,46 @@ export function JobModal({
           )}
         </div>
       </div>
-    </DetailDrawer>
+
+      {/* Inline actions footer — sits at the bottom of the panel so the
+          CustomerModal's drawer footer stays free for navigation. */}
+      <div style={{
+        display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center",
+        padding: "12px 0 4px", borderTop: "1px solid #F1F5F9", marginTop: 14,
+      }}>
+        <div style={{ flex: 1, display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <Button variant="ghost" onClick={() => navigate(`/app/services/oliver_invoices?from_job=${jobId}`)}>+ Invoice</Button>
+          <Button variant="ghost" onClick={() => navigate(`/app/services/oliver_quotes?from_job=${jobId}`)}>+ Quote</Button>
+        </div>
+        {nonTerminal.map((s) => (
+          <Button key={s} variant="primary" onClick={() => advanceTo(s)} disabled={busy === `status:${s}`}>
+            {busy === `status:${s}` ? "Updating…" : `Advance to ${s.replace(/_/g, " ")}`}
+          </Button>
+        ))}
+        {nextStates.includes("cancelled") && (
+          <Button variant="danger" onClick={() => advanceTo("cancelled")} disabled={busy === "status:cancelled"}>
+            {busy === "status:cancelled" ? "Cancelling…" : "Cancel job"}
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
 
 const jdInputStyle: React.CSSProperties = {
   width: "100%", padding: "7px 10px", fontSize: 12,
-  border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6,
-  background: "#fff",
+  border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6, background: "#fff",
 };
 
 function JobProfitabilityCard({
-  workers,
-  invoices,
+  workers, invoices,
 }: {
   workers: Array<{ assignmentId?: string; id: string; name: string; actualHours?: number | null; hourlyRate?: number | null }>;
   invoices: Array<{ id: string; amount: number; amountPaid?: number; status: string }>;
 }) {
-  const laborCost = workers.reduce((s, w) => {
-    const hrs = Number(w.actualHours || 0);
-    const rate = Number(w.hourlyRate || 0);
-    return s + hrs * rate;
-  }, 0);
+  const laborCost = workers.reduce((s, w) => s + Number(w.actualHours || 0) * Number(w.hourlyRate || 0), 0);
   const totalHours = workers.reduce((s, w) => s + Number(w.actualHours || 0), 0);
-  const revenue = invoices
-    .filter((i) => i.status === "paid")
+  const revenue = invoices.filter((i) => i.status === "paid")
     .reduce((s, i) => s + Number(i.amountPaid ?? i.amount ?? 0), 0);
   const profit = revenue - laborCost;
   const margin = revenue > 0 ? Math.round((profit / revenue) * 100) : null;
@@ -490,19 +436,18 @@ function JobProfitabilityCard({
       </div>
     );
   }
-
   return (
     <div className="card" style={{ background: profit >= 0 ? "#F0FDF4" : "#FEF2F2", borderLeft: `4px solid ${profit >= 0 ? "#059669" : "#DC2626"}` }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
         <div>
           <div className="card-ttl" style={{ margin: 0 }}>Profitability</div>
           <div className="card-sub" style={{ marginTop: 2 }}>
-            {revenue > 0 ? fmtMoney(revenue) : "$0"} collected · {totalHours.toFixed(1)}h logged · {fmtMoney(laborCost)} labor
+            {revenue > 0 ? `$${revenue.toLocaleString()}` : "$0"} collected · {totalHours.toFixed(1)}h logged · ${laborCost.toLocaleString()} labor
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 24, fontWeight: 700, color: profit >= 0 ? "#059669" : "#DC2626", fontFamily: "monospace" }}>
-            {profit >= 0 ? "" : "−"}{fmtMoney(Math.abs(profit))}
+            {profit >= 0 ? "" : "−"}${Math.abs(profit).toLocaleString()}
           </div>
           <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>
             {margin != null ? `${margin}% margin` : "profit"}
@@ -514,8 +459,7 @@ function JobProfitabilityCard({
 }
 
 function AssignmentRow({
-  worker,
-  onSave,
+  worker, onSave,
 }: {
   worker: { id: string; name: string; assignmentId?: string; actualHours?: number | null; hourlyRate?: number | null };
   onSave: (hours: number | null) => Promise<void>;
@@ -533,9 +477,8 @@ function AssignmentRow({
       const num = val.trim() === "" ? null : Number(val);
       await onSave(num != null && Number.isFinite(num) ? num : null);
       setEditing(false);
-    } catch (e) {
-      console.error(e);
-    } finally { setSaving(false); }
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -551,20 +494,16 @@ function AssignmentRow({
       </div>
       {editing ? (
         <>
-          <input
-            type="number" step="0.25" min="0" placeholder="Hours" value={val}
+          <input type="number" step="0.25" min="0" placeholder="Hours" value={val}
             onChange={(e) => setVal(e.target.value)} autoFocus
-            style={{ width: 70, padding: "4px 6px", fontSize: 12, border: "1px solid rgba(45,156,219,0.28)", borderRadius: 4, textAlign: "right" }}
-          />
+            style={{ width: 70, padding: "4px 6px", fontSize: 12, border: "1px solid rgba(45,156,219,0.28)", borderRadius: 4, textAlign: "right" }} />
           <span style={{ fontSize: 11, color: "#5A7A8A" }}>hr</span>
           <button onClick={save} disabled={saving}
             style={{ fontSize: 11, padding: "3px 8px", border: "none", background: "#0C4A60", color: "#fff", borderRadius: 4, cursor: "pointer" }}>
             {saving ? "…" : "Save"}
           </button>
           <button onClick={() => { setVal(worker.actualHours != null ? String(worker.actualHours) : ""); setEditing(false); }}
-            style={{ fontSize: 11, padding: "3px 8px", border: "1px solid #ddd", background: "#fff", borderRadius: 4, cursor: "pointer" }}>
-            Cancel
-          </button>
+            style={{ fontSize: 11, padding: "3px 8px", border: "1px solid #ddd", background: "#fff", borderRadius: 4, cursor: "pointer" }}>Cancel</button>
         </>
       ) : (
         <button onClick={() => setEditing(true)}

@@ -9,7 +9,8 @@ import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button, StatusBadge } from "../../components/oliver/ui";
 import { Sparkline } from "../../components/iainsights/Sparkline";
 import { OliverSetupCard } from "../../components/command/OliverSetupCard";
-import { Sparkles, ArrowUpRight } from "lucide-react";
+import { Sparkles, ArrowUpRight, Calendar as CalendarIcon } from "lucide-react";
+import { CalendarModal } from "../../components/oliver/customer/CalendarModal";
 
 interface TodaySummary {
   jobs_today: number;
@@ -101,6 +102,9 @@ function fmtRelative(d?: string) {
 }
 
 export function OliverDashboardPage() {
+  // Calendar Modal — opens from the "Upcoming jobs" card. Replaces the
+  // standalone Schedule page that was removed from the nav in Phase 1A.
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const { get, ready } = useOliverApi();
   const spark = useSparkApi();
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -251,7 +255,12 @@ export function OliverDashboardPage() {
               <div className="card-ttl">Upcoming jobs</div>
               <div className="card-sub">Scheduled, assigned, or dispatched — next 14 days</div>
             </div>
-            <Link to="/app/services/oliver_schedule" style={{ fontSize: 11, color: "#1A7DB5", textDecoration: "none" }}>View schedule →</Link>
+            <button
+              onClick={() => setCalendarOpen(true)}
+              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 11, color: "#1A7DB5", display: "inline-flex", alignItems: "center", gap: 4 }}
+            >
+              <CalendarIcon className="h-3 w-3" /> Open calendar
+            </button>
           </div>
           {!ops?.upcoming_jobs?.length ? (
             <div style={{ padding: "16px 0", color: "#5A7A8A", fontSize: 12, fontStyle: "italic" }}>
@@ -439,6 +448,8 @@ export function OliverDashboardPage() {
           ))
         )}
       </div>
+
+      {calendarOpen && <CalendarModal onClose={() => setCalendarOpen(false)} />}
     </OliverPageWrapper>
   );
 }

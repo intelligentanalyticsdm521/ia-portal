@@ -8,7 +8,7 @@ import {
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, Legend,
 } from "recharts";
-import { SubscriptionModal } from "./SubscriptionModal";
+import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
 
 interface Subscription {
   id: string;
@@ -355,10 +355,11 @@ export function OliverRecurringPage() {
       )}
 
       {openModalId && (
-        <SubscriptionModal
-          subscriptionId={openModalId}
+        <CustomerModal
+          focusSubscriptionId={openModalId}
           onClose={() => setOpenModalId(null)}
           onChanged={reload}
+          api={{ get, post, patch }}
         />
       )}
 

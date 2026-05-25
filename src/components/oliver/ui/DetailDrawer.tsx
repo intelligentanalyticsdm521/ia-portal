@@ -8,6 +8,16 @@ interface Props {
   title: string;
   subtitle?: string;
   width?: "md" | "lg" | "xl";
+  /**
+   * Sizing mode. Defaults to "fluid" — width capped, height up to 90vh.
+   *
+   * "fixed" gives Stripe-style stable dimensions: 1200px × 80vh regardless
+   * of content (whitespace inside on light records). Use this for any modal
+   * that opens from multiple entry points so the layout doesn't jump
+   * between calls. Width is fixed (still respects 94vw on narrow screens);
+   * height is fixed; internal scroll handles overflow.
+   */
+  size?: "fluid" | "fixed";
   headerActions?: ReactNode;
   footer?: ReactNode;
   children: ReactNode;
@@ -19,7 +29,12 @@ const widthPx: Record<NonNullable<Props["width"]>, number> = {
   xl: 1200,
 };
 
-export function DetailDrawer({ open, onClose, title, subtitle, width = "lg", headerActions, footer, children }: Props) {
+// Stripe-style fixed canvas — same dimensions every time the modal opens
+// so opening from Job Board / Subscriptions / Contacts all feels the same.
+const FIXED_WIDTH = 1200;
+const FIXED_HEIGHT_VH = 80;
+
+export function DetailDrawer({ open, onClose, title, subtitle, width = "lg", size = "fluid", headerActions, footer, children }: Props) {
   useEffect(() => {
     function onEsc(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
     if (open) document.addEventListener("keydown", onEsc);
@@ -58,11 +73,20 @@ export function DetailDrawer({ open, onClose, title, subtitle, width = "lg", hea
       onMouseUp={handleBackdropMouseUp}
     >
       <div
-        style={{
-          background: "#fff", borderRadius: 12,
-          maxWidth: widthPx[width], width: "94vw", maxHeight: "90vh",
-          display: "flex", flexDirection: "column",
-        }}
+        style={
+          size === "fixed"
+            ? {
+                background: "#fff", borderRadius: 12,
+                width: `min(${FIXED_WIDTH}px, 94vw)`,
+                height: `${FIXED_HEIGHT_VH}vh`,
+                display: "flex", flexDirection: "column",
+              }
+            : {
+                background: "#fff", borderRadius: 12,
+                maxWidth: widthPx[width], width: "94vw", maxHeight: "90vh",
+                display: "flex", flexDirection: "column",
+              }
+        }
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div style={{

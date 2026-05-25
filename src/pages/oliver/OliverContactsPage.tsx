@@ -9,6 +9,7 @@ import {
   PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState,
   StatusBadge, Button, type Column,
 } from "../../components/oliver/ui";
+import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
 
 const CUSTOMER_PILLS = [
   { key: "", label: "All" },
@@ -283,7 +284,7 @@ export function OliverContactsPage() {
         </>
       )}
 
-      {pickedId && <ContactDetailModal contactId={pickedId} onClose={() => setPickedId(null)} api={{ get, post, patch }} onChanged={reload} />}
+      {pickedId && <CustomerModal customerId={pickedId} onClose={() => setPickedId(null)} api={{ get, post, patch }} onChanged={reload} />}
       {showCreate && (
         <NewContactModal
           onClose={() => setShowCreate(false)}

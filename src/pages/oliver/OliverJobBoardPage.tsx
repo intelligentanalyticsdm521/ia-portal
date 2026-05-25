@@ -7,7 +7,7 @@ import {
   StatusBadge, type Column,
 } from "../../components/oliver/ui";
 import { JobCreateForm } from "./JobCreateForm";
-import { JobModal } from "./JobModal";
+import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
 
 interface Job {
   id: string;
@@ -107,7 +107,8 @@ export function OliverJobBoardPage() {
   const [recurringFilter, setRecurringFilter] = useState<'' | 'recurring' | 'one_off'>('');
   const [profitFilter, setProfitFilter] = useState("");
   const [search, setSearch] = useState("");
-  const [view, setView] = useState<"list" | "kanban">("list");
+  // Default Kanban — easier to see at a glance per founder request 2026-05-25.
+  const [view, setView] = useState<"list" | "kanban">("kanban");
   const [showCreate, setShowCreate] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
 
@@ -396,8 +397,8 @@ export function OliverJobBoardPage() {
       )}
 
       {detailId && (
-        <JobModal
-          jobId={detailId}
+        <CustomerModal
+          focusJobId={detailId}
           onClose={() => setDetailId(null)}
           onChanged={reload}
           api={{ get, post, patch }}
