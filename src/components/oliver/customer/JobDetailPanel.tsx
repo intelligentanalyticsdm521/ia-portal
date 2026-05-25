@@ -9,7 +9,6 @@
  * CustomerModal can render them at the bottom.
  */
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Button, StatusBadge } from "../ui";
 import { CatalogLineItemPicker, type LineItem } from "../CatalogLineItemPicker";
 
@@ -85,7 +84,6 @@ export interface JobDetailPanelProps {
 }
 
 export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPanelProps) {
-  const navigate = useNavigate();
   const [job, setJob] = useState<JobDetail | null>(null);
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [originalLineItems, setOriginalLineItems] = useState<LineItem[]>([]);
@@ -382,16 +380,14 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
         </div>
       </div>
 
-      {/* Inline actions footer — sits at the bottom of the panel so the
-          CustomerModal's drawer footer stays free for navigation. */}
+      {/* Status-transition footer. Quote/invoice creation lives in the parent
+          CustomerModal's Quotes/Invoices sections — no navigate-away buttons
+          here per founder spec 2026-05-25 ("everything handled in the
+          modal"). */}
       <div style={{
-        display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center",
+        display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", justifyContent: "flex-end",
         padding: "12px 0 4px", borderTop: "1px solid #F1F5F9", marginTop: 14,
       }}>
-        <div style={{ flex: 1, display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <Button variant="ghost" onClick={() => navigate(`/app/services/oliver_invoices?from_job=${jobId}`)}>+ Invoice</Button>
-          <Button variant="ghost" onClick={() => navigate(`/app/services/oliver_quotes?from_job=${jobId}`)}>+ Quote</Button>
-        </div>
         {nonTerminal.map((s) => (
           <Button key={s} variant="primary" onClick={() => advanceTo(s)} disabled={busy === `status:${s}`}>
             {busy === `status:${s}` ? "Updating…" : `Advance to ${s.replace(/_/g, " ")}`}

@@ -26,10 +26,12 @@
  *   Subscriptions — list; click → SubscriptionDetailPanel inline
  */
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { DetailDrawer, Button, StatusBadge } from "../ui";
 import { JobDetailPanel } from "./JobDetailPanel";
 import { SubscriptionDetailPanel } from "./SubscriptionDetailPanel";
+import {
+  JobCreatePanel, QuoteCreatePanel, InvoiceCreatePanel, SubscriptionCreatePanel,
+} from "./CreatePanels";
 
 type Tab = "overview" | "jobs" | "quotes" | "invoices" | "payments" | "subscriptions";
 
@@ -111,8 +113,6 @@ export function CustomerModal({
   onChanged,
   api,
 }: CustomerModalProps) {
-  const navigate = useNavigate();
-
   // Resolved customer id — may be derived from focusJobId / focusSubscriptionId.
   const [customerId, setCustomerId] = useState<string | null>(initialCustomerId || null);
   const [resolveErr, setResolveErr] = useState<string | null>(null);
@@ -129,6 +129,11 @@ export function CustomerModal({
   );
   const [focusedJobId, setFocusedJobId] = useState<string | null>(focusJobId || null);
   const [focusedSubId, setFocusedSubId] = useState<string | null>(focusSubscriptionId || null);
+
+  // Inline "+ New X" mode — when set, the matching section renders the create
+  // panel in place of the list view. Keeps creation inside the modal per
+  // founder spec.
+  const [creating, setCreating] = useState<null | "job" | "quote" | "invoice" | "subscription">(null);
 
   const [detail, setDetail] = useState<ContactDetail | null>(null);
   const [activity, setActivity] = useState<Activity | null>(null);
@@ -184,12 +189,6 @@ export function CustomerModal({
     ? [detail.email, detail.phone].filter(Boolean).join(" · ")
     : "";
 
-  // Map an entity id back to its row in `activity` for the inline expansion
-  // pattern. If the customer doesn't own the job (shouldn't happen, but
-  // defensive), we still show the JobDetailPanel — it fetches by id directly.
-  const expandedJob = focusedJobId ? activity?.jobs.find((j) => j.job_id === focusedJobId) : null;
-  const expandedSub = focusedSubId ? activity?.subscriptions?.find((s) => s.subscription_id === focusedSubId) : null;
-
   return (
     <DetailDrawer
       open
@@ -200,8 +199,12 @@ export function CustomerModal({
       width="xl"
       headerActions={detail && customerId ? (
         <div style={{ display: "flex", gap: 8 }}>
-          <Button variant="secondary" onClick={() => navigate(`/app/services/oliver_quotes?for_customer=${customerId}`)}>+ Quote</Button>
-          <Button variant="primary" onClick={() => navigate(`/app/services/oliver_invoices?for_customer=${customerId}`)}>+ Invoice</Button>
+          {/* Primary CTA — most common path is "skip the quote, create a job"
+              per founder spec 2026-05-25. Quote/Invoice/Subscription creation
+              are exposed inside their sections. */}
+          <Button variant="primary" onClick={() => { setTab("jobs"); setFocusedJobId(null); setCreating("job"); }}>
+            + New job
+          </Button>
         </div>
       ) : undefined}
     >
@@ -269,9 +272,21 @@ export function CustomerModal({
             </>
           )}
 
-          {/* ── Jobs (list OR focused job panel inline) ── */}
+          {/* ── Jobs (list / focused detail / create panel — all inline) ── */}
           {tab === "jobs" && (
-            focusedJobId ? (
+            creating === "job" && customerId ? (
+              <JobCreatePanel
+                customerId={customerId}
+                api={api}
+                onCancel={() => setCreating(null)}
+                onCreated={(newId) => {
+                  setCreating(null);
+                  reload();
+                  onChanged?.();
+                  if (newId) setFocusedJobId(newId);
+                }}
+              />
+            ) : focusedJobId ? (
               <JobDetailPanel
                 jobId={focusedJobId}
                 api={api}
@@ -286,70 +301,103 @@ export function CustomerModal({
                 }
               />
             ) : (
-              <table className="tbl">
-                <thead><tr><th>Job #</th><th>Title</th><th>Status</th><th>Scheduled</th><th></th></tr></thead>
-                <tbody>
-                  {activity.jobs.length === 0 ? (
-                    <tr><td colSpan={5} style={{ textAlign: "center", padding: "20px 0", color: "#5A7A8A" }}>No jobs yet</td></tr>
-                  ) : activity.jobs.map((j) => (
-                    <tr key={j.job_id} style={{ cursor: "pointer" }} onClick={() => setFocusedJobId(j.job_id)}>
-                      <td><strong>{j.job_number || j.job_id.slice(0, 8)}</strong></td>
-                      <td>{j.title || "—"}</td>
-                      <td><StatusBadge status={j.status} /></td>
-                      <td>{fmtDate(j.scheduled_start)}</td>
-                      <td style={{ textAlign: "right", color: "#1A7DB5", fontSize: 11 }}>Open →</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                  <Button variant="primary" onClick={() => setCreating("job")}>+ New job</Button>
+                </div>
+                <table className="tbl">
+                  <thead><tr><th>Job #</th><th>Title</th><th>Status</th><th>Scheduled</th><th></th></tr></thead>
+                  <tbody>
+                    {activity.jobs.length === 0 ? (
+                      <tr><td colSpan={5} style={{ textAlign: "center", padding: "20px 0", color: "#5A7A8A" }}>No jobs yet — click "+ New job" to create the first.</td></tr>
+                    ) : activity.jobs.map((j) => (
+                      <tr key={j.job_id} style={{ cursor: "pointer" }} onClick={() => setFocusedJobId(j.job_id)}>
+                        <td><strong>{j.job_number || j.job_id.slice(0, 8)}</strong></td>
+                        <td>{j.title || "—"}</td>
+                        <td><StatusBadge status={j.status} /></td>
+                        <td>{fmtDate(j.scheduled_start)}</td>
+                        <td style={{ textAlign: "right", color: "#1A7DB5", fontSize: 11 }}>Open →</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
             )
           )}
 
-          {/* ── Quotes ── */}
+          {/* ── Quotes (list / create panel) ── */}
           {tab === "quotes" && (
-            <table className="tbl">
-              <thead><tr><th>Status</th><th style={{ textAlign: "right" }}>Total</th><th>Valid until</th><th>Created</th></tr></thead>
-              <tbody>
-                {activity.quotes.length === 0 ? (
-                  <tr><td colSpan={4} style={{ textAlign: "center", padding: "20px 0", color: "#5A7A8A" }}>No quotes yet</td></tr>
-                ) : activity.quotes.map((q) => (
-                  <tr key={q.quote_id}>
-                    <td><StatusBadge status={q.status} /></td>
-                    <td style={{ textAlign: "right" }}>{fmtMoney(q.total)}</td>
-                    <td>{fmtDate(q.valid_until)}</td>
-                    <td>{fmtDate(q.created_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            creating === "quote" && customerId ? (
+              <QuoteCreatePanel
+                customerId={customerId}
+                api={api}
+                onCancel={() => setCreating(null)}
+                onCreated={() => { setCreating(null); reload(); onChanged?.(); }}
+              />
+            ) : (
+              <>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                  <Button variant="primary" onClick={() => setCreating("quote")}>+ New quote</Button>
+                </div>
+                <table className="tbl">
+                  <thead><tr><th>Status</th><th style={{ textAlign: "right" }}>Total</th><th>Valid until</th><th>Created</th></tr></thead>
+                  <tbody>
+                    {activity.quotes.length === 0 ? (
+                      <tr><td colSpan={4} style={{ textAlign: "center", padding: "20px 0", color: "#5A7A8A" }}>No quotes yet — quotes are optional. Click "+ New job" to skip straight to scheduling.</td></tr>
+                    ) : activity.quotes.map((q) => (
+                      <tr key={q.quote_id}>
+                        <td><StatusBadge status={q.status} /></td>
+                        <td style={{ textAlign: "right" }}>{fmtMoney(q.total)}</td>
+                        <td>{fmtDate(q.valid_until)}</td>
+                        <td>{fmtDate(q.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )
           )}
 
-          {/* ── Invoices ── */}
+          {/* ── Invoices (list / create panel) ── */}
           {tab === "invoices" && (
-            <table className="tbl">
-              <thead><tr>
-                <th>Invoice #</th><th>Status</th>
-                <th style={{ textAlign: "right" }}>Total</th>
-                <th style={{ textAlign: "right" }}>Paid</th>
-                <th style={{ textAlign: "right" }}>Balance</th>
-                <th>Source</th><th>Date</th>
-              </tr></thead>
-              <tbody>
-                {activity.invoices.length === 0 ? (
-                  <tr><td colSpan={7} style={{ textAlign: "center", padding: "20px 0", color: "#5A7A8A" }}>No invoices yet</td></tr>
-                ) : activity.invoices.map((i) => (
-                  <tr key={i.invoice_id}>
-                    <td><strong>{i.invoice_number}</strong></td>
-                    <td><StatusBadge status={i.status} /></td>
-                    <td style={{ textAlign: "right" }}>{fmtMoney(i.total)}</td>
-                    <td style={{ textAlign: "right" }}>{fmtMoney(i.amount_paid)}</td>
-                    <td style={{ textAlign: "right" }}>{fmtMoney(i.balance_due)}</td>
-                    <td style={{ fontSize: 10, textTransform: "uppercase", color: "#5A7A8A" }}>{i.source || "oliver"}</td>
-                    <td>{fmtDate(i.created_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            creating === "invoice" && customerId ? (
+              <InvoiceCreatePanel
+                customerId={customerId}
+                api={api}
+                onCancel={() => setCreating(null)}
+                onCreated={() => { setCreating(null); reload(); onChanged?.(); }}
+              />
+            ) : (
+              <>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                  <Button variant="primary" onClick={() => setCreating("invoice")}>+ New invoice</Button>
+                </div>
+                <table className="tbl">
+                  <thead><tr>
+                    <th>Invoice #</th><th>Status</th>
+                    <th style={{ textAlign: "right" }}>Total</th>
+                    <th style={{ textAlign: "right" }}>Paid</th>
+                    <th style={{ textAlign: "right" }}>Balance</th>
+                    <th>Source</th><th>Date</th>
+                  </tr></thead>
+                  <tbody>
+                    {activity.invoices.length === 0 ? (
+                      <tr><td colSpan={7} style={{ textAlign: "center", padding: "20px 0", color: "#5A7A8A" }}>No invoices yet</td></tr>
+                    ) : activity.invoices.map((i) => (
+                      <tr key={i.invoice_id}>
+                        <td><strong>{i.invoice_number}</strong></td>
+                        <td><StatusBadge status={i.status} /></td>
+                        <td style={{ textAlign: "right" }}>{fmtMoney(i.total)}</td>
+                        <td style={{ textAlign: "right" }}>{fmtMoney(i.amount_paid)}</td>
+                        <td style={{ textAlign: "right" }}>{fmtMoney(i.balance_due)}</td>
+                        <td style={{ fontSize: 10, textTransform: "uppercase", color: "#5A7A8A" }}>{i.source || "oliver"}</td>
+                        <td>{fmtDate(i.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )
           )}
 
           {/* ── Payments ── */}
@@ -374,9 +422,21 @@ export function CustomerModal({
             </table>
           )}
 
-          {/* ── Subscriptions (list OR focused sub panel inline) ── */}
+          {/* ── Subscriptions (list / focused detail / create — all inline) ── */}
           {tab === "subscriptions" && (
-            focusedSubId ? (
+            creating === "subscription" && customerId ? (
+              <SubscriptionCreatePanel
+                customerId={customerId}
+                api={api}
+                onCancel={() => setCreating(null)}
+                onCreated={(newId) => {
+                  setCreating(null);
+                  reload();
+                  onChanged?.();
+                  if (newId) setFocusedSubId(newId);
+                }}
+              />
+            ) : focusedSubId ? (
               <SubscriptionDetailPanel
                 subscriptionId={focusedSubId}
                 api={api}
@@ -391,6 +451,10 @@ export function CustomerModal({
                 }
               />
             ) : (
+              <>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                <Button variant="primary" onClick={() => setCreating("subscription")}>+ New subscription</Button>
+              </div>
               <table className="tbl">
                 <thead><tr>
                   <th>Service</th>
@@ -422,6 +486,7 @@ export function CustomerModal({
                   ))}
                 </tbody>
               </table>
+              </>
             )
           )}
         </>
