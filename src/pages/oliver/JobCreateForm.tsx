@@ -225,7 +225,7 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
               ))}
             </select>
           </Field>
-          <Field label="Service address (optional)">
+          <Field label="Address (optional)">
             <select
               value={addressId}
               onChange={(e) => setAddressId(e.target.value)}
@@ -243,9 +243,8 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
             </select>
             {contactId && !loadingAddrs && !addresses.length && (
               <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 4 }}>
-                No address on file. Leave blank if this job doesn't need one (e.g. consulting),
-                or add one from the customer's detail page. Service businesses will be able to
-                require an address per the upcoming business-type setting.
+                No address on file for this customer. Leave blank if this job doesn't need
+                an address — you'll still be able to add one from the customer's record later.
               </div>
             )}
           </Field>
@@ -270,7 +269,7 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
             </Field>
           </div>
           <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>
-            Service address
+            Address (optional)
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 80px 100px", gap: 8, marginBottom: 14 }}>
             <input placeholder="Street address *" value={addrLine1} onChange={(e) => setAddrLine1(e.target.value)} style={selectStyle} />
@@ -448,7 +447,7 @@ function NoAddressWarning({
           </>
         ) : (
           <>
-            <div style={{ fontSize: 18, fontWeight: 700, color: "#0B1C24" }}>Add service address</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#0B1C24" }}>Add address</div>
             <div style={{ marginTop: 12 }}>
               <label style={{ display: "block", marginBottom: 8 }}>
                 <span style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A" }}>Street address *</span>

@@ -415,7 +415,7 @@ function RequestDetailModal({ jobId, onClose, api, navigate }: { jobId: string; 
         <Row label="Name" value={detail.customerName || "—"} />
         {detail.customerEmail && <Row label="Email" value={<a href={`mailto:${detail.customerEmail}`} style={{ color: "#1A7DB5" }}>{detail.customerEmail}</a>} />}
         {detail.customerPhone && <Row label="Phone" value={detail.customerPhone} />}
-        {detail.service_address && <Row label="Service address" value={detail.service_address} />}
+        {detail.service_address && <Row label="Address" value={detail.service_address} />}
       </div>
 
       <div className="card">
