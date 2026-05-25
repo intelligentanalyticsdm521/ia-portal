@@ -28,13 +28,34 @@ export function DetailDrawer({ open, onClose, title, subtitle, width = "lg", hea
 
   if (!open) return null;
 
+  // Close on backdrop click — but ONLY if the click STARTED on the backdrop.
+  // Without the mousedown check, text drag-selection that begins inside the
+  // panel and ends outside it (mouseup on backdrop) wrongly closes the modal.
+  // The fix: track which element received mousedown; only close when both
+  // the down AND up happened on the backdrop itself.
+  function handleBackdropMouseDown(e: React.MouseEvent) {
+    if (e.target === e.currentTarget) {
+      // Defer the close to the mouseup so a stray text-select that escapes
+      // the panel never triggers it.
+      (e.currentTarget as HTMLDivElement).dataset.backdropDown = "1";
+    }
+  }
+  function handleBackdropMouseUp(e: React.MouseEvent) {
+    const target = e.currentTarget as HTMLDivElement;
+    if (target.dataset.backdropDown === "1" && e.target === target) {
+      onClose();
+    }
+    delete target.dataset.backdropDown;
+  }
+
   return (
     <div
       style={{
         position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
         display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
       }}
-      onClick={onClose}
+      onMouseDown={handleBackdropMouseDown}
+      onMouseUp={handleBackdropMouseUp}
     >
       <div
         style={{
@@ -42,7 +63,7 @@ export function DetailDrawer({ open, onClose, title, subtitle, width = "lg", hea
           maxWidth: widthPx[width], width: "94vw", maxHeight: "90vh",
           display: "flex", flexDirection: "column",
         }}
-        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         <div style={{
           padding: "16px 24px", borderBottom: "1px solid #eee",
