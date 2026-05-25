@@ -7,6 +7,7 @@ import {
   StatusBadge, type Column,
 } from "../../components/oliver/ui";
 import { JobCreateForm } from "./JobCreateForm";
+import { JobModal } from "./JobModal";
 
 interface Job {
   id: string;
@@ -395,7 +396,7 @@ export function OliverJobBoardPage() {
       )}
 
       {detailId && (
-        <JobDetailDrawer
+        <JobModal
           jobId={detailId}
           onClose={() => setDetailId(null)}
           onChanged={reload}
