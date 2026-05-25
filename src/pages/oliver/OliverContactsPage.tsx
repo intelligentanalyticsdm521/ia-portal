@@ -69,7 +69,7 @@ function contactName(c: Contact) {
 }
 
 export function OliverContactsPage() {
-  const { get, post, ready } = useOliverApi();
+  const { get, post, patch, ready } = useOliverApi();
   const { instance, accounts } = useMsal();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
@@ -282,7 +282,7 @@ export function OliverContactsPage() {
         </>
       )}
 
-      {pickedId && <ContactDetailModal contactId={pickedId} onClose={() => setPickedId(null)} api={{ get, post }} />}
+      {pickedId && <ContactDetailModal contactId={pickedId} onClose={() => setPickedId(null)} api={{ get, post, patch }} onChanged={reload} />}
       {showCreate && (
         <NewContactModal
           onClose={() => setShowCreate(false)}
@@ -361,12 +361,22 @@ function FormField({ label, value, onChange, type = "text" }: { label: string; v
 
 // ──────────────────────────────────────────────────────────────────────────────
 
-function ContactDetailModal({ contactId, onClose, api }: { contactId: string; onClose: () => void; api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T> } }) {
+function ContactDetailModal({ contactId, onClose, api, onChanged }: {
+  contactId: string;
+  onClose: () => void;
+  api: {
+    get: <T>(p: string) => Promise<T>;
+    post: <T>(p: string, b?: unknown) => Promise<T>;
+    patch: <T>(p: string, b: unknown) => Promise<T>;
+  };
+  onChanged?: () => void;
+}) {
   const navigate = useNavigate();
   const [detail, setDetail] = useState<ContactDetail | null>(null);
   const [activity, setActivity] = useState<Activity | null>(null);
   const [tab, setTab] = useState<"overview" | "jobs" | "quotes" | "invoices" | "payments" | "subscriptions">("overview");
   const [showAddAddress, setShowAddAddress] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
   const reload = async () => {
@@ -452,6 +462,9 @@ function ContactDetailModal({ contactId, onClose, api }: { contactId: string; on
               {healthPill.label}
             </span>
           )}
+          <Button variant="secondary" onClick={() => setShowEdit(true)}>
+            Edit
+          </Button>
           <Button variant="secondary" onClick={() => navigate(`/app/services/oliver_quotes?for_customer=${contactId}`)}>
             + Quote
           </Button>
@@ -645,6 +658,73 @@ function ContactDetailModal({ contactId, onClose, api }: { contactId: string; on
           </tbody>
         </table>
       )}
+      {showEdit && detail && (
+        <EditContactModal
+          contact={detail}
+          onClose={() => setShowEdit(false)}
+          onSaved={() => { setShowEdit(false); reload(); onChanged?.(); }}
+          patch={(b) => api.patch(`/contacts/${contactId}`, b)}
+        />
+      )}
+    </DetailDrawer>
+  );
+}
+
+// EditContactModal — mirrors NewContactModal but pre-populates from an existing
+// row and calls PATCH /contacts/:id (which writes to lumen.contact as of the
+// 2026-05-25 contact unification).
+function EditContactModal({ contact, onClose, onSaved, patch }: {
+  contact: ContactDetail;
+  onClose: () => void;
+  onSaved: () => void;
+  patch: (body: Record<string, string | undefined>) => Promise<unknown>;
+}) {
+  const [first, setFirst] = useState(contact.first_name || "");
+  const [last, setLast] = useState(contact.last_name || "");
+  const [email, setEmail] = useState(contact.email || "");
+  const [phone, setPhone] = useState(contact.phone || "");
+  const [company, setCompany] = useState(contact.company_name || "");
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    setErr(null);
+    if (!first.trim() || !last.trim()) { setErr("First and last name are required."); return; }
+    setSubmitting(true);
+    try {
+      await patch({
+        first_name: first.trim(),
+        last_name: last.trim(),
+        email: email.trim() || undefined,
+        phone: phone.trim() || undefined,
+        company_name: company.trim() || undefined,
+      });
+      onSaved();
+    } catch (e) {
+      setErr((e as Error).message || "Failed to update customer");
+    } finally { setSubmitting(false); }
+  }
+
+  return (
+    <DetailDrawer open onClose={onClose} title="Edit customer" subtitle={contact.email || contact.phone || undefined} width="md">
+      {err && (
+        <div style={{ background: "#FEE2E2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 6, padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>
+          {err}
+        </div>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <FormField label="First name *" value={first} onChange={setFirst} />
+        <FormField label="Last name *" value={last} onChange={setLast} />
+      </div>
+      <FormField label="Email" value={email} onChange={setEmail} type="email" />
+      <FormField label="Phone" value={phone} onChange={setPhone} type="tel" />
+      <FormField label="Company name" value={company} onChange={setCompany} />
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+        <Button variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" onClick={submit} disabled={submitting || !first.trim() || !last.trim()}>
+          {submitting ? "Saving…" : "Save changes"}
+        </Button>
+      </div>
     </DetailDrawer>
   );
 }
