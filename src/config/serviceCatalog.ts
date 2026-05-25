@@ -111,6 +111,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   // OLIVER — Full FSM suite (16 pages)
   { key: 'oliver_dashboard', displayName: 'Dashboard', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_dashboard', description: 'KPI overview: active jobs, revenue, open invoices, and recent activity.' },
   { key: 'oliver_job_board', displayName: 'Job Board', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_job_board', description: 'List and Kanban views of all jobs with status filtering.' },
+  { key: 'oliver_jobs_archive', displayName: 'Jobs Archive', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_jobs_archive', description: 'Closed jobs (paid + cancelled) with date-range filter. Surfaces older records than the rolling 7-day window on the Job Board.' },
   { key: 'oliver_schedule', displayName: 'Schedule', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_schedule', description: 'Calendar view of scheduled jobs and assignments.' },
   { key: 'oliver_dispatch', displayName: 'Dispatch', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_dispatch', description: 'Worker assignment, offer/accept dispatch flow.' },
   { key: 'oliver_workers', displayName: 'Team', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_workers', description: 'Manage team members and contractors.' },

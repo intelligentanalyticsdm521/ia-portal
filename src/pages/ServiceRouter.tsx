@@ -185,6 +185,7 @@ const SparkSmokeTestPage = lazyNamed(() => import('./spark/SparkSmokeTestPage'),
 // OLIVER pages — lazy-loaded (introduced 2026-05-11)
 const OliverDashboardPage = lazyNamed(() => import('./oliver/OliverDashboardPage'), 'OliverDashboardPage');
 const OliverJobBoardPage = lazyNamed(() => import('./oliver/OliverJobBoardPage'), 'OliverJobBoardPage');
+const OliverJobsArchivePage = lazyNamed(() => import('./oliver/OliverJobsArchivePage'), 'OliverJobsArchivePage');
 const OliverSchedulePage = lazyNamed(() => import('./oliver/OliverSchedulePage'), 'OliverSchedulePage');
 const OliverDispatchPage = lazyNamed(() => import('./oliver/OliverDispatchPage'), 'OliverDispatchPage');
 const OliverWorkersPage = lazyNamed(() => import('./oliver/OliverWorkersPage'), 'OliverWorkersPage');
@@ -354,6 +355,7 @@ export function ServiceRouter() {
     switch (service.key) {
       case 'oliver_dashboard': oliverPage = <OliverDashboardPage />; break;
       case 'oliver_job_board': oliverPage = <OliverJobBoardPage />; break;
+      case 'oliver_jobs_archive': oliverPage = <OliverJobsArchivePage />; break;
       case 'oliver_schedule': oliverPage = <OliverSchedulePage />; break;
       case 'oliver_dispatch': oliverPage = <OliverDispatchPage />; break;
       case 'oliver_workers': oliverPage = <OliverWorkersPage />; break;

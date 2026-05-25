@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
@@ -18,18 +18,60 @@ interface Job {
   revenue?: number;
   laborCost?: number;
   profit?: number;
+  /** Optional — set when the job was generated from a recurring template /
+   *  subscription. Surfaces a "Recurring" tag in the board. Backend wires
+   *  this up in Phase 1C (subscription management); until then it's always
+   *  falsy and the filter shows zero matches, which is the correct behavior. */
+  recurringJobId?: string | null;
+  isRecurring?: boolean;
 }
 
-const FILTER_PILLS = [
-  { key: "", label: "All" },
-  { key: "inquiry", label: "Inquiry" },
-  { key: "quoted", label: "Quoted" },
-  { key: "scheduled", label: "Scheduled" },
-  { key: "in_progress", label: "In progress" },
-  { key: "completed", label: "Completed" },
-  { key: "invoiced", label: "Invoiced" },
-  { key: "paid", label: "Paid" },
+// ─────────────────────────────────────────────────────────────────────────────
+// 5-bucket reorg (2026-05-25 founder spec)
+//
+//   Quotes        ← inquiry, quoted              (work not yet booked)
+//   Scheduled     ← scheduled, dispatched, assigned (booked, not started)
+//   In Progress   ← in_progress                  (active job)
+//   Job Completed ← completed, invoiced          (work done, money may not yet be received)
+//   Job Closed    ← paid, cancelled              (terminal; substatus pills discriminate)
+//
+// Statuses are kept on the backend exactly as today — buckets are purely a
+// UI grouping so we don't have to touch the state machine in jobs.js. The
+// Closed bucket shows a rolling 7-day window on the board; older closed
+// jobs live on the Archive page (#41).
+// ─────────────────────────────────────────────────────────────────────────────
+type BucketKey = 'quotes' | 'scheduled' | 'in_progress' | 'completed' | 'closed';
+
+interface BucketDef {
+  key: BucketKey;
+  label: string;
+  statuses: string[];
+}
+
+const BUCKETS: BucketDef[] = [
+  { key: 'quotes',      label: 'Quotes',         statuses: ['inquiry', 'quoted'] },
+  { key: 'scheduled',   label: 'Scheduled',      statuses: ['scheduled', 'dispatched', 'assigned'] },
+  { key: 'in_progress', label: 'In Progress',    statuses: ['in_progress'] },
+  { key: 'completed',   label: 'Job Completed',  statuses: ['completed', 'invoiced'] },
+  { key: 'closed',      label: 'Job Closed',     statuses: ['paid', 'cancelled'] },
 ];
+
+const STATUS_TO_BUCKET: Record<string, BucketKey> = BUCKETS.reduce((acc, b) => {
+  for (const s of b.statuses) acc[s] = b.key;
+  return acc;
+}, {} as Record<string, BucketKey>);
+
+function bucketOf(status: string): BucketKey | null {
+  return STATUS_TO_BUCKET[status] ?? null;
+}
+
+// Closed-bucket substatus pills — only rendered when the Closed bucket is
+// selected. Default '' shows both.
+const CLOSED_SUBSTATUS_PILLS = [
+  { key: '',          label: 'All' },
+  { key: 'paid',      label: 'Paid' },
+  { key: 'cancelled', label: 'Cancelled' },
+] as const;
 
 const PROFIT_PILLS = [
   { key: "", label: "Any profit" },
@@ -38,7 +80,9 @@ const PROFIT_PILLS = [
   { key: "profit:none", label: "No data" },
 ];
 
-const KANBAN_COLS = ["inquiry", "quoted", "scheduled", "in_progress", "completed", "invoiced", "paid"] as const;
+// Days back included in the Closed bucket on the main board. Older closed
+// jobs are surfaced via /app/services/oliver_jobs_archive.
+const CLOSED_BOARD_WINDOW_DAYS = 7;
 
 function fmtMoney(n?: number | null) {
   return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -53,7 +97,13 @@ export function OliverJobBoardPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
-  const [filter, setFilter] = useState("");
+  // bucket filter: '' = all buckets, else one of BucketKey
+  const [bucketFilter, setBucketFilter] = useState<'' | BucketKey>('');
+  // substatus filter — only meaningful when bucketFilter='closed'
+  const [closedSubstatus, setClosedSubstatus] = useState<'' | 'paid' | 'cancelled'>('');
+  // recurring tag filter — '' = any, 'recurring' = only recurring,
+  // 'one_off' = only one-off
+  const [recurringFilter, setRecurringFilter] = useState<'' | 'recurring' | 'one_off'>('');
   const [profitFilter, setProfitFilter] = useState("");
   const [search, setSearch] = useState("");
   const [view, setView] = useState<"list" | "kanban">("list");
@@ -84,9 +134,37 @@ export function OliverJobBoardPage() {
     }
   }, [searchParams, setSearchParams]);
 
+  // Board-visible jobs apply the rolling 7-day window to the Closed bucket
+  // BEFORE any user filters run. This keeps the board feeling current and
+  // pushes long-tail history to /oliver_jobs_archive without forcing the API
+  // to know about the cutoff.
+  const cutoffMs = useMemo(
+    () => Date.now() - CLOSED_BOARD_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    [],
+  );
+  function isClosedAndStale(j: Job): boolean {
+    if (bucketOf(j.status) !== 'closed') return false;
+    if (!j.scheduledDate) return false; // no anchor date → keep on board
+    const t = Date.parse(j.scheduledDate);
+    if (Number.isNaN(t)) return false;
+    return t < cutoffMs;
+  }
+  const boardJobs = useMemo(() => jobs.filter((j) => !isClosedAndStale(j)), [jobs, cutoffMs]);
+  const closedHidden = jobs.length - boardJobs.length;
+
   const filtered = useMemo(() => {
-    let list = jobs;
-    if (filter) list = list.filter((j) => j.status === filter);
+    let list = boardJobs;
+    if (bucketFilter) {
+      list = list.filter((j) => bucketOf(j.status) === bucketFilter);
+      if (bucketFilter === 'closed' && closedSubstatus) {
+        list = list.filter((j) => j.status === closedSubstatus);
+      }
+    }
+    if (recurringFilter === 'recurring') {
+      list = list.filter((j) => !!j.isRecurring || !!j.recurringJobId);
+    } else if (recurringFilter === 'one_off') {
+      list = list.filter((j) => !j.isRecurring && !j.recurringJobId);
+    }
     if (profitFilter === "profit:positive") {
       list = list.filter((j) => Number(j.profit ?? 0) > 0);
     } else if (profitFilter === "profit:negative") {
@@ -99,21 +177,40 @@ export function OliverJobBoardPage() {
       list = list.filter((j) => j.title?.toLowerCase().includes(q) || j.customerName?.toLowerCase().includes(q));
     }
     return list;
-  }, [jobs, filter, profitFilter, search]);
+  }, [boardJobs, bucketFilter, closedSubstatus, recurringFilter, profitFilter, search]);
 
-  const counts = useMemo(() => {
-    const c: Record<string, number> = { "": jobs.length };
-    for (const j of jobs) c[j.status] = (c[j.status] || 0) + 1;
+  // Counts are board-scoped (post 7-day window) so the pill totals reflect
+  // what's actually visible.
+  const bucketCounts = useMemo(() => {
+    const c: Record<string, number> = { '': boardJobs.length };
+    for (const b of BUCKETS) c[b.key] = 0;
+    for (const j of boardJobs) {
+      const b = bucketOf(j.status);
+      if (b) c[b] = (c[b] || 0) + 1;
+    }
     return c;
-  }, [jobs]);
-  const pills = FILTER_PILLS.map((p) => ({ ...p, count: counts[p.key] ?? 0 }));
+  }, [boardJobs]);
+  const bucketPills = useMemo(
+    () => [
+      { key: '', label: 'All', count: bucketCounts[''] ?? 0 },
+      ...BUCKETS.map((b) => ({ key: b.key, label: b.label, count: bucketCounts[b.key] ?? 0 })),
+    ],
+    [bucketCounts],
+  );
 
   const columns: Column<Job>[] = [
     {
       key: "title", header: "Job", sortable: true, sortAccessor: (j) => j.title?.toLowerCase() ?? "",
       render: (j) => (
         <div>
-          <div className="font-medium text-oliver-teal">{j.title || "(untitled)"}</div>
+          <div className="font-medium text-oliver-teal flex items-center gap-1.5">
+            <span>{j.title || "(untitled)"}</span>
+            {(j.isRecurring || j.recurringJobId) && (
+              <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-purple-800">
+                Recurring
+              </span>
+            )}
+          </div>
           <div className="text-xs text-slate-500 mt-0.5">{j.customerName || "—"}</div>
         </div>
       ),
@@ -170,24 +267,35 @@ export function OliverJobBoardPage() {
 
       <div className="stat-row">
         <div className="stat-card">
-          <div className="stat-lbl">Active</div>
-          <div className="stat-val">{jobs.filter((j) => !["paid", "cancelled", "completed"].includes(j.status)).length}</div>
-          <div className="stat-delta neu">in progress</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-lbl">Inquiry</div>
-          <div className="stat-val">{counts["inquiry"] ?? 0}</div>
-          <div className="stat-delta neu">awaiting action</div>
+          <div className="stat-lbl">Quotes</div>
+          <div className="stat-val">{bucketCounts['quotes'] ?? 0}</div>
+          <div className="stat-delta neu">awaiting decision</div>
         </div>
         <div className="stat-card">
           <div className="stat-lbl">Scheduled</div>
-          <div className="stat-val">{counts["scheduled"] ?? 0}</div>
+          <div className="stat-val">{bucketCounts['scheduled'] ?? 0}</div>
           <div className="stat-delta neu">booked</div>
         </div>
         <div className="stat-card">
+          <div className="stat-lbl">In Progress</div>
+          <div className="stat-val">{bucketCounts['in_progress'] ?? 0}</div>
+          <div className="stat-delta neu">active work</div>
+        </div>
+        <div className="stat-card">
           <div className="stat-lbl">Completed</div>
-          <div className="stat-val" style={{ color: "#059669" }}>{(counts["completed"] ?? 0) + (counts["invoiced"] ?? 0) + (counts["paid"] ?? 0)}</div>
-          <div className="stat-delta neu">all time</div>
+          <div className="stat-val" style={{ color: "#059669" }}>{bucketCounts['completed'] ?? 0}</div>
+          <div className="stat-delta neu">work done, awaiting close</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Closed · last {CLOSED_BOARD_WINDOW_DAYS}d</div>
+          <div className="stat-val">{bucketCounts['closed'] ?? 0}</div>
+          <div className="stat-delta neu">
+            {closedHidden > 0 ? (
+              <Link to="/app/services/oliver_jobs_archive" style={{ color: '#1A7DB5' }}>
+                +{closedHidden} in archive →
+              </Link>
+            ) : 'no older closed jobs'}
+          </div>
         </div>
       </div>
 
@@ -207,14 +315,56 @@ export function OliverJobBoardPage() {
       ) : !jobs.length && showCreate ? null : view === "list" ? (
         <>
           <FilterBar
-            pills={pills}
-            activePill={filter}
-            onPillChange={setFilter}
+            pills={bucketPills}
+            activePill={bucketFilter}
+            onPillChange={(k) => {
+              setBucketFilter(k as '' | BucketKey);
+              if (k !== 'closed') setClosedSubstatus('');
+            }}
             search={search}
             onSearchChange={setSearch}
             searchPlaceholder="Search title or customer…"
           />
-          {/* Second-row profitability pills — separate from status so they stack */}
+          {/* Substatus pills — only shown when Closed bucket is selected,
+              since "paid" vs "cancelled" only matters for terminal jobs. */}
+          {bucketFilter === 'closed' && (
+            <div className="ptabs" style={{ marginBottom: 8, marginTop: -4 }}>
+              {CLOSED_SUBSTATUS_PILLS.map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => setClosedSubstatus(p.key as '' | 'paid' | 'cancelled')}
+                  className={`ptab${closedSubstatus === p.key ? " active" : ""}`}
+                >
+                  {p.label}
+                </button>
+              ))}
+              <Link
+                to="/app/services/oliver_jobs_archive"
+                style={{ marginLeft: 8, alignSelf: 'center', fontSize: 12, color: '#1A7DB5' }}
+              >
+                Older than {CLOSED_BOARD_WINDOW_DAYS} days → Archive
+              </Link>
+            </div>
+          )}
+          {/* Recurring tag filter — orthogonal to bucket, applies everywhere.
+              Backend recurring linkage lands in Phase 1C; until then the
+              filter returns zero matches for "Recurring", which is correct. */}
+          <div className="ptabs" style={{ marginBottom: 8, marginTop: -4 }}>
+            {[
+              { key: '', label: 'All jobs' },
+              { key: 'recurring', label: 'Recurring' },
+              { key: 'one_off', label: 'One-off' },
+            ].map((p) => (
+              <button
+                key={p.key}
+                onClick={() => setRecurringFilter(p.key as '' | 'recurring' | 'one_off')}
+                className={`ptab${recurringFilter === p.key ? " active" : ""}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {/* Profitability pills */}
           <div className="ptabs" style={{ marginBottom: 12, marginTop: -4 }}>
             {PROFIT_PILLS.map((p) => (
               <button
@@ -235,7 +385,13 @@ export function OliverJobBoardPage() {
           />
         </>
       ) : (
-        <KanbanView jobs={jobs} search={search} onSearch={setSearch} onPick={setDetailId} />
+        <KanbanView
+          jobs={boardJobs}
+          search={search}
+          onSearch={setSearch}
+          onPick={setDetailId}
+          closedHidden={closedHidden}
+        />
       )}
 
       {detailId && (
@@ -250,7 +406,19 @@ export function OliverJobBoardPage() {
   );
 }
 
-function KanbanView({ jobs, search, onSearch, onPick }: { jobs: Job[]; search: string; onSearch: (q: string) => void; onPick: (id: string) => void }) {
+function KanbanView({
+  jobs,
+  search,
+  onSearch,
+  onPick,
+  closedHidden,
+}: {
+  jobs: Job[];
+  search: string;
+  onSearch: (q: string) => void;
+  onPick: (id: string) => void;
+  closedHidden: number;
+}) {
   const filtered = useMemo(() => {
     if (!search.trim()) return jobs;
     const q = search.toLowerCase();
@@ -259,7 +427,7 @@ function KanbanView({ jobs, search, onSearch, onPick }: { jobs: Job[]; search: s
 
   return (
     <>
-      <div className="mb-4">
+      <div className="mb-4 flex items-center gap-3 flex-wrap">
         <input
           type="search"
           value={search}
@@ -267,15 +435,20 @@ function KanbanView({ jobs, search, onSearch, onPick }: { jobs: Job[]; search: s
           placeholder="Search title or customer…"
           className="w-full md:w-80 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm focus:border-oliver-gold focus:ring-1 focus:ring-oliver-gold focus:outline-none"
         />
+        {closedHidden > 0 && (
+          <Link to="/app/services/oliver_jobs_archive" className="text-xs text-blue-600 hover:underline">
+            +{closedHidden} closed jobs older than {CLOSED_BOARD_WINDOW_DAYS}d → Archive
+          </Link>
+        )}
       </div>
       <div className="overflow-x-auto pb-3">
         <div className="flex gap-3 min-w-max">
-          {KANBAN_COLS.map((col) => {
-            const colJobs = filtered.filter((j) => j.status === col);
+          {BUCKETS.map((bucket) => {
+            const colJobs = filtered.filter((j) => bucketOf(j.status) === bucket.key);
             return (
-              <div key={col} className="w-72 flex-shrink-0">
+              <div key={bucket.key} className="w-72 flex-shrink-0">
                 <div className="bg-slate-100 rounded-t-lg px-3 py-2 flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{col.replace(/_/g, " ")}</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{bucket.label}</span>
                   <span className="text-xs text-slate-500">{colJobs.length}</span>
                 </div>
                 <div className="bg-slate-50 rounded-b-lg p-2 min-h-[400px] space-y-2">
@@ -284,6 +457,16 @@ function KanbanView({ jobs, search, onSearch, onPick }: { jobs: Job[]; search: s
                     <div key={j.id} onClick={() => onPick(j.id)} className="bg-white rounded-lg ring-1 ring-gray-200 p-3 shadow-sm hover:shadow-md transition cursor-pointer">
                       <div className="text-sm font-medium text-oliver-teal line-clamp-2">{j.title || "(untitled)"}</div>
                       {j.customerName && <div className="text-xs text-slate-500 mt-1">{j.customerName}</div>}
+                      <div className="flex items-center gap-1.5 mt-1">
+                        {/* Substatus chip on closed cards so paid vs cancelled
+                            is obvious at a glance. */}
+                        {bucket.key === 'closed' && <StatusBadge status={j.status} />}
+                        {(j.isRecurring || j.recurringJobId) && (
+                          <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-purple-800">
+                            Recurring
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center justify-between mt-2">
                         {j.scheduledDate && <span className="text-xs text-slate-500">{fmtDate(j.scheduledDate)}</span>}
                         {Number(j.total) > 0 && <span className="text-xs font-medium tabular-nums text-slate-700">{fmtMoney(j.total)}</span>}
