@@ -62,14 +62,22 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Service-business gating: warn (but don't block) on no-address job submission.
+  const [requiresServiceAddress, setRequiresServiceAddress] = useState(false);
+  const [showAddrWarning, setShowAddrWarning] = useState(false);
+
   useEffect(() => {
     if (!ready) return;
     (async () => {
       try {
-        const list = await get<ContactListItem[]>("/contacts");
+        const [list, settings] = await Promise.all([
+          get<ContactListItem[]>("/contacts"),
+          get<{ requiresServiceAddress?: boolean }>("/settings").catch(() => ({} as { requiresServiceAddress?: boolean })),
+        ]);
         setContacts(list || []);
+        setRequiresServiceAddress(!!settings?.requiresServiceAddress);
       } catch (e) {
-        setError(`Failed to load contacts: ${(e as Error).message}`);
+        setError(`Failed to load: ${(e as Error).message}`);
       }
     })();
   }, [get, ready]);
@@ -91,6 +99,31 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
       }
     })();
   }, [contactId, mode, get]);
+
+  // Determine if this submit lacks a service address (in current mode).
+  function hasNoAddress(): boolean {
+    if (mode === "existing") return !addressId;
+    // New-customer mode: address is "missing" if no street provided
+    return !addrLine1.trim();
+  }
+
+  // Entry point — runs the gating check, then either shows warning or
+  // submits. `bypassWarning=true` skips the gate (used by "Create anyway").
+  async function attemptSubmit(bypassWarning = false) {
+    setError(null);
+    if (!title.trim()) { setError("Job title is required."); return; }
+    if (mode === "existing" && !contactId) { setError("Pick a customer."); return; }
+    if (mode === "new" && (!first.trim() || !last.trim())) {
+      setError("First and last name are required.");
+      return;
+    }
+    // Service-business warning: tenant requires addresses but this job has none.
+    if (!bypassWarning && requiresServiceAddress && hasNoAddress()) {
+      setShowAddrWarning(true);
+      return;
+    }
+    await submit();
+  }
 
   async function submit() {
     setError(null);
@@ -277,9 +310,182 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
         <Button variant="secondary" onClick={onCancel}>Cancel</Button>
-        <Button variant="primary" onClick={submit} disabled={submitDisabled}>
+        <Button variant="primary" onClick={() => attemptSubmit(false)} disabled={submitDisabled}>
           {submitting ? "Creating…" : "Create job"}
         </Button>
+      </div>
+
+      {showAddrWarning && (
+        <NoAddressWarning
+          mode={mode}
+          contactId={contactId}
+          api={{ post }}
+          onAdded={async (newAddressId) => {
+            // For existing-customer mode, the new address came back from
+            // POST /contacts/:id/addresses — select it and re-submit.
+            if (mode === "existing") setAddressId(newAddressId);
+            setShowAddrWarning(false);
+            // Re-run submit with bypass=true since address is now present.
+            await submit();
+          }}
+          onAddInlineNew={(addr) => {
+            // For new-customer mode, populate the address fields in-form
+            // (the existing inline-create branch sends them with the job).
+            setAddrLine1(addr.address_line_1);
+            setCity(addr.city);
+            setState(addr.state);
+            setZip(addr.postal_code);
+            setShowAddrWarning(false);
+            submit();
+          }}
+          onCreateAnyway={() => {
+            setShowAddrWarning(false);
+            // bypass the gate this time
+            attemptSubmit(true);
+          }}
+          onCancel={() => setShowAddrWarning(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NoAddressWarning — Soft gate for service businesses (requires_service_address).
+// Shows when a tenant flagged as "does work at customer locations" tries to
+// create a job without an address. Lets them add inline OR create anyway.
+// ─────────────────────────────────────────────────────────────────────────────
+interface NewAddrFields {
+  address_line_1: string;
+  city: string;
+  state: string;
+  postal_code: string;
+}
+function NoAddressWarning({
+  mode, contactId, api, onAdded, onAddInlineNew, onCreateAnyway, onCancel,
+}: {
+  mode: "existing" | "new";
+  contactId: string;
+  api: { post: <T>(p: string, b?: unknown) => Promise<T> };
+  onAdded: (newAddressId: string) => void | Promise<void>;
+  onAddInlineNew: (a: NewAddrFields) => void;
+  onCreateAnyway: () => void;
+  onCancel: () => void;
+}) {
+  const [phase, setPhase] = useState<"warn" | "addForm">("warn");
+  const [line1, setLine1] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [zip, setZip] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function saveAddress() {
+    setErr(null);
+    if (!line1.trim() || !city.trim() || !state.trim() || !zip.trim()) {
+      setErr("All four fields are required.");
+      return;
+    }
+    if (mode === "new") {
+      // No contact exists yet — push the values back into the parent form's
+      // address fields. The job POST will create both contact + address.
+      onAddInlineNew({
+        address_line_1: line1.trim(), city: city.trim(),
+        state: state.trim(), postal_code: zip.trim(),
+      });
+      return;
+    }
+    // Existing-customer: POST /contacts/:id/addresses immediately so the
+    // address gets a real id we can attach to the job.
+    setSubmitting(true);
+    try {
+      const r = await api.post<{ address_id?: string; data?: { address_id?: string }; contact_id?: string }>(
+        `/contacts/${contactId}/addresses`,
+        { address_line_1: line1.trim(), city: city.trim(), state: state.trim(), postal_code: zip.trim() }
+      );
+      const id = r.address_id || r.data?.address_id || r.contact_id || "";
+      await onAdded(id);
+    } catch (e) {
+      setErr((e as Error).message || "Failed to add address.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1100,
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+    >
+      <div style={{ background: "#fff", borderRadius: 12, width: "94vw", maxWidth: 500, padding: 24 }}
+           onMouseDown={(e) => e.stopPropagation()}>
+        {phase === "warn" ? (
+          <>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#0B1C24" }}>No address on file</div>
+            <p style={{ fontSize: 13, color: "#475569", marginTop: 8, lineHeight: 1.5 }}>
+              Your business is set up as a service business (work happens at the customer's location).
+              Without an address, your team won't know where to go.
+            </p>
+            <p style={{ fontSize: 12, color: "#5A7A8A", marginTop: 4 }}>
+              Tip: you can change this in Settings → Business Profile if your business doesn't need addresses.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+              <button onClick={onCancel}
+                      style={{ padding: "8px 14px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: 6, fontSize: 13, cursor: "pointer" }}>
+                Cancel
+              </button>
+              <button onClick={onCreateAnyway}
+                      style={{ padding: "8px 14px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: 6, fontSize: 13, cursor: "pointer", color: "#B45309" }}>
+                Create anyway
+              </button>
+              <button onClick={() => setPhase("addForm")}
+                      style={{ padding: "8px 14px", border: "none", background: "#0F172A", color: "#fff", borderRadius: 6, fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
+                Add address
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#0B1C24" }}>Add service address</div>
+            <div style={{ marginTop: 12 }}>
+              <label style={{ display: "block", marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A" }}>Street address *</span>
+                <input value={line1} onChange={(e) => setLine1(e.target.value)}
+                       style={{ width: "100%", padding: "7px 10px", fontSize: 13, border: "1px solid #cbd5e1", borderRadius: 6 }} />
+              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8 }}>
+                <label>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A" }}>City *</span>
+                  <input value={city} onChange={(e) => setCity(e.target.value)}
+                         style={{ width: "100%", padding: "7px 10px", fontSize: 13, border: "1px solid #cbd5e1", borderRadius: 6 }} />
+                </label>
+                <label>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A" }}>State *</span>
+                  <input value={state} onChange={(e) => setState(e.target.value)}
+                         style={{ width: "100%", padding: "7px 10px", fontSize: 13, border: "1px solid #cbd5e1", borderRadius: 6 }} />
+                </label>
+                <label>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A" }}>ZIP *</span>
+                  <input value={zip} onChange={(e) => setZip(e.target.value)}
+                         style={{ width: "100%", padding: "7px 10px", fontSize: 13, border: "1px solid #cbd5e1", borderRadius: 6 }} />
+                </label>
+              </div>
+              {err && <div style={{ color: "#B91C1C", fontSize: 12, marginTop: 8 }}>{err}</div>}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+              <button onClick={() => setPhase("warn")} disabled={submitting}
+                      style={{ padding: "8px 14px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: 6, fontSize: 13, cursor: "pointer" }}>
+                Back
+              </button>
+              <button onClick={saveAddress} disabled={submitting}
+                      style={{ padding: "8px 14px", border: "none", background: "#0F172A", color: "#fff", borderRadius: 6, fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
+                {submitting ? "Saving…" : "Save & create job"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
