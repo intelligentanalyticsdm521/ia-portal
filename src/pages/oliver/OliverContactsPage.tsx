@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { formatPhone } from "../../lib/formatPhone";
 import { oliverDownload } from "../../lib/oliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
@@ -178,7 +179,7 @@ export function OliverContactsPage() {
       ),
     },
     { key: "email",   header: "Email",   render: (c) => c.email || "—" },
-    { key: "phone",   header: "Phone",   render: (c) => c.phone || "—" },
+    { key: "phone",   header: "Phone",   render: (c) => c.phone ? formatPhone(c.phone) : "—" },
     {
       key: "outstanding_balance", header: "Outstanding", align: "right", sortable: true,
       sortAccessor: (c) => Number(c.outstanding_balance ?? 0),
@@ -335,7 +336,7 @@ function NewContactModal({ onClose, onCreated, create }: { onClose: () => void; 
         <FormField label="Last name *" value={last} onChange={setLast} />
       </div>
       <FormField label="Email" value={email} onChange={setEmail} type="email" />
-      <FormField label="Phone" value={phone} onChange={setPhone} type="tel" />
+      <FormField label="Phone" value={phone} onChange={(v) => setPhone(formatPhone(v))} type="tel" />
       <FormField label="Company name" value={company} onChange={setCompany} />
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
@@ -447,7 +448,7 @@ function ContactDetailModal({ contactId, onClose, api, onChanged }: {
     <DetailDrawer
       open onClose={onClose}
       title={contactName(detail)}
-      subtitle={[detail.email, detail.phone].filter(Boolean).join(" · ")}
+      subtitle={[detail.email, detail.phone ? formatPhone(detail.phone) : null].filter(Boolean).join(" · ")}
       width="xl"
       headerActions={
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -682,7 +683,9 @@ function EditContactModal({ contact, onClose, onSaved, patch }: {
   const [first, setFirst] = useState(contact.first_name || "");
   const [last, setLast] = useState(contact.last_name || "");
   const [email, setEmail] = useState(contact.email || "");
-  const [phone, setPhone] = useState(contact.phone || "");
+  // Normalize whatever was stored (raw, hyphens, etc.) into the
+  // canonical +1 (555) 555-5555 display format when the editor opens.
+  const [phone, setPhone] = useState(contact.phone ? formatPhone(contact.phone) : "");
   const [company, setCompany] = useState(contact.company_name || "");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -717,7 +720,7 @@ function EditContactModal({ contact, onClose, onSaved, patch }: {
         <FormField label="Last name *" value={last} onChange={setLast} />
       </div>
       <FormField label="Email" value={email} onChange={setEmail} type="email" />
-      <FormField label="Phone" value={phone} onChange={setPhone} type="tel" />
+      <FormField label="Phone" value={phone} onChange={(v) => setPhone(formatPhone(v))} type="tel" />
       <FormField label="Company name" value={company} onChange={setCompany} />
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
