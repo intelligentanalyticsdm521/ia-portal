@@ -8,6 +8,7 @@ import {
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, Legend,
 } from "recharts";
+import { SubscriptionModal } from "./SubscriptionModal";
 
 interface Subscription {
   id: string;
@@ -86,7 +87,11 @@ function fmtDate(d?: string) {
 export function OliverRecurringPage() {
   const { get, post, patch, ready } = useOliverApi();
   const [tab, setTab] = useState<Tab>("subscriptions");
-  const [drawer, setDrawer] = useState<{ mode: "new" } | { mode: "edit"; id: string } | null>(null);
+  // drawer: legacy create/edit form (still used for "new"). Phase 1C added a
+  // richer SubscriptionModal that owns the "view/manage existing sub" path —
+  // openModalId drives that one.
+  const [drawer, setDrawer] = useState<{ mode: "new" } | null>(null);
+  const [openModalId, setOpenModalId] = useState<string | null>(null);
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [recurring, setRecurring] = useState<RecurringJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -343,10 +348,17 @@ export function OliverRecurringPage() {
       {drawer && (
         <SubscriptionDrawer
           mode={drawer.mode}
-          subId={drawer.mode === "edit" ? drawer.id : undefined}
           api={{ get, post, patch }}
           onClose={() => setDrawer(null)}
           onSaved={() => { setDrawer(null); reload(); }}
+        />
+      )}
+
+      {openModalId && (
+        <SubscriptionModal
+          subscriptionId={openModalId}
+          onClose={() => setOpenModalId(null)}
+          onChanged={reload}
         />
       )}
 
@@ -472,7 +484,7 @@ export function OliverRecurringPage() {
               rows={filteredSubs}
               columns={subColumns}
               rowKey={(s) => s.id}
-              onRowClick={(s) => setDrawer({ mode: "edit", id: s.id })}
+              onRowClick={(s) => setOpenModalId(s.id)}
               initialSort={{ key: "service", direction: "asc" }}
               emptyMessage="No subscriptions match these filters."
             />
