@@ -125,9 +125,14 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
     await submit();
   }
 
-  async function submit() {
+  // submit takes an optional explicit addressId so callers that just
+  // created an address (the NoAddressWarning "Add address" flow) can
+  // attach it immediately, without waiting for the React setState round
+  // trip on `addressId`. Otherwise uses the addressId from state.
+  async function submit(explicitAddressId?: string) {
     setError(null);
     if (!title.trim()) { setError("Job title is required."); return; }
+    const effectiveAddressId = explicitAddressId ?? addressId;
 
     let body: Record<string, unknown> = {
       title: title.trim(),
@@ -146,7 +151,7 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
     if (mode === "existing") {
       if (!contactId) { setError("Pick a customer."); return; }
       body = { ...body, contact_id: contactId };
-      if (addressId) body.service_address_id = addressId;
+      if (effectiveAddressId) body.service_address_id = effectiveAddressId;
     } else {
       if (!first.trim() || !last.trim()) { setError("First and last name are required."); return; }
       body = {
@@ -320,12 +325,13 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
           contactId={contactId}
           api={{ post }}
           onAdded={async (newAddressId) => {
-            // For existing-customer mode, the new address came back from
-            // POST /contacts/:id/addresses — select it and re-submit.
+            // For existing-customer mode, the new address just came back
+            // from POST /contacts/:id/addresses. Update state AND pass it
+            // explicitly to submit() so we don't depend on the React
+            // setState round trip (which loses to the immediate submit call).
             if (mode === "existing") setAddressId(newAddressId);
             setShowAddrWarning(false);
-            // Re-run submit with bypass=true since address is now present.
-            await submit();
+            await submit(newAddressId);
           }}
           onAddInlineNew={(addr) => {
             // For new-customer mode, populate the address fields in-form
