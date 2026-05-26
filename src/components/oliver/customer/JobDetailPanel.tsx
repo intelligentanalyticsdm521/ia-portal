@@ -209,201 +209,356 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
   const isTerminal = job.status === "paid" || job.status === "cancelled";
 
   return (
-    <div>
-      {topSlot}
+    <JobLayout
+      job={job}
+      jobId={jobId}
+      topSlot={topSlot}
+      err={err} toast={toast}
+      busy={busy}
+      editingDetails={editingDetails}
+      eTitle={eTitle} eStart={eStart} eEnd={eEnd} eNotes={eNotes}
+      setETitle={setETitle} setEStart={setEStart} setEEnd={setEEnd} setENotes={setENotes}
+      startEditDetails={startEditDetails} saveDetails={saveDetails} cancelEditDetails={() => setEditingDetails(false)}
+      lineItems={lineItems} setLineItems={setLineItems}
+      lineItemsDirty={lineItemsDirty} lineItemsSubtotal={lineItemsSubtotal}
+      saveLineItems={saveLineItems}
+      isTerminal={isTerminal}
+      changeStatus={changeStatus}
+      onAssignmentHours={async (assignmentId, hours) => {
+        await api.patch(`/jobs/${jobId}/assignments/${assignmentId}`, { actual_hours: hours });
+        await reload();
+        onChanged?.();
+      }}
+    />
+  );
+}
 
-      {/* Job header strip — status is now a clickable dropdown (founder spec
-          2026-05-25): admins can set any status directly, including backward
-          moves to re-open closed jobs. */}
+// ─────────────────────────────────────────────────────────────────────────────
+// JobLayout — Jobber/Housecall pattern (founder spec 2026-05-25):
+//   - Top: status pill (dropdown) + title + scheduled + total
+//   - Right column: sticky summary card (customer + financial + quick acts)
+//   - Left main: tabs (Details / Line Items / Workers + Time / Activity)
+//
+// All editing logic still lives in the parent JobDetailPanel — this is the
+// presentational shell that wires it up.
+// ─────────────────────────────────────────────────────────────────────────────
+type JobLayoutProps = {
+  job: JobDetail;
+  jobId: string;
+  topSlot?: React.ReactNode;
+  err: string | null;
+  toast: string | null;
+  busy: string | null;
+  editingDetails: boolean;
+  eTitle: string; eStart: string; eEnd: string; eNotes: string;
+  setETitle: (v: string) => void;
+  setEStart: (v: string) => void;
+  setEEnd: (v: string) => void;
+  setENotes: (v: string) => void;
+  startEditDetails: () => void;
+  saveDetails: () => Promise<void>;
+  cancelEditDetails: () => void;
+  lineItems: LineItem[];
+  setLineItems: (items: LineItem[]) => void;
+  lineItemsDirty: boolean;
+  lineItemsSubtotal: number;
+  saveLineItems: () => Promise<void>;
+  isTerminal: boolean;
+  changeStatus: (s: string) => Promise<void>;
+  onAssignmentHours: (assignmentId: string, hours: number | null) => Promise<void>;
+};
+
+type JobTab = "details" | "lines" | "workers" | "activity";
+
+function JobLayout(p: JobLayoutProps) {
+  const [tab, setTab] = useState<JobTab>("details");
+  const { job, jobId } = p;
+
+  return (
+    <div>
+      {p.topSlot}
+
+      {/* Top header — full width strip */}
       <div style={{
         display: "flex", justifyContent: "space-between", alignItems: "flex-start",
-        gap: 12, padding: "8px 12px", background: "#F8FAFC", borderRadius: 8, marginBottom: 12,
+        gap: 12, padding: "10px 14px", background: "#F8FAFC", borderRadius: 8, marginBottom: 12,
       }}>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 11, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.5 }}>Job</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#0B1C24", marginTop: 2 }}>{job.title || "(untitled job)"}</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#0B1C24", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {job.title || "(untitled job)"}
+          </div>
           <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <StatusDropdown
               currentStatus={job.status}
-              busy={!!(busy && busy.startsWith("status:"))}
-              onChange={changeStatus}
+              busy={!!(p.busy && p.busy.startsWith("status:"))}
+              onChange={p.changeStatus}
             />
             {job.scheduledDate && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Scheduled {new Date(job.scheduledDate).toLocaleString()}</span>}
             {Number(job.total) > 0 && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Total: <strong>{fmtMoney(job.total)}</strong></span>}
           </div>
         </div>
-        {!editingDetails && (
-          <button onClick={startEditDetails}
-            style={{ background: "none", border: "none", color: "#1A7DB5", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
-            Edit details
-          </button>
-        )}
       </div>
 
-      {err && (
-        <div style={{ marginBottom: 12, background: "#FEE2E2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 6, padding: "8px 12px", fontSize: 12 }}>{err}</div>
+      {p.err && (
+        <div style={{ marginBottom: 12, background: "#FEE2E2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 6, padding: "8px 12px", fontSize: 12 }}>{p.err}</div>
       )}
-      {toast && (
-        <div style={{ marginBottom: 12, background: "#DCFCE7", border: "1px solid #BBF7D0", color: "#166534", borderRadius: 6, padding: "8px 12px", fontSize: 12 }}>{toast}</div>
+      {p.toast && (
+        <div style={{ marginBottom: 12, background: "#DCFCE7", border: "1px solid #BBF7D0", color: "#166534", borderRadius: 6, padding: "8px 12px", fontSize: 12 }}>{p.toast}</div>
       )}
 
-      {editingDetails ? (
-        <div className="card">
-          <div className="card-ttl">Edit details</div>
-          <label style={{ display: "block", marginTop: 10 }}>
-            <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Title</span>
-            <input value={eTitle} onChange={(e) => setETitle(e.target.value)} style={jdInputStyle} />
-          </label>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
-            <label>
-              <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Scheduled start</span>
-              <input type="datetime-local" value={eStart} onChange={(e) => setEStart(e.target.value)} style={jdInputStyle} />
-            </label>
-            <label>
-              <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Scheduled end</span>
-              <input type="datetime-local" value={eEnd} onChange={(e) => setEEnd(e.target.value)} style={jdInputStyle} />
-            </label>
+      {/* Two-column body: tabs on left, sticky summary on right */}
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", gap: 16, alignItems: "start" }}>
+        {/* Main column — tabs */}
+        <div>
+          <div role="tablist" style={{
+            display: "flex", gap: 2, marginBottom: 10,
+            borderBottom: "1px solid #E5E7EB",
+          }}>
+            <TabBtn label="Details" active={tab === "details"} onClick={() => setTab("details")} />
+            <TabBtn label={`Line items${p.lineItems.length ? ` (${p.lineItems.length})` : ""}${p.lineItemsDirty ? " *" : ""}`} active={tab === "lines"} onClick={() => setTab("lines")} />
+            <TabBtn label={`Workers & Time${job.assignedWorkers?.length ? ` (${job.assignedWorkers.length})` : ""}`} active={tab === "workers"} onClick={() => setTab("workers")} />
+            <TabBtn label={`Activity${job.statusHistory?.length ? ` (${job.statusHistory.length})` : ""}`} active={tab === "activity"} onClick={() => setTab("activity")} />
           </div>
-          <label style={{ display: "block", marginTop: 10 }}>
-            <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Team notes (internal)</span>
-            <textarea rows={3} value={eNotes} onChange={(e) => setENotes(e.target.value)}
-              style={{ ...jdInputStyle, fontFamily: "inherit", resize: "vertical" }} />
-          </label>
-          <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end" }}>
-            <Button variant="ghost" onClick={() => setEditingDetails(false)}>Cancel</Button>
-            <Button variant="primary" onClick={saveDetails} disabled={busy === "save-details"}>
-              {busy === "save-details" ? "Saving…" : "Save details"}
-            </Button>
-          </div>
-        </div>
-      ) : job.description ? (
-        <div className="card">
-          <div className="card-ttl">Team notes</div>
-          <div style={{ fontSize: 12, color: "#0B1C24", marginTop: 6, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{job.description}</div>
-        </div>
-      ) : null}
 
-      {/* Line items */}
-      <div className="card">
-        <div className="card-hdr">
-          <div>
-            <div className="card-ttl">Line items</div>
-            <div className="card-sub">
-              {lineItems.length} item{lineItems.length === 1 ? "" : "s"} · subtotal {fmtMoney(lineItemsSubtotal)}
-              {lineItems.length > 0 && " · job total recomputed on save"}
-            </div>
-          </div>
-          {lineItemsDirty && !isTerminal && (
-            <Button variant="primary" onClick={saveLineItems} disabled={busy === "save-lines"}>
-              {busy === "save-lines" ? "Saving…" : "Save line items"}
-            </Button>
+          {tab === "details" && (
+            <DetailsTab
+              job={job}
+              editingDetails={p.editingDetails}
+              eTitle={p.eTitle} eStart={p.eStart} eEnd={p.eEnd} eNotes={p.eNotes}
+              setETitle={p.setETitle} setEStart={p.setEStart} setEEnd={p.setEEnd} setENotes={p.setENotes}
+              startEditDetails={p.startEditDetails} saveDetails={p.saveDetails} cancelEditDetails={p.cancelEditDetails}
+              saving={p.busy === "save-details"}
+            />
           )}
-        </div>
-        <CatalogLineItemPicker items={lineItems} onChange={setLineItems} disabled={isTerminal} />
-      </div>
 
-      {/* Workers + Status history */}
-      <div className="two-col">
-        <div className="card">
-          <div className="card-hdr">
-            <div>
-              <div className="card-ttl">Assigned workers</div>
-              <div className="card-sub">{job.assignedWorkers?.length || 0} active · enter hours to track labor cost</div>
-            </div>
-          </div>
-          {(job.assignedWorkers ?? []).length === 0 ? (
-            <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "8px 0" }}>
-              No active assignments. Use the Dispatch page to offer this job to a worker.
-            </div>
-          ) : (
-            (job.assignedWorkers ?? []).map((w) => (
-              <AssignmentRow
-                key={w.assignmentId || w.id}
-                worker={w}
-                onSave={async (hours) => {
-                  if (!w.assignmentId) return;
-                  await api.patch(`/jobs/${jobId}/assignments/${w.assignmentId}`, { actual_hours: hours });
-                  await reload();
-                  onChanged?.();
-                }}
-              />
-            ))
-          )}
-        </div>
-
-        <div className="card">
-          <div className="card-hdr">
-            <div>
-              <div className="card-ttl">Status history</div>
-              <div className="card-sub">{job.statusHistory?.length || 0} transitions</div>
-            </div>
-          </div>
-          {(job.statusHistory ?? []).map((h, i) => (
-            <div key={i} className="hrow" style={{ display: "flex", alignItems: "center", gap: 9 }}>
-              <StatusBadge status={h.status} />
-              <div style={{ flex: 1, fontSize: 11, color: "#5A7A8A" }}>{new Date(h.timestamp).toLocaleString()}</div>
-              {h.note && <div style={{ fontSize: 11, color: "#0B1C24", fontStyle: "italic" }}>{h.note}</div>}
-            </div>
-          ))}
-          {!(job.statusHistory ?? []).length && (
-            <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "8px 0" }}>No history yet.</div>
-          )}
-        </div>
-      </div>
-
-      <JobProfitabilityCard workers={job.assignedWorkers ?? []} invoices={job.invoices ?? []} />
-
-      <div className="two-col">
-        <div className="card">
-          <div className="card-hdr">
-            <div>
-              <div className="card-ttl">Quotes</div>
-              <div className="card-sub">{job.quotes?.length || 0} on this job</div>
-            </div>
-          </div>
-          {(job.quotes ?? []).length === 0 ? (
-            <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "8px 0" }}>No quotes yet.</div>
-          ) : (
-            (job.quotes ?? []).map((q) => (
-              <div key={q.id} className="hrow" style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                <StatusBadge status={q.status} />
-                <div style={{ flex: 1, fontSize: 11, color: "#5A7A8A", fontFamily: "monospace" }}>{q.id.slice(0, 12)}…</div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>{fmtMoney(q.amount)}</div>
+          {tab === "lines" && (
+            <div className="card">
+              <div className="card-hdr">
+                <div>
+                  <div className="card-ttl">Line items</div>
+                  <div className="card-sub">
+                    {p.lineItems.length} item{p.lineItems.length === 1 ? "" : "s"} · subtotal {fmtMoney(p.lineItemsSubtotal)}
+                    {p.lineItems.length > 0 && " · job total recomputed on save"}
+                  </div>
+                </div>
+                {p.lineItemsDirty && !p.isTerminal && (
+                  <Button variant="primary" onClick={p.saveLineItems} disabled={p.busy === "save-lines"}>
+                    {p.busy === "save-lines" ? "Saving…" : "Save line items"}
+                  </Button>
+                )}
               </div>
-            ))
-          )}
-        </div>
-
-        <div className="card">
-          <div className="card-hdr">
-            <div>
-              <div className="card-ttl">Invoices</div>
-              <div className="card-sub">{job.invoices?.length || 0} on this job</div>
+              <CatalogLineItemPicker items={p.lineItems} onChange={p.setLineItems} disabled={p.isTerminal} />
             </div>
-          </div>
-          {(job.invoices ?? []).length === 0 ? (
-            <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "8px 0" }}>No invoices yet.</div>
-          ) : (
-            (job.invoices ?? []).map((inv) => (
-              <div key={inv.id} className="hrow" style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                <StatusBadge status={inv.status} />
-                <div style={{ flex: 1, fontSize: 11, color: "#5A7A8A", fontFamily: "monospace" }}>{inv.id.slice(0, 12)}…</div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>{fmtMoney(inv.amount)}</div>
+          )}
+
+          {tab === "workers" && (
+            <div className="card">
+              <div className="card-hdr">
+                <div>
+                  <div className="card-ttl">Assigned workers</div>
+                  <div className="card-sub">{job.assignedWorkers?.length || 0} active · enter hours to track labor cost</div>
+                </div>
               </div>
-            ))
+              {(job.assignedWorkers ?? []).length === 0 ? (
+                <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "8px 0" }}>
+                  No active assignments. Use the Dispatch page to offer this job to a worker.
+                </div>
+              ) : (
+                (job.assignedWorkers ?? []).map((w) => (
+                  <AssignmentRow
+                    key={w.assignmentId || w.id}
+                    worker={w}
+                    onSave={async (hours) => {
+                      if (!w.assignmentId) return;
+                      await p.onAssignmentHours(w.assignmentId, hours);
+                    }}
+                  />
+                ))
+              )}
+              <JobProfitabilityCard workers={job.assignedWorkers ?? []} invoices={job.invoices ?? []} />
+            </div>
+          )}
+
+          {tab === "activity" && (
+            <div className="card">
+              <div className="card-hdr">
+                <div>
+                  <div className="card-ttl">Status history</div>
+                  <div className="card-sub">{job.statusHistory?.length || 0} transitions</div>
+                </div>
+              </div>
+              {(job.statusHistory ?? []).length === 0 ? (
+                <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "8px 0" }}>No history yet.</div>
+              ) : (
+                (job.statusHistory ?? []).map((h, i) => (
+                  <div key={i} className="hrow" style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                    <StatusBadge status={h.status} />
+                    <div style={{ flex: 1, fontSize: 11, color: "#5A7A8A" }}>{new Date(h.timestamp).toLocaleString()}</div>
+                    {h.note && <div style={{ fontSize: 11, color: "#0B1C24", fontStyle: "italic" }}>{h.note}</div>}
+                  </div>
+                ))
+              )}
+            </div>
           )}
         </div>
-      </div>
 
-      {/* Status footer removed — status moves now happen via the dropdown in
-          the header (founder spec 2026-05-25). Cancel/reopen is just another
-          dropdown pick. */}
+        {/* Right column — sticky summary */}
+        <aside style={{ position: "sticky", top: 0 }}>
+          <div className="card" style={{ marginBottom: 12 }}>
+            <div className="card-ttl">Customer</div>
+            <div style={{ fontSize: 13, color: "#0B1C24", marginTop: 4, fontWeight: 600 }}>{job.customerName || "—"}</div>
+            {job.customerEmail && <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>{job.customerEmail}</div>}
+          </div>
+
+          {!p.editingDetails && (
+            <div className="card" style={{ marginBottom: 12 }}>
+              <div className="card-ttl">Quick actions</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                <Button variant="secondary" onClick={p.startEditDetails}>Edit details</Button>
+                <div style={{ fontSize: 10, color: "#94A3B8", textAlign: "center", marginTop: 4 }}>
+                  Status moves via the pill above ↑
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="card">
+            <div className="card-ttl">Financials</div>
+            <SummaryRow label="Line items" value={fmtMoney(p.lineItemsSubtotal)} />
+            <SummaryRow label="Job total" value={fmtMoney(job.total)} bold />
+            <SummaryRow label="Quotes" value={String(job.quotes?.length ?? 0)} />
+            <SummaryRow label="Invoices" value={String(job.invoices?.length ?? 0)} />
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// StatusDropdown — clickable status pill, opens a list of every status.
+function TabBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      style={{
+        padding: "8px 14px",
+        background: "transparent",
+        border: "none",
+        borderBottom: active ? "2px solid #1A7DB5" : "2px solid transparent",
+        marginBottom: -1,
+        fontSize: 12,
+        fontWeight: active ? 700 : 500,
+        color: active ? "#0B1C24" : "#5A7A8A",
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function SummaryRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+  return (
+    <div style={{
+      display: "flex", justifyContent: "space-between", alignItems: "baseline",
+      padding: "4px 0", borderTop: "1px solid #F1F5F9", fontSize: 12,
+    }}>
+      <span style={{ color: "#5A7A8A" }}>{label}</span>
+      <span style={{ color: "#0B1C24", fontWeight: bold ? 700 : 500, fontFamily: "monospace" }}>{value}</span>
+    </div>
+  );
+}
+
+function DetailsTab({
+  job, editingDetails,
+  eTitle, eStart, eEnd, eNotes,
+  setETitle, setEStart, setEEnd, setENotes,
+  startEditDetails, saveDetails, cancelEditDetails, saving,
+}: {
+  job: JobDetail;
+  editingDetails: boolean;
+  eTitle: string; eStart: string; eEnd: string; eNotes: string;
+  setETitle: (v: string) => void;
+  setEStart: (v: string) => void;
+  setEEnd: (v: string) => void;
+  setENotes: (v: string) => void;
+  startEditDetails: () => void;
+  saveDetails: () => Promise<void>;
+  cancelEditDetails: () => void;
+  saving: boolean;
+}) {
+  if (editingDetails) {
+    return (
+      <div className="card">
+        <div className="card-ttl">Edit details</div>
+        <label style={{ display: "block", marginTop: 10 }}>
+          <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Title</span>
+          <input value={eTitle} onChange={(e) => setETitle(e.target.value)} style={jdInputStyle} />
+        </label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+          <label>
+            <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Scheduled start</span>
+            <input type="datetime-local" value={eStart} onChange={(e) => setEStart(e.target.value)} style={jdInputStyle} />
+          </label>
+          <label>
+            <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Scheduled end</span>
+            <input type="datetime-local" value={eEnd} onChange={(e) => setEEnd(e.target.value)} style={jdInputStyle} />
+          </label>
+        </div>
+        <label style={{ display: "block", marginTop: 10 }}>
+          <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>Team notes (internal)</span>
+          <textarea rows={3} value={eNotes} onChange={(e) => setENotes(e.target.value)}
+            style={{ ...jdInputStyle, fontFamily: "inherit", resize: "vertical" }} />
+        </label>
+        <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end" }}>
+          <Button variant="ghost" onClick={cancelEditDetails}>Cancel</Button>
+          <Button variant="primary" onClick={saveDetails} disabled={saving}>
+            {saving ? "Saving…" : "Save details"}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <div className="card-ttl">Details</div>
+          <div className="card-sub">Title, schedule, and internal notes</div>
+        </div>
+        <button onClick={startEditDetails}
+          style={{ background: "none", border: "none", color: "#1A7DB5", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
+          Edit
+        </button>
+      </div>
+      <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <InfoCell label="Title" value={job.title || "—"} />
+        <InfoCell label="Status" value={job.status} />
+        <InfoCell label="Scheduled start" value={job.scheduledDate ? new Date(job.scheduledDate).toLocaleString() : "—"} />
+        <InfoCell label="Scheduled end" value={job.scheduledEnd ? new Date(job.scheduledEnd).toLocaleString() : "—"} />
+      </div>
+      {job.description && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4 }}>Team notes</div>
+          <div style={{ fontSize: 12, color: "#0B1C24", marginTop: 4, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{job.description}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InfoCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, fontWeight: 600, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
+      <div style={{ fontSize: 12, color: "#0B1C24", marginTop: 2 }}>{value}</div>
+    </div>
+  );
+}
 // Backward moves are allowed (re-open a paid job, etc.) — the backend's
 // force=true flag (sent from the iadm_portal surface) skips the state-
 // machine validation.
