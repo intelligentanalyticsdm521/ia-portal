@@ -776,14 +776,14 @@ function InvoiceRowActions({
         <button
           onClick={paymentLink}
           disabled={busy !== null}
-          title="Generate a Stripe Checkout URL to send the customer"
+          title="Generate a payment link, copy it to your clipboard, then email or text it to the customer"
           style={{
             fontSize: 10, padding: "3px 8px",
             background: "#fff", color: "#0C4A60",
             border: "1px solid rgba(45,156,219,0.3)", borderRadius: 3, cursor: busy ? "wait" : "pointer",
           }}
         >
-          {busy === "link" ? "Generating…" : "Pay link"}
+          {busy === "link" ? "Generating…" : "Send Invoice"}
         </button>
       </div>
       {linkUrl && (
