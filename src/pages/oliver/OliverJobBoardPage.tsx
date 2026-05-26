@@ -479,11 +479,40 @@ function KanbanView({
    *  current one. Returns the chosen target status. */
   onMove: (jobId: string, targetStatus: string) => void;
 }) {
+  // F-08 — filter dropdowns. Worker filter narrows the board to a single
+  // worker's jobs (or unassigned-only). Recurring toggle filters jobs that
+  // came from a subscription template.
+  const [workerFilter, setWorkerFilter] = useState<string>("");           // "" | "__unassigned" | worker_id
+  const [recurringOnly, setRecurringOnly] = useState<"" | "yes" | "no">(""); // "" | yes | no
+
+  // Build the worker dropdown options from whatever workers appear in jobs.
+  const workerOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const j of jobs) {
+      for (const w of j.assignedWorkers || []) {
+        if (w.worker_id && !seen.has(w.worker_id)) {
+          seen.set(w.worker_id, `${(w.first_name || "").trim()} ${(w.last_name || "").trim()}`.trim() || w.worker_id);
+        }
+      }
+    }
+    return Array.from(seen.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [jobs]);
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return jobs;
-    const q = search.toLowerCase();
-    return jobs.filter((j) => j.title?.toLowerCase().includes(q) || j.customerName?.toLowerCase().includes(q));
-  }, [jobs, search]);
+    let list = jobs;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((j) => j.title?.toLowerCase().includes(q) || j.customerName?.toLowerCase().includes(q));
+    }
+    if (workerFilter === "__unassigned") {
+      list = list.filter((j) => !(j.assignedWorkers && j.assignedWorkers.length));
+    } else if (workerFilter) {
+      list = list.filter((j) => (j.assignedWorkers || []).some((w) => w.worker_id === workerFilter));
+    }
+    if (recurringOnly === "yes") list = list.filter((j) => j.isRecurring || j.recurringJobId);
+    else if (recurringOnly === "no") list = list.filter((j) => !(j.isRecurring || j.recurringJobId));
+    return list;
+  }, [jobs, search, workerFilter, recurringOnly]);
 
   // Track which column is currently being hovered with a drag for visual feedback.
   const [dragOverBucket, setDragOverBucket] = useState<BucketKey | null>(null);
@@ -498,8 +527,40 @@ function KanbanView({
           value={search}
           onChange={(e) => onSearch(e.target.value)}
           placeholder="Search title or customer…"
-          className="w-full md:w-80 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm focus:border-oliver-gold focus:ring-1 focus:ring-oliver-gold focus:outline-none"
+          className="w-full md:w-72 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm focus:border-oliver-gold focus:ring-1 focus:ring-oliver-gold focus:outline-none"
         />
+        {/* F-08 — worker filter */}
+        <select
+          value={workerFilter}
+          onChange={(e) => setWorkerFilter(e.target.value)}
+          className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm focus:border-oliver-gold focus:outline-none"
+          title="Filter by assigned worker"
+        >
+          <option value="">All workers</option>
+          <option value="__unassigned">Unassigned only</option>
+          {workerOptions.map(([id, name]) => (
+            <option key={id} value={id}>{name}</option>
+          ))}
+        </select>
+        {/* F-08 — recurring filter */}
+        <select
+          value={recurringOnly}
+          onChange={(e) => setRecurringOnly(e.target.value as "" | "yes" | "no")}
+          className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm focus:border-oliver-gold focus:outline-none"
+          title="Filter by recurring vs one-off"
+        >
+          <option value="">All types</option>
+          <option value="yes">Recurring only</option>
+          <option value="no">One-off only</option>
+        </select>
+        {(workerFilter || recurringOnly) && (
+          <button
+            onClick={() => { setWorkerFilter(""); setRecurringOnly(""); }}
+            className="text-[11px] text-slate-500 hover:text-slate-700 underline"
+          >
+            Clear filters
+          </button>
+        )}
         {closedHidden > 0 && (
           <Link to="/app/services/oliver_jobs_archive" className="text-xs text-blue-600 hover:underline">
             +{closedHidden} closed jobs older than {CLOSED_BOARD_WINDOW_DAYS}d → Archive
