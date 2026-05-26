@@ -36,7 +36,7 @@ const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export function CalendarModal({ onClose }: { onClose: () => void }) {
-  const { get, post, patch, ready } = useOliverApi();
+  const { get, post, patch, del, ready } = useOliverApi();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -194,7 +194,7 @@ export function CalendarModal({ onClose }: { onClose: () => void }) {
         <CustomerModal
           focusJobId={focusJobId}
           onClose={() => setFocusJobId(null)}
-          api={{ get, post, patch }}
+          api={{ get, post, patch, del }}
         />
       )}
     </>

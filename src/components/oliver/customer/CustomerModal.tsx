@@ -32,6 +32,7 @@ import { SubscriptionDetailPanel } from "./SubscriptionDetailPanel";
 import {
   JobCreatePanel, QuoteCreatePanel, InvoiceCreatePanel, SubscriptionCreatePanel,
 } from "./CreatePanels";
+import { PaymentMethodsCard } from "./PaymentMethodsCard";
 import { formatPhone } from "../../../lib/formatPhone";
 
 type Tab = "overview" | "jobs" | "quotes" | "invoices" | "payments" | "subscriptions";
@@ -105,6 +106,9 @@ export interface CustomerModalProps {
     get: <T>(p: string) => Promise<T>;
     post: <T>(p: string, b?: unknown) => Promise<T>;
     patch: <T>(p: string, b: unknown) => Promise<T>;
+    /** Optional — only required for payment-method removal in the
+     *  PaymentMethodsCard. Other surfaces are happy without it. */
+    del?: <T>(p: string) => Promise<T>;
   };
 }
 
@@ -276,6 +280,17 @@ export function CustomerModal({
                 api={api}
                 onSaved={() => { reload(); onChanged?.(); }}
               />
+
+              {customerId && api.del && (
+                <PaymentMethodsCard
+                  customerId={customerId}
+                  api={{
+                    get: api.get,
+                    post: api.post,
+                    del: api.del,
+                  }}
+                />
+              )}
 
               <div className="card">
                 <div className="card-ttl">Service addresses</div>

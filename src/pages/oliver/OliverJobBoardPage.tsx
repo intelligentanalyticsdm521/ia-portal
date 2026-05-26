@@ -94,7 +94,7 @@ function fmtDate(d?: string | null) {
 }
 
 export function OliverJobBoardPage() {
-  const { get, post, patch, ready } = useOliverApi();
+  const { get, post, patch, del, ready } = useOliverApi();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -398,7 +398,7 @@ export function OliverJobBoardPage() {
           focusJobId={detailId}
           onClose={() => setDetailId(null)}
           onChanged={reload}
-          api={{ get, post, patch }}
+          api={{ get, post, patch, del }}
         />
       )}
 
@@ -422,7 +422,7 @@ export function OliverJobBoardPage() {
           initialCreating={pendingNew.kind}
           onClose={() => setPendingNew(null)}
           onChanged={reload}
-          api={{ get, post, patch }}
+          api={{ get, post, patch, del }}
         />
       )}
     </OliverPageWrapper>

@@ -11,6 +11,8 @@
   "dependencies": {
     "@azure/msal-browser": "^3.14.0",
     "@azure/msal-react": "^2.0.17",
+    "@stripe/react-stripe-js": "^6.4.0",
+    "@stripe/stripe-js": "^9.6.0",
     "chart.js": "^4.5.1",
     "lucide-react": "^1.8.0",
     "react": "^18.3.1",

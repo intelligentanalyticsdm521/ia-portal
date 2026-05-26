@@ -85,7 +85,7 @@ function fmtDate(d?: string) {
 }
 
 export function OliverRecurringPage() {
-  const { get, post, patch, ready } = useOliverApi();
+  const { get, post, patch, del, ready } = useOliverApi();
   const [tab, setTab] = useState<Tab>("subscriptions");
   // drawer: legacy create/edit form (still used for "new"). Phase 1C added a
   // richer SubscriptionModal that owns the "view/manage existing sub" path —
@@ -359,7 +359,7 @@ export function OliverRecurringPage() {
           focusSubscriptionId={openModalId}
           onClose={() => setOpenModalId(null)}
           onChanged={reload}
-          api={{ get, post, patch }}
+          api={{ get, post, patch, del }}
         />
       )}
 

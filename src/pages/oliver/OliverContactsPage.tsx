@@ -71,7 +71,7 @@ function contactName(c: Contact) {
 }
 
 export function OliverContactsPage() {
-  const { get, post, patch, ready } = useOliverApi();
+  const { get, post, patch, del, ready } = useOliverApi();
   const { instance, accounts } = useMsal();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
@@ -284,7 +284,7 @@ export function OliverContactsPage() {
         </>
       )}
 
-      {pickedId && <CustomerModal customerId={pickedId} onClose={() => setPickedId(null)} api={{ get, post, patch }} onChanged={reload} />}
+      {pickedId && <CustomerModal customerId={pickedId} onClose={() => setPickedId(null)} api={{ get, post, patch, del }} onChanged={reload} />}
       {showCreate && (
         <NewContactModal
           onClose={() => setShowCreate(false)}
