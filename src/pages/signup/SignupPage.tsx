@@ -78,7 +78,8 @@ const PLATFORM_CARDS: PlatformCardSpec[] = [
     key: 'oliver',
     name: 'OLIVER',
     tagline: 'Field-service operations: jobs, scheduling, invoicing.',
-    fromUsd: 39.99,
+    // LOCKED 2026-05-26 — Lite respec from $39.99 to $19.99 (invoicing + jobs only)
+    fromUsd: 19.99,
     accent: '#FEC82C',
     status: 'active',
     select: { kind: 'state2', platform: 'oliver' },

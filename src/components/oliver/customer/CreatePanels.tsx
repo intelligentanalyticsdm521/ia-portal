@@ -348,7 +348,7 @@ export function JobCreatePanel({
                 <input value={title} onChange={(e) => setTitle(e.target.value)}
                   placeholder={items.length > 0
                     ? `Defaults to "${items[0].description}" if left blank`
-                    : "Leave blank — will auto-fill from the first line item"}
+                    : "Optional — auto-fills from the first line item if left blank"}
                   style={inputS} />
               </div>
               <div>
