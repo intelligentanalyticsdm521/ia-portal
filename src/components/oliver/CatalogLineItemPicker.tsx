@@ -70,30 +70,30 @@ export function CatalogLineItemPicker({
     })();
   }, [ready, loaded, get]);
 
-  // Filter offerings by search (skip recurring-only offerings — those are for
-  // subscriptions, not jobs).
+  // 2026-05-25 — Show EVERY offering, not just one-time-priced ones.
+  // Recurring catalog items (a Pro tier subscription, a maintenance retainer,
+  // etc.) are still legitimate line items on a job — they get billed once
+  // per occurrence in that context. Filtering them out hid 90%+ of the
+  // founder tenant's catalog (only "Business Consulting" had one_time
+  // prices). Subscriptions still gate on recurring-only prices in their
+  // own picker; that lives in SubscriptionCreatePanel and is separate.
   const filteredOfferings = useMemo(() => {
-    const oneTime = offerings
-      .map((o) => {
-        const prices = (o.prices || []).filter((p) => !(p.pricing_model === "recurring" || p.recurring_interval));
-        return { ...o, prices };
-      })
-      .filter((o) => (o.prices || []).length > 0);
-    if (!search.trim()) return oneTime;
+    if (!search.trim()) return offerings;
     const q = search.toLowerCase();
-    return oneTime.filter((o) =>
+    return offerings.filter((o) =>
       o.name.toLowerCase().includes(q) ||
       (o.description || "").toLowerCase().includes(q)
     );
   }, [offerings, search]);
 
   function addCatalogItem(off: CatalogOffering, priceIdx = 0) {
-    const price = (off.prices || [])[priceIdx];
-    if (!price) return;
+    // priceIdx === -1 means "offering has no catalog prices — add at $0
+    // and let the user edit inline".
+    const price = priceIdx >= 0 ? (off.prices || [])[priceIdx] : null;
     const newItem: LineItem = {
-      description: off.name + (price.label ? ` (${price.label})` : ""),
+      description: off.name + (price?.label ? ` (${price.label})` : ""),
       quantity: 1,
-      unit_price: Number(price.unit_amount),
+      unit_price: Number(price?.unit_amount ?? 0),
       service_offering_id: off.offering_id,
       duration_minutes: off.default_duration_minutes ?? null,
       sort_order: items.length,
@@ -276,31 +276,57 @@ export function CatalogLineItemPicker({
                       : "No matches. Try a different search or use “+ Add custom line”."}
                   </div>
                 ) : (
-                  filteredOfferings.map((o) => (
-                    <div key={o.offering_id} style={{ borderBottom: "1px solid #F3F4F6", padding: "8px 4px" }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "#0B1C24" }}>{o.name}</div>
-                      {o.description && (
-                        <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 1, marginBottom: 4 }}>{o.description}</div>
-                      )}
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        {(o.prices || []).map((p, idx) => (
-                          <button
-                            key={p.price_id}
-                            type="button"
-                            onClick={() => addCatalogItem(o, idx)}
-                            style={{
-                              fontSize: 11, padding: "4px 10px", background: "#E8F4FB",
-                              color: "#0C4A60", border: "1px solid rgba(45,156,219,0.28)",
-                              borderRadius: 4, cursor: "pointer",
-                            }}
-                          >
-                            + {fmtMoney(Number(p.unit_amount))}
-                            {p.label ? ` (${p.label})` : ""}
-                          </button>
-                        ))}
+                  filteredOfferings.map((o) => {
+                    const prices = o.prices || [];
+                    return (
+                      <div key={o.offering_id} style={{ borderBottom: "1px solid #F3F4F6", padding: "8px 4px" }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#0B1C24" }}>{o.name}</div>
+                        {o.description && (
+                          <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 1, marginBottom: 4 }}>{o.description}</div>
+                        )}
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {prices.length === 0 ? (
+                            // Offering has no prices in catalog — add at $0 and
+                            // let the user set the price inline.
+                            <button
+                              type="button"
+                              onClick={() => addCatalogItem(o, -1)}
+                              style={{
+                                fontSize: 11, padding: "4px 10px", background: "#fff",
+                                color: "#0C4A60", border: "1px dashed rgba(45,156,219,0.28)",
+                                borderRadius: 4, cursor: "pointer",
+                              }}
+                            >
+                              + Add (no preset price — set inline)
+                            </button>
+                          ) : prices.map((p, idx) => {
+                            const isRecurring = p.pricing_model === "recurring" || !!p.recurring_interval;
+                            return (
+                              <button
+                                key={p.price_id}
+                                type="button"
+                                onClick={() => addCatalogItem(o, idx)}
+                                title={isRecurring
+                                  ? `Adds at ${fmtMoney(Number(p.unit_amount))} per occurrence (catalog price is recurring; on a job it bills once)`
+                                  : ""}
+                                style={{
+                                  fontSize: 11, padding: "4px 10px",
+                                  background: isRecurring ? "#FEF3C7" : "#E8F4FB",
+                                  color: isRecurring ? "#92400E" : "#0C4A60",
+                                  border: `1px solid ${isRecurring ? "rgba(217,119,6,0.4)" : "rgba(45,156,219,0.28)"}`,
+                                  borderRadius: 4, cursor: "pointer",
+                                }}
+                              >
+                                + {fmtMoney(Number(p.unit_amount))}
+                                {p.label ? ` (${p.label})` : ""}
+                                {isRecurring ? " · recurring" : ""}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>

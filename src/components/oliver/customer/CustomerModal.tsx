@@ -93,6 +93,9 @@ export interface CustomerModalProps {
   focusSubscriptionId?: string;
   /** Optional — open straight to invoices/payments section. */
   initialSection?: Tab;
+  /** Optional — open the section's "+ New X" panel immediately. Used by the
+   *  Job Board's "+ New job" launcher so the user lands ready to type. */
+  initialCreating?: "job" | "quote" | "invoice" | "subscription";
 
   onClose: () => void;
   onChanged?: () => void;
@@ -109,6 +112,7 @@ export function CustomerModal({
   focusJobId,
   focusSubscriptionId,
   initialSection,
+  initialCreating,
   onClose,
   onChanged,
   api,
@@ -121,19 +125,27 @@ export function CustomerModal({
   const [tab, setTab] = useState<Tab>(
     initialSection
       ? initialSection
-      : focusJobId
-        ? "jobs"
-        : focusSubscriptionId
-          ? "subscriptions"
-          : "overview"
+      : initialCreating
+        ? (initialCreating === "subscription" ? "subscriptions"
+          : initialCreating === "quote" ? "quotes"
+          : initialCreating === "invoice" ? "invoices"
+          : "jobs")
+        : focusJobId
+          ? "jobs"
+          : focusSubscriptionId
+            ? "subscriptions"
+            : "overview"
   );
   const [focusedJobId, setFocusedJobId] = useState<string | null>(focusJobId || null);
   const [focusedSubId, setFocusedSubId] = useState<string | null>(focusSubscriptionId || null);
 
   // Inline "+ New X" mode — when set, the matching section renders the create
   // panel in place of the list view. Keeps creation inside the modal per
-  // founder spec.
-  const [creating, setCreating] = useState<null | "job" | "quote" | "invoice" | "subscription">(null);
+  // founder spec. `initialCreating` lets external callers (e.g. the Job
+  // Board's "+ New job" launcher) request the panel be open on mount.
+  const [creating, setCreating] = useState<null | "job" | "quote" | "invoice" | "subscription">(
+    initialCreating || null,
+  );
 
   const [detail, setDetail] = useState<ContactDetail | null>(null);
   const [activity, setActivity] = useState<Activity | null>(null);

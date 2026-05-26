@@ -77,13 +77,24 @@ export function JobCreatePanel({ customerId, api, onCancel, onCreated, topSlot }
 
   async function submit() {
     setErr(null);
-    if (!title.trim()) { setErr("Job title is required."); return; }
+    // Title is OPTIONAL — if blank, auto-fill from the first line item.
+    // Validation: require EITHER a title OR at least one line item.
+    let effectiveTitle = title.trim();
+    if (!effectiveTitle && items.length > 0) {
+      effectiveTitle = items[0].description?.trim() || "";
+    }
+    if (!effectiveTitle && items.length === 0) {
+      setErr("Add a job title or at least one line item.");
+      return;
+    }
     setSubmitting(true);
     try {
       // 1. Create the job tied to this customer.
-      const jobRes = await api.post<{ id?: string; data?: { id?: string } }>("/jobs", {
+      //    Note: oliverApi auto-unwraps `data`, so jobRes is the raw DB row.
+      //    POST /jobs returns the row with the column name `job_id` (not `id`).
+      const jobRes = await api.post<{ job_id?: string; id?: string }>("/jobs", {
         contact_id: customerId,
-        title: title.trim(),
+        title: effectiveTitle,
         job_type: jobType.trim() || null,
         scheduled_start: scheduledStart ? new Date(scheduledStart).toISOString() : null,
         scheduled_end: scheduledEnd ? new Date(scheduledEnd).toISOString() : null,
@@ -91,7 +102,7 @@ export function JobCreatePanel({ customerId, api, onCancel, onCreated, topSlot }
         customer_notes: customerNotes.trim() || null,
         source: "manual",
       });
-      const newId = (jobRes as any)?.id || (jobRes as any)?.data?.id;
+      const newId = (jobRes as any)?.job_id || (jobRes as any)?.id || (jobRes as any)?.data?.job_id;
       if (!newId) throw new Error("Job created but no id returned.");
 
       // 2. Persist line items if any were added at create time. Backend
@@ -131,14 +142,18 @@ export function JobCreatePanel({ customerId, api, onCancel, onCreated, topSlot }
 
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
           <div>
-            <label style={labelS}>Job title *</label>
+            <label style={labelS}>Job title</label>
             <input value={title} onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Roof repair, monthly lawn care, plumbing service" style={inputS} />
+              placeholder={items.length > 0
+                ? `Defaults to "${items[0].description}" if left blank`
+                : "Leave blank — will auto-fill from the first line item"}
+              style={inputS} />
           </div>
           <div>
             <label style={labelS}>Job type (optional)</label>
             <input value={jobType} onChange={(e) => setJobType(e.target.value)}
-              placeholder="Maintenance, Repair, Install" style={inputS} />
+              placeholder="Each line has its own category — this is for extra detail"
+              style={inputS} />
           </div>
         </div>
 
@@ -181,7 +196,7 @@ export function JobCreatePanel({ customerId, api, onCancel, onCreated, topSlot }
 
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", paddingTop: 8, borderTop: "1px solid #F1F5F9" }}>
         <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button variant="primary" onClick={submit} disabled={submitting || !title.trim()}>
+        <Button variant="primary" onClick={submit} disabled={submitting || (!title.trim() && items.length === 0)}>
           {submitting ? "Creating…" : "Create job"}
         </Button>
       </div>
@@ -206,23 +221,21 @@ export function QuoteCreatePanel({ customerId, api, onCancel, onCreated, topSlot
     const subtotal = items.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price || 0), 0);
     setSubmitting(true);
     try {
-      const res = await api.post<{ id?: string; quote_id?: string; data?: any }>("/quotes", {
+      // POST /quotes expects `line_items` (not `items`). API contract docs in
+      // oliver-api/routes/quotes.js line 17.
+      const res = await api.post<{ quote_id?: string; id?: string }>("/quotes", {
         contact_id: customerId,
-        subtotal,
-        total: subtotal,
         valid_until: validUntil ? new Date(validUntil).toISOString() : null,
         notes: notes.trim() || null,
-        items: items.map((it, i) => ({
+        line_items: items.map((it, i) => ({
           description: it.description,
           quantity: Number(it.quantity || 1),
           unit_price: Number(it.unit_price || 0),
-          line_total: Math.round(Number(it.quantity || 1) * Number(it.unit_price || 0) * 100) / 100,
           sort_order: i,
           service_offering_id: it.service_offering_id || null,
         })),
       });
-      const newId = (res as any)?.id || (res as any)?.quote_id || (res as any)?.data?.quote_id || (res as any)?.data?.id || "";
-      onCreated(newId || "");
+      onCreated((res as any)?.quote_id || (res as any)?.id || "");
     } catch (e) { setErr(`Create failed: ${(e as Error).message}`); }
     finally { setSubmitting(false); }
   }
@@ -280,13 +293,13 @@ export function InvoiceCreatePanel({ customerId, api, onCancel, onCreated, topSl
     const subtotal = items.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price || 0), 0);
     setSubmitting(true);
     try {
-      const res = await api.post<{ id?: string; invoice_id?: string; data?: any }>("/invoices", {
+      // POST /invoices expects `line_items` (not `items`). API contract docs in
+      // oliver-api/routes/invoices.js line 77.
+      const res = await api.post<{ invoice_id?: string; id?: string }>("/invoices", {
         contact_id: customerId,
-        subtotal,
-        total: subtotal,
         due_date: dueDate ? new Date(dueDate).toISOString() : null,
         notes: notes.trim() || null,
-        items: items.map((it, i) => ({
+        line_items: items.map((it, i) => ({
           description: it.description,
           quantity: Number(it.quantity || 1),
           unit_price: Number(it.unit_price || 0),
@@ -295,8 +308,7 @@ export function InvoiceCreatePanel({ customerId, api, onCancel, onCreated, topSl
           service_offering_id: it.service_offering_id || null,
         })),
       });
-      const newId = (res as any)?.id || (res as any)?.invoice_id || (res as any)?.data?.invoice_id || (res as any)?.data?.id || "";
-      onCreated(newId || "");
+      onCreated((res as any)?.invoice_id || (res as any)?.id || "");
     } catch (e) { setErr(`Create failed: ${(e as Error).message}`); }
     finally { setSubmitting(false); }
   }
@@ -397,13 +409,12 @@ export function SubscriptionCreatePanel({ customerId, api, onCancel, onCreated, 
     if (lines.length === 0) { setErr("Add at least one recurring price."); return; }
     setSubmitting(true);
     try {
-      const res = await api.post<{ id?: string; subscription_id?: string; data?: any }>("/subscriptions", {
+      const res = await api.post<{ subscription_id?: string; id?: string }>("/subscriptions", {
         contact_id: customerId,
         items: lines.map((l) => ({ price_id: l.price_id, quantity: l.quantity })),
         trial_days: trialDays ? Number(trialDays) : undefined,
       });
-      const newId = (res as any)?.id || (res as any)?.subscription_id || (res as any)?.data?.subscription_id || (res as any)?.data?.id || "";
-      onCreated(newId || "");
+      onCreated((res as any)?.subscription_id || (res as any)?.id || "");
     } catch (e) { setErr(`Create failed: ${(e as Error).message}`); }
     finally { setSubmitting(false); }
   }

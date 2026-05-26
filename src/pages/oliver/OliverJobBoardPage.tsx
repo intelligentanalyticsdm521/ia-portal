@@ -6,8 +6,8 @@ import {
   PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState, Button,
   StatusBadge, type Column,
 } from "../../components/oliver/ui";
-import { JobCreateForm } from "./JobCreateForm";
 import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
+import { NewEntityLauncher } from "../../components/oliver/customer/NewEntityLauncher";
 
 interface Job {
   id: string;
@@ -109,7 +109,11 @@ export function OliverJobBoardPage() {
   const [search, setSearch] = useState("");
   // Default Kanban — easier to see at a glance per founder request 2026-05-25.
   const [view, setView] = useState<"list" | "kanban">("kanban");
-  const [showCreate, setShowCreate] = useState(false);
+  // 2026-05-25 — "+ New job" now opens the NewEntityLauncher (customer-first
+  // picker), then routes the user into the CustomerModal at the chosen
+  // section's create panel. The old inline JobCreateForm is gone.
+  const [launcherOpen, setLauncherOpen] = useState(false);
+  const [pendingNew, setPendingNew] = useState<{ customerId: string; kind: "job" | "quote" } | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -262,7 +266,7 @@ export function OliverJobBoardPage() {
               <button className={`ptab${view === "list" ? " active" : ""}`} onClick={() => setView("list")}>List</button>
               <button className={`ptab${view === "kanban" ? " active" : ""}`} onClick={() => setView("kanban")}>Kanban</button>
             </div>
-            {!showCreate && <Button variant="primary" onClick={() => setShowCreate(true)}>+ New job</Button>}
+            <Button variant="primary" onClick={() => setLauncherOpen(true)}>+ New job</Button>
           </div>
         }
       />
@@ -301,20 +305,13 @@ export function OliverJobBoardPage() {
         </div>
       </div>
 
-      {showCreate && (
-        <JobCreateForm
-          onCreated={() => { setShowCreate(false); reload(); }}
-          onCancel={() => setShowCreate(false)}
-        />
-      )}
-
-      {!jobs.length && !showCreate ? (
+      {!jobs.length ? (
         <EmptyState
           title="No jobs yet"
           description="Jobs appear here when customers submit service requests, or when you create them manually."
-          action={<Button variant="primary" onClick={() => setShowCreate(true)}>+ New job</Button>}
+          action={<Button variant="primary" onClick={() => setLauncherOpen(true)}>+ New job</Button>}
         />
-      ) : !jobs.length && showCreate ? null : view === "list" ? (
+      ) : view === "list" ? (
         <>
           <FilterBar
             pills={bucketPills}
@@ -400,6 +397,30 @@ export function OliverJobBoardPage() {
         <CustomerModal
           focusJobId={detailId}
           onClose={() => setDetailId(null)}
+          onChanged={reload}
+          api={{ get, post, patch }}
+        />
+      )}
+
+      {/* "+ New job" customer-first picker. Resolves to {customerId, kind}
+          and then opens the CustomerModal at that section's create panel. */}
+      {launcherOpen && (
+        <NewEntityLauncher
+          defaultKind="job"
+          api={{ get, post }}
+          onCancel={() => setLauncherOpen(false)}
+          onResolved={({ customerId, kind }) => {
+            setLauncherOpen(false);
+            setPendingNew({ customerId, kind });
+          }}
+        />
+      )}
+
+      {pendingNew && (
+        <CustomerModal
+          customerId={pendingNew.customerId}
+          initialCreating={pendingNew.kind}
+          onClose={() => setPendingNew(null)}
           onChanged={reload}
           api={{ get, post, patch }}
         />

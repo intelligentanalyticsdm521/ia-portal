@@ -46,18 +46,23 @@ interface PersistedLineItem {
   durationMinutes?: number | null;
 }
 
-const VALID_NEXT: Record<string, string[]> = {
-  inquiry: ["quoted", "cancelled"],
-  quoted: ["scheduled", "cancelled"],
-  scheduled: ["dispatched", "cancelled"],
-  dispatched: ["assigned", "cancelled"],
-  assigned: ["in_progress", "cancelled"],
-  in_progress: ["completed", "cancelled"],
-  completed: ["invoiced"],
-  invoiced: ["paid"],
-  paid: [],
-  cancelled: [],
-};
+// Every status the job state machine knows about. The pill dropdown
+// renders these and lets admins jump directly to any — backward moves
+// included (reopen a paid job for a follow-up service call, etc.) — per
+// founder spec 2026-05-25. The backend's force=true flag (sent from
+// iadm_portal surface) skips the state-machine validation.
+const ALL_STATUSES: Array<{ key: string; label: string }> = [
+  { key: "inquiry",     label: "Inquiry" },
+  { key: "quoted",      label: "Quoted" },
+  { key: "scheduled",   label: "Scheduled" },
+  { key: "dispatched",  label: "Dispatched" },
+  { key: "assigned",    label: "Assigned" },
+  { key: "in_progress", label: "In progress" },
+  { key: "completed",   label: "Completed" },
+  { key: "invoiced",    label: "Invoiced" },
+  { key: "paid",        label: "Paid" },
+  { key: "cancelled",   label: "Cancelled" },
+];
 
 function fmtMoney(n?: number | null) {
   return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -172,11 +177,13 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
     finally { setBusy(null); }
   }
 
-  async function advanceTo(newStatus: string) {
-    if (newStatus === "cancelled" && !confirm("Cancel this job? This is a terminal status.")) return;
+  async function changeStatus(newStatus: string) {
+    if (!job || newStatus === job.status) return;
     setBusy(`status:${newStatus}`); setErr(null);
     try {
-      await api.patch(`/jobs/${jobId}/status`, { status: newStatus });
+      // force=true tells the backend to skip state-machine validation —
+      // admins on iadm_portal can jump to any status, including backward.
+      await api.patch(`/jobs/${jobId}/status`, { status: newStatus, force: true });
       setToast(`Status: ${newStatus.replace(/_/g, " ")}`);
       await reload();
       onChanged?.();
@@ -193,31 +200,39 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
     );
   }
 
-  const nextStates = VALID_NEXT[job.status] || [];
-  const nonTerminal = nextStates.filter((s) => s !== "cancelled");
   const lineItemsDirty = JSON.stringify(lineItems) !== JSON.stringify(originalLineItems);
   const lineItemsSubtotal = lineItems.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price || 0), 0);
+  // Even terminal-state jobs are editable now (per founder spec — re-open
+  // closed jobs by setting status back). The only thing isTerminal still
+  // disables is line-item editing, since changing line items on a paid job
+  // would desync the invoice. If they really need to, they reopen first.
   const isTerminal = job.status === "paid" || job.status === "cancelled";
 
   return (
     <div>
       {topSlot}
 
-      {/* Job header strip */}
+      {/* Job header strip — status is now a clickable dropdown (founder spec
+          2026-05-25): admins can set any status directly, including backward
+          moves to re-open closed jobs. */}
       <div style={{
         display: "flex", justifyContent: "space-between", alignItems: "flex-start",
         gap: 12, padding: "8px 12px", background: "#F8FAFC", borderRadius: 8, marginBottom: 12,
       }}>
-        <div>
+        <div style={{ flex: 1 }}>
           <div style={{ fontSize: 11, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.5 }}>Job</div>
           <div style={{ fontSize: 16, fontWeight: 700, color: "#0B1C24", marginTop: 2 }}>{job.title || "(untitled job)"}</div>
-          <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <StatusBadge status={job.status} />
+          <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <StatusDropdown
+              currentStatus={job.status}
+              busy={!!(busy && busy.startsWith("status:"))}
+              onChange={changeStatus}
+            />
             {job.scheduledDate && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Scheduled {new Date(job.scheduledDate).toLocaleString()}</span>}
             {Number(job.total) > 0 && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Total: <strong>{fmtMoney(job.total)}</strong></span>}
           </div>
         </div>
-        {!editingDetails && !isTerminal && (
+        {!editingDetails && (
           <button onClick={startEditDetails}
             style={{ background: "none", border: "none", color: "#1A7DB5", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
             Edit details
@@ -380,25 +395,100 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
         </div>
       </div>
 
-      {/* Status-transition footer. Quote/invoice creation lives in the parent
-          CustomerModal's Quotes/Invoices sections — no navigate-away buttons
-          here per founder spec 2026-05-25 ("everything handled in the
-          modal"). */}
-      <div style={{
-        display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", justifyContent: "flex-end",
-        padding: "12px 0 4px", borderTop: "1px solid #F1F5F9", marginTop: 14,
-      }}>
-        {nonTerminal.map((s) => (
-          <Button key={s} variant="primary" onClick={() => advanceTo(s)} disabled={busy === `status:${s}`}>
-            {busy === `status:${s}` ? "Updating…" : `Advance to ${s.replace(/_/g, " ")}`}
-          </Button>
-        ))}
-        {nextStates.includes("cancelled") && (
-          <Button variant="danger" onClick={() => advanceTo("cancelled")} disabled={busy === "status:cancelled"}>
-            {busy === "status:cancelled" ? "Cancelling…" : "Cancel job"}
-          </Button>
-        )}
-      </div>
+      {/* Status footer removed — status moves now happen via the dropdown in
+          the header (founder spec 2026-05-25). Cancel/reopen is just another
+          dropdown pick. */}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// StatusDropdown — clickable status pill, opens a list of every status.
+// Backward moves are allowed (re-open a paid job, etc.) — the backend's
+// force=true flag (sent from the iadm_portal surface) skips the state-
+// machine validation.
+// ─────────────────────────────────────────────────────────────────────────────
+function statusStyle(status: string): { bg: string; fg: string } {
+  switch (status) {
+    case "inquiry":     return { bg: "#F3E8FF", fg: "#7E22CE" };
+    case "quoted":      return { bg: "#E0E7FF", fg: "#4338CA" };
+    case "scheduled":   return { bg: "#DBEAFE", fg: "#1E40AF" };
+    case "dispatched":  return { bg: "#CFFAFE", fg: "#0E7490" };
+    case "assigned":    return { bg: "#CFFAFE", fg: "#0E7490" };
+    case "in_progress": return { bg: "#FEF3C7", fg: "#B45309" };
+    case "completed":   return { bg: "#D1FAE5", fg: "#047857" };
+    case "invoiced":    return { bg: "#DBEAFE", fg: "#1E40AF" };
+    case "paid":        return { bg: "#D1FAE5", fg: "#047857" };
+    case "cancelled":   return { bg: "#FEE2E2", fg: "#B91C1C" };
+    default:            return { bg: "#F1F5F9", fg: "#475569" };
+  }
+}
+
+function StatusDropdown({
+  currentStatus, busy, onChange,
+}: {
+  currentStatus: string;
+  busy: boolean;
+  onChange: (s: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const c = statusStyle(currentStatus);
+  const label = ALL_STATUSES.find((s) => s.key === currentStatus)?.label || currentStatus;
+
+  return (
+    <div style={{ position: "relative", display: "inline-block" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={busy}
+        style={{
+          background: c.bg, color: c.fg,
+          border: `1px solid ${c.fg}33`, borderRadius: 99,
+          padding: "4px 12px", fontSize: 12, fontWeight: 700,
+          cursor: busy ? "wait" : "pointer", display: "inline-flex", alignItems: "center", gap: 6,
+        }}
+      >
+        {busy ? "Updating…" : label}
+        <span style={{ fontSize: 9 }} aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 90 }} />
+          <div style={{
+            position: "absolute", top: "100%", left: 0, marginTop: 4,
+            background: "#fff", border: "1px solid #E5E7EB",
+            borderRadius: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+            zIndex: 100, minWidth: 180, padding: 4,
+          }}>
+            {ALL_STATUSES.map((s) => {
+              const sc = statusStyle(s.key);
+              const isCurrent = s.key === currentStatus;
+              return (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => { setOpen(false); onChange(s.key); }}
+                  disabled={isCurrent}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    width: "100%", padding: "6px 8px",
+                    background: isCurrent ? "#F8FAFC" : "transparent",
+                    border: "none", borderRadius: 4,
+                    fontSize: 12, color: "#0B1C24", textAlign: "left",
+                    cursor: isCurrent ? "default" : "pointer",
+                  }}
+                  onMouseEnter={(e) => { if (!isCurrent) (e.currentTarget as HTMLButtonElement).style.background = "#F8FAFC"; }}
+                  onMouseLeave={(e) => { if (!isCurrent) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                >
+                  <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 99, background: sc.fg }} />
+                  <span style={{ flex: 1 }}>{s.label}</span>
+                  {isCurrent && <span style={{ fontSize: 10, color: "#5A7A8A" }}>current</span>}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 }
