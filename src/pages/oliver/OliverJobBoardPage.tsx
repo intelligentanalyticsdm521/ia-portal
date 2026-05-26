@@ -9,6 +9,12 @@ import {
 import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
 import { NewEntityLauncher } from "../../components/oliver/customer/NewEntityLauncher";
 
+interface AssignedWorker {
+  worker_id: string;
+  first_name?: string | null;
+  last_name?: string | null;
+}
+
 interface Job {
   id: string;
   title: string;
@@ -25,6 +31,10 @@ interface Job {
    *  falsy and the filter shows zero matches, which is the correct behavior. */
   recurringJobId?: string | null;
   isRecurring?: boolean;
+  /** F-26 — assigned worker(s). Backend returns from /jobs as a parsed
+   *  array. Rendered as initial bubbles on the Kanban card; "Unassigned"
+   *  amber badge if empty AND the job is in a status that needs a worker. */
+  assignedWorkers?: AssignedWorker[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -390,6 +400,21 @@ export function OliverJobBoardPage() {
           onSearch={setSearch}
           onPick={setDetailId}
           closedHidden={closedHidden}
+          onMove={async (jobId, targetStatus) => {
+            // F-40: optimistic local update, then PATCH /jobs/:id/status
+            // with force=true so the state-machine guards don't block free
+            // movement. Reload on success to pull in the canonical state.
+            const prev = jobs.find((j) => j.id === jobId)?.status;
+            setJobs((rows) => rows.map((j) => j.id === jobId ? { ...j, status: targetStatus } : j));
+            try {
+              await patch(`/jobs/${jobId}/status`, { status: targetStatus, force: true });
+              reload();
+            } catch (e) {
+              // Revert + alert
+              setJobs((rows) => rows.map((j) => j.id === jobId ? { ...j, status: prev || j.status } : j));
+              alert(`Couldn't move job: ${e instanceof Error ? e.message : "unknown"}`);
+            }
+          }}
         />
       )}
 
@@ -429,24 +454,41 @@ export function OliverJobBoardPage() {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// F-40 — Drag-and-drop between buckets. Native HTML5 DnD.
+// On drop, we PATCH /jobs/:id/status with force=true to the FIRST status
+// in the target bucket's list (e.g. drop on "Scheduled" → status='scheduled').
+// State machine guard is bypassed because the founder explicitly opted
+// in to free movement: the Kanban is a manager-grade tool, not a strict
+// workflow gate.
+// ─────────────────────────────────────────────────────────────────────────────
 function KanbanView({
   jobs,
   search,
   onSearch,
   onPick,
   closedHidden,
+  onMove,
 }: {
   jobs: Job[];
   search: string;
   onSearch: (q: string) => void;
   onPick: (id: string) => void;
   closedHidden: number;
+  /** F-40: called when a card is dropped on a bucket different from its
+   *  current one. Returns the chosen target status. */
+  onMove: (jobId: string, targetStatus: string) => void;
 }) {
   const filtered = useMemo(() => {
     if (!search.trim()) return jobs;
     const q = search.toLowerCase();
     return jobs.filter((j) => j.title?.toLowerCase().includes(q) || j.customerName?.toLowerCase().includes(q));
   }, [jobs, search]);
+
+  // Track which column is currently being hovered with a drag for visual feedback.
+  const [dragOverBucket, setDragOverBucket] = useState<BucketKey | null>(null);
+  // The job being dragged — used to hide its source card while in flight.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
   return (
     <>
@@ -463,38 +505,66 @@ function KanbanView({
             +{closedHidden} closed jobs older than {CLOSED_BOARD_WINDOW_DAYS}d → Archive
           </Link>
         )}
+        <span className="text-[11px] text-slate-400 italic ml-auto">
+          Tip: drag any card to a different column to change its status.
+        </span>
       </div>
       <div className="overflow-x-auto pb-3">
         <div className="flex gap-3 min-w-max">
           {BUCKETS.map((bucket) => {
             const colJobs = filtered.filter((j) => bucketOf(j.status) === bucket.key);
+            const isDropTarget = dragOverBucket === bucket.key;
             return (
               <div key={bucket.key} className="w-72 flex-shrink-0">
                 <div className="bg-slate-100 rounded-t-lg px-3 py-2 flex items-center justify-between">
                   <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{bucket.label}</span>
                   <span className="text-xs text-slate-500">{colJobs.length}</span>
                 </div>
-                <div className="bg-slate-50 rounded-b-lg p-2 min-h-[400px] space-y-2">
+                <div
+                  className={`rounded-b-lg p-2 min-h-[400px] space-y-2 transition-colors ${
+                    isDropTarget ? "bg-amber-50 ring-2 ring-amber-300" : "bg-slate-50"
+                  }`}
+                  onDragOver={(e) => {
+                    // Preventing default is what allows the drop.
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (dragOverBucket !== bucket.key) setDragOverBucket(bucket.key);
+                  }}
+                  onDragLeave={(e) => {
+                    // Only clear if we're leaving the column entirely, not just
+                    // moving between child cards.
+                    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                    if (dragOverBucket === bucket.key) setDragOverBucket(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOverBucket(null);
+                    const jobId = e.dataTransfer.getData("text/plain");
+                    if (!jobId) return;
+                    const job = jobs.find((j) => j.id === jobId);
+                    if (!job) return;
+                    if (bucketOf(job.status) === bucket.key) return; // same column — no-op
+                    // Pick the FIRST status in the target bucket's list.
+                    const targetStatus = bucket.statuses[0];
+                    onMove(jobId, targetStatus);
+                  }}
+                >
                   {colJobs.length === 0 && <div className="text-xs text-slate-400 italic text-center py-4">No jobs</div>}
                   {colJobs.map((j) => (
-                    <div key={j.id} onClick={() => onPick(j.id)} className="bg-white rounded-lg ring-1 ring-gray-200 p-3 shadow-sm hover:shadow-md transition cursor-pointer">
-                      <div className="text-sm font-medium text-oliver-teal line-clamp-2">{j.title || "(untitled)"}</div>
-                      {j.customerName && <div className="text-xs text-slate-500 mt-1">{j.customerName}</div>}
-                      <div className="flex items-center gap-1.5 mt-1">
-                        {/* Substatus chip on closed cards so paid vs cancelled
-                            is obvious at a glance. */}
-                        {bucket.key === 'closed' && <StatusBadge status={j.status} />}
-                        {(j.isRecurring || j.recurringJobId) && (
-                          <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-purple-800">
-                            Recurring
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center justify-between mt-2">
-                        {j.scheduledDate && <span className="text-xs text-slate-500">{fmtDate(j.scheduledDate)}</span>}
-                        {Number(j.total) > 0 && <span className="text-xs font-medium tabular-nums text-slate-700">{fmtMoney(j.total)}</span>}
-                      </div>
-                    </div>
+                    <KanbanCard
+                      key={j.id}
+                      job={j}
+                      bucket={bucket.key}
+                      isDragging={draggingId === j.id}
+                      onPick={() => onPick(j.id)}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/plain", j.id);
+                        e.dataTransfer.effectAllowed = "move";
+                        setDraggingId(j.id);
+                      }}
+                      onDragEnd={() => setDraggingId(null)}
+                      onStatusChange={(next) => onMove(j.id, next)}
+                    />
                   ))}
                 </div>
               </div>
@@ -503,6 +573,117 @@ function KanbanView({
         </div>
       </div>
     </>
+  );
+}
+
+// All valid job statuses — used by F-29 quick-edit status dropdown.
+const ALL_STATUSES: Array<{ key: string; label: string }> = [
+  { key: "inquiry",     label: "Inquiry" },
+  { key: "quoted",      label: "Quoted" },
+  { key: "scheduled",   label: "Scheduled" },
+  { key: "dispatched",  label: "Dispatched" },
+  { key: "assigned",    label: "Assigned" },
+  { key: "in_progress", label: "In Progress" },
+  { key: "completed",   label: "Completed" },
+  { key: "invoiced",    label: "Invoiced" },
+  { key: "paid",        label: "Paid" },
+  { key: "cancelled",   label: "Cancelled" },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Single Kanban card. Uniform height so the column rhythm stays clean
+// (F-06). Worker bubbles + "Unassigned" amber badge per F-26.
+// F-29: status dropdown on each card for direct edit without opening the
+// modal — click the status pill to open a native select.
+// ─────────────────────────────────────────────────────────────────────────────
+function KanbanCard({
+  job, bucket, isDragging, onPick, onDragStart, onDragEnd, onStatusChange,
+}: {
+  job: Job;
+  bucket: BucketKey;
+  isDragging: boolean;
+  onPick: () => void;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+  onStatusChange?: (next: string) => void;
+}) {
+  // Bucket statuses that need a worker assignment for the work to actually
+  // happen. Quotes/Closed don't need a worker.
+  const needsWorker = bucket === "scheduled" || bucket === "in_progress";
+  const workers = job.assignedWorkers || [];
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onClick={onPick}
+      className={`bg-white rounded-lg ring-1 ring-gray-200 p-3 shadow-sm hover:shadow-md transition cursor-grab active:cursor-grabbing ${
+        isDragging ? "opacity-30" : ""
+      }`}
+      style={{ minHeight: 110 }}
+      title="Drag to move between columns, or click to open"
+    >
+      <div className="text-sm font-medium text-oliver-teal line-clamp-2" style={{ minHeight: 36 }}>
+        {job.title || "(untitled)"}
+      </div>
+      {job.customerName && <div className="text-xs text-slate-500 mt-1">{job.customerName}</div>}
+      <div className="flex items-center gap-1.5 mt-1 flex-wrap" onClick={(e) => e.stopPropagation()}>
+        {/* F-29 — inline status quick-edit. Stopping click propagation
+            so the parent's onPick doesn't fire when the user just wants
+            to change status. */}
+        {onStatusChange ? (
+          <select
+            value={job.status}
+            onChange={(e) => onStatusChange(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            className="text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 border border-slate-200 bg-white cursor-pointer hover:border-oliver-gold"
+            title="Quick-edit status"
+          >
+            {ALL_STATUSES.map((s) => (
+              <option key={s.key} value={s.key}>{s.label}</option>
+            ))}
+          </select>
+        ) : (
+          bucket === 'closed' && <StatusBadge status={job.status} />
+        )}
+        {(job.isRecurring || job.recurringJobId) && (
+          <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-purple-800">
+            Recurring
+          </span>
+        )}
+        {needsWorker && workers.length === 0 && (
+          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
+            Unassigned
+          </span>
+        )}
+      </div>
+      <div className="flex items-center justify-between mt-2 gap-2">
+        <div className="flex items-center gap-1">
+          {workers.slice(0, 3).map((w, idx) => {
+            const first = (w.first_name || "").trim();
+            const last = (w.last_name || "").trim();
+            const initials = `${first.charAt(0)}${last.charAt(0)}`.toUpperCase() || "?";
+            return (
+              <span
+                key={w.worker_id || idx}
+                title={`${first} ${last}`.trim()}
+                className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-oliver-teal text-white text-[9px] font-bold ring-2 ring-white"
+                style={{ marginLeft: idx > 0 ? -6 : 0 }}
+              >
+                {initials}
+              </span>
+            );
+          })}
+          {workers.length > 3 && (
+            <span className="text-[9px] text-slate-500 ml-1">+{workers.length - 3}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {job.scheduledDate && <span className="text-[10px] text-slate-500">{fmtDate(job.scheduledDate)}</span>}
+          {Number(job.total) > 0 && <span className="text-xs font-medium tabular-nums text-slate-700">{fmtMoney(job.total)}</span>}
+        </div>
+      </div>
+    </div>
   );
 }
 

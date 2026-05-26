@@ -24,6 +24,10 @@ interface ArchiveJob {
   customerName: string;
   status: string;             // paid | cancelled (anything else is excluded)
   scheduledDate?: string | null;
+  /** F-07 — REAL closed date. For paid: paid_at; for cancelled:
+   *  actual_end OR updated_at fallback. Backend computes server-side
+   *  so the Archive page doesn't have to guess. */
+  closedDate?: string | null;
   total: number;
   revenue?: number;
   laborCost?: number;
@@ -100,8 +104,11 @@ export function OliverJobsArchivePage() {
     if (substatus) list = list.filter((j) => j.status === substatus);
     if (range.fromMs != null || range.toMs != null) {
       list = list.filter((j) => {
-        if (!j.scheduledDate) return false;
-        const t = Date.parse(j.scheduledDate);
+        // F-07 — range filter against closedDate (when the job actually
+        // closed) not scheduledDate (when it was originally scheduled).
+        const dateStr = j.closedDate || j.scheduledDate;
+        if (!dateStr) return false;
+        const t = Date.parse(dateStr);
         if (Number.isNaN(t)) return false;
         if (range.fromMs != null && t < range.fromMs) return false;
         if (range.toMs != null && t > range.toMs) return false;
@@ -137,8 +144,14 @@ export function OliverJobsArchivePage() {
       render: (j) => <StatusBadge status={j.status} />,
     },
     {
-      key: 'closedDate', header: 'Closed', sortable: true, sortAccessor: (j) => j.scheduledDate ?? '',
-      render: (j) => <span className="text-sm text-slate-600">{j.scheduledDate ? new Date(j.scheduledDate).toLocaleDateString() : '—'}</span>,
+      // F-07 — use j.closedDate (paid_at for paid jobs, actual_end/updated_at
+      // for cancelled) instead of j.scheduledDate which is when the job was
+      // SCHEDULED to happen, not when it CLOSED.
+      key: 'closedDate', header: 'Closed', sortable: true, sortAccessor: (j) => j.closedDate ?? j.scheduledDate ?? '',
+      render: (j) => {
+        const d = j.closedDate || j.scheduledDate;
+        return <span className="text-sm text-slate-600">{d ? new Date(d).toLocaleDateString() : '—'}</span>;
+      },
     },
     {
       key: 'total', header: 'Amount', align: 'right', sortable: true, sortAccessor: (j) => Number(j.total),

@@ -49,6 +49,21 @@ export function OliverSetupCard() {
 
   useEffect(() => { reload(); }, [reload]);
 
+  // F-01: "I've handled this elsewhere" dismissal. Calls POST /onboarding/complete
+  // which marks tenant_settings.onboarding_completed_at, which then makes
+  // all_required_complete return true and this card hides forever.
+  const [dismissing, setDismissing] = useState(false);
+  const dismiss = useCallback(async () => {
+    if (!confirm("Mark OLIVER setup as complete? The setup card will disappear. You can still configure everything from Settings any time.")) return;
+    setDismissing(true);
+    try {
+      await post<{ data: { ok: boolean } }>("/onboarding/complete");
+      reload();
+    } catch (err) {
+      alert(`Could not mark setup complete: ${(err as Error)?.message || "unknown"}`);
+    } finally { setDismissing(false); }
+  }, [post, reload]);
+
   // Still figuring out whether OLIVER applies — render nothing transiently.
   if (oliverReachable === null && !hasOliver) return null;
   // Genuinely no OLIVER for this tenant.
@@ -77,13 +92,23 @@ export function OliverSetupCard() {
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => setOpen(true)}
-              className="text-xs px-3 py-1.5 rounded font-medium text-white flex-shrink-0"
-              style={{ background: "#0C4A60" }}
-            >
-              {done > 0 ? "Continue setup" : "Start guided setup"}
-            </button>
+            <div className="flex flex-col gap-1 items-end flex-shrink-0">
+              <button
+                onClick={() => setOpen(true)}
+                className="text-xs px-3 py-1.5 rounded font-medium text-white"
+                style={{ background: "#0C4A60" }}
+              >
+                {done > 0 ? "Continue setup" : "Start guided setup"}
+              </button>
+              <button
+                onClick={dismiss}
+                disabled={dismissing}
+                className="text-[10px] text-slate-400 hover:text-slate-600 underline disabled:opacity-50"
+                title="Mark setup complete and hide this card"
+              >
+                {dismissing ? "marking…" : "I've finished setup — dismiss"}
+              </button>
+            </div>
           </div>
           {status && (
             <div className="mt-3 flex items-center gap-2 text-[10px] text-slate-500">

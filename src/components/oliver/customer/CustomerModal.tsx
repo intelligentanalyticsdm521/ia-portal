@@ -136,8 +136,19 @@ export function CustomerModal({
   const [resolveErr, setResolveErr] = useState<string | null>(null);
 
   // Section + per-section focused item (job/sub being expanded inline).
-  const [tab, setTab] = useState<Tab>(
-    initialSection
+  //
+  // F-25 fix: persist the active tab to sessionStorage keyed on customerId
+  // so a parent re-render that re-mounts CustomerModal preserves the user's
+  // current section. Without this, saving inside Jobs/Quotes/Invoices/Payments
+  // could snap them back to Overview when the parent reload triggered a
+  // re-mount. Falls back to the prop-driven initial tab if no stored value.
+  const tabStorageKey = `oliverCustomerModalTab:${initialCustomerId || focusJobId || focusSubscriptionId || "unset"}`;
+  const [tab, setTab] = useState<Tab>(() => {
+    const stored = typeof window !== "undefined" ? window.sessionStorage.getItem(tabStorageKey) : null;
+    if (stored && ["overview","jobs","quotes","invoices","payments","subscriptions"].includes(stored)) {
+      return stored as Tab;
+    }
+    return initialSection
       ? initialSection
       : initialCreating
         ? (initialCreating === "subscription" ? "subscriptions"
@@ -148,8 +159,12 @@ export function CustomerModal({
           ? "jobs"
           : focusSubscriptionId
             ? "subscriptions"
-            : "overview"
-  );
+            : "overview";
+  });
+  // Persist tab whenever it changes.
+  useEffect(() => {
+    if (typeof window !== "undefined") window.sessionStorage.setItem(tabStorageKey, tab);
+  }, [tab, tabStorageKey]);
   const [focusedJobId, setFocusedJobId] = useState<string | null>(focusJobId || null);
   const [focusedSubId, setFocusedSubId] = useState<string | null>(focusSubscriptionId || null);
 
