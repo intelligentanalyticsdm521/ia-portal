@@ -143,7 +143,9 @@ export function JobCreatePanel({
         const firstJobId = (subRes as any)?.first_job_id || null;
         const autoErr = (subRes as any)?.auto_create_first_job_error;
         if (autoErr) {
-          setErr(`Subscription created, but first job was NOT auto-created: ${autoErr}. You can create a job manually from this customer's Jobs tab.`);
+          // Keep panel mounted so user can read the error before dismissing.
+          setErr(`Subscription created (id ${subId.slice(0, 8)}…), but the first job was NOT auto-created: ${autoErr}. You can create a job manually from this customer's Jobs tab once you close this panel.`);
+          return;
         }
         if (onRecurringCreated) {
           onRecurringCreated({ subscriptionId: subId, firstJobId });
@@ -604,10 +606,12 @@ export function SubscriptionCreatePanel({
       const firstJobId = (res as any)?.first_job_id || null;
       const autoErr = (res as any)?.auto_create_first_job_error;
       if (autoErr) {
-        // Subscription succeeded but the auto-create of the first job failed.
-        // Surface it so we don't silently end up with a sub and no schedulable
-        // job. User can still proceed — sub is created — but they'll know why.
-        setErr(`Subscription created, but first job was NOT auto-created: ${autoErr}. You can create a job manually from this customer's Jobs tab.`);
+        // Sub succeeded; auto-create first job didn't. Show the error and
+        // KEEP THE PANEL OPEN — calling onRecurringCreated would unmount us
+        // before the user can read what went wrong. They can hit Cancel to
+        // close manually after seeing the diagnostic.
+        setErr(`Subscription created (id ${subId.slice(0, 8)}…), but the first job was NOT auto-created: ${autoErr}. You can create a job manually from this customer's Jobs tab once you close this panel.`);
+        return;
       }
       // Prefer the recurring-aware callback if the parent provided one.
       if (onRecurringCreated) {
