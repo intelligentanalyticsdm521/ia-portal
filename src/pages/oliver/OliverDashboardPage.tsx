@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { Component, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   ResponsiveContainer, AreaChart, Area, Tooltip,
@@ -12,6 +13,39 @@ import { OliverSetupCard } from "../../components/command/OliverSetupCard";
 import { Sparkles, ArrowUpRight, Calendar as CalendarIcon } from "lucide-react";
 import { CalendarModal } from "../../components/oliver/customer/CalendarModal";
 import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
+
+// ─── Inline error boundary ───────────────────────────────────────────────────
+// Containment-only. A runtime exception in any new dashboard section should
+// hide that section, not white-screen the whole page. Logs to console so a
+// browser tab can still surface the underlying error during debugging.
+class DashSectionBoundary extends Component<
+  { label: string; children: ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(err: Error, info: unknown) {
+    // eslint-disable-next-line no-console
+    console.error(`[OliverDashboard] ${this.props.label} crashed`, err, info);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="card" style={{
+          background: "#FEF3C7", border: "1px solid #FDE68A",
+          color: "#78350F", fontSize: 12, padding: 12,
+        }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>{this.props.label} unavailable</div>
+          <div style={{ opacity: 0.85 }}>
+            This section hit a runtime error and was hidden so the rest of the dashboard can render.
+            Check the browser console for details.
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface TodaySummary {
   jobs_today: number;
@@ -218,19 +252,23 @@ export function OliverDashboardPage() {
       />
 
       {/* 1. IA Insights — compact header strip with Open Trends + Open ARGUS */}
-      <OliverIAInsightsGlance trendScore={iaTrendScore} trendHistory={iaTrendHistory} />
+      <DashSectionBoundary label="IA Insights">
+        <OliverIAInsightsGlance trendScore={iaTrendScore} trendHistory={iaTrendHistory} />
+      </DashSectionBoundary>
 
       {/* 2. Alerts — only when present (setup checklist + Stripe regression) */}
       {topBanner}
 
       {/* 3. Weekly Glance — primary daily operator surface */}
-      <WeeklyGlance
-        onOpenCalendar={(initialDate) => {
-          setCalendarInitialDate(initialDate);
-          setCalendarOpen(true);
-        }}
-        onOpenJob={(jobId) => setFocusJobId(jobId)}
-      />
+      <DashSectionBoundary label="Weekly Glance">
+        <WeeklyGlance
+          onOpenCalendar={(initialDate) => {
+            setCalendarInitialDate(initialDate);
+            setCalendarOpen(true);
+          }}
+          onOpenJob={(jobId) => setFocusJobId(jobId)}
+        />
+      </DashSectionBoundary>
 
       {/* 4. KPI row — secondary stats (smaller than headline area) */}
       <div className="stat-row">
@@ -259,7 +297,9 @@ export function OliverDashboardPage() {
 
       {/* 5. "Today" narrative — sparkline + headline message, secondary placement */}
       {today && (
-        <TodayHero today={today} />
+        <DashSectionBoundary label="Today narrative">
+          <TodayHero today={today} />
+        </DashSectionBoundary>
       )}
 
       {/* Two-col layout: upcoming jobs + service requests */}
@@ -493,14 +533,25 @@ function TodayHero({ today }: { today: TodaySummary }) {
     info:  { bg: "linear-gradient(90deg, #DBEAFE 0%, #BFDBFE 100%)", border: "#93C5FD", text: "#1E40AF", icon: "i" },
     ok:    { bg: "linear-gradient(90deg, #D1FAE5 0%, #A7F3D0 100%)", border: "#6EE7B7", text: "#065F46", icon: "✓" },
   };
-  const c = palette[today.headline.tone];
+  // Defensive: backend should always send a headline, but if not, fall back
+  // to an "ok / quiet day" message instead of throwing on palette[undefined].tone.
+  const headline = today.headline ?? {
+    tone: "ok" as const,
+    message: "Nothing urgent right now.",
+    action: { label: "Open job board", to: "/app/services/oliver_job_board" },
+  };
+  const c = palette[headline.tone] ?? palette.ok;
   const greeting = (() => {
     const h = new Date().getHours();
     if (h < 12) return "Good morning";
     if (h < 17) return "Good afternoon";
     return "Good evening";
   })();
-  const max = Math.max(...today.sparkline.map((s) => s.revenue), 0);
+  // Defensive: sparkline may be missing/null on first deploy or on tenants
+  // with no revenue history. Treat as empty array → renders the "no revenue"
+  // empty state instead of crashing on .map of undefined.
+  const sparkline = Array.isArray(today.sparkline) ? today.sparkline : [];
+  const max = Math.max(...sparkline.map((s) => s.revenue), 0);
 
   return (
     <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -520,17 +571,17 @@ function TodayHero({ today }: { today: TodaySummary }) {
             {greeting}
           </div>
           <div style={{ fontSize: 14, color: c.text, fontWeight: 600, lineHeight: 1.4, marginTop: 2 }}>
-            {today.headline.message}
+            {headline.message}
           </div>
         </div>
         <Link
-          to={today.headline.action.to}
+          to={headline.action?.to || "/app/services/oliver_job_board"}
           style={{
             padding: "8px 16px", borderRadius: 8, background: c.text, color: "#fff",
             fontSize: 12, fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0,
           }}
         >
-          {today.headline.action.label} →
+          {headline.action?.label || "Open"} →
         </Link>
       </div>
 
@@ -579,7 +630,7 @@ function TodayHero({ today }: { today: TodaySummary }) {
           {max > 0 ? (
             <div style={{ height: 70, marginTop: 4 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={today.sparkline} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                <AreaChart data={sparkline} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="dashSpark" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#1A7DB5" stopOpacity={0.5} />
@@ -729,7 +780,12 @@ function WeeklyGlance({
   const eventsByDay = useMemo(() => {
     const map = new Map<string, WeeklyGlanceEvent[]>();
     for (const ev of events) {
-      const key = new Date(ev.date).toISOString().slice(0, 10);
+      // Defensive: if a row has a null/invalid date, skip it rather than
+      // throwing on toISOString() of Invalid Date.
+      if (!ev?.date) continue;
+      const parsed = new Date(ev.date);
+      if (Number.isNaN(parsed.getTime())) continue;
+      const key = parsed.toISOString().slice(0, 10);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(ev);
     }
