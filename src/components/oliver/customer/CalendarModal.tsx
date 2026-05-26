@@ -87,6 +87,28 @@ function fmtTime(d: Date) {
   return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
+// Parse a YYYY-MM-DD string as a LOCAL date (midnight local), not UTC.
+// `new Date("2026-05-27")` parses as UTC midnight, which in a CT browser
+// displays as May 26 at 7pm — that off-by-one is the bug founder hit.
+// Falls back to today (local midnight) when input is missing/invalid.
+function parseLocalDate(s?: string): Date {
+  if (s) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    if (m) {
+      const y = Number(m[1]);
+      const mo = Number(m[2]) - 1;
+      const d = Number(m[3]);
+      const out = new Date(y, mo, d);
+      if (!Number.isNaN(out.getTime())) return out;
+    }
+    // ISO-with-time fallback (preserves original offset interpretation)
+    const fallback = new Date(s);
+    if (!Number.isNaN(fallback.getTime())) return fallback;
+  }
+  const today = new Date();
+  return new Date(today.getFullYear(), today.getMonth(), today.getDate());
+}
+
 export function CalendarModal({
   onClose,
   initialDate,
@@ -105,19 +127,9 @@ export function CalendarModal({
   // View mode — month grid or single-day timeline.
   // If caller passed initialDate, start on day view so the click feels direct.
   const [view, setView] = useState<"month" | "day">(initialDate ? "day" : "month");
-  const [selectedDay, setSelectedDay] = useState<Date>(() => {
-    if (initialDate) {
-      const d = new Date(initialDate);
-      if (!Number.isNaN(d.getTime())) return d;
-    }
-    return new Date();
-  });
+  const [selectedDay, setSelectedDay] = useState<Date>(() => parseLocalDate(initialDate));
   const [currentMonth, setCurrentMonth] = useState(() => {
-    const seed = initialDate ? new Date(initialDate) : new Date();
-    if (Number.isNaN(seed.getTime())) {
-      const now = new Date();
-      return new Date(now.getFullYear(), now.getMonth(), 1);
-    }
+    const seed = parseLocalDate(initialDate);
     return new Date(seed.getFullYear(), seed.getMonth(), 1);
   });
 
