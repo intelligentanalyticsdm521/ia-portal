@@ -16,6 +16,8 @@ interface SubItem {
   quantity: number;
   recurring_interval?: string | null;
   recurring_interval_count?: number | null;
+  /** Backend returns this — needed for PATCH /subscriptions/:id item edits. */
+  stripe_subscription_item_id?: string | null;
 }
 interface SubscriptionDetail {
   subscription_id: string;
@@ -84,6 +86,8 @@ export interface SubscriptionDetailPanelProps {
   api: {
     get: <T>(p: string) => Promise<T>;
     post: <T>(p: string, b?: unknown) => Promise<T>;
+    /** F-16 — used by line items edit mode to PATCH /subscriptions/:id */
+    patch: <T>(p: string, b: unknown) => Promise<T>;
   };
   onChanged?: () => void;
   topSlot?: React.ReactNode;
@@ -99,6 +103,12 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
   const [toast, setToast] = useState<string | null>(null);
   const [linkPickerOpen, setLinkPickerOpen] = useState(false);
   const [linkTemplateId, setLinkTemplateId] = useState<string>("");
+  // F-16 — line item edit mode. Lets the admin change quantities (and
+  // remove items) per-subscription via PATCH /subscriptions/:id, which
+  // updates Stripe + re-syncs the local mirror.
+  const [editingItems, setEditingItems] = useState(false);
+  const [draftItems, setDraftItems] = useState<Record<string, { quantity: number; deleted: boolean }>>({});
+  const [savingItems, setSavingItems] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -226,9 +236,50 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
 
       {/* Line items */}
       <div className="card">
-        <div className="card-ttl">Line items</div>
-        <div className="card-sub" style={{ marginBottom: 8 }}>
-          {(sub.items || []).length} item{(sub.items || []).length === 1 ? "" : "s"} on this subscription
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div>
+            <div className="card-ttl">Line items</div>
+            <div className="card-sub" style={{ marginBottom: 8 }}>
+              {(sub.items || []).length} item{(sub.items || []).length === 1 ? "" : "s"} on this subscription
+            </div>
+          </div>
+          {/* F-16 — Edit / Save / Cancel */}
+          {(sub.items || []).length > 0 && !editingItems && (
+            <Button variant="secondary" onClick={() => {
+              const d: Record<string, { quantity: number; deleted: boolean }> = {};
+              for (const it of sub.items || []) d[it.item_id] = { quantity: Number(it.quantity) || 1, deleted: false };
+              setDraftItems(d);
+              setEditingItems(true);
+            }}>Edit items</Button>
+          )}
+          {editingItems && (
+            <div style={{ display: "flex", gap: 6 }}>
+              <Button variant="ghost" onClick={() => { setEditingItems(false); setDraftItems({}); }} disabled={savingItems}>Cancel</Button>
+              <Button variant="primary" disabled={savingItems} onClick={async () => {
+                setSavingItems(true);
+                try {
+                  // Build the items payload — only include changed/deleted rows.
+                  const payload = (sub.items || []).map((it) => {
+                    const d = draftItems[it.item_id];
+                    if (!d || !it.stripe_subscription_item_id) return null;
+                    if (d.deleted) return { stripe_subscription_item_id: it.stripe_subscription_item_id, deleted: true };
+                    if (d.quantity !== Number(it.quantity)) return { stripe_subscription_item_id: it.stripe_subscription_item_id, quantity: d.quantity };
+                    return null;
+                  }).filter(Boolean);
+                  if (!payload.length) {
+                    setEditingItems(false); setDraftItems({}); return;
+                  }
+                  await api.patch(`/subscriptions/${subscriptionId}`, { items: payload });
+                  setEditingItems(false); setDraftItems({});
+                  setToast("Subscription updated"); setTimeout(() => setToast(null), 2500);
+                  await reload();
+                  onChanged?.();
+                } catch (e) {
+                  setErr((e as Error).message || "Update failed");
+                } finally { setSavingItems(false); }
+              }}>{savingItems ? "Saving…" : "Save changes"}</Button>
+            </div>
+          )}
         </div>
         {(sub.items || []).length === 0 ? (
           <div style={{ fontSize: 12, color: "#5A7A8A", fontStyle: "italic" }}>No items synced. Run "Sync from Stripe".</div>
@@ -240,20 +291,54 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
                 <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600 }}>Unit price</th>
                 <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600 }}>Qty</th>
                 <th style={{ textAlign: "right", padding: "6px 0", fontWeight: 600 }}>Line total</th>
+                {editingItems && <th style={{ padding: "6px 0", width: 24 }} aria-label="Remove" />}
               </tr>
             </thead>
             <tbody>
-              {(sub.items || []).map((it) => (
-                <tr key={it.item_id} style={{ borderBottom: "1px solid #F3F4F6" }}>
-                  <td style={{ padding: "8px 0", color: "#0B1C24" }}>
-                    {it.product_name}
-                    {it.recurring_interval && <span style={{ color: "#94A3B8", marginLeft: 6 }}>· /{it.recurring_interval_count && it.recurring_interval_count > 1 ? `${it.recurring_interval_count} ` : ""}{it.recurring_interval}</span>}
-                  </td>
-                  <td style={{ padding: "8px", textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(it.unit_amount)}</td>
-                  <td style={{ padding: "8px", textAlign: "right" }}>{it.quantity}</td>
-                  <td style={{ padding: "8px 0", textAlign: "right", fontFamily: "monospace", fontWeight: 600 }}>{fmtMoney(Number(it.unit_amount) * Number(it.quantity))}</td>
-                </tr>
-              ))}
+              {(sub.items || []).map((it) => {
+                const d = draftItems[it.item_id];
+                const qty = editingItems && d ? d.quantity : Number(it.quantity);
+                const isDeleted = !!d?.deleted;
+                return (
+                  <tr key={it.item_id} style={{ borderBottom: "1px solid #F3F4F6", opacity: isDeleted ? 0.35 : 1, textDecoration: isDeleted ? "line-through" : "none" }}>
+                    <td style={{ padding: "8px 0", color: "#0B1C24" }}>
+                      {it.product_name}
+                      {it.recurring_interval && <span style={{ color: "#94A3B8", marginLeft: 6 }}>· /{it.recurring_interval_count && it.recurring_interval_count > 1 ? `${it.recurring_interval_count} ` : ""}{it.recurring_interval}</span>}
+                    </td>
+                    <td style={{ padding: "8px", textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(it.unit_amount)}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>
+                      {editingItems && !isDeleted ? (
+                        <input
+                          type="number" min={1} value={qty}
+                          onChange={(e) => setDraftItems((prev) => ({
+                            ...prev,
+                            [it.item_id]: { ...(prev[it.item_id] || { quantity: qty, deleted: false }), quantity: Math.max(1, Number(e.target.value) || 1) },
+                          }))}
+                          style={{ width: 56, padding: "2px 6px", textAlign: "right", border: "1px solid #E5E7EB", borderRadius: 4 }}
+                        />
+                      ) : qty}
+                    </td>
+                    <td style={{ padding: "8px 0", textAlign: "right", fontFamily: "monospace", fontWeight: 600 }}>{fmtMoney(Number(it.unit_amount) * qty)}</td>
+                    {editingItems && (
+                      <td style={{ padding: "8px 0", textAlign: "right" }}>
+                        {isDeleted ? (
+                          <button
+                            onClick={() => setDraftItems((prev) => ({ ...prev, [it.item_id]: { ...(prev[it.item_id] || { quantity: qty, deleted: false }), deleted: false } }))}
+                            style={{ background: "none", border: "none", color: "#1A7DB5", cursor: "pointer", fontSize: 11 }}
+                            title="Undo remove"
+                          >undo</button>
+                        ) : (
+                          <button
+                            onClick={() => setDraftItems((prev) => ({ ...prev, [it.item_id]: { ...(prev[it.item_id] || { quantity: qty, deleted: false }), deleted: true } }))}
+                            style={{ background: "none", border: "none", color: "#DC2626", cursor: "pointer", fontSize: 14, lineHeight: 1 }}
+                            title="Remove this item from the subscription"
+                          >×</button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
