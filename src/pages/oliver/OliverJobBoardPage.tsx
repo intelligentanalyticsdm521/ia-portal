@@ -281,38 +281,63 @@ export function OliverJobBoardPage() {
         }
       />
 
-      <div className="stat-row">
-        <div className="stat-card">
-          <div className="stat-lbl">Quotes</div>
-          <div className="stat-val">{bucketCounts['quotes'] ?? 0}</div>
-          <div className="stat-delta neu">awaiting decision</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-lbl">Scheduled</div>
-          <div className="stat-val">{bucketCounts['scheduled'] ?? 0}</div>
-          <div className="stat-delta neu">booked</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-lbl">In Progress</div>
-          <div className="stat-val">{bucketCounts['in_progress'] ?? 0}</div>
-          <div className="stat-delta neu">active work</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-lbl">Completed</div>
-          <div className="stat-val" style={{ color: "#059669" }}>{bucketCounts['completed'] ?? 0}</div>
-          <div className="stat-delta neu">work done, awaiting close</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-lbl">Closed · last {CLOSED_BOARD_WINDOW_DAYS}d</div>
-          <div className="stat-val">{bucketCounts['closed'] ?? 0}</div>
-          <div className="stat-delta neu">
-            {closedHidden > 0 ? (
-              <Link to="/app/services/oliver_jobs_archive" style={{ color: '#1A7DB5' }}>
-                +{closedHidden} in archive →
-              </Link>
-            ) : 'no older closed jobs'}
-          </div>
-        </div>
+      {/* F-05 — Stat cards: smaller (compact padding + smaller numbers) and
+          5-column grid that aligns 1:1 with the Kanban buckets below. Click
+          a card to filter the board to that bucket; click again to clear. */}
+      <div
+        className="mb-3"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+          gap: 8,
+        }}
+      >
+        {BUCKETS.map((b) => {
+          const count = bucketCounts[b.key] ?? 0;
+          const active = bucketFilter === b.key;
+          const isCompleted = b.key === 'completed';
+          const isClosed = b.key === 'closed';
+          const label =
+            b.key === 'quotes' ? 'awaiting decision'
+              : b.key === 'scheduled' ? 'booked'
+              : b.key === 'in_progress' ? 'active work'
+              : b.key === 'completed' ? 'awaiting close'
+              : `last ${CLOSED_BOARD_WINDOW_DAYS}d`;
+          return (
+            <button
+              key={b.key}
+              type="button"
+              onClick={() => setBucketFilter(active ? '' : b.key)}
+              title={`Filter board to ${b.label} (click again to clear)`}
+              style={{
+                background: active ? "#FFF8E1" : "#fff",
+                border: `1px solid ${active ? "#FEC82C" : "#E5E7EB"}`,
+                borderRadius: 8,
+                padding: "8px 10px",
+                cursor: "pointer",
+                textAlign: "left",
+                transition: "all 0.12s",
+              }}
+            >
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                {b.label}
+              </div>
+              <div style={{
+                fontSize: 22, fontWeight: 700, fontFamily: "monospace", lineHeight: 1.2, marginTop: 2,
+                color: isCompleted ? "#059669" : isClosed ? "#5A7A8A" : "#0B1C24",
+              }}>
+                {count}
+              </div>
+              <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 2 }}>
+                {isClosed && closedHidden > 0 ? (
+                  <Link to="/app/services/oliver_jobs_archive" style={{ color: '#1A7DB5' }} onClick={(e) => e.stopPropagation()}>
+                    +{closedHidden} in archive →
+                  </Link>
+                ) : label}
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       {!jobs.length ? (
