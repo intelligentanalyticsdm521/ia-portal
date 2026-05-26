@@ -423,10 +423,11 @@ export function CustomerModal({
                     <th style={{ textAlign: "right" }}>Paid</th>
                     <th style={{ textAlign: "right" }}>Balance</th>
                     <th>Source</th><th>Date</th>
+                    <th>Actions</th>
                   </tr></thead>
                   <tbody>
                     {activity.invoices.length === 0 ? (
-                      <tr><td colSpan={7} style={{ textAlign: "center", padding: "20px 0", color: "#5A7A8A" }}>No invoices yet</td></tr>
+                      <tr><td colSpan={8} style={{ textAlign: "center", padding: "20px 0", color: "#5A7A8A" }}>No invoices yet</td></tr>
                     ) : activity.invoices.map((i) => (
                       <tr key={i.invoice_id}>
                         <td><strong>{i.invoice_number}</strong></td>
@@ -436,6 +437,15 @@ export function CustomerModal({
                         <td style={{ textAlign: "right" }}>{fmtMoney(i.balance_due)}</td>
                         <td style={{ fontSize: 10, textTransform: "uppercase", color: "#5A7A8A" }}>{i.source || "oliver"}</td>
                         <td>{fmtDate(i.created_at)}</td>
+                        <td>
+                          <InvoiceRowActions
+                            invoiceId={i.invoice_id}
+                            isPaid={i.status === "paid"}
+                            balance={Number(i.balance_due ?? i.total)}
+                            api={api}
+                            onCharged={() => { reload(); onChanged?.(); }}
+                          />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -682,6 +692,109 @@ function InfoRow({ label, value }: { label: string; value: string }) {
     <div>
       <div style={{ fontSize: 10, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
       <div style={{ fontSize: 13, color: "#0B1C24", marginTop: 2 }}>{value}</div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// InvoiceRowActions — per-invoice "Charge now" + "Send payment link".
+// Founder spec 2026-05-25 — admin charges in-portal (saved card via
+// PaymentIntent); payment link is for customer-facing Stripe Checkout.
+// ─────────────────────────────────────────────────────────────────────────────
+function InvoiceRowActions({
+  invoiceId, isPaid, balance, api, onCharged,
+}: {
+  invoiceId: string;
+  isPaid: boolean;
+  balance: number;
+  api: {
+    post: <T>(p: string, b?: unknown) => Promise<T>;
+  };
+  onCharged: () => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [linkUrl, setLinkUrl] = useState<string | null>(null);
+
+  if (isPaid) {
+    return <span style={{ fontSize: 10, color: "#047857", fontWeight: 700 }}>PAID</span>;
+  }
+  if (balance <= 0) {
+    return <span style={{ fontSize: 10, color: "#94A3B8" }}>—</span>;
+  }
+
+  async function charge() {
+    if (!confirm(`Charge the default card on file for $${balance.toFixed(2)}?`)) return;
+    setBusy("charge"); setErr(null);
+    try {
+      const res = await api.post<{ status?: string; client_secret?: string; data?: any }>(`/payments/invoices/${invoiceId}/charge`, {});
+      const status = (res as any)?.data?.status || (res as any)?.status;
+      if (status === "paid") {
+        onCharged();
+      } else if (status === "requires_action") {
+        setErr("Card requires 3DS confirmation — switch to 'Send payment link' for this one (full Elements confirm path lands in a follow-up).");
+      } else {
+        setErr(`Charge result: ${status || "unknown"}`);
+      }
+    } catch (e) {
+      const msg = (e as Error).message || "";
+      // Surface human-friendly variants
+      if (msg.includes("No payment method")) {
+        setErr("No card on file — add one in Overview, or send a payment link.");
+      } else { setErr(msg); }
+    } finally { setBusy(null); }
+  }
+
+  async function paymentLink() {
+    setBusy("link"); setErr(null); setLinkUrl(null);
+    try {
+      const res = await api.post<{ url?: string; data?: { url?: string } }>(`/payments/invoices/${invoiceId}/payment-link`, {});
+      const url = (res as any)?.url || (res as any)?.data?.url;
+      if (!url) throw new Error("No URL returned");
+      setLinkUrl(url);
+      // Auto-copy to clipboard so the admin can paste into an email/text.
+      try { await navigator.clipboard.writeText(url); } catch { /* ignore — show link in UI */ }
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(null); }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", gap: 4 }}>
+        <button
+          onClick={charge}
+          disabled={busy !== null}
+          title="Charge the default card on file"
+          style={{
+            fontSize: 10, padding: "3px 8px",
+            background: "#0C4A60", color: "#fff",
+            border: "none", borderRadius: 3, cursor: busy ? "wait" : "pointer",
+          }}
+        >
+          {busy === "charge" ? "Charging…" : "Charge now"}
+        </button>
+        <button
+          onClick={paymentLink}
+          disabled={busy !== null}
+          title="Generate a Stripe Checkout URL to send the customer"
+          style={{
+            fontSize: 10, padding: "3px 8px",
+            background: "#fff", color: "#0C4A60",
+            border: "1px solid rgba(45,156,219,0.3)", borderRadius: 3, cursor: busy ? "wait" : "pointer",
+          }}
+        >
+          {busy === "link" ? "Generating…" : "Pay link"}
+        </button>
+      </div>
+      {linkUrl && (
+        <div style={{ fontSize: 10, color: "#047857" }} title={linkUrl}>
+          ✓ Link copied to clipboard
+          <a href={linkUrl} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 4, color: "#1A7DB5" }}>open</a>
+        </div>
+      )}
+      {err && (
+        <div style={{ fontSize: 10, color: "#991B1B", maxWidth: 200 }}>{err}</div>
+      )}
     </div>
   );
 }
