@@ -212,6 +212,7 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
     <JobLayout
       job={job}
       jobId={jobId}
+      api={api}
       topSlot={topSlot}
       err={err} toast={toast}
       busy={busy}
@@ -226,6 +227,11 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
       changeStatus={changeStatus}
       onAssignmentHours={async (assignmentId, hours) => {
         await api.patch(`/jobs/${jobId}/assignments/${assignmentId}`, { actual_hours: hours });
+        await reload();
+        onChanged?.();
+      }}
+      onAssignWorker={async (workerId) => {
+        await api.post(`/dispatch/assign`, { job_id: jobId, worker_id: workerId });
         await reload();
         onChanged?.();
       }}
@@ -245,6 +251,11 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
 type JobLayoutProps = {
   job: JobDetail;
   jobId: string;
+  api: {
+    get: <T>(p: string) => Promise<T>;
+    post: <T>(p: string, b?: unknown) => Promise<T>;
+    patch: <T>(p: string, b: unknown) => Promise<T>;
+  };
   topSlot?: React.ReactNode;
   err: string | null;
   toast: string | null;
@@ -266,6 +277,7 @@ type JobLayoutProps = {
   isTerminal: boolean;
   changeStatus: (s: string) => Promise<void>;
   onAssignmentHours: (assignmentId: string, hours: number | null) => Promise<void>;
+  onAssignWorker: (workerId: string) => Promise<void>;
 };
 
 type JobTab = "details" | "lines" | "workers" | "activity";
@@ -362,7 +374,7 @@ function JobLayout(p: JobLayoutProps) {
               </div>
               {(job.assignedWorkers ?? []).length === 0 ? (
                 <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "8px 0" }}>
-                  No active assignments. Use the Dispatch page to offer this job to a worker.
+                  No workers assigned yet. Click "+ Add worker" below to dispatch one to this job.
                 </div>
               ) : (
                 (job.assignedWorkers ?? []).map((w) => (
@@ -376,6 +388,11 @@ function JobLayout(p: JobLayoutProps) {
                   />
                 ))
               )}
+              <AddWorkerControl
+                api={p.api}
+                onAssign={p.onAssignWorker}
+                alreadyAssigned={(job.assignedWorkers ?? []).map((w) => w.id)}
+              />
               <JobProfitabilityCard workers={job.assignedWorkers ?? []} invoices={job.invoices ?? []} />
             </div>
           )}
@@ -695,6 +712,121 @@ function JobProfitabilityCard({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AddWorkerControl — "+ Add worker" button below the assignment list.
+// Founder spec 2026-05-26 — every job should be able to assign a worker
+// directly from the modal without bouncing to a separate Dispatch page.
+// Hits POST /dispatch/assign for direct assignment (no offer/accept flow).
+// ─────────────────────────────────────────────────────────────────────────────
+function AddWorkerControl({
+  api, onAssign, alreadyAssigned,
+}: {
+  api: { get: <T>(p: string) => Promise<T> };
+  onAssign: (workerId: string) => Promise<void>;
+  alreadyAssigned: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [workers, setWorkers] = useState<Array<{ id: string; name: string; type?: string; status?: string; activeJobs?: number }>>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const assignedSet = new Set(alreadyAssigned);
+
+  async function openPicker() {
+    setOpen(true); setLoading(true); setErr(null);
+    try {
+      const r = await api.get<{ data: typeof workers } | typeof workers>("/workers");
+      const list = Array.isArray(r) ? r : ((r as any).data ?? []);
+      setWorkers(list.filter((w: { status?: string }) => w.status !== "inactive" && w.status !== "archived"));
+    } catch (e) { setErr((e as Error).message); }
+    finally { setLoading(false); }
+  }
+
+  async function assign(workerId: string) {
+    setBusy(workerId); setErr(null);
+    try {
+      await onAssign(workerId);
+      setOpen(false);
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(null); }
+  }
+
+  if (!open) {
+    return (
+      <div style={{ marginTop: 10 }}>
+        <button
+          type="button" onClick={openPicker}
+          style={{
+            fontSize: 12, padding: "6px 12px",
+            background: "#0C4A60", color: "#fff",
+            border: "none", borderRadius: 4, cursor: "pointer",
+          }}
+        >
+          + Add worker
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 10, padding: 10, border: "1px solid #cbd5e1", borderRadius: 8, background: "#fff" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <strong style={{ fontSize: 12, color: "#0B1C24" }}>Assign a worker</strong>
+        <button onClick={() => setOpen(false)}
+          style={{ background: "none", border: "none", color: "#5A7A8A", cursor: "pointer", fontSize: 13 }}>
+          Cancel
+        </button>
+      </div>
+      {err && (
+        <div style={{ background: "#FEE2E2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 6, padding: "6px 10px", fontSize: 11, marginBottom: 8 }}>
+          {err}
+        </div>
+      )}
+      {loading ? (
+        <div style={{ fontSize: 11, color: "#5A7A8A", padding: 8 }}>Loading workers…</div>
+      ) : workers.length === 0 ? (
+        <div style={{ fontSize: 11, color: "#5A7A8A", padding: 8 }}>
+          No active workers. Add workers on OLIVER → Team → Workers first.
+        </div>
+      ) : (
+        <div style={{ maxHeight: 280, overflowY: "auto" }}>
+          {workers.map((w) => {
+            const isAssigned = assignedSet.has(w.id);
+            return (
+              <div key={w.id} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "6px 4px", borderBottom: "1px solid #F1F5F9",
+              }}>
+                <div>
+                  <div style={{ fontSize: 12, color: "#0B1C24", fontWeight: 500 }}>{w.name}</div>
+                  <div style={{ fontSize: 10, color: "#5A7A8A" }}>
+                    {w.type || "worker"}{w.activeJobs != null ? ` · ${w.activeJobs} active job${w.activeJobs === 1 ? "" : "s"}` : ""}
+                  </div>
+                </div>
+                {isAssigned ? (
+                  <span style={{ fontSize: 10, color: "#94A3B8", fontStyle: "italic" }}>already assigned</span>
+                ) : (
+                  <button
+                    type="button" onClick={() => assign(w.id)} disabled={busy === w.id}
+                    style={{
+                      fontSize: 11, padding: "4px 10px",
+                      background: "#fff", color: "#0C4A60",
+                      border: "1px solid rgba(45,156,219,0.3)",
+                      borderRadius: 4, cursor: busy ? "wait" : "pointer",
+                    }}
+                  >
+                    {busy === w.id ? "Assigning…" : "Assign"}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
