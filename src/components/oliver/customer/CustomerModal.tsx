@@ -32,6 +32,7 @@ import { SubscriptionDetailPanel } from "./SubscriptionDetailPanel";
 import {
   JobCreatePanel, QuoteCreatePanel, InvoiceCreatePanel, SubscriptionCreatePanel,
 } from "./CreatePanels";
+import { formatPhone } from "../../../lib/formatPhone";
 
 type Tab = "overview" | "jobs" | "quotes" | "invoices" | "payments" | "subscriptions";
 
@@ -244,29 +245,37 @@ export function CustomerModal({
           </div>
 
           {/* ── Overview ── */}
-          {tab === "overview" && detail.financial_snapshot && (
+          {tab === "overview" && (
             <>
-              <div className="stat-row" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
-                <div className="stat-card">
-                  <div className="stat-lbl">Lifetime value</div>
-                  <div className="stat-val">{fmtMoney(detail.financial_snapshot.net_collected)}</div>
-                  <div className="stat-delta neu">net of refunds</div>
+              {detail.financial_snapshot && (
+                <div className="stat-row" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
+                  <div className="stat-card">
+                    <div className="stat-lbl">Lifetime value</div>
+                    <div className="stat-val">{fmtMoney(detail.financial_snapshot.net_collected)}</div>
+                    <div className="stat-delta neu">net of refunds</div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-lbl">Total jobs</div>
+                    <div className="stat-val">{detail.financial_snapshot.total_jobs}</div>
+                    <div className="stat-delta neu">last: {fmtDate(detail.financial_snapshot.last_job_date)}</div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-lbl">Avg invoice</div>
+                    <div className="stat-val">{fmtMoney(detail.financial_snapshot.avg_invoice_value)}</div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-lbl">Outstanding</div>
+                    <div className="stat-val">{fmtMoney(detail.financial_snapshot.outstanding_balance)}</div>
+                    <div className="stat-delta neu">last paid: {fmtDate(detail.financial_snapshot.last_payment_date)}</div>
+                  </div>
                 </div>
-                <div className="stat-card">
-                  <div className="stat-lbl">Total jobs</div>
-                  <div className="stat-val">{detail.financial_snapshot.total_jobs}</div>
-                  <div className="stat-delta neu">last: {fmtDate(detail.financial_snapshot.last_job_date)}</div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-lbl">Avg invoice</div>
-                  <div className="stat-val">{fmtMoney(detail.financial_snapshot.avg_invoice_value)}</div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-lbl">Outstanding</div>
-                  <div className="stat-val">{fmtMoney(detail.financial_snapshot.outstanding_balance)}</div>
-                  <div className="stat-delta neu">last paid: {fmtDate(detail.financial_snapshot.last_payment_date)}</div>
-                </div>
-              </div>
+              )}
+
+              <CustomerInfoCard
+                detail={detail}
+                api={api}
+                onSaved={() => { reload(); onChanged?.(); }}
+              />
 
               <div className="card">
                 <div className="card-ttl">Service addresses</div>
@@ -504,5 +513,137 @@ export function CustomerModal({
         </>
       )}
     </DetailDrawer>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CustomerInfoCard — name / email / phone / company + inline edit.
+// Patches lumen.contact via PATCH /contacts/:id (unified contact model since
+// migration 017).
+// ─────────────────────────────────────────────────────────────────────────────
+function CustomerInfoCard({
+  detail, api, onSaved,
+}: {
+  detail: ContactDetail;
+  api: { patch: <T>(p: string, b: unknown) => Promise<T> };
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [first, setFirst] = useState(detail.first_name || "");
+  const [last, setLast] = useState(detail.last_name || "");
+  const [email, setEmail] = useState(detail.email || "");
+  const [phone, setPhone] = useState(detail.phone ? formatPhone(detail.phone) : "");
+  const [company, setCompany] = useState(detail.company_name || "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  function startEdit() {
+    setFirst(detail.first_name || "");
+    setLast(detail.last_name || "");
+    setEmail(detail.email || "");
+    setPhone(detail.phone ? formatPhone(detail.phone) : "");
+    setCompany(detail.company_name || "");
+    setErr(null);
+    setEditing(true);
+  }
+
+  async function save() {
+    setErr(null);
+    if (!first.trim() && !last.trim() && !company.trim()) {
+      setErr("Need at least a name or a company.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const targetId = detail.legacy_oliver_uuid || detail.contact_id;
+      await api.patch(`/contacts/${targetId}`, {
+        first_name: first.trim() || null,
+        last_name: last.trim() || null,
+        email: email.trim() || null,
+        phone: phone.trim() || null,
+        company_name: company.trim() || null,
+      });
+      setEditing(false);
+      onSaved();
+    } catch (e) { setErr((e as Error).message || "Save failed"); }
+    finally { setSaving(false); }
+  }
+
+  const inputS: React.CSSProperties = {
+    width: "100%", padding: "7px 10px", fontSize: 12,
+    border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6, background: "#fff",
+  };
+  const labelS: React.CSSProperties = {
+    display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A",
+    marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.4,
+  };
+
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+        <div>
+          <div className="card-ttl">Customer info</div>
+          <div className="card-sub">Shared contact record — also visible in SPARK CRM.</div>
+        </div>
+        {!editing && (
+          <Button variant="secondary" onClick={startEdit}>Edit</Button>
+        )}
+      </div>
+
+      {err && (
+        <div style={{ background: "#FEE2E2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 6, padding: "8px 12px", fontSize: 12, marginTop: 10 }}>
+          {err}
+        </div>
+      )}
+
+      {editing ? (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={labelS}>First name</label>
+              <input value={first} onChange={(e) => setFirst(e.target.value)} style={inputS} />
+            </div>
+            <div>
+              <label style={labelS}>Last name</label>
+              <input value={last} onChange={(e) => setLast(e.target.value)} style={inputS} />
+            </div>
+            <div>
+              <label style={labelS}>Email</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={inputS} />
+            </div>
+            <div>
+              <label style={labelS}>Phone</label>
+              <input type="tel" value={phone} onChange={(e) => setPhone(formatPhone(e.target.value))} style={inputS} />
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={labelS}>Company</label>
+              <input value={company} onChange={(e) => setCompany(e.target.value)} style={inputS} />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+            <Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
+            <Button variant="primary" onClick={save} disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          <InfoRow label="Name" value={[detail.first_name, detail.last_name].filter(Boolean).join(" ") || "—"} />
+          <InfoRow label="Company" value={detail.company_name || "—"} />
+          <InfoRow label="Email" value={detail.email || "—"} />
+          <InfoRow label="Phone" value={detail.phone ? formatPhone(detail.phone) : "—"} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
+      <div style={{ fontSize: 13, color: "#0B1C24", marginTop: 2 }}>{value}</div>
+    </div>
   );
 }
