@@ -99,6 +99,11 @@ export interface CustomerModalProps {
    *  Job Board's "+ New job" launcher so the user lands ready to type. */
   initialCreating?: "job" | "quote" | "invoice" | "subscription";
 
+  /** Optional — when opening straight into the job create panel from the
+   *  Calendar Day View, prefill scheduled_start / scheduled_end with the
+   *  clicked timeslot. Format: local `YYYY-MM-DDTHH:MM` (no tz). */
+  prefillJob?: { scheduled_start?: string; scheduled_end?: string };
+
   onClose: () => void;
   onChanged?: () => void;
 
@@ -118,6 +123,7 @@ export function CustomerModal({
   focusSubscriptionId,
   initialSection,
   initialCreating,
+  prefillJob,
   onClose,
   onChanged,
   api,
@@ -314,6 +320,7 @@ export function CustomerModal({
               <JobCreatePanel
                 customerId={customerId}
                 api={api}
+                prefillJob={prefillJob}
                 onCancel={() => setCreating(null)}
                 onCreated={(newId) => {
                   setCreating(null);

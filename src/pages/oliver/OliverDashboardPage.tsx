@@ -726,9 +726,16 @@ function OliverIAInsightsGlance({
 // ─────────────────────────────────────────────────────────────────────────────
 interface WeeklyGlanceEvent {
   id: string;
+  type?: "job" | "booking";
   title: string;
-  date: string;
+  /** date is an alias of scheduled_start sent by the backend. */
+  date?: string;
+  scheduled_start?: string;
+  scheduled_end?: string;
   status: string;
+  customer_name?: string | null;
+  worker_id?: string | null;
+  worker_name?: string | null;
 }
 
 function WeeklyGlance({
@@ -777,29 +784,70 @@ function WeeklyGlance({
     return () => { cancelled = true; };
   }, [get, ready, startStr, endStr]);
 
+  // Backend returns one row per (job, worker_assignment) — a job assigned to 3
+  // workers arrives as 3 rows with the same id. Dedupe by id for chip display
+  // (counts + chips per day should reflect unique jobs/bookings, not rows).
+  const dedupedEvents = useMemo(() => {
+    const seen = new Set<string>();
+    const out: WeeklyGlanceEvent[] = [];
+    for (const ev of events) {
+      if (!ev?.id || seen.has(ev.id)) continue;
+      seen.add(ev.id);
+      out.push(ev);
+    }
+    return out;
+  }, [events]);
+
+  // Build a YYYY-MM-DD key from an event using the user's local timezone so
+  // a 9am-local job lands on today's column even if the API returns a UTC
+  // timestamp. Using toISOString() here would shift it to the wrong day.
+  function eventLocalDayKey(ev: WeeklyGlanceEvent): string | null {
+    const raw = ev.scheduled_start || ev.date;
+    if (!raw) return null;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return null;
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, "0");
+    const d = String(parsed.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  // Same conversion for the day columns themselves so keys are comparable.
+  function localDayKey(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
   const eventsByDay = useMemo(() => {
     const map = new Map<string, WeeklyGlanceEvent[]>();
-    for (const ev of events) {
-      // Defensive: if a row has a null/invalid date, skip it rather than
-      // throwing on toISOString() of Invalid Date.
-      if (!ev?.date) continue;
-      const parsed = new Date(ev.date);
-      if (Number.isNaN(parsed.getTime())) continue;
-      const key = parsed.toISOString().slice(0, 10);
+    for (const ev of dedupedEvents) {
+      const key = eventLocalDayKey(ev);
+      if (!key) continue;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(ev);
     }
+    // Sort each day's events by start time so the displayed chips are
+    // chronological (matches the user's mental model of "what's first today").
+    for (const list of map.values()) {
+      list.sort((a, b) => {
+        const ta = new Date(a.scheduled_start || a.date || 0).getTime();
+        const tb = new Date(b.scheduled_start || b.date || 0).getTime();
+        return ta - tb;
+      });
+    }
     return map;
-  }, [events]);
+  }, [dedupedEvents]);
 
-  const todayKey = startStr;
+  const todayKey = localDayKey(today);
 
   return (
     <div className="card">
       <div className="card-hdr">
         <div>
           <div className="card-ttl">Weekly Glance</div>
-          <div className="card-sub">{events.length} job{events.length === 1 ? "" : "s"} scheduled in the next 7 days · click a day or job to drill in</div>
+          <div className="card-sub">{dedupedEvents.length} job{dedupedEvents.length === 1 ? "" : "s"} scheduled in the next 7 days · click a day or job to drill in</div>
         </div>
         <button
           onClick={() => onOpenCalendar()}
@@ -815,7 +863,7 @@ function WeeklyGlance({
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
         {days.map((d) => {
-          const key = d.toISOString().slice(0, 10);
+          const key = localDayKey(d);
           const dayEvents = eventsByDay.get(key) || [];
           const isToday = key === todayKey;
           const dow = d.toLocaleDateString("en-US", { weekday: "short" });
@@ -859,11 +907,29 @@ function WeeklyGlance({
                   </span>
                   <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                     {dayEvents.slice(0, 3).map((ev) => {
-                      const c = weeklyGlanceStatusColor(ev.status);
+                      const c = ev.type === "booking"
+                        ? { bg: "#F3E8FF", fg: "#7E22CE" } // bookings: purple
+                        : weeklyGlanceStatusColor(ev.status);
+                      const t = ev.scheduled_start
+                        ? new Date(ev.scheduled_start).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+                        : "";
+                      const tip = [
+                        t,
+                        ev.title || "(untitled)",
+                        ev.customer_name ? `· ${ev.customer_name}` : "",
+                        ev.worker_name ? `· ${ev.worker_name}` : "",
+                        ev.type === "booking" ? "· booking" : "",
+                      ].filter(Boolean).join(" ");
                       return (
                         <span
                           key={ev.id}
-                          onClick={(e) => { e.stopPropagation(); onOpenJob(ev.id); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Bookings aren't jobs yet — clicking should drill into
+                            // the day so the user can convert/inspect it from there.
+                            if (ev.type === "booking") onOpenCalendar(key);
+                            else onOpenJob(ev.id);
+                          }}
                           style={{
                             background: c.bg, color: c.fg,
                             padding: "1px 4px", borderRadius: 3,
@@ -871,9 +937,9 @@ function WeeklyGlance({
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                             cursor: "pointer",
                           }}
-                          title={ev.title}
+                          title={tip}
                         >
-                          {ev.title || "(untitled)"}
+                          {t ? `${t} · ` : ""}{ev.title || "(untitled)"}
                         </span>
                       );
                     })}

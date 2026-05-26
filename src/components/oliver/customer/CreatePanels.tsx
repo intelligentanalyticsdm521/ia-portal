@@ -71,18 +71,22 @@ function ErrBox({ msg }: { msg: string | null }) {
 //   and the parent CustomerModal jumps to the first job.
 // ─────────────────────────────────────────────────────────────────────────────
 export function JobCreatePanel({
-  customerId, api, onCancel, onCreated, topSlot, onRecurringCreated,
+  customerId, api, onCancel, onCreated, topSlot, onRecurringCreated, prefillJob,
 }: BasePanelProps & {
   /** When the Recurring toggle is ON and submit succeeds, this callback
    *  fires with the new subscription + first job. Parent CustomerModal
    *  routes to the new job's detail. */
   onRecurringCreated?: RecurringCreatedFn;
+  /** Optional prefill from external launcher (e.g. Day View click-to-schedule).
+   *  Both fields are local-time `YYYY-MM-DDTHH:MM` strings ready to drop into
+   *  the datetime-local input. */
+  prefillJob?: { scheduled_start?: string; scheduled_end?: string };
 }) {
   const [recurring, setRecurring] = useState(false);
   const [title, setTitle] = useState("");
   const [jobType, setJobType] = useState("");
-  const [scheduledStart, setScheduledStart] = useState("");
-  const [scheduledEnd, setScheduledEnd] = useState("");
+  const [scheduledStart, setScheduledStart] = useState(prefillJob?.scheduled_start || "");
+  const [scheduledEnd, setScheduledEnd] = useState(prefillJob?.scheduled_end || "");
   const [teamNotes, setTeamNotes] = useState("");
   const [customerNotes, setCustomerNotes] = useState("");
   const [items, setItems] = useState<LineItem[]>([]);
