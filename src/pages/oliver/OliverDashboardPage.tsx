@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ResponsiveContainer, AreaChart, Area, Tooltip,
@@ -11,6 +11,7 @@ import { Sparkline } from "../../components/iainsights/Sparkline";
 import { OliverSetupCard } from "../../components/command/OliverSetupCard";
 import { Sparkles, ArrowUpRight, Calendar as CalendarIcon } from "lucide-react";
 import { CalendarModal } from "../../components/oliver/customer/CalendarModal";
+import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
 
 interface TodaySummary {
   jobs_today: number;
@@ -102,10 +103,14 @@ function fmtRelative(d?: string) {
 }
 
 export function OliverDashboardPage() {
-  // Calendar Modal — opens from the "Upcoming jobs" card. Replaces the
-  // standalone Schedule page that was removed from the nav in Phase 1A.
+  // Calendar Modal — opens from Weekly Glance widget + "Open full calendar"
+  // link. Accepts an optional initialDate to deep-link the calendar to a
+  // specific day when clicked from the Glance widget.
   const [calendarOpen, setCalendarOpen] = useState(false);
-  const { get, ready } = useOliverApi();
+  const [calendarInitialDate, setCalendarInitialDate] = useState<string | undefined>(undefined);
+  // Job focus from Weekly Glance chip click — opens CustomerModal on that job
+  const [focusJobId, setFocusJobId] = useState<string | null>(null);
+  const { get, post, patch, del, ready } = useOliverApi();
   const spark = useSparkApi();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
@@ -212,17 +217,22 @@ export function OliverDashboardPage() {
         }
       />
 
-      {topBanner}
-
-      {/* v6.8 — IA Insights at-a-glance strip (links to Trends + ARGUS) */}
+      {/* 1. IA Insights — compact header strip with Open Trends + Open ARGUS */}
       <OliverIAInsightsGlance trendScore={iaTrendScore} trendHistory={iaTrendHistory} />
 
-      {/* Hero "Today" narrative + sparkline — ARION-style headline card */}
-      {today && (
-        <TodayHero today={today} />
-      )}
+      {/* 2. Alerts — only when present (setup checklist + Stripe regression) */}
+      {topBanner}
 
-      {/* KPI row — ARION stat-card pattern */}
+      {/* 3. Weekly Glance — primary daily operator surface */}
+      <WeeklyGlance
+        onOpenCalendar={(initialDate) => {
+          setCalendarInitialDate(initialDate);
+          setCalendarOpen(true);
+        }}
+        onOpenJob={(jobId) => setFocusJobId(jobId)}
+      />
+
+      {/* 4. KPI row — secondary stats (smaller than headline area) */}
       <div className="stat-row">
         <div className="stat-card">
           <div className="stat-lbl">Active jobs</div>
@@ -246,6 +256,11 @@ export function OliverDashboardPage() {
           <div className="stat-delta neu">{billing?.overdue_count ?? 0} past due</div>
         </div>
       </div>
+
+      {/* 5. "Today" narrative — sparkline + headline message, secondary placement */}
+      {today && (
+        <TodayHero today={today} />
+      )}
 
       {/* Two-col layout: upcoming jobs + service requests */}
       <div className="two-col">
@@ -449,7 +464,20 @@ export function OliverDashboardPage() {
         )}
       </div>
 
-      {calendarOpen && <CalendarModal onClose={() => setCalendarOpen(false)} />}
+      {calendarOpen && (
+        <CalendarModal
+          initialDate={calendarInitialDate}
+          onClose={() => { setCalendarOpen(false); setCalendarInitialDate(undefined); }}
+        />
+      )}
+
+      {focusJobId && (
+        <CustomerModal
+          focusJobId={focusJobId}
+          onClose={() => setFocusJobId(null)}
+          api={{ get, post, patch, del }}
+        />
+      )}
     </OliverPageWrapper>
   );
 }
@@ -586,58 +614,237 @@ function OliverIAInsightsGlance({
   trendScore: number | null;
   trendHistory: Array<{ period_end: string; score: number }>;
 }) {
-  const score = trendScore ?? 0;
-  const band = score >= 70 ? "green" : score >= 50 ? "amber" : score > 0 ? "red" : "gray";
-  const bandColor = ({ green: "#16A34A", amber: "#EAB308", red: "#DC2626", gray: "#94A3B8" } as const)[band];
+  // Founder spec 2026-05-26: compact header strip — no big colored band,
+  // score + sparkline + nav buttons all on one row.
+  const scoreColor = trendScore == null
+    ? "#94A3B8"
+    : trendScore >= 70 ? "#16A34A"
+    : trendScore >= 50 ? "#EAB308"
+    : "#DC2626";
   return (
-    <div
-      style={{
-        background: "linear-gradient(90deg, rgba(254,200,44,0.15), #ffffff)",
-        border: "1px solid #E5E7EB",
-        borderRadius: 12,
-        padding: 14,
-        margin: "16px 0",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Sparkles className="h-4 w-4" style={{ color: "#FEC82C" }} />
-          <span style={{ fontWeight: 600, fontSize: 14, color: "#0F172A" }}>OLIVER IA Insights at a glance</span>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Link to="/app/services/oliver_ia_insights_trends" style={{ fontSize: 12, color: "#1A3A4A", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>
-            Open Trends <ArrowUpRight className="h-3 w-3" />
-          </Link>
-          <Link to="/app/services/argus_health" style={{ fontSize: 12, color: "#64748B", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}>
-            ARGUS <ArrowUpRight className="h-3 w-3" />
-          </Link>
-        </div>
+    <div style={{
+      display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
+      background: "#fff", border: "1px solid #E5E7EB", borderRadius: 10,
+      padding: "10px 14px", margin: "12px 0",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <Sparkles className="h-4 w-4" style={{ color: "#FEC82C", flexShrink: 0 }} />
+        <span style={{ fontWeight: 600, fontSize: 13, color: "#0F172A" }}>IA Insights</span>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 8, padding: "10px 14px", flex: 1, maxWidth: 280 }}>
-          <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, color: "#64748B", fontWeight: 600, marginBottom: 2 }}>
-            OLIVER Trend Score
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: bandColor }}>
-              {trendScore != null ? trendScore : "—"}
-            </div>
-            {trendHistory.length > 1 && (
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <Sparkline data={trendHistory} color={bandColor} width={100} height={26} showBands={false} />
-              </div>
-            )}
-          </div>
-          <div style={{ fontSize: 9, color: "#94A3B8", marginTop: 2 }}>
-            {trendScore != null ? `Band: ${band}` : "Reports populate after 30 days of jobs/invoices/payments"}
-          </div>
-        </div>
-        <div style={{ fontSize: 12, color: "#475569", flex: 1 }}>
-          Composite across Operations Health, Revenue Performance, Cash Flow, Quote Win Rate,
-          Customer Retention, Crew Capacity, Service Line, and Seasonal Planning.
-          See the 8-report breakdown for specific observations and recommended actions.
-        </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 0.4, color: "#64748B", fontWeight: 600 }}>
+          Trend Score
+        </span>
+        <span style={{ fontSize: 18, fontWeight: 700, color: scoreColor, fontVariantNumeric: "tabular-nums" }}>
+          {trendScore != null ? trendScore : "—"}
+        </span>
+        {trendHistory.length > 1 && (
+          <Sparkline data={trendHistory} color={scoreColor} width={80} height={22} showBands={false} />
+        )}
+      </div>
+      <div style={{ flex: 1, fontSize: 11, color: "#64748B", minWidth: 200 }}>
+        {trendScore != null
+          ? "Composite across Ops Health, Revenue, Cash Flow, Win Rate, Retention, Capacity, Service Line, Seasonal."
+          : "Reports populate after 30 days of jobs/invoices/payments."}
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <Link to="/app/services/oliver_ia_insights_trends" style={{
+          fontSize: 11, color: "#0C4A60", textDecoration: "none",
+          padding: "5px 10px", border: "1px solid #cbd5e1", borderRadius: 6,
+          display: "inline-flex", alignItems: "center", gap: 3,
+        }}>
+          Open Trends <ArrowUpRight className="h-3 w-3" />
+        </Link>
+        <Link to="/app/services/argus_health" style={{
+          fontSize: 11, color: "#0C4A60", textDecoration: "none",
+          padding: "5px 10px", border: "1px solid #cbd5e1", borderRadius: 6,
+          display: "inline-flex", alignItems: "center", gap: 3,
+        }}>
+          Open ARGUS <ArrowUpRight className="h-3 w-3" />
+        </Link>
       </div>
     </div>
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WeeklyGlance — 7-day strip showing next week's job load at-a-glance.
+// Founder spec 2026-05-26 — the dashboard's primary calendar surface.
+// Click a day to drill into that date via the CalendarModal; click a job
+// chip to open it directly.
+// ─────────────────────────────────────────────────────────────────────────────
+interface WeeklyGlanceEvent {
+  id: string;
+  title: string;
+  date: string;
+  status: string;
+}
+
+function WeeklyGlance({
+  onOpenCalendar,
+  onOpenJob,
+}: {
+  onOpenCalendar: (initialDate?: string) => void;
+  onOpenJob: (jobId: string) => void;
+}) {
+  const { get, ready } = useOliverApi();
+  const [events, setEvents] = useState<WeeklyGlanceEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // 7-day window starting today
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+  const days = useMemo(() => {
+    const arr: Date[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(today);
+      d.setDate(today.getDate() + i);
+      arr.push(d);
+    }
+    return arr;
+  }, [today]);
+  const startStr = today.toISOString().slice(0, 10);
+  const endStr = days[6].toISOString().slice(0, 10);
+
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const data = await get<WeeklyGlanceEvent[]>(`/schedule/calendar?start=${startStr}&end=${endStr}`);
+        if (!cancelled) setEvents(data || []);
+      } catch {
+        if (!cancelled) setEvents([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [get, ready, startStr, endStr]);
+
+  const eventsByDay = useMemo(() => {
+    const map = new Map<string, WeeklyGlanceEvent[]>();
+    for (const ev of events) {
+      const key = new Date(ev.date).toISOString().slice(0, 10);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(ev);
+    }
+    return map;
+  }, [events]);
+
+  const todayKey = startStr;
+
+  return (
+    <div className="card">
+      <div className="card-hdr">
+        <div>
+          <div className="card-ttl">Weekly Glance</div>
+          <div className="card-sub">{events.length} job{events.length === 1 ? "" : "s"} scheduled in the next 7 days · click a day or job to drill in</div>
+        </div>
+        <button
+          onClick={() => onOpenCalendar()}
+          style={{
+            background: "none", border: "none", padding: 0, cursor: "pointer",
+            fontSize: 11, color: "#1A7DB5",
+            display: "inline-flex", alignItems: "center", gap: 4,
+          }}
+        >
+          <CalendarIcon className="h-3 w-3" /> Open full calendar →
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
+        {days.map((d) => {
+          const key = d.toISOString().slice(0, 10);
+          const dayEvents = eventsByDay.get(key) || [];
+          const isToday = key === todayKey;
+          const dow = d.toLocaleDateString("en-US", { weekday: "short" });
+          const dom = d.getDate();
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onOpenCalendar(key)}
+              style={{
+                display: "flex", flexDirection: "column", gap: 4,
+                background: isToday ? "#E8F4FB" : "#fff",
+                border: `1px solid ${isToday ? "#1A7DB5" : "#E5E7EB"}`,
+                borderRadius: 8, padding: "8px 6px",
+                cursor: "pointer", textAlign: "left",
+                minHeight: 110,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <span style={{
+                  fontSize: 10, color: isToday ? "#1A7DB5" : "#5A7A8A",
+                  textTransform: "uppercase", letterSpacing: 0.4, fontWeight: 700,
+                }}>
+                  {dow}
+                </span>
+                <span style={{
+                  fontSize: 14, fontWeight: 700,
+                  color: isToday ? "#1A7DB5" : "#0B1C24",
+                }}>
+                  {dom}
+                </span>
+              </div>
+              {loading ? (
+                <span style={{ fontSize: 10, color: "#94A3B8", fontStyle: "italic" }}>—</span>
+              ) : dayEvents.length === 0 ? (
+                <span style={{ fontSize: 10, color: "#94A3B8" }}>No jobs</span>
+              ) : (
+                <>
+                  <span style={{ fontSize: 10, color: "#5A7A8A", fontWeight: 600 }}>
+                    {dayEvents.length} job{dayEvents.length === 1 ? "" : "s"}
+                  </span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    {dayEvents.slice(0, 3).map((ev) => {
+                      const c = weeklyGlanceStatusColor(ev.status);
+                      return (
+                        <span
+                          key={ev.id}
+                          onClick={(e) => { e.stopPropagation(); onOpenJob(ev.id); }}
+                          style={{
+                            background: c.bg, color: c.fg,
+                            padding: "1px 4px", borderRadius: 3,
+                            fontSize: 9, fontWeight: 500,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            cursor: "pointer",
+                          }}
+                          title={ev.title}
+                        >
+                          {ev.title || "(untitled)"}
+                        </span>
+                      );
+                    })}
+                    {dayEvents.length > 3 && (
+                      <span style={{ fontSize: 9, color: "#94A3B8" }}>+ {dayEvents.length - 3} more</span>
+                    )}
+                  </div>
+                </>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function weeklyGlanceStatusColor(status: string): { bg: string; fg: string } {
+  switch (status) {
+    case "scheduled":   return { bg: "#DBEAFE", fg: "#1E40AF" };
+    case "assigned":
+    case "dispatched":  return { bg: "#CFFAFE", fg: "#0E7490" };
+    case "in_progress": return { bg: "#FEF3C7", fg: "#B45309" };
+    case "completed":   return { bg: "#D1FAE5", fg: "#047857" };
+    case "invoiced":    return { bg: "#DBEAFE", fg: "#1E40AF" };
+    case "paid":        return { bg: "#D1FAE5", fg: "#047857" };
+    case "cancelled":   return { bg: "#FEE2E2", fg: "#B91C1C" };
+    default:            return { bg: "#F1F5F9", fg: "#475569" };
+  }
 }

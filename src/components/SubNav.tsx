@@ -88,6 +88,7 @@ const OLIVER_NAV: SubNavConfig = {
       label: "Jobs", icon: Wrench, collapsible: true, sectionId: "oliver_jobs",
       items: [
         { key: "oliver_job_board", label: "Job Board", route: "/app/services/oliver_job_board" },
+        { key: "oliver_schedule", label: "Schedule", route: "/app/services/oliver_schedule" },
         { key: "oliver_jobs_archive", label: "Archive", route: "/app/services/oliver_jobs_archive" },
       ],
     },
@@ -517,7 +518,7 @@ function getDefaultSection(path: string): string | null {
   //     so the auto-expand picks the correct collapsed section when a deep
   //     link is opened. Their underlying routes still load (legacy pages
   //     reachable via /app/services/<key>) but new nav doesn't expose them.
-  if (path.includes("/oliver_job_board") || path.includes("/oliver_jobs_archive")) return "oliver_jobs";
+  if (path.includes("/oliver_job_board") || path.includes("/oliver_schedule") || path.includes("/oliver_jobs_archive")) return "oliver_jobs";
   if (path.includes("/oliver_workers") || path.includes("/oliver_crew_performance") || path.includes("/oliver_time_tracking")) return "oliver_team";
   if (path.includes("/oliver_contacts") || path.includes("/oliver_service_requests") || path.includes("/oliver_booking")) return "oliver_customers";
   if (path.includes("/oliver_catalog") || path.includes("/oliver_categories") || path.includes("/oliver_coupons")) return "oliver_products";

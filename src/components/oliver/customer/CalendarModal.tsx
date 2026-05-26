@@ -35,14 +35,27 @@ const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
 };
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export function CalendarModal({ onClose }: { onClose: () => void }) {
+export function CalendarModal({
+  onClose,
+  initialDate,
+}: {
+  onClose: () => void;
+  /** YYYY-MM-DD — when provided, calendar opens on the month containing
+   *  this date so day-click handlers from Weekly Glance / external entry
+   *  points land in the right view. */
+  initialDate?: string;
+}) {
   const { get, post, patch, del, ready } = useOliverApi();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentMonth, setCurrentMonth] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
+    const seed = initialDate ? new Date(initialDate) : new Date();
+    if (Number.isNaN(seed.getTime())) {
+      const now = new Date();
+      return new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+    return new Date(seed.getFullYear(), seed.getMonth(), 1);
   });
   const [focusJobId, setFocusJobId] = useState<string | null>(null);
 
