@@ -132,6 +132,7 @@ export function JobCreatePanel({
           subscription_id?: string;
           id?: string;
           first_job_id?: string | null;
+          auto_create_first_job_error?: string | null;
         }>("/subscriptions", {
           contact_id: customerId,
           items: [{ price_id: recurringPriceId, quantity: 1 }],
@@ -140,6 +141,10 @@ export function JobCreatePanel({
         });
         const subId = (subRes as any)?.subscription_id || (subRes as any)?.id || "";
         const firstJobId = (subRes as any)?.first_job_id || null;
+        const autoErr = (subRes as any)?.auto_create_first_job_error;
+        if (autoErr) {
+          setErr(`Subscription created, but first job was NOT auto-created: ${autoErr}. You can create a job manually from this customer's Jobs tab.`);
+        }
         if (onRecurringCreated) {
           onRecurringCreated({ subscriptionId: subId, firstJobId });
         } else if (firstJobId) {
@@ -584,6 +589,7 @@ export function SubscriptionCreatePanel({
         subscription_id?: string;
         id?: string;
         first_job_id?: string | null;
+        auto_create_first_job_error?: string | null;
       }>("/subscriptions", {
         contact_id: customerId,
         items: lines.map((l) => ({ price_id: l.price_id, quantity: l.quantity })),
@@ -596,6 +602,13 @@ export function SubscriptionCreatePanel({
       });
       const subId = (res as any)?.subscription_id || (res as any)?.id || "";
       const firstJobId = (res as any)?.first_job_id || null;
+      const autoErr = (res as any)?.auto_create_first_job_error;
+      if (autoErr) {
+        // Subscription succeeded but the auto-create of the first job failed.
+        // Surface it so we don't silently end up with a sub and no schedulable
+        // job. User can still proceed — sub is created — but they'll know why.
+        setErr(`Subscription created, but first job was NOT auto-created: ${autoErr}. You can create a job manually from this customer's Jobs tab.`);
+      }
       // Prefer the recurring-aware callback if the parent provided one.
       if (onRecurringCreated) {
         onRecurringCreated({ subscriptionId: subId, firstJobId });
