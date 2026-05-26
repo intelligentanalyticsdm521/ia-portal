@@ -89,6 +89,9 @@ export function JobCreatePanel({
   const [scheduledEnd, setScheduledEnd] = useState(prefillJob?.scheduled_end || "");
   const [teamNotes, setTeamNotes] = useState("");
   const [customerNotes, setCustomerNotes] = useState("");
+  // F-42 — track whether the user has manually edited team_notes; if not,
+  // prefill it from the customer's internal_notes once that loads.
+  const [teamNotesDirty, setTeamNotesDirty] = useState(false);
   const [items, setItems] = useState<LineItem[]>([]);
   // Recurring-mode state
   const [offerings, setOfferings] = useState<CatalogOffering[]>([]);
@@ -101,6 +104,25 @@ export function JobCreatePanel({
   const [hasCardOnFile, setHasCardOnFile] = useState<boolean | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // F-42 — fetch the customer's internal_notes and prefill team_notes once.
+  // Only fires once on mount per customerId; if the user has already typed
+  // anything in the field (teamNotesDirty), don't clobber their input.
+  useEffect(() => {
+    if (!customerId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await api.get<{ internal_notes?: string | null } | { data: { internal_notes?: string | null } }>(`/contacts/${customerId}`);
+        const ic = (r as any)?.internal_notes ?? (r as any)?.data?.internal_notes ?? null;
+        if (!cancelled && ic && !teamNotesDirty) {
+          setTeamNotes(ic);
+        }
+      } catch { /* not fatal — just no prefill */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerId, api]);
 
   // Lazy-load saved cards once we're in recurring mode (only matters there).
   useEffect(() => {
@@ -360,7 +382,8 @@ export function JobCreatePanel({
               <div>
                 <label style={labelS}>Internal team notes</label>
                 <textarea rows={2} value={teamNotes}
-                  onChange={(e) => setTeamNotes(e.target.value)}
+                  onChange={(e) => { setTeamNotes(e.target.value); setTeamNotesDirty(true); }}
+                  placeholder="Crew-only — never shown to the customer. Prefilled from the customer's Internal Notes."
                   style={{ ...inputS, fontFamily: "inherit", resize: "vertical" }} />
               </div>
             </div>

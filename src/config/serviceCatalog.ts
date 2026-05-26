@@ -136,7 +136,12 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_portal_designer', displayName: 'Portal Designer', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_portal_designer', description: 'White Label Design Editor — control portal buttons, labels, fonts, header/footer, and custom CSS (Client Experience add-on).' },
   { key: 'oliver_automations', displayName: 'Automations & Notifications', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_automations', description: 'Customer-facing notification copy, triggers, and reminder cadence (Client Experience add-on).' },
   // OLIVER v1.0 additions
-  { key: 'oliver_workflow_templates', displayName: 'Workflow Templates', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_workflow_templates', description: 'Pre-built job templates (HVAC, plumbing, mobile pet, cleaning, etc.) with default checklists, durations, and prices.' },
+  // Workflow Templates DEPRECATED 2026-05-26 — redundant with service catalog
+  // (preset durations/prices) and customer.internal_notes (per-customer
+  // recurring details). Page + route stay reachable by URL but removed from
+  // nav. Real "Proposal Templates" feature will land later as a sibling of
+  // the Quotes feature when that gets full-feature treatment.
+  // { key: 'oliver_workflow_templates', displayName: 'Workflow Templates', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_workflow_templates', description: 'Pre-built job templates (HVAC, plumbing, mobile pet, cleaning, etc.) with default checklists, durations, and prices.' },
   { key: 'oliver_job_offers', displayName: 'Job Offers', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_job_offers', description: 'Broadcast a job to multiple workers — first to accept claims it.' },
   { key: 'oliver_support_tickets', displayName: 'Support Tickets', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_support_tickets', description: 'Customer-facing support tickets with threaded replies + convert-to-job.' },
   { key: 'oliver_time_tracking', displayName: 'Time Tracking', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_time_tracking', description: 'Worker time entries — clock in/out + manual + billable rollup (Pro).' },

@@ -45,6 +45,9 @@ interface ContactDetail {
   email?: string | null;
   phone?: string | null;
   company_name?: string | null;
+  /** F-42 — crew-only customer-level notes that auto-prefill into each
+   *  new job's team_notes. Never surfaced in the customer portal. */
+  internal_notes?: string | null;
   addresses?: Array<{ address_id: string; address_line_1: string; city: string; state: string; postal_code: string }>;
   financial_snapshot?: {
     total_jobs: number;
@@ -589,6 +592,8 @@ function CustomerInfoCard({
   const [email, setEmail] = useState(detail.email || "");
   const [phone, setPhone] = useState(detail.phone ? formatPhone(detail.phone) : "");
   const [company, setCompany] = useState(detail.company_name || "");
+  // F-42 — crew-only customer notes that prefill new jobs.
+  const [internalNotes, setInternalNotes] = useState(detail.internal_notes || "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -598,6 +603,7 @@ function CustomerInfoCard({
     setEmail(detail.email || "");
     setPhone(detail.phone ? formatPhone(detail.phone) : "");
     setCompany(detail.company_name || "");
+    setInternalNotes(detail.internal_notes || "");
     setErr(null);
     setEditing(true);
   }
@@ -617,6 +623,7 @@ function CustomerInfoCard({
         email: email.trim() || null,
         phone: phone.trim() || null,
         company_name: company.trim() || null,
+        internal_notes: internalNotes.trim() || null,
       });
       setEditing(false);
       onSaved();
@@ -674,6 +681,16 @@ function CustomerInfoCard({
               <label style={labelS}>Company</label>
               <input value={company} onChange={(e) => setCompany(e.target.value)} style={inputS} />
             </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={labelS}>Internal notes (crew only — auto-prefills new jobs)</label>
+              <textarea
+                rows={3}
+                value={internalNotes}
+                onChange={(e) => setInternalNotes(e.target.value)}
+                placeholder="e.g. Gate code 1234, dog in back yard, use side entrance. Never shown to the customer."
+                style={{ ...inputS, fontFamily: "inherit", resize: "vertical" }}
+              />
+            </div>
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
             <Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
@@ -683,12 +700,24 @@ function CustomerInfoCard({
           </div>
         </div>
       ) : (
-        <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-          <InfoRow label="Name" value={[detail.first_name, detail.last_name].filter(Boolean).join(" ") || "—"} />
-          <InfoRow label="Company" value={detail.company_name || "—"} />
-          <InfoRow label="Email" value={detail.email || "—"} />
-          <InfoRow label="Phone" value={detail.phone ? formatPhone(detail.phone) : "—"} />
-        </div>
+        <>
+          <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            <InfoRow label="Name" value={[detail.first_name, detail.last_name].filter(Boolean).join(" ") || "—"} />
+            <InfoRow label="Company" value={detail.company_name || "—"} />
+            <InfoRow label="Email" value={detail.email || "—"} />
+            <InfoRow label="Phone" value={detail.phone ? formatPhone(detail.phone) : "—"} />
+          </div>
+          {detail.internal_notes && (
+            <div style={{ marginTop: 12, padding: "10px 12px", background: "#FEF9C3", border: "1px solid #FDE68A", borderRadius: 6 }}>
+              <div style={{ fontSize: 10, color: "#78350F", textTransform: "uppercase", letterSpacing: 0.4, fontWeight: 600, marginBottom: 4 }}>
+                Internal notes · crew only
+              </div>
+              <div style={{ fontSize: 12, color: "#0B1C24", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                {detail.internal_notes}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
