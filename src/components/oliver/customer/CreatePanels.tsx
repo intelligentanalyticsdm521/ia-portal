@@ -63,8 +63,22 @@ function ErrBox({ msg }: { msg: string | null }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // JobCreatePanel — the primary CTA in the modal. Title + schedule + catalog
 // line items. Skipping a quote is the explicit default (founder spec).
+//
+// Founder spec 2026-05-25 — Recurring/subscription unification:
+//   Tenants can toggle "Recurring" at create time. When ON, the form
+//   collapses to a recurring catalog product picker + start_date. Server
+//   creates Stripe sub + recurring_job_template + first job in one call,
+//   and the parent CustomerModal jumps to the first job.
 // ─────────────────────────────────────────────────────────────────────────────
-export function JobCreatePanel({ customerId, api, onCancel, onCreated, topSlot }: BasePanelProps) {
+export function JobCreatePanel({
+  customerId, api, onCancel, onCreated, topSlot, onRecurringCreated,
+}: BasePanelProps & {
+  /** When the Recurring toggle is ON and submit succeeds, this callback
+   *  fires with the new subscription + first job. Parent CustomerModal
+   *  routes to the new job's detail. */
+  onRecurringCreated?: RecurringCreatedFn;
+}) {
+  const [recurring, setRecurring] = useState(false);
   const [title, setTitle] = useState("");
   const [jobType, setJobType] = useState("");
   const [scheduledStart, setScheduledStart] = useState("");
@@ -72,11 +86,73 @@ export function JobCreatePanel({ customerId, api, onCancel, onCreated, topSlot }
   const [teamNotes, setTeamNotes] = useState("");
   const [customerNotes, setCustomerNotes] = useState("");
   const [items, setItems] = useState<LineItem[]>([]);
+  // Recurring-mode state
+  const [offerings, setOfferings] = useState<CatalogOffering[]>([]);
+  const [recurringOfferingsLoaded, setRecurringOfferingsLoaded] = useState(false);
+  const [recurringPriceId, setRecurringPriceId] = useState("");
+  const [recurringStartDate, setRecurringStartDate] = useState<string>(defaultStartDate());
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Lazy-load catalog when user toggles into recurring mode.
+  useEffect(() => {
+    if (!recurring || recurringOfferingsLoaded) return;
+    (async () => {
+      try {
+        const data = await api.get<{ data: CatalogOffering[] } | CatalogOffering[]>("/catalog/offerings?include_prices=1");
+        setOfferings(Array.isArray(data) ? data : ((data as any).data ?? []));
+      } catch { setOfferings([]); }
+      finally { setRecurringOfferingsLoaded(true); }
+    })();
+  }, [recurring, recurringOfferingsLoaded, api]);
+
+  const recurringPriceOptions = offerings.flatMap((o) =>
+    (o.prices ?? [])
+      .filter((p) => p.pricing_model === "recurring" || p.recurring_interval)
+      .map((p) => ({
+        offering: o.name,
+        price_id: p.price_id,
+        label: `${o.name} · $${Number(p.unit_amount).toFixed(2)}/${p.recurring_interval_count && p.recurring_interval_count > 1 ? `${p.recurring_interval_count} ` : ""}${p.recurring_interval}${p.label ? ` (${p.label})` : ""}`,
+      })),
+  );
+
   async function submit() {
     setErr(null);
+
+    // ── Recurring path ──
+    // Founder spec 2026-05-25: tenant picks a recurring catalog product +
+    // a start date. We post to /subscriptions with auto_create_first_job,
+    // and the parent CustomerModal jumps to the new first job.
+    if (recurring) {
+      if (!recurringPriceId) { setErr("Pick a recurring product/service from the catalog."); return; }
+      if (!recurringStartDate) { setErr("Pick a start date for the first occurrence."); return; }
+      setSubmitting(true);
+      try {
+        const subRes = await api.post<{
+          subscription_id?: string;
+          id?: string;
+          first_job_id?: string | null;
+        }>("/subscriptions", {
+          contact_id: customerId,
+          items: [{ price_id: recurringPriceId, quantity: 1 }],
+          start_date: new Date(recurringStartDate).toISOString(),
+          auto_create_first_job: true,
+        });
+        const subId = (subRes as any)?.subscription_id || (subRes as any)?.id || "";
+        const firstJobId = (subRes as any)?.first_job_id || null;
+        if (onRecurringCreated) {
+          onRecurringCreated({ subscriptionId: subId, firstJobId });
+        } else if (firstJobId) {
+          onCreated(firstJobId);
+        } else {
+          onCreated(subId);
+        }
+      } catch (e) { setErr(`Create failed: ${(e as Error).message}`); }
+      finally { setSubmitting(false); }
+      return;
+    }
+
+    // ── One-time path ──
     // Title is OPTIONAL — if blank, auto-fill from the first line item.
     // Validation: require EITHER a title OR at least one line item.
     let effectiveTitle = title.trim();
@@ -135,69 +211,142 @@ export function JobCreatePanel({ customerId, api, onCancel, onCreated, topSlot }
       <ErrBox msg={err} />
 
       <div className="card">
-        <div className="card-ttl">New job</div>
-        <div className="card-sub" style={{ marginBottom: 10 }}>
-          Skip the quote and go straight to a scheduled job. Line items optional — add later from the job detail view.
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div className="card-ttl">New job</div>
+            <div className="card-sub" style={{ marginBottom: 10 }}>
+              {recurring
+                ? "Recurring — picks a catalog product, sets up the subscription, and auto-creates the first job on the start date."
+                : "Skip the quote and go straight to a scheduled job. Line items optional — add later from the job detail view."}
+            </div>
+          </div>
+          {/* One-time / Recurring segmented toggle */}
+          <div role="tablist" aria-label="Job kind" style={{
+            display: "inline-flex", background: "#F1F5F9", borderRadius: 6, padding: 2, fontSize: 11,
+          }}>
+            <button type="button" role="tab" aria-selected={!recurring}
+              onClick={() => setRecurring(false)}
+              style={{
+                padding: "4px 10px", borderRadius: 4, border: "none",
+                background: !recurring ? "#fff" : "transparent",
+                color: !recurring ? "#0B1C24" : "#5A7A8A",
+                fontWeight: !recurring ? 700 : 500, cursor: "pointer",
+                boxShadow: !recurring ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
+              }}>
+              One-time
+            </button>
+            <button type="button" role="tab" aria-selected={recurring}
+              onClick={() => setRecurring(true)}
+              style={{
+                padding: "4px 10px", borderRadius: 4, border: "none",
+                background: recurring ? "#fff" : "transparent",
+                color: recurring ? "#0B1C24" : "#5A7A8A",
+                fontWeight: recurring ? 700 : 500, cursor: "pointer",
+                boxShadow: recurring ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
+              }}>
+              Recurring
+            </button>
+          </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
-          <div>
-            <label style={labelS}>Job title</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)}
-              placeholder={items.length > 0
-                ? `Defaults to "${items[0].description}" if left blank`
-                : "Leave blank — will auto-fill from the first line item"}
-              style={inputS} />
+        {recurring ? (
+          // Recurring fields — picks one recurring product + start date.
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
+            <div>
+              <label style={labelS}>Recurring product/service *</label>
+              <select value={recurringPriceId} onChange={(e) => setRecurringPriceId(e.target.value)}
+                style={inputS}
+                disabled={recurringOfferingsLoaded && recurringPriceOptions.length === 0}>
+                <option value="">
+                  {!recurringOfferingsLoaded ? "Loading catalog…"
+                    : recurringPriceOptions.length === 0 ? "No recurring prices in catalog — add a monthly/weekly price first"
+                    : "— Pick a recurring price —"}
+                </option>
+                {recurringPriceOptions.map((p) => (
+                  <option key={p.price_id} value={p.price_id}>{p.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={labelS}>First occurrence date *</label>
+              <input type="datetime-local" value={recurringStartDate}
+                onChange={(e) => setRecurringStartDate(e.target.value)} style={{ ...inputS, maxWidth: 280 }} />
+              <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 4 }}>
+                The subscription's billing cadence is set automatically from the product. We'll create the
+                first scheduled job at this date so you can assign crew immediately.
+              </div>
+            </div>
           </div>
-          <div>
-            <label style={labelS}>Job type (optional)</label>
-            <input value={jobType} onChange={(e) => setJobType(e.target.value)}
-              placeholder="Each line has its own category — this is for extra detail"
-              style={inputS} />
-          </div>
-        </div>
+        ) : (
+          // One-time fields (unchanged)
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+              <div>
+                <label style={labelS}>Job title</label>
+                <input value={title} onChange={(e) => setTitle(e.target.value)}
+                  placeholder={items.length > 0
+                    ? `Defaults to "${items[0].description}" if left blank`
+                    : "Leave blank — will auto-fill from the first line item"}
+                  style={inputS} />
+              </div>
+              <div>
+                <label style={labelS}>Job type (optional)</label>
+                <input value={jobType} onChange={(e) => setJobType(e.target.value)}
+                  placeholder="Each line has its own category — this is for extra detail"
+                  style={inputS} />
+              </div>
+            </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 10 }}>
-          <div>
-            <label style={labelS}>Scheduled start (optional)</label>
-            <input type="datetime-local" value={scheduledStart}
-              onChange={(e) => setScheduledStart(e.target.value)} style={inputS} />
-          </div>
-          <div>
-            <label style={labelS}>Scheduled end (optional)</label>
-            <input type="datetime-local" value={scheduledEnd}
-              onChange={(e) => setScheduledEnd(e.target.value)} style={inputS} />
-          </div>
-        </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 10 }}>
+              <div>
+                <label style={labelS}>Scheduled start (optional)</label>
+                <input type="datetime-local" value={scheduledStart}
+                  onChange={(e) => setScheduledStart(e.target.value)} style={inputS} />
+              </div>
+              <div>
+                <label style={labelS}>Scheduled end (optional)</label>
+                <input type="datetime-local" value={scheduledEnd}
+                  onChange={(e) => setScheduledEnd(e.target.value)} style={inputS} />
+              </div>
+            </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 10 }}>
-          <div>
-            <label style={labelS}>Customer notes (visible in portal)</label>
-            <textarea rows={2} value={customerNotes}
-              onChange={(e) => setCustomerNotes(e.target.value)}
-              style={{ ...inputS, fontFamily: "inherit", resize: "vertical" }} />
-          </div>
-          <div>
-            <label style={labelS}>Internal team notes</label>
-            <textarea rows={2} value={teamNotes}
-              onChange={(e) => setTeamNotes(e.target.value)}
-              style={{ ...inputS, fontFamily: "inherit", resize: "vertical" }} />
-          </div>
-        </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 10 }}>
+              <div>
+                <label style={labelS}>Customer notes (visible in portal)</label>
+                <textarea rows={2} value={customerNotes}
+                  onChange={(e) => setCustomerNotes(e.target.value)}
+                  style={{ ...inputS, fontFamily: "inherit", resize: "vertical" }} />
+              </div>
+              <div>
+                <label style={labelS}>Internal team notes</label>
+                <textarea rows={2} value={teamNotes}
+                  onChange={(e) => setTeamNotes(e.target.value)}
+                  style={{ ...inputS, fontFamily: "inherit", resize: "vertical" }} />
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
-      <div className="card">
-        <div className="card-ttl">Line items (optional at create)</div>
-        <div className="card-sub" style={{ marginBottom: 10 }}>
-          Add services from your catalog or custom lines. The job total will be the sum.
+      {/* Line items section only shows in one-time mode — recurring sub items
+          come from the chosen catalog price. */}
+      {!recurring && (
+        <div className="card">
+          <div className="card-ttl">Line items (optional at create)</div>
+          <div className="card-sub" style={{ marginBottom: 10 }}>
+            Add services from your catalog or custom lines. The job total will be the sum.
+          </div>
+          <CatalogLineItemPicker items={items} onChange={setItems} />
         </div>
-        <CatalogLineItemPicker items={items} onChange={setItems} />
-      </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", paddingTop: 8, borderTop: "1px solid #F1F5F9" }}>
         <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button variant="primary" onClick={submit} disabled={submitting || (!title.trim() && items.length === 0)}>
-          {submitting ? "Creating…" : "Create job"}
+        <Button variant="primary" onClick={submit}
+          disabled={submitting || (recurring ? (!recurringPriceId || !recurringStartDate) : (!title.trim() && items.length === 0))}>
+          {submitting
+            ? "Creating…"
+            : recurring ? "Create subscription & first job" : "Create job"}
         </Button>
       </div>
     </div>
@@ -375,11 +524,32 @@ interface RecurringLine {
   quantity: number;
 }
 
-export function SubscriptionCreatePanel({ customerId, api, onCancel, onCreated, topSlot }: BasePanelProps) {
+/** Default start date for a new subscription's first job — today at 9am local. */
+function defaultStartDate(): string {
+  const d = new Date();
+  d.setHours(9, 0, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Extended onCreated callback that also returns the first_job_id, so the
+ *  parent CustomerModal can jump straight to it after a recurring create. */
+type RecurringCreatedFn = (args: { subscriptionId: string; firstJobId?: string | null }) => void;
+
+export function SubscriptionCreatePanel({
+  customerId, api, onCancel, onCreated, topSlot,
+  onRecurringCreated,
+}: BasePanelProps & {
+  /** When provided, called instead of onCreated so the parent can route to
+   *  the auto-created first job. The default `onCreated(id)` still fires
+   *  via fallback so legacy callers don't break. */
+  onRecurringCreated?: RecurringCreatedFn;
+}) {
   const [offerings, setOfferings] = useState<CatalogOffering[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [lines, setLines] = useState<RecurringLine[]>([]);
   const [trialDays, setTrialDays] = useState("");
+  const [startDate, setStartDate] = useState<string>(defaultStartDate());
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -407,14 +577,31 @@ export function SubscriptionCreatePanel({ customerId, api, onCancel, onCreated, 
   async function submit() {
     setErr(null);
     if (lines.length === 0) { setErr("Add at least one recurring price."); return; }
+    if (!startDate) { setErr("Pick a start date for the first job."); return; }
     setSubmitting(true);
     try {
-      const res = await api.post<{ subscription_id?: string; id?: string }>("/subscriptions", {
+      const res = await api.post<{
+        subscription_id?: string;
+        id?: string;
+        first_job_id?: string | null;
+      }>("/subscriptions", {
         contact_id: customerId,
         items: lines.map((l) => ({ price_id: l.price_id, quantity: l.quantity })),
         trial_days: trialDays ? Number(trialDays) : undefined,
+        start_date: new Date(startDate).toISOString(),
+        // Recurring/subscription unification: server auto-creates the
+        // recurring_job_template + first job at start_date so the user can
+        // schedule the crew straight away.
+        auto_create_first_job: true,
       });
-      onCreated((res as any)?.subscription_id || (res as any)?.id || "");
+      const subId = (res as any)?.subscription_id || (res as any)?.id || "";
+      const firstJobId = (res as any)?.first_job_id || null;
+      // Prefer the recurring-aware callback if the parent provided one.
+      if (onRecurringCreated) {
+        onRecurringCreated({ subscriptionId: subId, firstJobId });
+      } else {
+        onCreated(subId);
+      }
     } catch (e) { setErr(`Create failed: ${(e as Error).message}`); }
     finally { setSubmitting(false); }
   }
@@ -469,9 +656,18 @@ export function SubscriptionCreatePanel({ customerId, api, onCancel, onCreated, 
           </div>
         )}
 
-        <div style={{ marginTop: 12 }}>
-          <label style={labelS}>Free trial days (optional)</label>
-          <input type="number" min={0} value={trialDays} onChange={(e) => setTrialDays(e.target.value)} style={{ ...inputS, width: 120 }} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+          <div>
+            <label style={labelS}>First job start date *</label>
+            <input type="datetime-local" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={inputS} />
+            <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 4 }}>
+              A scheduled job will be auto-created for this date when the subscription is saved.
+            </div>
+          </div>
+          <div>
+            <label style={labelS}>Free trial days (optional)</label>
+            <input type="number" min={0} value={trialDays} onChange={(e) => setTrialDays(e.target.value)} style={{ ...inputS, width: 120 }} />
+          </div>
         </div>
       </div>
 

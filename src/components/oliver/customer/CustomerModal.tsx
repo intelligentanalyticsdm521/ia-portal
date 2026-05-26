@@ -306,6 +306,14 @@ export function CustomerModal({
                   onChanged?.();
                   if (newId) setFocusedJobId(newId);
                 }}
+                onRecurringCreated={({ firstJobId }) => {
+                  // Recurring path: hop to the first auto-generated job so the
+                  // user can schedule crew immediately.
+                  setCreating(null);
+                  reload();
+                  onChanged?.();
+                  if (firstJobId) setFocusedJobId(firstJobId);
+                }}
               />
             ) : focusedJobId ? (
               <JobDetailPanel
@@ -455,6 +463,21 @@ export function CustomerModal({
                   reload();
                   onChanged?.();
                   if (newId) setFocusedSubId(newId);
+                }}
+                onRecurringCreated={({ subscriptionId, firstJobId }) => {
+                  // Founder spec 2026-05-25: after creating a subscription
+                  // the modal jumps to the first auto-created job so the
+                  // user can schedule crew. If for any reason no job got
+                  // generated, fall back to focusing the new subscription.
+                  setCreating(null);
+                  reload();
+                  onChanged?.();
+                  if (firstJobId) {
+                    setTab("jobs");
+                    setFocusedJobId(firstJobId);
+                  } else if (subscriptionId) {
+                    setFocusedSubId(subscriptionId);
+                  }
                 }}
               />
             ) : focusedSubId ? (
