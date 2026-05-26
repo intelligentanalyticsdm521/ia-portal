@@ -91,8 +91,24 @@ export function JobCreatePanel({
   const [recurringOfferingsLoaded, setRecurringOfferingsLoaded] = useState(false);
   const [recurringPriceId, setRecurringPriceId] = useState("");
   const [recurringStartDate, setRecurringStartDate] = useState<string>(defaultStartDate());
+  // Billing method (F-21) — only meaningful in recurring mode.
+  const [collectionMethod, setCollectionMethod] = useState<"charge_automatically" | "send_invoice">("charge_automatically");
+  const [daysUntilDue, setDaysUntilDue] = useState("30");
+  const [hasCardOnFile, setHasCardOnFile] = useState<boolean | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Lazy-load saved cards once we're in recurring mode (only matters there).
+  useEffect(() => {
+    if (!recurring) return;
+    (async () => {
+      try {
+        const r = await api.get<{ data: Array<{ id: string }> } | Array<{ id: string }>>(`/payments/contacts/${customerId}/methods`);
+        const list = Array.isArray(r) ? r : ((r as any).data ?? []);
+        setHasCardOnFile(list.length > 0);
+      } catch { setHasCardOnFile(false); }
+    })();
+  }, [recurring, api, customerId]);
 
   // Lazy-load catalog when user toggles into recurring mode.
   useEffect(() => {
@@ -126,6 +142,10 @@ export function JobCreatePanel({
     if (recurring) {
       if (!recurringPriceId) { setErr("Pick a recurring product/service from the catalog."); return; }
       if (!recurringStartDate) { setErr("Pick a start date for the first occurrence."); return; }
+      if (collectionMethod === "charge_automatically" && hasCardOnFile === false) {
+        setErr("Automatic billing needs a payment method on file. Add a card on the Overview tab first, or switch to Send invoice below.");
+        return;
+      }
       setSubmitting(true);
       try {
         const subRes = await api.post<{
@@ -137,6 +157,8 @@ export function JobCreatePanel({
           contact_id: customerId,
           items: [{ price_id: recurringPriceId, quantity: 1 }],
           start_date: new Date(recurringStartDate).toISOString(),
+          collection_method: collectionMethod,
+          days_until_due: collectionMethod === "send_invoice" ? Number(daysUntilDue || 30) : undefined,
           auto_create_first_job: true,
         });
         const subId = (subRes as any)?.subscription_id || (subRes as any)?.id || "";
@@ -283,6 +305,13 @@ export function JobCreatePanel({
                 first scheduled job at this date so you can assign crew immediately.
               </div>
             </div>
+            <BillingMethodPicker
+              collectionMethod={collectionMethod}
+              onChangeMethod={setCollectionMethod}
+              daysUntilDue={daysUntilDue}
+              onChangeDays={setDaysUntilDue}
+              hasCardOnFile={hasCardOnFile}
+            />
           </div>
         ) : (
           // One-time fields (unchanged)
@@ -350,7 +379,9 @@ export function JobCreatePanel({
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", paddingTop: 8, borderTop: "1px solid #F1F5F9" }}>
         <Button variant="ghost" onClick={onCancel}>Cancel</Button>
         <Button variant="primary" onClick={submit}
-          disabled={submitting || (recurring ? (!recurringPriceId || !recurringStartDate) : (!title.trim() && items.length === 0))}>
+          disabled={submitting || (recurring
+            ? (!recurringPriceId || !recurringStartDate || (collectionMethod === "charge_automatically" && hasCardOnFile === false))
+            : (!title.trim() && items.length === 0))}>
           {submitting
             ? "Creating…"
             : recurring ? "Create subscription & first job" : "Create job"}
@@ -557,6 +588,12 @@ export function SubscriptionCreatePanel({
   const [lines, setLines] = useState<RecurringLine[]>([]);
   const [trialDays, setTrialDays] = useState("");
   const [startDate, setStartDate] = useState<string>(defaultStartDate());
+  // Founder spec 2026-05-26: never let a sub end up 'incomplete'. Two
+  // explicit billing paths — pick one before submit.
+  const [collectionMethod, setCollectionMethod] = useState<"charge_automatically" | "send_invoice">("charge_automatically");
+  const [daysUntilDue, setDaysUntilDue] = useState("30");
+  // Saved-card check — needed when collectionMethod=charge_automatically.
+  const [hasCardOnFile, setHasCardOnFile] = useState<boolean | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -568,6 +605,17 @@ export function SubscriptionCreatePanel({
     finally { setLoaded(true); }
   }, [api]);
   useEffect(() => { reload(); }, [reload]);
+
+  // Probe customer's saved cards — needed to validate auto-charge selection.
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.get<{ data: Array<{ id: string }> } | Array<{ id: string }>>(`/payments/contacts/${customerId}/methods`);
+        const list = Array.isArray(r) ? r : ((r as any).data ?? []);
+        setHasCardOnFile(list.length > 0);
+      } catch { setHasCardOnFile(false); }
+    })();
+  }, [api, customerId]);
 
   const allRecurringPrices = offerings.flatMap((o) =>
     (o.prices ?? [])
@@ -585,6 +633,10 @@ export function SubscriptionCreatePanel({
     setErr(null);
     if (lines.length === 0) { setErr("Add at least one recurring price."); return; }
     if (!startDate) { setErr("Pick a start date for the first job."); return; }
+    if (collectionMethod === "charge_automatically" && hasCardOnFile === false) {
+      setErr("Automatic billing needs a payment method on file. Add a card on the Overview tab first, or switch to Send invoice below.");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await api.post<{
@@ -597,6 +649,9 @@ export function SubscriptionCreatePanel({
         items: lines.map((l) => ({ price_id: l.price_id, quantity: l.quantity })),
         trial_days: trialDays ? Number(trialDays) : undefined,
         start_date: new Date(startDate).toISOString(),
+        // Billing method (F-21) — never produces an 'incomplete' sub.
+        collection_method: collectionMethod,
+        days_until_due: collectionMethod === "send_invoice" ? Number(daysUntilDue || 30) : undefined,
         // Recurring/subscription unification: server auto-creates the
         // recurring_job_template + first job at start_date so the user can
         // schedule the crew straight away.
@@ -686,14 +741,114 @@ export function SubscriptionCreatePanel({
             <input type="number" min={0} value={trialDays} onChange={(e) => setTrialDays(e.target.value)} style={{ ...inputS, width: 120 }} />
           </div>
         </div>
+
+        {/* Billing method choice (F-21): never let sub end up 'incomplete'. */}
+        <BillingMethodPicker
+          collectionMethod={collectionMethod}
+          onChangeMethod={setCollectionMethod}
+          daysUntilDue={daysUntilDue}
+          onChangeDays={setDaysUntilDue}
+          hasCardOnFile={hasCardOnFile}
+        />
       </div>
 
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", paddingTop: 8, borderTop: "1px solid #F1F5F9" }}>
         <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button variant="primary" onClick={submit} disabled={submitting || lines.length === 0}>
+        <Button variant="primary" onClick={submit}
+          disabled={submitting || lines.length === 0 || (collectionMethod === "charge_automatically" && hasCardOnFile === false)}>
           {submitting ? "Creating…" : "Create subscription"}
         </Button>
       </div>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BillingMethodPicker — shared between SubscriptionCreatePanel and
+// JobCreatePanel's recurring path. Founder spec 2026-05-26: every recurring
+// thing has an explicit billing method, never lands at "incomplete".
+//   - Auto-charge → must have a saved card; sub goes active immediately.
+//   - Send invoice → Stripe emails customer a payment link each cycle.
+// ─────────────────────────────────────────────────────────────────────────────
+function BillingMethodPicker({
+  collectionMethod, onChangeMethod,
+  daysUntilDue, onChangeDays,
+  hasCardOnFile,
+}: {
+  collectionMethod: "charge_automatically" | "send_invoice";
+  onChangeMethod: (m: "charge_automatically" | "send_invoice") => void;
+  daysUntilDue: string;
+  onChangeDays: (d: string) => void;
+  hasCardOnFile: boolean | null;
+}) {
+  const auto = collectionMethod === "charge_automatically";
+  return (
+    <div style={{ gridColumn: "1 / -1", marginTop: 4, paddingTop: 12, borderTop: "1px solid #F1F5F9" }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4 }}>
+        Billing method
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <BillingCard
+          selected={auto}
+          onClick={() => onChangeMethod("charge_automatically")}
+          title="Auto-charge"
+          subtitle="Stripe charges the default card on file each cycle"
+        />
+        <BillingCard
+          selected={!auto}
+          onClick={() => onChangeMethod("send_invoice")}
+          title="Send invoice"
+          subtitle="Stripe emails the customer a payment link each cycle"
+        />
+      </div>
+
+      {auto && hasCardOnFile === false && (
+        <div style={{
+          marginTop: 10,
+          background: "#FEF3C7", border: "1px solid #FDE68A",
+          color: "#92400E", borderRadius: 6, padding: "8px 12px", fontSize: 12,
+        }}>
+          ⚠ No payment method on file. Add a card on the customer's <strong>Overview tab</strong> first
+          — or switch to <strong>Send invoice</strong> above.
+        </div>
+      )}
+
+      {!auto && (
+        <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: "#5A7A8A" }}>Days until invoice is due:</span>
+          <input
+            type="number" min={1} max={365}
+            value={daysUntilDue} onChange={(e) => onChangeDays(e.target.value)}
+            style={{ width: 80, padding: "6px 8px", fontSize: 12, border: "1px solid #cbd5e1", borderRadius: 6 }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BillingCard({
+  selected, onClick, title, subtitle,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        textAlign: "left", padding: "10px 12px",
+        background: selected ? "#E8F4FB" : "#fff",
+        border: `2px solid ${selected ? "#1A7DB5" : "#E5E7EB"}`,
+        borderRadius: 8, cursor: "pointer",
+      }}
+    >
+      <div style={{ fontSize: 13, fontWeight: 700, color: selected ? "#0C4A60" : "#0B1C24" }}>{title}</div>
+      <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>{subtitle}</div>
+    </button>
   );
 }
