@@ -1,8 +1,18 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { Shield } from "lucide-react";
+import { Shield, Settings } from "lucide-react";
 import { useAppState } from "../app/AppState";
 import { useIsSuperAdmin } from "../hooks/useIsSuperAdmin";
 import { resolveServiceStatus, SERVICE_CATALOG } from "../config/serviceCatalog";
+
+// F-02 — per-product settings route map. The gear icon in the rail routes
+// to the active product's settings page when clicked. Cross-product settings
+// (business profile, account, platform notifications) live in the hamburger.
+const PRODUCT_SETTINGS_ROUTE: Partial<Record<ProductKey, string>> = {
+  oliver: "/app/services/oliver_settings",
+  arion: "/app/services/arion_settings",
+  spark: "/app/services/spark_settings",
+  argus: "/app/services/argus_settings",
+};
 
 export type ProductKey = "overview" | "arion" | "oliver" | "spark" | "stella" | "forge" | "argus" | "consulting";
 
@@ -133,14 +143,34 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
         })}
       </div>
 
+      {/* F-02 — Per-product settings gear. Routes to the active product's
+          settings page. Visible whenever the current product has a settings
+          route defined. Sits ABOVE the SUPER_ADMIN gear so it's the
+          obvious "settings for this product" entry point for normal users. */}
+      {PRODUCT_SETTINGS_ROUTE[activeProduct] && (
+        <button
+          onClick={() => navigate(PRODUCT_SETTINGS_ROUTE[activeProduct]!)}
+          title={`${activeProduct.toUpperCase()} settings`}
+          className={`mt-auto flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
+            location.pathname.startsWith(PRODUCT_SETTINGS_ROUTE[activeProduct]!) ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white/80"
+          }`}
+        >
+          <span className="flex h-6 w-6 items-center justify-center">
+            <Settings className="h-5 w-5" />
+          </span>
+          <span className="text-[9px] font-medium leading-tight">Settings</span>
+        </button>
+      )}
+
       {/* Platform Admin gear — pinned at bottom. SUPER_ADMIN-only.
-          Tenant settings moved to the hamburger menu (top-right of HeaderBar)
-          so non-admin users no longer see this gear at all. */}
+          Only gets mt-auto if the per-product Settings gear didn't already
+          consume it (otherwise both fight for the auto-margin and both
+          stick to the top of the bottom section). */}
       {isSuperAdmin && (
         <button
           onClick={() => navigate("/admin")}
           title="Platform Admin (SUPER_ADMIN)"
-          className={`mt-auto flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
+          className={`${PRODUCT_SETTINGS_ROUTE[activeProduct] ? "" : "mt-auto"} flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
             isAdminActive ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white/80"
           }`}
         >

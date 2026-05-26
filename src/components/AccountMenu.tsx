@@ -10,24 +10,21 @@ import {
   Plug,
   ShieldCheck,
   DatabaseZap,
-  KeyRound,
-  Calendar,
-  MapPin,
-  Clock,
-  FileText,
   ChevronRight,
 } from 'lucide-react';
 
 /**
  * AccountMenu — the hamburger ☰ at the top right of every page.
  *
- * Phase 1A (2026-05-25): every tenant setting is exposed as its own menu item
- * with its own URL. Each item navigates directly to the per-setting page
- * (defined in pages/settings/SettingsRoutes.tsx for platform settings,
- * /app/services/oliver_* for OLIVER-specific settings).
+ * F-02 LOCKED 2026-05-26 — strict cross-product scope only:
+ *   - My account (Profile, Notification preferences)
+ *   - Business settings (whole-org: profile, plan, team, integrations)
+ *   - Platform (notification rules, security, data + privacy)
  *
- * The gear icon at the bottom of the IconRail is now SUPER_ADMIN-only and
- * targets /admin — it is NOT the same as Settings.
+ * Per-PRODUCT settings (OLIVER / ARION / SPARK / etc.) DO NOT belong in the
+ * hamburger anymore — they live behind the gear icon in the IconRail, which
+ * routes to the current product's settings page. This keeps cross-product
+ * concerns separate from per-product configuration.
  */
 export function AccountMenu({
   userLabel,
@@ -105,16 +102,10 @@ export function AccountMenu({
             <MenuItem to="/app/settings/integrations" icon={<Plug className="h-4 w-4" />} label="Connected Accounts" onClick={close} />
           </MenuSection>
 
-          {/* OLIVER-specific settings — reuse the existing OLIVER feature pages
-              so we don't duplicate UI. Pro-tier ones (Territories, SLA) are
-              shown for everyone here; the page itself enforces the gate. */}
-          <MenuSection label="OLIVER settings">
-            <MenuItem to="/app/services/oliver_team_access" icon={<KeyRound className="h-4 w-4" />} label="Team Access" onClick={close} />
-            <MenuItem to="/app/services/oliver_templates" icon={<FileText className="h-4 w-4" />} label="Templates" onClick={close} />
-            <MenuItem to="/app/services/oliver_booking" icon={<Calendar className="h-4 w-4" />} label="Booking Page" onClick={close} />
-            <MenuItem to="/app/services/oliver_territories" icon={<MapPin className="h-4 w-4" />} label="Territories" pill="Pro" onClick={close} />
-            <MenuItem to="/app/services/oliver_sla_policies" icon={<Clock className="h-4 w-4" />} label="SLA Policies" pill="Pro" onClick={close} />
-          </MenuSection>
+          {/* F-02 — REMOVED OLIVER settings block from hamburger. Per-product
+              settings now live behind the gear icon in the IconRail (which
+              routes to the active product's settings page). The hamburger is
+              strictly cross-product scope. */}
 
           {/* Platform */}
           <MenuSection label="Platform">
