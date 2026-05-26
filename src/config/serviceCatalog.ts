@@ -134,7 +134,11 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_fees', displayName: 'Fees', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_fees', description: 'Full processing-fee breakdown by tier — Stripe portion, platform portion, and per-transaction caps.' },
   { key: 'oliver_client_experience', displayName: 'Client Experience', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_client_experience', description: 'Client Experience add-on — Essentials / Growth / Authority. White-label design editor, automations, retention tools.' },
   { key: 'oliver_portal_designer', displayName: 'Portal Designer', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_portal_designer', description: 'White Label Design Editor — control portal buttons, labels, fonts, header/footer, and custom CSS (Client Experience add-on).' },
-  { key: 'oliver_automations', displayName: 'Automations & Notifications', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_automations', description: 'Customer-facing notification copy, triggers, and reminder cadence (Client Experience add-on).' },
+  // LOCKED 2026-05-26 r2 — Workflow & Automations is the new nav home for
+  // the Automations engine (Pro+ rule library + tenant message customization).
+  // Replaces the deprecated Client Experience add-on stub; routes to the
+  // re-implemented OliverAutomationsPage that talks to /automations/* API.
+  { key: 'oliver_automations', displayName: 'Workflow & Automations', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_automations', description: 'Pre-built automation rules (booking confirmations, job reminders, auto-invoicing, on-the-way SMS, auto-assign workers) + customizable message templates. Pro+ unlocks the orchestration rules; comms rules work on all tiers.' },
   // OLIVER v1.0 additions
   // Workflow Templates DEPRECATED 2026-05-26 — redundant with service catalog
   // (preset durations/prices) and customer.internal_notes (per-customer
