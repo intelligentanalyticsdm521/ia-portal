@@ -48,6 +48,11 @@ interface ContactDetail {
   /** F-42 — crew-only customer-level notes that auto-prefill into each
    *  new job's team_notes. Never surfaced in the customer portal. */
   internal_notes?: string | null;
+  /** F-66 — customer worker preferences. preferred_worker_id is the
+   *  primary; backup_worker_ids is an ordered list of fallbacks. Drives
+   *  the auto_assign_worker 'preferred_worker' strategy. */
+  preferred_worker_id?: string | null;
+  backup_worker_ids?: string[] | string | null;
   addresses?: Array<{ address_id: string; address_line_1: string; city: string; state: string; postal_code: string }>;
   financial_snapshot?: {
     total_jobs: number;
@@ -300,6 +305,13 @@ export function CustomerModal({
               )}
 
               <CustomerInfoCard
+                detail={detail}
+                api={api}
+                onSaved={() => { reload(); onChanged?.(); }}
+              />
+
+              {/* F-66 — Preferred crew picker (primary + ordered backups). */}
+              <PreferredCrewCard
                 detail={detail}
                 api={api}
                 onSaved={() => { reload(); onChanged?.(); }}
@@ -743,6 +755,235 @@ function InfoRow({ label, value }: { label: string; value: string }) {
     <div>
       <div style={{ fontSize: 10, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
       <div style={{ fontSize: 13, color: "#0B1C24", marginTop: 2 }}>{value}</div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F-66 — PreferredCrewCard
+//
+// Lets admin pick a primary worker + ordered backups for this customer.
+// Drives the auto_assign_worker 'preferred_worker' strategy: when a job is
+// created, the engine tries preferred first, then each backup in order, then
+// falls back to whichever strategy is configured (round-robin / skill-match).
+//
+// Customer-facing equivalent of this lives on the Customer Portal Account
+// page (F-54) — but admins can override here.
+// ─────────────────────────────────────────────────────────────────────────────
+interface WorkerLite {
+  id: string;
+  name?: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  type?: string;
+  status?: string;
+}
+
+function parseBackupIds(v: ContactDetail["backup_worker_ids"]): string[] {
+  if (!v) return [];
+  if (Array.isArray(v)) return v.map(String).filter(Boolean);
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return [];
+    try {
+      const parsed = JSON.parse(s);
+      if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+    } catch { /* fall through */ }
+    return s.split(",").map((x) => x.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function PreferredCrewCard({
+  detail,
+  api,
+  onSaved,
+}: {
+  detail: ContactDetail;
+  api: { get: <T>(p: string) => Promise<T>; patch: <T>(p: string, b: unknown) => Promise<T> };
+  onSaved: () => void;
+}) {
+  const [workers, setWorkers] = useState<WorkerLite[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [preferred, setPreferred] = useState<string | "">(detail.preferred_worker_id || "");
+  const [backups, setBackups] = useState<string[]>(parseBackupIds(detail.backup_worker_ids));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await api.get<WorkerLite[]>("/workers");
+        if (!cancelled) setWorkers((list || []).filter((w) => !w.status || w.status === "active"));
+      } catch (e) {
+        if (!cancelled) setErr((e as Error).message || "Failed to load team list");
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [api]);
+
+  // Reset local state if the underlying contact changes (e.g. modal switches
+  // customers without unmount). Avoids stale picker state from a prior open.
+  useEffect(() => {
+    setPreferred(detail.preferred_worker_id || "");
+    setBackups(parseBackupIds(detail.backup_worker_ids));
+    setEditing(false);
+  }, [detail.contact_id, detail.preferred_worker_id, detail.backup_worker_ids]);
+
+  function nameOf(id: string | null | undefined): string {
+    if (!id) return "—";
+    const w = workers.find((x) => x.id === id);
+    if (!w) return "(removed worker)";
+    return w.name || `${w.first_name ?? ""} ${w.last_name ?? ""}`.trim() || w.email || "Unnamed";
+  }
+
+  function startEdit() {
+    setPreferred(detail.preferred_worker_id || "");
+    setBackups(parseBackupIds(detail.backup_worker_ids));
+    setErr(null);
+    setEditing(true);
+  }
+
+  function moveBackup(idx: number, dir: -1 | 1) {
+    setBackups((cur) => {
+      const next = [...cur];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return next;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  }
+  function removeBackup(idx: number) {
+    setBackups((cur) => cur.filter((_, i) => i !== idx));
+  }
+  function addBackup(id: string) {
+    if (!id) return;
+    if (id === preferred) return; // can't be both
+    if (backups.includes(id)) return; // de-dupe
+    setBackups((cur) => [...cur, id]);
+  }
+
+  async function save() {
+    setSaving(true); setErr(null);
+    try {
+      const targetId = detail.legacy_oliver_uuid || detail.contact_id;
+      // De-dupe: if preferred is in backups, strip it
+      const cleanedBackups = backups.filter((id) => id && id !== preferred);
+      await api.patch(`/contacts/${targetId}`, {
+        preferred_worker_id: preferred || null,
+        backup_worker_ids: cleanedBackups,
+      });
+      setEditing(false);
+      onSaved();
+    } catch (e) { setErr((e as Error).message || "Save failed"); }
+    finally { setSaving(false); }
+  }
+
+  const labelS: React.CSSProperties = {
+    display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A",
+    marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.4,
+  };
+  const inputS: React.CSSProperties = {
+    width: "100%", padding: "7px 10px", fontSize: 12,
+    border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6, background: "#fff",
+  };
+
+  const availableForBackup = workers.filter(
+    (w) => w.id !== preferred && !backups.includes(w.id)
+  );
+  const currentBackups = parseBackupIds(detail.backup_worker_ids);
+
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+        <div>
+          <div className="card-ttl">Preferred crew</div>
+          <div className="card-sub">Auto-assign tries the primary first, then each backup in order. Falls back to your tenant's default strategy if no one is available.</div>
+        </div>
+        {!editing && loaded && (
+          <Button variant="secondary" onClick={startEdit}>Edit</Button>
+        )}
+      </div>
+
+      {err && (
+        <div style={{ background: "#FEE2E2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 6, padding: "8px 12px", fontSize: 12, marginTop: 10 }}>
+          {err}
+        </div>
+      )}
+
+      {!loaded ? (
+        <div style={{ marginTop: 10, fontSize: 12, color: "#5A7A8A" }}>Loading team…</div>
+      ) : editing ? (
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div>
+            <label style={labelS}>Primary worker</label>
+            <select value={preferred} onChange={(e) => setPreferred(e.target.value)} style={inputS}>
+              <option value="">— None (use tenant default) —</option>
+              {workers.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name || `${w.first_name ?? ""} ${w.last_name ?? ""}`.trim() || w.email}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={labelS}>Backup workers (in order of preference)</label>
+            {backups.length === 0 ? (
+              <div style={{ fontSize: 12, color: "#5A7A8A", fontStyle: "italic", padding: "4px 0" }}>No backups yet.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {backups.map((id, i) => (
+                  <div key={`${id}-${i}`} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 6 }}>
+                    <span style={{ flex: "0 0 22px", fontSize: 11, color: "#5A7A8A", fontWeight: 600 }}>{i + 1}.</span>
+                    <span style={{ flex: 1, fontSize: 12, color: "#0B1C24" }}>{nameOf(id)}</span>
+                    <button type="button" disabled={i === 0} onClick={() => moveBackup(i, -1)} style={{ background: "none", border: 0, color: i === 0 ? "#cbd5e1" : "#1A7DB5", cursor: i === 0 ? "not-allowed" : "pointer", fontSize: 12 }}>↑</button>
+                    <button type="button" disabled={i === backups.length - 1} onClick={() => moveBackup(i, 1)} style={{ background: "none", border: 0, color: i === backups.length - 1 ? "#cbd5e1" : "#1A7DB5", cursor: i === backups.length - 1 ? "not-allowed" : "pointer", fontSize: 12 }}>↓</button>
+                    <button type="button" onClick={() => removeBackup(i)} style={{ background: "none", border: 0, color: "#dc2626", cursor: "pointer", fontSize: 12 }}>Remove</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {availableForBackup.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <select
+                  value=""
+                  onChange={(e) => { addBackup(e.target.value); e.currentTarget.value = ""; }}
+                  style={inputS}
+                >
+                  <option value="">+ Add backup worker…</option>
+                  {availableForBackup.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name || `${w.first_name ?? ""} ${w.last_name ?? ""}`.trim() || w.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
+            <Button variant="primary" onClick={save} disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          <InfoRow label="Primary" value={detail.preferred_worker_id ? nameOf(detail.preferred_worker_id) : "—"} />
+          <InfoRow
+            label={currentBackups.length ? `Backups (${currentBackups.length})` : "Backups"}
+            value={currentBackups.length ? currentBackups.map((id) => nameOf(id)).join(" → ") : "—"}
+          />
+        </div>
+      )}
     </div>
   );
 }

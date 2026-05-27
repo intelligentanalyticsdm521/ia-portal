@@ -97,6 +97,10 @@ const OLIVER_NAV: SubNavConfig = {
       items: [
         { key: "oliver_catalog", label: "Products & Services", route: "/app/services/oliver_catalog" },
         { key: "oliver_categories", label: "Categories", route: "/app/services/oliver_categories" },
+        // F-74 — separate taxonomy for crew skills (Plumbing, Electrical, etc.).
+        // Distinct from product categories; drives auto-assign + customer
+        // worker preferences.
+        { key: "oliver_service_categories", label: "Service Categories", route: "/app/services/oliver_service_categories" },
         { key: "oliver_coupons", label: "Coupons", route: "/app/services/oliver_coupons" },
       ],
     },
@@ -533,7 +537,7 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/oliver_job_board") || path.includes("/oliver_schedule") || path.includes("/oliver_jobs_archive")) return "oliver_jobs";
   if (path.includes("/oliver_workers") || path.includes("/oliver_crew_performance") || path.includes("/oliver_time_tracking")) return "oliver_team";
   if (path.includes("/oliver_contacts") || path.includes("/oliver_service_requests") || path.includes("/oliver_booking")) return "oliver_customers";
-  if (path.includes("/oliver_catalog") || path.includes("/oliver_categories") || path.includes("/oliver_coupons")) return "oliver_products";
+  if (path.includes("/oliver_catalog") || path.includes("/oliver_categories") || path.includes("/oliver_service_categories") || path.includes("/oliver_coupons")) return "oliver_products";
   if (path.includes("/oliver_expenses") || path.includes("/oliver_job_costing")) return "oliver_expenses";
   if (path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders")) return "oliver_billing";
   if (path.includes("/oliver_ia_insights") || path.includes("/argus_cross_channel")) return "oliver_ia_insights";

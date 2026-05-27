@@ -5,7 +5,7 @@
 
 import { useCallback, useMemo } from "react";
 import { useMsal } from "@azure/msal-react";
-import { oliverGet, oliverPost, oliverPatch, oliverDelete } from "../lib/oliverApi";
+import { oliverGet, oliverPost, oliverPatch, oliverPut, oliverDelete } from "../lib/oliverApi";
 
 export interface TierGateError {
   type: "tier_gate";
@@ -41,6 +41,11 @@ export function useOliverApi() {
     [instance, account]
   );
 
+  const put = useCallback(
+    <T>(path: string, body: unknown) => oliverPut<T>(instance, account, path, body),
+    [instance, account]
+  );
+
   const del = useCallback(
     <T>(path: string) => oliverDelete<T>(instance, account, path),
     [instance, account]
@@ -49,7 +54,7 @@ export function useOliverApi() {
   // Stable object identity — prevents consumers keyed on this hook's result
   // from re-fetching on every render (fetch once per page, not per render).
   return useMemo(
-    () => ({ get, post, patch, del, ready: !!account }),
-    [get, post, patch, del, account]
+    () => ({ get, post, patch, put, del, ready: !!account }),
+    [get, post, patch, put, del, account]
   );
 }

@@ -15,6 +15,23 @@ interface Worker {
   type: string; // employee | contractor
   status: string;
   hourly_rate?: number | null;
+  // F-46 — JSON array of free-text strings the tenant uses to tag regions
+  // (e.g. ["North Side","Downtown","SF Peninsula"]) and skills (e.g.
+  // ["Drain cleaning","Tankless install"]). Free-form on purpose so the
+  // tenant doesn't need to maintain a hard taxonomy for these.
+  regions?: string[] | string | null;
+  skills?: string[] | string | null;
+}
+
+// F-74 — formal categories (drawn from oliver.service_category) the worker
+// is assigned to via the worker_service_category M2M table.
+interface ServiceCategory {
+  category_id: string;
+  name: string;
+  slug: string;
+  icon?: string | null;
+  color?: string | null;
+  proficiency?: string | null;
 }
 
 interface AvailabilitySlot {
@@ -35,7 +52,7 @@ const FILTER_PILLS = [
 ];
 
 export function OliverWorkersPage() {
-  const { get, post, ready } = useOliverApi();
+  const { get, post, patch, put, ready } = useOliverApi();
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -140,30 +157,72 @@ export function OliverWorkersPage() {
           workerId={editingId}
           onClose={() => setEditingId(null)}
           onSaved={() => { setEditingId(null); reload(); }}
-          api={{ get, post }}
+          api={{ get, post, patch, put }}
         />
       )}
     </OliverPageWrapper>
   );
 }
 
-function WorkerDrawer({ workerId, onClose, onSaved, api }: { workerId: string | "new"; onClose: () => void; onSaved: () => void; api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T> } }) {
+interface WorkerDrawerApi {
+  get: <T>(p: string) => Promise<T>;
+  post: <T>(p: string, b?: unknown) => Promise<T>;
+  patch: <T>(p: string, b: unknown) => Promise<T>;
+  put: <T>(p: string, b: unknown) => Promise<T>;
+}
+
+function parseStringArray(v: Worker["regions"] | Worker["skills"]): string[] {
+  if (!v) return [];
+  if (Array.isArray(v)) return v.map(String);
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return [];
+    try {
+      const parsed = JSON.parse(s);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch { /* not json, fall through to comma split */ }
+    return s.split(",").map((x) => x.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function WorkerDrawer({ workerId, onClose, onSaved, api }: { workerId: string | "new"; onClose: () => void; onSaved: () => void; api: WorkerDrawerApi }) {
   const isNew = workerId === "new";
-  const [worker, setWorker] = useState<Worker | null>(isNew ? { id: "", first_name: "", last_name: "", email: "", phone: "", type: "employee", status: "active" } : null);
+  const [worker, setWorker] = useState<Worker | null>(isNew ? { id: "", first_name: "", last_name: "", email: "", phone: "", type: "employee", status: "active", regions: [], skills: [] } : null);
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
   const [loading, setLoading] = useState(!isNew);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // F-46 / F-74 — specialties state
+  const [regions, setRegions] = useState<string[]>([]);
+  const [skills, setSkills] = useState<string[]>([]);
+  const [allCategories, setAllCategories] = useState<ServiceCategory[]>([]);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+
   useEffect(() => {
-    if (isNew) return;
     (async () => {
       try {
+        if (isNew) {
+          const cats = await api.get<ServiceCategory[]>("/service-categories").catch(() => [] as ServiceCategory[]);
+          setAllCategories(cats || []);
+          return;
+        }
         const list = await api.get<Worker[]>("/workers");
-        const w = list.find((x) => x.id === workerId);
-        setWorker(w ?? null);
+        const w = list.find((x) => x.id === workerId) ?? null;
+        setWorker(w);
+        if (w) {
+          setRegions(parseStringArray(w.regions));
+          setSkills(parseStringArray(w.skills));
+        }
         const slotData = await api.get<AvailabilitySlot[]>(`/availability/workers/${workerId}`);
         setSlots(slotData || []);
+        const [cats, assigned] = await Promise.all([
+          api.get<ServiceCategory[]>("/service-categories").catch(() => [] as ServiceCategory[]),
+          api.get<ServiceCategory[]>(`/service-categories/by-worker/${workerId}`).catch(() => [] as ServiceCategory[]),
+        ]);
+        setAllCategories(cats || []);
+        setSelectedCategoryIds((assigned || []).map((c) => c.category_id));
       } finally { setLoading(false); }
     })();
   }, [api, workerId, isNew]);
@@ -172,20 +231,50 @@ function WorkerDrawer({ workerId, onClose, onSaved, api }: { workerId: string | 
 
   function setField<K extends keyof Worker>(k: K, v: Worker[K]) { setWorker((cur) => cur ? { ...cur, [k]: v } : cur); }
 
+  function toggleCategory(catId: string) {
+    setSelectedCategoryIds((cur) => cur.includes(catId) ? cur.filter((x) => x !== catId) : [...cur, catId]);
+  }
+
   async function save() {
     setBusy(true); setErr(null);
     try {
+      let workerIdForSync = worker!.id;
       if (isNew) {
-        const created = await api.post<Worker>("/workers", worker);
+        const created = await api.post<Worker>("/workers", {
+          first_name: worker!.first_name,
+          last_name: worker!.last_name,
+          email: worker!.email,
+          phone: worker!.phone,
+          type: worker!.type,
+          hourly_rate: worker!.hourly_rate,
+        });
+        workerIdForSync = created.id;
+        // Sync specialties + availability on the freshly created row.
+        await api.patch(`/workers/${workerIdForSync}`, {
+          regions,
+          skills,
+        }).catch(() => null);
         if (slots.length) {
-          await api.post(`/availability/workers/${created.id}`, { slots: slots.map((s) => ({ dayOfWeek: s.day_of_week, startTime: s.start_time, endTime: s.end_time })) });
+          await api.post(`/availability/workers/${workerIdForSync}`, { slots: slots.map((s) => ({ dayOfWeek: s.day_of_week, startTime: s.start_time, endTime: s.end_time })) });
         }
       } else {
-        // PATCH worker
-        await fetch(`${(import.meta.env.VITE_OLIVER_API_BASE || "")}/workers/${worker!.id}`, { method: "PATCH" }); // placeholder if backend supports
-        // Save availability via the dedicated endpoint
-        await api.post(`/availability/workers/${worker!.id}`, { slots: slots.map((s) => ({ dayOfWeek: s.day_of_week, startTime: s.start_time, endTime: s.end_time })) });
+        // F-44 fix — actually PATCH the worker (was previously a no-op fetch
+        // with no body, which silently swallowed every Save click).
+        await api.patch(`/workers/${workerIdForSync}`, {
+          first_name: worker!.first_name,
+          last_name: worker!.last_name,
+          email: worker!.email,
+          phone: worker!.phone || null,
+          type: worker!.type,
+          status: worker!.status,
+          hourly_rate: worker!.hourly_rate ?? null,
+          regions,
+          skills,
+        });
+        await api.post(`/availability/workers/${workerIdForSync}`, { slots: slots.map((s) => ({ dayOfWeek: s.day_of_week, startTime: s.start_time, endTime: s.end_time })) });
       }
+      // F-74 — replace category assignments (idempotent PUT)
+      await api.put(`/service-categories/by-worker/${workerIdForSync}`, { category_ids: selectedCategoryIds }).catch(() => null);
       onSaved();
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
@@ -257,6 +346,61 @@ function WorkerDrawer({ workerId, onClose, onSaved, api }: { workerId: string | 
         </div>
       </section>
 
+      {/* F-46 + F-74 — Specialties: regions/skills + service-category tags */}
+      <section className="mt-6 space-y-3 pt-4 border-t border-gray-200">
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal">Specialties</h3>
+          <p className="text-xs text-slate-500 mt-1">Used by auto-assignment to match jobs and by customers when picking their preferred crew.</p>
+        </div>
+
+        <Field label="Service categories">
+          <div className="flex flex-wrap gap-1.5">
+            {allCategories.length === 0 ? (
+              <span className="text-xs text-slate-400 italic">No service categories defined yet. Add them in Service Categories.</span>
+            ) : allCategories.map((c) => {
+              const on = selectedCategoryIds.includes(c.category_id);
+              return (
+                <button
+                  type="button"
+                  key={c.category_id}
+                  onClick={() => toggleCategory(c.category_id)}
+                  style={{
+                    fontSize: 12,
+                    padding: "4px 10px",
+                    borderRadius: 99,
+                    border: `1px solid ${on ? (c.color || "#1A3A4A") : "#cbd5e1"}`,
+                    background: on ? (c.color || "#1A3A4A") : "#fff",
+                    color: on ? "#fff" : "#0B1C24",
+                    cursor: "pointer",
+                    fontWeight: on ? 600 : 500,
+                  }}
+                >
+                  {c.name}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+
+        <Field label="Regions / territories (free text, comma separated)">
+          <ChipInput
+            value={regions}
+            onChange={setRegions}
+            placeholder="e.g. Downtown, North Side, SF Peninsula"
+          />
+          <p className="text-[10px] text-slate-400 mt-1">Free-form labels. Auto-assignment can match these against the job's service-address region label.</p>
+        </Field>
+
+        <Field label="Skills (free text, comma separated)">
+          <ChipInput
+            value={skills}
+            onChange={setSkills}
+            placeholder="e.g. Drain cleaning, Tankless install, Bilingual ES"
+          />
+          <p className="text-[10px] text-slate-400 mt-1">Finer-grained than categories — quick filterable tags for the customer's preferred-crew picker.</p>
+        </Field>
+      </section>
+
       {!isNew && (
         <section className="mt-6 space-y-3 pt-4 border-t border-gray-200">
           <CalendarSyncPanel workerId={worker.id} api={api} />
@@ -319,13 +463,50 @@ function Field({ label, required, children }: { label: string; required?: boolea
   );
 }
 
+// Simple chip input — user types a value and presses Enter or comma to
+// commit, click × to remove a chip. Renders the chips inline with the
+// editing field so the whole thing reads as a single composite control.
+function ChipInput({ value, onChange, placeholder }: { value: string[]; onChange: (next: string[]) => void; placeholder?: string }) {
+  const [draft, setDraft] = useState("");
+  function commit(raw: string) {
+    const v = raw.trim().replace(/^,+|,+$/g, "").trim();
+    if (!v) return;
+    if (value.includes(v)) { setDraft(""); return; }
+    onChange([...value, v]);
+    setDraft("");
+  }
+  function remove(idx: number) { onChange(value.filter((_, i) => i !== idx)); }
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: 6, border: "1px solid #d1d5db", borderRadius: 8, background: "#fff" }}>
+      {value.map((v, i) => (
+        <span key={`${v}-${i}`} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", fontSize: 12, background: "#E0F2FE", color: "#075985", borderRadius: 99 }}>
+          {v}
+          <button type="button" onClick={() => remove(i)} style={{ background: "none", border: 0, color: "#075985", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
+        </span>
+      ))}
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === ",") { e.preventDefault(); commit(draft); }
+          else if (e.key === "Backspace" && !draft && value.length) { remove(value.length - 1); }
+        }}
+        onBlur={() => commit(draft)}
+        placeholder={value.length ? "" : (placeholder ?? "")}
+        style={{ flex: "1 1 120px", border: 0, outline: "none", fontSize: 13, padding: "3px 4px", minWidth: 120 }}
+      />
+    </div>
+  );
+}
+
 // ─── Calendar Sync panel ─────────────────────────────────────────────────────
 // Renders inside the worker drawer. Lazy-fetches the worker's ICS feed URL
 // (creating the token if it doesn't exist), shows the copy-paste URL + a
 // one-click webcal:// subscribe button, plus a "rotate token" path.
 function CalendarSyncPanel({ workerId, api }: {
   workerId: string;
-  api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T> };
+  api: Pick<WorkerDrawerApi, "get" | "post">;
 }) {
   const [url, setUrl] = useState<string | null>(null);
   const [webcalUrl, setWebcalUrl] = useState<string | null>(null);

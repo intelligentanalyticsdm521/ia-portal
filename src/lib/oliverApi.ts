@@ -92,6 +92,13 @@ export function oliverPatch<T>(msal: IPublicClientApplication, account: AccountI
   });
 }
 
+export function oliverPut<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, body: unknown) {
+  return oliverFetch<T>(msal, account, path, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
 export function oliverDelete<T>(msal: IPublicClientApplication, account: AccountInfo, path: string) {
   return oliverFetch<T>(msal, account, path, { method: "DELETE" });
 }
