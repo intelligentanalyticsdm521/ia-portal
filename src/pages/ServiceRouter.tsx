@@ -221,6 +221,7 @@ const OliverClientExperiencePage = lazyNamed(() => import('./oliver/OliverClient
 const OliverPortalDesignerPage = lazyNamed(() => import('./oliver/OliverPortalDesignerPage'), 'OliverPortalDesignerPage');
 const OliverAutomationsPage = lazyNamed(() => import('./oliver/OliverAutomationsPage'), 'OliverAutomationsPage');
 const OliverAddonsPage = lazyNamed(() => import('./oliver/OliverAddonsPage'), 'OliverAddonsPage');
+const OliverPortalDomainsPage = lazyNamed(() => import('./oliver/OliverPortalDomainsPage'), 'OliverPortalDomainsPage');
 // OLIVER v1.0 additions
 const OliverWorkflowTemplatesPage = lazyNamed(() => import('./oliver/OliverWorkflowTemplatesPage'), 'OliverWorkflowTemplatesPage');
 const OliverJobOffersPage = lazyNamed(() => import('./oliver/OliverJobOffersPage'), 'OliverJobOffersPage');
@@ -391,6 +392,7 @@ export function ServiceRouter() {
       case 'oliver_portal_designer': oliverPage = <OliverPortalDesignerPage />; break;
       case 'oliver_automations': oliverPage = <OliverAutomationsPage />; break;
       case 'oliver_addons': oliverPage = <OliverAddonsPage />; break;
+      case 'oliver_portal_domains': oliverPage = <OliverPortalDomainsPage />; break;
       // v1.0 additions
       case 'oliver_workflow_templates': oliverPage = <OliverWorkflowTemplatesPage />; break;
       case 'oliver_job_offers': oliverPage = <OliverJobOffersPage />; break;

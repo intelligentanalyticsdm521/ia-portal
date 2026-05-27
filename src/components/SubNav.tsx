@@ -4,7 +4,7 @@ import {
   Monitor, Server, ShieldCheck, BarChart2, TrendingUp,
   Search as SearchIcon, MapPin, Star, ChevronDown, Settings,
   Users, Megaphone, Briefcase, Heart, Target, Sparkles,
-  Wrench, UserCircle, CreditCard, MessageSquare, LineChart,
+  Wrench, UserCircle, CreditCard, MessageSquare, LineChart, Zap,
 } from "lucide-react";
 import type { ProductKey } from "./IconRail";
 
@@ -113,8 +113,20 @@ const OLIVER_NAV: SubNavConfig = {
       label: "Team", icon: Users, collapsible: true, sectionId: "oliver_team",
       items: [
         { key: "oliver_workers", label: "Workers", route: "/app/services/oliver_workers" },
-        { key: "oliver_time_tracking", label: "Time Tracking", route: "/app/services/oliver_time_tracking" },
+        // F-44 (2026-05-26) — Time Tracking removed from nav per founder lock
+        // "no time tracking until payroll later". Page + route still reachable
+        // by URL for legacy data; not surfaced in OLIVER nav.
         { key: "oliver_crew_performance", label: "Performance", route: "/app/services/oliver_crew_performance", gated: true },
+      ],
+    },
+    {
+      // F-43 (2026-05-26) — Workflow & Automations nav group. Page exists at
+      // /app/services/oliver_automations but was missing from SubNav.
+      label: "Workflow & Automations", icon: Zap, collapsible: true, sectionId: "oliver_workflow",
+      items: [
+        { key: "oliver_automations", label: "Automations", route: "/app/services/oliver_automations" },
+        { key: "oliver_addons", label: "Add-ons", route: "/app/services/oliver_addons" },
+        { key: "oliver_portal_domains", label: "Portals & Domains", route: "/app/services/oliver_portal_domains" },
       ],
     },
     {
