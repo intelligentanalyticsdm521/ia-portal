@@ -207,6 +207,7 @@ const OliverTemplateLibraryPage = lazyNamed(() => import('./oliver/OliverTemplat
 const OliverServiceCatalogPage = lazyNamed(() => import('./oliver/OliverServiceCatalogPage'), 'OliverServiceCatalogPage');
 const OliverCategoriesPage = lazyNamed(() => import('./oliver/OliverCategoriesPage'), 'OliverCategoriesPage');
 const OliverServiceCategoriesPage = lazyNamed(() => import('./oliver/OliverServiceCategoriesPage'), 'OliverServiceCategoriesPage');
+const OliverWorkflowSettingsPage = lazyNamed(() => import('./oliver/OliverWorkflowSettingsPage'), 'OliverWorkflowSettingsPage');
 const OliverBillingOverviewPage = lazyNamed(() => import('./oliver/OliverBillingOverviewPage'), 'OliverBillingOverviewPage');
 const OliverRemindersPage = lazyNamed(() => import('./oliver/OliverRemindersPage'), 'OliverRemindersPage');
 const OliverOnboardingPage = lazyNamed(() => import('./oliver/OliverOnboardingPage'), 'OliverOnboardingPage');
@@ -379,6 +380,7 @@ export function ServiceRouter() {
       case 'oliver_catalog': oliverPage = <OliverServiceCatalogPage />; break;
       case 'oliver_categories': oliverPage = <OliverCategoriesPage />; break;
       case 'oliver_service_categories': oliverPage = <OliverServiceCategoriesPage />; break;
+      case 'oliver_workflow_settings': oliverPage = <OliverWorkflowSettingsPage />; break;
       case 'oliver_billing_overview': oliverPage = <OliverBillingOverviewPage />; break;
       case 'oliver_reminders': oliverPage = <OliverRemindersPage />; break;
       case 'oliver_onboarding': oliverPage = <OliverOnboardingPage />; break;

@@ -144,6 +144,9 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_automations', displayName: 'Workflow & Automations', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_automations', description: 'Pre-built automation rules (booking confirmations, job reminders, auto-invoicing, on-the-way SMS, auto-assign workers) + customizable message templates. Pro+ unlocks the orchestration rules; comms rules work on all tiers.' },
   { key: 'oliver_addons', displayName: 'Add-ons', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_addons', description: 'Stack-on subscriptions: SMS Essentials/Growth/Authority for operational notifications. Future: per-tenant native mobile apps.' },
   { key: 'oliver_portal_domains', displayName: 'Portals & Domains', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_portal_domains', description: 'Customer + crew portal URLs. Default subdomains (xxx.customer.ia-dm.com) free; bring your own domain on Pro+.' },
+  // F-70 + F-72 + F-63 — Workflow Settings (reschedule policy, post-booking
+  // actions, customer signup form config).
+  { key: 'oliver_workflow_settings', displayName: 'Workflow Settings', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_workflow_settings', description: 'Reschedule policy + after-booking actions (auto-invoice, confirmation email, auto-assign) + the customer signup form library.' },
   // OLIVER v1.0 additions
   // Workflow Templates DEPRECATED 2026-05-26 — redundant with service catalog
   // (preset durations/prices) and customer.internal_notes (per-customer

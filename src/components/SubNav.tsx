@@ -131,6 +131,8 @@ const OLIVER_NAV: SubNavConfig = {
         { key: "oliver_automations", label: "Automations", route: "/app/services/oliver_automations" },
         { key: "oliver_addons", label: "Add-ons", route: "/app/services/oliver_addons" },
         { key: "oliver_portal_domains", label: "Portals & Domains", route: "/app/services/oliver_portal_domains" },
+        // F-70 + F-72 + F-63 — reschedule policy, post-booking actions, signup form
+        { key: "oliver_workflow_settings", label: "Workflow Settings", route: "/app/services/oliver_workflow_settings" },
       ],
     },
     {
