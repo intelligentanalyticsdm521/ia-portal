@@ -263,6 +263,26 @@ const ARION_NAV: SubNavConfig = {
   ],
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SPARK navigation — F-84 re-alignment 2026-05-28 (mirrors OLIVER pattern).
+//
+// What changed vs v7.1:
+//   - Admin section removed from main nav entirely. API Keys, Webhooks,
+//     Secrets, Audit Log, Config Backup, Custom Fields, Calendar Sync,
+//     and Approvals now live under the gear (SparkSettingsPage hub).
+//   - Bottom standalone strip removed. Real-Time Activity + Usage moved
+//     into Reporting. Plan & Pricing + API Reference + Engine Docs +
+//     Smoke Test moved into the Settings hub (Ops & admin group).
+//   - Service Category moved out of IA Insights into Settings (it's a
+//     tenant config that drives benchmark selection, not a report).
+//   - Sender Domains + Tracking + Audience Sync + Quiet Hours + Saved
+//     Searches surfaced in Settings (not in main nav).
+//
+// SHAPE after refactor:
+//   - 8 main-nav sections (down from 11) + Get Started/Overview at top
+//   - Settings reached via the gear in the IconRail → SparkSettingsPage hub
+//   - Lean main nav covers the daily-work surfaces only
+// ─────────────────────────────────────────────────────────────────────────────
 const SPARK_NAV: SubNavConfig = {
   productName: "SPARK",
   tagline: "Growth Platform",
@@ -275,16 +295,10 @@ const SPARK_NAV: SubNavConfig = {
       ],
     },
     {
-      // v7.1 — CRM 10 → 8. Bulk Ops / Contact Merge / Saved Searches /
-      // Custom Fields hidden from nav (folded into Contacts page tabs +
-      // Admin); Contact 360° and Health Score moved here from AI &
-      // Intelligence — they're contact-level views, not AI tools.
       label: "CRM", icon: Users, collapsible: true, sectionId: "spark_crm",
       items: [
         { key: "spark_contacts", label: "Contacts", route: "/app/services/spark_contacts" },
         { key: "spark_contact_import", label: "Import (CSV)", route: "/app/services/spark_contact_import" },
-        // Companies (renamed from "B2B Accounts" — matches HubSpot/Salesforce/Pipedrive
-        // industry convention). Auto-matched from contact email domains.
         { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts" },
         { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
         { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments" },
@@ -294,12 +308,6 @@ const SPARK_NAV: SubNavConfig = {
       ],
     },
     {
-      // v7.1 — Outreach consolidated 15 → 8. Hidden-from-nav items remain in
-      // serviceCatalog + ServiceRouter so existing deep links still resolve;
-      // they'll fold into their parent pages as channel toggles / tabs in a
-      // follow-up (SMS Campaigns→Campaigns, Sender Domains→Deliverability,
-      // Quiet Hours→Deliverability, Automation Builder→Automations, Content
-      // Calendar→Social, SMS Templates→Templates).
       label: "Outreach", icon: Megaphone, collapsible: true, sectionId: "spark_outreach",
       items: [
         { key: "spark_campaigns", label: "Campaigns", route: "/app/services/spark_campaigns" },
@@ -310,6 +318,8 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter" },
         { key: "spark_social", label: "Social & Calendar", route: "/app/services/spark_social" },
         { key: "spark_sms_inbox", label: "SMS Inbox", route: "/app/services/spark_sms_inbox" },
+        // Approvals belongs with outreach — it's the campaign-send gate, not a setting.
+        { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals" },
         { key: "spark_deliverability", label: "Deliverability", route: "/app/services/spark_deliverability" },
       ],
     },
@@ -323,41 +333,14 @@ const SPARK_NAV: SubNavConfig = {
       ],
     },
     {
-      // v7.1 — Sales 13 → 6. Rule/configuration pages (Scoring Rules,
-      // Routing Rules, Auto-Tag Rules, Audience Sync, Visitor Tracking,
-      // Competitor Watch, Search Profiles) are now hidden from nav — they
-      // remain in serviceCatalog so deep links work, and will surface as
-      // tabs on Leads/Deals/Admin pages later. Lead Inbox kept as the
-      // single primary lead-gen entry point.
       label: "Sales", icon: Briefcase, collapsible: true, sectionId: "spark_sales",
       items: [
-        // Lead Gen folded into Sales — they're sequential: lead → deal → close.
         { key: "spark_leads", label: "Lead Inbox", route: "/app/services/spark_leads" },
         { key: "spark_lead_territories", label: "Lead Territories", route: "/app/services/spark_lead_territories" },
         { key: "spark_lead_suppression", label: "Lead Suppression", route: "/app/services/spark_lead_suppression" },
         { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines" },
         { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals" },
         { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution" },
-      ],
-    },
-    {
-      // v7.1 — Admin 13 → 8. The three webhook pages collapse to a single
-      // "Webhooks" nav link (the page will host Outbound/Deliveries/Inbound
-      // as tabs in a follow-up). Workflow Triggers → Automations
-      // (automation event source). Translations + Calendar Sync hidden
-      // (route still works). Scheduled Reports + Anomaly Alerts moved up
-      // to the new Reporting group. Custom Fields surfaced here as
-      // tenant-config.
-      label: "Admin", icon: Sparkles, collapsible: true, sectionId: "spark_admin",
-      items: [
-        { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals" },
-        { key: "spark_custom_fields", label: "Custom Fields", route: "/app/services/spark_custom_fields" },
-        { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys" },
-        { key: "spark_webhooks", label: "Webhooks", route: "/app/services/spark_webhooks" },
-        { key: "spark_secrets", label: "Secrets Vault", route: "/app/services/spark_secrets" },
-        { key: "spark_audit_log", label: "Audit Log", route: "/app/services/spark_audit_log" },
-        { key: "spark_config_backup", label: "Config Backup", route: "/app/services/spark_config_backup" },
-        { key: "spark_calendar_sync", label: "Calendar Sync", route: "/app/services/spark_calendar_sync" },
       ],
     },
     {
@@ -371,6 +354,7 @@ const SPARK_NAV: SubNavConfig = {
       ],
     },
     {
+      // IA Insights — pure analytics. Service Category moved to Settings.
       label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "spark_ia_insights",
       items: [
         { key: "spark_ia_insights_health", label: "Health", route: "/app/services/spark_ia_insights_health" },
@@ -378,16 +362,9 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" } },
         { key: "spark_stella", label: "STELLA Send Intelligence", route: "/app/services/spark_stella", tag: { label: "STELLA", color: "#EF6C33" } },
         { key: "argus_cross_channel", label: "Cross-Channel", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
-        { key: "spark_service_category", label: "Service Category", route: "/app/services/spark_service_category" },
       ],
     },
     {
-      // v7.1 — "AI & Intelligence" 9 → 5. STELLA moved up into IA Insights as
-      // a peer of Intelligence (it IS modelled analytics). Old generic
-      // "Insights" page removed from nav — IA Insights Trends replaces it.
-      // Dashboards + Analytics Reports moved out into a Reporting group.
-      // Contact 360 + Health Score moved into CRM (they're contact-level
-      // views, not AI tools). Underlying routes preserved.
       label: "AI Tools", icon: Sparkles, collapsible: true, sectionId: "spark_intelligence",
       items: [
         { key: "spark_ai_writer", label: "AI Writer", route: "/app/services/spark_ai_writer" },
@@ -396,23 +373,16 @@ const SPARK_NAV: SubNavConfig = {
       ],
     },
     {
+      // Reporting absorbed the formerly-standalone Real-Time Activity + Usage.
+      // Plan & Pricing left to Settings (it's a tenant admin concern, not a report).
       label: "Reporting", icon: BarChart2, collapsible: true, sectionId: "spark_reporting",
       items: [
         { key: "spark_dashboards", label: "Dashboards", route: "/app/services/spark_dashboards" },
         { key: "spark_analytics_reports", label: "Analytics Reports", route: "/app/services/spark_analytics_reports" },
         { key: "spark_scheduled_reports", label: "Scheduled Reports", route: "/app/services/spark_scheduled_reports" },
-        { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts" },
-      ],
-    },
-    {
-      label: "", icon: LineChart,
-      items: [
         { key: "spark_realtime_metrics", label: "Real-Time Activity", route: "/app/services/spark_realtime_metrics" },
-        { key: "spark_usage", label: "Plan & Pricing", route: "/app/services/spark_usage" },
+        { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts" },
         { key: "spark_usage_report", label: "Usage", route: "/app/services/spark_usage_report" },
-        { key: "spark_api_reference", label: "API Reference", route: "/app/services/spark_api_reference" },
-        { key: "spark_engine_docs", label: "IA Insights Engine Docs", route: "/app/services/spark_engine_docs" },
-        { key: "spark_smoke_test", label: "Tenant Smoke Test", route: "/app/services/spark_smoke_test" },
       ],
     },
   ],
@@ -523,13 +493,18 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("arion_seo_")) return "seo";
   if (path.includes("arion_search_")) return "search";
   if (path.includes("arion_business_")) return "business";
-  // SPARK sections
-  if (path.includes("/spark_contacts") || path.includes("/spark_accounts") || path.includes("/spark_lists") || path.includes("/spark_tags") || path.includes("/spark_segments")) return "spark_crm";
-  if (path.includes("/spark_campaigns") || path.includes("/spark_automations") || path.includes("/spark_newsletter") || path.includes("/spark_social") || path.includes("/spark_calendar")) return "spark_outreach";
-  if (path.includes("/spark_forms") || path.includes("/spark_landing_pages") || path.includes("/spark_qr_codes")) return "spark_capture";
-  if (path.includes("/spark_leads") || path.includes("/spark_search_profiles") || path.includes("/spark_pipelines") || path.includes("/spark_deals")) return "spark_sales";
-  if (path.includes("/spark_nps") || path.includes("/spark_reviews") || path.includes("/spark_referrals")) return "spark_customer_success";
-  if (path.includes("/spark_ai_writer") || path.includes("/spark_intelligence") || path.includes("/spark_insights")) return "spark_intelligence";
+  // SPARK sections — F-84 refactored auto-expand. Admin items now live in
+  // the Settings hub (not in main nav); their auto-expand entries are
+  // removed because hitting one of those routes opens the page directly
+  // (e.g. /spark_audit_log) without needing a main-nav group to expand.
+  if (path.includes("/spark_contacts") || path.includes("/spark_contact_") || path.includes("/spark_accounts") || path.includes("/spark_lists") || path.includes("/spark_tags") || path.includes("/spark_segments") || path.includes("/spark_health_score")) return "spark_crm";
+  if (path.includes("/spark_campaigns") || path.includes("/spark_email_templates") || path.includes("/spark_automations") || path.includes("/spark_journey_") || path.includes("/spark_ab_tests") || path.includes("/spark_newsletter") || path.includes("/spark_social") || path.includes("/spark_sms_") || path.includes("/spark_approvals") || path.includes("/spark_deliverability")) return "spark_outreach";
+  if (path.includes("/spark_forms") || path.includes("/spark_form_") || path.includes("/spark_landing_pages") || path.includes("/spark_qr_codes")) return "spark_capture";
+  if (path.includes("/spark_leads") || path.includes("/spark_lead_") || path.includes("/spark_pipelines") || path.includes("/spark_deals") || path.includes("/spark_attribution")) return "spark_sales";
+  if (path.includes("/spark_nps") || path.includes("/spark_reviews") || path.includes("/spark_review_") || path.includes("/spark_referrals")) return "spark_customer_success";
+  if (path.includes("/spark_ai_writer") || path.includes("/spark_intelligence") || path.includes("/spark_activity_stream")) return "spark_intelligence";
+  if (path.includes("/spark_ia_insights_") || path.includes("/spark_stella")) return "spark_ia_insights";
+  if (path.includes("/spark_dashboards") || path.includes("/spark_analytics_reports") || path.includes("/spark_scheduled_reports") || path.includes("/spark_realtime_metrics") || path.includes("/spark_anomaly_alerts") || path.includes("/spark_usage_report")) return "spark_reporting";
   // OLIVER sections (simplified nav 2026-05-25 — see OLIVER_NAV comment)
   //   - Removed entries for retired nav items (Projects, Schedule, Dispatch,
   //     Quotes-page, Billing Overview, Template Library, Operations *, Comms)
