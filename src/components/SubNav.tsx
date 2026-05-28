@@ -323,7 +323,11 @@ const SPARK_NAV: SubNavConfig = {
       label: "Outreach", icon: Megaphone, collapsible: true, sectionId: "spark_outreach",
       items: [
         { key: "spark_campaigns", label: "Campaigns", route: "/app/services/spark_campaigns" },
-        { key: "spark_email_templates", label: "Templates", route: "/app/services/spark_email_templates" },
+        // F-91 — single "Templates" entry points at the new unified library
+        // page (spark_templates), which handles Email + SMS via tabs + modal
+        // editor. The legacy spark_email_templates page still exists for the
+        // advanced visual block-builder; the editor modal links to it.
+        { key: "spark_templates", label: "Templates", route: "/app/services/spark_templates" },
         { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter" },
         { key: "spark_social", label: "Social & Calendar", route: "/app/services/spark_social" },
         { key: "spark_sms_inbox", label: "SMS Inbox", route: "/app/services/spark_sms_inbox" },
@@ -672,7 +676,7 @@ function getDefaultSection(path: string): string | null {
   // F-93 — Email Templates / SMS Templates / Translations all live under
   // the SPARK_NAV "Templates" entry (Outreach group) now. They collapse
   // into a single feature with channel tabs.
-  if (path.includes("/spark_campaigns") || path.includes("/spark_email_templates") || path.includes("/spark_sms_templates") || path.includes("/spark_template_i18n") || path.includes("/spark_newsletter") || path.includes("/spark_social") || path.includes("/spark_sms_inbox") || path.includes("/spark_deliverability")) return "spark_outreach";
+  if (path.includes("/spark_campaigns") || path.includes("/spark_templates") || path.includes("/spark_email_templates") || path.includes("/spark_sms_templates") || path.includes("/spark_template_i18n") || path.includes("/spark_newsletter") || path.includes("/spark_social") || path.includes("/spark_sms_inbox") || path.includes("/spark_deliverability")) return "spark_outreach";
   // F-89 + F-93 — Workflow & Automations contains everything that fires on
   // its own. Webhooks + Audience Sync moved here from Settings.
   if (path.includes("/spark_automations") || path.includes("/spark_journey_") || path.includes("/spark_ab_tests") || path.includes("/spark_approvals") || path.includes("/spark_workflow_triggers") || path.includes("/spark_anomaly_alerts") || path.includes("/spark_webhooks") || path.includes("/spark_inbound_webhooks") || path.includes("/spark_webhook_deliveries") || path.includes("/spark_audience_sync") || path.includes("/spark_scoring_rules") || path.includes("/spark_routing_rules") || path.includes("/spark_autotag_rules") || path.includes("/spark_lead_suppression") || path.includes("/spark_lead_territories")) return "spark_workflow";

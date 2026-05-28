@@ -155,6 +155,7 @@ const SparkTrackingPage = lazyNamed(() => import('./spark/SparkTrackingPage'), '
 const SparkSenderDomainsPage = lazyNamed(() => import('./spark/SparkSenderDomainsPage'), 'SparkSenderDomainsPage');
 const SparkOnboardingPage = lazyNamed(() => import('./spark/SparkOnboardingPage'), 'SparkOnboardingPage');
 const SparkAccountProfilePage = lazyNamed(() => import('./spark/SparkAccountProfilePage'), 'SparkAccountProfilePage');
+const SparkTemplatesPage = lazyNamed(() => import('./spark/SparkTemplatesPage'), 'SparkTemplatesPage');
 const SparkApiKeysPage = lazyNamed(() => import('./spark/SparkApiKeysPage'), 'SparkApiKeysPage');
 const SparkReviewWidgetPage = lazyNamed(() => import('./spark/SparkReviewWidgetPage'), 'SparkReviewWidgetPage');
 const SparkWebhooksPage = lazyNamed(() => import('./spark/SparkWebhooksPage'), 'SparkWebhooksPage');
@@ -500,6 +501,7 @@ export function ServiceRouter() {
       case 'spark_sender_domains': sparkPage = <SparkSenderDomainsPage />; break;
       case 'spark_onboarding': sparkPage = <SparkOnboardingPage />; break;
       case 'spark_account_profile': sparkPage = <SparkAccountProfilePage />; break;
+      case 'spark_templates': sparkPage = <SparkTemplatesPage />; break;
       case 'spark_api_keys': sparkPage = <SparkApiKeysPage />; break;
       case 'spark_review_widget': sparkPage = <SparkReviewWidgetPage />; break;
       case 'spark_webhooks': sparkPage = <SparkWebhooksPage />; break;
