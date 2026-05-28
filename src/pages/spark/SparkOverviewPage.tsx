@@ -14,6 +14,7 @@ import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { TimeRangeSelector, rangeForPreset } from "../../components/oliver/ui";
 import { ArgusInsightBox } from "../../components/oliver/ArgusInsightBox";
 import { Sparkline } from "../../components/iainsights/Sparkline";
+import { SparkSetupCard } from "../../components/command/SparkSetupCard";
 
 // ─ Types ──────────────────────────────────────────────────────────────────────
 interface UsageResponse {
@@ -183,6 +184,11 @@ export function SparkOverviewPage() {
   return (
     <OliverPageWrapper title="SPARK Overview" subtitle="Your marketing + sales command center" error={error} loading={loading}>
       <div className="p-6 space-y-6">
+
+        {/* F-87 — Get Started banner. Self-hides when required steps are
+            done. Replaces the "Get Started" nav item; opens the wizard
+            modal in-place rather than navigating to a separate page. */}
+        <SparkSetupCard />
 
         <div className="flex justify-end">
           <TimeRangeSelector value={range} onChange={setRange} />

@@ -288,10 +288,14 @@ const SPARK_NAV: SubNavConfig = {
   tagline: "Growth Platform",
   groups: [
     {
+      // F-87 — "Get Started" removed from nav. Onboarding now lives as a
+      // dashboard banner (SparkSetupCard on SparkOverviewPage) that opens
+      // SparkOnboardingWizard as a modal. A permanent "Get Started" nav
+      // item told returning users "you're a beginner here forever" — the
+      // banner self-hides when the required steps are complete.
       label: "",
       items: [
-        { key: "spark_onboarding", label: "Get Started", route: "/app/services/spark_onboarding" },
-        { key: "spark_overview", label: "Overview", route: "/app/services/spark_overview" },
+        { key: "spark_overview", label: "Dashboard", route: "/app/services/spark_overview" },
       ],
     },
     {
