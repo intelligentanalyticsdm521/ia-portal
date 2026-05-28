@@ -370,9 +370,9 @@ const SPARK_NAV: SubNavConfig = {
         // "set it and forget it" — same mental model as Automations.
         { key: "spark_webhooks", label: "Webhooks", route: "/app/services/spark_webhooks" },
         { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync" },
-        { key: "spark_scoring_rules", label: "Scoring Rules", route: "/app/services/spark_scoring_rules" },
-        { key: "spark_routing_rules", label: "Routing Rules", route: "/app/services/spark_routing_rules" },
-        { key: "spark_autotag_rules", label: "Auto-Tag Rules", route: "/app/services/spark_autotag_rules" },
+        // Rules consolidation (2026-05-28) — was 3 separate nav entries
+        // (Scoring / Routing / Auto-Tag). User flag: "should be 1." Now is.
+        { key: "spark_rules", label: "Rules", route: "/app/services/spark_rules" },
         { key: "spark_lead_suppression", label: "Lead Suppression", route: "/app/services/spark_lead_suppression" },
         { key: "spark_lead_territories", label: "Lead Territories", route: "/app/services/spark_lead_territories" },
       ],
@@ -414,7 +414,11 @@ const SPARK_NAV: SubNavConfig = {
     {
       label: "AI Tools", icon: Sparkles, collapsible: true, sectionId: "spark_intelligence",
       items: [
-        { key: "spark_ai_writer", label: "AI Writer", route: "/app/services/spark_ai_writer" },
+        // D-12 (2026-05-28): AI Writer dropped from nav. It's a 121-LOC
+        // "coming with v2" placeholder, no API calls, all static copy.
+        // Surfacing it as a nav item misleads users into thinking it
+        // works. Page route remains so deep-links don't 404 and the
+        // marketing/coming-soon preview is still reachable.
         { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence" },
         { key: "spark_activity_stream", label: "Activity Stream", route: "/app/services/spark_activity_stream" },
       ],
@@ -679,7 +683,10 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/spark_campaigns") || path.includes("/spark_templates") || path.includes("/spark_email_templates") || path.includes("/spark_sms_templates") || path.includes("/spark_template_i18n") || path.includes("/spark_newsletter") || path.includes("/spark_social") || path.includes("/spark_sms_inbox") || path.includes("/spark_deliverability")) return "spark_outreach";
   // F-89 + F-93 — Workflow & Automations contains everything that fires on
   // its own. Webhooks + Audience Sync moved here from Settings.
-  if (path.includes("/spark_automations") || path.includes("/spark_journey_") || path.includes("/spark_ab_tests") || path.includes("/spark_approvals") || path.includes("/spark_workflow_triggers") || path.includes("/spark_anomaly_alerts") || path.includes("/spark_webhooks") || path.includes("/spark_inbound_webhooks") || path.includes("/spark_webhook_deliveries") || path.includes("/spark_audience_sync") || path.includes("/spark_scoring_rules") || path.includes("/spark_routing_rules") || path.includes("/spark_autotag_rules") || path.includes("/spark_lead_suppression") || path.includes("/spark_lead_territories")) return "spark_workflow";
+  // F-93 + rules consolidation (2026-05-28): spark_rules replaces the 3
+  // separate scoring/routing/autotag entries but old deep-links still
+  // expand the right group.
+  if (path.includes("/spark_automations") || path.includes("/spark_journey_") || path.includes("/spark_ab_tests") || path.includes("/spark_approvals") || path.includes("/spark_workflow_triggers") || path.includes("/spark_anomaly_alerts") || path.includes("/spark_webhooks") || path.includes("/spark_inbound_webhooks") || path.includes("/spark_webhook_deliveries") || path.includes("/spark_audience_sync") || path.includes("/spark_rules") || path.includes("/spark_scoring_rules") || path.includes("/spark_routing_rules") || path.includes("/spark_autotag_rules") || path.includes("/spark_lead_suppression") || path.includes("/spark_lead_territories")) return "spark_workflow";
   if (path.includes("/spark_forms") || path.includes("/spark_form_") || path.includes("/spark_landing_pages") || path.includes("/spark_qr_codes")) return "spark_capture";
   if (path.includes("/spark_leads") || path.includes("/spark_pipelines") || path.includes("/spark_deals") || path.includes("/spark_attribution")) return "spark_sales";
   if (path.includes("/spark_nps") || path.includes("/spark_reviews") || path.includes("/spark_review_") || path.includes("/spark_referrals")) return "spark_customer_success";
