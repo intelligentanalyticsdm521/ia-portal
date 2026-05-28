@@ -105,12 +105,16 @@ const OLIVER_NAV: SubNavConfig = {
       ],
     },
     {
-      // Billing — money in. Quotes & Recurring/Templates handled in the Job flow.
+      // Billing — money in + the templates you use to bill (invoice, quote,
+      // proposal). F-93: oliver_templates was previously in Settings; it's
+      // a feature (library you create/edit/use), so it belongs in main nav.
+      // Placed in Billing because the templates ARE billing artefacts.
       label: "Billing", icon: CreditCard, collapsible: true, sectionId: "oliver_billing",
       items: [
         { key: "oliver_invoices", label: "Invoices", route: "/app/services/oliver_invoices" },
         { key: "oliver_recurring", label: "Subscriptions", route: "/app/services/oliver_recurring" },
         { key: "oliver_payments", label: "Payments", route: "/app/services/oliver_payments" },
+        { key: "oliver_templates", label: "Templates", route: "/app/services/oliver_templates" },
       ],
     },
     {
@@ -314,6 +318,8 @@ const SPARK_NAV: SubNavConfig = {
     {
       // Outreach = the act of sending a message. Active work. Anything
       // that runs on a schedule or by trigger is in Workflow & Automations.
+      // Templates lives here (a feature with a library, not a setting) —
+      // single entry covering Email + SMS + Translations via tabs inside.
       label: "Outreach", icon: Megaphone, collapsible: true, sectionId: "spark_outreach",
       items: [
         { key: "spark_campaigns", label: "Campaigns", route: "/app/services/spark_campaigns" },
@@ -355,6 +361,11 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals" },
         { key: "spark_workflow_triggers", label: "Workflow Triggers", route: "/app/services/spark_workflow_triggers" },
         { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts" },
+        // F-93 — Webhooks + Audience Sync moved here from Settings. They
+        // are features (libraries you CRUD), event-driven, and conceptually
+        // "set it and forget it" — same mental model as Automations.
+        { key: "spark_webhooks", label: "Webhooks", route: "/app/services/spark_webhooks" },
+        { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync" },
         { key: "spark_scoring_rules", label: "Scoring Rules", route: "/app/services/spark_scoring_rules" },
         { key: "spark_routing_rules", label: "Routing Rules", route: "/app/services/spark_routing_rules" },
         { key: "spark_autotag_rules", label: "Auto-Tag Rules", route: "/app/services/spark_autotag_rules" },
@@ -379,6 +390,8 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_nps", label: "NPS", route: "/app/services/spark_nps" },
         { key: "spark_nps_schedules", label: "NPS Schedules", route: "/app/services/spark_nps_schedules" },
         { key: "spark_reviews", label: "Reputation Hub", route: "/app/services/spark_reviews" },
+        // F-93 — Review Widget stays here. It's a customer-facing widget
+        // feature you configure + share, not a toggle setting.
         { key: "spark_review_widget", label: "Review Widget", route: "/app/services/spark_review_widget" },
         { key: "spark_referrals", label: "Referrals", route: "/app/services/spark_referrals" },
       ],
@@ -412,6 +425,9 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_scheduled_reports", label: "Scheduled Reports", route: "/app/services/spark_scheduled_reports" },
         { key: "spark_realtime_metrics", label: "Real-Time Activity", route: "/app/services/spark_realtime_metrics" },
         { key: "spark_usage_report", label: "Usage", route: "/app/services/spark_usage_report" },
+        // F-93 — Audit Log moved here from Settings. It's a viewer feature
+        // (you READ the log), not a configuration toggle.
+        { key: "spark_audit_log", label: "Audit Log", route: "/app/services/spark_audit_log" },
       ],
     },
   ],
@@ -476,17 +492,26 @@ const PLACEHOLDER_NAV = (name: string, tagline: string): SubNavConfig => ({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// F-86 — Settings as its own IconRail destination.
+// F-86 + F-93 — Settings as its own IconRail destination.
 //
-// The gear in the IconRail no longer routes to a per-product settings PAGE;
-// it activates this Settings SubNav. The SubNav has one collapsible group per
-// product, each containing that product's configuration pages. Result:
-// "where do I configure X" has one answer no matter which product you're in,
-// matching the OLIVER pattern (settings is a separate concern from daily work).
+// F-93 TAXONOMY (locked 2026-05-28):
 //
-// The hamburger ☰ at the top right is STILL strictly cross-product (My
-// Account, Business Settings, Platform) — it doesn't touch per-product
-// settings any more.
+//   FEATURE = distinct piece of functionality. Library of items. Users
+//             *create*, *edit*, *use*. Example: Templates, Webhooks, Campaigns.
+//             → Lives in MAIN NAV, with modal-driven CRUD.
+//
+//   SETTING = customization option. Toggle / on-off / single value /
+//             pure config. Example: Quiet Hours, Custom Fields schema,
+//             Service Category. → Lives in this Settings SubNav.
+//
+//   GLOBAL  = set once across the whole platform. → Lives in the
+//             hamburger ☰ (Business Profile, Plan & Pricing, Team Members).
+//
+// Earlier I dumped ~22 SPARK items here without distinguishing. Founder
+// called it: Templates and Webhooks are features (with libraries), not
+// settings. Business Profile + Plan & Pricing are GLOBAL — already in
+// the hamburger, never in here. This rewrite applies the taxonomy
+// strictly.
 // ─────────────────────────────────────────────────────────────────────────────
 const SETTINGS_NAV: SubNavConfig = {
   productName: "Settings",
@@ -495,52 +520,53 @@ const SETTINGS_NAV: SubNavConfig = {
     {
       label: "ARION", icon: Monitor, collapsible: true, sectionId: "settings_arion",
       items: [
+        // Brand = brand colors/logos config (setting).
+        // Service Area = single-value config (setting).
+        // REMOVED: arion_plugin_provisioning (feature → main nav).
+        // REMOVED: arion_usage Plan & Pricing (global → hamburger).
         { key: "arion_brand", label: "Brand", route: "/app/services/arion_brand" },
-        { key: "arion_plugin_provisioning", label: "Plugin Provisioning", route: "/app/services/arion_plugin_provisioning" },
         { key: "arion_service_area", label: "Service Area", route: "/app/services/arion_service_area" },
-        { key: "arion_usage", label: "Plan & Pricing", route: "/app/services/arion_usage" },
       ],
     },
     {
       label: "OLIVER", icon: Wrench, collapsible: true, sectionId: "settings_oliver",
       items: [
+        // Business Setup = foundational config + Stripe connect (mixed
+        // but mostly setup — kept as setting).
+        // Workflow Settings = toggles for reschedule/no-show policy (setting).
+        // Service Categories = taxonomy config for worker skills (setting).
+        // Team Access = role assignment config (borderline; kept here for
+        // now — moving it out would force a separate Team Management page
+        // that doesn't justify its own main-nav slot).
+        // REMOVED: oliver_booking (feature, in main nav)
+        // REMOVED: oliver_portal_domains (feature, in main nav W&A)
+        // REMOVED: oliver_coupons (feature, in main nav Products & Services)
+        // REMOVED: oliver_categories (feature, in main nav Products & Services)
+        // REMOVED: oliver_templates (feature → moved to main nav Billing)
+        // REMOVED: oliver_addons (feature, in main nav W&A)
         { key: "oliver_settings", label: "Business Setup", route: "/app/services/oliver_settings" },
         { key: "oliver_workflow_settings", label: "Workflow Settings", route: "/app/services/oliver_workflow_settings" },
-        { key: "oliver_booking", label: "Booking Pages", route: "/app/services/oliver_booking" },
-        { key: "oliver_portal_domains", label: "Portals & Domains", route: "/app/services/oliver_portal_domains" },
         { key: "oliver_service_categories", label: "Service Categories", route: "/app/services/oliver_service_categories" },
         { key: "oliver_team_access", label: "Team Access", route: "/app/services/oliver_team_access" },
-        { key: "oliver_coupons", label: "Coupons", route: "/app/services/oliver_coupons" },
-        { key: "oliver_categories", label: "Categories", route: "/app/services/oliver_categories" },
-        { key: "oliver_templates", label: "Templates", route: "/app/services/oliver_templates" },
-        { key: "oliver_addons", label: "Add-ons", route: "/app/services/oliver_addons" },
       ],
     },
     {
       label: "SPARK", icon: Megaphone, collapsible: true, sectionId: "settings_spark",
       items: [
-        { key: "spark_account_profile", label: "Business Profile", route: "/app/services/spark_account_profile" },
+        // True settings only — every item is a toggle / single-value config
+        // / setup config. Features moved to main nav (Templates → Outreach,
+        // Webhooks + Audience Sync → Workflow & Automations, Review Widget
+        // → Customer Success, Audit Log → Reports). Business Profile +
+        // Plan & Pricing are global, live in hamburger.
         { key: "spark_sender_domains", label: "Sender Domains", route: "/app/services/spark_sender_domains" },
-        { key: "spark_email_templates", label: "Email Templates", route: "/app/services/spark_email_templates" },
-        { key: "spark_sms_templates", label: "SMS Templates", route: "/app/services/spark_sms_templates" },
-        { key: "spark_template_i18n", label: "Translations", route: "/app/services/spark_template_i18n" },
         { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys" },
-        { key: "spark_webhooks", label: "Outbound Webhooks", route: "/app/services/spark_webhooks" },
-        { key: "spark_inbound_webhooks", label: "Inbound Webhooks", route: "/app/services/spark_inbound_webhooks" },
-        { key: "spark_webhook_deliveries", label: "Webhook Deliveries", route: "/app/services/spark_webhook_deliveries" },
         { key: "spark_secrets", label: "Tenant Secrets", route: "/app/services/spark_secrets" },
         { key: "spark_custom_fields", label: "Custom Fields", route: "/app/services/spark_custom_fields" },
         { key: "spark_quiet_hours", label: "Quiet Hours", route: "/app/services/spark_quiet_hours" },
         { key: "spark_tracking", label: "Tracking Pixels", route: "/app/services/spark_tracking" },
-        { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync" },
         { key: "spark_calendar_sync", label: "Calendar Sync", route: "/app/services/spark_calendar_sync" },
         { key: "spark_service_category", label: "Service Category", route: "/app/services/spark_service_category" },
-        { key: "spark_review_widget", label: "Review Widget", route: "/app/services/spark_review_widget" },
-        { key: "spark_usage", label: "Plan & Pricing", route: "/app/services/spark_usage" },
-        { key: "spark_audit_log", label: "Audit Log", route: "/app/services/spark_audit_log" },
         { key: "spark_config_backup", label: "Config Backup", route: "/app/services/spark_config_backup" },
-        { key: "spark_api_reference", label: "API Reference", route: "/app/services/spark_api_reference" },
-        { key: "spark_engine_docs", label: "Engine Docs", route: "/app/services/spark_engine_docs" },
       ],
     },
     {
@@ -611,10 +637,24 @@ interface SubNavProps {
 // Determine which section should auto-expand based on current path.
 // Each entry maps a path predicate to a sectionId (which must match a group's sectionId).
 function getDefaultSection(path: string): string | null {
-  // Settings — collapse all but the active product's settings group
-  if (path.includes("/oliver_settings") || path.includes("/oliver_workflow_settings") || path.includes("/oliver_booking") || path.includes("/oliver_portal_domains") || path.includes("/oliver_service_categories") || path.includes("/oliver_team_access") || path.includes("/oliver_coupons") || path.includes("/oliver_categories") || path.includes("/oliver_templates") || path.includes("/oliver_addons")) return "settings_oliver";
-  if (path.includes("/arion_brand") || path.includes("/arion_plugin_provisioning") || path.includes("/arion_service_area") || path.includes("/arion_usage")) return "settings_arion";
-  if (path.includes("/spark_account_profile") || path.includes("/spark_sender_domains") || path.includes("/spark_email_templates") || path.includes("/spark_sms_templates") || path.includes("/spark_template_i18n") || path.includes("/spark_api_keys") || path.includes("/spark_webhooks") || path.includes("/spark_inbound_webhooks") || path.includes("/spark_webhook_deliveries") || path.includes("/spark_secrets") || path.includes("/spark_custom_fields") || path.includes("/spark_quiet_hours") || path.includes("/spark_tracking") || path.includes("/spark_audience_sync") || path.includes("/spark_calendar_sync") || path.includes("/spark_service_category") || path.includes("/spark_review_widget") || path.includes("/spark_usage") || path.includes("/spark_audit_log") || path.includes("/spark_config_backup") || path.includes("/spark_api_reference") || path.includes("/spark_engine_docs")) return "settings_spark";
+  // F-93 — Settings auto-expand. ONLY the routes that are CURRENTLY in
+  // Settings should expand a settings group. Routes that moved OUT to
+  // main nav (Templates, Webhooks, Audience Sync, Audit Log, Review Widget,
+  // Coupons, Categories, Booking, etc.) are intentionally excluded —
+  // they expand their main-nav group instead.
+  if (path.includes("/oliver_settings") || path.includes("/oliver_workflow_settings") || path.includes("/oliver_service_categories") || path.includes("/oliver_team_access")) return "settings_oliver";
+  if (path.includes("/arion_brand") || path.includes("/arion_service_area")) return "settings_arion";
+  if (
+    path.includes("/spark_sender_domains") ||
+    path.includes("/spark_api_keys") ||
+    path.includes("/spark_secrets") ||
+    path.includes("/spark_custom_fields") ||
+    path.includes("/spark_quiet_hours") ||
+    path.includes("/spark_tracking") ||
+    path.includes("/spark_calendar_sync") ||
+    path.includes("/spark_service_category") ||
+    path.includes("/spark_config_backup")
+  ) return "settings_spark";
 
   // ARION sections
   if (path.includes("arion_website_security") || path.includes("arion_website_performance") || path.includes("arion_website_updates")) return "security";
@@ -629,17 +669,20 @@ function getDefaultSection(path: string): string | null {
   // removed because hitting one of those routes opens the page directly
   // (e.g. /spark_audit_log) without needing a main-nav group to expand.
   if (path.includes("/spark_contacts") || path.includes("/spark_contact_") || path.includes("/spark_accounts") || path.includes("/spark_lists") || path.includes("/spark_tags") || path.includes("/spark_segments") || path.includes("/spark_health_score")) return "spark_crm";
-  if (path.includes("/spark_campaigns") || path.includes("/spark_email_templates") || path.includes("/spark_newsletter") || path.includes("/spark_social") || path.includes("/spark_sms_inbox") || path.includes("/spark_deliverability")) return "spark_outreach";
-  // F-89 — Workflow & Automations contains everything that fires on its
-  // own (multi-step automations + always-on rules). Auto-expands for ANY
-  // of those routes.
-  if (path.includes("/spark_automations") || path.includes("/spark_journey_") || path.includes("/spark_ab_tests") || path.includes("/spark_approvals") || path.includes("/spark_workflow_triggers") || path.includes("/spark_anomaly_alerts") || path.includes("/spark_scoring_rules") || path.includes("/spark_routing_rules") || path.includes("/spark_autotag_rules") || path.includes("/spark_lead_suppression") || path.includes("/spark_lead_territories")) return "spark_workflow";
+  // F-93 — Email Templates / SMS Templates / Translations all live under
+  // the SPARK_NAV "Templates" entry (Outreach group) now. They collapse
+  // into a single feature with channel tabs.
+  if (path.includes("/spark_campaigns") || path.includes("/spark_email_templates") || path.includes("/spark_sms_templates") || path.includes("/spark_template_i18n") || path.includes("/spark_newsletter") || path.includes("/spark_social") || path.includes("/spark_sms_inbox") || path.includes("/spark_deliverability")) return "spark_outreach";
+  // F-89 + F-93 — Workflow & Automations contains everything that fires on
+  // its own. Webhooks + Audience Sync moved here from Settings.
+  if (path.includes("/spark_automations") || path.includes("/spark_journey_") || path.includes("/spark_ab_tests") || path.includes("/spark_approvals") || path.includes("/spark_workflow_triggers") || path.includes("/spark_anomaly_alerts") || path.includes("/spark_webhooks") || path.includes("/spark_inbound_webhooks") || path.includes("/spark_webhook_deliveries") || path.includes("/spark_audience_sync") || path.includes("/spark_scoring_rules") || path.includes("/spark_routing_rules") || path.includes("/spark_autotag_rules") || path.includes("/spark_lead_suppression") || path.includes("/spark_lead_territories")) return "spark_workflow";
   if (path.includes("/spark_forms") || path.includes("/spark_form_") || path.includes("/spark_landing_pages") || path.includes("/spark_qr_codes")) return "spark_capture";
   if (path.includes("/spark_leads") || path.includes("/spark_pipelines") || path.includes("/spark_deals") || path.includes("/spark_attribution")) return "spark_sales";
   if (path.includes("/spark_nps") || path.includes("/spark_reviews") || path.includes("/spark_review_") || path.includes("/spark_referrals")) return "spark_customer_success";
   if (path.includes("/spark_ai_writer") || path.includes("/spark_intelligence") || path.includes("/spark_activity_stream")) return "spark_intelligence";
   if (path.includes("/spark_ia_insights_") || path.includes("/spark_stella")) return "spark_ia_insights";
-  if (path.includes("/spark_dashboards") || path.includes("/spark_analytics_reports") || path.includes("/spark_scheduled_reports") || path.includes("/spark_realtime_metrics") || path.includes("/spark_usage_report")) return "spark_reporting";
+  // F-93 — Audit Log moved from Settings → Reporting.
+  if (path.includes("/spark_dashboards") || path.includes("/spark_analytics_reports") || path.includes("/spark_scheduled_reports") || path.includes("/spark_realtime_metrics") || path.includes("/spark_usage_report") || path.includes("/spark_audit_log")) return "spark_reporting";
   // OLIVER sections (simplified nav 2026-05-25 — see OLIVER_NAV comment)
   //   - Removed entries for retired nav items (Projects, Schedule, Dispatch,
   //     Quotes-page, Billing Overview, Template Library, Operations *, Comms)
@@ -651,7 +694,8 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/oliver_contacts") || path.includes("/oliver_service_requests") || path.includes("/oliver_booking")) return "oliver_customers";
   if (path.includes("/oliver_catalog") || path.includes("/oliver_categories") || path.includes("/oliver_service_categories") || path.includes("/oliver_coupons")) return "oliver_products";
   if (path.includes("/oliver_expenses") || path.includes("/oliver_job_costing")) return "oliver_expenses";
-  if (path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders")) return "oliver_billing";
+  // F-93 — oliver_templates moved from Settings → Billing main nav.
+  if (path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders") || path.includes("/oliver_templates")) return "oliver_billing";
   if (path.includes("/oliver_ia_insights") || path.includes("/argus_cross_channel")) return "oliver_ia_insights";
   if (path.includes("/oliver_reports") || path.includes("/oliver_activity_log")) return "oliver_reporting";
   return null;
