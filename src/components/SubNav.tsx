@@ -308,18 +308,15 @@ const SPARK_NAV: SubNavConfig = {
       ],
     },
     {
+      // Outreach = the act of sending a message. Active work. Anything
+      // that runs on a schedule or by trigger is in Workflow & Automations.
       label: "Outreach", icon: Megaphone, collapsible: true, sectionId: "spark_outreach",
       items: [
         { key: "spark_campaigns", label: "Campaigns", route: "/app/services/spark_campaigns" },
         { key: "spark_email_templates", label: "Templates", route: "/app/services/spark_email_templates" },
-        { key: "spark_automations", label: "Automations", route: "/app/services/spark_automations" },
-        { key: "spark_journey_builder", label: "Journeys", route: "/app/services/spark_journey_builder" },
-        { key: "spark_ab_tests", label: "A/B Tests", route: "/app/services/spark_ab_tests" },
         { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter" },
         { key: "spark_social", label: "Social & Calendar", route: "/app/services/spark_social" },
         { key: "spark_sms_inbox", label: "SMS Inbox", route: "/app/services/spark_sms_inbox" },
-        // Approvals belongs with outreach — it's the campaign-send gate, not a setting.
-        { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals" },
         { key: "spark_deliverability", label: "Deliverability", route: "/app/services/spark_deliverability" },
       ],
     },
@@ -333,11 +330,40 @@ const SPARK_NAV: SubNavConfig = {
       ],
     },
     {
+      // F-89 — Workflow & Automations group, recognition-mirror of OLIVER's
+      // same-named group. The mental model is "set it and forget it" — things
+      // SPARK runs on its own, without you sending the message.
+      //
+      // Two sub-flavors live here:
+      //   - Multi-step processes: Automations, Journeys, A/B Tests, Approvals,
+      //     Workflow Triggers (the event sources that fire automations).
+      //   - Always-on rules: Scoring, Routing, Auto-Tag, Lead Suppression,
+      //     Lead Territories, Anomaly Alerts (data-driven notifications).
+      //
+      // Keeping them in one group rather than two avoids the user having to
+      // decide which sub-bucket their thing lives in — they all share the
+      // mental model "configurable behavior that fires automatically".
+      label: "Workflow & Automations", icon: Zap, collapsible: true, sectionId: "spark_workflow",
+      items: [
+        { key: "spark_automations", label: "Automations", route: "/app/services/spark_automations" },
+        { key: "spark_journey_builder", label: "Journeys", route: "/app/services/spark_journey_builder" },
+        { key: "spark_ab_tests", label: "A/B Tests", route: "/app/services/spark_ab_tests" },
+        { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals" },
+        { key: "spark_workflow_triggers", label: "Workflow Triggers", route: "/app/services/spark_workflow_triggers" },
+        { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts" },
+        { key: "spark_scoring_rules", label: "Scoring Rules", route: "/app/services/spark_scoring_rules" },
+        { key: "spark_routing_rules", label: "Routing Rules", route: "/app/services/spark_routing_rules" },
+        { key: "spark_autotag_rules", label: "Auto-Tag Rules", route: "/app/services/spark_autotag_rules" },
+        { key: "spark_lead_suppression", label: "Lead Suppression", route: "/app/services/spark_lead_suppression" },
+        { key: "spark_lead_territories", label: "Lead Territories", route: "/app/services/spark_lead_territories" },
+      ],
+    },
+    {
+      // Sales = active human work on leads/deals. Sales rules (scoring,
+      // routing, suppression, territories) moved up to Workflow & Automations.
       label: "Sales", icon: Briefcase, collapsible: true, sectionId: "spark_sales",
       items: [
         { key: "spark_leads", label: "Lead Inbox", route: "/app/services/spark_leads" },
-        { key: "spark_lead_territories", label: "Lead Territories", route: "/app/services/spark_lead_territories" },
-        { key: "spark_lead_suppression", label: "Lead Suppression", route: "/app/services/spark_lead_suppression" },
         { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines" },
         { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals" },
         { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution" },
@@ -381,7 +407,6 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_analytics_reports", label: "Analytics Reports", route: "/app/services/spark_analytics_reports" },
         { key: "spark_scheduled_reports", label: "Scheduled Reports", route: "/app/services/spark_scheduled_reports" },
         { key: "spark_realtime_metrics", label: "Real-Time Activity", route: "/app/services/spark_realtime_metrics" },
-        { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts" },
         { key: "spark_usage_report", label: "Usage", route: "/app/services/spark_usage_report" },
       ],
     },
@@ -600,13 +625,17 @@ function getDefaultSection(path: string): string | null {
   // removed because hitting one of those routes opens the page directly
   // (e.g. /spark_audit_log) without needing a main-nav group to expand.
   if (path.includes("/spark_contacts") || path.includes("/spark_contact_") || path.includes("/spark_accounts") || path.includes("/spark_lists") || path.includes("/spark_tags") || path.includes("/spark_segments") || path.includes("/spark_health_score")) return "spark_crm";
-  if (path.includes("/spark_campaigns") || path.includes("/spark_email_templates") || path.includes("/spark_automations") || path.includes("/spark_journey_") || path.includes("/spark_ab_tests") || path.includes("/spark_newsletter") || path.includes("/spark_social") || path.includes("/spark_sms_") || path.includes("/spark_approvals") || path.includes("/spark_deliverability")) return "spark_outreach";
+  if (path.includes("/spark_campaigns") || path.includes("/spark_email_templates") || path.includes("/spark_newsletter") || path.includes("/spark_social") || path.includes("/spark_sms_inbox") || path.includes("/spark_deliverability")) return "spark_outreach";
+  // F-89 — Workflow & Automations contains everything that fires on its
+  // own (multi-step automations + always-on rules). Auto-expands for ANY
+  // of those routes.
+  if (path.includes("/spark_automations") || path.includes("/spark_journey_") || path.includes("/spark_ab_tests") || path.includes("/spark_approvals") || path.includes("/spark_workflow_triggers") || path.includes("/spark_anomaly_alerts") || path.includes("/spark_scoring_rules") || path.includes("/spark_routing_rules") || path.includes("/spark_autotag_rules") || path.includes("/spark_lead_suppression") || path.includes("/spark_lead_territories")) return "spark_workflow";
   if (path.includes("/spark_forms") || path.includes("/spark_form_") || path.includes("/spark_landing_pages") || path.includes("/spark_qr_codes")) return "spark_capture";
-  if (path.includes("/spark_leads") || path.includes("/spark_lead_") || path.includes("/spark_pipelines") || path.includes("/spark_deals") || path.includes("/spark_attribution")) return "spark_sales";
+  if (path.includes("/spark_leads") || path.includes("/spark_pipelines") || path.includes("/spark_deals") || path.includes("/spark_attribution")) return "spark_sales";
   if (path.includes("/spark_nps") || path.includes("/spark_reviews") || path.includes("/spark_review_") || path.includes("/spark_referrals")) return "spark_customer_success";
   if (path.includes("/spark_ai_writer") || path.includes("/spark_intelligence") || path.includes("/spark_activity_stream")) return "spark_intelligence";
   if (path.includes("/spark_ia_insights_") || path.includes("/spark_stella")) return "spark_ia_insights";
-  if (path.includes("/spark_dashboards") || path.includes("/spark_analytics_reports") || path.includes("/spark_scheduled_reports") || path.includes("/spark_realtime_metrics") || path.includes("/spark_anomaly_alerts") || path.includes("/spark_usage_report")) return "spark_reporting";
+  if (path.includes("/spark_dashboards") || path.includes("/spark_analytics_reports") || path.includes("/spark_scheduled_reports") || path.includes("/spark_realtime_metrics") || path.includes("/spark_usage_report")) return "spark_reporting";
   // OLIVER sections (simplified nav 2026-05-25 — see OLIVER_NAV comment)
   //   - Removed entries for retired nav items (Projects, Schedule, Dispatch,
   //     Quotes-page, Billing Overview, Template Library, Operations *, Comms)
