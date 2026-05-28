@@ -67,10 +67,9 @@ const DEFAULT_SMS: SmsTemplate = {
 };
 
 export function SparkTemplateEditorModal({ open, onClose, channel, templateId, onChanged }: Props) {
-  const { get, post, put, patch, del, ready } = useSparkApi() as {
+  const { get, post, patch, del, ready } = useSparkApi() as {
     get: <T>(p: string) => Promise<T>;
     post: <T>(p: string, body?: unknown) => Promise<T>;
-    put: <T>(p: string, body?: unknown) => Promise<T>;
     patch: <T>(p: string, body?: unknown) => Promise<T>;
     del: <T>(p: string) => Promise<T>;
     ready: boolean;
@@ -122,17 +121,30 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
     setError(null);
     try {
       if (channel === "email") {
+        // POST requires name + subject + body_html; PATCH allows partial
+        // updates including is_active. There is NO PUT — the LUMEN-API
+        // mutation verb for email templates is PATCH.
         if (!email.name.trim()) { setError("Name is required."); setSaving(false); return; }
         if (templateId == null) {
-          await post(`/api/v1/email-templates`, email);
+          if (!email.subject.trim()) { setError("Subject is required for new email templates."); setSaving(false); return; }
+          if (!email.body_html.trim()) { setError("Body HTML is required for new email templates."); setSaving(false); return; }
+          // POST does NOT accept is_active — strip it on create (defaults to active=1 server-side).
+          const { is_active: _ignore, ...createPayload } = email;
+          await post(`/api/v1/email-templates`, createPayload);
         } else {
-          await put(`/api/v1/email-templates/${templateId}`, email);
+          // PATCH accepts every editable field including is_active.
+          await patch(`/api/v1/email-templates/${templateId}`, email);
         }
       } else {
+        // SMS POST allow-list: template_key, name, description, category, body.
+        //   (is_active NOT in POST allow-list — defaults to 1 server-side.)
+        // SMS PATCH allow-list: name, description, category, body, template_key,
+        //   is_active (separately handled in the PATCH route).
         if (!sms.name.trim()) { setError("Name is required."); setSaving(false); return; }
         if (!sms.body.trim()) { setError("Body is required."); setSaving(false); return; }
         if (templateId == null) {
-          await post(`/api/v1/sms-templates`, sms);
+          const { is_active: _ignore, ...createPayload } = sms;
+          await post(`/api/v1/sms-templates`, createPayload);
         } else {
           await patch(`/api/v1/sms-templates/${templateId}`, sms);
         }
@@ -216,12 +228,16 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
                     <option value="system">System</option>
                   </select>
                 </Row>
-                <Row label="Active">
-                  <label className="flex items-center gap-2 mt-1.5">
-                    <input type="checkbox" checked={email.is_active} onChange={(e) => setEmail({ ...email, is_active: e.target.checked })} />
-                    <span className="text-sm">Template is active</span>
-                  </label>
-                </Row>
+                {isEdit ? (
+                  <Row label="Active">
+                    <label className="flex items-center gap-2 mt-1.5">
+                      <input type="checkbox" checked={email.is_active} onChange={(e) => setEmail({ ...email, is_active: e.target.checked })} />
+                      <span className="text-sm">Template is active</span>
+                    </label>
+                  </Row>
+                ) : (
+                  <div />
+                )}
               </div>
               <Row label="Subject">
                 <input value={email.subject} onChange={(e) => setEmail({ ...email, subject: e.target.value })} className="spark-input" placeholder="Welcome to {{tenant.name}}" />
@@ -274,12 +290,16 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
                     <option value="system">System</option>
                   </select>
                 </Row>
-                <Row label="Active">
-                  <label className="flex items-center gap-2 mt-1.5">
-                    <input type="checkbox" checked={sms.is_active} onChange={(e) => setSms({ ...sms, is_active: e.target.checked })} />
-                    <span className="text-sm">Template is active</span>
-                  </label>
-                </Row>
+                {isEdit ? (
+                  <Row label="Active">
+                    <label className="flex items-center gap-2 mt-1.5">
+                      <input type="checkbox" checked={sms.is_active} onChange={(e) => setSms({ ...sms, is_active: e.target.checked })} />
+                      <span className="text-sm">Template is active</span>
+                    </label>
+                  </Row>
+                ) : (
+                  <div />
+                )}
               </div>
               <Row label="SMS body">
                 <textarea
