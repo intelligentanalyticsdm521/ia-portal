@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
@@ -75,9 +76,15 @@ export function SparkLeadsPage() {
               </button>
             ))}
           </div>
-          <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+          {/* F-90 — Was a dead button. "New Search" creates a lead-gen
+              search profile, which is what fills this inbox. Send the user
+              to the search profile setup page. */}
+          <Link
+            to="/app/services/spark_search_profiles"
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
             New Search
-          </button>
+          </Link>
         </div>
 
         <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">

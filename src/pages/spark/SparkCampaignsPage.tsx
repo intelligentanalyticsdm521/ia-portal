@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { EmbeddedReportChart, type ReportSeriesResponse } from "../../components/reporting/EmbeddedReportChart";
+import { SparkCampaignComposerModal } from "../../components/spark/SparkCampaignComposerModal";
 
 interface Campaign {
   id: string;
@@ -22,25 +23,24 @@ export function SparkCampaignsPage() {
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"email" | "sms">("email");
+  // F-90 — dead "Create Campaign" button now opens the composer modal.
+  const [composerOpen, setComposerOpen] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!ready) return;
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const raw = await get<{ data: Campaign[] }>("/api/v1/campaigns");
-        if (!cancelled) setCampaigns(raw.data || []);
-      } catch (err) {
-        if (!cancelled) setError(err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+    setLoading(true);
+    setError(null);
+    try {
+      const raw = await get<{ data: Campaign[] }>("/api/v1/campaigns");
+      setCampaigns(raw.data || []);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
     }
-    load();
-    return () => { cancelled = true; };
   }, [get, ready]);
+
+  useEffect(() => { load(); }, [load]);
 
   const filtered = campaigns.filter((c) => c.channel === tab);
 
@@ -102,8 +102,11 @@ export function SparkCampaignsPage() {
               </button>
             ))}
           </div>
-          <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-            Create Campaign
+          <button
+            onClick={() => setComposerOpen(true)}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            + New campaign
           </button>
         </div>
 
@@ -139,6 +142,12 @@ export function SparkCampaignsPage() {
           </table>
         </div>
       </div>
+
+      <SparkCampaignComposerModal
+        open={composerOpen}
+        onClose={() => setComposerOpen(false)}
+        onCreated={() => { setComposerOpen(false); load(); }}
+      />
     </OliverPageWrapper>
   );
 }
