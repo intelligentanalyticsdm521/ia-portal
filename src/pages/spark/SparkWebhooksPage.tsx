@@ -1,8 +1,36 @@
 // SparkWebhooksPage — Manage outbound webhook subscriptions.
+// F-92 — tab strip at top of body lets users switch to inbound without
+// returning to a separate nav entry. SPARK_NAV "Webhooks" entry points
+// at THIS page (outbound is the default view); the tab strip handles
+// the channel switch.
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
-import { Plus, Trash2, Copy, Check, Send, Activity } from "lucide-react";
+import { Plus, Trash2, Copy, Check, Send, Activity, Inbox } from "lucide-react";
+
+function WebhooksTabStrip({ active }: { active: "outbound" | "inbound" }) {
+  return (
+    <div className="mb-4 flex items-center gap-1 rounded-lg bg-slate-100 p-1 w-fit">
+      <Link
+        to="/app/services/spark_webhooks"
+        className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+          active === "outbound" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+        }`}
+      >
+        <Send className="h-3.5 w-3.5" /> Outbound
+      </Link>
+      <Link
+        to="/app/services/spark_inbound_webhooks"
+        className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+          active === "inbound" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+        }`}
+      >
+        <Inbox className="h-3.5 w-3.5" /> Inbound
+      </Link>
+    </div>
+  );
+}
 
 interface Subscription {
   id: number; name: string; target_url: string; events: string;
@@ -101,6 +129,7 @@ export function SparkWebhooksPage() {
       loading={loading}
       error={error}
     >
+      <WebhooksTabStrip active="outbound" />
       {showSecret && (
         <div className="rounded-lg border-2 border-emerald-300 bg-emerald-50 p-4 mb-4">
           <div className="text-sm font-bold text-emerald-900">Your signing secret is ready</div>

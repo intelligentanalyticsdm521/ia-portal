@@ -1,8 +1,36 @@
 // SparkInboundWebhooksPage — Manage inbound webhook receivers.
+// F-92 — tab strip at top of body lets users switch back to outbound
+// without a separate nav entry. SPARK_NAV "Webhooks" entry points at
+// spark_webhooks (outbound is the default); the tab strip handles the
+// channel switch.
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
-import { Plus, Copy, Check, Trash2, Inbox, AlertCircle } from "lucide-react";
+import { Plus, Copy, Check, Trash2, Inbox, AlertCircle, Send } from "lucide-react";
+
+function WebhooksTabStrip({ active }: { active: "outbound" | "inbound" }) {
+  return (
+    <div className="mb-4 flex items-center gap-1 rounded-lg bg-slate-100 p-1 w-fit">
+      <Link
+        to="/app/services/spark_webhooks"
+        className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+          active === "outbound" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+        }`}
+      >
+        <Send className="h-3.5 w-3.5" /> Outbound
+      </Link>
+      <Link
+        to="/app/services/spark_inbound_webhooks"
+        className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+          active === "inbound" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+        }`}
+      >
+        <Inbox className="h-3.5 w-3.5" /> Inbound
+      </Link>
+    </div>
+  );
+}
 
 type Action = "create_contact" | "log_only" | "fire_event";
 interface Hook {
@@ -110,6 +138,7 @@ export function SparkInboundWebhooksPage() {
       loading={loading}
       error={error}
     >
+      <WebhooksTabStrip active="inbound" />
       {showSecret && (
         <div className="rounded-lg border-2 border-emerald-300 bg-emerald-50 p-4 mb-4">
           <div className="text-sm font-bold text-emerald-900">Webhook ready</div>
