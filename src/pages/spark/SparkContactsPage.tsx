@@ -4,6 +4,7 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkDrawer } from "../../components/spark/SparkDrawer";
+import { SparkContactModal } from "../../components/spark/SparkContactModal";
 import { SparkTable, type SparkTableColumn } from "../../components/spark/SparkTable";
 import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
 import { SparkSearchBox } from "../../components/spark/SparkSearchBox";
@@ -437,16 +438,16 @@ export function SparkContactsPage() {
         </div>
       </SparkDrawer>
 
-      {/* Contact detail drawer */}
-      <SparkDrawer
+      {/* F-88 — Contact detail is now a unified modal (centered, tabbed)
+          instead of a side-panel drawer. Mirrors OLIVER's CustomerModal
+          pattern: one place to view + edit + see activity + take action,
+          so users don't have to bounce between pages to do common work. */}
+      <SparkContactModal
+        contactId={drawer === "detail" && detail ? detail.id : null}
         open={drawer === "detail" && !!detail}
         onClose={() => { setDrawer(null); setDetail(null); }}
-        title={detail ? `${detail.first_name || ""} ${detail.last_name || ""}`.trim() || detail.email || "Contact" : ""}
-        subtitle={detail?.email || detail?.phone || undefined}
-        width="wide"
-      >
-        {detail && <ContactDetail contact={detail} />}
-      </SparkDrawer>
+        onChanged={() => { load(); }}
+      />
     </SparkPageShell>
   );
 }
@@ -508,80 +509,7 @@ function EmptyContactsState({ onAdd, onImport }: { onAdd: () => void; onImport: 
   );
 }
 
-function ContactDetail({ contact }: { contact: Contact }) {
-  return (
-    <>
-      {/* Score + Activity strip */}
-      <div className="grid grid-cols-3 gap-2 mb-4">
-        <div className="bg-slate-50 border border-slate-200 rounded-md p-2.5">
-          <div className="text-[10px] uppercase text-slate-500 font-semibold">Tier</div>
-          <div className="mt-1"><ScoreBadge tier={contact.contact_intelligence_tier} score={contact.contact_intelligence_score} /></div>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded-md p-2.5">
-          <div className="text-[10px] uppercase text-slate-500 font-semibold">Source</div>
-          <div className="mt-1 text-sm capitalize">{contact.source?.replace(/_/g, " ") || "—"}</div>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded-md p-2.5">
-          <div className="text-[10px] uppercase text-slate-500 font-semibold">Added</div>
-          <div className="mt-1 text-sm">{new Date(contact.created_at).toLocaleDateString()}</div>
-        </div>
-      </div>
-
-      {/* Profile */}
-      <h4 className="text-xs font-semibold uppercase text-slate-600 mb-2 tracking-wide">Profile</h4>
-      <div className="space-y-1.5 mb-4">
-        <DetailRow icon={Mail} label="Email" value={contact.email} />
-        <DetailRow icon={Phone} label="Phone" value={contact.phone} />
-        <DetailRow icon={Building2} label="Company" value={contact.account_name || contact.company} sub={contact.account_domain} />
-      </div>
-
-      {/* Status flags */}
-      {(contact.email_unsubscribed || contact.email_invalid || contact.sms_unsubscribed) && (
-        <>
-          <h4 className="text-xs font-semibold uppercase text-slate-600 mb-2 tracking-wide">Status flags</h4>
-          <div className="space-y-1 mb-4">
-            {contact.email_unsubscribed && <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">⚠ Email unsubscribed — will not receive campaigns</div>}
-            {contact.email_invalid && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">⚠ Email marked invalid</div>}
-            {contact.sms_unsubscribed && <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">⚠ SMS unsubscribed</div>}
-          </div>
-        </>
-      )}
-
-      {/* Tags */}
-      {contact.tag_names && (
-        <>
-          <h4 className="text-xs font-semibold uppercase text-slate-600 mb-2 tracking-wide">Tags</h4>
-          <div className="flex flex-wrap gap-1 mb-4">
-            {contact.tag_names.split(",").map(t => t.trim()).filter(Boolean).map(t => (
-              <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">{t}</span>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* Activity placeholder */}
-      <h4 className="text-xs font-semibold uppercase text-slate-600 mb-2 tracking-wide flex items-center gap-1">
-        <Activity className="h-3 w-3" /> Recent activity
-      </h4>
-      <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md p-3 text-center">
-        Activity timeline coming with v2 — opens/clicks/replies will appear here.
-      </div>
-    </>
-  );
-}
-
-function DetailRow({ icon: Icon, label, value, sub }: { icon: typeof Mail; label: string; value: string | null | undefined; sub?: string | null }) {
-  if (!value) return null;
-  return (
-    <div className="flex items-start gap-2 text-sm">
-      <Icon className="h-3.5 w-3.5 text-slate-400 mt-0.5 flex-shrink-0" />
-      <div className="min-w-0 flex-1">
-        <div className="text-[10px] uppercase text-slate-500">{label}</div>
-        <div className="text-slate-900 truncate">{value}</div>
-        {sub && <div className="text-[11px] text-slate-500">{sub}</div>}
-      </div>
-    </div>
-  );
-}
+// F-88 — ContactDetail + DetailRow side-panel helpers removed; replaced
+// by the centered SparkContactModal (full tabbed UI) imported above.
 
 export default SparkContactsPage;
