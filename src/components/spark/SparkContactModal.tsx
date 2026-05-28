@@ -52,17 +52,21 @@ interface ContactFull extends ContactLite {
   address_state?: string;
   address_zip?: string;
   tags?: Array<{ id: number; name: string; color?: string | null }>;
-  notes?: Array<{ id: number; body: string; created_at: string; author_email?: string | null }>;
+  // API shape (verified against routes/contacts.js GET /:id):
+  //   { id, content, author, created_at, ... }
+  // (Previously I had wrong field names body/author_email — D-06/D-07.)
+  notes?: Array<{ id: number; content: string; created_at: string; author?: string | null }>;
 }
 
 interface ActivityEvent {
+  // API shape (verified against routes/contacts.js GET /:id/activity):
+  //   { id, event_type, channel, metadata, occurred_at }
+  // metadata is a JSON column. (Previously I had wrong field 'detail' — D-05.)
   id?: number;
   event_type: string;
   occurred_at: string;
-  detail?: string | null;
-  campaign_id?: number | null;
-  template_id?: number | null;
-  source?: string | null;
+  channel?: string | null;
+  metadata?: string | null;
 }
 
 type Tab = "overview" | "activity" | "notes" | "tags" | "danger";
@@ -189,11 +193,12 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
     if (!contactId || !newNote.trim()) return;
     setPostingNote(true);
     try {
-      await post(`/api/v1/contacts/${contactId}/notes`, { body: newNote.trim() });
+      // D-04 — API requires `content`, NOT `body`. Earlier shipped version
+      // sent {body:...} → 400. Verified against routes/contacts.js POST /:id/notes.
+      await post(`/api/v1/contacts/${contactId}/notes`, { content: newNote.trim() });
       setNewNote("");
       await reload();
     } catch (err) {
-      // Notes endpoint may not exist on every deployment — show inline error
       setError(err);
     } finally {
       setPostingNote(false);
@@ -385,17 +390,31 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
               )}
               {activity && activity.length > 0 && (
                 <ul className="space-y-2">
-                  {activity.map((e, i) => (
-                    <li key={i} className="flex items-start gap-3 border-l-2 border-slate-200 pl-3 py-1">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium text-slate-900">{e.event_type}</div>
-                        {e.detail && <div className="text-[11px] text-slate-600 truncate">{e.detail}</div>}
-                      </div>
-                      <div className="text-[10px] text-slate-400 tabular-nums whitespace-nowrap">
-                        {new Date(e.occurred_at).toLocaleString()}
-                      </div>
-                    </li>
-                  ))}
+                  {activity.map((e, i) => {
+                    // metadata is a JSON column on lumen.communication_event.
+                    // Try to parse and surface a short detail line.
+                    let detail: string | null = null;
+                    if (e.metadata) {
+                      try {
+                        const m = typeof e.metadata === "string" ? JSON.parse(e.metadata) : e.metadata;
+                        detail = m?.subject || m?.body || m?.title || m?.summary || null;
+                      } catch { /* keep null */ }
+                    }
+                    return (
+                      <li key={i} className="flex items-start gap-3 border-l-2 border-slate-200 pl-3 py-1">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-slate-900 flex items-center gap-1.5">
+                            <span>{e.event_type}</span>
+                            {e.channel && <span className="text-[9px] uppercase font-bold px-1 py-px rounded bg-slate-200 text-slate-600">{e.channel}</span>}
+                          </div>
+                          {detail && <div className="text-[11px] text-slate-600 truncate">{detail}</div>}
+                        </div>
+                        <div className="text-[10px] text-slate-400 tabular-nums whitespace-nowrap">
+                          {new Date(e.occurred_at).toLocaleString()}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
@@ -425,9 +444,9 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
                 <ul className="space-y-2">
                   {contact.notes.map((n) => (
                     <li key={n.id} className="rounded bg-slate-50 border border-slate-200 p-2.5">
-                      <div className="text-xs text-slate-700 whitespace-pre-wrap">{n.body}</div>
+                      <div className="text-xs text-slate-700 whitespace-pre-wrap">{n.content}</div>
                       <div className="mt-1 text-[10px] text-slate-400">
-                        {n.author_email || "—"} · {new Date(n.created_at).toLocaleString()}
+                        {n.author || "—"} · {new Date(n.created_at).toLocaleString()}
                       </div>
                     </li>
                   ))}

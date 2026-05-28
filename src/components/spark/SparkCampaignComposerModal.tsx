@@ -12,7 +12,7 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 type Channel = "email" | "sms";
 type Step = "channel" | "compose";
 
-interface List { id: number; name: string; member_count?: number }
+interface List { id: number; name: string; contact_count?: number }
 
 interface Props {
   open: boolean;
@@ -183,7 +183,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated }: Props) 
                 >
                   <option value="">— Pick a list (or leave blank for now) —</option>
                   {lists.map((l) => (
-                    <option key={l.id} value={l.id}>{l.name}{l.member_count != null ? ` (${l.member_count})` : ""}</option>
+                    <option key={l.id} value={l.id}>{l.name}{l.contact_count != null ? ` (${l.contact_count})` : ""}</option>
                   ))}
                 </select>
                 <p className="text-[11px] text-slate-500 mt-0.5">You can change recipients before sending.</p>
