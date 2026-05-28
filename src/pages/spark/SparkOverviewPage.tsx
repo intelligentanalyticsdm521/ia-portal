@@ -10,7 +10,7 @@ import {
   PieChart, Pie, Cell, Legend,
 } from "recharts";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { TimeRangeSelector, rangeForPreset } from "../../components/oliver/ui";
 import { ArgusInsightBox } from "../../components/oliver/ArgusInsightBox";
 import { Sparkline } from "../../components/iainsights/Sparkline";
@@ -182,7 +182,7 @@ export function SparkOverviewPage() {
   }, [growth, comm, nps, leads]);
 
   return (
-    <OliverPageWrapper title="SPARK Overview" subtitle="Your marketing + sales command center" error={error} loading={loading}>
+    <SparkPageShell title="SPARK Overview" subtitle="Your marketing + sales command center" error={error} loading={loading}>
       <div className="p-6 space-y-6">
 
         {/* F-87 — Get Started banner. Self-hides when required steps are
@@ -411,7 +411,7 @@ export function SparkOverviewPage() {
           </div>
         </Card>
       </div>
-    </OliverPageWrapper>
+    </SparkPageShell>
   );
 }
 

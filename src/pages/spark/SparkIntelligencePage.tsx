@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
 
 interface TierDistribution {
   tier: string;
@@ -88,7 +88,7 @@ export function SparkIntelligencePage() {
   const filtered = tab === "all" ? contacts : contacts.filter((c) => c.contact_intelligence_tier === tab);
 
   return (
-    <OliverPageWrapper title="Contact Intelligence" subtitle="X/Y/Z scoring with cross-platform signals" error={error} loading={loading}>
+    <SparkPageShell title="Contact Intelligence" subtitle="X/Y/Z scoring with cross-platform signals" error={error} loading={loading}>
       <div className="p-6 space-y-6">
         {/* Tier summary cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -167,6 +167,6 @@ export function SparkIntelligencePage() {
           </table>
         </div>
       </div>
-    </OliverPageWrapper>
+    </SparkPageShell>
   );
 }

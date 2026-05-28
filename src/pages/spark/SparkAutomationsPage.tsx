@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { Plus, Settings, Zap, Trash2 } from "lucide-react";
 
 interface Automation {
@@ -66,7 +66,7 @@ export function SparkAutomationsPage() {
   );
 
   return (
-    <OliverPageWrapper title="Automations" subtitle="Trigger-based workflows that run automatically" error={error} loading={loading}>
+    <SparkPageShell title="Automations" subtitle="Trigger-based workflows that run automatically" error={error} loading={loading}>
       <div className="p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
@@ -154,7 +154,7 @@ export function SparkAutomationsPage() {
           </div>
         )}
       </div>
-    </OliverPageWrapper>
+    </SparkPageShell>
   );
 }
 

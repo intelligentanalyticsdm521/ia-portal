@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
 
 interface Lead {
   id: string;
@@ -62,7 +62,7 @@ export function SparkLeadsPage() {
   }
 
   return (
-    <OliverPageWrapper title="Lead Inbox" subtitle="B2B leads with scoring and actions" error={error} loading={loading}>
+    <SparkPageShell title="Lead Inbox" subtitle="B2B leads with scoring and actions" error={error} loading={loading}>
       <div className="p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
@@ -132,6 +132,6 @@ export function SparkLeadsPage() {
           </table>
         </div>
       </div>
-    </OliverPageWrapper>
+    </SparkPageShell>
   );
 }

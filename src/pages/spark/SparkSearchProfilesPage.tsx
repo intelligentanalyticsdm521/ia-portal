@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
 
 interface SearchProfile {
   id: string;
@@ -57,7 +57,7 @@ export function SparkSearchProfilesPage() {
   }
 
   return (
-    <OliverPageWrapper title="Search Profiles" subtitle="Saved lead search configurations" error={error} loading={loading}>
+    <SparkPageShell title="Search Profiles" subtitle="Saved lead search configurations" error={error} loading={loading}>
       <div className="p-6 space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-sm text-slate-500">{profiles.length} profile{profiles.length !== 1 ? "s" : ""}</p>
@@ -150,6 +150,6 @@ export function SparkSearchProfilesPage() {
           </div>
         )}
       </div>
-    </OliverPageWrapper>
+    </SparkPageShell>
   );
 }

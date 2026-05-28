@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { EmbeddedReportChart, type ReportSeriesResponse } from "../../components/reporting/EmbeddedReportChart";
 import { SparkCampaignComposerModal } from "../../components/spark/SparkCampaignComposerModal";
 
@@ -75,7 +75,7 @@ export function SparkCampaignsPage() {
   }
 
   return (
-    <OliverPageWrapper title="Campaigns" subtitle="Email and SMS campaign management" error={error} loading={loading}>
+    <SparkPageShell title="Campaigns" subtitle="Email and SMS campaign management" error={error} loading={loading}>
       <div className="p-6 space-y-4">
         {/* v7.2 — Embedded Campaign Performance from the IA Insights Trends
             engine. Date toggles + "View full report" link to the full
@@ -148,6 +148,6 @@ export function SparkCampaignsPage() {
         onClose={() => setComposerOpen(false)}
         onCreated={() => { setComposerOpen(false); load(); }}
       />
-    </OliverPageWrapper>
+    </SparkPageShell>
   );
 }

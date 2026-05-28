@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
 
 interface SparkForm {
   id: string;
@@ -68,7 +68,7 @@ export function SparkFormsPage() {
   }
 
   return (
-    <OliverPageWrapper title="Forms" subtitle="Form builder with hosted URLs and embedded widgets" error={error} loading={loading}>
+    <SparkPageShell title="Forms" subtitle="Form builder with hosted URLs and embedded widgets" error={error} loading={loading}>
       <div className="p-6 space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-sm text-slate-500">{forms.length} form{forms.length !== 1 ? "s" : ""}</p>
@@ -167,6 +167,6 @@ export function SparkFormsPage() {
           </div>
         )}
       </div>
-    </OliverPageWrapper>
+    </SparkPageShell>
   );
 }
