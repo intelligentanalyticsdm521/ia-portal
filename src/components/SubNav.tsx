@@ -446,6 +446,102 @@ const PLACEHOLDER_NAV = (name: string, tagline: string): SubNavConfig => ({
   ],
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// F-86 — Settings as its own IconRail destination.
+//
+// The gear in the IconRail no longer routes to a per-product settings PAGE;
+// it activates this Settings SubNav. The SubNav has one collapsible group per
+// product, each containing that product's configuration pages. Result:
+// "where do I configure X" has one answer no matter which product you're in,
+// matching the OLIVER pattern (settings is a separate concern from daily work).
+//
+// The hamburger ☰ at the top right is STILL strictly cross-product (My
+// Account, Business Settings, Platform) — it doesn't touch per-product
+// settings any more.
+// ─────────────────────────────────────────────────────────────────────────────
+const SETTINGS_NAV: SubNavConfig = {
+  productName: "Settings",
+  tagline: "Per-product configuration",
+  groups: [
+    {
+      label: "ARION", icon: Monitor, collapsible: true, sectionId: "settings_arion",
+      items: [
+        { key: "arion_brand", label: "Brand", route: "/app/services/arion_brand" },
+        { key: "arion_plugin_provisioning", label: "Plugin Provisioning", route: "/app/services/arion_plugin_provisioning" },
+        { key: "arion_service_area", label: "Service Area", route: "/app/services/arion_service_area" },
+        { key: "arion_usage", label: "Plan & Pricing", route: "/app/services/arion_usage" },
+      ],
+    },
+    {
+      label: "OLIVER", icon: Wrench, collapsible: true, sectionId: "settings_oliver",
+      items: [
+        { key: "oliver_settings", label: "Business Setup", route: "/app/services/oliver_settings" },
+        { key: "oliver_workflow_settings", label: "Workflow Settings", route: "/app/services/oliver_workflow_settings" },
+        { key: "oliver_booking", label: "Booking Pages", route: "/app/services/oliver_booking" },
+        { key: "oliver_portal_domains", label: "Portals & Domains", route: "/app/services/oliver_portal_domains" },
+        { key: "oliver_service_categories", label: "Service Categories", route: "/app/services/oliver_service_categories" },
+        { key: "oliver_team_access", label: "Team Access", route: "/app/services/oliver_team_access" },
+        { key: "oliver_coupons", label: "Coupons", route: "/app/services/oliver_coupons" },
+        { key: "oliver_categories", label: "Categories", route: "/app/services/oliver_categories" },
+        { key: "oliver_templates", label: "Templates", route: "/app/services/oliver_templates" },
+        { key: "oliver_addons", label: "Add-ons", route: "/app/services/oliver_addons" },
+      ],
+    },
+    {
+      label: "SPARK", icon: Megaphone, collapsible: true, sectionId: "settings_spark",
+      items: [
+        { key: "spark_account_profile", label: "Business Profile", route: "/app/services/spark_account_profile" },
+        { key: "spark_sender_domains", label: "Sender Domains", route: "/app/services/spark_sender_domains" },
+        { key: "spark_email_templates", label: "Email Templates", route: "/app/services/spark_email_templates" },
+        { key: "spark_sms_templates", label: "SMS Templates", route: "/app/services/spark_sms_templates" },
+        { key: "spark_template_i18n", label: "Translations", route: "/app/services/spark_template_i18n" },
+        { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys" },
+        { key: "spark_webhooks", label: "Outbound Webhooks", route: "/app/services/spark_webhooks" },
+        { key: "spark_inbound_webhooks", label: "Inbound Webhooks", route: "/app/services/spark_inbound_webhooks" },
+        { key: "spark_webhook_deliveries", label: "Webhook Deliveries", route: "/app/services/spark_webhook_deliveries" },
+        { key: "spark_secrets", label: "Tenant Secrets", route: "/app/services/spark_secrets" },
+        { key: "spark_custom_fields", label: "Custom Fields", route: "/app/services/spark_custom_fields" },
+        { key: "spark_quiet_hours", label: "Quiet Hours", route: "/app/services/spark_quiet_hours" },
+        { key: "spark_tracking", label: "Tracking Pixels", route: "/app/services/spark_tracking" },
+        { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync" },
+        { key: "spark_calendar_sync", label: "Calendar Sync", route: "/app/services/spark_calendar_sync" },
+        { key: "spark_service_category", label: "Service Category", route: "/app/services/spark_service_category" },
+        { key: "spark_review_widget", label: "Review Widget", route: "/app/services/spark_review_widget" },
+        { key: "spark_usage", label: "Plan & Pricing", route: "/app/services/spark_usage" },
+        { key: "spark_audit_log", label: "Audit Log", route: "/app/services/spark_audit_log" },
+        { key: "spark_config_backup", label: "Config Backup", route: "/app/services/spark_config_backup" },
+        { key: "spark_api_reference", label: "API Reference", route: "/app/services/spark_api_reference" },
+        { key: "spark_engine_docs", label: "Engine Docs", route: "/app/services/spark_engine_docs" },
+      ],
+    },
+    {
+      label: "STELLA", icon: BarChart2, collapsible: true, sectionId: "settings_stella",
+      items: [
+        { key: "stella_coming", label: "Coming Soon", route: "/app/services/stella_coming" },
+      ],
+    },
+    {
+      label: "FORGE", icon: Server, collapsible: true, sectionId: "settings_forge",
+      items: [
+        { key: "forge_coming", label: "Coming Soon", route: "/app/services/forge_coming" },
+      ],
+    },
+    {
+      label: "ARGUS", icon: Sparkles, collapsible: true, sectionId: "settings_argus",
+      items: [
+        { key: "argus_coming", label: "Coming Soon", route: "/app/services/argus_coming" },
+      ],
+    },
+  ],
+};
+
+// Set of every key that lives under Settings — used by AppShell.deriveProduct
+// to recognise a settings-mode URL even though the URL prefix is still the
+// product code (oliver_settings, spark_account_profile, etc.).
+export const SETTINGS_KEYS = new Set<string>(
+  SETTINGS_NAV.groups.flatMap((g) => g.items.map((i) => i.key)),
+);
+
 // v9.2 — ARGUS as full product per spec §2 (uniform nav). Single IA Insights
 // group with the 4 spec sub-items: Health → Trends → Intelligence →
 // Cross-Channel. Matches the uniform pattern used by ARION/SPARK/OLIVER.
@@ -474,6 +570,7 @@ export const SUB_NAV_CONFIGS: Record<ProductKey, SubNavConfig | null> = {
   stella: PLACEHOLDER_NAV("STELLA", "Reporting & BI"),
   forge: PLACEHOLDER_NAV("FORGE", "Integrations"),
   argus: ARGUS_NAV,
+  settings: SETTINGS_NAV,
 };
 
 // ── Component ────────────────────────────────────────────────
@@ -485,6 +582,11 @@ interface SubNavProps {
 // Determine which section should auto-expand based on current path.
 // Each entry maps a path predicate to a sectionId (which must match a group's sectionId).
 function getDefaultSection(path: string): string | null {
+  // Settings — collapse all but the active product's settings group
+  if (path.includes("/oliver_settings") || path.includes("/oliver_workflow_settings") || path.includes("/oliver_booking") || path.includes("/oliver_portal_domains") || path.includes("/oliver_service_categories") || path.includes("/oliver_team_access") || path.includes("/oliver_coupons") || path.includes("/oliver_categories") || path.includes("/oliver_templates") || path.includes("/oliver_addons")) return "settings_oliver";
+  if (path.includes("/arion_brand") || path.includes("/arion_plugin_provisioning") || path.includes("/arion_service_area") || path.includes("/arion_usage")) return "settings_arion";
+  if (path.includes("/spark_account_profile") || path.includes("/spark_sender_domains") || path.includes("/spark_email_templates") || path.includes("/spark_sms_templates") || path.includes("/spark_template_i18n") || path.includes("/spark_api_keys") || path.includes("/spark_webhooks") || path.includes("/spark_inbound_webhooks") || path.includes("/spark_webhook_deliveries") || path.includes("/spark_secrets") || path.includes("/spark_custom_fields") || path.includes("/spark_quiet_hours") || path.includes("/spark_tracking") || path.includes("/spark_audience_sync") || path.includes("/spark_calendar_sync") || path.includes("/spark_service_category") || path.includes("/spark_review_widget") || path.includes("/spark_usage") || path.includes("/spark_audit_log") || path.includes("/spark_config_backup") || path.includes("/spark_api_reference") || path.includes("/spark_engine_docs")) return "settings_spark";
+
   // ARION sections
   if (path.includes("arion_website_security") || path.includes("arion_website_performance") || path.includes("arion_website_updates")) return "security";
   if (path.includes("arion_website_")) return "website";

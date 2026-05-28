@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { HeaderBar } from "./HeaderBar";
 import { IconRail, type ProductKey } from "./IconRail";
-import { SubNav, SUB_NAV_CONFIGS, type SubNavConfig } from "./SubNav";
+import { SubNav, SUB_NAV_CONFIGS, SETTINGS_KEYS, type SubNavConfig } from "./SubNav";
 import { useOliverRole } from "../hooks/useOliverRole";
 
 // Strip OLIVER nav items that aren't in allowedServiceKeys, and drop any
@@ -22,6 +22,12 @@ function applyOliverNavFilter(
 
 /** Derive the active product from the current URL path */
 function deriveProduct(pathname: string): ProductKey {
+  // F-86 — Settings-class URLs share the product prefix (oliver_settings,
+  // spark_account_profile, etc.) but should activate the Settings SubNav,
+  // not the product's daily-work SubNav. Check the SETTINGS_KEYS set first.
+  const keyMatch = pathname.match(/\/app\/services\/([a-z0-9_]+)/);
+  if (keyMatch && SETTINGS_KEYS.has(keyMatch[1])) return "settings";
+
   const match = pathname.match(/\/app\/services\/([a-z]+)_/);
   if (!match) return "overview";
   const prefix = match[1];

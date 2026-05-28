@@ -16,15 +16,16 @@ import {
 /**
  * AccountMenu — the hamburger ☰ at the top right of every page.
  *
- * F-02 LOCKED 2026-05-26 — strict cross-product scope only:
+ * F-02 + F-86 (2026-05-28) — strict cross-product scope ONLY:
  *   - My account (Profile, Notification preferences)
  *   - Business settings (whole-org: profile, plan, team, integrations)
  *   - Platform (notification rules, security, data + privacy)
  *
- * Per-PRODUCT settings (OLIVER / ARION / SPARK / etc.) DO NOT belong in the
- * hamburger anymore — they live behind the gear icon in the IconRail, which
- * routes to the current product's settings page. This keeps cross-product
- * concerns separate from per-product configuration.
+ * Per-PRODUCT settings (OLIVER / ARION / SPARK / etc.) live behind the gear
+ * icon in the IconRail, which now opens a dedicated cross-product Settings
+ * SubNav with one collapsible group per product. (Previously the gear routed
+ * to a per-product settings page; superseded by F-86.) The hamburger stays
+ * strictly cross-product — never duplicate per-product config items here.
  */
 export function AccountMenu({
   userLabel,

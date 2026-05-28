@@ -4,17 +4,7 @@ import { useAppState } from "../app/AppState";
 import { useIsSuperAdmin } from "../hooks/useIsSuperAdmin";
 import { resolveServiceStatus, SERVICE_CATALOG } from "../config/serviceCatalog";
 
-// F-02 — per-product settings route map. The gear icon in the rail routes
-// to the active product's settings page when clicked. Cross-product settings
-// (business profile, account, platform notifications) live in the hamburger.
-const PRODUCT_SETTINGS_ROUTE: Partial<Record<ProductKey, string>> = {
-  oliver: "/app/services/oliver_settings",
-  arion: "/app/services/arion_settings",
-  spark: "/app/services/spark_settings",
-  argus: "/app/services/argus_settings",
-};
-
-export type ProductKey = "overview" | "arion" | "oliver" | "spark" | "stella" | "forge" | "argus" | "consulting";
+export type ProductKey = "overview" | "arion" | "oliver" | "spark" | "stella" | "forge" | "argus" | "consulting" | "settings";
 
 export interface ProductDef {
   key: ProductKey;
@@ -25,6 +15,7 @@ export interface ProductDef {
 }
 
 const PRODUCT_ICONS: Record<ProductKey, React.ReactNode> = {
+  settings: <Settings className="h-5 w-5" />,
   overview: (
     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25a2.25 2.25 0 01-2.25-2.25v-2.25z" />
@@ -102,6 +93,7 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
     const sectionMap: Record<ProductKey, string> = {
       overview: "Shared", arion: "ARION", oliver: "OLIVER", spark: "LUMEN",
       stella: "STELLA", forge: "FORGE", argus: "ARGUS", consulting: "CONSULTING",
+      settings: "Settings",
     };
     const section = sectionMap[p.key];
     if (p.key === "overview" || p.key === "consulting") return { ...p, enabled: true };
@@ -143,34 +135,32 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
         })}
       </div>
 
-      {/* F-02 — Per-product settings gear. Routes to the active product's
-          settings page. Visible whenever the current product has a settings
-          route defined. Sits ABOVE the SUPER_ADMIN gear so it's the
-          obvious "settings for this product" entry point for normal users. */}
-      {PRODUCT_SETTINGS_ROUTE[activeProduct] && (
-        <button
-          onClick={() => navigate(PRODUCT_SETTINGS_ROUTE[activeProduct]!)}
-          title={`${activeProduct.toUpperCase()} settings`}
-          className={`mt-auto flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
-            location.pathname.startsWith(PRODUCT_SETTINGS_ROUTE[activeProduct]!) ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white/80"
-          }`}
-        >
-          <span className="flex h-6 w-6 items-center justify-center">
-            <Settings className="h-5 w-5" />
-          </span>
-          <span className="text-[9px] font-medium leading-tight">Settings</span>
-        </button>
-      )}
+      {/* F-86 — Settings gear. Activates the cross-product Settings SubNav
+          (one collapsible group per product: ARION / OLIVER / SPARK / STELLA /
+          FORGE / ARGUS). One destination for "where do I configure X" no
+          matter which product the user is currently in. Per-product config
+          pages stay where they are; the Settings SubNav just groups them. */}
+      <button
+        onClick={() => onSelect("settings")}
+        title="Settings"
+        className={`mt-auto flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
+          activeProduct === "settings" ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white/80"
+        }`}
+      >
+        <span className="flex h-6 w-6 items-center justify-center">
+          <Settings className="h-5 w-5" />
+        </span>
+        <span className="text-[9px] font-medium leading-tight">Settings</span>
+      </button>
 
       {/* Platform Admin gear — pinned at bottom. SUPER_ADMIN-only.
-          Only gets mt-auto if the per-product Settings gear didn't already
-          consume it (otherwise both fight for the auto-margin and both
-          stick to the top of the bottom section). */}
+          The Settings gear above always consumes mt-auto, so this button
+          just stacks below it. */}
       {isSuperAdmin && (
         <button
           onClick={() => navigate("/admin")}
           title="Platform Admin (SUPER_ADMIN)"
-          className={`${PRODUCT_SETTINGS_ROUTE[activeProduct] ? "" : "mt-auto"} flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
+          className={`flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
             isAdminActive ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white/80"
           }`}
         >
