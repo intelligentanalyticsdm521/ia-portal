@@ -1,137 +1,130 @@
-import { useEffect, useState, useCallback } from "react";
+// SparkLeadsPage — F-124 (lead generator paused for Monday go-live).
+//
+// Founder decision 2026-05-29: the lead generator is too much work to wire
+// up properly before Monday onboarding. Page stays so the nav doesn't
+// flicker, but the live data + actions are replaced with a Coming Soon
+// surface and a greyed-out preview of what's coming.
+//
+// The lumen.lead-gen-admin backend is still live for ARION/SPARK product
+// configuration. This is strictly a UX pause on the consumer surface
+// pending the broader lead-gen rebuild.
+import { Sparkles, Target, Lock } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 
-interface Lead {
-  id: string;
-  business_name: string;
-  hot_warm_cold: "Hot" | "Warm" | "Cold";
-  email: string;
-  phone: string;
-  status: string;
-  source: string;
-  created_at: string;
-}
-
 export function SparkLeadsPage() {
-  const { get, put, ready } = useSparkApi();
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [error, setError] = useState<unknown>(null);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "Hot" | "Warm" | "Cold">("all");
-
-  const load = useCallback(async () => {
-    if (!ready) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const params = filter !== "all" ? `?hot_warm_cold=${filter}` : "";
-      const raw = await get<{ data: Lead[] }>(`/api/v1/leads${params}`);
-      setLeads(raw.data || []);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [get, ready, filter]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function handleAction(leadId: string, action: "accept" | "reject") {
-    try {
-      // LUMEN-API exposes dedicated /:id/accept and /:id/reject endpoints (PUT, no body).
-      await put(`/api/v1/leads/${leadId}/${action}`, {});
-      setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, status: action === "accept" ? "accepted" : "rejected" } : l));
-    } catch (err) {
-      setError(err);
-    }
-  }
-
-  function scoreBadge(score: string) {
-    const colors: Record<string, string> = {
-      Hot: "bg-red-100 text-red-700",
-      Warm: "bg-amber-100 text-amber-700",
-      Cold: "bg-blue-100 text-blue-700",
-    };
-    return (
-      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${colors[score] || "bg-gray-100 text-gray-600"}`}>
-        {score}
-      </span>
-    );
-  }
-
   return (
-    <SparkPageShell title="Lead Inbox" subtitle="B2B leads with scoring and actions" error={error} loading={loading}>
-      <div className="p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
-            {(["all", "Hot", "Warm", "Cold"] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${filter === f ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-              >
-                {f === "all" ? "All" : f}
-              </button>
-            ))}
+    <SparkPageShell
+      title="Lead Inbox"
+      subtitle="B2B lead discovery — coming soon"
+      error={null}
+      loading={false}
+    >
+      <div className="p-6">
+        {/* Coming-soon hero */}
+        <div className="rounded-2xl border-2 border-dashed border-slate-300 bg-white p-10 text-center mb-6">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-50 border border-amber-200">
+            <Target className="h-7 w-7 text-amber-600" />
           </div>
-          {/* F-90 — Was a dead button. "New Search" creates a lead-gen
-              search profile, which is what fills this inbox. Send the user
-              to the search profile setup page. */}
-          <Link
-            to="/app/services/spark_search_profiles"
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            New Search
-          </Link>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
+            SPARK · Coming Soon
+          </div>
+          <h1 className="mt-2 text-3xl font-bold text-slate-900">Lead Generator</h1>
+          <p className="mx-auto mt-3 max-w-xl text-sm text-slate-600 leading-relaxed">
+            We're rebuilding the lead generator to give you proper B2B discovery
+            with Hot/Warm/Cold scoring, source attribution, accept/reject
+            workflow, and direct hand-off to SPARK campaigns. Coming this June.
+          </p>
+          <div className="mt-6 inline-flex items-center gap-2 rounded-full bg-orange-50 border border-orange-200 px-4 py-1.5 text-xs font-semibold text-orange-800">
+            <Sparkles className="h-3.5 w-3.5" />
+            Building during June enhancements
+          </div>
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <Link
+              to="/app/services/spark_forms"
+              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Use Forms instead →
+            </Link>
+            <Link
+              to="/app/services/spark_contacts"
+              className="rounded-md bg-[#EF6C33] px-4 py-2 text-sm font-medium text-white hover:bg-[#D85F2A]"
+            >
+              Go to Contacts
+            </Link>
+          </div>
         </div>
 
-        <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-gray-50 text-xs text-slate-500 uppercase tracking-wide">
-              <tr>
-                <th className="px-4 py-3">Business</th>
-                <th className="px-4 py-3">Score</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Phone</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Source</th>
-                <th className="px-4 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {leads.map((l) => (
-                <tr key={l.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-slate-900">{l.business_name}</td>
-                  <td className="px-4 py-3">{scoreBadge(l.hot_warm_cold)}</td>
-                  <td className="px-4 py-3 text-slate-600">{l.email || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{l.phone || "—"}</td>
-                  <td className="px-4 py-3 text-slate-500 text-xs capitalize">{l.status}</td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">{l.source}</td>
-                  <td className="px-4 py-3">
-                    {l.status === "new" || l.status === "pending" ? (
-                      <div className="flex gap-1">
-                        <button onClick={() => handleAction(l.id, "accept")} className="rounded bg-green-50 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-100">Accept</button>
-                        <button onClick={() => handleAction(l.id, "reject")} className="rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100">Reject</button>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-slate-400">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {leads.length === 0 && !loading && (
+        {/* Greyed preview of what's coming */}
+        <div className="relative rounded-xl bg-white ring-1 ring-slate-200 overflow-hidden pointer-events-none select-none">
+          <div className="absolute inset-0 z-10 bg-white/70 backdrop-blur-[1px] flex items-center justify-center">
+            <div className="rounded-full bg-slate-900/90 text-white px-4 py-1.5 text-xs font-semibold flex items-center gap-1.5 shadow-lg">
+              <Lock className="h-3 w-3" /> Preview · not yet live
+            </div>
+          </div>
+          <div className="p-6 grayscale opacity-60">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div className="flex gap-1 rounded-lg bg-gray-100 p-1">
+                {(["All", "Hot", "Warm", "Cold"] as const).map((f) => (
+                  <button
+                    key={f}
+                    className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                      f === "All" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+              <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white">
+                New Search
+              </button>
+            </div>
+
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-gray-50 text-xs text-slate-500 uppercase tracking-wide">
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">
-                    No leads found. Run a search to discover new prospects.
-                  </td>
+                  <th className="px-4 py-3">Business</th>
+                  <th className="px-4 py-3">Score</th>
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3">Phone</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Source</th>
+                  <th className="px-4 py-3">Actions</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {[
+                  { name: "Acme Plumbing Co", score: "Hot", color: "bg-red-100 text-red-700" },
+                  { name: "Greenfield Landscaping", score: "Warm", color: "bg-amber-100 text-amber-700" },
+                  { name: "Northside HVAC", score: "Cold", color: "bg-blue-100 text-blue-700" },
+                ].map((s, i) => (
+                  <tr key={i}>
+                    <td className="px-4 py-3 font-medium text-slate-900">{s.name}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${s.color}`}>
+                        {s.score}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">hidden@example.com</td>
+                    <td className="px-4 py-3 text-slate-600">(555) 000-0000</td>
+                    <td className="px-4 py-3 text-slate-500 text-xs">new</td>
+                    <td className="px-4 py-3 text-slate-500 text-xs">search</td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1">
+                        <button className="rounded bg-green-50 px-2 py-1 text-xs font-medium text-green-700">Accept</button>
+                        <button className="rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700">Reject</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </SparkPageShell>
   );
 }
+
+export default SparkLeadsPage;
