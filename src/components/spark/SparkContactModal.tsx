@@ -19,11 +19,12 @@
 //   - Same interaction model OLIVER uses → users recognise the pattern.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  X, Mail, Phone, Building2, MapPin, Tag as TagIcon,
+  Mail, Phone, Building2, MapPin, Tag as TagIcon, List as ListIcon,
   Activity as ActivityIcon, FileText, AlertTriangle, Edit3, Save, Trash2,
   Plus,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { IadmModal, IadmButton } from "../IadmModal";
 
 export interface ContactLite {
   id: number;
@@ -58,6 +59,20 @@ interface ContactFull extends ContactLite {
   notes?: Array<{ id: number; content: string; created_at: string; author?: string | null }>;
 }
 
+interface ListMembership {
+  id: number;
+  name: string;
+  description?: string | null;
+  contact_count?: number;
+  added_at: string;
+}
+
+interface AvailableList {
+  id: number;
+  name: string;
+  contact_count?: number;
+}
+
 interface ActivityEvent {
   // API shape (verified against routes/contacts.js GET /:id/activity):
   //   { id, event_type, channel, metadata, occurred_at }
@@ -69,7 +84,7 @@ interface ActivityEvent {
   metadata?: string | null;
 }
 
-type Tab = "overview" | "activity" | "notes" | "tags" | "danger";
+type Tab = "overview" | "activity" | "notes" | "lists" | "tags" | "danger";
 
 interface Props {
   contactId: number | null;
@@ -97,6 +112,9 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
   const [tab, setTab] = useState<Tab>("overview");
   const [contact, setContact] = useState<ContactFull | null>(null);
   const [activity, setActivity] = useState<ActivityEvent[] | null>(null);
+  const [lists, setLists] = useState<ListMembership[] | null>(null);
+  const [availableLists, setAvailableLists] = useState<AvailableList[]>([]);
+  const [pickerListId, setPickerListId] = useState<number | "">("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -134,6 +152,20 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
     }
   }, [get, contactId, ready]);
 
+  const loadLists = useCallback(async () => {
+    if (!ready || !contactId) return;
+    try {
+      const r = await get<{ data: ListMembership[] }>(`/api/v1/contacts/${contactId}/lists`);
+      setLists(r.data || []);
+      // Also load the catalog of all lists so the picker is populated.
+      const all = await get<{ data: AvailableList[] }>("/api/v1/lists");
+      setAvailableLists(all.data || []);
+    } catch {
+      setLists([]);
+      setAvailableLists([]);
+    }
+  }, [get, contactId, ready]);
+
   useEffect(() => {
     if (open && contactId) {
       setTab("overview");
@@ -142,12 +174,33 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
     } else {
       setContact(null);
       setActivity(null);
+      setLists(null);
+      setAvailableLists([]);
     }
   }, [open, contactId, reload]);
 
   useEffect(() => {
     if (open && tab === "activity" && activity === null) loadActivity();
-  }, [open, tab, activity, loadActivity]);
+    if (open && tab === "lists" && lists === null) loadLists();
+  }, [open, tab, activity, lists, loadActivity, loadLists]);
+
+  async function addToList() {
+    if (!contactId || pickerListId === "") return;
+    try {
+      await post(`/api/v1/contacts/${contactId}/lists`, { list_id: pickerListId });
+      setPickerListId("");
+      await loadLists();
+    } catch (err) { setError(err); }
+  }
+
+  async function removeFromList(listId: number) {
+    if (!contactId) return;
+    if (!confirm("Remove from this list?")) return;
+    try {
+      await del(`/api/v1/contacts/${contactId}/lists/${listId}`);
+      await loadLists();
+    } catch (err) { setError(err); }
+  }
 
   // Esc closes
   useEffect(() => {
@@ -219,56 +272,37 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
 
   if (!open) return null;
 
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="spark-contact-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-3xl max-h-[92vh] overflow-hidden rounded-xl bg-white shadow-2xl flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3 bg-gradient-to-r from-[#0B1C24] to-[#1a3540] text-white">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="h-9 w-9 rounded-full bg-white/15 flex items-center justify-center flex-shrink-0 font-semibold text-sm">
-              {(contact?.first_name?.[0] || "?").toUpperCase()}{(contact?.last_name?.[0] || "").toUpperCase()}
-            </div>
-            <div className="min-w-0">
-              <h2 id="spark-contact-modal-title" className="text-base font-semibold truncate">
-                {loading ? "Loading…" : fullName}
-              </h2>
-              <div className="text-[11px] text-white/60 truncate">
-                {contact?.email || contact?.phone || "—"}
-                {contact?.account_name ? ` · ${contact.account_name}` : ""}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {contact?.contact_intelligence_tier && (
-              <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-[10px] font-bold ring-1 ${TIER_COLORS[contact.contact_intelligence_tier] || TIER_COLORS.Z}`}>
-                {contact.contact_intelligence_tier}
-              </span>
-            )}
-            <button
-              onClick={onClose}
-              aria-label="Close"
-              className="rounded-full p-1.5 text-white/60 hover:bg-white/10 hover:text-white transition-colors"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
+  // Tier badge in the header right-side slot.
+  const tierBadge = contact?.contact_intelligence_tier ? (
+    <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-[10px] font-bold ring-1 ${TIER_COLORS[contact.contact_intelligence_tier] || TIER_COLORS.Z}`}>
+      {contact.contact_intelligence_tier}
+    </span>
+  ) : null;
 
+  return (
+    <IadmModal
+      open={open}
+      onClose={onClose}
+      product="spark"
+      eyebrow="SPARK · CONTACT"
+      title={loading ? "Loading…" : fullName}
+      subtitle={
+        <>
+          {contact?.email || contact?.phone || "—"}
+          {contact?.account_name ? ` · ${contact.account_name}` : ""}
+        </>
+      }
+      headerActions={tierBadge}
+      size="lg"
+    >
+      <div className="flex h-full flex-col">
         {/* Tabs */}
-        <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-1">
+        <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-1 flex-shrink-0">
           {([
             { key: "overview", label: "Overview", icon: Edit3 },
             { key: "activity", label: "Activity", icon: ActivityIcon },
             { key: "notes",    label: contact?.notes?.length ? `Notes (${contact.notes.length})` : "Notes", icon: FileText },
+            { key: "lists",    label: lists?.length ? `Lists (${lists.length})` : "Lists", icon: ListIcon },
             { key: "tags",     label: contact?.tags?.length ? `Tags (${contact.tags.length})` : "Tags", icon: TagIcon },
             { key: "danger",   label: "More", icon: AlertTriangle },
           ] as Array<{ key: Tab; label: string; icon: typeof Edit3 }>).map((t) => {
@@ -457,6 +491,67 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
             </div>
           )}
 
+          {tab === "lists" && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-2">Membership</h3>
+                {lists === null ? (
+                  <div className="text-sm text-slate-500">Loading…</div>
+                ) : lists.length === 0 ? (
+                  <div className="text-sm text-slate-500 italic">Not in any list.</div>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {lists.map((l) => (
+                      <li key={l.id} className="flex items-center justify-between gap-2 rounded border border-slate-200 bg-white p-2.5">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-slate-900 truncate">{l.name}</div>
+                          {l.description && <div className="text-[11px] text-slate-500 truncate">{l.description}</div>}
+                          <div className="text-[10px] text-slate-400">Added {new Date(l.added_at).toLocaleDateString()}</div>
+                        </div>
+                        <button
+                          onClick={() => removeFromList(l.id)}
+                          className="text-[11px] text-rose-600 hover:text-rose-700 inline-flex items-center gap-1"
+                        >
+                          <Trash2 className="h-3 w-3" /> Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div>
+                <h3 className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-2">Add to a list</h3>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={pickerListId}
+                    onChange={(e) => setPickerListId(e.target.value === "" ? "" : Number(e.target.value))}
+                    className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
+                  >
+                    <option value="">— Pick a list —</option>
+                    {availableLists
+                      .filter((al) => !lists?.some((l) => l.id === al.id))
+                      .map((l) => (
+                        <option key={l.id} value={l.id}>{l.name}{l.contact_count != null ? ` (${l.contact_count})` : ""}</option>
+                      ))}
+                  </select>
+                  <IadmButton
+                    variant="accent"
+                    product="spark"
+                    onClick={addToList}
+                    disabled={pickerListId === ""}
+                    icon={<Plus className="h-3 w-3" />}
+                  >
+                    Add
+                  </IadmButton>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Lists are static, manually-curated groups. Segments are dynamic (auto-updated by filter rules) — manage those on the Segments page.
+                </p>
+              </div>
+            </div>
+          )}
+
           {tab === "tags" && contact && (
             <div>
               {contact.tags && contact.tags.length > 0 ? (
@@ -504,7 +599,7 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
           )}
         </div>
       </div>
-    </div>
+    </IadmModal>
   );
 }
 

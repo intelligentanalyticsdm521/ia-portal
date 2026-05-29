@@ -323,11 +323,10 @@ const SPARK_NAV: SubNavConfig = {
       label: "Outreach", icon: Megaphone, collapsible: true, sectionId: "spark_outreach",
       items: [
         { key: "spark_campaigns", label: "Campaigns", route: "/app/services/spark_campaigns" },
-        // F-91 — single "Templates" entry points at the new unified library
-        // page (spark_templates), which handles Email + SMS via tabs + modal
-        // editor. The legacy spark_email_templates page still exists for the
-        // advanced visual block-builder; the editor modal links to it.
-        { key: "spark_templates", label: "Templates", route: "/app/services/spark_templates" },
+        // F-91 + 2026-05-28 — Templates moved DOWN to Workflow & Automations
+        // per founder decision. Library is configuration-like, used BY
+        // campaigns rather than alongside them. Keeping reference here so
+        // the move is documented.
         { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter" },
         { key: "spark_social", label: "Social & Calendar", route: "/app/services/spark_social" },
         { key: "spark_sms_inbox", label: "SMS Inbox", route: "/app/services/spark_sms_inbox" },
@@ -365,6 +364,10 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals" },
         { key: "spark_workflow_triggers", label: "Workflow Triggers", route: "/app/services/spark_workflow_triggers" },
         { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts" },
+        // Templates moved here from Outreach (2026-05-28 founder decision).
+        // It's a library used by other features — configuration-like, not
+        // an active send surface.
+        { key: "spark_templates", label: "Templates", route: "/app/services/spark_templates" },
         // F-93 — Webhooks + Audience Sync moved here from Settings. They
         // are features (libraries you CRUD), event-driven, and conceptually
         // "set it and forget it" — same mental model as Automations.

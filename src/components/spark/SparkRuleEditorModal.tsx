@@ -26,6 +26,7 @@
 import { useEffect, useState } from "react";
 import { X, Save, Trash2, AlertTriangle, Plus } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { IadmModal, IadmButton } from "../IadmModal";
 
 export type RuleType = "scoring" | "routing" | "autotag";
 

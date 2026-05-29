@@ -83,10 +83,26 @@ export function SparkTemplatesPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Product filter — F-81 makes /email-templates return the tenant's own
+  // rows AND the 'iadm-platform' system rows. The system set seeds
+  // OLIVER-specific templates (job.scheduled, invoice.paid, etc.) that have
+  // no place in the SPARK library. Hide any system row whose template_key
+  // signals it's OLIVER work. Tenant-owned rows always show through.
+  function isOliverSystemTemplate(r: TemplateRow): boolean {
+    if (!r.is_system) return false;
+    // We can't easily check template_key from the row shape exposed in the
+    // LIST endpoint (this page's interface only includes name/category/etc).
+    // We DO get it on the row via spread — emails-templates GET returns it.
+    const key = (r as unknown as { template_key?: string }).template_key || "";
+    return /^(job|invoice|quote|approval|subscription)\./.test(key);
+  }
+
   const rows: TemplateRow[] = useMemo(() => {
     let list: TemplateRow[] = [];
     if (channelFilter === "all" || channelFilter === "email") list = list.concat(emails);
     if (channelFilter === "all" || channelFilter === "sms") list = list.concat(smss);
+    // Drop OLIVER-side system templates (job/invoice/quote/approval/subscription).
+    list = list.filter((r) => !isOliverSystemTemplate(r));
     if (categoryFilter !== "all") list = list.filter((r) => r.category === categoryFilter);
     if (search.trim()) {
       const q = search.toLowerCase();

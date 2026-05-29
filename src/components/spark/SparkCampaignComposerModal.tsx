@@ -8,6 +8,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { X, Mail, MessageSquare, ArrowRight, ArrowLeft } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { IadmModal, IadmButton } from "../IadmModal";
 
 type Channel = "email" | "sms";
 type Step = "channel" | "compose";
