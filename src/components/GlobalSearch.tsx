@@ -11,7 +11,7 @@ import { useNavigate } from "react-router-dom";
 import { Search } from "lucide-react";
 import { IadmModal } from "./IadmModal";
 import { useAppState } from "../app/AppState";
-import { SERVICE_CATALOG } from "../config/serviceCatalog";
+import { SERVICE_CATALOG, type PortalService } from "../config/serviceCatalog";
 
 interface SearchableRoute {
   key: string;
@@ -22,9 +22,28 @@ interface SearchableRoute {
   keywords: string;
 }
 
-function buildSearchableRoutes(enabled: Set<string>): SearchableRoute[] {
+// Map a service's `section` to the underlying tenant service-key that
+// indicates the tenant is on that product. SERVICE_CATALOG uses 'LUMEN'
+// as the section tag for SPARK (legacy).
+const SECTION_TO_SERVICE_KEY: Record<PortalService["section"], string | null> = {
+  Shared: null,        // always available
+  ARION: "arion",
+  OLIVER: "oliver",
+  LUMEN: "lumen",      // SPARK on the backend is still 'lumen'
+  STELLA: "stella",
+  FORGE: "forge",
+  ARGUS: "argus",
+  CONSULTING: "consulting",
+};
+
+function buildSearchableRoutes(activeServices: Set<string>): SearchableRoute[] {
   return SERVICE_CATALOG
-    .filter((s) => s.defaultStatus !== "coming_soon" && enabled.has(s.key))
+    .filter((s) => {
+      if (s.defaultStatus === "coming_soon") return false;
+      const required = SECTION_TO_SERVICE_KEY[s.section];
+      if (!required) return true; // Shared section always visible
+      return activeServices.has(required);
+    })
     .map((s) => ({
       key: s.key,
       label: s.displayName,
@@ -52,11 +71,23 @@ function score(item: SearchableRoute, query: string): number {
 
 export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
-  const { enabledServices } = useAppState();
+  const { active } = useAppState();
   const [query, setQuery] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
 
-  const routes = useMemo(() => buildSearchableRoutes(enabledServices), [enabledServices]);
+  // Section-level filter: any product the tenant has an active subscription
+  // for shows ALL its routes (not just the coarse keys that enabledServices
+  // carries). active.services has serviceKey ('oliver', 'arion', 'lumen').
+  const activeServices = useMemo(() => {
+    const s = new Set<string>();
+    for (const svc of active?.services || []) {
+      const k = String(svc.serviceKey || "").trim().toLowerCase();
+      if (k) s.add(k);
+    }
+    return s;
+  }, [active]);
+
+  const routes = useMemo(() => buildSearchableRoutes(activeServices), [activeServices]);
 
   const results = useMemo(() => {
     if (!query.trim()) {
