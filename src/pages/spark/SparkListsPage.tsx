@@ -5,6 +5,7 @@ import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkTable } from "../../components/spark/SparkTable";
 import { SparkSearchBox } from "../../components/spark/SparkSearchBox";
+import { SparkListDetailModal } from "../../components/spark/SparkListDetailModal";
 import { List as ListIcon, Plus, Users, Send } from "lucide-react";
 
 interface ContactList {
@@ -25,6 +26,8 @@ export function SparkListsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [form, setForm] = useState({ name: "", description: "" });
   const [saving, setSaving] = useState(false);
+  // F-96 — click any list row to open the detail modal (was a dead row).
+  const [detailListId, setDetailListId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -106,6 +109,7 @@ export function SparkListsPage() {
           getRowKey={l => l.id}
           totalCount={filtered.length}
           emptyState={search ? `No lists match "${search}"` : "No lists"}
+          onRowClick={l => setDetailListId(l.id)}
           columns={[
             {
               key: "name", header: "List", width: "wide",
@@ -168,6 +172,13 @@ export function SparkListsPage() {
           After creating the list, add contacts to it from the <strong>Contacts</strong> page using the bulk-action toolbar.
         </div>
       </SparkDrawer>
+
+      <SparkListDetailModal
+        open={detailListId !== null}
+        onClose={() => setDetailListId(null)}
+        listId={detailListId}
+        onChanged={() => { load(); }}
+      />
     </SparkPageShell>
   );
 }
