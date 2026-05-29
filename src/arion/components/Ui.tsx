@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useArionContext } from '../useArionContext';
+import { IadmModal } from '../../components/IadmModal';
 
 /* ── Tier helpers ── */
 const TIER_ORDER = ['lite', 'standard', 'pro', 'business'] as const;
@@ -322,17 +323,25 @@ export function ConsultingUpsell({ headline, subtext, serviceType, triggerPage }
 }
 
 /**
- * DetailsModal — reusable full-details overlay matching the SEO Rankings
- * modal pattern. Use for "See Full Details →" drill-downs across pages.
+ * DetailsModal — F-103.
  *
- * <DetailsModal
- *   open={show}
- *   onClose={() => setShow(false)}
- *   eyebrow="Content SEO"
- *   title="42 pages and posts tracked"
- * >
- *   ...table / tabs / whatever...
- * </DetailsModal>
+ * Was the bespoke ARION drill-down overlay (white header, muted blue-gray
+ * "Content SEO" / "Security" eyebrow). Founder edict 2026-05-28: every
+ * product's modals share the same chrome — ink-gradient header, fixed
+ * canvas, platform-color accent, Core Blue primary button. See
+ * IadmModal docblock for the full spec.
+ *
+ * Rather than touch the 8 ARION pages that use this, DetailsModal becomes
+ * a thin shim over IadmModal with product="arion". Every consumer auto-
+ * inherits the standard chrome in one commit.
+ *
+ * Width translation preserves "static size, not dynamic":
+ *   width <= 800   → IadmModal "md" (800 × 70vh)
+ *   width  > 800   → IadmModal "lg" (1200 × 80vh)
+ *
+ * The eyebrow prop maps directly to IadmModal's eyebrow slot (it already
+ * renders in the platform accent color, so "Content SEO" / "Security" /
+ * etc. now show in ARION sky-blue instead of muted slate).
  */
 export function DetailsModal({
   open, onClose, eyebrow, title, children, width = 1200,
@@ -344,28 +353,19 @@ export function DetailsModal({
   children: React.ReactNode;
   width?: number;
 }) {
-  if (!open) return null;
   return (
-    <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-      onClick={onClose}
+    <IadmModal
+      open={open}
+      onClose={onClose}
+      product="arion"
+      eyebrow={eyebrow ?? "ARION"}
+      title={title}
+      size={width <= 800 ? "md" : "lg"}
     >
-      <div
-        style={{ background: '#fff', borderRadius: 12, maxWidth: width, width: '94vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ padding: '16px 24px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            {eyebrow && <div style={{ fontSize: 11, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5 }}>{eyebrow}</div>}
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#0B1C24', marginTop: 2 }}>{title}</div>
-          </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#999', padding: '0 4px' }}>&times;</button>
-        </div>
-        <div style={{ flex: 1, overflow: 'auto', padding: '16px 24px 24px' }}>
-          {children}
-        </div>
-      </div>
-    </div>
+      {/* Preserve the old DetailsModal body padding so existing ARION
+          drill-down content lays out identically inside the new chrome. */}
+      <div style={{ padding: '16px 24px 24px' }}>{children}</div>
+    </IadmModal>
   );
 }
 
