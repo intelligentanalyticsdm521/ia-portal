@@ -1,5 +1,5 @@
-import { useEffect, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { type ReactNode } from "react";
+import { IadmModal } from "../IadmModal";
 
 interface SparkDrawerProps {
   open: boolean;
@@ -14,70 +14,39 @@ interface SparkDrawerProps {
 }
 
 /**
- * SparkDrawer — right-side slide-out panel for create/edit forms.
+ * SparkDrawer — was a right-side slide-out panel; now a thin compatibility
+ * shim over IadmModal so all 15 SPARK pages that consume it inherit the
+ * standard centered modal chrome (ink gradient header, fixed canvas,
+ * SPARK orange accents, drag-text-safe backdrop close).
  *
- * Brevo/Pipedrive/HubSpot all use this pattern. Feels more "SaaS tool" than
- * a center modal — keeps context visible behind, easier to compare while
- * editing.
+ * Founder edict 2026-05-28: "side panel should only be used for our
+ * checkout system, everything else should use our standard sized modal."
  *
- * - 480px default width (form-friendly), 720px for wide
- * - Backdrop closes on click
- * - ESC closes
- * - Body scroll locked while open
+ * To preserve calling-site behavior:
+ *   - width="default" → IadmModal size "md" (800px × 70vh)
+ *   - width="wide"    → IadmModal size "lg" (1200px × 80vh)
+ *
+ * Body content is wrapped in a padded div so existing pages that didn't
+ * include their own padding still render with consistent spacing
+ * (the old SparkDrawer wrapped children in `px-5 py-4`).
+ *
+ * Direct uses of IadmModal in new code should reach for it directly —
+ * this shim is just for the existing consumer pages.
  */
 export function SparkDrawer({
   open, onClose, title, subtitle, footer, width = "default", children,
 }: SparkDrawerProps) {
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    document.addEventListener("keydown", onKey);
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
-    };
-  }, [open, onClose]);
-
-  if (!open) return null;
-
-  const widthClass = width === "wide" ? "w-[720px] max-w-[90vw]" : "w-[480px] max-w-[90vw]";
-
   return (
-    <div className="fixed inset-0 z-50 flex">
-      {/* Backdrop */}
-      <button
-        type="button"
-        onClick={onClose}
-        className="flex-1 bg-black/40 cursor-default"
-        aria-label="Close"
-      />
-      {/* Panel */}
-      <div className={`${widthClass} bg-white shadow-2xl flex flex-col h-full animate-spark-drawer-in`}>
-        {/* Header */}
-        <div className="flex items-start justify-between px-5 py-4 border-b border-slate-200">
-          <div className="min-w-0">
-            <h2 className="text-base font-semibold text-slate-900 truncate">{title}</h2>
-            {subtitle && <p className="text-xs text-slate-500 mt-0.5 truncate">{subtitle}</p>}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-700 -mr-1 p-1 rounded hover:bg-slate-100"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        {/* Body — scrolls if needed */}
-        <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
-        {/* Footer — sticky */}
-        {footer && (
-          <div className="border-t border-slate-200 px-5 py-3 flex items-center justify-end gap-2 bg-slate-50/50">
-            {footer}
-          </div>
-        )}
-      </div>
-    </div>
+    <IadmModal
+      open={open}
+      onClose={onClose}
+      product="spark"
+      title={title}
+      subtitle={subtitle}
+      footer={footer}
+      size={width === "wide" ? "lg" : "md"}
+    >
+      <div className="p-5">{children}</div>
+    </IadmModal>
   );
 }
