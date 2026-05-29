@@ -23,8 +23,14 @@ import {
   type PlanCatalogEntry, type BillingCycle, type SignupProduct,
 } from '../../lib/onboardingApi';
 import {
-  fetchSignupCatalog, createSignupCheckout, type SignupCatalog,
+  fetchSignupCatalog, createSignupCheckout, createSignupCartCheckout, type SignupCatalog,
 } from '../../lib/signupCheckout';
+import {
+  readCart, setCartItem as cartSet, removeCartItem as cartRemove,
+  readCycle as cartReadCycle, writeCycle as cartWriteCycle,
+  readBuyer as cartReadBuyer, writeBuyer as cartWriteBuyer,
+  bundleDiscountPercent, type CartItem, type CartProduct,
+} from '../../lib/signupCart';
 
 const PRODUCT_COPY: Record<SignupProduct, { title: string; sub: string }> = {
   arion:  { title: 'Get your AI-built website live in minutes', sub: "Pick a plan. Pay. Answer a few questions — we handle the rest." },
@@ -183,9 +189,20 @@ export function SignupPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
-  const [cycle, setCycle] = useState<BillingCycle>(params.billing);
+  // F-108 — cart state. Hydrated from sessionStorage on first render so
+  // navigating State 1 ↔ State 2 preserves the user's progress + the
+  // bundle discount preview stays current.
+  const [cart, setCart] = useState<CartItem[]>(() => readCart());
+  const initialBuyer = useMemo(() => cartReadBuyer(), []);
+  const [email, setEmail] = useState(initialBuyer.email);
+  const [name, setName] = useState(initialBuyer.name);
+  const [cycle, setCycle] = useState<BillingCycle>(() => {
+    const stored = cartReadCycle();
+    return stored || params.billing;
+  });
+  // Persist buyer + cycle on change so the cart survives full-page navigations.
+  useEffect(() => { cartWriteBuyer({ email, name }); }, [email, name]);
+  useEffect(() => { cartWriteCycle(cycle); }, [cycle]);
 
   // ARION (existing arion-api catalog)
   const [arionPlans, setArionPlans] = useState<PlanCatalogEntry[]>([]);
@@ -223,6 +240,28 @@ export function SignupPage() {
     }
   }, [selectedPlatform, product, cycle, params.plan]);
 
+  // F-108 — when entering State 2 with an existing cart row for that
+  // product, hydrate the picker fields from the saved config so the user
+  // sees what they previously chose. New picks overwrite on save.
+  useEffect(() => {
+    if (!selectedPlatform) return;
+    const existing = cart.find((it) => it.product === product);
+    if (!existing) return;
+    if (existing.product === 'arion') {
+      setArionPlan(existing.plan);
+    } else if (existing.product === 'oliver') {
+      setOliverPlan(existing.plan);
+    } else if (existing.product === 'spark') {
+      setVolume(existing.volume);
+      setFeatureAddon((existing.featureAddon || '') as '' | 'pro' | 'business');
+      setLeadsPkg((existing.leads || '') as '' | 'essentials' | 'growth' | 'authority');
+      if (existing.leadsSelected != null) setLeadsCount(existing.leadsSelected);
+    }
+    // Run only on platform change — manual edits to the pickers should not
+    // re-trigger this and snap back to the saved values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPlatform]);
+
   // SPARK leads: snap count to >= included and step by increment
   const leadsMeta = leadsPkg && cat?.leads ? cat.leads[leadsPkg] : null;
   useEffect(() => {
@@ -243,22 +282,116 @@ export function SignupPage() {
     return t;
   }, [product, cat, volume, featureAddon, leadsPkg, leadsCount, leadsMeta]);
 
-  async function handleContinue() {
+  // F-108 — build the cart item for the currently-configured State 2 platform.
+  function snapshotCurrentItem(): CartItem | null {
+    if (!selectedPlatform) return null;
+    if (product === 'arion') {
+      return { product: 'arion', plan: arionPlan };
+    }
+    if (product === 'oliver') {
+      return { product: 'oliver', plan: oliverPlan };
+    }
+    return {
+      product: 'spark',
+      volume,
+      featureAddon: featureAddon || '',
+      leads: leadsPkg || '',
+      ...(leadsPkg ? { leadsSelected: leadsCount } : {}),
+    };
+  }
+
+  // Save the current State 2 configuration into the cart. Re-used by both
+  // "Save & pick another" and "Save & checkout".
+  function saveCurrentToCart(): CartItem[] {
+    const snap = snapshotCurrentItem();
+    if (!snap) return cart;
+    const next = cartSet(snap);
+    setCart(next);
+    return next;
+  }
+
+  function removeFromCart(p: CartProduct) {
+    const next = cartRemove(p);
+    setCart(next);
+  }
+
+  // Drop the current item into the cart and return to State 1 so the user
+  // can pick another platform.
+  function saveAndPickAnother() {
+    saveCurrentToCart();
+    backToSelector();
+  }
+
+  // Checkout from the cart. Uses the multi-product cart endpoint when the
+  // cart holds 2+ items (one Stripe customer, one invoice, bundle discount
+  // auto-applied). Falls back to the single-product endpoint for 1-item
+  // carts so the existing flow keeps working unchanged.
+  async function startCartCheckout() {
     setError(null);
     if (!email.includes('@')) { setError('Please enter a valid email address.'); return; }
     setSubmitting(true);
     try {
-      if (product === 'arion') {
-        const s = await createCheckoutSession({ email, name: name || undefined, plan: arionPlan, billing_cycle: cycle, domain: { mode: 'byod' } });
+      // If we're still on State 2 with unsaved config, fold it into the
+      // cart first so the user doesn't have to click "Save" before "Checkout".
+      const baseCart = selectedPlatform ? saveCurrentToCart() : cart;
+
+      if (baseCart.length === 0) {
+        setError('Pick at least one platform to add to your plan.');
+        setSubmitting(false);
+        return;
+      }
+
+      // ARION historically goes through arion-api when it's the only item
+      // (legacy onboardingApi.createCheckoutSession handles the website
+      // wizard). For ARION-only carts we keep that path. For everything
+      // else, the unified /signup/checkout-cart endpoint handles it.
+      if (baseCart.length === 1) {
+        const only = baseCart[0];
+        if (only.product === 'arion') {
+          const s = await createCheckoutSession({
+            email, name: name || undefined,
+            plan: only.plan, billing_cycle: cycle,
+            domain: { mode: 'byod' },
+          });
+          window.location.href = s.checkout_url;
+          return;
+        }
+        if (only.product === 'oliver') {
+          const s = await createSignupCheckout({
+            product: 'oliver', email, name: name || undefined,
+            billing_cycle: cycle, plan: only.plan,
+          });
+          window.location.href = s.checkout_url;
+          return;
+        }
+        // SPARK single
+        const s = await createSignupCheckout({
+          product: 'spark', email, name: name || undefined,
+          billing_cycle: cycle,
+          volume: only.volume,
+          featureAddon: (only.featureAddon || null) as 'pro' | 'business' | null,
+          leads: (only.leads || null) as 'essentials' | 'growth' | 'authority' | null,
+          leadsSelected: only.leads ? only.leadsSelected : undefined,
+        });
         window.location.href = s.checkout_url;
         return;
       }
-      const s = await createSignupCheckout({
-        product: product as 'oliver' | 'spark',
-        email, name: name || undefined, billing_cycle: cycle,
-        ...(product === 'oliver'
-          ? { plan: oliverPlan }
-          : { volume, featureAddon: featureAddon || null, leads: leadsPkg || null, leadsSelected: leadsPkg ? leadsCount : undefined }),
+
+      // 2+ items → unified cart checkout. One customer, one invoice,
+      // bundle discount auto-applied server-side.
+      const s = await createSignupCartCheckout({
+        email, name: name || undefined,
+        billing_cycle: cycle,
+        items: baseCart.map((it) => {
+          if (it.product === 'arion') return { product: 'arion', plan: it.plan, seo: it.seo || null };
+          if (it.product === 'oliver') return { product: 'oliver', plan: it.plan };
+          return {
+            product: 'spark', volume: it.volume,
+            featureAddon: it.featureAddon || null,
+            leads: it.leads || null,
+            ...(it.leads ? { leadsSelected: it.leadsSelected } : {}),
+          };
+        }),
       });
       window.location.href = s.checkout_url;
     } catch (e) {
@@ -266,6 +399,10 @@ export function SignupPage() {
       setSubmitting(false);
     }
   }
+
+  // Alias kept so the existing "Continue to checkout →" button on State 2
+  // still works without renaming.
+  const handleContinue = startCartCheckout;
 
   // State 1 — platform selector. Renders when no ?platform=/?product= is set
   // (or after the user clicks "Back to All Platforms").
@@ -292,9 +429,28 @@ export function SignupPage() {
             </div>
           )}
 
+          {/* F-108 — cart preview banner. Shows what's queued so far +
+              bundle discount + a button to head straight to checkout
+              without configuring another product. */}
+          <CartBanner
+            cart={cart}
+            email={email} name={name}
+            cycle={cycle}
+            submitting={submitting}
+            error={error}
+            onEmailChange={setEmail}
+            onNameChange={setName}
+            onRemove={removeFromCart}
+            onCheckout={startCartCheckout}
+            onEdit={(p) => gotoPlatform(p as SignupProduct)}
+          />
+
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {PLATFORM_CARDS.map((card) => {
               const disabled = card.select.kind === 'disabled';
+              const cardPlatform = card.select.kind === 'state2' ? card.select.platform : null;
+              const inCart = cardPlatform != null
+                && cart.some((it) => it.product === cardPlatform);
               const onSelect = () => {
                 if (card.select.kind === 'state2') gotoPlatform(card.select.platform);
                 else if (card.select.kind === 'external') window.location.href = card.select.url;
@@ -335,12 +491,15 @@ export function SignupPage() {
                   <button
                     onClick={onSelect}
                     disabled={disabled}
-                    className="mt-5 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow disabled:cursor-not-allowed disabled:bg-gray-300"
-                    style={disabled ? undefined : { background: card.accent }}
+                    className={`mt-5 rounded-lg px-4 py-2 text-sm font-semibold shadow disabled:cursor-not-allowed disabled:bg-gray-300 ${
+                      inCart ? 'text-emerald-700 border-2 border-emerald-500 bg-emerald-50' : 'text-white'
+                    }`}
+                    style={disabled || inCart ? undefined : { background: card.accent }}
                     title={disabled ? card.select.kind === 'disabled' ? card.select.reason : '' : ''}
                   >
                     {disabled ? card.select.kind === 'disabled' ? card.select.reason : 'Unavailable' :
-                      card.select.kind === 'external' ? 'Request a quote →' : 'Select →'}
+                      inCart ? '✓ In your plan — edit' :
+                        card.select.kind === 'external' ? 'Request a quote →' : 'Add to your plan →'}
                   </button>
                 </div>
               );
@@ -383,6 +542,23 @@ export function SignupPage() {
             Checkout cancelled — nothing was charged. Pick a plan to try again.
           </div>
         )}
+
+        {/* F-108 — cart banner persists on State 2 too so the user sees
+            their queued items + bundle discount while configuring the
+            current platform. */}
+        <CartBanner
+          cart={cart}
+          email={email} name={name}
+          cycle={cycle}
+          submitting={submitting}
+          error={null}
+          onEmailChange={setEmail}
+          onNameChange={setName}
+          onRemove={removeFromCart}
+          onCheckout={startCartCheckout}
+          onEdit={(p) => gotoPlatform(p as SignupProduct)}
+          hideEmailFields
+        />
 
         <div className="mx-auto max-w-md mb-8 grid gap-3">
           <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name (optional)"
@@ -468,13 +644,146 @@ export function SignupPage() {
 
         <div className="mt-10 flex flex-col items-center gap-3">
           {error && <div className="text-sm text-red-600">{error}</div>}
-          <button disabled={submitting || !email} onClick={handleContinue}
-            className="rounded-lg bg-[#EF6C33] px-8 py-3 text-base font-semibold text-white shadow disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#d75a25]">
-            {submitting ? 'Redirecting to checkout…' : 'Continue to checkout →'}
-          </button>
+          {/* F-108 — two-button checkout: save the current config to the
+              cart and either pick another platform (bundle discount) or
+              go straight to Stripe. */}
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={saveAndPickAnother}
+              className="rounded-lg border-2 border-[#EF6C33] bg-white px-6 py-3 text-sm font-semibold text-[#EF6C33] hover:bg-[#FFF7F2]"
+            >
+              ＋ Add another platform
+            </button>
+            <button disabled={submitting || !email} onClick={handleContinue}
+              className="rounded-lg bg-[#EF6C33] px-8 py-3 text-base font-semibold text-white shadow disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#d75a25]">
+              {submitting ? 'Redirecting to checkout…' : (
+                cart.length > 0
+                  ? `Continue to checkout (${cart.some((c) => c.product === product) ? cart.length : cart.length + 1} items) →`
+                  : 'Continue to checkout →'
+              )}
+            </button>
+          </div>
           <p className="text-xs text-gray-500">Secure checkout via Stripe. You'll set up your account right after payment.</p>
         </div>
       </main>
+    </div>
+  );
+}
+
+// ── CartBanner (F-108) ────────────────────────────────────────────────
+
+/**
+ * Multi-product cart preview. Shown on both State 1 and State 2 above the
+ * fold whenever the cart has at least one item. Lists each item with a
+ * remove × button + edit link, shows the bundle discount when it would
+ * apply, and offers a "Checkout (N items)" button that routes through
+ * /signup/checkout-cart (or the legacy single-product /signup/checkout
+ * when the cart only has one row).
+ *
+ * Buyer fields (email + name) live here too — entered ONCE rather than
+ * once per platform — and are persisted to sessionStorage so they
+ * survive page refreshes during configuration.
+ */
+function CartBanner({
+  cart, email, name, cycle, submitting, error,
+  onEmailChange, onNameChange, onRemove, onCheckout, onEdit,
+  hideEmailFields,
+}: {
+  cart: CartItem[];
+  email: string;
+  name: string;
+  cycle: BillingCycle;
+  submitting: boolean;
+  error: string | null;
+  onEmailChange: (v: string) => void;
+  onNameChange: (v: string) => void;
+  onRemove: (p: CartProduct) => void;
+  onCheckout: () => void;
+  onEdit: (p: string) => void;
+  hideEmailFields?: boolean;
+}) {
+  if (cart.length === 0) return null;
+  const bundle = bundleDiscountPercent(cart);
+  const labelFor = (it: CartItem): string => {
+    if (it.product === 'oliver') return `OLIVER ${it.plan.charAt(0).toUpperCase()}${it.plan.slice(1)}`;
+    if (it.product === 'arion')  return `ARION ${it.plan.charAt(0).toUpperCase()}${it.plan.slice(1)}${it.seo ? ` + SEO ${it.seo}` : ''}`;
+    const fa = it.featureAddon ? ` + ${it.featureAddon}` : '';
+    const lg = it.leads ? ` + Leads ${it.leads}` : '';
+    return `SPARK ${it.volume}${fa}${lg}`;
+  };
+  const accentFor: Record<string, string> = { oliver: '#FEC82C', spark: '#EF6C33', arion: '#38BDF8' };
+  return (
+    <div className="mx-auto max-w-3xl mb-8 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="border-b border-gray-100 bg-gradient-to-r from-[#0B1C24] to-[#1a3540] px-5 py-3 text-white">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider font-bold text-[#EF6C33]">Your plan</div>
+            <div className="text-sm font-semibold">
+              {cart.length} platform{cart.length === 1 ? '' : 's'} queued
+              {bundle > 0 && (
+                <span className="ml-2 inline-block rounded-full bg-emerald-500/20 text-emerald-200 px-2 py-0.5 text-[10px] font-bold uppercase">
+                  Bundle −{bundle}%
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="text-[10px] text-white/60">{cycle === 'annual' ? 'Annual billing' : 'Monthly billing'}</div>
+        </div>
+      </div>
+      <ul className="divide-y divide-gray-100">
+        {cart.map((it) => (
+          <li key={it.product} className="flex items-center justify-between gap-3 px-5 py-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="inline-block h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ background: accentFor[it.product] }} />
+              <div className="text-sm font-medium text-gray-900 truncate">{labelFor(it)}</div>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => onEdit(it.product)}
+                className="text-[11px] text-gray-500 hover:text-gray-700 underline"
+              >Edit</button>
+              <button
+                type="button"
+                onClick={() => onRemove(it.product as CartProduct)}
+                className="text-[11px] text-rose-600 hover:text-rose-700"
+                aria-label={`Remove ${it.product} from your plan`}
+              >Remove</button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {!hideEmailFields && (
+        <div className="px-5 py-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <input
+            type="text" value={name} onChange={(e) => onNameChange(e.target.value)}
+            placeholder="Your name (optional)"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#EF6C33] focus:ring-1 focus:ring-[#EF6C33]"
+          />
+          <input
+            type="email" value={email} onChange={(e) => onEmailChange(e.target.value)}
+            placeholder="you@yourbusiness.com *"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#EF6C33] focus:ring-1 focus:ring-[#EF6C33]"
+          />
+        </div>
+      )}
+      {error && <div className="px-5 py-2 text-sm text-red-600">{error}</div>}
+      <div className="border-t border-gray-100 bg-gray-50 px-5 py-3 flex items-center justify-between gap-3">
+        <p className="text-[11px] text-gray-500">
+          {bundle > 0
+            ? `Bundle discount auto-applies at checkout — ${bundle}% off every recurring invoice for as long as you keep ${cart.length} platforms.`
+            : 'Add a second platform to unlock 5% off, or a third for 7% off.'}
+        </p>
+        <button
+          type="button"
+          disabled={submitting || !email}
+          onClick={onCheckout}
+          className="rounded-lg bg-[#EF6C33] px-5 py-2 text-sm font-semibold text-white shadow hover:bg-[#d75a25] disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+        >
+          {submitting ? 'Redirecting…' : `Checkout (${cart.length} item${cart.length === 1 ? '' : 's'}) →`}
+        </button>
+      </div>
     </div>
   );
 }

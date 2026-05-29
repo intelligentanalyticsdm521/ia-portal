@@ -57,6 +57,34 @@ export function createSignupCheckout(input: SignupCheckoutInput) {
   });
 }
 
+/** F-108 — Multi-product cart checkout. Accepts 1–3 items spanning ARION/
+ *  OLIVER/SPARK, returns a single Stripe Checkout Session URL covering all
+ *  of them. Bundle discount auto-applied server-side (MP5R / MP7R). */
+export interface SignupCartCheckoutInput {
+  email: string;
+  name?: string;
+  billing_cycle: BillingCycleU;
+  items: Array<
+    | { product: "oliver"; plan: string }
+    | { product: "spark"; volume: string; featureAddon?: string | null; leads?: string | null; leadsSelected?: number }
+    | { product: "arion"; plan: string; seo?: string | null }
+  >;
+}
+export interface SignupCartCheckoutResult {
+  checkout_url: string;
+  session_id: string;
+  cart: Array<{ product: string; items: number }>;
+  bundle_coupon: string | null;
+  bundle_coupon_applied: boolean;
+}
+
+export function createSignupCartCheckout(input: SignupCartCheckoutInput) {
+  return j<SignupCartCheckoutResult>("/signup/checkout-cart", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export interface SignupSession {
   email: string; product: string; plan: string;
   billing_cycle: string; status: string; tenant_id: string | null;
