@@ -17,6 +17,7 @@ import { useAppState } from "../../app/AppState";
 import { isPlatformOwner } from "../../lib/currentPlan";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PendingChangeBanner } from "../../components/PendingChangeBanner";
+import { CheckoutResultFlash } from "../../components/CheckoutResultFlash";
 import { Check, AlertCircle, ChevronDown, ChevronUp, Users, Briefcase, RotateCw } from "lucide-react";
 
 interface UsageResponse {
@@ -294,6 +295,7 @@ export function OliverUsagePage() {
   return (
     <OliverPageWrapper title="Plan & Pricing" subtitle={usage?.tier ? `You're on the ${String(usage.tier).replace(/^\w/, c => c.toUpperCase())} plan` : "Pick your tier — usage tracked live"} error={error} loading={loading}>
       <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} />
+      <CheckoutResultFlash product="OLIVER" />
       {/* ── CURRENT USAGE STRIP ─────────────────────────────────────────── */}
       {usage && (
         <div className="card mb-4">

@@ -6,6 +6,7 @@ import { changePlan } from "../../lib/billingApi";
 import { useAccessToken } from "../../auth/useAccessToken";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { PendingChangeBanner } from "../../components/PendingChangeBanner";
+import { CheckoutResultFlash } from "../../components/CheckoutResultFlash";
 import {
   Mail, MessageSquare, Users, Target, Check, AlertCircle, ChevronDown, ChevronUp,
 } from "lucide-react";
@@ -326,6 +327,7 @@ export function SparkUsagePage() {
       error={error}
     >
       <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} />
+      <CheckoutResultFlash product="SPARK" />
       {/* CURRENT USAGE STRIP */}
       {usage && (
         <div className="spark-mini-card mb-4">

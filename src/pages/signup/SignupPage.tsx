@@ -31,6 +31,7 @@ import {
   readBuyer as cartReadBuyer, writeBuyer as cartWriteBuyer,
   bundleDiscountPercent, type CartItem, type CartProduct,
 } from '../../lib/signupCart';
+import { WaitlistModal } from '../../components/signup/WaitlistModal';
 
 const PRODUCT_COPY: Record<SignupProduct, { title: string; sub: string }> = {
   arion:  { title: 'Get your AI-built website live in minutes', sub: "Pick a plan. Pay. Answer a few questions — we handle the rest." },
@@ -207,6 +208,14 @@ export function SignupPage() {
   // ARION (existing arion-api catalog)
   const [arionPlans, setArionPlans] = useState<PlanCatalogEntry[]>([]);
   const [arionPlan, setArionPlan] = useState<string>(params.plan || '');
+  // F-109 — optional ARION SEO add-on selected at signup. Auth'd
+  // ArionUsagePage has its own picker; this is the public mirror so new
+  // tenants can buy ARION + SEO in one go instead of post-signup upsell.
+  const [arionSeo, setArionSeo] = useState<'' | 'essentials' | 'growth' | 'authority'>('');
+
+  // F-110 — waitlist modal state. STELLA/FORGE/ARGUS cards open this in
+  // place of being disabled.
+  const [waitlist, setWaitlist] = useState<{ key: string; name: string } | null>(null);
 
   // OLIVER / SPARK (unified oliver-api catalog)
   const [cat, setCat] = useState<SignupCatalog | null>(null);
@@ -249,6 +258,7 @@ export function SignupPage() {
     if (!existing) return;
     if (existing.product === 'arion') {
       setArionPlan(existing.plan);
+      setArionSeo((existing.seo || '') as '' | 'essentials' | 'growth' | 'authority');
     } else if (existing.product === 'oliver') {
       setOliverPlan(existing.plan);
     } else if (existing.product === 'spark') {
@@ -286,7 +296,7 @@ export function SignupPage() {
   function snapshotCurrentItem(): CartItem | null {
     if (!selectedPlatform) return null;
     if (product === 'arion') {
-      return { product: 'arion', plan: arionPlan };
+      return { product: 'arion', plan: arionPlan, seo: arionSeo || '' };
     }
     if (product === 'oliver') {
       return { product: 'oliver', plan: oliverPlan };
@@ -348,6 +358,18 @@ export function SignupPage() {
       if (baseCart.length === 1) {
         const only = baseCart[0];
         if (only.product === 'arion') {
+          // F-109 — ARION + SEO at signup routes through /signup/checkout-cart
+          // (oliver-api) which knows how to bundle the SEO line item.
+          // ARION-only without SEO keeps using the legacy arion-api path so
+          // the website-build domain wizard still runs.
+          if (only.seo) {
+            const s = await createSignupCartCheckout({
+              email, name: name || undefined, billing_cycle: cycle,
+              items: [{ product: 'arion', plan: only.plan, seo: only.seo || null }],
+            });
+            window.location.href = s.checkout_url;
+            return;
+          }
           const s = await createCheckoutSession({
             email, name: name || undefined,
             plan: only.plan, billing_cycle: cycle,
@@ -451,15 +473,22 @@ export function SignupPage() {
               const cardPlatform = card.select.kind === 'state2' ? card.select.platform : null;
               const inCart = cardPlatform != null
                 && cart.some((it) => it.product === cardPlatform);
+              // F-110 — coming-soon / proposal-only cards (STELLA, FORGE,
+              // ARGUS) open the waitlist modal instead of being dead.
+              const waitlistKeys: Record<string, string> = {
+                stella: 'STELLA', forge: 'FORGE', argus: 'ARGUS',
+              };
+              const isWaitlist = disabled && waitlistKeys[card.key];
               const onSelect = () => {
                 if (card.select.kind === 'state2') gotoPlatform(card.select.platform);
                 else if (card.select.kind === 'external') window.location.href = card.select.url;
+                else if (isWaitlist) setWaitlist({ key: card.key, name: waitlistKeys[card.key] });
               };
               return (
                 <div
                   key={card.key}
                   className={`rounded-2xl border-2 p-6 flex flex-col bg-white transition ${
-                    disabled
+                    disabled && !isWaitlist
                       ? 'border-gray-200 opacity-60'
                       : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
                   }`}
@@ -490,15 +519,18 @@ export function SignupPage() {
                   )}
                   <button
                     onClick={onSelect}
-                    disabled={disabled}
+                    disabled={disabled && !isWaitlist}
                     className={`mt-5 rounded-lg px-4 py-2 text-sm font-semibold shadow disabled:cursor-not-allowed disabled:bg-gray-300 ${
-                      inCart ? 'text-emerald-700 border-2 border-emerald-500 bg-emerald-50' : 'text-white'
+                      inCart ? 'text-emerald-700 border-2 border-emerald-500 bg-emerald-50' :
+                      isWaitlist ? 'text-white bg-slate-700 hover:bg-slate-800' :
+                      'text-white'
                     }`}
-                    style={disabled || inCart ? undefined : { background: card.accent }}
-                    title={disabled ? card.select.kind === 'disabled' ? card.select.reason : '' : ''}
+                    style={(disabled && !isWaitlist) || inCart || isWaitlist ? undefined : { background: card.accent }}
+                    title={disabled && !isWaitlist ? (card.select.kind === 'disabled' ? card.select.reason : '') : ''}
                   >
-                    {disabled ? card.select.kind === 'disabled' ? card.select.reason : 'Unavailable' :
-                      inCart ? '✓ In your plan — edit' :
+                    {disabled
+                      ? (isWaitlist ? '🔔 Get notified at launch' : (card.select.kind === 'disabled' ? card.select.reason : 'Unavailable'))
+                      : inCart ? '✓ In your plan — edit' :
                         card.select.kind === 'external' ? 'Request a quote →' : 'Add to your plan →'}
                   </button>
                 </div>
@@ -510,6 +542,16 @@ export function SignupPage() {
             Already a customer? <a href="/" className="underline">Sign in</a> to manage your plan from the portal.
           </p>
         </main>
+
+        {/* F-110 — waitlist capture for STELLA/FORGE/ARGUS */}
+        <WaitlistModal
+          open={waitlist !== null}
+          onClose={() => setWaitlist(null)}
+          productKey={waitlist?.key || ''}
+          productName={waitlist?.name || ''}
+          defaultEmail={email}
+          defaultName={name}
+        />
       </div>
     );
   }
@@ -577,17 +619,60 @@ export function SignupPage() {
         {loading ? (
           <div className="text-center text-gray-500 py-12">Loading plans…</div>
         ) : product === 'arion' ? (
-          <div className="grid gap-4 lg:grid-cols-4">
-            {arionPlans.map((p) => (
-              <button key={p.key} onClick={() => setArionPlan(p.key)}
-                className={`text-left rounded-xl p-6 border-2 transition ${arionPlan === p.key ? 'border-[#EF6C33] bg-white shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
-                <div className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{p.name}</div>
-                <div className="mt-3 text-3xl font-bold text-gray-900">${cycle === 'annual' ? p.pricing.annual_per_month_usd.toFixed(0) : p.pricing.monthly_usd.toFixed(0)}<span className="ml-1 text-sm text-gray-500">/mo</span></div>
-                <p className="mt-3 text-sm text-gray-600">{p.description}</p>
-                <ul className="mt-4 space-y-2 text-xs text-gray-700">{p.features.map((f) => <li key={f} className="flex gap-2"><span className="text-[#EF6C33]">✓</span><span>{f}</span></li>)}</ul>
-              </button>
-            ))}
-          </div>
+          <>
+            <div className="grid gap-4 lg:grid-cols-4">
+              {arionPlans.map((p) => (
+                <button key={p.key} onClick={() => setArionPlan(p.key)}
+                  className={`text-left rounded-xl p-6 border-2 transition ${arionPlan === p.key ? 'border-[#EF6C33] bg-white shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                  <div className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{p.name}</div>
+                  <div className="mt-3 text-3xl font-bold text-gray-900">${cycle === 'annual' ? p.pricing.annual_per_month_usd.toFixed(0) : p.pricing.monthly_usd.toFixed(0)}<span className="ml-1 text-sm text-gray-500">/mo</span></div>
+                  <p className="mt-3 text-sm text-gray-600">{p.description}</p>
+                  <ul className="mt-4 space-y-2 text-xs text-gray-700">{p.features.map((f) => <li key={f} className="flex gap-2"><span className="text-[#EF6C33]">✓</span><span>{f}</span></li>)}</ul>
+                </button>
+              ))}
+            </div>
+
+            {/* F-109 — ARION SEO add-on selector. Optional; default "Skip".
+                Auth'd ArionUsagePage has the full SEO catalog; here we just
+                surface the 3 main tiers so the buyer can bundle at signup
+                instead of being redirected to upsell after sign-in. */}
+            <div className="mt-8 rounded-xl border border-gray-200 bg-white p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">SEO add-on (optional)</div>
+                  <p className="text-xs text-gray-500 mt-0.5">Keyword tracking, site-audit, competitor monitoring + AI search visibility. Layered on top of the website plan above.</p>
+                </div>
+                {arionSeo && (
+                  <button type="button" onClick={() => setArionSeo('')} className="text-xs text-gray-500 hover:text-gray-700 underline">Remove</button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {([
+                  { key: 'essentials', label: 'Essentials', blurb: '10 keywords · site audit · monthly report', from: 29 },
+                  { key: 'growth',     label: 'Growth',     blurb: '25 keywords · competitors · Google AI Mode', from: 79 },
+                  { key: 'authority',  label: 'Authority',  blurb: '60 keywords · all AI engines · weekly digest', from: 149 },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setArionSeo(opt.key)}
+                    className={`text-left rounded-lg border-2 p-3 transition ${
+                      arionSeo === opt.key ? 'border-[#38BDF8] bg-sky-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="flex items-baseline justify-between">
+                      <div className="text-sm font-bold text-gray-900">{opt.label}</div>
+                      <div className="text-xs text-gray-500">from {money(opt.from)}/mo</div>
+                    </div>
+                    <p className="mt-1 text-[11px] text-gray-600 leading-snug">{opt.blurb}</p>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-3 text-[11px] text-gray-500">
+                Exact pricing depends on your billing cycle and is confirmed at checkout.
+              </p>
+            </div>
+          </>
         ) : product === 'oliver' ? (
           <div className="grid gap-4 lg:grid-cols-4">
             {(cat?.plans || []).map((p) => (

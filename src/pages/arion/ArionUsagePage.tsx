@@ -14,6 +14,7 @@ import { getArionOverview } from "../../lib/arionApi";
 import { isPlatformOwner } from "../../lib/currentPlan";
 import { changePlan } from "../../lib/billingApi";
 import { PendingChangeBanner } from "../../components/PendingChangeBanner";
+import { CheckoutResultFlash } from "../../components/CheckoutResultFlash";
 
 interface Props { service?: PortalService; status?: ServiceStatus; }
 
@@ -163,6 +164,7 @@ export function ArionUsagePage(_: Props) {
   return (
     <div className="arion-page">
       <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} />
+      <CheckoutResultFlash product="ARION" />
       <div className="card">
         <div className="card-hdr">
           <div>
