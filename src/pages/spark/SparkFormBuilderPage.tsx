@@ -1,6 +1,13 @@
 // SparkFormBuilderPage — Visual form designer (v4.2).
 //
-// Two-pane layout:
+// F-104 refactor: the editor body + state has been extracted into a shared
+// FormBuilderEditor component (exported below) so the same editor renders
+// either as this routed page (deep links / back-compat) or inside
+// SparkFormBuilderModal (the new primary surface, opened from
+// SparkFormsPage). When the user clicks "Create Form" or "Edit in Builder"
+// on the library they get the modal — no navigation, no page swap.
+//
+// Two-pane layout (inside the editor):
 //   Left:  field list + per-field config + field palette
 //   Right: live preview of the form as it will render publicly
 //
@@ -8,20 +15,20 @@
 // PUT /api/v1/forms/:id endpoint. The hosted/public render endpoint
 // (/api/v1/forms/:id/public) returns the parsed schema so external sites
 // can mount the form without auth.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import {
   Type, Mail, Phone, AlignLeft, ChevronDown, Square, CircleDot, Calendar, Hash, Lock,
-  Plus, Trash2, ArrowUp, ArrowDown, Save, Eye, Copy, Check, Settings as SettingsIcon,
+  Trash2, ArrowUp, ArrowDown, Save, Eye, Copy, Check, Settings as SettingsIcon,
 } from "lucide-react";
 
 // ── Field type registry ──────────────────────────────────────────────
 
-type FieldType = "text" | "email" | "phone" | "textarea" | "select" | "checkbox" | "radio" | "date" | "number" | "hidden";
+export type FieldType = "text" | "email" | "phone" | "textarea" | "select" | "checkbox" | "radio" | "date" | "number" | "hidden";
 
-interface FormField {
+export interface FormField {
   id: string;
   type: FieldType;
   name: string;            // form field name; e.g. "first_name"
@@ -52,7 +59,7 @@ const FIELD_TYPE_META: Record<FieldType, { label: string; icon: typeof Type; des
   hidden:   { label: "Hidden",     icon: Lock,       description: "Hidden value submitted invisibly" },
 };
 
-interface FormRow {
+export interface FormRow {
   id: number;
   tenant_id: string;
   name: string;
@@ -83,11 +90,26 @@ function defaultField(type: FieldType): FormField {
   return base;
 }
 
-export function SparkFormBuilderPage() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const formId = id || searchParams.get("id") || "";
+// ── Shared editor (used by both the page and the modal) ──────────────
+
+interface EditorProps {
+  formId: string;
+  /** Renders without the header config block (name/slug/URLs/QR). Default false. */
+  compact?: boolean;
+  /** Called after a successful save; the parent typically refreshes its list. */
+  onSaved?: () => void;
+}
+
+/**
+ * FormBuilderEditor — the actual designer. No page chrome, no modal chrome —
+ * just the editor. Used by SparkFormBuilderPage and SparkFormBuilderModal.
+ *
+ * Exposes a `header` portion (form name + slug + URLs + QR) and a `body`
+ * portion (palette + field list + config panel). The container decides where
+ * to put the Save button (the editor returns the current dirty state via
+ * `onSaved` but the parent owns the button placement).
+ */
+export function FormBuilderEditor({ formId, onSaved }: EditorProps) {
   const { get, put, ready } = useSparkApi();
 
   const [formRow, setFormRow] = useState<FormRow | null>(null);
@@ -100,6 +122,7 @@ export function SparkFormBuilderPage() {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copyTarget, setCopyTarget] = useState<"submit" | "hosted" | null>(null);
 
   const fetchForm = useCallback(async () => {
     if (!ready || !formId) { setLoading(false); return; }
@@ -150,13 +173,14 @@ export function SparkFormBuilderPage() {
     try {
       await put(`/api/v1/forms/${formRow.id}`, { name, fields_schema: fields, slug: slug.trim() || null });
       setSavedAt(new Date());
+      onSaved?.();
     } catch (err) { alert(`Save failed: ${(err as Error).message}`); }
     finally { setSaving(false); }
   }
 
   // Submit URL uses LUMEN-API base (read from window for now; the env var
   // can override). Hosted page renders an HTML form at /api/v1/forms/:id/hosted.
-  const apiBase = ((typeof window !== "undefined" && (window as any).__LUMEN_API_BASE) as string | undefined)
+  const apiBase = ((typeof window !== "undefined" && (window as unknown as { __LUMEN_API_BASE?: string }).__LUMEN_API_BASE) as string | undefined)
     || `${typeof window !== "undefined" ? window.location.origin.replace(/\/$/, "") : ""}`;
   const submitUrl = formRow ? `${apiBase}/api/v1/forms/${formRow.id}/submit` : "";
   // Prefer the slug URL when a slug is saved; otherwise fall back to /hosted.
@@ -165,7 +189,6 @@ export function SparkFormBuilderPage() {
     : null;
   const hostedUrl = slugUrl || (formRow ? `${apiBase}/api/v1/forms/${formRow.id}/hosted` : "");
   const qrSvgUrl = formRow ? `${apiBase}/api/v1/forms/${formRow.id}/qr.svg?size=200` : "";
-  const [copyTarget, setCopyTarget] = useState<"submit" | "hosted" | null>(null);
 
   async function copyText(text: string, target: "submit" | "hosted") {
     try {
@@ -176,22 +199,20 @@ export function SparkFormBuilderPage() {
     } catch (e) { alert(`Copy failed: ${(e as Error).message}`); }
   }
 
-  if (!formId) {
-    return (
-      <SparkPageShell title="Form Builder" subtitle="No form selected">
-        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
-          Choose a form from <button onClick={() => navigate("/app/services/spark_forms")} className="text-[#EF6C33] underline">Forms</button> to edit, or create a new form first.
-        </div>
-      </SparkPageShell>
-    );
+  if (loading) {
+    return <div className="text-sm text-slate-500 p-4">Loading form…</div>;
+  }
+  if (error) {
+    return <div className="text-sm text-red-600 p-4">Couldn't load form: {String((error as Error)?.message || error)}</div>;
   }
 
   return (
-    <SparkPageShell
-      title={`Form Builder — ${name || `Form #${formId}`}`}
-      subtitle={formRow ? `${formRow.submission_count.toLocaleString()} submissions` : ""}
-      help="Visually design the fields, labels, and validation rules of your SPARK form. The hosted submit URL is below; embed it in your site or share directly."
-      actions={
+    <div className="space-y-3">
+      {/* Save bar */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] text-slate-500">
+          {formRow ? `${formRow.submission_count.toLocaleString()} submission${formRow.submission_count === 1 ? "" : "s"} received` : ""}
+        </div>
         <div className="flex items-center gap-2">
           {savedAt && (
             <span className="text-[10px] text-emerald-700 flex items-center gap-1">
@@ -202,12 +223,10 @@ export function SparkFormBuilderPage() {
             <Save className="h-4 w-4" /> {saving ? "Saving…" : "Save form"}
           </button>
         </div>
-      }
-      loading={loading}
-      error={error}
-    >
+      </div>
+
       {/* Form-level config */}
-      <div className="rounded-lg border border-slate-200 bg-white p-3 mb-3">
+      <div className="rounded-lg border border-slate-200 bg-white p-3">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="text-xs md:col-span-1 space-y-2">
             <label className="block">
@@ -349,11 +368,46 @@ export function SparkFormBuilderPage() {
           )}
         </aside>
       </div>
+    </div>
+  );
+}
+
+// ── Page (deep-link / back-compat surface) ───────────────────────────
+
+/**
+ * The modal at SparkFormsPage is the primary surface (F-104). This routed
+ * page survives for back-compat with any deep links that still go to
+ * /app/services/spark_form_builder?id=… — it just wraps the same editor in
+ * a SparkPageShell and adds a "Back to Forms" affordance.
+ */
+export function SparkFormBuilderPage() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const formId = id || searchParams.get("id") || "";
+
+  if (!formId) {
+    return (
+      <SparkPageShell title="Form Builder" subtitle="No form selected">
+        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
+          Choose a form from <button onClick={() => navigate("/app/services/spark_forms")} className="text-[#EF6C33] underline">Forms</button> to edit, or create a new form first.
+        </div>
+      </SparkPageShell>
+    );
+  }
+
+  return (
+    <SparkPageShell
+      title={`Form Builder`}
+      subtitle="Tip: the same editor opens as a modal from the Forms page — that's the recommended surface."
+      help="Visually design the fields, labels, and validation rules of your SPARK form. The hosted submit URL is below; embed it in your site or share directly."
+    >
+      <FormBuilderEditor formId={formId} />
     </SparkPageShell>
   );
 }
 
-// ── Preview + config ──────────────────────────────────────────────────
+// ── Preview + config (private helpers) ───────────────────────────────
 
 function FieldPreview({ field }: { field: FormField }) {
   const label = (
