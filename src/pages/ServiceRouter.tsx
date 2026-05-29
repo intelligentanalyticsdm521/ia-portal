@@ -226,12 +226,15 @@ const OliverPortalDesignerPage = lazyNamed(() => import('./oliver/OliverPortalDe
 const OliverAutomationsPage = lazyNamed(() => import('./oliver/OliverAutomationsPage'), 'OliverAutomationsPage');
 const OliverAddonsPage = lazyNamed(() => import('./oliver/OliverAddonsPage'), 'OliverAddonsPage');
 const OliverPortalDomainsPage = lazyNamed(() => import('./oliver/OliverPortalDomainsPage'), 'OliverPortalDomainsPage');
+// F-114 — unified portals hub
+const OliverPortalsHubPage = lazyNamed(() => import('./oliver/OliverPortalsHubPage'), 'OliverPortalsHubPage');
 // OLIVER v1.0 additions
 const OliverWorkflowTemplatesPage = lazyNamed(() => import('./oliver/OliverWorkflowTemplatesPage'), 'OliverWorkflowTemplatesPage');
 const OliverJobOffersPage = lazyNamed(() => import('./oliver/OliverJobOffersPage'), 'OliverJobOffersPage');
 const OliverSupportTicketsPage = lazyNamed(() => import('./oliver/OliverSupportTicketsPage'), 'OliverSupportTicketsPage');
 const OliverTimeTrackingPage = lazyNamed(() => import('./oliver/OliverTimeTrackingPage'), 'OliverTimeTrackingPage');
-const OliverExpensesPage = lazyNamed(() => import('./oliver/OliverExpensesPage'), 'OliverExpensesPage');
+// F-116 — Expenses deprecated, replaced with STELLA placeholder
+const StellaExpensesComingPage = lazyNamed(() => import('./stella/StellaExpensesComingPage'), 'StellaExpensesComingPage');
 const OliverRescheduleRequestsPage = lazyNamed(() => import('./oliver/OliverRescheduleRequestsPage'), 'OliverRescheduleRequestsPage');
 const OliverQuoteOptionsPage = lazyNamed(() => import('./oliver/OliverQuoteOptionsPage'), 'OliverQuoteOptionsPage');
 const OliverTerritoriesPage = lazyNamed(() => import('./oliver/OliverTerritoriesPage'), 'OliverTerritoriesPage');
@@ -399,12 +402,16 @@ export function ServiceRouter() {
       case 'oliver_automations': oliverPage = <OliverAutomationsPage />; break;
       case 'oliver_addons': oliverPage = <OliverAddonsPage />; break;
       case 'oliver_portal_domains': oliverPage = <OliverPortalDomainsPage />; break;
+      case 'oliver_portals_hub': oliverPage = <OliverPortalsHubPage />; break;
       // v1.0 additions
       case 'oliver_workflow_templates': oliverPage = <OliverWorkflowTemplatesPage />; break;
       case 'oliver_job_offers': oliverPage = <OliverJobOffersPage />; break;
       case 'oliver_support_tickets': oliverPage = <OliverSupportTicketsPage />; break;
       case 'oliver_time_tracking': oliverPage = <OliverTimeTrackingPage />; break;
-      case 'oliver_expenses': oliverPage = <OliverExpensesPage />; break;
+      // F-116 — Expenses moved to STELLA. Deep links to oliver_expenses
+      // render the STELLA placeholder instead of the deprecated page.
+      case 'oliver_expenses': oliverPage = <StellaExpensesComingPage />; break;
+      case 'stella_expenses_coming': oliverPage = <StellaExpensesComingPage />; break;
       case 'oliver_reschedule_requests': oliverPage = <OliverRescheduleRequestsPage />; break;
       case 'oliver_quote_options': oliverPage = <OliverQuoteOptionsPage />; break;
       case 'oliver_territories': oliverPage = <OliverTerritoriesPage />; break;

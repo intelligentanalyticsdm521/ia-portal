@@ -144,6 +144,8 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_automations', displayName: 'Workflow & Automations', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_automations', description: 'Pre-built automation rules (booking confirmations, job reminders, auto-invoicing, on-the-way SMS, auto-assign workers) + customizable message templates. Pro+ unlocks the orchestration rules; comms rules work on all tiers.' },
   { key: 'oliver_addons', displayName: 'Add-ons', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_addons', description: 'Stack-on subscriptions: SMS Essentials/Growth/Authority for operational notifications. Future: per-tenant native mobile apps.' },
   { key: 'oliver_portal_domains', displayName: 'Portals & Domains', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_portal_domains', description: 'Customer + crew portal URLs. Default subdomains (xxx.customer.ia-dm.com) free; bring your own domain on Pro+.' },
+  // F-114 — Unified Customer & Crew portals hub (replaces 3 scattered surfaces).
+  { key: 'oliver_portals_hub', displayName: 'Customer & Crew Portals', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_portals_hub', description: 'Single hub to manage both portals — design, signup form, domain binding, and workflow rules.' },
   // F-70 + F-72 + F-63 — Workflow Settings (reschedule policy, post-booking
   // actions, customer signup form config).
   { key: 'oliver_workflow_settings', displayName: 'Workflow Settings', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_workflow_settings', description: 'Reschedule policy + after-booking actions (auto-invoice, confirmation email, auto-assign) + the customer signup form library.' },
@@ -157,7 +159,14 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_job_offers', displayName: 'Job Offers', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_job_offers', description: 'Broadcast a job to multiple workers — first to accept claims it.' },
   { key: 'oliver_support_tickets', displayName: 'Support Tickets', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_support_tickets', description: 'Customer-facing support tickets with threaded replies + convert-to-job.' },
   { key: 'oliver_time_tracking', displayName: 'Time Tracking', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_time_tracking', description: 'Worker time entries — clock in/out + manual + billable rollup (Pro).' },
-  { key: 'oliver_expenses', displayName: 'Expenses', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_expenses', description: 'Per-job + per-worker expense tracking with approve/reject flow (Pro).' },
+  // F-116 — OLIVER Expenses deprecated; rebuilds expansively in STELLA.
+  // Status set to coming_soon so it surfaces in the platform service
+  // catalog but never appears as an active OLIVER feature. Route kept for
+  // deep-link safety but page redirects to STELLA placeholder (see
+  // ServiceRouter).
+  { key: 'oliver_expenses', displayName: 'Expenses (moved to STELLA)', section: 'OLIVER', defaultStatus: 'coming_soon', route: '/app/services/oliver_expenses', description: 'Deprecated — Expenses moves to STELLA for the expanded build. Existing data preserved.' },
+  // F-116 — STELLA Expenses placeholder for the future rebuild.
+  { key: 'stella_expenses_coming', displayName: 'Expenses (Coming Soon)', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_expenses_coming', description: 'Expansive expense + reimbursement + budget tracking. Rebuilds during STELLA build sessions.' },
   { key: 'oliver_reschedule_requests', displayName: 'Reschedule Queue', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_reschedule_requests', description: 'Customer self-service reschedule requests with admin approval (Pro).' },
   { key: 'oliver_quote_options', displayName: 'Quote Options', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_quote_options', description: 'Multi-option (good/better/best) pricing tiers on a quote (Pro). Open from a quote.' },
   { key: 'oliver_territories', displayName: 'Territories', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_territories', description: 'Service area rules + primary/backup workers (Business).' },

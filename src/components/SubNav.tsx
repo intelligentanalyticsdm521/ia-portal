@@ -134,17 +134,16 @@ const OLIVER_NAV: SubNavConfig = {
       items: [
         { key: "oliver_automations", label: "Automations", route: "/app/services/oliver_automations" },
         { key: "oliver_addons", label: "Add-ons", route: "/app/services/oliver_addons" },
-        { key: "oliver_portal_domains", label: "Portals & Domains", route: "/app/services/oliver_portal_domains" },
+        // F-114 — Portals hub replaces the standalone Portals & Domains page;
+        // the old page stays reachable by URL but no longer surfaces in nav.
+        { key: "oliver_portals_hub", label: "Customer & Crew Portals", route: "/app/services/oliver_portals_hub" },
         // F-70 + F-72 + F-63 — reschedule policy, post-booking actions, signup form
         { key: "oliver_workflow_settings", label: "Workflow Settings", route: "/app/services/oliver_workflow_settings" },
       ],
     },
-    {
-      label: "Expenses", icon: TrendingUp, collapsible: true, sectionId: "oliver_expenses",
-      items: [
-        { key: "oliver_expenses", label: "Expenses", route: "/app/services/oliver_expenses" },
-      ],
-    },
+    // F-116 — Expenses removed from OLIVER nav; rebuilds in STELLA. The
+    // routes/page/backend table stay in place (deprecated) so deep links
+    // don't 500 if anyone hits them.
     {
       label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "oliver_ia_insights",
       items: [
@@ -502,6 +501,23 @@ const PLACEHOLDER_NAV = (name: string, tagline: string): SubNavConfig => ({
   ],
 });
 
+// F-116 — STELLA placeholder nav: Coming Soon + Expenses-rebuild placeholder
+// so OLIVER's deprecated Expenses surface has a forward-looking home in
+// the product where the next-gen build will land.
+const STELLA_NAV: SubNavConfig = {
+  productName: "STELLA",
+  tagline: "Reporting & BI · Coming Soon",
+  groups: [
+    {
+      label: "",
+      items: [
+        { key: "stella_coming", label: "Overview (Coming Soon)", route: "/app/services/stella_coming" },
+        { key: "stella_expenses_coming", label: "Expenses (Coming Soon)", route: "/app/services/stella_expenses_coming" },
+      ],
+    },
+  ],
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // F-86 + F-93 — Settings as its own IconRail destination.
 //
@@ -633,7 +649,7 @@ export const SUB_NAV_CONFIGS: Record<ProductKey, SubNavConfig | null> = {
   oliver: OLIVER_NAV,
   spark: SPARK_NAV,
   consulting: CONSULTING_NAV,
-  stella: PLACEHOLDER_NAV("STELLA", "Reporting & BI"),
+  stella: STELLA_NAV,
   forge: PLACEHOLDER_NAV("FORGE", "Integrations"),
   argus: ARGUS_NAV,
   settings: SETTINGS_NAV,
@@ -710,6 +726,8 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/oliver_expenses") || path.includes("/oliver_job_costing")) return "oliver_expenses";
   // F-93 — oliver_templates moved from Settings → Billing main nav.
   if (path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders") || path.includes("/oliver_templates")) return "oliver_billing";
+  // F-114 — Portals hub + legacy Portal Designer / Portals & Domains all live in the W&A group.
+  if (path.includes("/oliver_portals_hub") || path.includes("/oliver_portal_designer") || path.includes("/oliver_portal_domains") || path.includes("/oliver_automations") || path.includes("/oliver_addons") || path.includes("/oliver_workflow_settings")) return "oliver_workflow";
   if (path.includes("/oliver_ia_insights") || path.includes("/argus_cross_channel")) return "oliver_ia_insights";
   if (path.includes("/oliver_reports") || path.includes("/oliver_activity_log")) return "oliver_reporting";
   return null;
