@@ -6,14 +6,15 @@
 // OliverOnboardingWizard pattern: finite task, dismiss when done, self-hide
 // when 100% complete.
 //
-// The content mirrors SparkOnboardingPage (same checklist API + same action
-// map) but renders as an overlay instead of a routed page. The /spark_onboarding
-// page is being phased out — anyone deep-linking there will see the same
-// content with a "this is now in your dashboard" banner.
+// F-101 — refactored to host on IadmModal so the wizard inherits the
+// standard ink-gradient header + Core Blue / SPARK accent button policy
+// + drag-text-safe backdrop close. The progress strip (numbers + bar) now
+// renders as the first body row instead of fighting the standard header.
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { Check, ArrowRight, Sparkles, Lock, X } from "lucide-react";
+import { Check, ArrowRight, Sparkles, Lock } from "lucide-react";
+import { IadmModal, IadmButton } from "../IadmModal";
 
 interface Step {
   key: string;
@@ -66,142 +67,128 @@ export function SparkOnboardingWizard({ open, onClose }: Props) {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Esc closes
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  // Esc + click-outside close handled by IadmModal.
 
   if (!open) return null;
 
   const allRequiredDone = progress && progress.required_done === progress.required_total;
   const allDone = progress && progress.done === progress.total;
 
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="spark-onboarding-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-gradient-to-br from-[#0B1C24] to-[#1a3540] px-6 py-5 text-white rounded-t-xl">
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="absolute right-3 top-3 rounded-full p-1.5 text-white/60 hover:bg-white/10 hover:text-white transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="text-[10px] uppercase tracking-wider font-bold text-[#EF6C33]">Get started</div>
-              <h2 id="spark-onboarding-title" className="text-xl font-bold mt-1">
-                {progress ? `${progress.done} of ${progress.total} complete` : "Loading checklist…"}
-              </h2>
-              {progress && progress.required_done < progress.required_total && (
-                <div className="text-xs text-white/70 mt-1">{progress.required_done} of {progress.required_total} required steps done</div>
-              )}
-              {allDone && <div className="text-xs text-emerald-300 mt-1 flex items-center gap-1"><Sparkles className="h-3 w-3" /> You're fully onboarded.</div>}
-              {!allDone && allRequiredDone && <div className="text-xs text-amber-300 mt-1">Required complete. Optional steps will sharpen results.</div>}
-            </div>
-            <div className="text-right">
-              <div className="text-4xl font-bold tabular-nums">{progress?.percent ?? 0}<span className="text-lg">%</span></div>
-            </div>
-          </div>
-          <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden mt-3">
-            <div className="h-full bg-[#EF6C33] transition-all" style={{ width: `${progress?.percent ?? 0}%` }} />
-          </div>
-        </div>
-
-        {/* Body */}
-        <div className="p-5 space-y-2">
-          {loading && <div className="text-center py-8 text-slate-500 text-sm">Loading…</div>}
-          {Boolean(error) && (
-            <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              Couldn't load checklist. {String((error as Error)?.message || error)}
-            </div>
-          )}
-          {!loading && steps.map((s, i) => {
-            const a = ACTION_MAP[s.key] || { href: "#", cta: "Open", help: "" };
-            const locked = !!s.locked;
-            return (
-              <div
-                key={s.key}
-                className={`flex items-start gap-3 p-3 rounded-lg border-2 ${
-                  locked ? "border-slate-200 bg-slate-50 opacity-60"
-                    : s.done ? "border-emerald-200 bg-emerald-50/30" : "border-slate-200 bg-white"
-                }`}
-              >
-                <div className="flex-shrink-0 mt-0.5">
-                  {locked ? (
-                    <div className="rounded-full border-2 border-slate-300 text-slate-400 w-6 h-6 flex items-center justify-center" title="Locked — upgrade required">
-                      <Lock className="h-3 w-3" />
-                    </div>
-                  ) : s.done ? (
-                    <div className="rounded-full bg-emerald-600 text-white w-6 h-6 flex items-center justify-center">
-                      <Check className="h-3.5 w-3.5" />
-                    </div>
-                  ) : (
-                    <div className="rounded-full border-2 border-slate-300 text-slate-400 w-6 h-6 flex items-center justify-center text-[11px] font-bold">
-                      {i + 1}
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <div className="font-semibold text-slate-900 text-sm">{s.label}</div>
-                    {locked && <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">{s.requiredTier} plan</span>}
-                    {!locked && s.required && !s.done && <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">required</span>}
-                    {!locked && s.done && <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">complete</span>}
-                  </div>
-                  <div className="text-xs text-slate-600 leading-snug">{a.help}</div>
-                </div>
-                <div className="flex-shrink-0">
-                  {locked ? (
-                    <Link
-                      to="/app/spark/pricing"
-                      onClick={onClose}
-                      className="text-xs px-2.5 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-100 inline-flex items-center gap-1"
-                    >
-                      Upgrade <ArrowRight className="h-3 w-3" />
-                    </Link>
-                  ) : (
-                    <Link
-                      to={a.href}
-                      onClick={onClose}
-                      className="text-xs px-2.5 py-1 rounded bg-[#EF6C33] hover:bg-[#d75a25] text-white inline-flex items-center gap-1"
-                    >
-                      {s.done ? "Review" : a.cta} <ArrowRight className="h-3 w-3" />
-                    </Link>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Footer */}
-        <div className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3 rounded-b-xl">
-          <div className="text-[11px] text-slate-500">
-            Skip what you don't need — required steps unlock the core platform; the optional ones sharpen results.
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded bg-white border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
-          >
-            Close
-          </button>
-        </div>
+  // The big % indicator lives in the header's right slot (headerActions) so
+  // the standard IadmModal eyebrow + title + subtitle pattern still owns the
+  // left side. The progress bar itself drops into the body's first row.
+  const headerPct = (
+    <div className="text-right">
+      <div className="text-3xl font-bold tabular-nums leading-none">
+        {progress?.percent ?? 0}<span className="text-base text-white/60">%</span>
       </div>
     </div>
+  );
+
+  const subtitle = !progress ? "Loading checklist…"
+    : allDone ? "You're fully onboarded."
+    : allRequiredDone ? "Required complete. Optional steps will sharpen results."
+    : progress.required_done < progress.required_total
+      ? `${progress.required_done} of ${progress.required_total} required steps done`
+      : undefined;
+
+  return (
+    <IadmModal
+      open={open}
+      onClose={onClose}
+      product="spark"
+      eyebrow="SPARK · GET STARTED"
+      title={progress ? `${progress.done} of ${progress.total} complete` : "Get started"}
+      subtitle={subtitle}
+      headerActions={headerPct}
+      size="md"
+      footer={
+        <>
+          <div className="mr-auto text-[11px] text-slate-500">
+            Skip what you don't need — required steps unlock the core platform; optional ones sharpen results.
+          </div>
+          <IadmButton variant="ghost" onClick={onClose}>Close</IadmButton>
+        </>
+      }
+    >
+      <div className="p-5 space-y-3">
+        {/* Progress bar — first row of the body so the standard ink header
+            stays untouched but the visual cue is still front-and-center. */}
+        <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+          <div className="h-full bg-[#EF6C33] transition-all" style={{ width: `${progress?.percent ?? 0}%` }} />
+        </div>
+
+        {allDone && (
+          <div className="flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            <Sparkles className="h-3.5 w-3.5" /> Every checklist item is done. You can close this.
+          </div>
+        )}
+
+        {loading && <div className="text-center py-8 text-slate-500 text-sm">Loading…</div>}
+        {Boolean(error) && (
+          <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            Couldn't load checklist. {String((error as Error)?.message || error)}
+          </div>
+        )}
+        {!loading && steps.map((s, i) => {
+          const a = ACTION_MAP[s.key] || { href: "#", cta: "Open", help: "" };
+          const locked = !!s.locked;
+          return (
+            <div
+              key={s.key}
+              className={`flex items-start gap-3 p-3 rounded-lg border-2 ${
+                locked ? "border-slate-200 bg-slate-50 opacity-60"
+                  : s.done ? "border-emerald-200 bg-emerald-50/30" : "border-slate-200 bg-white"
+              }`}
+            >
+              <div className="flex-shrink-0 mt-0.5">
+                {locked ? (
+                  <div className="rounded-full border-2 border-slate-300 text-slate-400 w-6 h-6 flex items-center justify-center" title="Locked — upgrade required">
+                    <Lock className="h-3 w-3" />
+                  </div>
+                ) : s.done ? (
+                  <div className="rounded-full bg-emerald-600 text-white w-6 h-6 flex items-center justify-center">
+                    <Check className="h-3.5 w-3.5" />
+                  </div>
+                ) : (
+                  <div className="rounded-full border-2 border-slate-300 text-slate-400 w-6 h-6 flex items-center justify-center text-[11px] font-bold">
+                    {i + 1}
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <div className="font-semibold text-slate-900 text-sm">{s.label}</div>
+                  {locked && <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">{s.requiredTier} plan</span>}
+                  {!locked && s.required && !s.done && <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">required</span>}
+                  {!locked && s.done && <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">complete</span>}
+                </div>
+                <div className="text-xs text-slate-600 leading-snug">{a.help}</div>
+              </div>
+              <div className="flex-shrink-0">
+                {locked ? (
+                  <Link
+                    to="/app/spark/pricing"
+                    onClick={onClose}
+                    className="text-xs px-2.5 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-100 inline-flex items-center gap-1"
+                  >
+                    Upgrade <ArrowRight className="h-3 w-3" />
+                  </Link>
+                ) : (
+                  <Link
+                    to={a.href}
+                    onClick={onClose}
+                    className="text-xs px-2.5 py-1 rounded bg-[#EF6C33] hover:bg-[#d75a25] text-white inline-flex items-center gap-1"
+                  >
+                    {s.done ? "Review" : a.cta} <ArrowRight className="h-3 w-3" />
+                  </Link>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </IadmModal>
   );
 }
 

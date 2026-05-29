@@ -24,7 +24,7 @@
 // PATCH endpoints were added in D-09/D-10/D-11 — before that day, rules
 // couldn't be edited at all, only deleted + recreated.
 import { useEffect, useState } from "react";
-import { X, Save, Trash2, AlertTriangle, Plus } from "lucide-react";
+import { Save, Trash2, AlertTriangle, Plus } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal, IadmButton } from "../IadmModal";
 
@@ -169,13 +169,7 @@ export function SparkRuleEditorModal({ open, onClose, ruleType, ruleId, onChange
     })();
   }, [open, ready, ruleType, ruleId, get]);
 
-  // Esc closes
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  // Esc + click-outside close is handled by IadmModal.
 
   async function save() {
     setSaving(true); setError(null);
@@ -265,27 +259,40 @@ export function SparkRuleEditorModal({ open, onClose, ruleType, ruleId, onChange
   const isEdit = ruleId != null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
+    <IadmModal
+      open={open}
+      onClose={onClose}
+      product="spark"
+      eyebrow={`SPARK · ${TYPE_LABEL[ruleType].toUpperCase()}`}
+      title={isEdit ? "Edit rule" : "New rule"}
+      subtitle={TYPE_LABEL[ruleType]}
+      size="md"
+      footer={
+        <>
+          {/* Delete pinned to the left via mr-auto — only on edit */}
+          {isEdit && (
+            <button
+              onClick={remove}
+              disabled={saving}
+              className="mr-auto text-xs text-rose-600 hover:text-rose-700 inline-flex items-center gap-1 disabled:opacity-50"
+            >
+              <Trash2 className="h-3 w-3" /> Delete
+            </button>
+          )}
+          <IadmButton variant="ghost" onClick={onClose}>Cancel</IadmButton>
+          <IadmButton
+            variant="accent"
+            product="spark"
+            onClick={save}
+            disabled={saving || loading}
+            icon={isEdit ? <Save className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+          >
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Create rule"}
+          </IadmButton>
+        </>
+      }
     >
-      <div
-        className="relative w-full max-w-2xl max-h-[92vh] overflow-hidden rounded-xl bg-white shadow-2xl flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3 bg-gradient-to-r from-[#0B1C24] to-[#1a3540] text-white">
-          <div>
-            <div className="text-[10px] uppercase tracking-wider font-bold text-[#EF6C33]">{TYPE_LABEL[ruleType]}</div>
-            <h2 className="text-base font-semibold">{isEdit ? "Edit rule" : "New rule"}</h2>
-          </div>
-          <button onClick={onClose} aria-label="Close" className="rounded-full p-1.5 text-white/60 hover:bg-white/10 hover:text-white transition-colors">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-5">
+      <div className="p-5">
           {loading && <div className="text-sm text-slate-500">Loading…</div>}
           {error && (
             <div className="mb-3 rounded border border-red-200 bg-red-50 p-2.5 text-xs text-red-700 flex items-start gap-2">
@@ -397,39 +404,18 @@ export function SparkRuleEditorModal({ open, onClose, ruleType, ruleId, onChange
               </label>
             </div>
           )}
-        </div>
-
-        <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3">
-          <div>
-            {isEdit && (
-              <button onClick={remove} disabled={saving} className="text-xs text-rose-600 hover:text-rose-700 inline-flex items-center gap-1">
-                <Trash2 className="h-3 w-3" /> Delete
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={onClose} className="rounded bg-white border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">
-              Cancel
-            </button>
-            <button onClick={save} disabled={saving || loading} className="rounded bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50 inline-flex items-center gap-1">
-              {isEdit ? <Save className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-              {saving ? "Saving…" : isEdit ? "Save changes" : "Create rule"}
-            </button>
-          </div>
-        </div>
+        <style>{`
+          .rule-input {
+            width: 100%;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 13px;
+          }
+          .rule-input:focus { outline: none; border-color: #EF6C33; box-shadow: 0 0 0 1px #EF6C33; }
+        `}</style>
       </div>
-
-      <style>{`
-        .rule-input {
-          width: 100%;
-          border: 1px solid #cbd5e1;
-          border-radius: 4px;
-          padding: 4px 8px;
-          font-size: 13px;
-        }
-        .rule-input:focus { outline: none; border-color: #EF6C33; box-shadow: 0 0 0 1px #EF6C33; }
-      `}</style>
-    </div>
+    </IadmModal>
   );
 }
 

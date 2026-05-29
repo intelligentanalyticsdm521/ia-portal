@@ -6,7 +6,7 @@
 // campaigns list. Matches the modal-driven creation pattern: one entry
 // point, no navigation between pages to start a new campaign.
 import { useEffect, useState, useCallback } from "react";
-import { X, Mail, MessageSquare, ArrowRight, ArrowLeft } from "lucide-react";
+import { Mail, MessageSquare, ArrowRight, ArrowLeft } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal, IadmButton } from "../IadmModal";
 
@@ -61,13 +61,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated }: Props) 
     }
   }, [open, ready, get]);
 
-  // Esc to close.
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  // Esc + click-outside close handled by IadmModal.
 
   const canSave = useCallback(() => {
     if (!name.trim() || !channel) return false;
@@ -108,32 +102,40 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated }: Props) 
   if (!open) return null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="spark-campaign-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
+    <IadmModal
+      open={open}
+      onClose={onClose}
+      product="spark"
+      eyebrow="SPARK · NEW CAMPAIGN"
+      title={step === "channel" ? "Pick a channel" : `Compose · ${channel?.toUpperCase()}`}
+      subtitle={step === "channel" ? "Email or SMS — saved as a draft you can refine" : undefined}
+      size="md"
+      footer={
+        <>
+          {step === "compose" && (
+            <button
+              onClick={() => setStep("channel")}
+              className="mr-auto text-xs text-slate-500 hover:text-slate-700 inline-flex items-center gap-1"
+            >
+              <ArrowLeft className="h-3 w-3" /> Back
+            </button>
+          )}
+          <IadmButton variant="ghost" onClick={onClose}>Cancel</IadmButton>
+          {step === "compose" && (
+            <IadmButton
+              variant="accent"
+              product="spark"
+              onClick={saveDraft}
+              disabled={saving || !canSave()}
+              icon={<ArrowRight className="h-3 w-3" />}
+            >
+              {saving ? "Saving…" : "Save draft"}
+            </IadmButton>
+          )}
+        </>
+      }
     >
-      <div
-        className="relative w-full max-w-xl max-h-[92vh] overflow-hidden rounded-xl bg-white shadow-2xl flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3 bg-gradient-to-r from-[#0B1C24] to-[#1a3540] text-white">
-          <div className="min-w-0">
-            <div className="text-[10px] uppercase tracking-wider font-bold text-[#EF6C33]">New campaign</div>
-            <h2 id="spark-campaign-modal-title" className="text-base font-semibold">
-              {step === "channel" ? "Pick a channel" : `Compose · ${channel?.toUpperCase()}`}
-            </h2>
-          </div>
-          <button onClick={onClose} aria-label="Close" className="rounded-full p-1.5 text-white/60 hover:bg-white/10 hover:text-white transition-colors">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto p-5">
+      <div className="p-5">
           {error && (
             <div className="mb-3 rounded border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">{error}</div>
           )}
@@ -254,37 +256,8 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated }: Props) 
               )}
             </div>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3">
-          <div>
-            {step === "compose" && (
-              <button
-                onClick={() => setStep("channel")}
-                className="text-xs text-slate-500 hover:text-slate-700 inline-flex items-center gap-1"
-              >
-                <ArrowLeft className="h-3 w-3" /> Back
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={onClose} className="rounded bg-white border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">
-              Cancel
-            </button>
-            {step === "compose" && (
-              <button
-                onClick={saveDraft}
-                disabled={saving || !canSave()}
-                className="rounded bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50 inline-flex items-center gap-1"
-              >
-                {saving ? "Saving…" : "Save draft"} <ArrowRight className="h-3 w-3" />
-              </button>
-            )}
-          </div>
-        </div>
       </div>
-    </div>
+    </IadmModal>
   );
 }
 

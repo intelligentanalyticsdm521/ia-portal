@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { useAppState } from "../../app/AppState";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkTable } from "../../components/spark/SparkTable";
-import { Plus, QrCode, ExternalLink, Eye, User, Sparkles } from "lucide-react";
+import { Plus, QrCode, ExternalLink, Eye, User, Sparkles, Wand2 } from "lucide-react";
 
 interface QrCode {
   id: number; label: string; target_url: string; short_code: string;
@@ -18,6 +19,22 @@ interface VCardForm {
   phone: string; email: string;
   website: string;
 }
+
+// Shape returned by GET /api/v1/account/profile (see LUMEN-API
+// routes/accountProfile.js → mapShared). The shared business profile lives in
+// core.tenants so SPARK/OLIVER/ARION all read the same source of truth.
+interface AccountProfile {
+  businessName: string | null;
+  primaryContactEmail: string | null;
+  primaryContactPhone: string | null;
+  websiteUrl: string | null;
+  logoUrl: string | null;
+  brandColor: string | null;
+}
+const EMPTY_VCARD: VCardForm = {
+  first_name: "", last_name: "", title: "", company: "",
+  phone: "", email: "", website: "",
+};
 
 /**
  * Build a vCard 3.0 data URI from the form. When the QR is scanned the phone
@@ -44,15 +61,22 @@ function buildVcardDataUri(v: VCardForm): string {
 
 export function SparkQrCodesPage() {
   const { get, post, ready } = useSparkApi();
+  const { active: appActive } = useAppState();
   const [list, setList] = useState<QrCode[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [drawer, setDrawer] = useState<"url" | "vcard" | null>(null);
   const [form, setForm] = useState({ label: "", target_url: "", utm_source: "", utm_medium: "qr", utm_campaign: "" });
-  const [vcard, setVcard] = useState<VCardForm>({
-    first_name: "", last_name: "", title: "", company: "",
-    phone: "", email: "", website: "",
-  });
+  const [vcard, setVcard] = useState<VCardForm>(EMPTY_VCARD);
+
+  // Shared business profile (core.tenants) — fetched once and reused for
+  // every "Reset to my info" / drawer open. Per the data-fetching convention:
+  // fetch on mount, never on render. The "prefilled" flag is shown as a hint
+  // ("Auto-filled from your profile — edit anything") so the user knows where
+  // the values came from and that they can override them.
+  const [profile, setProfile] = useState<AccountProfile | null>(null);
+  const [prefilled, setPrefilled] = useState(false);
+  const profileLoadedRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -63,6 +87,66 @@ export function SparkQrCodesPage() {
     } catch (err) { setError(err); } finally { setLoading(false); }
   }, [get, ready]);
   useEffect(() => { load(); }, [load]);
+
+  // Load the shared business profile once when ready. Failure is silent — the
+  // user just sees an empty form they can fill in by hand (same as before).
+  useEffect(() => {
+    if (!ready || profileLoadedRef.current) return;
+    profileLoadedRef.current = true;
+    (async () => {
+      try {
+        const r = await get<{ data: { profile: AccountProfile } }>("/api/v1/account/profile");
+        if (r?.data?.profile) setProfile(r.data.profile);
+      } catch {
+        /* silent — auto-prefill is a nice-to-have, not required */
+      }
+    })();
+  }, [get, ready]);
+
+  // Compute the "fully prefilled" baseline vCard from the active user + shared
+  // profile. Identity (first/last/email) comes from the signed-in user; org
+  // fields (company/phone/website) come from the shared business profile.
+  const buildPrefillFromProfile = useCallback((): VCardForm => {
+    const u = appActive?.user;
+    const p = profile;
+    return {
+      first_name: u?.firstName || "",
+      last_name:  u?.lastName  || "",
+      title:      "",
+      company:    p?.businessName || "",
+      // Personal phone isn't on the user record — fall back to the business's
+      // primary contact phone so the QR has something useful by default.
+      phone:      p?.primaryContactPhone || "",
+      email:      u?.email || p?.primaryContactEmail || "",
+      website:    p?.websiteUrl || "",
+    };
+  }, [appActive, profile]);
+
+  // When the vCard drawer opens with an empty form, auto-fill it from the
+  // profile so the user can just hit Generate. If they've already edited
+  // fields, leave their work alone. They can also click "Reset to my info"
+  // any time to start over from the profile-derived baseline.
+  useEffect(() => {
+    if (drawer !== "vcard") return;
+    const isEmpty = !vcard.first_name && !vcard.last_name && !vcard.company
+      && !vcard.email && !vcard.phone && !vcard.website && !vcard.title;
+    if (!isEmpty) return;
+    const next = buildPrefillFromProfile();
+    const filledSomething = !!(next.first_name || next.last_name || next.company
+      || next.email || next.phone || next.website);
+    if (filledSomething) {
+      setVcard(next);
+      setPrefilled(true);
+    }
+    // We intentionally only react to drawer open transitions — re-running on
+    // every vcard keystroke would clobber the user's edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawer]);
+
+  function resetVcardToProfile() {
+    setVcard(buildPrefillFromProfile());
+    setPrefilled(true);
+  }
 
   async function create() {
     if (!form.label.trim() || !form.target_url.trim()) return;
@@ -85,7 +169,8 @@ export function SparkQrCodesPage() {
         utm_medium: "qr",
         utm_campaign: "business_card",
       });
-      setVcard({ first_name: "", last_name: "", title: "", company: "", phone: "", email: "", website: "" });
+      setVcard(EMPTY_VCARD);
+      setPrefilled(false);
       setDrawer(null);
       await load();
     } catch (err) { setError(err); }
@@ -201,6 +286,38 @@ export function SparkQrCodesPage() {
           </>
         }
       >
+        {/* Prefill hint + reset — shows once we've auto-filled from the shared
+            profile so the user knows where the values came from and that they
+            can override any field. Reset wipes their edits back to the
+            profile baseline. */}
+        {prefilled && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 mb-1">
+            <div className="text-xs text-emerald-800 flex items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
+              <span>Auto-filled from your account &amp; business profile — edit any field below to customize.</span>
+            </div>
+            <button
+              type="button"
+              onClick={resetVcardToProfile}
+              className="text-[11px] text-emerald-700 hover:text-emerald-900 inline-flex items-center gap-1 flex-shrink-0 font-medium"
+              title="Reset all fields to your profile defaults"
+            >
+              <Wand2 className="h-3 w-3" /> Reset
+            </button>
+          </div>
+        )}
+        {!prefilled && profile && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 mb-1">
+            <span className="text-xs text-slate-600">Want to start from your account info?</span>
+            <button
+              type="button"
+              onClick={resetVcardToProfile}
+              className="text-[11px] text-[#EF6C33] hover:underline inline-flex items-center gap-1 flex-shrink-0 font-medium"
+            >
+              <Wand2 className="h-3 w-3" /> Fill from my profile
+            </button>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <div className="spark-field">
             <label className="spark-field-label">First name</label>
