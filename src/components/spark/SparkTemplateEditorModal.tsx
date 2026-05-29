@@ -187,7 +187,7 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
       product="spark"
       eyebrow={`SPARK · ${channelLabel.toUpperCase()} TEMPLATE`}
       title={isEdit ? `Edit · ${channel === "email" ? email.name : sms.name || "template"}` : "New template"}
-      size="md"
+      size="info"
       footer={
         <>
           {isEdit && (

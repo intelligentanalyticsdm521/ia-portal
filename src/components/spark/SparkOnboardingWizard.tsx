@@ -101,7 +101,7 @@ export function SparkOnboardingWizard({ open, onClose }: Props) {
       title={progress ? `${progress.done} of ${progress.total} complete` : "Get started"}
       subtitle={subtitle}
       headerActions={headerPct}
-      size="md"
+      size="info"
       footer={
         <>
           <div className="mr-auto text-[11px] text-slate-500">

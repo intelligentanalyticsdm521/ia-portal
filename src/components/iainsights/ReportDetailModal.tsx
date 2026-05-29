@@ -99,8 +99,13 @@ export function ReportDetailModal({
       role="dialog"
       aria-modal="true"
     >
+      {/* F-107 — canvas sized to the "report" standard (1400 × 90vh). The
+          bespoke score-circle-in-header chrome stays as-is; documented as an
+          exception in Modal_Standards.md (the score being prominent in the
+          header is intentional UX, hard to do via IadmModal headerActions). */}
       <div
-        className="bg-white rounded-lg shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col"
+        className="bg-white rounded-lg shadow-2xl flex flex-col"
+        style={{ width: "min(1400px, 94vw)", height: "90vh" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

@@ -266,7 +266,7 @@ export function SparkRuleEditorModal({ open, onClose, ruleType, ruleId, onChange
       eyebrow={`SPARK · ${TYPE_LABEL[ruleType].toUpperCase()}`}
       title={isEdit ? "Edit rule" : "New rule"}
       subtitle={TYPE_LABEL[ruleType]}
-      size="md"
+      size="info"
       footer={
         <>
           {/* Delete pinned to the left via mr-auto — only on edit */}

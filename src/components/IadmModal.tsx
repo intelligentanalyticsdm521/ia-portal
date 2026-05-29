@@ -17,7 +17,37 @@ import { useEffect, type ReactNode } from "react";
 import { X } from "lucide-react";
 
 export type IadmModalProduct = "spark" | "oliver" | "arion" | "argus" | "stella";
-export type IadmModalSize = "md" | "lg";
+
+/**
+ * IadmModalSize — F-107 modal size standards (LOCKED 2026-05-29).
+ *
+ * Pick the size that matches what the modal IS, not how much content it has
+ * (fixed-canvas rule still applies — whitespace is expected on lightly
+ * populated records). One prop, one decision:
+ *
+ *   "nav"     → 560 × 50vh — selection / picker / "what do you want to
+ *                create?". Use for short option grids, channel pickers,
+ *                kind pickers, filter chip selectors. Step 1 of a multi-step
+ *                composer.
+ *
+ *   "info"    → 1200 × 80vh — THE STANDARD. Forms, customer info, templates,
+ *                rule/list/contact editors, anything view-or-edit. Matches the
+ *                OLIVER CustomerModal pattern the founder locked.
+ *
+ *   "report"  → 1400 × 90vh — IA Insights drilldowns, Intelligence / Trends,
+ *                dashboards-in-modal. Anything with KPI tiles + charts +
+ *                multi-section observations.
+ *
+ *   "confirm" → 420 × auto — destructive confirms ("Delete this list?"),
+ *                short decisions. Replaces window.confirm().
+ *
+ * Deprecated aliases retained for back-compat:
+ *   "md" → maps to "info"
+ *   "lg" → maps to "info"
+ *
+ * See Global/Modal_Standards.md for the full decision tree.
+ */
+export type IadmModalSize = "nav" | "info" | "report" | "confirm" | "md" | "lg";
 
 interface Props {
   open: boolean;
@@ -38,8 +68,17 @@ interface Props {
   children: ReactNode;
 }
 
-const FIXED: Record<IadmModalSize, { w: number; h: number }> = {
-  md: { w: 800,  h: 70 },
+// F-107 — Canvas dimensions per size standard. "confirm" uses an auto height
+// (the only non-fixed size — short content, no body scroll, no whitespace).
+const FIXED: Record<IadmModalSize, { w: number; h: number | "auto" }> = {
+  nav:     { w: 560,  h: 50 },
+  info:    { w: 1200, h: 80 },
+  report:  { w: 1400, h: 90 },
+  confirm: { w: 420,  h: "auto" },
+  // Deprecated aliases — both legacy names map to the new "info" standard.
+  // Existing call sites keep working; new code should reach for nav/info/
+  // report/confirm directly.
+  md: { w: 1200, h: 80 },
   lg: { w: 1200, h: 80 },
 };
 
@@ -99,7 +138,10 @@ export function IadmModal({
         className="flex flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
         style={{
           width:  `min(${dims.w}px, 94vw)`,
-          height: `${dims.h}vh`,
+          // "auto" height (confirm only) lets the modal size to its content
+          // — no body scroll, no fixed canvas. Every other size is fixed.
+          height: dims.h === "auto" ? "auto" : `${dims.h}vh`,
+          maxHeight: dims.h === "auto" ? "90vh" : undefined,
         }}
       >
         {/* Ink gradient header */}

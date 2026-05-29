@@ -150,7 +150,7 @@ export function SparkListDetailModal({ open, onClose, listId, onChanged }: Props
       eyebrow="SPARK · LIST"
       title={loading ? "Loading…" : (list?.name || "List")}
       subtitle={list ? `${list.contact_count.toLocaleString()} member${list.contact_count === 1 ? "" : "s"}` : undefined}
-      size="lg"
+      size="info"
       footer={
         <>
           <button onClick={removeList} className="mr-auto text-xs text-rose-600 hover:text-rose-700 inline-flex items-center gap-1">

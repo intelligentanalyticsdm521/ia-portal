@@ -335,16 +335,14 @@ export function ConsultingUpsell({ headline, subtext, serviceType, triggerPage }
  * a thin shim over IadmModal with product="arion". Every consumer auto-
  * inherits the standard chrome in one commit.
  *
- * Width translation preserves "static size, not dynamic":
- *   width <= 800   → IadmModal "md" (800 × 70vh)
- *   width  > 800   → IadmModal "lg" (1200 × 80vh)
- *
- * The eyebrow prop maps directly to IadmModal's eyebrow slot (it already
- * renders in the platform accent color, so "Content SEO" / "Security" /
- * etc. now show in ARION sky-blue instead of muted slate).
+ * F-107 — every DetailsModal renders at the standard "report" canvas
+ * (1400 × 90vh). ARION drilldowns are reports — KPI tiles, tables, tabs,
+ * charts. The legacy `width` prop is preserved for back-compat but no longer
+ * changes dimensions. New code should call IadmModal directly with one of
+ * the semantic sizes (nav / info / report / confirm).
  */
 export function DetailsModal({
-  open, onClose, eyebrow, title, children, width = 1200,
+  open, onClose, eyebrow, title, children, width: _width = 1200,
 }: {
   open: boolean;
   onClose: () => void;
@@ -360,7 +358,7 @@ export function DetailsModal({
       product="arion"
       eyebrow={eyebrow ?? "ARION"}
       title={title}
-      size={width <= 800 ? "md" : "lg"}
+      size="report"
     >
       {/* Preserve the old DetailsModal body padding so existing ARION
           drill-down content lays out identically inside the new chrome. */}

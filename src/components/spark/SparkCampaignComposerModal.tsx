@@ -109,7 +109,10 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated }: Props) 
       eyebrow="SPARK · NEW CAMPAIGN"
       title={step === "channel" ? "Pick a channel" : `Compose · ${channel?.toUpperCase()}`}
       subtitle={step === "channel" ? "Email or SMS — saved as a draft you can refine" : undefined}
-      size="md"
+      // F-107 — dynamic size: nav-sized picker on step 1, info-sized form on
+      // step 2. The picker is a 2-card grid; the compose form needs the full
+      // standard canvas to match every other SPARK form modal.
+      size={step === "channel" ? "nav" : "info"}
       footer={
         <>
           {step === "compose" && (

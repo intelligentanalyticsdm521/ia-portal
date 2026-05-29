@@ -293,7 +293,7 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
         </>
       }
       headerActions={tierBadge}
-      size="lg"
+      size="info"
     >
       <div className="flex h-full flex-col">
         {/* Tabs */}

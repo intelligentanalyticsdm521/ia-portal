@@ -28,7 +28,7 @@ export function SparkFormBuilderModal({ open, onClose, formId, onSaved }: Props)
       eyebrow="SPARK · FORM BUILDER"
       title="Design fields"
       subtitle="Pick a field type from the palette, configure validation on the right, and save. The hosted form URL updates instantly."
-      size="lg"
+      size="report"
       footer={
         <IadmButton variant="ghost" onClick={onClose}>Close</IadmButton>
       }

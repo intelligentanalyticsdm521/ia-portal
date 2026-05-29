@@ -81,7 +81,8 @@ export function OliverReportDetailModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose} role="dialog" aria-modal="true">
-      <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      {/* F-107 — "report" standard canvas. Bespoke header retained. */}
+      <div className="bg-white rounded-lg shadow-2xl flex flex-col" style={{ width: "min(1400px, 94vw)", height: "90vh" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-6 py-4 flex-shrink-0">
           <div className="flex items-start gap-3 min-w-0 flex-1">
             <div className="flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center" style={{ background: `${scoreColor}1A`, color: scoreColor }}>

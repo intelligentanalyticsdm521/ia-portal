@@ -107,8 +107,10 @@ export function SparkReportDetailModal({
       role="dialog"
       aria-modal="true"
     >
+      {/* F-107 — "report" standard canvas. Bespoke header retained. */}
       <div
-        className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col"
+        className="bg-white rounded-lg shadow-2xl flex flex-col"
+        style={{ width: "min(1400px, 94vw)", height: "90vh" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

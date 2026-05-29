@@ -22,19 +22,18 @@ interface SparkDrawerProps {
  * Founder edict 2026-05-28: "side panel should only be used for our
  * checkout system, everything else should use our standard sized modal."
  *
- * To preserve calling-site behavior:
- *   - width="default" → IadmModal size "md" (800px × 70vh)
- *   - width="wide"    → IadmModal size "lg" (1200px × 80vh)
+ * F-107 — both shim widths now map to the standard "info" size (1200×80,
+ * the OLIVER customer modal size). The old `width` prop is kept for back-
+ * compat but no longer changes dimensions: per the founder spec every form/
+ * info modal uses the same canvas. New code should call IadmModal directly
+ * with one of the semantic sizes (nav / info / report / confirm).
  *
  * Body content is wrapped in a padded div so existing pages that didn't
  * include their own padding still render with consistent spacing
  * (the old SparkDrawer wrapped children in `px-5 py-4`).
- *
- * Direct uses of IadmModal in new code should reach for it directly —
- * this shim is just for the existing consumer pages.
  */
 export function SparkDrawer({
-  open, onClose, title, subtitle, footer, width = "default", children,
+  open, onClose, title, subtitle, footer, children,
 }: SparkDrawerProps) {
   return (
     <IadmModal
@@ -44,7 +43,7 @@ export function SparkDrawer({
       title={title}
       subtitle={subtitle}
       footer={footer}
-      size={width === "wide" ? "lg" : "md"}
+      size="info"
     >
       <div className="p-5">{children}</div>
     </IadmModal>

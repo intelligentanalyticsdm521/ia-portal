@@ -38,11 +38,13 @@ interface Props {
   children: ReactNode;
 }
 
-function mapSize(width: NonNullable<Props["width"]>, size: NonNullable<Props["size"]>): IadmModalSize {
-  if (size === "fixed") return "lg";
-  if (width === "md") return "md";
-  // lg + xl both bucket into IadmModal "lg" (1200 × 80vh)
-  return "lg";
+// F-107 — every DetailDrawer call now resolves to the standard "info" size
+// (1200×80vh — the OLIVER CustomerModal canvas the founder locked). The
+// width/size props are kept for back-compat but no longer change dimensions.
+// New code should call IadmModal directly with one of the semantic sizes
+// (nav / info / report / confirm).
+function mapSize(_width: NonNullable<Props["width"]>, _size: NonNullable<Props["size"]>): IadmModalSize {
+  return "info";
 }
 
 export function DetailDrawer({
