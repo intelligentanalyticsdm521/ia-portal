@@ -572,14 +572,17 @@ export function SparkUsagePage() {
         </div>
       </div>
 
-      {/* INVOICE HISTORY PLACEHOLDER */}
-      <div className="spark-mini-card">
-        <div className="spark-mini-card-header">
-          <span className="spark-mini-card-title">Billing history</span>
+      {/* F-106 — Cross-product cross-link back to the unified hub.
+          From here you can see every product's status + manage all billing
+          (cancel, payment method updates, invoice history via Stripe). */}
+      <div className="spark-mini-card flex items-center justify-between gap-3">
+        <div className="text-xs text-slate-600">
+          <strong className="text-slate-900">Manage every IA platform in one place.</strong>
+          {" "}See all your subscriptions, add ARION or OLIVER to your account, or update billing details.
         </div>
-        <div className="py-8 text-center text-sm text-slate-500">
-          Stripe invoice history connects with v2 billing.
-        </div>
+        <a href="/app/settings/plan-pricing" className="spark-btn spark-btn-sm spark-btn-secondary flex-shrink-0">
+          Open Plan &amp; Pricing hub →
+        </a>
       </div>
     </SparkPageShell>
   );

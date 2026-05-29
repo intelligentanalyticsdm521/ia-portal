@@ -380,6 +380,17 @@ function FullFeatureTable() {
           </tbody>
         </table>
       </div>
+
+      {/* F-106 — cross-link to the unified Plan & Pricing hub. */}
+      <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
+        <div className="text-xs text-slate-600">
+          <strong className="text-slate-900">Manage every IA platform in one place.</strong>
+          {" "}See all your subscriptions, add SPARK or OLIVER, or update billing / cancel via Stripe.
+        </div>
+        <a href="/app/settings/plan-pricing" className="text-xs font-semibold text-[#38BDF8] hover:underline whitespace-nowrap">
+          Open Plan &amp; Pricing hub →
+        </a>
+      </div>
     </div>
   );
 }
