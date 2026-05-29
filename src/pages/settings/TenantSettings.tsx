@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { useAccessToken } from '../../auth/useAccessToken';
 import { connectGoogle, getGoogleProperties, selectGoogleProperties, listArionSites, listGbpLocations, selectGbpLocation, disconnectGbp } from '../../lib/arionApi';
 import { useOliverApi } from '../../hooks/useOliverApi';
 import { LogoPicker } from '../../components/oliver/LogoPicker';
 import { formatPhone } from '../../lib/formatPhone';
+// F-106 — Plan & Pricing hub (SubscriptionBillingTab)
+import { PendingChangeBanner } from '../../components/PendingChangeBanner';
+import {
+  fetchSubscriptions, createPortalSession,
+  type SubscriptionsResponse, type ProductSubscription,
+} from '../../lib/billingApi';
 
 /* ------------------------------------------------------------------ */
 /*  Types & constants                                                  */
@@ -267,61 +273,234 @@ export function OrganizationTab() {
 /*  Tab: Subscription & Billing                                        */
 /* ------------------------------------------------------------------ */
 
-const PRODUCTS = [
-  { name: 'ARION', desc: 'Website intelligence & SEO', tier: 'Professional' },
-  { name: 'OLIVER', desc: 'Field service management', tier: 'Starter' },
-  { name: 'SPARK', desc: 'Marketing automation', tier: 'Free' },
-] as const;
+// F-106 — Real Plan & Pricing hub.
+//
+// Was a hardcoded placeholder with fake tier badges and an external link to
+// the marketing site. Now drives the actual cross-product subscription
+// experience the founder spec'd:
+//   1. Live status per platform (from Stripe via /billing/subscriptions)
+//   2. "Manage plan" → the product's own Plan & Pricing page (tier picker
+//      → /billing/change → Stripe Checkout / proration / Subscription
+//      Schedule downgrade depending on direction)
+//   3. "Add this platform" → the product's Plan & Pricing page (same flow
+//      starting from no existing sub)
+//   4. "Manage billing in Stripe" → Stripe Customer Portal session
+//      (handles cancel, payment-method updates, invoice history — all
+//      without us building custom UI)
+//   5. Pending-change banner at top — driven by /billing/pending-change
+//
+// Lives under /app/settings/plan-pricing (hamburger > Plan & Pricing).
+interface ProductMeta {
+  key: "oliver" | "spark" | "arion";
+  name: string;
+  desc: string;
+  accent: string;            // brand accent for the card's left rail
+  usagePath: string;         // per-product Plan & Pricing route
+}
+const PLAN_HUB_PRODUCTS: ProductMeta[] = [
+  { key: "oliver", name: "OLIVER", desc: "Field service operations — jobs, invoices, recurring", accent: "#FEC82C", usagePath: "/app/services/oliver_usage" },
+  { key: "spark",  name: "SPARK",  desc: "Marketing & CRM — campaigns, lists, forms",             accent: "#EF6C33", usagePath: "/app/services/spark_usage" },
+  { key: "arion",  name: "ARION",  desc: "Website intelligence — SEO, security, performance",     accent: "#38BDF8", usagePath: "/app/services/arion_usage" },
+];
 
 export function SubscriptionBillingTab() {
+  type SubsResp = SubscriptionsResponse;
+  type ProdSub  = ProductSubscription;
+
+  const { activeTenantId } = useAppState();
+  const { getToken } = useAccessToken();
+  const [data, setData] = useState<SubsResp | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [openingPortal, setOpeningPortal] = useState<string | null>(null);
+
+  // Fetch once when the page mounts. Re-fetch trigger is bumped after the
+  // user returns from Stripe (?refresh=1).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const refresh = searchParams.get("refresh");
+
+  useEffect(() => {
+    if (!activeTenantId) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true); setError(null);
+      try {
+        const t = await getToken();
+        const r = await fetchSubscriptions({ token: t.accessToken, tenantId: activeTenantId });
+        if (!cancelled) setData(r);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Could not load subscriptions.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    // Clear the ?refresh=1 marker once we've reloaded so back-button doesn't re-trigger.
+    if (refresh) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("refresh");
+      setSearchParams(next, { replace: true });
+    }
+    return () => { cancelled = true; };
+  }, [activeTenantId, getToken, refresh, searchParams, setSearchParams, fetchSubscriptions]);
+
+  async function openPortal(product?: ProductMeta["key"]) {
+    if (!activeTenantId) return;
+    setOpeningPortal(product || "any");
+    try {
+      const t = await getToken();
+      const r = await createPortalSession({
+        token: t.accessToken,
+        tenantId: activeTenantId,
+        product,
+        returnUrl: window.location.origin + "/app/settings/plan-pricing?refresh=1",
+      });
+      if (r.mode === "portal" && r.url) {
+        window.open(r.url, "_blank", "noopener,noreferrer");
+      } else if (r.mode === "owner") {
+        alert(r.message || "Platform account has no billing portal.");
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Couldn't open Stripe Billing Portal.");
+    } finally {
+      setOpeningPortal(null);
+    }
+  }
+
+  // Index real subs by product so card rendering can branch on "has-sub" vs "not-yet".
+  const subByProduct = new Map<string, ProdSub>();
+  for (const s of data?.subscriptions || []) subByProduct.set(s.product, s);
+  const totalMonthly = (data?.subscriptions || []).reduce((sum, s) => sum + (s.monthly_usd || 0), 0);
+
   return (
     <div className="space-y-6">
-      <SectionLabel title="Current subscriptions" />
+      <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} />
 
-      {/* Product tiles */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        {PRODUCTS.map((p) => (
-          <div key={p.name} className="rounded-lg border bg-gray-50 p-4">
-            <div className="text-sm font-semibold text-gray-900">{p.name}</div>
-            <div className="mt-0.5 text-xs text-gray-500">{p.desc}</div>
-            <div className="mt-3">
-              <span className="inline-block rounded-full bg-black px-2.5 py-0.5 text-xs font-medium text-white">
-                {p.tier}
-              </span>
-            </div>
-            <a
-              href="https://intelligentanalyticsdm.com/pricing"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-3 inline-block text-xs font-medium text-blue-600 hover:underline"
+      <SectionLabel
+        title="Your subscriptions"
+        description={data?.owner
+          ? "Platform account — all products are included at no charge."
+          : "Manage every IA platform from one place. Click into a product to upgrade or downgrade, or open the Stripe portal to cancel or update billing details."}
+      />
+
+      {loading && <div className="rounded-md border bg-gray-50 p-3 text-sm text-gray-500">Loading subscriptions…</div>}
+      {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
+      {/* Per-platform cards */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {PLAN_HUB_PRODUCTS.map((p) => {
+          const sub = subByProduct.get(p.key);
+          const isActive = !!sub;
+          const isOwner = !!data?.owner;
+          const tierLabel = sub?.tier ? sub.tier.charAt(0).toUpperCase() + sub.tier.slice(1) : null;
+          return (
+            <div
+              key={p.key}
+              className="relative overflow-hidden rounded-lg border bg-white p-4"
+              style={{ borderLeft: `3px solid ${p.accent}` }}
             >
-              Upgrade plan &rarr;
-            </a>
-          </div>
-        ))}
+              <div className="flex items-baseline justify-between">
+                <div className="text-sm font-bold tracking-wide" style={{ color: p.accent }}>{p.name}</div>
+                {isActive && (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                      sub.cancel_at_period_end
+                        ? "bg-amber-50 text-amber-700 border border-amber-200"
+                        : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    }`}
+                  >
+                    {sub.cancel_at_period_end ? "Cancels at period end" : "Active"}
+                  </span>
+                )}
+                {!isActive && !loading && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-gray-500">
+                    Not subscribed
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 text-xs text-gray-500">{p.desc}</div>
+
+              {/* Tier + price block */}
+              <div className="mt-3 flex items-baseline gap-2">
+                {tierLabel && (
+                  <span className="inline-block rounded-md bg-gray-900 px-2 py-0.5 text-xs font-semibold text-white">
+                    {tierLabel} tier
+                  </span>
+                )}
+                {isOwner && (
+                  <span className="text-xs text-gray-500">Included</span>
+                )}
+                {isActive && !isOwner && sub.monthly_usd > 0 && (
+                  <span className="text-sm font-bold text-gray-900 tabular-nums">
+                    ${sub.monthly_usd.toFixed(2)}<span className="text-xs font-normal text-gray-500">/mo</span>
+                  </span>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="mt-4 flex flex-col gap-1.5">
+                {isActive ? (
+                  <>
+                    <Link
+                      to={p.usagePath}
+                      className="inline-flex items-center justify-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                    >
+                      Manage plan
+                    </Link>
+                    {!isOwner && (
+                      <button
+                        type="button"
+                        onClick={() => openPortal(p.key)}
+                        disabled={openingPortal === p.key}
+                        className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {openingPortal === p.key ? "Opening Stripe…" : "Manage billing / Cancel"}
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <Link
+                    to={p.usagePath}
+                    className="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold text-white"
+                    style={{ background: p.accent }}
+                  >
+                    Add {p.name} to your account
+                  </Link>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Invoice history */}
+      {/* Total + global billing portal link (when there's anything to manage). */}
+      {data && data.hasAnySubscription && !data.owner && (
+        <div className="flex items-center justify-between rounded-lg border bg-gray-50 p-4">
+          <div>
+            <div className="text-xs uppercase font-semibold text-gray-500">Combined monthly subtotal</div>
+            <div className="text-2xl font-bold text-gray-900 tabular-nums">${totalMonthly.toFixed(2)}<span className="text-sm font-normal text-gray-500">/mo</span></div>
+            <div className="mt-1 text-[11px] text-gray-500">
+              Recurring proration + annual discounts are reconciled by Stripe. The amount on your next invoice may differ slightly from this estimate.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => openPortal(undefined)}
+            disabled={openingPortal === "any"}
+            className="inline-flex items-center rounded-md bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+          >
+            {openingPortal === "any" ? "Opening Stripe…" : "Open Stripe Billing Portal"}
+          </button>
+        </div>
+      )}
+
+      {/* Invoice history — Stripe Portal handles full history. We keep the
+          empty stub for now; a richer in-app invoice table is a v2 task. */}
       <div className="border-t pt-4">
         <SectionLabel title="Invoice history" />
-
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b text-xs font-medium uppercase text-gray-400">
-                <th className="pb-2 pr-4">Date</th>
-                <th className="pb-2 pr-4">Amount</th>
-                <th className="pb-2">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td colSpan={3} className="py-6 text-center text-sm text-gray-400">
-                  No invoices yet
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div className="mt-3 rounded-md border bg-gray-50 p-4 text-sm text-gray-600">
+          Your full invoice history (with PDF downloads, payment-method updates, and cancel
+          options) lives in the Stripe Billing Portal. Click <strong>Open Stripe Billing
+          Portal</strong> above (or <strong>Manage billing</strong> on a specific platform card).
         </div>
       </div>
     </div>
