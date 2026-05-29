@@ -5,6 +5,7 @@ import { useAppState } from '../app/AppState';
 import { useAccessToken } from '../auth/useAccessToken';
 import { AccountMenu } from './AccountMenu';
 import { GlobalSearch } from './GlobalSearch';
+import { GuidedTourLauncher } from './GuidedTourLauncher';
 
 export function HeaderBar() {
   const { active } = useAppState();
@@ -47,6 +48,9 @@ export function HeaderBar() {
             <span>Search…</span>
             <kbd className="hidden lg:inline-block text-[10px] font-mono bg-white/10 px-1 py-0.5 rounded">⌘K</kbd>
           </button>
+
+          {/* F-119 — guided tours launcher */}
+          <GuidedTourLauncher />
 
           <div className="hidden md:block iadm-header-tenant" aria-label="Tenant greeting">
             <span className="text-white/70">Welcome,</span> <span className="font-medium text-white">{tenantLabel}</span>

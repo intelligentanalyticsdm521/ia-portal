@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button } from "../../components/oliver/ui";
+import { SignupFormBuilder, type SignupConfig as SignupConfigFull } from "../../components/oliver/SignupFormBuilder";
 
 interface WorkflowSettings {
   reschedule_mode: "auto_confirm" | "admin_approval" | "disabled";
@@ -35,6 +36,7 @@ interface SignupField {
 
 interface SignupConfig {
   fields: SignupField[];
+  custom_fields?: SignupConfigFull["custom_fields"];
   welcome_text: string;
   submit_label: string;
 }
@@ -49,6 +51,8 @@ export function OliverWorkflowSettingsPage() {
   const [error, setError] = useState<unknown>(null);
   const [wfMsg, setWfMsg] = useState<string | null>(null);
   const [signupMsg, setSignupMsg] = useState<string | null>(null);
+  // F-113 — full builder modal
+  const [builderOpen, setBuilderOpen] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -212,6 +216,7 @@ export function OliverWorkflowSettingsPage() {
               <div className="card-sub">Pick which fields a customer sees when they self-register on your customer portal.</div>
             </div>
             {signupMsg && <span style={{ fontSize: 12, color: "#059669", fontWeight: 600 }}>{signupMsg}</span>}
+            <Button variant="primary" onClick={() => setBuilderOpen(true)}>Open full builder →</Button>
           </div>
 
           <Field label="Welcome text">
@@ -259,6 +264,34 @@ export function OliverWorkflowSettingsPage() {
           </div>
         </div>
       )}
+
+      {/* F-113 — Full signup form builder modal */}
+      <SignupFormBuilder
+        open={builderOpen}
+        config={signup ? {
+          fields: signup.fields as unknown as SignupConfigFull["fields"],
+          custom_fields: signup.custom_fields || [],
+          welcome_text: signup.welcome_text,
+          submit_label: signup.submit_label,
+        } : null}
+        onClose={() => setBuilderOpen(false)}
+        saving={savingSignup}
+        onSave={async (next) => {
+          setSavingSignup(true);
+          setError(null);
+          try {
+            const saved = await patch<SignupConfig>("/customer-signup/config", next);
+            setSignup(saved);
+            setSignupMsg("Saved.");
+            setTimeout(() => setSignupMsg(null), 4000);
+            setBuilderOpen(false);
+          } catch (e) {
+            setError(e);
+          } finally {
+            setSavingSignup(false);
+          }
+        }}
+      />
     </OliverPageWrapper>
   );
 }

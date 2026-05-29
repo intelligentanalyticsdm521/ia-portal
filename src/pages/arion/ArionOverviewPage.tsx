@@ -8,6 +8,8 @@ import { ArionApiError, getArionOverview, type OverviewResponse } from '../../li
 import { ArionCard, ArionServiceLayout, EmptyPanel } from './ArionServiceLayout';
 import { useArionSites } from './useArionSites';
 import { Sparkline } from '../../components/iainsights/Sparkline';
+import { SetupHints } from '../../components/SetupHints';
+import { Globe, Search as SearchIcon, MapPin, Layout } from 'lucide-react';
 
 
 interface Props { service: PortalService; status: ServiceStatus }
@@ -106,6 +108,47 @@ export function ArionOverviewPage({ service, status }: Props) {
         <EmptyPanel title="No ARION sites found" body="Create your first ARION website to begin tracking analytics, console, hosting, maps, and SEO data." />
       ) : (
         <>
+          {/* F-118 — lightweight setup hints. Each hint is dismissable and
+              survives across pageloads via localStorage. */}
+          <SetupHints hints={[
+            {
+              id: "arion_gsc_not_connected",
+              icon: SearchIcon,
+              title: "Connect Google Search Console",
+              body: "Powers rankings, impressions, and AI Search results. Takes about 2 minutes if you have a Google account on the site.",
+              cta: { label: "Connect GSC", to: "/app/services/arion_onboarding" },
+              show: !data?.overview.clicks && !data?.overview.impressions,
+              accent: "#38BDF8",
+            },
+            {
+              id: "arion_gbp_not_connected",
+              icon: MapPin,
+              title: "Claim & connect Google Business Profile",
+              body: "Unlocks reviews, local-pack rankings, and review-response automation. Skip if you're purely e-commerce.",
+              cta: { label: "Open Business Profile", to: "/app/services/arion_business_overview" },
+              show: true,
+              accent: "#16A34A",
+            },
+            {
+              id: "arion_no_seo",
+              icon: Layout,
+              title: "Add the SEO package",
+              body: "Without SEO you still get analytics — but rankings, audits, and AI Search visibility live behind the SEO add-on.",
+              cta: { label: "Choose SEO tier", to: "/app/services/arion_usage" },
+              show: !data?.seo.seoPackageCode || data?.seo.seoPackageCode === "Not enabled",
+              accent: "#7C3AED",
+            },
+            {
+              id: "arion_install_plugin",
+              icon: Globe,
+              title: "Install the IA plugin",
+              body: "The plugin pushes site data to ARION (security scans, plugin status, content health). Plugin Provisioning has the one-click installer.",
+              cta: { label: "Open plugin provisioning", to: "/app/services/arion_plugin_provisioning" },
+              show: true,
+              accent: "#1A3A4A",
+            },
+          ]} />
+
           {/* v6.9 — IA Insights at-a-glance strip */}
           <ArionIAInsightsGlance trendScore={iaTrendScore} trendHistory={iaTrendHistory} />
 

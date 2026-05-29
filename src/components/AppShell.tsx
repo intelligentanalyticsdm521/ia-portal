@@ -4,6 +4,7 @@ import { HeaderBar } from "./HeaderBar";
 import { IconRail, type ProductKey } from "./IconRail";
 import { SubNav, SUB_NAV_CONFIGS, SETTINGS_KEYS, type SubNavConfig } from "./SubNav";
 import { useOliverRole } from "../hooks/useOliverRole";
+import { ArgusChatbot } from "./argus/ArgusChatbot";
 
 // Strip OLIVER nav items that aren't in allowedServiceKeys, and drop any
 // group that becomes empty. Returns the original config when no filter
@@ -113,6 +114,9 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+
+      {/* F-120 — floating ARGUS chatbot, always available on authenticated pages */}
+      <ArgusChatbot />
     </div>
   );
 }

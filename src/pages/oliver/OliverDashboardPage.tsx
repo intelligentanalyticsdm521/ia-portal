@@ -10,7 +10,8 @@ import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button, StatusBadge } from "../../components/oliver/ui";
 import { Sparkline } from "../../components/iainsights/Sparkline";
 import { OliverSetupCard } from "../../components/command/OliverSetupCard";
-import { Sparkles, ArrowUpRight, Calendar as CalendarIcon } from "lucide-react";
+import { SetupHints, type SetupHint } from "../../components/SetupHints";
+import { Sparkles, ArrowUpRight, Calendar as CalendarIcon, Users as UsersIcon, Globe, Zap, MessageSquare } from "lucide-react";
 import { CalendarModal } from "../../components/oliver/customer/CalendarModal";
 import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
 
@@ -208,9 +209,54 @@ export function OliverDashboardPage() {
   // genuinely 100% complete). Plus a Stripe-only nag for the edge case where
   // onboarding completed but the Stripe account later regressed.
   const stripeRegressed = !!onboarding?.all_required_complete && !!stripeStatus && !stripeStatus.readyToCharge;
+
+  // F-118 — dashboard setup hints. Lightweight, dismissable nudges that
+  // complement the big setup card. Each hint is per-tenant, persistent (the
+  // dismissal is localStorage-keyed by hint id), and only shows when the
+  // data indicates the action hasn't been taken.
+  const oliverHints: SetupHint[] = useMemo(() => ([
+    {
+      id: "oliver_no_workers",
+      icon: UsersIcon,
+      title: "Invite your crew",
+      body: "You haven't added any workers yet. Workers see jobs in the crew portal and can be assigned via the job board.",
+      cta: { label: "Add a worker", to: "/app/services/oliver_workers" },
+      show: !!stats && (stats.workers ?? 0) === 0,
+      accent: "#FEC82C",
+    },
+    {
+      id: "oliver_portals_not_published",
+      icon: Globe,
+      title: "Publish your customer portal",
+      body: "Your customer portal isn't live yet. Pick a subdomain or bring your own domain so customers can self-serve.",
+      cta: { label: "Open portal hub", to: "/app/services/oliver_portals_hub" },
+      show: !!onboarding && onboarding.all_required_complete === false,
+      accent: "#1A3A4A",
+    },
+    {
+      id: "oliver_no_automations",
+      icon: Zap,
+      title: "Turn on automations",
+      body: "Booking confirmations, on-the-way SMS, auto-invoicing — automations run when you're not looking. Start with one.",
+      cta: { label: "Open automations", to: "/app/services/oliver_automations" },
+      show: true,
+      accent: "#16A34A",
+    },
+    {
+      id: "oliver_signup_form",
+      icon: MessageSquare,
+      title: "Customize your signup form",
+      body: "Tell customers exactly what you need at signup — preferred contact, service address, key questions — instead of the defaults.",
+      cta: { label: "Edit signup form", to: "/app/services/oliver_workflow_settings#signup-form" },
+      show: true,
+      accent: "#7C3AED",
+    },
+  ]), [stats, onboarding]);
+
   const topBanner: React.ReactNode = (
     <>
       <OliverSetupCard />
+      <SetupHints hints={oliverHints} />
       {stripeRegressed && (
       <div className="card" style={{
         background: "linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)",

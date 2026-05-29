@@ -15,6 +15,8 @@ import { TimeRangeSelector, rangeForPreset } from "../../components/oliver/ui";
 import { ArgusInsightBox } from "../../components/oliver/ArgusInsightBox";
 import { Sparkline } from "../../components/iainsights/Sparkline";
 import { SparkSetupCard } from "../../components/command/SparkSetupCard";
+import { SetupHints, type SetupHint } from "../../components/SetupHints";
+import { Globe as GlobeIcon, Zap as ZapIcon } from "lucide-react";
 
 // ─ Types ──────────────────────────────────────────────────────────────────────
 interface UsageResponse {
@@ -189,6 +191,47 @@ export function SparkOverviewPage() {
             done. Replaces the "Get Started" nav item; opens the wizard
             modal in-place rather than navigating to a separate page. */}
         <SparkSetupCard />
+
+        {/* F-118 — lightweight, dismissable setup hints. Complements the
+            big setup card; surfaces high-value optional next steps. */}
+        <SetupHints hints={[
+          {
+            id: "spark_no_contacts",
+            icon: Users,
+            title: "Import your first contacts",
+            body: "Upload a CSV or add contacts manually so campaigns + automations have someone to talk to.",
+            cta: { label: "Import contacts", to: "/app/services/spark_contact_import" },
+            show: !!usage && usage.usage.contacts_count === 0,
+            accent: "#EF6C33",
+          },
+          {
+            id: "spark_no_campaign",
+            icon: Megaphone,
+            title: "Send a starter campaign",
+            body: "Pick a template, choose a list, and you're live — most teams send the first one in under 10 minutes.",
+            cta: { label: "Open campaigns", to: "/app/services/spark_campaigns" },
+            show: !!usage && usage.usage.emails_sent === 0,
+            accent: "#EF6C33",
+          },
+          {
+            id: "spark_sender_domain",
+            icon: GlobeIcon,
+            title: "Verify your sender domain",
+            body: "Deliverability climbs significantly when you send from your own domain instead of the shared sender.",
+            cta: { label: "Sender domains", to: "/app/services/spark_sender_domains" },
+            show: true,
+            accent: "#7C3AED",
+          },
+          {
+            id: "spark_automations",
+            icon: ZapIcon,
+            title: "Set up a welcome automation",
+            body: "Send a welcome email the moment someone signs up — set it once, it runs forever.",
+            cta: { label: "Open automations", to: "/app/services/spark_automations" },
+            show: true,
+            accent: "#16A34A",
+          },
+        ]} />
 
         <div className="flex justify-end">
           <TimeRangeSelector value={range} onChange={setRange} />
