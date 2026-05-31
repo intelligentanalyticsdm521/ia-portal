@@ -14,7 +14,7 @@ export type DomainMode = 'purchase' | 'byod';
 export type SignupProduct = 'arion' | 'oliver' | 'spark';
 
 export interface PlanCatalogEntry {
-  key: string; // arion: starter|essentials|growth|authority · oliver: lite|standard|pro|business · spark: standard|pro|business
+  key: string; // arion: lite|standard|pro|business · oliver: lite|standard|pro|business · spark: standard|pro|business · (SEO addon, separate: essentials|growth|authority)
   product?: SignupProduct;
   name: string;
   description: string;

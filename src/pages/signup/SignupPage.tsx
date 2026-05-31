@@ -19,7 +19,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import {
-  fetchPlanCatalog, createCheckoutSession,
+  fetchPlanCatalog,
   type PlanCatalogEntry, type BillingCycle, type SignupProduct,
 } from '../../lib/onboardingApi';
 import {
@@ -231,7 +231,7 @@ export function SignupPage() {
     setLoading(true); setError(null);
     if (product === 'arion') {
       fetchPlanCatalog('arion')
-        .then((d) => { setArionPlans(d); if (!d.some((x) => x.key === params.plan)) setArionPlan(d.find((x) => x.key === 'growth') ? 'growth' : (d[0]?.key || '')); })
+        .then((d) => { setArionPlans(d); if (!d.some((x) => x.key === params.plan)) setArionPlan(d.find((x) => x.key === 'standard') ? 'standard' : (d[0]?.key || '')); })
         .catch((e) => setError(e.message)).finally(() => setLoading(false));
     } else {
       fetchSignupCatalog(product as 'oliver' | 'spark', cycle)
@@ -351,29 +351,19 @@ export function SignupPage() {
         return;
       }
 
-      // ARION historically goes through arion-api when it's the only item
-      // (legacy onboardingApi.createCheckoutSession handles the website
-      // wizard). For ARION-only carts we keep that path. For everything
-      // else, the unified /signup/checkout-cart endpoint handles it.
+      // F-133 — all guest-checkout paths go through oliver-api (the single
+      // Stripe owner). The legacy arion-api /onboarding/checkout/create-session
+      // path is dead (never had Stripe env vars in prod and threw "Stripe not
+      // configured" for ARION-only-no-SEO carts). One checkout endpoint, one
+      // Stripe customer, one invoice — bundle discount auto-applied server-side
+      // when the cart has 2+ products. The domain-purchase wizard (if/when we
+      // re-enable it) belongs in the ARION onboarding step AFTER Stripe checkout.
       if (baseCart.length === 1) {
         const only = baseCart[0];
         if (only.product === 'arion') {
-          // F-109 — ARION + SEO at signup routes through /signup/checkout-cart
-          // (oliver-api) which knows how to bundle the SEO line item.
-          // ARION-only without SEO keeps using the legacy arion-api path so
-          // the website-build domain wizard still runs.
-          if (only.seo) {
-            const s = await createSignupCartCheckout({
-              email, name: name || undefined, billing_cycle: cycle,
-              items: [{ product: 'arion', plan: only.plan, seo: only.seo || null }],
-            });
-            window.location.href = s.checkout_url;
-            return;
-          }
-          const s = await createCheckoutSession({
-            email, name: name || undefined,
-            plan: only.plan, billing_cycle: cycle,
-            domain: { mode: 'byod' },
+          const s = await createSignupCartCheckout({
+            email, name: name || undefined, billing_cycle: cycle,
+            items: [{ product: 'arion', plan: only.plan, seo: only.seo || null }],
           });
           window.location.href = s.checkout_url;
           return;
