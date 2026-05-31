@@ -13,6 +13,7 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { SignupFormBuilder, type SignupConfig as SignupConfigFull } from "../../components/oliver/SignupFormBuilder";
+import { PortalActivationWizard } from "../../components/oliver/PortalActivationWizard";
 import {
   Users, Wrench, ExternalLink, Globe, Settings, Brush, FileText,
   AlertTriangle, CheckCircle2, Clock, Palette, Upload,
@@ -49,6 +50,10 @@ export function OliverPortalsHubPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [editing, setEditing] = useState<{ kind: PortalKind; tab: Tab } | null>(null);
+  // F-127 — first-run activation wizard. Opens automatically the FIRST time
+  // a tenant clicks Edit on an un-published portal; can be re-opened later
+  // via the Publish button on the card.
+  const [activating, setActivating] = useState<PortalKind | null>(null);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -82,7 +87,11 @@ export function OliverPortalsHubPage() {
           tagline="Self-serve experience for your customers"
           status={customer}
           memberLabel="customers"
-          onEdit={(tab) => setEditing({ kind: "customer", tab })}
+          onEdit={(tab) => {
+            // F-127 — first-run: bounce to activation wizard before editor.
+            if (!customer.is_published) setActivating("customer");
+            else setEditing({ kind: "customer", tab });
+          }}
         />
         <PortalCard
           kind="crew"
@@ -92,7 +101,10 @@ export function OliverPortalsHubPage() {
           tagline="Field workers' job board + actions"
           status={crew}
           memberLabel="workers"
-          onEdit={(tab) => setEditing({ kind: "crew", tab })}
+          onEdit={(tab) => {
+            if (!crew.is_published) setActivating("crew");
+            else setEditing({ kind: "crew", tab });
+          }}
         />
       </div>
 
@@ -103,6 +115,17 @@ export function OliverPortalsHubPage() {
           initialTab={editing.tab}
           onClose={() => setEditing(null)}
           onSaved={() => { load(); }}
+        />
+      )}
+
+      {activating && (
+        <PortalActivationWizard
+          open
+          portalKind={activating}
+          initialSlug={(activating === "customer" ? customer : crew).subdomain_slug}
+          initialPublished={(activating === "customer" ? customer : crew).is_published}
+          onClose={() => setActivating(null)}
+          onPublished={() => { load(); }}
         />
       )}
     </OliverPageWrapper>
