@@ -677,44 +677,135 @@ export function SignupPage() {
             {(cat?.plans || []).length === 0 && <div className="col-span-4 text-center text-amber-600 text-sm">No plans available — Stripe prices not configured.</div>}
           </div>
         ) : (
-          // SPARK — volume + optional feature add-on + optional leads package
-          <div className="mx-auto max-w-2xl space-y-5">
-            <div className="rounded-xl bg-white border border-gray-200 p-5">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Email volume / contacts</label>
-              <select value={volume} onChange={(e) => setVolume(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
-                {(cat?.volumes || []).map((v) => <option key={v.volume} value={v.volume}>{v.name} — {money(v.monthly_usd)}/mo</option>)}
-              </select>
-              {(cat?.volumes || []).length === 0 && <p className="text-xs text-amber-600 mt-1">No SPARK volumes available — Stripe prices not configured.</p>}
-            </div>
-
-            <div className="rounded-xl bg-white border border-gray-200 p-5">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Feature tier add-on (optional)</label>
-              <select value={featureAddon} onChange={(e) => setFeatureAddon(e.target.value as '' | 'pro' | 'business')} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
-                <option value="">Standard (included)</option>
-                {Object.entries(cat?.featureAddons || {}).map(([k, v]) => <option key={k} value={k}>{v.name} — +{money(v.monthly_usd)}/mo</option>)}
-              </select>
-            </div>
-
-            <div className="rounded-xl bg-white border border-gray-200 p-5">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Lead Generation (optional)</label>
-              <select value={leadsPkg} onChange={(e) => setLeadsPkg(e.target.value as '' | 'essentials' | 'growth' | 'authority')} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
-                <option value="">No lead generation</option>
-                {Object.entries(cat?.leads || {}).map(([k, v]) => <option key={k} value={k}>{v.name} — {money(v.monthly_usd)}/mo (incl. {v.included} leads)</option>)}
-              </select>
-              {leadsMeta && (
-                <div className="mt-3">
-                  <label className="block text-xs text-gray-600 mb-1">Leads per month: <strong>{leadsCount}</strong> (includes {leadsMeta.included}; extra billed per {leadsMeta.increment} at {leadsMeta.addon_unit_usd != null ? money(leadsMeta.addon_unit_usd) : '—'})</label>
-                  <input type="range" min={leadsMeta.included} max={leadsMeta.included + leadsMeta.increment * 40} step={leadsMeta.increment}
-                    value={leadsCount} onChange={(e) => setLeadsCount(Number(e.target.value))} className="w-full" />
+          // SPARK — F-135: volume slider (auto-selects the matching Standard
+          // tier price) + Standard/Pro/Business upgrade cards + lead generation.
+          // Slider is index-based (volumes are non-uniform: 5/10/15/25/50/
+          // 100/150/250/500 thousand emails) — the position picks the volume
+          // and the price updates live.
+          (() => {
+            const volumes = cat?.volumes || [];
+            const volIndex = Math.max(0, volumes.findIndex((v) => v.volume === volume));
+            const currentVol = volumes[volIndex] || volumes[0];
+            const addonMeta = (k: 'pro' | 'business') => cat?.featureAddons?.[k] || null;
+            const proAddon = addonMeta('pro');
+            const bizAddon = addonMeta('business');
+            return (
+              <div className="mx-auto max-w-3xl space-y-6">
+                {/* Volume slider */}
+                <div className="rounded-xl bg-white border border-gray-200 p-6">
+                  <div className="flex items-baseline justify-between mb-1">
+                    <label className="text-sm font-semibold text-gray-700">Email volume per month</label>
+                    <span className="text-xs text-gray-500">{volumes.length > 0 ? `${volumes[0].volume} – ${volumes[volumes.length - 1].volume}` : ''}</span>
+                  </div>
+                  {volumes.length === 0 ? (
+                    <p className="text-sm text-amber-600">No SPARK volumes available — Stripe prices not configured.</p>
+                  ) : (
+                    <>
+                      <div className="flex items-baseline gap-3 mb-3">
+                        <span className="text-4xl font-bold text-gray-900">{currentVol?.volume}</span>
+                        <span className="text-base text-gray-500">emails/mo</span>
+                        <span className="ml-auto text-2xl font-bold text-[#EF6C33]">{money(currentVol?.monthly_usd || 0)}<span className="text-sm font-normal text-gray-500">/mo</span></span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={volumes.length - 1}
+                        step={1}
+                        value={volIndex}
+                        onChange={(e) => setVolume(volumes[Number(e.target.value)].volume)}
+                        className="w-full accent-[#EF6C33]"
+                      />
+                      <div className="flex justify-between text-[10px] text-gray-400 mt-1 px-1">
+                        {volumes.map((v) => (
+                          <span key={v.volume} className={v.volume === volume ? 'font-bold text-[#EF6C33]' : ''}>{v.volume}</span>
+                        ))}
+                      </div>
+                      <p className="mt-3 text-xs text-gray-500">
+                        Includes the full SPARK CRM (contacts, email + SMS campaigns, forms, automations).
+                        Adjustable anytime in Settings post-signup.
+                      </p>
+                    </>
+                  )}
                 </div>
-              )}
-            </div>
 
-            <div className="rounded-xl bg-[#0B1C24] text-white p-5 flex items-center justify-between">
-              <span className="text-sm text-white/70">Estimated {cycle}</span>
-              <span className="text-2xl font-bold">{money(sparkTotal)}<span className="text-sm font-normal text-white/60">/mo</span></span>
-            </div>
-          </div>
+                {/* Feature tier upgrade cards */}
+                <div>
+                  <div className="text-sm font-semibold text-gray-700 mb-2">Upgrade for more features (optional)</div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {/* Standard (included) */}
+                    <button
+                      type="button"
+                      onClick={() => setFeatureAddon('')}
+                      className={`text-left rounded-xl p-4 border-2 transition ${featureAddon === '' ? 'border-[#EF6C33] bg-white shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'}`}
+                    >
+                      <div className="text-xs font-bold uppercase tracking-wide text-gray-500">Standard</div>
+                      <div className="mt-1 text-base font-bold text-gray-900">Included</div>
+                      <ul className="mt-3 space-y-1.5 text-[11px] text-gray-700">
+                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Full CRM + contacts</li>
+                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Email + SMS campaigns</li>
+                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Forms + UTM tracking</li>
+                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>ARION form → SPARK auto-flow</li>
+                      </ul>
+                    </button>
+                    {/* Pro */}
+                    <button
+                      type="button"
+                      disabled={!proAddon}
+                      onClick={() => setFeatureAddon('pro')}
+                      className={`text-left rounded-xl p-4 border-2 transition ${featureAddon === 'pro' ? 'border-[#EF6C33] bg-white shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'} ${!proAddon ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <div className="text-xs font-bold uppercase tracking-wide text-gray-500">Pro</div>
+                      <div className="mt-1 text-base font-bold text-gray-900">+{money(proAddon?.monthly_usd || 0)}<span className="text-xs font-normal text-gray-500">/mo</span></div>
+                      <ul className="mt-3 space-y-1.5 text-[11px] text-gray-700">
+                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Sales Pipeline + Deals</li>
+                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Newsletter Studio + WP publish</li>
+                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Social scheduler</li>
+                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Landing pages, NPS, referrals</li>
+                      </ul>
+                    </button>
+                    {/* Business */}
+                    <button
+                      type="button"
+                      disabled={!bizAddon}
+                      onClick={() => setFeatureAddon('business')}
+                      className={`text-left rounded-xl p-4 border-2 transition ${featureAddon === 'business' ? 'border-[#EF6C33] bg-white shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'} ${!bizAddon ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <div className="text-xs font-bold uppercase tracking-wide text-gray-500">Business</div>
+                      <div className="mt-1 text-base font-bold text-gray-900">+{money(bizAddon?.monthly_usd || 0)}<span className="text-xs font-normal text-gray-500">/mo</span></div>
+                      <ul className="mt-3 space-y-1.5 text-[11px] text-gray-700">
+                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Everything in Pro</li>
+                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>AI Writer (full)</li>
+                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>OLIVER-cross segments</li>
+                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Revenue attribution + B2B</li>
+                      </ul>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lead Generation — optional separate add-on */}
+                <div className="rounded-xl bg-white border border-gray-200 p-5">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Lead Generation (optional)</label>
+                  <select value={leadsPkg} onChange={(e) => setLeadsPkg(e.target.value as '' | 'essentials' | 'growth' | 'authority')} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                    <option value="">No lead generation</option>
+                    {Object.entries(cat?.leads || {}).map(([k, v]) => <option key={k} value={k}>{v.name} — {money(v.monthly_usd)}/mo (incl. {v.included} leads)</option>)}
+                  </select>
+                  {leadsMeta && (
+                    <div className="mt-3">
+                      <label className="block text-xs text-gray-600 mb-1">Leads per month: <strong>{leadsCount}</strong> (includes {leadsMeta.included}; extra billed per {leadsMeta.increment} at {leadsMeta.addon_unit_usd != null ? money(leadsMeta.addon_unit_usd) : '—'})</label>
+                      <input type="range" min={leadsMeta.included} max={leadsMeta.included + leadsMeta.increment * 40} step={leadsMeta.increment}
+                        value={leadsCount} onChange={(e) => setLeadsCount(Number(e.target.value))} className="w-full accent-[#EF6C33]" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Total */}
+                <div className="rounded-xl bg-[#0B1C24] text-white p-5 flex items-center justify-between">
+                  <span className="text-sm text-white/70">Estimated {cycle}</span>
+                  <span className="text-2xl font-bold">{money(sparkTotal)}<span className="text-sm font-normal text-white/60">/mo</span></span>
+                </div>
+              </div>
+            );
+          })()
         )}
 
         <div className="mt-10 flex flex-col items-center gap-3">
