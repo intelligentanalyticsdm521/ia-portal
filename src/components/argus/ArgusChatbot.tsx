@@ -16,6 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { MessageSquare, Send, X, ExternalLink, Play, Ticket } from "lucide-react";
 import { matchIntent, type ArgusIntent } from "./argusIntents";
 import { ALL_TOURS, GuidedTour, type TourDef } from "../GuidedTour";
+import { useAppState } from "../../app/AppState";
 
 type Sender = "user" | "argus";
 
@@ -34,7 +35,7 @@ interface TicketDraft {
   severity: "low" | "medium" | "high";
 }
 
-const FOUNDER_FALLBACK_MAILTO = "support@intelligentanalyticsdm.com";
+const FOUNDER_FALLBACK_MAILTO = "info@intelligentanalyticsdm.com";
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
 
@@ -109,7 +110,16 @@ export function ArgusChatbot() {
     if (openTicket) setTicketOpen(true);
     if (tourId) {
       const t = ALL_TOURS.find((t) => t.id === tourId);
-      if (t) setActiveTour(t);
+      if (t) {
+        // F-127 fix — close the chat panel BEFORE launching the tour so
+        // its z-index doesn't sit over the nav links the spotlight is
+        // trying to highlight. Brief delay so users see ARGUS's "starting…"
+        // message before the chat collapses.
+        setTimeout(() => {
+          setOpen(false);
+          setActiveTour(t);
+        }, 800);
+      }
     }
   };
 
@@ -159,7 +169,7 @@ export function ArgusChatbot() {
               />
               <div>
                 <div className="text-sm font-bold">ARGUS Agent</div>
-                <div className="text-[10px] text-white/70">Online · Rule-based v1</div>
+                <div className="text-[10px] text-white/70">Online</div>
               </div>
             </div>
             <button
@@ -224,9 +234,6 @@ export function ArgusChatbot() {
                 <Send className="h-3.5 w-3.5" /> Send
               </button>
             </form>
-            <div className="mt-1 text-[9px] text-slate-400 text-center">
-              ARGUS · F-120 v1 · rule-based intents
-            </div>
           </div>
         </div>
       )}
@@ -295,6 +302,19 @@ function InlineTicketForm({ onClose, onSubmitted }: { onClose: () => void; onSub
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const apiBase = useMemo(() => (import.meta.env.VITE_LUMEN_API_BASE_URL || "").replace(/\/$/, ""), []);
+  const { active } = useAppState();
+
+  // F-127 — enrich the ticket with business + user context so the
+  // founder doesn't have to guess who/where from.
+  const context = useMemo(() => ({
+    business_name: active?.tenant?.tenantFullName || active?.tenant?.tenantName || null,
+    tenant_id:    active?.tenant?.tenantId || null,
+    user_name:    active?.user?.displayName || [active?.user?.firstName, active?.user?.lastName].filter(Boolean).join(" ") || null,
+    user_email:   active?.user?.email || null,
+    user_phone:   null as string | null,                  // not currently in the session payload
+    current_url:  typeof window !== "undefined" ? window.location.href : null,
+    user_agent:   typeof navigator !== "undefined" ? navigator.userAgent : null,
+  }), [active]);
 
   const submit = async () => {
     if (!draft.subject.trim() || !draft.description.trim()) {
@@ -303,22 +323,34 @@ function InlineTicketForm({ onClose, onSubmitted }: { onClose: () => void; onSub
     }
     setSubmitting(true); setError(null);
     try {
-      // Best-effort POST. Endpoint may not exist yet — fall back to mailto.
+      const payload = { ...draft, context };
       const res = await fetch(`${apiBase}/api/v1/argus/tickets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(draft),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = await res.json();
       onSubmitted(body?.ticket_id || body?.id || "pending");
       onClose();
     } catch (err) {
-      // Fallback: open the user's email client with a prefilled message.
+      // Fallback: open the user's email client with a richer prefilled message.
       const subj = encodeURIComponent(`[ARGUS Ticket] ${draft.subject}`);
-      const body = encodeURIComponent(`Severity: ${draft.severity}\n\n${draft.description}\n\n— Submitted from ARGUS chat`);
-      window.location.href = `mailto:${FOUNDER_FALLBACK_MAILTO}?subject=${subj}&body=${body}`;
+      const ctxLines = [
+        `Severity:  ${draft.severity}`,
+        `Business:  ${context.business_name || '(unknown)'}`,
+        `Tenant:    ${context.tenant_id || ''}`,
+        `User:      ${context.user_name || ''} <${context.user_email || ''}>`,
+        context.user_phone ? `Phone:     ${context.user_phone}` : null,
+        `URL:       ${context.current_url || ''}`,
+        '',
+        '---',
+        draft.description,
+        '',
+        '— Submitted from ARGUS chat',
+      ].filter(Boolean).join('\n');
+      window.location.href = `mailto:${FOUNDER_FALLBACK_MAILTO}?subject=${subj}&body=${encodeURIComponent(ctxLines)}`;
       setError("Backend unavailable — opened your email client as a fallback.");
     } finally {
       setSubmitting(false);

@@ -12,9 +12,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
+import { SignupFormBuilder, type SignupConfig as SignupConfigFull } from "../../components/oliver/SignupFormBuilder";
 import {
   Users, Wrench, ExternalLink, Globe, Settings, Brush, FileText,
-  AlertTriangle, CheckCircle2, Clock,
+  AlertTriangle, CheckCircle2, Clock, Palette, Upload,
 } from "lucide-react";
 
 type PortalKind = "customer" | "crew";
@@ -93,12 +94,6 @@ export function OliverPortalsHubPage() {
           memberLabel="workers"
           onEdit={(tab) => setEditing({ kind: "crew", tab })}
         />
-      </div>
-
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">
-        <strong className="text-slate-900">Shared infrastructure:</strong> both portals run on the same
-        per-tenant CIAM. Notification rules, branding (logo + colors), and tenant DNS are managed at the
-        business-profile level. Per-portal config (signup fields, design, domain, workflow) is here.
       </div>
 
       {editing && (
@@ -270,77 +265,326 @@ function StubLink({ label, route, icon: Icon }: { label: string; route: string; 
   );
 }
 
-function DesignTabStub({ portalKind, accent }: { portalKind: PortalKind; accent: string; onSaved: () => void }) {
-  return (
-    <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-slate-900">Design</h3>
-      <p className="text-xs text-slate-600">
-        Button visibility, labels, font, header/footer, custom CSS. Gated on the Client Experience add-on.
-      </p>
-      <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-        <div className="text-[11px] text-slate-500 mb-2">Configure on the standalone designer (will be inlined in a follow-up release):</div>
-        <StubLink label={`Open ${portalKind} portal designer`} route="/app/services/oliver_portal_designer" icon={Brush} />
-      </div>
-      <div className="text-[10px] text-slate-400">Accent color preview: <span className="inline-block w-4 h-4 rounded-full align-middle ml-1" style={{ background: accent }} /></div>
-    </div>
-  );
-}
+// ── DesignTabStub → inline design editor (F-127) ──────────────────────────
+function DesignTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind; accent: string; onSaved: () => void }) {
+  const { get, patch, ready } = useOliverApi();
+  const [design, setDesign] = useState<{ primary_color: string; accent_color: string; logo_url: string; button_radius: number; font_family: string; header_text: string; footer_text: string; custom_css: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
 
-function SignupTabStub({ portalKind, accent }: { portalKind: PortalKind; accent: string; onSaved: () => void }) {
-  return (
-    <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-slate-900">Signup form</h3>
-      <p className="text-xs text-slate-600">
-        Pick which fields you collect at signup. Built-in fields plus your own custom fields, with required toggles and label customization.
-      </p>
-      <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-        <div className="text-[11px] text-slate-500 mb-2">Configure on the signup form builder:</div>
-        <StubLink label={`Open ${portalKind} signup form builder`} route="/app/services/oliver_workflow_settings#signup-form" icon={FileText} />
-      </div>
-      <div className="text-[10px] text-slate-400">Accent: <span className="inline-block w-4 h-4 rounded-full align-middle ml-1" style={{ background: accent }} /></div>
-    </div>
-  );
-}
+  useEffect(() => {
+    if (!ready) return;
+    get<{ data: typeof design }>(`/portals/design?kind=${portalKind}`)
+      .then((r) => setDesign(r.data || { primary_color: "#1A3A4A", accent_color: accent, logo_url: "", button_radius: 6, font_family: "Inter", header_text: "", footer_text: "", custom_css: "" }))
+      .catch(() => setDesign({ primary_color: "#1A3A4A", accent_color: accent, logo_url: "", button_radius: 6, font_family: "Inter", header_text: "", footer_text: "", custom_css: "" }));
+  }, [ready, portalKind, accent, get]);
 
-function DomainTabStub({ portalKind, status, accent }: { portalKind: PortalKind; status: PortalStatus; accent: string; onSaved: () => void }) {
+  if (!design) return <div className="text-xs text-slate-500">Loading design…</div>;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await patch(`/portals/design?kind=${portalKind}`, design);
+      setSavedMsg("Saved.");
+      setTimeout(() => setSavedMsg(null), 3000);
+      onSaved();
+    } catch (e) {
+      setSavedMsg(`Error: ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-slate-900">Domain</h3>
-      <p className="text-xs text-slate-600">
-        Default subdomain on <code className="font-mono text-[11px] bg-slate-100 px-1 rounded">{portalKind}.ia-dm.com</code>, or bring your own custom domain (Pro+).
-      </p>
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
-          <div className="text-[10px] uppercase font-semibold text-slate-500">Subdomain slug</div>
-          <div className="font-mono text-slate-900">{status.subdomain_slug || "(not set)"}</div>
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-slate-900">Design</h3>
+        <p className="text-xs text-slate-600">Logo, colors, buttons, header/footer copy. Available on Standard+. Custom CSS unlocked on Pro+.</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Primary color</span>
+          <div className="flex items-center gap-2 mt-1">
+            <input type="color" value={design.primary_color} onChange={(e) => setDesign({ ...design, primary_color: e.target.value })} className="h-8 w-12 rounded border border-slate-300" />
+            <input type="text" value={design.primary_color} onChange={(e) => setDesign({ ...design, primary_color: e.target.value })} className="flex-1 text-xs px-2 py-1 rounded border border-slate-300 font-mono" />
+          </div>
+        </label>
+        <label className="block">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Accent color</span>
+          <div className="flex items-center gap-2 mt-1">
+            <input type="color" value={design.accent_color} onChange={(e) => setDesign({ ...design, accent_color: e.target.value })} className="h-8 w-12 rounded border border-slate-300" />
+            <input type="text" value={design.accent_color} onChange={(e) => setDesign({ ...design, accent_color: e.target.value })} className="flex-1 text-xs px-2 py-1 rounded border border-slate-300 font-mono" />
+          </div>
+        </label>
+      </div>
+
+      <label className="block">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Logo URL</span>
+        <div className="flex items-center gap-2 mt-1">
+          <Upload className="h-3 w-3 text-slate-400" />
+          <input type="url" value={design.logo_url} onChange={(e) => setDesign({ ...design, logo_url: e.target.value })} placeholder="https://yourcompany.com/logo.png" className="flex-1 text-xs px-2 py-1 rounded border border-slate-300" />
         </div>
-        <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
-          <div className="text-[10px] uppercase font-semibold text-slate-500">Custom domain</div>
-          <div className="font-mono text-slate-900">{status.custom_domain || "—"}</div>
-          <div className="text-[10px] text-slate-500">Status: {status.custom_domain_status}</div>
-        </div>
+      </label>
+
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Button corner radius (px)</span>
+          <input type="number" value={design.button_radius} onChange={(e) => setDesign({ ...design, button_radius: Number(e.target.value) })} className="w-full mt-1 text-xs px-2 py-1 rounded border border-slate-300" />
+        </label>
+        <label className="block">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Font family</span>
+          <select value={design.font_family} onChange={(e) => setDesign({ ...design, font_family: e.target.value })} className="w-full mt-1 text-xs px-2 py-1 rounded border border-slate-300 bg-white">
+            <option value="Inter">Inter (default)</option>
+            <option value="System">System</option>
+            <option value="Georgia">Georgia (serif)</option>
+            <option value="Roboto">Roboto</option>
+            <option value="Open Sans">Open Sans</option>
+            <option value="Poppins">Poppins</option>
+          </select>
+        </label>
       </div>
-      <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-        <div className="text-[11px] text-slate-500 mb-2">Manage domain binding:</div>
-        <StubLink label="Open Portals & Domains" route="/app/services/oliver_portal_domains" icon={Globe} />
+
+      <label className="block">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Header copy</span>
+        <input type="text" value={design.header_text} onChange={(e) => setDesign({ ...design, header_text: e.target.value })} placeholder="Welcome to {{business_name}}" className="w-full mt-1 text-xs px-2 py-1 rounded border border-slate-300" />
+      </label>
+
+      <label className="block">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Footer copy</span>
+        <input type="text" value={design.footer_text} onChange={(e) => setDesign({ ...design, footer_text: e.target.value })} placeholder="Need help? Email us at support@…" className="w-full mt-1 text-xs px-2 py-1 rounded border border-slate-300" />
+      </label>
+
+      <label className="block">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Custom CSS <span className="text-slate-400 normal-case">(Pro+)</span></span>
+        <textarea value={design.custom_css} onChange={(e) => setDesign({ ...design, custom_css: e.target.value })} rows={4} placeholder=".portal-card { box-shadow: 0 2px 12px rgba(0,0,0,0.08); }" className="w-full mt-1 text-xs px-2 py-1 rounded border border-slate-300 font-mono" />
+      </label>
+
+      <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+        {savedMsg && <span className="text-xs text-emerald-700">{savedMsg}</span>}
+        <button onClick={save} disabled={saving} className="ml-auto inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50" style={{ background: accent, color: accent === "#FEC82C" ? "#1A3A4A" : "#fff" }}>
+          <Palette className="h-3 w-3" /> {saving ? "Saving…" : "Save design"}
+        </button>
       </div>
-      <div className="text-[10px] text-slate-400">Accent: <span className="inline-block w-4 h-4 rounded-full align-middle ml-1" style={{ background: accent }} /></div>
     </div>
   );
 }
 
-function WorkflowTabStub({ portalKind, accent }: { portalKind: PortalKind; accent: string; onSaved: () => void }) {
+// ── SignupTabStub → inline signup form builder (F-127) ────────────────────
+function SignupTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind; accent: string; onSaved: () => void }) {
+  const { get, patch, ready } = useOliverApi();
+  const [config, setConfig] = useState<SignupConfigFull | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!ready) return;
+    get<SignupConfigFull>("/customer-signup/config")
+      .then((r) => setConfig(r))
+      .catch(() => setConfig(null));
+  }, [ready, get]);
+
+  // SignupFormBuilder is a modal that takes over the screen — we always-mount
+  // it when this tab is active and let the user save inline.
+  if (!config) return <div className="text-xs text-slate-500">Loading signup form…</div>;
+
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-slate-900">Workflow</h3>
-      <p className="text-xs text-slate-600">
-        Portal-side workflow: reschedule policy, post-booking actions, and customer-initiated request handling.
-      </p>
-      <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-        <div className="text-[11px] text-slate-500 mb-2">Configure workflow rules:</div>
-        <StubLink label="Open Workflow Settings" route="/app/services/oliver_workflow_settings" icon={Settings} />
+      <div>
+        <h3 className="text-sm font-semibold text-slate-900">Signup form</h3>
+        <p className="text-xs text-slate-600">
+          {portalKind === "customer"
+            ? "Fields a customer fills out to create their portal account."
+            : "Fields a worker fills out when invited (customer-portal builder shares this config)."}
+        </p>
       </div>
-      <div className="text-[10px] text-slate-400">{portalKind} portal · accent <span className="inline-block w-4 h-4 rounded-full align-middle ml-1" style={{ background: accent }} /></div>
+
+      <SignupFormBuilder
+        open={true}
+        config={config}
+        saving={saving}
+        onClose={() => { /* no-op — modal is always-open inside the tab */ }}
+        onSave={async (next) => {
+          setSaving(true);
+          try {
+            const saved = await patch<SignupConfigFull>("/customer-signup/config", next);
+            setConfig(saved);
+            setSavedMsg("Saved.");
+            setTimeout(() => setSavedMsg(null), 3000);
+            onSaved();
+          } finally {
+            setSaving(false);
+          }
+        }}
+      />
+      {savedMsg && <div className="text-xs text-emerald-700">{savedMsg}</div>}
+      <div className="text-[10px] text-slate-400">Accent: <span className="inline-block w-3 h-3 rounded-full align-middle ml-1" style={{ background: accent }} /></div>
+    </div>
+  );
+}
+
+// ── DomainTabStub → inline domain binding (F-127) ─────────────────────────
+function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: PortalKind; status: PortalStatus; accent: string; onSaved: () => void }) {
+  const { post, ready } = useOliverApi();
+  const [customDomain, setCustomDomain] = useState(status.custom_domain || "");
+  const [binding, setBinding] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const bind = async () => {
+    if (!customDomain.match(/^[a-z0-9.-]+\.[a-z]{2,}$/i)) {
+      setMsg("Enter a valid hostname like portal.acme.com");
+      return;
+    }
+    setBinding(true); setMsg(null);
+    try {
+      await post(`/portal-domains/custom`, { portal_kind: portalKind, hostname: customDomain });
+      setMsg("Binding submitted — Azure is validating the CNAME (1-5 min).");
+      onSaved();
+    } catch (e) {
+      setMsg(`Error: ${(e as Error).message}`);
+    } finally {
+      setBinding(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-slate-900">Domain</h3>
+        <p className="text-xs text-slate-600">
+          Default subdomain on <code className="font-mono text-[11px] bg-slate-100 px-1 rounded">.{portalKind}.ia-dm.com</code>, or bring your own custom domain (Pro+).
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 text-xs">
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <div className="text-[10px] uppercase font-semibold text-slate-500 mb-1">Default subdomain</div>
+          <div className="font-mono text-slate-900 text-sm">{status.subdomain_slug || "(not set)"}<span className="text-slate-400">.{portalKind}.ia-dm.com</span></div>
+          <div className="text-[10px] text-slate-500 mt-1">Auto-bound. No DNS required.</div>
+        </div>
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <div className="text-[10px] uppercase font-semibold text-slate-500 mb-1">Custom domain status</div>
+          <div className="font-mono text-slate-900 text-sm">{status.custom_domain || "—"}</div>
+          <div className="text-[10px] text-slate-500 mt-1">{status.custom_domain_status === "ready" ? "✓ Live" : status.custom_domain_status === "pending" ? "Validating…" : status.custom_domain_status === "failed" ? "Failed — check CNAME" : "Not configured"}</div>
+        </div>
+      </div>
+
+      <div className="rounded-md border border-slate-200 bg-white p-3">
+        <div className="text-[10px] uppercase font-semibold text-slate-500 mb-2">Bind a custom domain (Pro+)</div>
+        <div className="text-[11px] text-slate-600 mb-2">
+          Add a CNAME at your DNS provider: <code className="font-mono bg-slate-100 px-1">your-host → {portalKind === "customer" ? "<customer-portal>.azurestaticapps.net" : "<crew-portal>.azurestaticapps.net"}</code> then enter the hostname here.
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={customDomain}
+            onChange={(e) => setCustomDomain(e.target.value.toLowerCase().trim())}
+            placeholder={`portal.yourcompany.com`}
+            className="flex-1 text-xs px-2 py-1.5 rounded border border-slate-300 font-mono"
+            disabled={!ready}
+          />
+          <button onClick={bind} disabled={binding || !ready || !customDomain} className="rounded-md px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50" style={{ background: accent, color: accent === "#FEC82C" ? "#1A3A4A" : "#fff" }}>
+            {binding ? "Binding…" : "Bind"}
+          </button>
+        </div>
+        {msg && <div className="text-[11px] text-slate-700 mt-2">{msg}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ── WorkflowTabStub → inline workflow rules (F-127) ───────────────────────
+function WorkflowTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind; accent: string; onSaved: () => void }) {
+  const { get, patch, ready } = useOliverApi();
+  const [wf, setWf] = useState<{ reschedule_mode: string; reschedule_advance_notice_hours: number; reschedule_cutoff_hours: number; reschedule_max_count: number; booking_auto_create_invoice: string; booking_auto_send_confirmation: boolean; booking_auto_assign_worker: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!ready) return;
+    get<typeof wf>("/workflow-settings").then((r) => setWf(r)).catch(() => setWf(null));
+  }, [ready, get]);
+
+  if (!wf) return <div className="text-xs text-slate-500">Loading workflow…</div>;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await patch("/workflow-settings", wf);
+      setSavedMsg("Saved.");
+      setTimeout(() => setSavedMsg(null), 3000);
+      onSaved();
+    } catch (e) {
+      setSavedMsg(`Error: ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-slate-900">Workflow rules</h3>
+        <p className="text-xs text-slate-600">Customer-initiated reschedules + what happens automatically after a booking confirms.</p>
+      </div>
+
+      <div className="rounded-md border border-slate-200 bg-white p-3 space-y-2">
+        <div className="text-[10px] uppercase font-semibold text-slate-500">Reschedule policy</div>
+        <label className="flex items-center gap-2 text-xs">
+          <span className="w-32">Allow reschedules</span>
+          <select value={wf.reschedule_mode} onChange={(e) => setWf({ ...wf, reschedule_mode: e.target.value })} className="flex-1 text-xs px-2 py-1 rounded border border-slate-300 bg-white">
+            <option value="disabled">Disabled — admin manages all changes</option>
+            <option value="auto_confirm">Auto-confirm — customer picks new time, instantly confirmed</option>
+            <option value="admin_approval">Require admin approval — customer requests, you approve</option>
+          </select>
+        </label>
+        <div className="grid grid-cols-3 gap-2">
+          <label className="block text-xs">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Advance notice (hr)</span>
+            <input type="number" value={wf.reschedule_advance_notice_hours} onChange={(e) => setWf({ ...wf, reschedule_advance_notice_hours: Number(e.target.value) })} className="w-full mt-1 text-xs px-2 py-1 rounded border border-slate-300" />
+          </label>
+          <label className="block text-xs">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Cutoff (hr before)</span>
+            <input type="number" value={wf.reschedule_cutoff_hours} onChange={(e) => setWf({ ...wf, reschedule_cutoff_hours: Number(e.target.value) })} className="w-full mt-1 text-xs px-2 py-1 rounded border border-slate-300" />
+          </label>
+          <label className="block text-xs">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Max per booking</span>
+            <input type="number" value={wf.reschedule_max_count} onChange={(e) => setWf({ ...wf, reschedule_max_count: Number(e.target.value) })} className="w-full mt-1 text-xs px-2 py-1 rounded border border-slate-300" />
+          </label>
+        </div>
+      </div>
+
+      <div className="rounded-md border border-slate-200 bg-white p-3 space-y-2">
+        <div className="text-[10px] uppercase font-semibold text-slate-500">After booking confirms</div>
+        <label className="flex items-center gap-2 text-xs">
+          <span className="w-32">Auto-create invoice</span>
+          <select value={wf.booking_auto_create_invoice} onChange={(e) => setWf({ ...wf, booking_auto_create_invoice: e.target.value })} className="flex-1 text-xs px-2 py-1 rounded border border-slate-300 bg-white">
+            <option value="never">Never — manual invoicing only</option>
+            <option value="on_confirm">When booking confirms</option>
+            <option value="on_completion">When job marked complete</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-2 text-xs">
+          <input type="checkbox" checked={wf.booking_auto_send_confirmation} onChange={(e) => setWf({ ...wf, booking_auto_send_confirmation: e.target.checked })} />
+          <span>Send confirmation email + .ics calendar invite</span>
+        </label>
+        <label className="flex items-center gap-2 text-xs">
+          <span className="w-32">Auto-assign worker</span>
+          <select value={wf.booking_auto_assign_worker} onChange={(e) => setWf({ ...wf, booking_auto_assign_worker: e.target.value })} className="flex-1 text-xs px-2 py-1 rounded border border-slate-300 bg-white">
+            <option value="none">Don't auto-assign — admin assigns</option>
+            <option value="preferred">Customer's preferred worker if available</option>
+            <option value="round_robin">Round-robin across active workers</option>
+            <option value="skill_match">Match worker by service category</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+        {savedMsg && <span className="text-xs text-emerald-700">{savedMsg}</span>}
+        <button onClick={save} disabled={saving} className="ml-auto inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50" style={{ background: accent, color: accent === "#FEC82C" ? "#1A3A4A" : "#fff" }}>
+          <Settings className="h-3 w-3" /> {saving ? "Saving…" : "Save workflow"}
+        </button>
+      </div>
     </div>
   );
 }

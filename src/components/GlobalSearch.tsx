@@ -144,7 +144,7 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
       product="argus"
       eyebrow="QUICK NAV · ⌘K"
       title="Where do you want to go?"
-      subtitle={`${results.length} of ${routes.length} routes`}
+      subtitle="Search any page across your platform"
       size="nav"
     >
       <div className="p-3">
