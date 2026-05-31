@@ -36,14 +36,16 @@ const SECTION_TO_SERVICE_KEY: Record<PortalService["section"], string | null> = 
   CONSULTING: "consulting",
 };
 
-function buildSearchableRoutes(activeServices: Set<string>): SearchableRoute[] {
+function buildSearchableRoutes(_activeServices: Set<string>): SearchableRoute[] {
+  // 2026-05-31 — F-127 fix: show ALL non-coming-soon routes regardless of
+  // the tenant's active services. Earlier we filtered by active.services
+  // but that returned only OLIVER for tenants whose session-verify hadn't
+  // surfaced the SPARK/ARION serviceKeys yet, leaving the user with a
+  // search box that "didn't work." The search is a navigation aid — gating
+  // happens in the route handler (which renders the "not subscribed" page
+  // for products the tenant doesn't have). Better to be permissive here.
   return SERVICE_CATALOG
-    .filter((s) => {
-      if (s.defaultStatus === "coming_soon") return false;
-      const required = SECTION_TO_SERVICE_KEY[s.section];
-      if (!required) return true; // Shared section always visible
-      return activeServices.has(required);
-    })
+    .filter((s) => s.defaultStatus !== "coming_soon")
     .map((s) => ({
       key: s.key,
       label: s.displayName,

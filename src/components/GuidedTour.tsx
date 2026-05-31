@@ -87,19 +87,34 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
     }
   }, [open, step, inferredRoute, location.pathname, navigate]);
 
-  // Find target element + measure. Re-measures on resize/scroll.
+  // Find target element + measure. Re-measures on resize/scroll/route
+  // change. Also re-measures after smooth-scroll so the spotlight tracks
+  // the final on-screen position (was a major bug — initial rect was
+  // captured before the scroll completed, leaving the spotlight stuck
+  // where the element WAS before scrolling).
   useLayoutEffect(() => {
     if (!open || !step) return;
     setReady(false);
 
+    // If the step has an inferred route and we're not yet there, wait
+    // for the navigation to land before even starting to look for the
+    // target element. Avoids capturing a stale rect from the previous page.
+    if (inferredRoute && location.pathname !== inferredRoute) return;
+
     let cancelled = false;
     let raf = 0;
+    let reMeasureTimer = 0;
     const start = performance.now();
-    const minWait = step.waitMs ?? (step.route ? 250 : 0);
+    const minWait = step.waitMs ?? (step.route ? 400 : 0);
+
+    function captureRect() {
+      if (!step.targetSelector) return null;
+      const el = document.querySelector(step.targetSelector) as HTMLElement | null;
+      return el?.getBoundingClientRect() || null;
+    }
 
     function measure() {
       if (cancelled) return;
-      // Centered hero step needs no target.
       if (!step.targetSelector || step.placement === "center") {
         setTargetRect(null);
         setReady(true);
@@ -108,12 +123,12 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
       const el = document.querySelector(step.targetSelector) as HTMLElement | null;
       const elapsed = performance.now() - start;
       if (!el) {
-        // Keep trying for up to 4s — lazy-loaded chunks can take a moment.
+        // Lazy-loaded chunks can take a moment; keep trying up to 4s.
         if (elapsed < 4000) {
           raf = requestAnimationFrame(measure);
           return;
         }
-        setTargetRect(null); // give up, show centered tooltip
+        setTargetRect(null);
         setReady(true);
         return;
       }
@@ -121,25 +136,45 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
         raf = requestAnimationFrame(measure);
         return;
       }
-      const rect = el.getBoundingClientRect();
-      setTargetRect(rect);
-      // Scroll target into view if it's offscreen.
-      const inViewport = rect.top >= 0 && rect.bottom <= window.innerHeight;
-      if (!inViewport) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      const initialRect = el.getBoundingClientRect();
+      setTargetRect(initialRect);
+      // Scroll target into view if it's not visible enough.
+      const inViewport = initialRect.top >= 0 && initialRect.bottom <= window.innerHeight - 20;
+      if (!inViewport) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        // Smooth scroll takes ~300-500ms; re-measure after to catch the
+        // final position. Then one more re-measure ~600ms later as a safety
+        // net for slower browsers.
+        reMeasureTimer = window.setTimeout(() => {
+          if (cancelled) return;
+          const r = captureRect();
+          if (r) setTargetRect(r);
+          reMeasureTimer = window.setTimeout(() => {
+            if (cancelled) return;
+            const r2 = captureRect();
+            if (r2) setTargetRect(r2);
+          }, 600);
+        }, 350);
+      }
       setReady(true);
     }
     measure();
 
-    function onResize() { measure(); }
+    function onResize() {
+      if (cancelled) return;
+      const r = captureRect();
+      if (r) setTargetRect(r);
+    }
     window.addEventListener("resize", onResize);
     window.addEventListener("scroll", onResize, true);
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
+      clearTimeout(reMeasureTimer);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("scroll", onResize, true);
     };
-  }, [open, step, location.pathname]);
+  }, [open, step, location.pathname, inferredRoute]);
 
   // Reset to first step whenever the tour opens.
   useEffect(() => {
