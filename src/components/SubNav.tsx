@@ -450,47 +450,11 @@ const CONSULTING_NAV: SubNavConfig = {
     {
       label: "",
       items: [
-        { key: "consulting_overview", label: "Overview", route: "/app/services/consulting_overview" },
-      ],
-    },
-    {
-      label: "Build Your Brand",
-      items: [
-        { key: "consulting_brand_tasks", label: "Tasks", route: "/app/services/consulting_brand_tasks" },
-        { key: "consulting_brand_deliverables", label: "Deliverables", route: "/app/services/consulting_brand_deliverables" },
-      ],
-    },
-    {
-      label: "Build Your Foundation",
-      items: [
-        { key: "consulting_foundation_tasks", label: "Tasks", route: "/app/services/consulting_foundation_tasks" },
-        { key: "consulting_foundation_deliverables", label: "Deliverables", route: "/app/services/consulting_foundation_deliverables" },
-      ],
-    },
-    {
-      label: "Build Your Clarity",
-      items: [
-        { key: "consulting_clarity_tasks", label: "Tasks", route: "/app/services/consulting_clarity_tasks" },
-        { key: "consulting_clarity_deliverables", label: "Deliverables", route: "/app/services/consulting_clarity_deliverables" },
-      ],
-    },
-    {
-      label: "Build Your Engine",
-      items: [
-        { key: "consulting_engine_tasks", label: "Tasks", route: "/app/services/consulting_engine_tasks" },
-        { key: "consulting_engine_deliverables", label: "Deliverables", route: "/app/services/consulting_engine_deliverables" },
-      ],
-    },
-    {
-      label: "",
-      items: [
-        { key: "consulting_calendar", label: "Calendar & Events", route: "/app/services/consulting_calendar" },
-      ],
-    },
-    {
-      label: "Tickets Board",
-      items: [
-        { key: "consulting_tickets", label: "All Tickets", route: "/app/services/consulting_tickets" },
+        { key: "consulting_overview",     label: "Overview",          route: "/app/services/consulting_overview" },
+        { key: "consulting_tickets",      label: "Requests Board",    route: "/app/services/consulting_tickets" },
+        { key: "consulting_projects",     label: "Projects",          route: "/app/services/consulting_projects" },
+        { key: "consulting_deliverables", label: "Deliverables",      route: "/app/services/consulting_deliverables" },
+        { key: "consulting_calendar",     label: "Calendar & Events", route: "/app/services/consulting_calendar" },
       ],
     },
     {

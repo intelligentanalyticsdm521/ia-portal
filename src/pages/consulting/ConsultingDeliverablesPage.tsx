@@ -1,206 +1,169 @@
-import { useEffect, useState, useCallback } from "react";
-import { useConsultingApi } from "../../hooks/useConsultingApi";
+// ConsultingDeliverablesPage — F-140 redesign.
+//
+// Unified artifact library for the consulting hub. Pulls client-visible
+// artifacts from EVERY active project and presents them in a filterable
+// grid. Tags by Build Your Series (engagement_type from parent project)
+// for the user-requested categorization.
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
 interface Deliverable {
-  id: number;
+  artifact_id: string;
+  project_id: string;
+  project_number: string;
+  project_title: string;
+  project_engagement_type?: string | null;
+  project_type_display: string;
+  client_business_name?: string | null;
+  kind: string;
   title: string;
+  description?: string;
+  file_url?: string;
+  external_link?: string;
   status: string;
-  engagement_name: string;
-  engagement_type: string;
-  file_url: string | null;
-  file_name: string | null;
-  submitted_at: string | null;
-  approved_at: string | null;
+  is_client_visible: boolean;
+  uploaded_by_kind: string;
+  uploaded_by_name?: string;
+  created_at: string;
 }
 
-interface ConsultingDeliverablesPageProps {
-  engagementType?: string;
-}
+const ENGAGEMENT_COLORS: Record<string, string> = {
+  build_your_brand: "#EF6C33",
+  build_your_foundation: "#3B82F6",
+  build_your_clarity: "#8B5CF6",
+  build_your_engine: "#10B981",
+};
 
-export function ConsultingDeliverablesPage({ engagementType }: ConsultingDeliverablesPageProps) {
-  const { get, post, ready } = useConsultingApi();
-  const [deliverables, setDeliverables] = useState<Deliverable[]>([]);
-  const [error, setError] = useState<unknown>(null);
+const KIND_ICON: Record<string, string> = {
+  proposal: "📄", design: "🎨", contract: "📝", brief: "📋",
+  spec: "📐", code: "💻", copy: "✍️", other: "📎",
+};
+
+export function ConsultingDeliverablesPage() {
+  const { get, ready } = useOliverApi();
+  const [items, setItems] = useState<Deliverable[]>([]);
+  const [kindFilter, setKindFilter] = useState<string>("");
+  const [tagFilter, setTagFilter] = useState<string>("");
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  const [revisionId, setRevisionId] = useState<number | null>(null);
-  const [revisionNotes, setRevisionNotes] = useState("");
-  const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const loadDeliverables = useCallback(async () => {
+  const load = useCallback(async () => {
     if (!ready) return;
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
-      const query = engagementType ? `?engagement_type=${encodeURIComponent(engagementType)}` : "";
-      const raw = await get<{ data: Deliverable[] }>(`/consulting/deliverables${query}`);
-      setDeliverables(raw?.data ?? []);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
+      const r = await get<{ data: { projects: any[] } }>("/consulting-projects?include_archived=1");
+      const projects = r.data?.projects || [];
+      const all: Deliverable[] = [];
+      for (const p of projects) {
+        try {
+          const pd = await get<{ data: any }>(`/consulting-projects/${p.project_id}`);
+          for (const a of (pd.data?.artifacts || [])) {
+            all.push({
+              ...a,
+              project_id: p.project_id,
+              project_number: p.project_number,
+              project_title: p.title,
+              project_engagement_type: p.engagement_type,
+              project_type_display: p.project_type_display,
+              client_business_name: p.client_business_name,
+            });
+          }
+        } catch { /* skip projects we can't load */ }
+      }
+      all.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setItems(all);
+    } catch (e) { setError((e as Error).message); }
+    finally { setLoading(false); }
+  }, [get, ready]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = useMemo(() => items.filter(i => {
+    if (kindFilter && i.kind !== kindFilter) return false;
+    if (tagFilter && i.project_engagement_type !== tagFilter) return false;
+    if (search) {
+      const s = search.toLowerCase();
+      if (!i.title.toLowerCase().includes(s) &&
+          !(i.project_title || "").toLowerCase().includes(s) &&
+          !(i.client_business_name || "").toLowerCase().includes(s)) return false;
     }
-  }, [get, ready, engagementType]);
+    return true;
+  }), [items, kindFilter, tagFilter, search]);
 
-  useEffect(() => {
-    loadDeliverables();
-  }, [loadDeliverables]);
-
-  async function handleApprove(id: number) {
-    setActionLoading(id);
-    try {
-      await post(`/consulting/deliverables/${id}/approve`);
-      await loadDeliverables();
-    } catch (err) {
-      setError(err);
-    } finally {
-      setActionLoading(null);
-    }
-  }
-
-  async function handleRevision(id: number) {
-    if (!revisionNotes.trim()) return;
-    setActionLoading(id);
-    try {
-      await post(`/consulting/deliverables/${id}/revision`, { notes: revisionNotes.trim() });
-      setRevisionId(null);
-      setRevisionNotes("");
-      await loadDeliverables();
-    } catch (err) {
-      setError(err);
-    } finally {
-      setActionLoading(null);
-    }
-  }
-
-  function formatDate(d: string | null) {
-    if (!d) return "—";
-    return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  }
-
-  const typeLabel = engagementType
-    ? engagementType.replace(/^build_your_/, "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
-    : "All";
+  const kinds = useMemo(() => Array.from(new Set(items.map(i => i.kind))), [items]);
+  const tags = useMemo(() => Array.from(new Set(items.map(i => i.project_engagement_type).filter(Boolean) as string[])), [items]);
 
   return (
-    <OliverPageWrapper
-      title={`${typeLabel} Deliverables`}
-      subtitle="Review and approve deliverables from your consulting team"
-      error={error}
-      loading={loading}
-    >
-      <div className="p-6 space-y-4">
-        {deliverables.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
-            <p className="text-sm text-slate-600">No deliverables found for this engagement.</p>
+    <OliverPageWrapper title="Deliverables" subtitle="IA Consulting · Unified artifact library" error={error} loading={loading}>
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…"
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-48" />
+          <select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            <option value="">All types</option>
+            {kinds.map(k => <option key={k} value={k}>{KIND_ICON[k] || ""} {k}</option>)}
+          </select>
+          <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            <option value="">All engagements</option>
+            {tags.map(t => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
+          </select>
+          <span className="ml-auto text-xs text-slate-500">{filtered.length} of {items.length} deliverable{items.length === 1 ? "" : "s"}</span>
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="rounded-xl bg-slate-50 border border-slate-200 px-6 py-12 text-center text-sm text-slate-500">
+            {items.length === 0 ? "No deliverables yet — upload them from inside a project." : "No matches for current filters."}
           </div>
         ) : (
-          deliverables.map((d) => (
-            <div
-              key={d.id}
-              className={`rounded-xl bg-white ring-1 p-5 ${
-                d.status === "submitted"
-                  ? "ring-purple-300 bg-purple-50 border-l-4 border-[#7B1FA2]"
-                  : d.status === "approved"
-                    ? "ring-green-200"
-                    : "ring-gray-200"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-semibold text-slate-900">{d.title}</h3>
-                    {d.status === "approved" && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
-                        <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                        Approved
-                      </span>
-                    )}
-                    {d.status === "submitted" && (
-                      <span className="inline-block rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">
-                        Awaiting Review
-                      </span>
-                    )}
-                    {d.status === "revision_requested" && (
-                      <span className="inline-block rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
-                        Revision Requested
-                      </span>
-                    )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {filtered.map(d => {
+              const tagColor = d.project_engagement_type ? ENGAGEMENT_COLORS[d.project_engagement_type] : "#94a3b8";
+              return (
+                <div key={d.artifact_id} className="bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md transition">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-2xl">{KIND_ICON[d.kind] || "📎"}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs uppercase font-bold text-slate-500">{d.kind}</div>
+                      <div className="text-sm font-semibold text-slate-900 truncate">{d.title}</div>
+                    </div>
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">{d.engagement_name}</p>
-                  <p className="mt-0.5 text-xs text-slate-400">Submitted {formatDate(d.submitted_at)}</p>
-                </div>
-
-                <div className="shrink-0 flex items-center gap-2">
-                  {d.file_url && (
-                    <a
-                      href={d.file_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-gray-200 transition-colors"
-                    >
-                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      {d.file_name ?? "Download"}
+                  {d.description && <div className="text-xs text-slate-600 mb-2 line-clamp-2">{d.description}</div>}
+                  <div className="flex flex-wrap items-center gap-1 mb-2">
+                    {d.project_engagement_type && (
+                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded text-white" style={{ background: tagColor }}>
+                        {d.project_engagement_type.replace(/_/g, " ").replace("build your ", "")}
+                      </span>
+                    )}
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">{d.project_type_display}</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mb-2">
+                    {d.client_business_name && <>📁 {d.client_business_name} · </>}
+                    <a href={`/app/services/consulting_projects?open=${d.project_id}`} className="text-blue-600 hover:underline">
+                      {d.project_number}
+                    </a>
+                  </div>
+                  {(d.file_url || d.external_link) && (
+                    <a href={d.file_url || d.external_link} target="_blank" rel="noreferrer"
+                      className="text-xs font-semibold text-blue-600 hover:underline">
+                      Open ↗
                     </a>
                   )}
-                </div>
-              </div>
-
-              {/* Action buttons for submitted deliverables */}
-              {d.status === "submitted" && (
-                <div className="mt-4 flex items-center gap-3">
-                  <button
-                    onClick={() => handleApprove(d.id)}
-                    disabled={actionLoading === d.id}
-                    className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
-                  >
-                    {actionLoading === d.id ? "Approving..." : "Approve"}
-                  </button>
-                  <button
-                    onClick={() => setRevisionId(revisionId === d.id ? null : d.id)}
-                    disabled={actionLoading === d.id}
-                    className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50 transition-colors"
-                  >
-                    Request Revision
-                  </button>
-                </div>
-              )}
-
-              {/* Revision notes textarea */}
-              {revisionId === d.id && (
-                <div className="mt-3 space-y-2">
-                  <textarea
-                    value={revisionNotes}
-                    onChange={(e) => setRevisionNotes(e.target.value)}
-                    placeholder="Describe the revisions needed..."
-                    className="w-full rounded-lg border border-gray-300 p-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-purple-400 focus:ring-1 focus:ring-purple-400 outline-none"
-                    rows={3}
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleRevision(d.id)}
-                      disabled={!revisionNotes.trim() || actionLoading === d.id}
-                      className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50 transition-colors"
-                    >
-                      {actionLoading === d.id ? "Submitting..." : "Submit Revision Request"}
-                    </button>
-                    <button
-                      onClick={() => { setRevisionId(null); setRevisionNotes(""); }}
-                      className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-gray-200 transition-colors"
-                    >
-                      Cancel
-                    </button>
+                  <div className="mt-2 text-[10px] text-slate-400">
+                    {new Date(d.created_at).toLocaleDateString()} · by {d.uploaded_by_kind}
                   </div>
                 </div>
-              )}
-            </div>
-          ))
+              );
+            })}
+          </div>
         )}
       </div>
     </OliverPageWrapper>
   );
 }
+
+export default ConsultingDeliverablesPage;

@@ -253,6 +253,8 @@ const ConsultingWorkspacePage = lazyNamed(() => import('./consulting/ConsultingW
 const ConsultingAccessLogPage = lazyNamed(() => import('./consulting/ConsultingAccessLogPage'), 'ConsultingAccessLogPage');
 const ConsultingOnboardClientPage = lazyNamed(() => import('./consulting/ConsultingOnboardClientPage'), 'ConsultingOnboardClientPage');
 const ConsultingTicketsBoardPage = lazyNamed(() => import('./consulting/ConsultingTicketsBoardPage'), 'ConsultingTicketsBoardPage');
+const ConsultingProjectsBoardPage = lazyNamed(() => import('./consulting/ConsultingProjectsBoardPage'), 'ConsultingProjectsBoardPage');
+const ConsultingDeliverablesPage = lazyNamed(() => import('./consulting/ConsultingDeliverablesPage'), 'ConsultingDeliverablesPage');
 
 // Shared loading fallback used by every Suspense boundary in this router.
 function RouteLoading() {
@@ -559,20 +561,27 @@ export function ServiceRouter() {
   if (service.section === 'CONSULTING') {
     let consultingPage: React.ReactNode = null;
     switch (service.key) {
-      case 'consulting_overview': consultingPage = <ConsultingOverviewPage />; break;
-      case 'consulting_brand_tasks': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_brand" view="tasks" />; break;
-      case 'consulting_brand_deliverables': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_brand" view="deliverables" />; break;
-      case 'consulting_foundation_tasks': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_foundation" view="tasks" />; break;
-      case 'consulting_foundation_deliverables': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_foundation" view="deliverables" />; break;
-      case 'consulting_clarity_tasks': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_clarity" view="tasks" />; break;
-      case 'consulting_clarity_deliverables': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_clarity" view="deliverables" />; break;
-      case 'consulting_engine_tasks': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_engine" view="tasks" />; break;
-      case 'consulting_engine_deliverables': consultingPage = <ConsultingEngagementWrapper engagementType="build_your_engine" view="deliverables" />; break;
-      case 'consulting_calendar': consultingPage = <ConsultingCalendarPage />; break;
-      case 'consulting_workspace': consultingPage = <ConsultingWorkspacePage />; break;
-      case 'consulting_access_log': consultingPage = <ConsultingAccessLogPage />; break;
-      case 'consulting_onboard_client': consultingPage = <ConsultingOnboardClientPage />; break;
-      case 'consulting_tickets': consultingPage = <ConsultingTicketsBoardPage />; break;
+      // F-140 — new structure: Overview / Requests / Projects / Deliverables / Calendar / Onboard
+      case 'consulting_overview':         consultingPage = <ConsultingOverviewPage />; break;
+      case 'consulting_tickets':          consultingPage = <ConsultingTicketsBoardPage />; break;
+      case 'consulting_projects':         consultingPage = <ConsultingProjectsBoardPage />; break;
+      case 'consulting_deliverables':     consultingPage = <ConsultingDeliverablesPage />; break;
+      case 'consulting_calendar':         consultingPage = <ConsultingCalendarPage />; break;
+      case 'consulting_onboard_client':   consultingPage = <ConsultingOnboardClientPage />; break;
+      // Founder-only utility surfaces (still accessible by URL)
+      case 'consulting_workspace':        consultingPage = <ConsultingWorkspacePage />; break;
+      case 'consulting_access_log':       consultingPage = <ConsultingAccessLogPage />; break;
+      // Legacy "Build Your X" per-engagement task/deliverable pages —
+      // redirected to the unified Requests Board with an engagement filter.
+      case 'consulting_brand_tasks':
+      case 'consulting_brand_deliverables':
+      case 'consulting_foundation_tasks':
+      case 'consulting_foundation_deliverables':
+      case 'consulting_clarity_tasks':
+      case 'consulting_clarity_deliverables':
+      case 'consulting_engine_tasks':
+      case 'consulting_engine_deliverables':
+        consultingPage = <ConsultingTicketsBoardPage />; break;
       default: break;
     }
     if (consultingPage) {

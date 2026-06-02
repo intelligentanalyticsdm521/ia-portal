@@ -1,184 +1,187 @@
-import { useEffect, useState } from "react";
-import { useConsultingApi } from "../../hooks/useConsultingApi";
+// ConsultingOverviewPage — F-140 redesign.
+//
+// Three sections:
+//   1. Stats cards — completed-this-month / open / hours / cycle time
+//   2. Alerts strip — overdue items (client review stale, no activity, phase stalled)
+//   3. Notifications feed — recent activity the viewer hasn't authored
+//
+// Backend: GET /consulting-overview returns all three in one call.
+
+import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
-interface OverviewData {
-  active_engagements: number;
-  tasks_in_progress: number;
-  needs_input: number;
-  upcoming_events: number;
+interface OverviewResponse {
+  viewer_side: "provider" | "client";
+  notifications: Array<{
+    kind: "request_status" | "request_comment" | "project_status";
+    event_id: number; ref_id: string; ref_number: string; ref_title: string;
+    from_status: string | null; to_status: string;
+    actor_kind: "provider" | "client";
+    created_at: string;
+    project_id?: string | null;
+  }>;
+  alerts: Array<{
+    kind: "request_client_review_stale" | "request_no_activity" | "project_phase_stalled";
+    ref_id: string; ref_number: string; ref_title: string;
+    days_old: number;
+    project_id?: string | null;
+  }>;
+  stats: {
+    requests_completed_30d: number;
+    requests_open: number;
+    projects_active: number;
+    projects_completed_30d: number;
+    hours_logged_30d: number;
+    avg_request_cycle_days_90d: number | null;
+  };
+  sla_thresholds: {
+    client_review_days: number;
+    open_request_days: number;
+    phase_stall_days: number;
+  };
 }
 
-interface RecentTask {
-  id: number;
-  title: string;
-  status: string;
-  engagement_name: string;
-  due_date: string | null;
-}
+const ALERT_LABEL: Record<string, string> = {
+  request_client_review_stale: "Awaiting client review",
+  request_no_activity: "No activity",
+  project_phase_stalled: "Phase stalled",
+};
 
-interface UpcomingEvent {
-  id: number;
-  title: string;
-  type: string;
-  scheduled_at: string;
-  duration_minutes: number;
-}
+const NOTIF_LABEL: Record<string, (n: any) => string> = {
+  request_status: (n) => `Request ${n.ref_number} moved to ${n.to_status.replace(/_/g, " ")}`,
+  request_comment: (n) => `New comment on request ${n.ref_number}`,
+  project_status: (n) => `Project ${n.ref_number}${n.from_status ? ` moved to ${n.to_status}` : " created"}`,
+};
 
 export function ConsultingOverviewPage() {
-  const { get, ready } = useConsultingApi();
-  const [overview, setOverview] = useState<OverviewData | null>(null);
-  const [tasks, setTasks] = useState<RecentTask[]>([]);
-  const [events, setEvents] = useState<UpcomingEvent[]>([]);
-  const [error, setError] = useState<unknown>(null);
+  const { get, ready } = useOliverApi();
+  const [data, setData] = useState<OverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!ready) return;
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const [oRaw, tRaw, eRaw] = await Promise.all([
-          get<{ data: OverviewData }>("/consulting/overview"),
-          get<{ data: RecentTask[] }>("/consulting/tasks?limit=5"),
-          get<{ data: UpcomingEvent[] }>("/consulting/events?limit=5"),
-        ]);
-        if (!cancelled) {
-          setOverview(oRaw?.data ?? null);
-          setTasks(tRaw?.data ?? []);
-          setEvents(eRaw?.data ?? []);
-        }
-      } catch (err) {
-        if (!cancelled) setError(err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await get<{ data: OverviewResponse }>("/consulting-overview");
+      setData(r.data);
+    } catch (e) { setError((e as Error).message); }
+    finally { setLoading(false); }
   }, [get, ready]);
 
-  const hasEngagements = overview && overview.active_engagements > 0;
+  useEffect(() => { load(); }, [load]);
 
-  const cards = overview
-    ? [
-        { label: "Active Engagements", value: overview.active_engagements },
-        { label: "Tasks In Progress", value: overview.tasks_in_progress },
-        { label: "Needs Your Input", value: overview.needs_input },
-        { label: "Upcoming Events", value: overview.upcoming_events },
-      ]
-    : [];
-
-  function statusBadge(status: string) {
-    switch (status) {
-      case "in_progress":
-        return <span className="inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">In Progress</span>;
-      case "needs_input":
-        return <span className="inline-block rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">Needs Your Input</span>;
-      case "complete":
-        return <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Complete</span>;
-      default:
-        return <span className="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">Upcoming</span>;
-    }
-  }
-
-  function formatDate(d: string | null) {
-    if (!d) return "—";
-    return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  }
-
-  function formatDateTime(d: string) {
-    return new Date(d).toLocaleDateString("en-US", {
-      month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-    });
-  }
+  const stats = data?.stats;
+  const cycleDays = stats?.avg_request_cycle_days_90d != null ? stats.avg_request_cycle_days_90d.toFixed(1) : "—";
 
   return (
-    <OliverPageWrapper title="Consulting Overview" subtitle="Your IA consulting engagement at a glance" error={error} loading={loading}>
-      <div className="p-6 space-y-6">
-        {!hasEngagements ? (
-          <div className="rounded-xl border-2 border-dashed border-purple-300 bg-purple-50 p-8 text-center">
-            <h2 className="text-lg font-semibold text-purple-900">IA Consulting Services</h2>
-            <p className="mx-auto mt-2 max-w-xl text-sm text-purple-700">
-              Our consulting team helps you build your brand, foundation, clarity, and growth engine.
-              From strategy sessions to deliverable reviews, we partner with you every step of the way.
-            </p>
-            <a
-              href="https://iadm.co/consulting"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-4 inline-block rounded-lg bg-[#7B1FA2] px-5 py-2.5 text-sm font-medium text-white hover:bg-purple-800 transition-colors"
-            >
-              Learn More
-            </a>
+    <OliverPageWrapper title="Consulting Overview" subtitle="IA Consulting · Snapshot of activity, alerts, and recent stats" error={error} loading={loading}>
+      <div className="space-y-6 max-w-7xl">
+        {/* Stats cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <StatCard label="Requests completed (30d)" value={stats?.requests_completed_30d ?? "—"} color="#10b981" />
+          <StatCard label="Open requests"           value={stats?.requests_open ?? "—"}           color="#3b82f6" />
+          <StatCard label="Projects active"         value={stats?.projects_active ?? "—"}         color="#8b5cf6" />
+          <StatCard label="Projects shipped (30d)"  value={stats?.projects_completed_30d ?? "—"}  color="#a855f7" />
+          <StatCard label="Hours logged (30d)"      value={stats?.hours_logged_30d ?? "—"}        color="#f59e0b" />
+          <StatCard label="Avg cycle (days, 90d)"   value={cycleDays}                              color="#334155" />
+        </div>
+
+        {/* Alerts */}
+        <section>
+          <div className="flex items-baseline justify-between mb-2">
+            <h2 className="text-base font-bold text-slate-900">Alerts</h2>
+            <span className="text-[11px] text-slate-500">
+              SLA: client review &gt; {data?.sla_thresholds.client_review_days}d ·
+              no activity &gt; {data?.sla_thresholds.open_request_days}d ·
+              phase stalled &gt; {data?.sla_thresholds.phase_stall_days}d
+            </span>
           </div>
-        ) : (
-          <>
-            {/* Summary cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {cards.map((c) => (
-                <div
-                  key={c.label}
-                  className="rounded-xl bg-white ring-1 ring-gray-200 p-5 border-l-4 border-[#7B1FA2]"
-                >
-                  <p className="text-sm text-slate-500">{c.label}</p>
-                  <p className="mt-1 text-2xl font-bold text-slate-900">{c.value}</p>
-                </div>
-              ))}
+          {data?.alerts.length === 0 ? (
+            <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-6 text-sm text-emerald-700 text-center">
+              ✓ Nothing overdue right now.
             </div>
-
-            {/* Recent tasks */}
-            <div className="rounded-xl bg-white ring-1 ring-gray-200 p-5">
-              <h2 className="text-lg font-semibold text-slate-900 mb-4">Recent Tasks</h2>
-              {tasks.length === 0 ? (
-                <p className="text-sm text-slate-500">No tasks yet.</p>
-              ) : (
-                <div className="space-y-3">
-                  {tasks.map((t) => (
-                    <div
-                      key={t.id}
-                      className={`flex items-center justify-between rounded-lg p-3 ${
-                        t.status === "needs_input" ? "bg-purple-50 ring-1 ring-purple-200" : "bg-gray-50"
-                      }`}
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{t.title}</p>
-                        <p className="text-xs text-slate-500">{t.engagement_name}</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        {statusBadge(t.status)}
-                        <span className="text-xs text-slate-400">{formatDate(t.due_date)}</span>
+          ) : (
+            <div className="rounded-xl bg-white border border-slate-200 divide-y divide-slate-100">
+              {data?.alerts.map((a, i) => {
+                const route = a.project_id
+                  ? `/app/services/consulting_projects?open=${a.project_id}`
+                  : `/app/services/consulting_tickets?open=${a.ref_id}`;
+                return (
+                  <Link to={route} key={`${a.kind}-${a.ref_id}-${i}`}
+                    className="flex items-center gap-3 p-3 hover:bg-amber-50">
+                    <span className="text-xs font-bold uppercase px-2 py-1 rounded bg-amber-100 text-amber-800 whitespace-nowrap">
+                      {a.days_old}d
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold text-slate-900 truncate">{a.ref_title}</div>
+                      <div className="text-[11px] text-slate-500">
+                        {a.ref_number} · {ALERT_LABEL[a.kind] || a.kind.replace(/_/g, " ")}
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                    <span className="text-slate-400 text-xs">→</span>
+                  </Link>
+                );
+              })}
             </div>
+          )}
+        </section>
 
-            {/* Upcoming events */}
-            <div className="rounded-xl bg-white ring-1 ring-gray-200 p-5">
-              <h2 className="text-lg font-semibold text-slate-900 mb-4">Upcoming Events</h2>
-              {events.length === 0 ? (
-                <p className="text-sm text-slate-500">No upcoming events.</p>
-              ) : (
-                <div className="space-y-3">
-                  {events.map((e) => (
-                    <div key={e.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{e.title}</p>
-                        <p className="text-xs text-slate-500">{e.duration_minutes} min</p>
-                      </div>
-                      <span className="text-xs text-slate-500">{formatDateTime(e.scheduled_at)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+        {/* Notifications */}
+        <section>
+          <h2 className="text-base font-bold text-slate-900 mb-2">Recent activity</h2>
+          {data?.notifications.length === 0 ? (
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-6 text-sm text-slate-500 text-center">
+              No new activity in the last 14 days.
             </div>
-          </>
-        )}
+          ) : (
+            <div className="rounded-xl bg-white border border-slate-200 divide-y divide-slate-100 max-h-[480px] overflow-y-auto">
+              {data?.notifications.map((n, i) => {
+                const route = n.kind === "project_status"
+                  ? `/app/services/consulting_projects?open=${n.ref_id}`
+                  : `/app/services/consulting_tickets?open=${n.ref_id}`;
+                const ageHrs = (Date.now() - new Date(n.created_at).getTime()) / 36e5;
+                const ageLabel = ageHrs < 1 ? `${Math.round(ageHrs * 60)}m`
+                              : ageHrs < 24 ? `${Math.round(ageHrs)}h`
+                              : `${Math.round(ageHrs / 24)}d`;
+                return (
+                  <Link to={route} key={`${n.kind}-${n.event_id}-${i}`}
+                    className="flex items-center gap-3 p-3 hover:bg-slate-50">
+                    <span className={`w-2 h-2 rounded-full ${n.actor_kind === "client" ? "bg-emerald-500" : "bg-blue-500"}`}></span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm text-slate-800 truncate">
+                        {NOTIF_LABEL[n.kind] ? NOTIF_LABEL[n.kind](n) : n.kind}
+                      </div>
+                      <div className="text-[11px] text-slate-500 truncate">
+                        {n.ref_title} · by {n.actor_kind}
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-slate-400 whitespace-nowrap">{ageLabel}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <p className="text-center text-[10px] text-slate-400">
+          {data?.viewer_side === "provider" ? "Founder view" : "Client view"} · Updated {new Date().toLocaleString()}
+        </p>
       </div>
     </OliverPageWrapper>
   );
 }
+
+function StatCard({ label, value, color }: { label: string; value: number | string; color: string }) {
+  return (
+    <div className="rounded-xl bg-white border-2 px-4 py-3" style={{ borderLeftColor: color, borderLeftWidth: 4 }}>
+      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</div>
+      <div className="mt-1 text-2xl font-bold text-slate-900 tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+export default ConsultingOverviewPage;

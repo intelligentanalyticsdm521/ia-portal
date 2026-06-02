@@ -180,7 +180,7 @@ export function ConsultingTicketsBoardPage() {
   }
 
   return (
-    <OliverPageWrapper title="Consulting Tickets" subtitle="IA Consulting · Client Work Board" error={error} loading={loading}>
+    <OliverPageWrapper title="Requests Board" subtitle="IA Consulting · Client work pipeline" error={error} loading={loading}>
       <div className="space-y-3">
         {/* Header / actions */}
         <div className="flex flex-wrap items-center gap-2">
@@ -188,7 +188,7 @@ export function ConsultingTicketsBoardPage() {
             onClick={() => setShowCreate(true)}
             className="px-4 py-2 rounded-lg bg-[#EF6C33] text-white text-sm font-semibold hover:bg-[#d75a25]"
           >
-            ＋ New Ticket
+            ＋ New Request
           </button>
 
           {viewerSide === "provider" && clients.length > 0 && (
@@ -249,7 +249,7 @@ export function ConsultingTicketsBoardPage() {
                     }}
                   >
                     {colTickets.length === 0 && (
-                      <div className="text-xs text-slate-400 italic text-center py-4">No tickets</div>
+                      <div className="text-xs text-slate-400 italic text-center py-4">No requests</div>
                     )}
                     {colTickets.map(t => (
                       <TicketCard
