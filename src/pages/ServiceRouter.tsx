@@ -247,7 +247,6 @@ const ArionPluginProvisioningPage = lazyNamed(() => import('./arion/ArionPluginP
 
 // CONSULTING — lazy-loaded
 const ConsultingOverviewPage = lazyNamed(() => import('./consulting/ConsultingOverviewPage'), 'ConsultingOverviewPage');
-const ConsultingEngagementWrapper = lazyNamed(() => import('./consulting/ConsultingEngagementWrapper'), 'ConsultingEngagementWrapper');
 const ConsultingCalendarPage = lazyNamed(() => import('./consulting/ConsultingCalendarPage'), 'ConsultingCalendarPage');
 const ConsultingWorkspacePage = lazyNamed(() => import('./consulting/ConsultingWorkspacePage'), 'ConsultingWorkspacePage');
 const ConsultingAccessLogPage = lazyNamed(() => import('./consulting/ConsultingAccessLogPage'), 'ConsultingAccessLogPage');

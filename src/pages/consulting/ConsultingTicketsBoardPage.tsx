@@ -460,7 +460,7 @@ function TicketDetailModal({ ticketId, onClose, onChanged }: { ticketId: string;
                   <option value="">— pick a type —</option>
                   {convertTypes.map(ct => <option key={ct.type_key} value={ct.type_key}>{ct.display_name}</option>)}
                 </select>
-                {convertType && convertTypes.find(c => c.type_key === convertType)?.default_phases?.length > 0 && (
+                {convertType && (convertTypes.find(c => c.type_key === convertType)?.default_phases?.length ?? 0) > 0 && (
                   <div className="text-[11px] text-purple-700">
                     Phases will auto-populate: {convertTypes.find(c => c.type_key === convertType)!.default_phases.map((p: any) => p.name).join(" → ")}
                   </div>
