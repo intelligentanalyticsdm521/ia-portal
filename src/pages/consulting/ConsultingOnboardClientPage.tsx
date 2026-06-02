@@ -132,7 +132,7 @@ export function ConsultingOnboardClientPage() {
       (stripeAction === "link_existing" && stripeMatches !== null && stripeMatches.length > 0));
 
   return (
-    <OliverPageWrapper title="Onboard Client" subtitle="IA Consulting · Platform Operations">
+    <OliverPageWrapper title="Onboard Client" subtitle="IA Consulting · Platform Operations" error={error} loading={submitting || searching}>
       <div className="max-w-3xl mx-auto">
         {/* Progress strip */}
         <div className="flex items-center gap-2 mb-6">
