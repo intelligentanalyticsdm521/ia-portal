@@ -1,17 +1,14 @@
-// ConsultingOnboardClientPage — F-137
+// ConsultingOnboardClientPage — F-137 (refactored simpler)
 //
-// Founder-only flow for "IA Consulting → Onboard Client". Walks the operator
-// (you) through:
+// 4-step founder-only client onboarding flow:
+//   1  New or Existing client?
+//   2  Pick platforms (multi-select ARION/OLIVER/SPARK)
+//   3  Client details + optional coupon
+//   4  Confirm → execute → handoff checklist
 //
-//   Step 1  New or Existing client?
-//   Step 2  Which platforms (ARION / OLIVER / SPARK — multi-select)?
-//   Step 3  Client details (business name, email, phone, WP URL if ARION)
-//   Step 4  Stripe action — link existing customer / create new w/ coupon
-//   Step 5  Confirm + execute
-//   Step 6  Done — operator handoff checklist (provision code, WP-CLI commands,
-//           plugin .zip URL, next steps)
-//
-// Backend orchestrator: POST /admin/onboard-client on oliver-api.
+// Backend auto-detects whether the email exists in Stripe (links if yes,
+// creates new if no). Coupon works in both cases — applied to existing
+// customer's next invoice OR to new customer.
 
 import { useState } from "react";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
@@ -19,17 +16,6 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 
 type ClientType = "new" | "existing";
 type Platform = "arion" | "oliver" | "spark";
-type StripeAction = "link_existing" | "create_new_with_coupon" | "no_charge";
-
-interface StripeMatch {
-  id: string;
-  email: string | null;
-  name: string | null;
-  subscriptions?: Array<{
-    id: string;
-    items: Array<{ price_id: string; nickname?: string; unit_amount?: number; recurring?: string }>;
-  }>;
-}
 
 interface OnboardResult {
   tenant_id: string;
@@ -54,7 +40,7 @@ interface OnboardResult {
 }
 
 export function ConsultingOnboardClientPage() {
-  const { get, post, ready } = useOliverApi();
+  const { post, ready } = useOliverApi();
 
   const [step, setStep] = useState(1);
   const [clientType, setClientType] = useState<ClientType | null>(null);
@@ -64,10 +50,7 @@ export function ConsultingOnboardClientPage() {
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [wpSiteUrl, setWpSiteUrl] = useState("");
-  const [stripeAction, setStripeAction] = useState<StripeAction>("link_existing");
   const [couponCode, setCouponCode] = useState("");
-  const [stripeMatches, setStripeMatches] = useState<StripeMatch[] | null>(null);
-  const [searching, setSearching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<OnboardResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,23 +59,6 @@ export function ConsultingOnboardClientPage() {
     const next = new Set(platforms);
     if (next.has(p)) next.delete(p); else next.add(p);
     setPlatforms(next);
-  };
-
-  const searchStripe = async () => {
-    if (!contactEmail || !ready) return;
-    setSearching(true);
-    setError(null);
-    try {
-      const r = await get<{ data: StripeMatch[] }>(
-        `/admin/onboard-client/stripe-customer-search?email=${encodeURIComponent(contactEmail)}`
-      );
-      setStripeMatches(r.data || []);
-    } catch (e) {
-      setError((e as Error).message);
-      setStripeMatches([]);
-    } finally {
-      setSearching(false);
-    }
   };
 
   const submit = async () => {
@@ -106,17 +72,25 @@ export function ConsultingOnboardClientPage() {
         contact_phone: contactPhone || undefined,
         wp_site_url: platforms.has("arion") ? wpSiteUrl : undefined,
         products: Array.from(platforms),
-        stripe_action: stripeAction,
+        // Backend auto-detects: lookup by email → link if found, create if not.
+        // Coupon (if provided) applied either way.
+        stripe_action: "auto",
         coupon_code: couponCode || undefined,
       };
       const r = await post<{ data: OnboardResult }>("/admin/onboard-client", body);
       setResult(r.data);
-      setStep(6);
+      setStep(5);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const reset = () => {
+    setStep(1); setClientType(null); setPlatforms(new Set());
+    setBusinessName(""); setContactEmail(""); setContactName(""); setContactPhone("");
+    setWpSiteUrl(""); setCouponCode(""); setResult(null);
   };
 
   const canProceedStep1 = clientType !== null;
@@ -125,18 +99,13 @@ export function ConsultingOnboardClientPage() {
     businessName.trim().length > 1 &&
     contactEmail.includes("@") &&
     (!platforms.has("arion") || wpSiteUrl.trim().length > 0);
-  const canSubmit =
-    canProceedStep3 &&
-    (stripeAction === "no_charge" ||
-      (stripeAction === "create_new_with_coupon") ||
-      (stripeAction === "link_existing" && stripeMatches !== null && stripeMatches.length > 0));
 
   return (
-    <OliverPageWrapper title="Onboard Client" subtitle="IA Consulting · Platform Operations" error={error} loading={submitting || searching}>
-      <div className="max-w-3xl mx-auto">
+    <OliverPageWrapper title="Onboard Client" subtitle="IA Consulting · Platform Operations" error={error} loading={submitting}>
+      <div className="max-w-2xl mx-auto">
         {/* Progress strip */}
         <div className="flex items-center gap-2 mb-6">
-          {[1, 2, 3, 4, 5, 6].map((n) => (
+          {[1, 2, 3, 4, 5].map((n) => (
             <div key={n}
               className={`h-1 flex-1 rounded ${n <= step ? "bg-[#EF6C33]" : "bg-gray-200"}`} />
           ))}
@@ -145,28 +114,20 @@ export function ConsultingOnboardClientPage() {
         {/* Step 1 — New / Existing */}
         {step === 1 && (
           <div className="space-y-4">
-            <h2 className="text-xl font-bold text-slate-900">Is this a new or existing client?</h2>
-            <p className="text-sm text-slate-600">
-              "Existing" = they're already a customer in Stripe (e.g. Midwest Ag Services).
-              "New" = brand new — we'll create their Stripe customer (with optional coupon for free months).
-            </p>
+            <h2 className="text-xl font-bold text-slate-900">New or existing client?</h2>
             <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => setClientType("existing")}
-                className={`p-5 rounded-xl border-2 text-left ${clientType === "existing" ? "border-[#EF6C33] bg-white" : "border-gray-200 bg-white hover:border-gray-300"}`}>
-                <div className="font-semibold text-slate-900">Existing in Stripe</div>
-                <div className="mt-1 text-xs text-slate-500">Customer + subscription already exist. We link and onboard.</div>
-              </button>
               <button onClick={() => setClientType("new")}
-                className={`p-5 rounded-xl border-2 text-left ${clientType === "new" ? "border-[#EF6C33] bg-white" : "border-gray-200 bg-white hover:border-gray-300"}`}>
-                <div className="font-semibold text-slate-900">New (create Stripe customer)</div>
-                <div className="mt-1 text-xs text-slate-500">Optional coupon for N months free. Good for partners + testers.</div>
+                className={`p-6 rounded-xl border-2 text-center ${clientType === "new" ? "border-[#EF6C33] bg-white shadow-md" : "border-gray-200 bg-white hover:border-gray-300"}`}>
+                <div className="text-lg font-bold text-slate-900">New</div>
+              </button>
+              <button onClick={() => setClientType("existing")}
+                className={`p-6 rounded-xl border-2 text-center ${clientType === "existing" ? "border-[#EF6C33] bg-white shadow-md" : "border-gray-200 bg-white hover:border-gray-300"}`}>
+                <div className="text-lg font-bold text-slate-900">Existing</div>
               </button>
             </div>
-            <div className="pt-4">
-              <button disabled={!canProceedStep1} onClick={() => {
-                setStripeAction(clientType === "existing" ? "link_existing" : "create_new_with_coupon");
-                setStep(2);
-              }} className="px-6 py-2.5 rounded-lg bg-[#EF6C33] text-white font-semibold disabled:opacity-50">
+            <div className="pt-4 flex justify-end">
+              <button disabled={!canProceedStep1} onClick={() => setStep(2)}
+                className="px-6 py-2.5 rounded-lg bg-[#EF6C33] text-white font-semibold disabled:opacity-50">
                 Continue →
               </button>
             </div>
@@ -177,16 +138,16 @@ export function ConsultingOnboardClientPage() {
         {step === 2 && (
           <div className="space-y-4">
             <h2 className="text-xl font-bold text-slate-900">Which platforms?</h2>
-            <p className="text-sm text-slate-600">Multi-select what they're getting access to.</p>
+            <p className="text-xs text-slate-500">Multi-select. Coupons + Stripe handled automatically on the next step.</p>
             <div className="grid grid-cols-3 gap-3">
               {(["arion", "oliver", "spark"] as Platform[]).map((p) => (
                 <button key={p} onClick={() => togglePlatform(p)}
-                  className={`p-5 rounded-xl border-2 text-center ${platforms.has(p) ? "border-[#EF6C33] bg-white" : "border-gray-200 bg-white hover:border-gray-300"}`}>
-                  <div className="text-sm font-bold uppercase tracking-wide text-slate-700">{p}</div>
+                  className={`p-6 rounded-xl border-2 text-center ${platforms.has(p) ? "border-[#EF6C33] bg-white shadow-md" : "border-gray-200 bg-white hover:border-gray-300"}`}>
+                  <div className="text-base font-bold uppercase tracking-wide text-slate-700">{p}</div>
                 </button>
               ))}
             </div>
-            <div className="pt-4 flex gap-2">
+            <div className="pt-4 flex justify-between">
               <button onClick={() => setStep(1)} className="px-6 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-semibold">← Back</button>
               <button disabled={!canProceedStep2} onClick={() => setStep(3)}
                 className="px-6 py-2.5 rounded-lg bg-[#EF6C33] text-white font-semibold disabled:opacity-50">Continue →</button>
@@ -194,111 +155,52 @@ export function ConsultingOnboardClientPage() {
           </div>
         )}
 
-        {/* Step 3 — Client details */}
+        {/* Step 3 — Details + optional coupon */}
         {step === 3 && (
           <div className="space-y-4">
             <h2 className="text-xl font-bold text-slate-900">Client details</h2>
             <div className="grid gap-3">
               <Field label="Business name *" value={businessName} onChange={setBusinessName} />
               <Field label="Contact email *" value={contactEmail} onChange={setContactEmail} type="email" />
-              <Field label="Contact name (optional)" value={contactName} onChange={setContactName} />
-              <Field label="Contact phone (optional)" value={contactPhone} onChange={setContactPhone} />
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Contact name" value={contactName} onChange={setContactName} />
+                <Field label="Contact phone" value={contactPhone} onChange={setContactPhone} />
+              </div>
               {platforms.has("arion") && (
-                <Field label="WordPress site URL * (required for ARION)" value={wpSiteUrl} onChange={setWpSiteUrl}
+                <Field label="WordPress site URL *" value={wpSiteUrl} onChange={setWpSiteUrl}
                   placeholder="https://midwestagservices.com" />
               )}
+              <Field label="Coupon code (optional)" value={couponCode} onChange={setCouponCode}
+                placeholder="e.g. SIX_MONTHS_FREE" />
+              <p className="text-[11px] text-slate-500 -mt-2">
+                Stripe coupon ID. Works for both new and existing clients — applied to next invoice.
+              </p>
             </div>
-            <div className="pt-4 flex gap-2">
+            <div className="pt-4 flex justify-between">
               <button onClick={() => setStep(2)} className="px-6 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-semibold">← Back</button>
               <button disabled={!canProceedStep3} onClick={() => setStep(4)}
-                className="px-6 py-2.5 rounded-lg bg-[#EF6C33] text-white font-semibold disabled:opacity-50">Continue →</button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 4 — Stripe action */}
-        {step === 4 && (
-          <div className="space-y-4">
-            <h2 className="text-xl font-bold text-slate-900">Stripe</h2>
-            <div className="space-y-2">
-              {(["link_existing", "create_new_with_coupon", "no_charge"] as StripeAction[]).map((a) => (
-                <label key={a} className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer ${stripeAction === a ? "border-[#EF6C33] bg-white" : "border-gray-200 bg-white hover:border-gray-300"}`}>
-                  <input type="radio" checked={stripeAction === a} onChange={() => setStripeAction(a)} className="mt-1" />
-                  <div>
-                    <div className="font-semibold text-slate-900">
-                      {a === "link_existing" && "Link existing Stripe customer (by email)"}
-                      {a === "create_new_with_coupon" && "Create new Stripe customer (optional coupon for free months)"}
-                      {a === "no_charge" && "Skip Stripe — manual billing"}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-0.5">
-                      {a === "link_existing" && "Looks up the customer by email + links to the new tenant."}
-                      {a === "create_new_with_coupon" && "Creates a new Stripe customer. Apply a coupon ID (e.g. SIX_MONTHS_FREE) for free trial periods."}
-                      {a === "no_charge" && "No Stripe touch. Use when invoicing offline or running a fully-free relationship."}
-                    </div>
-                  </div>
-                </label>
-              ))}
-            </div>
-
-            {stripeAction === "link_existing" && (
-              <div className="rounded-lg bg-slate-50 border border-slate-200 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <button onClick={searchStripe} disabled={!contactEmail || searching}
-                    className="px-3 py-1.5 rounded border border-slate-300 text-sm font-semibold bg-white hover:bg-slate-50 disabled:opacity-50">
-                    {searching ? "Searching…" : `Find Stripe customer for ${contactEmail}`}
-                  </button>
-                </div>
-                {stripeMatches !== null && (
-                  <div className="text-xs">
-                    {stripeMatches.length === 0 && (
-                      <div className="text-rose-600">No Stripe customer found for {contactEmail}. They may need to be created — switch to "Create new" above.</div>
-                    )}
-                    {stripeMatches.map((m) => (
-                      <div key={m.id} className="bg-white border border-slate-200 rounded p-2 mb-1">
-                        <div className="font-semibold">{m.name || "(no name)"} · {m.email}</div>
-                        <div className="text-slate-500">{m.id}</div>
-                        {m.subscriptions && m.subscriptions.length > 0 && (
-                          <ul className="mt-1 pl-3 list-disc text-slate-700">
-                            {m.subscriptions.flatMap((s) => s.items).map((it, i) => (
-                              <li key={i}>{it.nickname || it.price_id} — ${((it.unit_amount || 0) / 100).toFixed(2)}/{it.recurring || "?"}</li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {stripeAction === "create_new_with_coupon" && (
-              <Field label="Stripe coupon ID (optional, e.g. SIX_MONTHS_FREE)" value={couponCode} onChange={setCouponCode} />
-            )}
-
-            <div className="pt-4 flex gap-2">
-              <button onClick={() => setStep(3)} className="px-6 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-semibold">← Back</button>
-              <button disabled={!canSubmit} onClick={() => setStep(5)}
                 className="px-6 py-2.5 rounded-lg bg-[#EF6C33] text-white font-semibold disabled:opacity-50">Review →</button>
             </div>
           </div>
         )}
 
-        {/* Step 5 — Confirm */}
-        {step === 5 && (
+        {/* Step 4 — Confirm */}
+        {step === 4 && (
           <div className="space-y-4">
             <h2 className="text-xl font-bold text-slate-900">Confirm</h2>
             <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-1 text-sm">
+              <div><span className="text-slate-500 w-32 inline-block">Type:</span> <strong>{clientType === "new" ? "New" : "Existing"}</strong></div>
               <div><span className="text-slate-500 w-32 inline-block">Business:</span> <strong>{businessName}</strong></div>
               <div><span className="text-slate-500 w-32 inline-block">Email:</span> {contactEmail}</div>
               {contactName && <div><span className="text-slate-500 w-32 inline-block">Name:</span> {contactName}</div>}
               {contactPhone && <div><span className="text-slate-500 w-32 inline-block">Phone:</span> {contactPhone}</div>}
               <div><span className="text-slate-500 w-32 inline-block">Platforms:</span> {Array.from(platforms).join(", ").toUpperCase()}</div>
               {platforms.has("arion") && <div><span className="text-slate-500 w-32 inline-block">WP site:</span> {wpSiteUrl}</div>}
-              <div><span className="text-slate-500 w-32 inline-block">Stripe:</span> {stripeAction.replace(/_/g, " ")}{couponCode ? ` (coupon: ${couponCode})` : ""}</div>
+              {couponCode && <div><span className="text-slate-500 w-32 inline-block">Coupon:</span> {couponCode}</div>}
             </div>
             {error && <div className="text-sm text-rose-600">{error}</div>}
-            <div className="pt-4 flex gap-2">
-              <button onClick={() => setStep(4)} className="px-6 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-semibold">← Back</button>
+            <div className="pt-4 flex justify-between">
+              <button onClick={() => setStep(3)} className="px-6 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-semibold">← Back</button>
               <button disabled={submitting} onClick={submit}
                 className="px-6 py-2.5 rounded-lg bg-[#EF6C33] text-white font-semibold disabled:opacity-50">
                 {submitting ? "Onboarding…" : "Onboard client →"}
@@ -307,8 +209,8 @@ export function ConsultingOnboardClientPage() {
           </div>
         )}
 
-        {/* Step 6 — Done */}
-        {step === 6 && result && (
+        {/* Step 5 — Done */}
+        {step === 5 && result && (
           <div className="space-y-4">
             <h2 className="text-xl font-bold text-slate-900">✓ {businessName} onboarded</h2>
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm">
@@ -322,7 +224,10 @@ export function ConsultingOnboardClientPage() {
               <ul className="text-sm space-y-1">
                 {result.steps.map((s, i) => (
                   <li key={i} className="flex items-start gap-2">
-                    <span className={`text-xs font-bold uppercase mt-0.5 ${s.status === "ok" || s.status === "created" || s.status === "linked" || s.status === "reused" ? "text-emerald-600" : s.status === "warn" ? "text-amber-600" : "text-rose-600"}`}>{s.status}</span>
+                    <span className={`text-xs font-bold uppercase mt-0.5 ${
+                      s.status === "ok" || s.status === "created" || s.status === "linked" || s.status === "reused"
+                        ? "text-emerald-600" : s.status === "warn" ? "text-amber-600" : "text-rose-600"
+                    }`}>{s.status}</span>
                     <span><strong>{s.step}</strong> — {s.detail}</span>
                   </li>
                 ))}
@@ -331,44 +236,33 @@ export function ConsultingOnboardClientPage() {
 
             {result.handoff.arion && (
               <div className="bg-white border border-slate-200 rounded-xl p-4">
-                <div className="font-semibold text-slate-900 mb-2">ARION plugin install — operator handoff</div>
-                <div className="text-xs text-slate-600 mb-3">Two paths. Pick whichever fits the client's host.</div>
-
+                <div className="font-semibold text-slate-900 mb-2">ARION plugin install</div>
                 <details className="mb-3" open>
-                  <summary className="cursor-pointer font-semibold text-sm">Method A — Hostinger SSH + WP-CLI (auto)</summary>
+                  <summary className="cursor-pointer font-semibold text-sm">Method A — Hostinger SSH + WP-CLI</summary>
                   <pre className="mt-2 bg-slate-900 text-emerald-300 text-xs p-3 rounded overflow-x-auto whitespace-pre-wrap">
                     {result.handoff.arion.manual_install.method_a_hostinger_ssh.join("\n")}
                   </pre>
                 </details>
-
                 <details className="mb-3">
-                  <summary className="cursor-pointer font-semibold text-sm">Method B — manual .zip upload via WP-admin</summary>
+                  <summary className="cursor-pointer font-semibold text-sm">Method B — manual .zip upload</summary>
                   <pre className="mt-2 bg-slate-900 text-emerald-300 text-xs p-3 rounded overflow-x-auto whitespace-pre-wrap">
                     {result.handoff.arion.manual_install.method_b_manual_zip.join("\n")}
                   </pre>
                 </details>
-
                 <details>
-                  <summary className="cursor-pointer font-semibold text-sm">User setup (create IA admin + downgrade client to editor)</summary>
+                  <summary className="cursor-pointer font-semibold text-sm">User setup (IA admin + editor downgrade)</summary>
                   <pre className="mt-2 bg-slate-900 text-emerald-300 text-xs p-3 rounded overflow-x-auto whitespace-pre-wrap">
                     {result.handoff.arion.manual_install.users.join("\n")}
                   </pre>
                 </details>
-
                 <div className="mt-3 text-xs text-slate-600">
-                  <strong>Plugin .zip:</strong>{" "}
-                  <a href={result.handoff.arion.plugin_download_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
-                    {result.handoff.arion.plugin_download_url}
-                  </a>
-                </div>
-                <div className="mt-1 text-xs text-slate-600">
-                  <strong>Provision code (single-use, 14d):</strong> <code className="bg-slate-100 px-1.5 py-0.5 rounded">{result.handoff.arion.provision_code}</code>
+                  <strong>Provision code (14d):</strong> <code className="bg-slate-100 px-1.5 py-0.5 rounded">{result.handoff.arion.provision_code}</code>
                 </div>
               </div>
             )}
 
             <div className="pt-2 flex gap-2">
-              <button onClick={() => { setStep(1); setClientType(null); setPlatforms(new Set()); setBusinessName(""); setContactEmail(""); setContactName(""); setContactPhone(""); setWpSiteUrl(""); setCouponCode(""); setStripeMatches(null); setResult(null); }}
+              <button onClick={reset}
                 className="px-6 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-semibold">
                 Onboard another client
               </button>

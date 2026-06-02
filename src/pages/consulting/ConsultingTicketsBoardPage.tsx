@@ -91,17 +91,33 @@ export function ConsultingTicketsBoardPage() {
     finally { setLoading(false); }
   }, [get, ready, clientFilter, engTypeFilter]);
 
+  const [hasConsultingAccess, setHasConsultingAccess] = useState<boolean | null>(null);
+
   const loadClients = useCallback(async () => {
     if (!ready) return;
     try {
       const r = await get<{ data: { clients: Client[] } }>(`/consulting-tickets/_/clients`);
       setClients(r.data?.clients || []);
       setViewerSide("provider");
+      setHasConsultingAccess(true);
     } catch {
-      // Not a founder — that's fine. The viewer is on the client side.
+      // Not a founder — they're a client. Whether they have consulting
+      // access depends on whether they have any tickets OR an active
+      // consulting engagement. We infer from /consulting-tickets returning
+      // a non-empty list. Brand-new clients with no tickets see the gate
+      // overlay until they book a consultation.
       setViewerSide("client");
     }
   }, [get, ready]);
+
+  // Decide whether to show the gate overlay (client viewer + no tickets ever)
+  useEffect(() => {
+    if (viewerSide === "provider") { setHasConsultingAccess(true); return; }
+    if (viewerSide === "client") {
+      // If client has any tickets (open or archived), they have access.
+      setHasConsultingAccess(tickets.length > 0);
+    }
+  }, [viewerSide, tickets.length]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadClients(); }, [loadClients]);
@@ -124,6 +140,44 @@ export function ConsultingTicketsBoardPage() {
       setError((e as Error).message);
     }
   };
+
+  // Gate overlay for clients with no consulting access yet
+  if (viewerSide === "client" && hasConsultingAccess === false) {
+    return (
+      <OliverPageWrapper title="Consulting Tickets" subtitle="IA Consulting" error={error} loading={loading}>
+        <div className="relative">
+          {/* Greyed background placeholder */}
+          <div className="opacity-30 pointer-events-none select-none">
+            <div className="flex gap-3 overflow-x-auto pb-3">
+              {BUCKETS.map(b => (
+                <div key={b.key} className="w-72 flex-shrink-0">
+                  <div className="rounded-t-lg px-3 py-2 text-white" style={{ background: b.color }}>
+                    <span className="text-xs font-semibold uppercase tracking-wide">{b.label}</span>
+                  </div>
+                  <div className="rounded-b-lg p-2 min-h-[400px] bg-slate-50" />
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Overlay */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="bg-white border-2 border-[#EF6C33] rounded-2xl p-8 max-w-md text-center shadow-xl">
+              <div className="text-3xl mb-2">🎯</div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Book your consultation today</h3>
+              <p className="text-sm text-slate-600 mb-4">
+                Get hands-on help building your brand, foundation, clarity, or engine — direct from the IA team.
+                Once you have an active consulting engagement, your tickets will live here.
+              </p>
+              <a href="https://book.intelligentanalyticsdm.com" target="_blank" rel="noreferrer"
+                className="inline-block px-6 py-3 rounded-lg bg-[#EF6C33] text-white font-semibold hover:bg-[#d75a25]">
+                Book a consultation →
+              </a>
+            </div>
+          </div>
+        </div>
+      </OliverPageWrapper>
+    );
+  }
 
   return (
     <OliverPageWrapper title="Consulting Tickets" subtitle="IA Consulting · Client Work Board" error={error} loading={loading}>
