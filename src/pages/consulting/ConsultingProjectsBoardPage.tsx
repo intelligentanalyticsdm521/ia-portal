@@ -381,33 +381,82 @@ function ProjectDetailModal({ projectId, onClose, onChanged }: { projectId: stri
 
 function AddArtifactInline({ projectId, phases, onSaved, onCancel }: { projectId: string; phases: Phase[]; onSaved: () => void; onCancel: () => void; }) {
   const { post } = useOliverApi();
+  const [mode, setMode] = useState<"upload" | "link">("upload");
   const [kind, setKind] = useState("proposal");
   const [title, setTitle] = useState("");
   const [link, setLink] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [phaseId, setPhaseId] = useState<string>("");
   const [visible, setVisible] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
   const submit = async () => {
-    if (!title) return;
-    setBusy(true);
+    if (mode === "upload") {
+      if (!file) { setErr("Pick a file"); return; }
+    } else {
+      if (!title) { setErr("Title required"); return; }
+    }
+    setBusy(true); setErr(null);
     try {
-      await post(`/consulting-projects/${projectId}/artifacts`, {
-        kind, title, external_link: link || undefined,
-        phase_id: phaseId ? Number(phaseId) : null,
-        is_client_visible: visible,
-      });
+      if (mode === "upload") {
+        // Multipart upload via the API base from the oliver hook (manual fetch
+        // since useOliverApi.post sends JSON).
+        const apiBase = (import.meta.env.VITE_OLIVER_API_BASE as string)
+          || "https://app-oliver-api-prod-eaffhyhqgrgbcfh0.centralus-01.azurewebsites.net";
+        const token = sessionStorage.getItem("oliver_access_token") || ""; // best-effort; the hook normally injects
+        const fd = new FormData();
+        fd.append("file", file as Blob);
+        fd.append("kind", kind);
+        fd.append("title", title || file!.name);
+        if (phaseId) fd.append("phase_id", phaseId);
+        fd.append("is_client_visible", visible ? "1" : "0");
+        const res = await fetch(`${apiBase}/consulting-projects/${projectId}/artifacts/upload`, {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          body: fd,
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const t = await res.text().catch(() => "");
+          throw new Error(`Upload failed (HTTP ${res.status}): ${t.slice(0, 200)}`);
+        }
+      } else {
+        await post(`/consulting-projects/${projectId}/artifacts`, {
+          kind, title, external_link: link || undefined,
+          phase_id: phaseId ? Number(phaseId) : null,
+          is_client_visible: visible,
+        });
+      }
       onSaved();
-    } finally { setBusy(false); }
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
   };
+
   return (
     <div className="border border-[#EF6C33] rounded-lg p-3 bg-orange-50 space-y-2">
+      <div className="flex gap-1">
+        <button onClick={() => setMode("upload")}
+          className={`text-xs px-2 py-1 rounded ${mode === "upload" ? "bg-[#EF6C33] text-white" : "bg-white border border-slate-300"}`}>
+          📤 Upload file
+        </button>
+        <button onClick={() => setMode("link")}
+          className={`text-xs px-2 py-1 rounded ${mode === "link" ? "bg-[#EF6C33] text-white" : "bg-white border border-slate-300"}`}>
+          🔗 External link
+        </button>
+      </div>
       <select value={kind} onChange={(e) => setKind(e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1 text-sm">
         {ARTIFACT_KINDS.map(k => <option key={k} value={k}>{k}</option>)}
       </select>
-      <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title *"
+      <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={mode === "upload" ? "Title (defaults to filename)" : "Title *"}
         className="w-full rounded border border-slate-300 px-2 py-1 text-sm" />
-      <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="External link (Figma, Drive, etc.)"
-        className="w-full rounded border border-slate-300 px-2 py-1 text-sm" />
+      {mode === "upload" ? (
+        <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)}
+          className="w-full text-xs" />
+      ) : (
+        <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://figma.com/..."
+          className="w-full rounded border border-slate-300 px-2 py-1 text-sm" />
+      )}
       <select value={phaseId} onChange={(e) => setPhaseId(e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1 text-sm">
         <option value="">— no phase —</option>
         {phases.map(ph => <option key={ph.phase_id} value={ph.phase_id}>{ph.name}</option>)}
@@ -416,9 +465,11 @@ function AddArtifactInline({ projectId, phases, onSaved, onCancel }: { projectId
         <input type="checkbox" checked={visible} onChange={(e) => setVisible(e.target.checked)} />
         Client can see this
       </label>
+      {err && <div className="text-xs text-rose-600">{err}</div>}
       <div className="flex justify-end gap-2">
         <button onClick={onCancel} className="text-xs px-3 py-1 rounded border border-slate-300">Cancel</button>
-        <button onClick={submit} disabled={busy || !title} className="text-xs px-3 py-1 rounded bg-[#EF6C33] text-white font-semibold disabled:opacity-50">
+        <button onClick={submit} disabled={busy || (mode === "upload" ? !file : !title)}
+          className="text-xs px-3 py-1 rounded bg-[#EF6C33] text-white font-semibold disabled:opacity-50">
           {busy ? "Saving…" : "Save"}
         </button>
       </div>

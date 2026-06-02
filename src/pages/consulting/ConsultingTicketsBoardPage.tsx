@@ -340,6 +340,9 @@ function TicketDetailModal({ ticketId, onClose, onChanged }: { ticketId: string;
   const [newHoursDesc, setNewHoursDesc] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [showConvert, setShowConvert] = useState(false);
+  const [convertType, setConvertType] = useState("");
+  const [convertTypes, setConvertTypes] = useState<Array<{ type_key: string; display_name: string; default_phases: any[] }>>([]);
 
   const load = useCallback(async () => {
     try {
@@ -349,6 +352,29 @@ function TicketDetailModal({ ticketId, onClose, onChanged }: { ticketId: string;
   }, [get, ticketId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load project type templates for the Convert dropdown (only fetched
+  // when the operator opens the convert form, to avoid wasting a call)
+  useEffect(() => {
+    if (!showConvert || convertTypes.length > 0) return;
+    get<{ data: { types: any[] } }>("/consulting-projects/_/types")
+      .then(r => setConvertTypes(r.data?.types || []))
+      .catch(() => {});
+  }, [showConvert, convertTypes.length, get]);
+
+  const convertToProject = async () => {
+    if (!convertType) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await post<{ data: { project_id: string; project_number: string } }>(
+        `/consulting-tickets/${ticketId}/convert-to-project`,
+        { project_type: convertType, title: detail?.ticket?.title }
+      );
+      // Jump to the new project
+      window.location.href = `/app/services/consulting_projects?open=${r.data.project_id}`;
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
 
   const transition = async (to: TicketStatus) => {
     setBusy(true); setErr(null);
@@ -416,6 +442,45 @@ function TicketDetailModal({ ticketId, onClose, onChanged }: { ticketId: string;
         {/* Description */}
         {t.description && (
           <div className="bg-slate-50 border border-slate-200 rounded p-3 text-sm whitespace-pre-wrap">{t.description}</div>
+        )}
+
+        {/* Convert to Project (founder + not-already-in-project only) */}
+        {side === "provider" && !t.project_id && (
+          <div className="bg-purple-50 border border-purple-200 rounded p-3">
+            {!showConvert ? (
+              <button onClick={() => setShowConvert(true)}
+                className="text-xs font-semibold text-purple-800 hover:underline">
+                ↪ Convert this request into a Project
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-purple-900">Pick a project type to convert into:</div>
+                <select value={convertType} onChange={(e) => setConvertType(e.target.value)}
+                  className="w-full rounded border border-purple-300 px-2 py-1 text-sm">
+                  <option value="">— pick a type —</option>
+                  {convertTypes.map(ct => <option key={ct.type_key} value={ct.type_key}>{ct.display_name}</option>)}
+                </select>
+                {convertType && convertTypes.find(c => c.type_key === convertType)?.default_phases?.length > 0 && (
+                  <div className="text-[11px] text-purple-700">
+                    Phases will auto-populate: {convertTypes.find(c => c.type_key === convertType)!.default_phases.map((p: any) => p.name).join(" → ")}
+                  </div>
+                )}
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => { setShowConvert(false); setConvertType(""); }}
+                    className="text-xs px-3 py-1 rounded border border-purple-300">Cancel</button>
+                  <button disabled={busy || !convertType} onClick={convertToProject}
+                    className="text-xs px-3 py-1 rounded bg-purple-700 text-white font-semibold disabled:opacity-50">
+                    {busy ? "Converting…" : "Convert + open"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {t.project_id && (
+          <div className="bg-purple-50 border border-purple-200 rounded p-2 text-xs">
+            🔗 Part of project — <a href={`/app/services/consulting_projects?open=${t.project_id}`} className="font-semibold text-purple-700 hover:underline">open project</a>
+          </div>
         )}
 
         {/* Meta grid */}
