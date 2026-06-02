@@ -298,6 +298,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'consulting_calendar', displayName: 'Calendar & Events', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_calendar', description: 'Scheduled events — discovery calls, QBRs, strategy sessions, reviews.' },
   { key: 'consulting_workspace', displayName: 'Client Workspace', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_workspace', description: 'IA operators: switch into a client tenant to do consulting work. Platform admins see all tenants; consultants see their granted clients.' },
   { key: 'consulting_access_log', displayName: 'IA Access Log', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_access_log', description: 'Transparency: whether Intelligent Analytics manages this account and a full log of everything IA has done in it.' },
+  { key: 'consulting_onboard_client', displayName: 'Onboard Client', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_onboard_client', description: 'Founder-only — onboard a new or existing client onto the IA platform (creates tenant, links/creates Stripe customer, sets up ARION site + plugin provisioning).' },
 ];
 
 export function resolveServiceStatus(service: PortalService, enabledKeys: Set<string>): ServiceStatus {

@@ -251,6 +251,7 @@ const ConsultingEngagementWrapper = lazyNamed(() => import('./consulting/Consult
 const ConsultingCalendarPage = lazyNamed(() => import('./consulting/ConsultingCalendarPage'), 'ConsultingCalendarPage');
 const ConsultingWorkspacePage = lazyNamed(() => import('./consulting/ConsultingWorkspacePage'), 'ConsultingWorkspacePage');
 const ConsultingAccessLogPage = lazyNamed(() => import('./consulting/ConsultingAccessLogPage'), 'ConsultingAccessLogPage');
+const ConsultingOnboardClientPage = lazyNamed(() => import('./consulting/ConsultingOnboardClientPage'), 'ConsultingOnboardClientPage');
 
 // Shared loading fallback used by every Suspense boundary in this router.
 function RouteLoading() {
@@ -569,6 +570,7 @@ export function ServiceRouter() {
       case 'consulting_calendar': consultingPage = <ConsultingCalendarPage />; break;
       case 'consulting_workspace': consultingPage = <ConsultingWorkspacePage />; break;
       case 'consulting_access_log': consultingPage = <ConsultingAccessLogPage />; break;
+      case 'consulting_onboard_client': consultingPage = <ConsultingOnboardClientPage />; break;
       default: break;
     }
     if (consultingPage) {

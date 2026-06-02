@@ -487,6 +487,12 @@ const CONSULTING_NAV: SubNavConfig = {
         { key: "consulting_calendar", label: "Calendar & Events", route: "/app/services/consulting_calendar" },
       ],
     },
+    {
+      label: "Platform Operations",
+      items: [
+        { key: "consulting_onboard_client", label: "Onboard Client", route: "/app/services/consulting_onboard_client" },
+      ],
+    },
   ],
 };
 
