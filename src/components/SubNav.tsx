@@ -488,6 +488,12 @@ const CONSULTING_NAV: SubNavConfig = {
       ],
     },
     {
+      label: "Tickets Board",
+      items: [
+        { key: "consulting_tickets", label: "All Tickets", route: "/app/services/consulting_tickets" },
+      ],
+    },
+    {
       label: "Platform Operations",
       items: [
         { key: "consulting_onboard_client", label: "Onboard Client", route: "/app/services/consulting_onboard_client" },
