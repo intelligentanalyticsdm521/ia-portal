@@ -1,3 +1,7 @@
+// @deprecated 2026-06-12 — Dispatch is absorbed into the Jobs board (see
+// SubNav comment near line 86). Route still resolves but is hidden from nav.
+// Per OLIVER E2E audit "Other route-without-nav pages" finding. Confirm
+// with founder before deletion as part of task #174.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
