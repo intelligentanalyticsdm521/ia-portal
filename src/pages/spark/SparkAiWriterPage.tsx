@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 - orphan after refactor. Superseded by D-12 (2026-05-28): AI Writer dropped from nav. Stub kept for legacy; no current entry point.. Confirm with founder before deletion (task #174).
 import { Link } from "react-router-dom";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import {

@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 - orphan after refactor. Superseded by F-91 unified Templates page (SparkTemplatesPage) — drop Email/SMS/Translations split. Confirm with founder before deletion (task #174).
 // SparkSmsTemplatesPage â€” SMS template library + send-test
 //
 // Lightweight cousin of the email-templates page. Single-body editor,

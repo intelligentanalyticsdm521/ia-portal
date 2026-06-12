@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 - orphan after refactor. Superseded by F-37 CalendarModal + cross-product calendar unified at oliver-api /calendar/unified. Confirm with founder before deletion (task #174).
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";

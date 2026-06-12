@@ -5,6 +5,7 @@ import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkTable } from "../../components/spark/SparkTable";
 import { Plus, Newspaper, ExternalLink, Send, FileText, DownloadCloud, Check } from "lucide-react";
+import { ComingSoonBanner } from "../../components/ComingSoonBanner";
 
 interface NewsletterIssue {
   id: number; issue_number: number; edition_date: string; title: string; summary: string | null;
@@ -165,6 +166,18 @@ export function SparkNewsletterPage() {
       loading={loading}
       error={error}
     >
+      <ComingSoonBanner
+        feature="Newsletter Email Blast"
+        detail={
+          <>
+            Publish today pushes the issue to your WordPress site as a blog post — it does
+            NOT yet send an email blast to your subscriber list. Email-list delivery
+            (subscribers → SPARK contact segment) ships with v1.1. For now, manually
+            launch a Campaign to your newsletter list if you want the email side too.
+          </>
+        }
+        eta="v1.1"
+      />
       <SparkTable<NewsletterIssue>
         rows={list}
         getRowKey={n => n.id}

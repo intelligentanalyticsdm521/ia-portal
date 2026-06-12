@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 - orphan after refactor. Superseded by Rules consolidation (2026-05-28): all 3 rules pages merged into SparkRulesPage. Confirm with founder before deletion (task #174).
 // SparkAutoTagRulesPage — Auto-tag rules applied to incoming leads
 //
 // When a new lead is created, rules in this list run in `sort_order` and any

@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 - orphan after refactor. Superseded by Rules consolidation (2026-05-28): merged into SparkRulesPage. Confirm with founder before deletion (task #174).
 // SparkScoringRulesPage — Lead scoring rules
 //
 // Each rule fires when its trigger event happens (or its condition matches)

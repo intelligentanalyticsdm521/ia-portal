@@ -6,6 +6,7 @@ import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkTable } from "../../components/spark/SparkTable";
 import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
 import { Star, MessageSquare, ThumbsUp, ThumbsDown, ExternalLink } from "lucide-react";
+import { ComingSoonBanner } from "../../components/ComingSoonBanner";
 
 interface Review {
   id: number; source: string; reviewer_name: string | null; rating: number | null;
@@ -87,6 +88,18 @@ export function SparkReviewsPage() {
       loading={loading}
       error={error}
     >
+      <ComingSoonBanner
+        feature="Reputation Hub"
+        detail={
+          <>
+            Review ingestion + in-app response drafting works today, but auto-publishing
+            replies back to Google / Yelp / Facebook is not live yet — your typed responses
+            are saved locally and you'll need to copy them to each platform manually for now.
+            One-click publish ships with v1.1.
+          </>
+        }
+        eta="v1.1"
+      />
       {summary.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           {summary.map(s => (
@@ -158,7 +171,12 @@ export function SparkReviewsPage() {
             <div className="spark-field">
               <label className="spark-field-label">Your response</label>
               <textarea className="spark-field-textarea" rows={6} value={responseText} onChange={e => setResponseText(e.target.value)} placeholder="Thank you for the review…" autoFocus />
-              <p className="text-[11px] text-slate-500 mt-1">Posts to {responding.source}. AI-drafted responses coming in v2.</p>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Saved to SPARK. Auto-publishing back to {responding.source} ships
+                with v1.1 — for now click <strong>View ★</strong> on the row to
+                reply on {responding.source} directly. AI-drafted responses
+                coming in v2.
+              </p>
             </div>
           </>
         )}

@@ -155,8 +155,10 @@ export function EmptyPanel({ title, body, action }: { title: string; body: strin
 }
 
 export function BackToOverviewLink() {
+  // Audit 2026-06-12 (#19): `arion_overview` is not a registered service key —
+  // `serviceCatalog.ts` only has `arion_dashboard`. Pointing here 404'd before.
   return (
-    <Link to="/app/services/arion_overview" className="text-sm font-medium text-sky-700 hover:text-sky-800">
+    <Link to="/app/services/arion_dashboard" className="text-sm font-medium text-sky-700 hover:text-sky-800">
       Back to ARION Overview
     </Link>
   );

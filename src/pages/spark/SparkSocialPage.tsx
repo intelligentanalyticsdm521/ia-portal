@@ -6,6 +6,7 @@ import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkTable } from "../../components/spark/SparkTable";
 import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
 import { Plus, Share2, Calendar, Link as LinkIcon } from "lucide-react";
+import { ComingSoonBanner } from "../../components/ComingSoonBanner";
 
 interface SocialAccount { id: number; provider: string; account_label: string | null; is_active: boolean; connected_at: string; }
 interface SocialPost { id: number; social_account_id: number; status: string; content: string; scheduled_at: string | null; posted_at: string | null; provider?: string; account_label?: string; }
@@ -114,6 +115,18 @@ export function SparkSocialPage() {
       loading={loading}
       error={error}
     >
+      <ComingSoonBanner
+        feature="Social Scheduler"
+        detail={
+          <>
+            You can draft + schedule posts here, but nothing actually publishes to Meta /
+            LinkedIn / X / Google Business Profile yet — OAuth app registration with each
+            provider is the blocker. Scheduled posts will sit in the queue and we'll
+            backfill-publish them once OAuth is live.
+          </>
+        }
+        eta="v1.1"
+      />
       {accounts.length === 0 ? (
         <div className="spark-mini-card py-8 text-center">
           <Share2 className="h-8 w-8 text-slate-300 mx-auto mb-2" />

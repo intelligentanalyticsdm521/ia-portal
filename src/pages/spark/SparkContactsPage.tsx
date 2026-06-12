@@ -318,17 +318,35 @@ export function SparkContactsPage() {
             <button onClick={clearSelection} className="text-xs text-slate-400 hover:text-white underline">Clear</button>
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={() => alert("Tag flow — coming soon")} className="px-2 py-1 rounded hover:bg-white/10 text-xs flex items-center gap-1">
-              <TagIcon className="h-3 w-3" /> Tag
+            {/*
+              Bulk Tag / Add-to-list / Delete are not wired yet (audit 2026-06-12).
+              Showing as disabled with a "Coming soon" title — kept visible so the
+              UI surface tells the truth instead of pretending. Send campaign DOES
+              work — it deep-links into the campaigns composer.
+            */}
+            <button
+              disabled
+              title="Bulk tagging — coming soon in v1.1"
+              className="px-2 py-1 rounded text-xs flex items-center gap-1 opacity-40 cursor-not-allowed"
+            >
+              <TagIcon className="h-3 w-3" /> Tag <span className="text-[9px] uppercase tracking-wide ml-1">Soon</span>
             </button>
-            <button onClick={() => alert("Add to list — coming soon")} className="px-2 py-1 rounded hover:bg-white/10 text-xs flex items-center gap-1">
-              <ListPlus className="h-3 w-3" /> Add to list
+            <button
+              disabled
+              title="Bulk add-to-list — coming soon in v1.1"
+              className="px-2 py-1 rounded text-xs flex items-center gap-1 opacity-40 cursor-not-allowed"
+            >
+              <ListPlus className="h-3 w-3" /> Add to list <span className="text-[9px] uppercase tracking-wide ml-1">Soon</span>
             </button>
             <button onClick={() => navigate("/app/services/spark_campaigns")} className="px-2 py-1 rounded hover:bg-white/10 text-xs flex items-center gap-1">
               <Send className="h-3 w-3" /> Send campaign
             </button>
-            <button onClick={() => alert("Delete flow — coming soon")} className="px-2 py-1 rounded hover:bg-white/10 text-xs flex items-center gap-1 text-rose-300">
-              <Trash2 className="h-3 w-3" /> Delete
+            <button
+              disabled
+              title="Bulk delete — coming soon in v1.1. Use the single-row delete on each contact for now."
+              className="px-2 py-1 rounded text-xs flex items-center gap-1 text-rose-300 opacity-40 cursor-not-allowed"
+            >
+              <Trash2 className="h-3 w-3" /> Delete <span className="text-[9px] uppercase tracking-wide ml-1">Soon</span>
             </button>
           </div>
         </div>

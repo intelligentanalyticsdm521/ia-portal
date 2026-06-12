@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 - orphan after refactor. Superseded by F-89 visual automation builder + SparkAutomationsPage (the live list page). Confirm with founder before deletion (task #174).
 // SparkAutomationBuilderPage — visual flow builder for SPARK automations
 //
 // Lists existing automations, lets you create/edit one with a linear step list

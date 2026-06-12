@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 - orphan after refactor. Superseded by Rules consolidation (2026-05-28): merged into SparkRulesPage. Confirm with founder before deletion (task #174).
 // SparkRoutingRulesPage — Inbound lead routing rules
 //
 // Rules run in `sort_order` (lowest first). The first rule whose condition

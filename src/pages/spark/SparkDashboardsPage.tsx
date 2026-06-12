@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { Plus, Trash2, Star, Share2, Pencil, LayoutDashboard, Check, X } from "lucide-react";
+import { ComingSoonBanner } from "../../components/ComingSoonBanner";
 
 interface Widget {
   type: string;
@@ -150,6 +151,18 @@ export function SparkDashboardsPage() {
       loading={loading}
       error={error}
     >
+      <ComingSoonBanner
+        feature="Dashboard Widgets"
+        detail={
+          <>
+            You can create + save dashboard layouts today, but the individual widget
+            renderers (metric tiles, charts, lists) are stubbed — they show the layout
+            shape and source endpoint, not live data. Real widget rendering ships with
+            v1.1 once the underlying data APIs settle.
+          </>
+        }
+        eta="v1.1"
+      />
       {creating && (
         <CreateModal
           form={form}
