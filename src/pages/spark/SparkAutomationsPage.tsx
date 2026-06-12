@@ -31,9 +31,22 @@ export function SparkAutomationsPage() {
     setLoading(true);
     setError(null);
     try {
-      const r = await get<{ data: Automation[] }>("/api/v1/automations");
-      setAutomations(r.data || []);
+      const r = await get<{ data: Automation[] } | Automation[]>("/api/v1/automations");
+      // Defensive — accept either {data: [...]} envelope OR bare array
+      // (route shape changed historically; both should render).
+      const list = Array.isArray(r) ? r : (r?.data || []);
+      // Normalize each row so optional fields can't crash render.
+      setAutomations(
+        list.map((a) => ({
+          ...a,
+          execution_count: Number(a?.execution_count) || 0,
+          is_active: Boolean(a?.is_active),
+          name: a?.name || "(untitled)",
+          trigger_type: a?.trigger_type || "manual",
+        }))
+      );
     } catch (err) {
+      console.error("[SparkAutomationsPage] load failed:", err);
       setError(err);
     } finally {
       setLoading(false);
