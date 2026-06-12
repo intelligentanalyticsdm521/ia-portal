@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { ComingSoonBanner } from "../../components/ComingSoonBanner";
 import { Plus, Save, Send, Trash2, Copy as CopyIcon } from "lucide-react";
 
 type Category = "transactional" | "marketing" | "system";
@@ -134,6 +135,10 @@ export function SparkSmsTemplatesPage() {
       loading={loading}
       error={error}
     >
+      <ComingSoonBanner
+        feature="SMS Templates"
+        detail="SMS template authoring is available but actual SMS dispatch via ACS is in Beta. Save templates here; sending may go to a stub until v1.1."
+      />
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
         <div className="lg:col-span-1 border border-slate-200 rounded max-h-[700px] overflow-y-auto">
           {list.length === 0 && <div className="p-6 text-center text-sm text-slate-500">No templates.</div>}

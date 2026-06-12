@@ -77,7 +77,23 @@ export function SparkNewsletterPage() {
       const r = await get<{ ok: boolean; posts: WpPost[] }>("/api/v1/newsletters/wp-posts?category=Newsletter&limit=100");
       setWpPosts(r.posts || []);
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : "Couldn't reach ARION/WP");
+      // The wp-posts proxy returns specific error codes from arion-api.
+      // Parse them out of the SPARK-API-error string so the user gets
+      // an actionable message instead of "SPARK API 502: {...}".
+      const raw = err instanceof Error ? err.message : String(err);
+      let friendly = "Couldn't reach ARION/WordPress.";
+      if (/no_arion_site/i.test(raw) || /404/.test(raw)) {
+        friendly = "No ARION-managed website is connected to this tenant yet. Connect a site (or finish ARION onboarding) before importing newsletters from WordPress.";
+      } else if (/plugin_call_failed/i.test(raw)) {
+        friendly = "Reached your ARION site but the IA plugin didn't respond. Check that the plugin is installed and activated on your WordPress site, then try again.";
+      } else if (/arion_api_not_configured/i.test(raw)) {
+        friendly = "The SPARK ↔ ARION connection isn't configured on the platform yet. Contact support.";
+      } else if (/SPARK API 5\d\d/.test(raw)) {
+        friendly = "ARION is temporarily unreachable. Try again in a minute. If it keeps failing, check that your WordPress site is online.";
+      } else if (raw && raw.length < 200) {
+        friendly = raw;
+      }
+      setImportError(friendly);
     } finally {
       setImportLoading(false);
     }

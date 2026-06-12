@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { ComingSoonBanner } from "../../components/ComingSoonBanner";
 import { MessageSquare, Send, Phone, AlertCircle } from "lucide-react";
 
 interface InboundRow {
@@ -122,6 +123,10 @@ export function SparkSmsInboxPage() {
       loading={loading}
       error={error}
     >
+      <ComingSoonBanner
+        feature="SMS Inbox"
+        detail="2-way SMS via the shared IADM toll-free number is in Beta. Inbound messages are captured today; outbound replies via ACS may go to a stub until v1.1."
+      />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Inbox list */}
         <div className="lg:col-span-1 max-h-[640px] overflow-y-auto border border-slate-200 rounded">

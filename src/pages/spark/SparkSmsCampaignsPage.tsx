@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { ComingSoonBanner } from "../../components/ComingSoonBanner";
 import {
   MessageSquare,
   Send,
@@ -426,6 +427,10 @@ export function SparkSmsCampaignsPage() {
       loading={loading}
       error={error}
     >
+      <ComingSoonBanner
+        feature="SMS Campaigns"
+        detail="SMS sending is in Beta. You can draft and queue campaigns today, but ACS SMS dispatch is still being wired up. Sends may go to a stub until v1.1."
+      />
       {(creating || editing) && (
         <CampaignFormCard
           mode={editing ? "edit" : "create"}
