@@ -296,14 +296,20 @@ export const SERVICE_CATALOG: PortalService[] = [
   },
   // CONSULTING — IA Work & Deliverables (platform-level, always enabled for all tenants)
   { key: 'consulting_overview', displayName: 'Overview', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_overview', description: 'Summary of active engagements, tasks, deliverables, and upcoming events.' },
-  { key: 'consulting_brand_tasks', displayName: 'Brand Tasks', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_brand_tasks', description: 'Build Your Brand engagement tasks — logo, identity, website, GBP, SEO.' },
-  { key: 'consulting_brand_deliverables', displayName: 'Brand Deliverables', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_brand_deliverables', description: 'Build Your Brand deliverables for review and approval.' },
-  { key: 'consulting_foundation_tasks', displayName: 'Foundation Tasks', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_foundation_tasks', description: 'Build Your Foundation tasks — OLIVER setup, CRM config, process design.' },
-  { key: 'consulting_foundation_deliverables', displayName: 'Foundation Deliverables', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_foundation_deliverables', description: 'Build Your Foundation deliverables for review and approval.' },
-  { key: 'consulting_clarity_tasks', displayName: 'Clarity Tasks', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_clarity_tasks', description: 'Build Your Clarity tasks — analytics, reporting, dashboards.' },
-  { key: 'consulting_clarity_deliverables', displayName: 'Clarity Deliverables', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_clarity_deliverables', description: 'Build Your Clarity deliverables for review and approval.' },
-  { key: 'consulting_engine_tasks', displayName: 'Engine Tasks', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_engine_tasks', description: 'Build Your Engine tasks — custom development, automation, integrations.' },
-  { key: 'consulting_engine_deliverables', displayName: 'Engine Deliverables', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_engine_deliverables', description: 'Build Your Engine deliverables for review and approval.' },
+  // @deprecated 2026-06-12 (M11): 8 legacy "Build Your X Tasks/Deliverables"
+  // entries below all currently route to the same unfiltered Requests Board.
+  // Superseded by consulting_tickets + consulting_projects + consulting_deliverables
+  // (new flat nav structure). Hidden from nav already via SubNav.tsx — these
+  // entries stay in the catalog so any old bookmarks render the Coming Soon
+  // placeholder instead of the unfiltered board. Confirm with founder before deletion (task #174).
+  { key: 'consulting_brand_tasks', displayName: 'Brand Tasks', section: 'CONSULTING', defaultStatus: 'coming_soon', route: '/app/services/consulting_brand_tasks', description: '(Deprecated) See Requests Board for active brand work.' },
+  { key: 'consulting_brand_deliverables', displayName: 'Brand Deliverables', section: 'CONSULTING', defaultStatus: 'coming_soon', route: '/app/services/consulting_brand_deliverables', description: '(Deprecated) See Deliverables library.' },
+  { key: 'consulting_foundation_tasks', displayName: 'Foundation Tasks', section: 'CONSULTING', defaultStatus: 'coming_soon', route: '/app/services/consulting_foundation_tasks', description: '(Deprecated) See Requests Board.' },
+  { key: 'consulting_foundation_deliverables', displayName: 'Foundation Deliverables', section: 'CONSULTING', defaultStatus: 'coming_soon', route: '/app/services/consulting_foundation_deliverables', description: '(Deprecated) See Deliverables library.' },
+  { key: 'consulting_clarity_tasks', displayName: 'Clarity Tasks', section: 'CONSULTING', defaultStatus: 'coming_soon', route: '/app/services/consulting_clarity_tasks', description: '(Deprecated) See Requests Board.' },
+  { key: 'consulting_clarity_deliverables', displayName: 'Clarity Deliverables', section: 'CONSULTING', defaultStatus: 'coming_soon', route: '/app/services/consulting_clarity_deliverables', description: '(Deprecated) See Deliverables library.' },
+  { key: 'consulting_engine_tasks', displayName: 'Engine Tasks', section: 'CONSULTING', defaultStatus: 'coming_soon', route: '/app/services/consulting_engine_tasks', description: '(Deprecated) See Requests Board.' },
+  { key: 'consulting_engine_deliverables', displayName: 'Engine Deliverables', section: 'CONSULTING', defaultStatus: 'coming_soon', route: '/app/services/consulting_engine_deliverables', description: '(Deprecated) See Deliverables library.' },
   { key: 'consulting_calendar', displayName: 'Calendar & Events', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_calendar', description: 'Scheduled events — discovery calls, QBRs, strategy sessions, reviews.' },
   { key: 'consulting_workspace', displayName: 'Client Workspace', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_workspace', description: 'IA operators: switch into a client tenant to do consulting work. Platform admins see all tenants; consultants see their granted clients.' },
   { key: 'consulting_access_log', displayName: 'IA Access Log', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_access_log', description: 'Transparency: whether Intelligent Analytics manages this account and a full log of everything IA has done in it.' },

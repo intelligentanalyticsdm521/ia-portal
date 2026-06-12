@@ -24,6 +24,35 @@ const BUCKETS: Array<{ key: TicketStatus; label: string; color: string }> = [
   { key: "completed",              label: "Completed",              color: "#334155" },
 ];
 
+// M2 fix (audit 2026-06-12): mirror of the server-side TRANSITIONS table
+// in consultingTickets.js:67-84. Each side (provider/client) can only push
+// a ticket to specific next-statuses from any given current status. The
+// modal previously rendered every non-current bucket as a transition
+// button — half the buttons errored 422 when clicked because the server
+// rejected the disallowed move. Now only allowed transitions are shown.
+const TRANSITIONS: Record<"provider" | "client", Record<TicketStatus, TicketStatus[]>> = {
+  provider: {
+    new:                    ["client_review", "revision"],
+    client_review:          ["revision", "approved", "completed"],
+    revision:               ["client_revision_review", "completed"],
+    client_revision_review: ["revision", "approved", "completed"],
+    approved:               ["completed"],
+    completed:              [],
+  },
+  client: {
+    new:                    [],
+    client_review:          ["revision", "approved"],
+    revision:               [],
+    client_revision_review: ["revision", "approved"],
+    approved:               [],
+    completed:              [],
+  },
+};
+
+function allowedTransitions(status: TicketStatus, side: "provider" | "client"): TicketStatus[] {
+  return TRANSITIONS[side]?.[status] || [];
+}
+
 const ENGAGEMENT_TYPES = [
   { key: "build_your_brand",      label: "Build Your Brand",      color: "#EF6C33" },
   { key: "build_your_foundation", label: "Build Your Foundation", color: "#3B82F6" },
@@ -430,13 +459,22 @@ function TicketDetailModal({ ticketId, onClose, onChanged }: { ticketId: string;
                 style={{ background: bucket?.color || "#94a3b8" }}>
             {bucket?.label || t.status}
           </span>
-          {BUCKETS.filter(b => b.key !== t.status).map(b => (
-            <button key={b.key} disabled={busy}
-              onClick={() => transition(b.key)}
-              className="text-xs px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50">
-              → {b.label}
-            </button>
-          ))}
+          {/* M2 fix (audit 2026-06-12): previously rendered every non-current
+              bucket as a transition button, ignoring the server-side
+              TRANSITIONS allow-list (consultingTickets.js:67-84). Half the
+              buttons errored with 422. Now mirrors the server allow-list
+              based on which side the caller is on. */}
+          {allowedTransitions(t.status, side).map(toStatus => {
+            const b = BUCKETS.find(x => x.key === toStatus);
+            if (!b) return null;
+            return (
+              <button key={b.key} disabled={busy}
+                onClick={() => transition(b.key)}
+                className="text-xs px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50">
+                → {b.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Description */}
