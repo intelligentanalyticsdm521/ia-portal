@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 — orphan after refactor. Superseded by F-77 deprecated Workflow Templates feature; replaced by Automations + future Proposal Templates. Confirm with founder before deletion (task #174).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";

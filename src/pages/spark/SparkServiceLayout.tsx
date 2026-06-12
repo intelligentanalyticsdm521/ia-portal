@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 — orphan after refactor. Superseded by components/spark/SparkPageShell.tsx (every SPARK page uses Shell directly). Confirm with founder before deletion (task #174).
 import type { PropsWithChildren } from "react";
 import { Link } from "react-router-dom";
 import type { PortalService, ServiceStatus } from "../../config/serviceCatalog";

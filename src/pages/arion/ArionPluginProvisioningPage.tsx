@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 — orphan after refactor. Superseded by F-139 plugin distribution — provisioning now handled by arion-api /plugin/* endpoints. Confirm with founder before deletion (task #174).
 // ArionPluginProvisioningPage â€” Mint plugin provisioning codes + show install paths.
 //
 // Three install options after minting:

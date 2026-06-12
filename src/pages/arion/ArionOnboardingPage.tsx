@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 — orphan after refactor. Superseded by ArionDashboard onboarding banner (task #173) — Get Started removed from nav 2026-06-12. Confirm with founder before deletion (task #174).
 // ArionOnboardingPage â€” in-app ARION onboarding checklist (parity with
 // SPARK/OLIVER). Site creation happens in the signup flow; this surfaces the
 // post-provision connection steps (GA4/GSC/GBP/Bing) + the SEO add-on.

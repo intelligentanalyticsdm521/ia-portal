@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 — orphan after refactor. Superseded by hamburger > Plan & Pricing — usage moved to global hamburger menu. Confirm with founder before deletion (task #174).
 // ArionUsagePage â€” ARION Plan & Pricing.
 //
 // Shows the tenant's CURRENT plan (base tier + SEO add-on) as tagged cards

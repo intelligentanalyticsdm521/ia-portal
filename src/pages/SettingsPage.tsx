@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 — orphan after refactor. Superseded by F-86 + F-93 cross-product Settings SubNav — pages\settings\TenantSettings.tsx. Confirm with founder before deletion (task #174).
 import { useMemo } from 'react';
 import { useAppState } from '../app/AppState';
 

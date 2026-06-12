@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 — orphan after refactor. Superseded by arion/pages/security/ — split into Security Overview/Vulnerabilities/Performance. Confirm with founder before deletion (task #174).
 import { useEffect, useState } from 'react';
 import type { PortalService, ServiceStatus } from '../../config/serviceCatalog';
 import { useAppState } from '../../app/AppState';

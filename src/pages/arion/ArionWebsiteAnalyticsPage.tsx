@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 — orphan after refactor. Superseded by arion/pages/analytics/ — split into GA4/GSC/GBP/Bing. Confirm with founder before deletion (task #174).
 import { useEffect, useMemo, useState } from 'react';
 import type { PortalService, ServiceStatus } from '../../config/serviceCatalog';
 import { useAppState } from '../../app/AppState';

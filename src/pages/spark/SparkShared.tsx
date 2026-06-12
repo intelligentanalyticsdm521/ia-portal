@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 — orphan after refactor. Superseded by components/spark/SparkPageShell.tsx + spark/SparkContactModal. Confirm with founder before deletion (task #174).
 import { ReactNode } from "react";
 import { FeatureGate, FeatureState } from "../../components/FeatureGate";
 import { useAppState } from "../../app/AppState";

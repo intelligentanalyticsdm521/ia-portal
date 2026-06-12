@@ -1,3 +1,4 @@
+// @deprecated 2026-06-12 — orphan after refactor. Superseded by arion/pages/dashboard/ — consolidated into ArionOverviewPage. Confirm with founder before deletion (task #174).
 import { useEffect, useState } from 'react';
 import type { PortalService, ServiceStatus } from '../../config/serviceCatalog';
 import { useAppState } from '../../app/AppState';
