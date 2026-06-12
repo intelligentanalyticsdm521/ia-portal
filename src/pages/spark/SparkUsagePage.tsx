@@ -20,37 +20,49 @@ interface UsageResponse {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Pricing model — mirrors intelligentanalyticsdm.com/platforms/spark/spark-pricing
+// Pricing model — LOCKED 2026-06-12 founder volume-tier table
 // ─────────────────────────────────────────────────────────────────────────────
-// Email volume is the primary slider. Contacts + SMS follow as derived limits.
+// 10 volume tiers; each bundles a specific emails/contacts/SMS allowance.
+// The previous derive-from-ratio formula (contacts=emails/5, sms=emails/50)
+// was WRONG — caps don't scale linearly. Hardcoded per founder table.
 //
-// Public page reference (https://intelligentanalyticsdm.com/platforms/spark/spark-pricing):
-//   Slider range: 5,000 → 500,000 emails/month
-//   At 5k:   1,000 contacts, 100 SMS, $19/mo monthly ($17/mo annual)
-//   Pro add-on:      $49/mo monthly ($44/mo annual) — 10% annual savings
-//   Business add-on: $89/mo monthly ($80/mo annual)
-//   Enterprise:      $150/mo monthly ($135/mo annual)
-//   Annual billing saves 10% (one discount, applied at total)
-//
-// Resource ratios at the 5k baseline: contacts = emails / 5, SMS = emails / 50
+// SPARK Pro / Business add-ons are FEATURE add-ons; they DO NOT change the
+// volume bundle. Server-side caps in lumen-api/usage.js mirror this table.
 
-const EMAIL_STEPS = [5000, 10000, 25000, 50000, 100000, 250000, 500000];
+interface VolumeTier {
+  key: string;
+  emails: number;
+  contacts: number;
+  sms: number;
+  monthlyUsd: number;
+}
 
-function basePriceForEmails(emails: number, cycle: "monthly" | "annual"): number {
-  // Monthly prices. Annual prices are 10% lower.
-  const monthly =
-    emails <= 5000   ? 19  :
-    emails <= 10000  ? 29  :
-    emails <= 25000  ? 49  :
-    emails <= 50000  ? 79  :
-    emails <= 100000 ? 129 :
-    emails <= 250000 ? 239 :
-                       399;
+const VOLUME_TIERS: VolumeTier[] = [
+  { key: "5k",   emails:   5000, contacts:   1000, sms:  100, monthlyUsd:  19 },
+  { key: "10k",  emails:  10000, contacts:   2500, sms:  150, monthlyUsd:  29 },
+  { key: "15k",  emails:  15000, contacts:  25000, sms:  200, monthlyUsd:  39 },
+  { key: "25k",  emails:  25000, contacts:  50000, sms:  300, monthlyUsd:  49 },
+  { key: "50k",  emails:  50000, contacts: 150000, sms:  500, monthlyUsd:  79 },
+  { key: "100k", emails: 100000, contacts: 150000, sms: 1000, monthlyUsd: 129 },
+  { key: "150k", emails: 150000, contacts: 250000, sms: 1500, monthlyUsd: 179 },
+  { key: "250k", emails: 250000, contacts: 250000, sms: 2500, monthlyUsd: 239 },
+  { key: "350k", emails: 350000, contacts: 500000, sms: 3500, monthlyUsd: 319 },
+  { key: "500k", emails: 500000, contacts: 500000, sms: 5000, monthlyUsd: 399 },
+];
+
+const EMAIL_STEPS = VOLUME_TIERS.map((t) => t.emails);
+
+function tierAt(idx: number): VolumeTier {
+  return VOLUME_TIERS[Math.max(0, Math.min(idx, VOLUME_TIERS.length - 1))];
+}
+
+function basePriceForIdx(idx: number, cycle: "monthly" | "annual"): number {
+  const monthly = tierAt(idx).monthlyUsd;
   return cycle === "annual" ? +(monthly * 0.9).toFixed(2) : monthly;
 }
 
-function contactsForEmails(emails: number): number { return Math.round(emails / 5); }
-function smsForEmails(emails: number): number { return Math.round(emails / 50); }
+function contactsAtIdx(idx: number): number { return tierAt(idx).contacts; }
+function smsAtIdx(idx: number): number { return tierAt(idx).sms; }
 
 // Tier add-ons — monthly rates. Annual = 10% off.
 const TIER_ADDON_MONTHLY = { standard: 0, pro: 49, business: 89, enterprise: 150 } as const;
@@ -251,10 +263,14 @@ export function SparkUsagePage() {
   const currentLeadGen: LeadGenTier["key"] | null = owner ? "authority" : null;
 
   // ─ Derived ───────────────────────────────────────────────────────────────
-  const targetEmails = EMAIL_STEPS[emailsIdx];
-  const targetContacts = contactsForEmails(targetEmails);
-  const targetSms = smsForEmails(targetEmails);
-  const basePrice = basePriceForEmails(targetEmails, billingCycle);
+  // Clamp emailsIdx defensively — if state ever gets out of range (e.g.
+  // older session-storage value pointing past array end) the page would
+  // white-screen on EMAIL_STEPS[emailsIdx]. Now caps to bounds.
+  const safeIdx = Math.max(0, Math.min(emailsIdx, VOLUME_TIERS.length - 1));
+  const targetEmails = EMAIL_STEPS[safeIdx];
+  const targetContacts = contactsAtIdx(safeIdx);
+  const targetSms = smsAtIdx(safeIdx);
+  const basePrice = basePriceForIdx(safeIdx, billingCycle);
   const tierPrice = tierAddOn(tier as keyof typeof TIER_ADDON_MONTHLY, billingCycle);
 
   const lgTierObj = leadGenTier ? LEAD_GEN_TIERS.find(t => t.key === leadGenTier) : null;

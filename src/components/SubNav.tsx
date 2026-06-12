@@ -170,7 +170,10 @@ const ARION_NAV: SubNavConfig = {
     {
       label: "",
       items: [
-        { key: "arion_onboarding", label: "Get Started", route: "/app/services/arion_onboarding" },
+        // F-87-arion: "Get Started" removed from nav (matches SPARK/OLIVER pattern).
+        // Onboarding now lives as a dashboard banner + modal on the ARION home
+        // command center. A permanent "Get Started" nav entry was clutter once
+        // onboarding completed.
         { key: "arion_dashboard", label: "Dashboard", route: "/app/services/arion_dashboard" },
       ],
     },
