@@ -18,12 +18,12 @@ interface Progress {
 }
 
 const ACTION: Record<string, { href: string; cta: string; help: string }> = {
-  arion_site:      { href: "/app/services/arion_overview",                 cta: "Open site",      help: "Your AI-built website. Created during signup from your questionnaire." },
+  arion_site:      { href: "/app/services/arion_dashboard",                cta: "Open site",      help: "Your AI-built website. Created during signup from your questionnaire." },
   arion_ga4:       { href: "/app/settings?tab=Connected%20Accounts",        cta: "Connect GA4",    help: "Required for traffic, audience, and conversion reporting." },
   arion_gsc:       { href: "/app/settings?tab=Connected%20Accounts",        cta: "Connect GSC",    help: "Powers the Search report — clicks, impressions, CTR, position." },
   arion_gbp:       { href: "/app/settings?tab=Connected%20Accounts",        cta: "Connect GBP",    help: "Enables Local Presence — reviews, calls, direction requests." },
   arion_bing:      { href: "/app/settings?tab=Connected%20Accounts",        cta: "Connect Bing",   help: "One-click Bing Webmaster Tools via the master account." },
-  arion_seranking: { href: "/app/services/arion_seo",                       cta: "Open SEO",       help: "Keyword tracking, audits, and competitor monitoring (SE Ranking)." },
+  arion_seranking: { href: "/app/services/arion_seo_overview",              cta: "Open SEO",       help: "Keyword tracking, audits, and competitor monitoring (SE Ranking)." },
 };
 
 export function ArionOnboardingPage() {

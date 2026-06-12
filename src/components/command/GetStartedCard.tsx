@@ -37,7 +37,7 @@ export function GetStartedCard() {
   const oliver = useOliverApi();
   const { getToken } = useAccessToken();
 
-  const hasArion = enabledServices.has("arion_overview") || enabledServices.has("arion_ia_insights_trends");
+  const hasArion = enabledServices.has("arion_dashboard") || enabledServices.has("arion_ia_insights_trends");
   const hasSpark = enabledServices.has("spark_overview") || enabledServices.has("spark_contacts");
   const hasOliver = enabledServices.has("oliver_dashboard") || enabledServices.has("oliver_jobs");
 

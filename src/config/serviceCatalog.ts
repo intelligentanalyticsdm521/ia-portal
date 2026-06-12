@@ -267,6 +267,15 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_quiet_hours', displayName: 'Quiet Hours', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_quiet_hours', description: 'Tenant-wide outbound-SMS quiet window. Block, queue, or reject sends during the configured hours with a live 24-segment clock view.' },
   { key: 'spark_nps_schedules', displayName: 'NPS Schedules', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_nps_schedules', description: 'Recurring NPS or CSAT surveys on a once/weekly/monthly/quarterly cadence with fire-now and pause controls.' },
   { key: 'spark_custom_fields', displayName: 'Custom Fields', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_custom_fields', description: 'Tenant-defined extra fields on contacts, deals, and accounts with string/number/date/boolean/enum types.' },
+
+  // ── Coming-Soon placeholders for STELLA / FORGE / ARGUS ────────────────────
+  // These keys are referenced from SubNav and from in-page links (STELLA
+  // overview from StellaExpensesComingPage, IA Insights header sub-routes,
+  // etc.). They render the generic "Coming soon" placeholder in
+  // ServiceRouter — no dedicated page component needed.
+  { key: 'stella_coming', displayName: 'STELLA Overview', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_coming', description: 'STELLA reporting & business intelligence — coming soon. Currently rebuilds during STELLA build sessions.' },
+  { key: 'forge_coming', displayName: 'FORGE Overview', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_coming', description: 'FORGE integration hub — coming soon. The home for cross-product integrations and data plumbing.' },
+  { key: 'argus_coming', displayName: 'ARGUS Overview', section: 'ARGUS', defaultStatus: 'coming_soon', route: '/app/services/argus_coming', description: 'ARGUS AI agents — coming soon. Autonomous AI doing work on your behalf under your guardrails.' },
   { key: 'spark_workflow_triggers', displayName: 'Workflow Triggers', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_workflow_triggers', description: 'Per-contact triggers (health tier change / lead score threshold / activity silence / tag added) that fire an action.' },
   { key: 'spark_config_backup', displayName: 'Configuration Backup', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_config_backup', description: 'Export and import the tenant SPARK configuration (dashboards, reports, fields, rules, templates).' },
   {
