@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useAccessToken } from "../../auth/useAccessToken";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { IadmModal } from "../../components/IadmModal";
 
@@ -381,6 +382,7 @@ function ProjectDetailModal({ projectId, onClose, onChanged }: { projectId: stri
 
 function AddArtifactInline({ projectId, phases, onSaved, onCancel }: { projectId: string; phases: Phase[]; onSaved: () => void; onCancel: () => void; }) {
   const { post } = useOliverApi();
+  const { getToken } = useAccessToken();
   const [mode, setMode] = useState<"upload" | "link">("upload");
   const [kind, setKind] = useState("proposal");
   const [title, setTitle] = useState("");
@@ -400,11 +402,16 @@ function AddArtifactInline({ projectId, phases, onSaved, onCancel }: { projectId
     setBusy(true); setErr(null);
     try {
       if (mode === "upload") {
-        // Multipart upload via the API base from the oliver hook (manual fetch
-        // since useOliverApi.post sends JSON).
+        // M8 fix (audit 2026-06-12): previous version read
+        // sessionStorage.getItem("oliver_access_token") which is never set
+        // (MSAL caches differently). Result: bearer header empty → 401.
+        // Now acquires the token via MSAL the same way useOliverApi does
+        // internally, so multipart upload works end-to-end.
         const apiBase = (import.meta.env.VITE_OLIVER_API_BASE as string)
           || "https://app-oliver-api-prod-eaffhyhqgrgbcfh0.centralus-01.azurewebsites.net";
-        const token = sessionStorage.getItem("oliver_access_token") || ""; // best-effort; the hook normally injects
+        const tokenRes = await getToken();
+        const token = tokenRes?.accessToken || "";
+        if (!token) throw new Error("Could not acquire access token. Try signing out and back in.");
         const fd = new FormData();
         fd.append("file", file as Blob);
         fd.append("kind", kind);
@@ -413,7 +420,7 @@ function AddArtifactInline({ projectId, phases, onSaved, onCancel }: { projectId
         fd.append("is_client_visible", visible ? "1" : "0");
         const res = await fetch(`${apiBase}/consulting-projects/${projectId}/artifacts/upload`, {
           method: "POST",
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          headers: { Authorization: `Bearer ${token}` },
           body: fd,
           credentials: "include",
         });

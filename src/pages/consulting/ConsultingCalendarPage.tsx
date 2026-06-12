@@ -2,19 +2,29 @@ import { useEffect, useState } from "react";
 import { useConsultingApi } from "../../hooks/useConsultingApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
+// B2/B3 fix (audit 2026-06-12): page was calling /consulting/events with
+// fields {id, type, scheduled_at, duration_minutes} that the backend doesn't
+// return. The canonical endpoint is /calendar/unified which returns
+// {id, source, kind, title, start, end?, status, color} and already produces
+// project_phase + project_target events (calendarUnified.js:173-234) plus
+// engagement-level consulting events. Wired to that.
 interface CalendarEvent {
-  id: number;
+  id: string;
+  source: string;
+  kind: string;
   title: string;
-  type: string;
-  scheduled_at: string;
-  duration_minutes: number;
-  notes: string | null;
+  start: string;
+  end?: string | null;
+  status?: string | null;
+  color?: string | null;
 }
 
-const TYPE_CONFIG: Record<string, { label: string; className: string }> = {
+const KIND_CONFIG: Record<string, { label: string; className: string }> = {
+  project_phase:  { label: "Project Phase",  className: "bg-violet-100 text-violet-700" },
+  project_target: { label: "Project Target", className: "bg-purple-100 text-purple-700" },
   discovery_call: { label: "Discovery Call", className: "bg-blue-100 text-blue-700" },
-  qbr: { label: "QBR", className: "bg-purple-100 text-purple-700" },
-  strategy_call: { label: "Strategy Call", className: "bg-teal-100 text-teal-700" },
+  qbr:            { label: "QBR",            className: "bg-purple-100 text-purple-700" },
+  strategy_call:  { label: "Strategy Call",  className: "bg-teal-100 text-teal-700" },
   content_review: { label: "Content Review", className: "bg-amber-100 text-amber-700" },
 };
 
@@ -31,7 +41,12 @@ export function ConsultingCalendarPage() {
       setLoading(true);
       setError(null);
       try {
-        const raw = await get<{ data: CalendarEvent[] }>("/consulting/events");
+        // 12-week window — wide enough to show current quarter + a peek into the next.
+        const today = new Date();
+        const start = today.toISOString().slice(0, 10);
+        const end = new Date(today.getTime() + 84 * 86400_000).toISOString().slice(0, 10);
+        const kinds = "project_phase,project_target,consulting";
+        const raw = await get<{ data: CalendarEvent[] }>(`/calendar/unified?start=${start}&end=${end}&kinds=${kinds}`);
         if (!cancelled) setEvents(raw?.data ?? []);
       } catch (err) {
         if (!cancelled) setError(err);
@@ -43,8 +58,8 @@ export function ConsultingCalendarPage() {
     return () => { cancelled = true; };
   }, [get, ready]);
 
-  function typeBadge(type: string) {
-    const cfg = TYPE_CONFIG[type] ?? { label: type.replace(/_/g, " "), className: "bg-gray-100 text-gray-700" };
+  function typeBadge(kind: string) {
+    const cfg = KIND_CONFIG[kind] ?? { label: kind.replace(/_/g, " "), className: "bg-gray-100 text-gray-700" };
     return (
       <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.className}`}>
         {cfg.label}
@@ -73,7 +88,7 @@ export function ConsultingCalendarPage() {
 
   // Group by month
   const grouped = events.reduce<Record<string, CalendarEvent[]>>((acc, e) => {
-    const key = monthKey(e.scheduled_at);
+    const key = monthKey(e.start);
     (acc[key] ??= []).push(e);
     return acc;
   }, {});
@@ -100,17 +115,22 @@ export function ConsultingCalendarPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <h3 className="text-sm font-semibold text-slate-900">{e.title}</h3>
-                          {typeBadge(e.type)}
+                          {typeBadge(e.kind)}
+                          {e.status && (
+                            <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-600">
+                              {e.status}
+                            </span>
+                          )}
                         </div>
-                        {e.notes && (
-                          <p className="mt-2 text-sm text-slate-600">{e.notes}</p>
-                        )}
                       </div>
                       <div className="shrink-0 text-right">
-                        <p className="text-sm font-medium text-slate-700">{formatDay(e.scheduled_at)}</p>
-                        <p className="text-xs text-slate-500">
-                          {formatTime(e.scheduled_at)} &middot; {e.duration_minutes} min
-                        </p>
+                        <p className="text-sm font-medium text-slate-700">{formatDay(e.start)}</p>
+                        {e.end && e.end !== e.start && (
+                          <p className="text-xs text-slate-500">{formatTime(e.start)} – {formatTime(e.end)}</p>
+                        )}
+                        {(!e.end || e.end === e.start) && (
+                          <p className="text-xs text-slate-500">{formatTime(e.start)}</p>
+                        )}
                       </div>
                     </div>
                   </div>
