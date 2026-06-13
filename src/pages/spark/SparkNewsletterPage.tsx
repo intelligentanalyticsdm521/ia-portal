@@ -4,8 +4,15 @@ import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkTable } from "../../components/spark/SparkTable";
-import { Plus, Newspaper, ExternalLink, Send, FileText, DownloadCloud, Check } from "lucide-react";
+import { Plus, Newspaper, ExternalLink, Send, FileText, DownloadCloud, Check, Settings } from "lucide-react";
 import { ComingSoonBanner } from "../../components/ComingSoonBanner";
+
+// 2026-06-13: per-tenant taxonomy config for "Import from ARION". Default
+// looks for posts tagged or categorized "newsletter"; each tenant can
+// override which taxonomy and which term via the cog UI next to Import.
+type TaxonomyType = "category" | "tag" | "both";
+interface ImportConfig { type: TaxonomyType; value: string }
+const DEFAULT_IMPORT_CONFIG: ImportConfig = { type: "both", value: "newsletter" };
 
 interface NewsletterIssue {
   id: number; issue_number: number; edition_date: string; title: string; summary: string | null;
@@ -25,11 +32,11 @@ interface WpPost {
 }
 
 export function SparkNewsletterPage() {
-  const { get, post, ready } = useSparkApi();
+  const { get, post, put, ready } = useSparkApi();
   const [list, setList] = useState<NewsletterIssue[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
-  const [drawer, setDrawer] = useState<"new" | "import" | null>(null);
+  const [drawer, setDrawer] = useState<"new" | "import" | "import_config" | null>(null);
   const [form, setForm] = useState({
     issue_number: 1, edition_date: new Date().toISOString().slice(0, 10),
     title: "", summary: "",
@@ -42,6 +49,10 @@ export function SparkNewsletterPage() {
   const [importError, setImportError] = useState<string | null>(null);
   const [selectedPostIds, setSelectedPostIds] = useState<Set<number>>(new Set());
   const [importing, setImporting] = useState(false);
+  // Per-tenant Import config (taxonomy filter for /wp-posts)
+  const [importConfig, setImportConfig] = useState<ImportConfig>(DEFAULT_IMPORT_CONFIG);
+  const [configDraft, setConfigDraft] = useState<ImportConfig>(DEFAULT_IMPORT_CONFIG);
+  const [configSaving, setConfigSaving] = useState(false);
   // Already-imported wp_post_ids (so we can grey them out)
   const importedPostIds = new Set(list.filter(n => n.wp_post_id).map(n => n.wp_post_id!));
 
@@ -55,6 +66,39 @@ export function SparkNewsletterPage() {
     } catch (err) { setError(err); } finally { setLoading(false); }
   }, [get, ready]);
   useEffect(() => { load(); }, [load]);
+
+  // Load per-tenant Newsletter Import config (default = both/newsletter)
+  useEffect(() => {
+    if (!ready) return;
+    (async () => {
+      try {
+        const r = await get<{ data: { setting_value?: string } | null }>("/api/v1/tenant-settings/newsletter_import_config");
+        const raw = r?.data?.setting_value;
+        if (raw) {
+          const parsed = JSON.parse(raw) as Partial<ImportConfig>;
+          const cfg: ImportConfig = {
+            type: (parsed.type === "category" || parsed.type === "tag" || parsed.type === "both") ? parsed.type : "both",
+            value: (parsed.value || "newsletter").toString(),
+          };
+          setImportConfig(cfg);
+          setConfigDraft(cfg);
+        }
+      } catch { /* default config is fine */ }
+    })();
+  }, [get, ready]);
+
+  async function saveImportConfig() {
+    setConfigSaving(true);
+    try {
+      await put("/api/v1/tenant-settings/newsletter_import_config", { setting_value: JSON.stringify(configDraft) });
+      setImportConfig(configDraft);
+      setDrawer(null);
+    } catch (err) {
+      alert(`Couldn't save Import config: ${(err as Error).message}`);
+    } finally {
+      setConfigSaving(false);
+    }
+  }
 
   async function create() {
     await post("/api/v1/newsletters", form);
@@ -75,7 +119,12 @@ export function SparkNewsletterPage() {
     setImportError(null);
     setSelectedPostIds(new Set());
     try {
-      const r = await get<{ ok: boolean; posts: WpPost[] }>("/api/v1/newsletters/wp-posts?category=Newsletter&limit=100");
+      const qp = new URLSearchParams({
+        taxonomy_type: importConfig.type,
+        taxonomy_value: importConfig.value,
+        limit: "100",
+      });
+      const r = await get<{ ok: boolean; posts: WpPost[] }>(`/api/v1/newsletters/wp-posts?${qp}`);
       setWpPosts(r.posts || []);
     } catch (err) {
       // The wp-posts proxy returns specific error codes from arion-api.
@@ -150,6 +199,13 @@ export function SparkNewsletterPage() {
           <button onClick={openImportDrawer} className="spark-btn spark-btn-secondary">
             <DownloadCloud className="h-3.5 w-3.5" /> Import from ARION
           </button>
+          <button
+            onClick={() => { setConfigDraft(importConfig); setDrawer("import_config"); }}
+            className="spark-btn spark-btn-secondary"
+            title={`Configure Import: ${importConfig.type === 'both' ? 'category or tag' : importConfig.type} = "${importConfig.value}"`}
+          >
+            <Settings className="h-3.5 w-3.5" />
+          </button>
           <button onClick={() => setDrawer("new")} className="spark-btn spark-btn-accent">
             <Plus className="h-3.5 w-3.5" /> New issue
           </button>
@@ -212,6 +268,54 @@ export function SparkNewsletterPage() {
           </button>
         ) : null}
       />
+
+      <SparkDrawer
+        open={drawer === "import_config"}
+        onClose={() => setDrawer(null)}
+        title="Configure Newsletter Import"
+        subtitle="Choose which WordPress taxonomy + term Import from ARION looks for. Default is both category and tag matching 'newsletter'."
+        footer={
+          <>
+            <button onClick={() => setDrawer(null)} className="spark-btn spark-btn-secondary">Cancel</button>
+            <button onClick={saveImportConfig} disabled={configSaving || !configDraft.value.trim()} className="spark-btn spark-btn-primary">
+              {configSaving ? "Saving…" : "Save"}
+            </button>
+          </>
+        }
+      >
+        <div className="spark-field">
+          <label className="spark-field-label">Taxonomy</label>
+          <select
+            className="spark-field-select"
+            value={configDraft.type}
+            onChange={e => setConfigDraft({ ...configDraft, type: e.target.value as TaxonomyType })}
+          >
+            <option value="both">Both (category or tag — OR match)</option>
+            <option value="category">Category only</option>
+            <option value="tag">Tag only</option>
+          </select>
+          <p className="text-[11px] text-slate-500 mt-1">
+            WordPress has two taxonomies. "Both" pulls posts that match the term as either a category or a tag.
+          </p>
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">Term</label>
+          <input
+            type="text"
+            className="spark-field-input"
+            placeholder="newsletter"
+            value={configDraft.value}
+            onChange={e => setConfigDraft({ ...configDraft, value: e.target.value })}
+            autoFocus
+          />
+          <p className="text-[11px] text-slate-500 mt-1">
+            We match by slug first, then name. Case-insensitive. Examples: <code className="bg-slate-100 px-1 rounded">newsletter</code>, <code className="bg-slate-100 px-1 rounded">intelligence-brief</code>.
+          </p>
+        </div>
+        <div className="mt-3 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
+          <strong>Current setting:</strong> {importConfig.type === "both" ? "category OR tag" : importConfig.type} = <code>"{importConfig.value}"</code>
+        </div>
+      </SparkDrawer>
 
       <SparkDrawer
         open={drawer === "new"}
