@@ -128,7 +128,7 @@ export function SparkDeliverabilityPage() {
   return (
     <SparkPageShell
       title="Deliverability"
-      subtitle={`${range.label} · ${dash?.overall.sent.toLocaleString() || 0} sent`}
+      subtitle={`${range.label} · ${(dash?.overall?.sent ?? 0).toLocaleString()} sent`}
       help="Track how your emails are landing. Bounce, complaint, and unsubscribe rates feed back into the auto-suppression list. Keep complaint rate under 0.1% and hard bounce rate under 2% to maintain sender reputation."
       stats={stats || undefined}
       filters={

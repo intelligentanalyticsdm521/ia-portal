@@ -85,7 +85,7 @@ export function SparkStellaPage() {
           {data?.recommendation ? (
             <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg p-4">
               <div className="text-2xl font-bold text-slate-900">{data.recommendation.label.split("(")[0].trim()}</div>
-              <div className="text-sm text-slate-600 mt-1">{data.recommendation.rate}% open rate based on {data.recommendation.sends.toLocaleString()} sends in this window</div>
+              <div className="text-sm text-slate-600 mt-1">{data.recommendation.rate ?? 0}% open rate based on {(data.recommendation.sends ?? 0).toLocaleString()} sends in this window</div>
             </div>
           ) : (
             <div className="text-sm text-slate-500 italic">Not enough data yet to make a confident recommendation. {data?.note || "Send at least 20 emails in a single hour-of-week slot."}</div>
