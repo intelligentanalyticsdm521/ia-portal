@@ -354,7 +354,11 @@ export function SparkNewsletterPage() {
         open={drawer === "import"}
         onClose={() => setDrawer(null)}
         title="Import newsletters from ARION"
-        subtitle={`Showing posts in the "Newsletter" category from your WordPress site`}
+        subtitle={
+          importConfig.type === "both"
+            ? `Showing posts tagged or categorized "${importConfig.value}"`
+            : `Showing posts ${importConfig.type === "tag" ? "tagged" : "in category"} "${importConfig.value}"`
+        }
         width="wide"
         footer={
           <>
@@ -374,8 +378,8 @@ export function SparkNewsletterPage() {
           </div>
         ) : wpPosts.length === 0 ? (
           <div className="py-8 text-center text-sm text-slate-500">
-            No posts in the "Newsletter" category on your WordPress site.
-            <div className="text-[11px] mt-2">Tip: if your newsletters were published in a different category, change it on WP first or rename here.</div>
+            No posts found matching {importConfig.type === "both" ? "category or tag" : importConfig.type} "{importConfig.value}".
+            <div className="text-[11px] mt-2">Tip: change the term via the settings cog (top right) or tag posts in WP with this term.</div>
           </div>
         ) : (
           <>
