@@ -39,6 +39,7 @@ import { PlatformTeamAccess } from './pages/settings/PlatformTeamAccess';
 import { SignupPage as PricingPage } from './pages/signup/SignupPage';
 import { OnboardingFlow } from './pages/signup/OnboardingFlow';
 import { ProvisioningStatus } from './pages/signup/ProvisioningStatus';
+import { WelcomePage } from './pages/signup/WelcomePage';
 
 // In-app add-site flow
 import { AddSiteFlow } from './pages/sites/AddSiteFlow';
@@ -70,6 +71,7 @@ export function App() {
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/pricing/onboarding" element={<OnboardingFlow />} />
           <Route path="/pricing/status" element={<ProvisioningStatus />} />
+          <Route path="/welcome" element={<WelcomePage />} />
 
           {/* 301-style redirects from the old /signup URLs.
               RedirectPreservingSearch keeps ?session_id=… so Stripe Checkout
