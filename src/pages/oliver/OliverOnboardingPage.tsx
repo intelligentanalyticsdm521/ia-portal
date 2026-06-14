@@ -28,6 +28,7 @@ const STEP_DEST: Record<string, string> = {
   invoice_template: "/app/services/oliver_settings",
   service_catalog: "/app/services/oliver_catalog",
   team: "/app/services/oliver_workers",
+  customer_import: "/app/services/oliver_customer_import",
 };
 const STEP_CTA: Record<string, string> = {
   business_profile: "Update profile",
@@ -35,7 +36,21 @@ const STEP_CTA: Record<string, string> = {
   invoice_template: "Customize template",
   service_catalog: "Add offering",
   team: "Invite worker",
+  customer_import: "Import customers",
 };
+
+// Frontend-injected step shown alongside the backend-driven checklist until
+// the lumen-api onboardingChecklist response also returns it. The step
+// completes when the customer either imports a CSV or explicitly skips.
+const FRONTEND_EXTRA_STEPS: OnboardingStep[] = [
+  {
+    key: "customer_import",
+    title: "Import your existing customers",
+    description: "Upload a CSV of your existing customer list so they're available for booking, invoicing, and marketing across IADM. Skip if you don't have one — you can come back.",
+    complete: false,
+    optional: true,
+  },
+];
 
 export function OliverOnboardingPage() {
   const { get, post, patch, ready } = useOliverApi();
@@ -118,8 +133,11 @@ export function OliverOnboardingPage() {
         </div>
       )}
 
-      {/* Step cards */}
-      {status?.steps.map((step, i) => (
+      {/* Step cards — backend steps + injected frontend steps */}
+      {[
+        ...(status?.steps || []),
+        ...FRONTEND_EXTRA_STEPS.filter((fs) => !(status?.steps || []).some((s) => s.key === fs.key)),
+      ].map((step, i) => (
         <div key={step.key} className="card" style={{
           borderLeft: `4px solid ${step.complete ? "#059669" : step.optional ? "#94A3B8" : "#F59E0B"}`,
         }}>

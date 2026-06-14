@@ -193,6 +193,7 @@ const OliverDispatchPage = lazyNamed(() => import('./oliver/OliverDispatchPage')
 const OliverWorkersPage = lazyNamed(() => import('./oliver/OliverWorkersPage'), 'OliverWorkersPage');
 const OliverCrewPerformancePage = lazyNamed(() => import('./oliver/OliverCrewPerformancePage'), 'OliverCrewPerformancePage');
 const OliverContactsPage = lazyNamed(() => import('./oliver/OliverContactsPage'), 'OliverContactsPage');
+const OliverCustomerImportPage = lazyNamed(() => import('./oliver/OliverCustomerImportPage'), 'OliverCustomerImportPage');
 const OliverServiceRequestsPage = lazyNamed(() => import('./oliver/OliverServiceRequestsPage'), 'OliverServiceRequestsPage');
 const OliverBookingPage = lazyNamed(() => import('./oliver/OliverBookingPage'), 'OliverBookingPage');
 const OliverQuotesPage = lazyNamed(() => import('./oliver/OliverQuotesPage'), 'OliverQuotesPage');
@@ -373,6 +374,7 @@ export function ServiceRouter() {
       case 'oliver_workers': oliverPage = <OliverWorkersPage />; break;
       case 'oliver_crew_performance': oliverPage = <OliverCrewPerformancePage />; break;
       case 'oliver_contacts': oliverPage = <OliverContactsPage />; break;
+      case 'oliver_customer_import': oliverPage = <OliverCustomerImportPage />; break;
       case 'oliver_service_requests': oliverPage = <OliverServiceRequestsPage />; break;
       case 'oliver_booking': oliverPage = <OliverBookingPage />; break;
       case 'oliver_quotes': oliverPage = <OliverQuotesProposalsPage />; break;
