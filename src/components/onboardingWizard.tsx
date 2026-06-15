@@ -32,6 +32,11 @@ export interface QuestionnaireAnswers {
   pages: string[];
   primaryColor: string;
   tagline: string;
+  // Existing-website branch: customer already has a working WordPress site at
+  // the domain — we install the IA Plugin + set brand options, but we DO NOT
+  // import a template or splice copy (would destroy their content). When true,
+  // the description/services/copy fields in the questionnaire are optional.
+  hasExistingWebsite: boolean;
 }
 
 export interface DomainSelection {
@@ -84,6 +89,7 @@ export const DEFAULT_ANSWERS: QuestionnaireAnswers = {
   pages: ['Home', 'About', 'Services', 'Contact'],
   primaryColor: '#1a73e8',
   tagline: '',
+  hasExistingWebsite: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -369,13 +375,45 @@ export function QuestionnaireStep({ value, onChange, onBack, onContinue }: {
     set('pages', value.pages.includes(page) ? value.pages.filter((p) => p !== page) : [...value.pages, page]);
   };
 
-  const valid = value.businessName && value.industry && value.description.length >= 20 && value.services.filter(Boolean).length >= 2;
+  // Existing-WP flow only requires businessName + industry + brand color.
+  // For new-site flow we still require description + services so AI copy has
+  // something to work with.
+  const valid = value.businessName && value.industry && (
+    value.hasExistingWebsite || (value.description.length >= 20 && value.services.filter(Boolean).length >= 2)
+  );
 
   return (
     <div>
       <h2 className="text-2xl font-bold text-gray-900">Tell us about your business</h2>
       <p className="mt-2 text-sm text-gray-600">This drives what your AI-built site will look like and say.</p>
       <div className="mt-6 grid gap-5">
+        <Field label="Do you already have a WordPress site at this domain?">
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="hasExistingWebsite"
+                checked={!value.hasExistingWebsite}
+                onChange={() => set('hasExistingWebsite', false)}
+              />
+              <span>No — build me a new site</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="hasExistingWebsite"
+                checked={value.hasExistingWebsite}
+                onChange={() => set('hasExistingWebsite', true)}
+              />
+              <span>Yes — keep my existing site, just add ARION</span>
+            </label>
+          </div>
+          {value.hasExistingWebsite && (
+            <p className="text-xs text-gray-500 mt-2">
+              We'll install the IA Plugin on your existing site (without touching your content) and connect it to ARION for SEO + analytics.
+            </p>
+          )}
+        </Field>
         <Field label="Business name *">
           <input className="ia-input" value={value.businessName} onChange={(e) => set('businessName', e.target.value)} placeholder="Acme Plumbing" />
         </Field>

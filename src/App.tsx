@@ -28,6 +28,7 @@ import {
   DataPrivacySettingsPage,
 } from './pages/settings/SettingsRoutes';
 import { PlatformAdminPage } from './pages/PlatformAdminPage';
+import { ArionOnboardExistingPage } from './pages/admin/ArionOnboardExistingPage';
 
 // NEW: SPARK pricing page route
 import { SparkPricingPage } from './pages/spark/SparkPricingPage';
@@ -128,6 +129,7 @@ export function App() {
                 Stub for now; founder-only UI for cross-tenant ops, dead-tenant
                 cleanup, schema migrations, etc. */}
             <Route path="admin" element={<PlatformAdminPage />} />
+            <Route path="admin/onboard-arion-existing" element={<ArionOnboardExistingPage />} />
 
             {/* Personal account settings (hamburger menu items) */}
             <Route path="account" element={<PersonalSettings />} />
