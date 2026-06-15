@@ -58,6 +58,20 @@ export const PAGE_OPTIONS = ['Home', 'About', 'Services', 'Contact', 'Blog', 'Sh
 export const VOICE_OPTIONS: QuestionnaireAnswers['brandVoice'][] = ['Professional', 'Friendly', 'Bold', 'Premium', 'Casual'];
 export const STYLE_OPTIONS: QuestionnaireAnswers['stylePreference'][] = ['Modern', 'Classic', 'Minimal', 'Bold'];
 
+// Maps directly to arion-api/lib/templateRegistry.js bucket keys.
+// "Other" routes to the generic_business fallback.
+export const INDUSTRY_OPTIONS: { value: string; label: string }[] = [
+  { value: 'service_business', label: 'Service business (plumber, electrician, HVAC, cleaner, contractor)' },
+  { value: 'consulting', label: 'Consulting / professional services' },
+  { value: 'healthcare', label: 'Healthcare / wellness (dental, chiro, gym, therapy)' },
+  { value: 'restaurant', label: 'Restaurant / food' },
+  { value: 'tech_saas', label: 'Tech / SaaS / software' },
+  { value: 'retail', label: 'Retail / online shop' },
+  { value: 'real_estate', label: 'Real estate' },
+  { value: 'creative', label: 'Creative / agency / portfolio' },
+  { value: 'other', label: 'Other (describe below)' },
+];
+
 export const DEFAULT_ANSWERS: QuestionnaireAnswers = {
   businessName: '',
   industry: '',
@@ -366,7 +380,31 @@ export function QuestionnaireStep({ value, onChange, onBack, onContinue }: {
           <input className="ia-input" value={value.businessName} onChange={(e) => set('businessName', e.target.value)} placeholder="Acme Plumbing" />
         </Field>
         <Field label="Industry / business type *">
-          <input className="ia-input" value={value.industry} onChange={(e) => set('industry', e.target.value)} placeholder="HVAC services, dental practice, boutique gym, etc." />
+          <select
+            className="ia-input"
+            value={INDUSTRY_OPTIONS.find((o) => o.value === value.industry)
+              ? value.industry
+              : (value.industry ? 'other' : '')}
+            onChange={(e) => {
+              const v = e.target.value;
+              // For preset buckets, store the bucket key directly.
+              // For "other", clear so the user fills the free-text field below.
+              set('industry', v === 'other' ? '' : v);
+            }}
+          >
+            <option value="">Select an industry…</option>
+            {INDUSTRY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          {(!INDUSTRY_OPTIONS.find((o) => o.value === value.industry)) && (
+            <input
+              className="ia-input mt-2"
+              value={value.industry}
+              onChange={(e) => set('industry', e.target.value)}
+              placeholder="Describe your business type (e.g. boutique gym, art studio)"
+            />
+          )}
         </Field>
         <Field label="Brief description * (1-2 sentences)">
           <textarea className="ia-input" rows={2} value={value.description} onChange={(e) => set('description', e.target.value)} placeholder="What you do, who you serve, what makes you different." />
