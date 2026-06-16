@@ -561,9 +561,15 @@ export const SPARK_QUICK_TOUR: TourDef = {
     },
     // ── Workflow & Automations ─────────────────────────────────────────────
     {
-      title: "Workflow — Automations",
-      body: "Set-and-forget rules — welcome series, lead routing, follow-up sequences. Fire on triggers without you touching them.",
-      targetSelector: "a[href='/app/services/spark_automations']",
+      title: "Workflow — Customer Lifecycle Flow",
+      body: "Pick the customer journey your business follows — Quick Sale, Service Pipeline (recommended default), Quote-Driven, Subscription, or Enterprise B2B. Stages drive scoring, automations, and reporting. Stage labels are renameable.",
+      targetSelector: "a[href='/app/spark/customer-flow']",
+      placement: "right",
+    },
+    {
+      title: "Workflow — Workflows & Automations",
+      body: "Unified library of triggers + rules + automations. One 'New workflow' button opens a chooser. JSON-free builders — pick an action, the right fields appear.",
+      targetSelector: "a[href='/app/services/spark_workflows_automations']",
       placement: "right",
     },
     {
@@ -587,8 +593,20 @@ export const SPARK_QUICK_TOUR: TourDef = {
     // ── Sales ───────────────────────────────────────────────────────────────
     {
       title: "Sales — Lead Inbox",
-      body: "B2B leads from forms, ARION, and other sources. Coming soon — full lead generator rebuild lands June.",
+      body: "B2B leads from forms, ARION, and the new SPARK Lead Generator. Review, accept, or reject — accepted leads become contacts with their lead score seeded into the new contact intelligence score.",
       targetSelector: "a[href='/app/services/spark_leads']",
+      placement: "right",
+    },
+    {
+      title: "Sales — Lead Generator (NEW)",
+      body: "Search for B2B prospects by category + location + radius. Picks expanded keywords from the IA taxonomy, hits Google Custom Search + Hunter enrichment, scores each lead 4-dimensional, and lands them in your Lead Inbox for review.",
+      targetSelector: "a[href='/app/spark/leadgen/new']",
+      placement: "right",
+    },
+    {
+      title: "Sales — Saved Searches",
+      body: "Re-run a search profile you already built without retyping anything. Each run honors lifetime per-tenant uniqueness so you never get the same domain twice.",
+      targetSelector: "a[href='/app/spark/leadgen/saved']",
       placement: "right",
     },
     {
