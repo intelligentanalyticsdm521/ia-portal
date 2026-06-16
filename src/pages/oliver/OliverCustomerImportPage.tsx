@@ -16,7 +16,7 @@ export function OliverCustomerImportPage() {
   const navigate = useNavigate();
 
   return (
-    <OliverPageWrapper>
+    <OliverPageWrapper title="Import customers" loading={false} error={null}>
       <PageHeader title="Import customers" subtitle="Upload a CSV of your existing customer list and we'll add them now." />
       <div className="max-w-3xl mx-auto">
         <CsvImportWidget
