@@ -360,24 +360,22 @@ const SPARK_NAV: SubNavConfig = {
       // mental model "configurable behavior that fires automatically".
       label: "Workflow & Automations", icon: Zap, collapsible: true, sectionId: "spark_workflow",
       items: [
-        { key: "spark_automations", label: "Automations", route: "/app/services/spark_automations" },
+        // Phase 3A merger (2026-06-16) — Automations + Rules + Workflow
+        // Triggers consolidated into ONE list page. The page exposes a
+        // segmented filter for "All / Automations / Rules" and a single
+        // "New workflow" button that opens the unified chooser modal.
+        { key: "spark_workflows_automations", label: "Workflows & Automations", route: "/app/services/spark_workflows_automations" },
         { key: "spark_journey_builder", label: "Journeys", route: "/app/services/spark_journey_builder" },
         { key: "spark_ab_tests", label: "A/B Tests", route: "/app/services/spark_ab_tests" },
         { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals" },
-        { key: "spark_workflow_triggers", label: "Workflow Triggers", route: "/app/services/spark_workflow_triggers" },
         { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts" },
         // Templates moved here from Outreach (2026-05-28 founder decision).
         // It's a library used by other features — configuration-like, not
         // an active send surface.
         { key: "spark_templates", label: "Templates", route: "/app/services/spark_templates" },
-        // F-93 — Webhooks + Audience Sync moved here from Settings. They
-        // are features (libraries you CRUD), event-driven, and conceptually
-        // "set it and forget it" — same mental model as Automations.
-        { key: "spark_webhooks", label: "Webhooks", route: "/app/services/spark_webhooks" },
+        // Phase 3A (2026-06-16) — Webhooks pulled from nav until our own
+        // implementation ships in SPARK v1.5 (page shows Coming Soon banner).
         { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync" },
-        // Rules consolidation (2026-05-28) — was 3 separate nav entries
-        // (Scoring / Routing / Auto-Tag). User flag: "should be 1." Now is.
-        { key: "spark_rules", label: "Rules", route: "/app/services/spark_rules" },
         { key: "spark_lead_suppression", label: "Lead Suppression", route: "/app/services/spark_lead_suppression" },
         { key: "spark_lead_territories", label: "Lead Territories", route: "/app/services/spark_lead_territories" },
       ],
@@ -684,7 +682,7 @@ function getDefaultSection(path: string): string | null {
   // F-93 + rules consolidation (2026-05-28): spark_rules replaces the 3
   // separate scoring/routing/autotag entries but old deep-links still
   // expand the right group.
-  if (path.includes("/spark_automations") || path.includes("/spark_journey_") || path.includes("/spark_ab_tests") || path.includes("/spark_approvals") || path.includes("/spark_workflow_triggers") || path.includes("/spark_anomaly_alerts") || path.includes("/spark_webhooks") || path.includes("/spark_inbound_webhooks") || path.includes("/spark_webhook_deliveries") || path.includes("/spark_audience_sync") || path.includes("/spark_rules") || path.includes("/spark_scoring_rules") || path.includes("/spark_routing_rules") || path.includes("/spark_autotag_rules") || path.includes("/spark_lead_suppression") || path.includes("/spark_lead_territories")) return "spark_workflow";
+  if (path.includes("/spark_workflows_automations") || path.includes("/spark_automations") || path.includes("/spark_journey_") || path.includes("/spark_ab_tests") || path.includes("/spark_approvals") || path.includes("/spark_workflow_triggers") || path.includes("/spark_anomaly_alerts") || path.includes("/spark_webhooks") || path.includes("/spark_inbound_webhooks") || path.includes("/spark_webhook_deliveries") || path.includes("/spark_audience_sync") || path.includes("/spark_rules") || path.includes("/spark_scoring_rules") || path.includes("/spark_routing_rules") || path.includes("/spark_autotag_rules") || path.includes("/spark_lead_suppression") || path.includes("/spark_lead_territories")) return "spark_workflow";
   if (path.includes("/spark_forms") || path.includes("/spark_form_") || path.includes("/spark_landing_pages") || path.includes("/spark_qr_codes")) return "spark_capture";
   if (path.includes("/spark_leads") || path.includes("/spark_pipelines") || path.includes("/spark_deals") || path.includes("/spark_attribution")) return "spark_sales";
   if (path.includes("/spark_nps") || path.includes("/spark_reviews") || path.includes("/spark_review_") || path.includes("/spark_referrals")) return "spark_customer_success";

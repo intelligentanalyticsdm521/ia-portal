@@ -33,6 +33,13 @@ import { ArionOnboardExistingPage } from './pages/admin/ArionOnboardExistingPage
 // NEW: SPARK pricing page route
 import { SparkPricingPage } from './pages/spark/SparkPricingPage';
 
+// SPARK Lead Gen V1 (F-150/F-163) — dedicated routes because the job page
+// takes an :id path param that doesn't fit the service-key router.
+import { SparkLeadGenNewPage } from './pages/spark/SparkLeadGenNewPage';
+import { SparkLeadGenJobPage } from './pages/spark/SparkLeadGenJobPage';
+import { SparkLeadGenSavedPage } from './pages/spark/SparkLeadGenSavedPage';
+import SparkCustomerFlowPage from './pages/spark/SparkCustomerFlowPage';
+
 // Platform admin: team access (role + product gating)
 import { PlatformTeamAccess } from './pages/settings/PlatformTeamAccess';
 
@@ -136,6 +143,14 @@ export function App() {
 
             {/* NEW: SPARK pricing page used by subscribe buttons */}
             <Route path="spark/pricing" element={<SparkPricingPage />} />
+
+            {/* SPARK Lead Gen V1 (F-150/F-163) — search form, job progress,
+                saved searches. The job page needs an :id path param so these
+                live here instead of the service-key router. */}
+            <Route path="spark/leadgen/new" element={<SparkLeadGenNewPage />} />
+            <Route path="spark/leadgen/jobs/:id" element={<SparkLeadGenJobPage />} />
+            <Route path="spark/leadgen/saved" element={<SparkLeadGenSavedPage />} />
+            <Route path="spark/customer-flow" element={<SparkCustomerFlowPage />} />
 
             {/* Platform admin: team access */}
             <Route path="team-access" element={<PlatformTeamAccess />} />

@@ -157,6 +157,8 @@ const SparkOnboardingPage = lazyNamed(() => import('./spark/SparkOnboardingPage'
 const SparkAccountProfilePage = lazyNamed(() => import('./spark/SparkAccountProfilePage'), 'SparkAccountProfilePage');
 const SparkTemplatesPage = lazyNamed(() => import('./spark/SparkTemplatesPage'), 'SparkTemplatesPage');
 const SparkRulesPage = lazyNamed(() => import('./spark/SparkRulesPage'), 'SparkRulesPage');
+// Phase 3A merger — unified Workflows + Rules list page.
+const SparkWorkflowsAutomationsPage = lazyNamed(() => import('./spark/SparkWorkflowsAutomationsPage'), 'SparkWorkflowsAutomationsPage');
 const SparkApiKeysPage = lazyNamed(() => import('./spark/SparkApiKeysPage'), 'SparkApiKeysPage');
 const SparkReviewWidgetPage = lazyNamed(() => import('./spark/SparkReviewWidgetPage'), 'SparkReviewWidgetPage');
 const SparkWebhooksPage = lazyNamed(() => import('./spark/SparkWebhooksPage'), 'SparkWebhooksPage');
@@ -465,7 +467,12 @@ export function ServiceRouter() {
       case 'spark_segments': sparkPage = <SparkSegmentsPage />; break;
       case 'spark_campaigns': sparkPage = <SparkCampaignsPage />; break;
       case 'spark_forms': sparkPage = <SparkFormsPage />; break;
-      case 'spark_automations': sparkPage = <SparkAutomationsPage />; break;
+      // Phase 3A — unified Workflows & Automations list page. The old
+      // automation/rules/workflow-triggers keys redirect here for back-compat.
+      case 'spark_workflows_automations':
+      case 'spark_automations':
+      case 'spark_workflow_triggers':
+        sparkPage = <SparkWorkflowsAutomationsPage />; break;
       case 'spark_leads': sparkPage = <SparkLeadsPage />; break;
       case 'spark_search_profiles': sparkPage = <SparkSearchProfilesPage />; break;
       case 'spark_intelligence': sparkPage = <SparkIntelligencePage />; break;
@@ -515,7 +522,9 @@ export function ServiceRouter() {
       case 'spark_onboarding': sparkPage = <SparkOnboardingPage />; break;
       case 'spark_account_profile': sparkPage = <SparkAccountProfilePage />; break;
       case 'spark_templates': sparkPage = <SparkTemplatesPage />; break;
-      case 'spark_rules': sparkPage = <SparkRulesPage />; break;
+      // Phase 3A — back-compat: deep links to /spark_rules redirect to
+      // the unified Workflows & Automations page (rules tab).
+      case 'spark_rules': sparkPage = <SparkWorkflowsAutomationsPage />; break;
       case 'spark_api_keys': sparkPage = <SparkApiKeysPage />; break;
       case 'spark_review_widget': sparkPage = <SparkReviewWidgetPage />; break;
       case 'spark_webhooks': sparkPage = <SparkWebhooksPage />; break;
@@ -535,7 +544,8 @@ export function ServiceRouter() {
       case 'spark_quiet_hours': sparkPage = <SparkQuietHoursPage />; break;
       case 'spark_nps_schedules': sparkPage = <SparkNpsSchedulesPage />; break;
       case 'spark_custom_fields': sparkPage = <SparkCustomFieldsPage />; break;
-      case 'spark_workflow_triggers': sparkPage = <SparkWorkflowTriggersPage />; break;
+      // spark_workflow_triggers handled at top via unified Workflows page;
+      // SparkWorkflowTriggersPage component retained for back-compat imports.
       case 'spark_config_backup': sparkPage = <SparkConfigBackupPage />; break;
       // v5.x IA Insights architecture
       case 'spark_ia_insights_health': sparkPage = <SparkIAInsightsHealthPage />; break;
