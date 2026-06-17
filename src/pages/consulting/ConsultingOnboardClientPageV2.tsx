@@ -607,7 +607,11 @@ function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
               {arionPlans.map((p) => {
                 const active = arionInCart?.plan === p.key;
-                const price = cycle === "annual" ? p.pricing.annual_per_month_usd : p.pricing.monthly_usd;
+                // catalog returns monthly_usd + annual_per_month_usd.
+                // For annual mode, show the FULL annual cost with /yr label.
+                const price = cycle === "annual"
+                  ? (p.pricing.annual_per_month_usd ?? 0) * 12
+                  : (p.pricing.monthly_usd ?? 0);
                 return (
                   <button key={p.key}
                     onClick={() => upsertCart({ product: "arion", plan: p.key, seo: arionInCart?.seo || "" })}
@@ -615,7 +619,7 @@ function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, 
                     style={active ? { borderColor: ACCENT } : {}}
                   >
                     <div className="font-bold uppercase tracking-wide text-slate-500 text-[10px]">{p.name}</div>
-                    <div className="text-base font-bold text-slate-900 mt-1">{money(price)}<span className="text-[10px] font-normal text-slate-500">/mo</span></div>
+                    <div className="text-base font-bold text-slate-900 mt-1">{money(price)}<span className="text-[10px] font-normal text-slate-500">/{cycle === "annual" ? "yr" : "mo"}</span></div>
                   </button>
                 );
               })}
@@ -665,6 +669,10 @@ function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
             {oliverCat.plans.map((p) => {
               const active = oliverInCart?.plan === p.key;
+              // fetchSignupCatalog(product, cycle) returns monthly_usd that
+              // represents the per-month-equivalent for the selected cycle.
+              // Multiply by 12 for the full annual cost when in annual mode.
+              const displayPrice = cycle === "annual" ? p.monthly_usd * 12 : p.monthly_usd;
               return (
                 <button key={p.key}
                   onClick={() => upsertCart({ product: "oliver", plan: p.key })}
@@ -672,7 +680,7 @@ function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, 
                   style={active ? { borderColor: ACCENT } : {}}
                 >
                   <div className="font-bold uppercase tracking-wide text-slate-500 text-[10px]">{p.name}</div>
-                  <div className="text-base font-bold text-slate-900 mt-1">{money(p.monthly_usd)}<span className="text-[10px] font-normal text-slate-500">/mo</span></div>
+                  <div className="text-base font-bold text-slate-900 mt-1">{money(displayPrice)}<span className="text-[10px] font-normal text-slate-500">/{cycle === "annual" ? "yr" : "mo"}</span></div>
                 </button>
               );
             })}
@@ -682,11 +690,11 @@ function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, 
 
       {/* SPARK — driven by fetchSignupCatalog('spark') */}
       <ProductSection title="SPARK" tagline="CRM + email marketing + Lead Gen add-on" inCart={!!sparkInCart} onRemove={() => removeCart("spark")}>
-        <SparkPicker cat={sparkCat} item={sparkInCart} upsert={(it) => upsertCart(it)} />
+        <SparkPicker cat={sparkCat} item={sparkInCart} upsert={(it) => upsertCart(it)} cycle={cycle} />
       </ProductSection>
 
       {/* Consulting — founder-only, separate from /pricing */}
-      <ProductSection title="Consulting" tagline="Monthly retainer — sourced from OLIVER service offerings (Build Your Brand/Clarity/Engine/Foundation). Founder picks engagement; price overridable per tenant."
+      <ProductSection title="Consulting" tagline="Retainer engagements — sourced from OLIVER service offerings. Founder picks engagement; price overridable per tenant. Cycle toggle above changes the default."
         inCart={!!consultingPick} onRemove={() => setConsultingPick(null)}>
         {!consultingProducts || consultingProducts.length === 0 ? (
           <div className="text-xs space-y-1">
@@ -704,7 +712,7 @@ function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, 
             </div>
           </div>
         ) : (
-          <ConsultingPicker products={consultingProducts} pick={consultingPick} setPick={setConsultingPick} />
+          <ConsultingPicker products={consultingProducts} pick={consultingPick} setPick={setConsultingPick} cycle={cycle} />
         )}
       </ProductSection>
     </StepShell>
@@ -730,11 +738,14 @@ function ProductSection({ title, tagline, inCart, onRemove, children }: {
   );
 }
 
-function SparkPicker({ cat, item, upsert }: {
+function SparkPicker({ cat, item, upsert, cycle }: {
   cat: SignupCatalog | null;
   item: Extract<CartItem, { product: "spark" }> | undefined;
   upsert: (it: CartItem) => void;
+  cycle: BillingCycle;
 }) {
+  const unitLabel = cycle === "annual" ? "yr" : "mo";
+  const multiplier = cycle === "annual" ? 12 : 1;
   const volumes = cat?.volumes || [];
   const currentVolume = item?.volume || volumes[0]?.volume || "";
   const volIndex = Math.max(0, volumes.findIndex((v) => v.volume === currentVolume));
@@ -764,7 +775,7 @@ function SparkPicker({ cat, item, upsert }: {
         <div className="flex items-baseline gap-3 mb-1">
           <span className="text-xl font-bold text-slate-900">{currentVolume}</span>
           <span className="text-xs text-slate-500">emails/mo</span>
-          <span className="ml-auto text-lg font-bold text-[#EF6C33]">{money(currentVol?.monthly_usd || 0)}<span className="text-[10px] font-normal text-slate-500">/mo</span></span>
+          <span className="ml-auto text-lg font-bold text-[#EF6C33]">{money((currentVol?.monthly_usd || 0) * multiplier)}<span className="text-[10px] font-normal text-slate-500">/{unitLabel}</span></span>
         </div>
         <input type="range" min={0} max={volumes.length - 1} step={1} value={volIndex}
           onChange={(e) => setItem({ volume: volumes[Number(e.target.value)].volume })}
@@ -789,7 +800,7 @@ function SparkPicker({ cat, item, upsert }: {
                 style={active ? { borderColor: ACCENT } : {}}
               >
                 <div className="font-bold uppercase tracking-wide text-slate-500 text-[10px]">{k === "" ? "Standard" : k}</div>
-                <div className="text-xs text-slate-900 mt-0.5">{k === "" ? "Included" : meta ? `+${money(meta.monthly_usd)}` : "—"}</div>
+                <div className="text-xs text-slate-900 mt-0.5">{k === "" ? "Included" : meta ? `+${money(meta.monthly_usd * multiplier)}/${unitLabel}` : "—"}</div>
               </button>
             );
           })}
@@ -804,7 +815,7 @@ function SparkPicker({ cat, item, upsert }: {
           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
           <option value="">No lead generation</option>
           {Object.entries(cat?.leads || {}).map(([k, v]) => (
-            <option key={k} value={k}>{v.name} — {money(v.monthly_usd)}/mo (incl. {v.included} leads)</option>
+            <option key={k} value={k}>{v.name} — {money(v.monthly_usd * multiplier)}/{unitLabel} (incl. {v.included} leads)</option>
           ))}
         </select>
         {leadsMeta && (
@@ -827,15 +838,18 @@ function SparkPicker({ cat, item, upsert }: {
   );
 }
 
-function ConsultingPicker({ products, pick, setPick }: {
+function ConsultingPicker({ products, pick, setPick, cycle }: {
   products: ConsultingProduct[];
   pick: ConsultingPick | null;
   setPick: (p: ConsultingPick | null) => void;
+  cycle: BillingCycle;
 }) {
-  // Click a product card → instantly add to cart with the default (monthly)
-  // price. Mirrors ARION/OLIVER pickers — implicit add, not explicit "Add to
-  // cart" button. Interval + price edit inline and auto-save.
-  const selectProduct = (p: ConsultingProduct, interval: "month" | "year" = "month") => {
+  // Click a product card → instantly add to cart with the cycle-appropriate
+  // default price (monthly or annual). Mirrors ARION/OLIVER pickers —
+  // implicit add, not explicit "Add to cart" button. Interval + price edit
+  // inline and auto-save.
+  const defaultInterval: "month" | "year" = cycle === "annual" ? "year" : "month";
+  const selectProduct = (p: ConsultingProduct, interval: "month" | "year" = defaultInterval) => {
     const defaultPrice = p.prices.find((pr) => pr.interval === interval)
       ?? p.prices.find((pr) => pr.interval === "month")
       ?? p.prices[0];
@@ -846,6 +860,21 @@ function ConsultingPicker({ products, pick, setPick }: {
       unitAmount: defaultPrice?.unit_amount ?? 0,
     });
   };
+
+  // When the cycle toggle changes globally, re-sync any existing pick to the
+  // new interval's catalog price so the user sees the right default.
+  useEffect(() => {
+    if (!pick) return;
+    const prod = products.find((p) => p.product_id === pick.productId);
+    if (!prod) return;
+    if (pick.interval !== defaultInterval) {
+      const newDefault = prod.prices.find((pr) => pr.interval === defaultInterval);
+      if (newDefault) {
+        setPick({ ...pick, interval: defaultInterval, unitAmount: newDefault.unit_amount });
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cycle]);
 
   const updateInterval = (newInterval: "month" | "year") => {
     if (!pick) return;
@@ -874,7 +903,11 @@ function ConsultingPicker({ products, pick, setPick }: {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
         {products.map((p) => {
           const active = pick?.productId === p.product_id;
-          const defaultMonthlyPrice = p.prices.find((pr) => pr.interval === "month");
+          // Card shows the cycle-appropriate price so the toggle is visible.
+          const displayPrice = p.prices.find((pr) => pr.interval === defaultInterval)
+            ?? p.prices.find((pr) => pr.interval === "month")
+            ?? p.prices[0];
+          const unitLabel = displayPrice?.interval === "year" ? "yr" : "mo";
           return (
             <button key={p.product_id}
               onClick={() => selectProduct(p)}
@@ -883,7 +916,7 @@ function ConsultingPicker({ products, pick, setPick }: {
             >
               <div className="font-bold text-slate-900 text-[11px]">{p.name}</div>
               <div className="text-[10px] text-slate-500 mt-1">
-                {defaultMonthlyPrice ? `from ${money(defaultMonthlyPrice.unit_amount / 100)}/mo` : "price TBD"}
+                {displayPrice ? `from ${money(displayPrice.unit_amount / 100)}/${unitLabel}` : "price TBD"}
               </div>
             </button>
           );
