@@ -1,56 +1,51 @@
-// ConsultingOnboardClientPageV2 — Founder onboarding wizard, 7-step rebuild.
+// ConsultingOnboardClientPageV2 — Founder onboarding wizard.
 //
-// Brandon's scoping 2026-06-17:
-//   1. Customer mode (New/Existing + Stripe lookup)
-//   2. Product cart (multi-select ARION/SPARK/OLIVER/Consulting + tiers/add-ons)
-//   3. Checkout — coupon autocomplete + payment method
-//   4. Business profile (deep — address drives ARION SE Ranking region binding)
-//   5. Owner account (beefed)
-//   6. Review
-//   7. Submit + per-product onboarding progress
+// REBUILT 2026-06-17 (commit after wizard-v1-fabricated-cart incident):
+// The cart picker in step 2 is now CATALOG-DRIVEN — it uses the SAME
+// `fetchPlanCatalog('arion')` + `fetchSignupCatalog('oliver'|'spark', cycle)`
+// APIs that public /pricing uses, and the SAME canonical CartItem types
+// from `lib/signupCart.ts`. Hardcoded plan lists / prices have been removed.
+// Don't reintroduce them — they will fall out of sync with Stripe.
 //
-// Backend: POST /admin/onboard-client (extended 2026-06-17 to accept
-// subscription_items[], business_profile{}, owner_account{}, collection_method).
-// Coupon autocomplete: GET /admin/onboard-client/coupons?q=
-// Consulting prices: GET /admin/onboard-client/consulting-products
+// Backend dependency table:
+//   GET  /onboarding/checkout/catalog?product=arion      → arionPlans
+//   GET  /signup/catalog?product=oliver&billing=...      → cat.plans
+//   GET  /signup/catalog?product=spark&billing=...       → cat.volumes/featureAddons/leads
+//   GET  /admin/onboard-client/coupons?q=                → coupon autocomplete (founder only)
+//   GET  /admin/onboard-client/consulting-products       → consulting Stripe products
+//   GET  /admin/onboard-client/stripe-customer-search    → existing-customer lookup
+//   POST /admin/onboard-client                           → tenant + Stripe customer + coupon
+//                                                          + subscription_items (consulting price_data)
+//                                                          + business_profile + owner_account
+//   POST /signup/checkout-cart  ← Stripe Checkout URL for ARION/SPARK/OLIVER
+//                                  (bundle coupon auto-applied server-side)
 
 import { useEffect, useMemo, useState } from "react";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { fetchPlanCatalog, type PlanCatalogEntry } from "../../lib/onboardingApi";
+import {
+  fetchSignupCatalog, createSignupCartCheckout,
+  type SignupCatalog,
+} from "../../lib/signupCheckout";
+import { bundleDiscountPercent, type CartItem } from "../../lib/signupCart";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
 type CustomerMode = "new" | "existing";
-type Product = "arion" | "oliver" | "spark" | "consulting";
 type ArionSiteType = "new" | "existing" | "migrate";
-type Interval = "month" | "year";
-
-interface CartConfig {
-  arion?: {
-    plan: "lite" | "standard" | "pro" | "business";
-    seo: "" | "starter" | "essentials" | "growth" | "authority";
-    siteType: ArionSiteType;
-    wpSiteUrl?: string;
-  };
-  spark?: {
-    volume: "5k" | "10k" | "25k" | "50k" | "100k" | "250k" | "500k";
-    addon: "" | "pro" | "business";
-  };
-  oliver?: {
-    tier: "lite" | "standard" | "pro" | "business";
-  };
-  consulting?: {
-    productId: string;
-    productName: string;
-    interval: Interval;
-    unitAmount: number; // cents — founder-overridable
-  };
-}
+type BillingCycle = "monthly" | "annual";
 
 interface ConsultingProduct {
   product_id: string;
   name: string;
   prices: Array<{ id: string; unit_amount: number; interval?: string; nickname?: string | null }>;
+}
+interface ConsultingPick {
+  productId: string;
+  productName: string;
+  interval: "month" | "year";
+  unitAmount: number; // cents (founder-overridable)
 }
 
 interface CouponOption {
@@ -95,7 +90,7 @@ interface StripeCustomerMatch {
   id: string;
   email: string | null;
   name: string | null;
-  subscriptions?: Array<{ id: string; items: Array<{ price_id: string; nickname: string | null; unit_amount: number | null; recurring: string | null }> }>;
+  subscriptions?: Array<{ id: string; items: Array<{ price_id: string; nickname: string | null }> }>;
 }
 
 interface OnboardResult {
@@ -114,34 +109,13 @@ interface OnboardResult {
   };
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────
-
-const ARION_PLANS = [
-  { id: "lite", label: "Lite", price: "$19" },
-  { id: "standard", label: "Standard", price: "$29" },
-  { id: "pro", label: "Pro", price: "$49" },
-  { id: "business", label: "Business", price: "$99" },
-] as const;
-
-const ARION_SEO_ADDONS = [
-  { id: "", label: "No SEO add-on", price: "—" },
-  { id: "starter", label: "SEO Starter", price: "+$29" },
-  { id: "essentials", label: "SEO Essentials", price: "+$49" },
-  { id: "growth", label: "SEO Growth (AI Mode)", price: "+$99" },
-  { id: "authority", label: "SEO Authority (full AI)", price: "+$199" },
-] as const;
-
-const SPARK_VOLUMES = ["5k", "10k", "25k", "50k", "100k", "250k", "500k"] as const;
-
-const OLIVER_TIERS = [
-  { id: "lite", label: "Lite", price: "$19.99" },
-  { id: "standard", label: "Standard", price: "$29.99" },
-  { id: "pro", label: "Pro", price: "$49.99" },
-  { id: "business", label: "Business", price: "$99.99" },
-] as const;
+// ARION = uses `arion` product type; SPARK/OLIVER use their own.
+// Cart shape mirrors signupCart.ts canonically.
 
 const ACCENT = "#EF6C33";
 const INK = "#0B1C24";
+
+function money(usd: number) { return `$${usd.toFixed(2)}`; }
 
 // ─── Component ────────────────────────────────────────────────────────────
 
@@ -152,9 +126,10 @@ export function ConsultingOnboardClientPageV2() {
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<OnboardResult | null>(null);
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Step 1 — Customer mode
+  // Step 1
   const [customerMode, setCustomerMode] = useState<CustomerMode | null>(null);
   const [searchEmail, setSearchEmail] = useState("");
   const [searchResults, setSearchResults] = useState<StripeCustomerMatch[] | null>(null);
@@ -162,28 +137,34 @@ export function ConsultingOnboardClientPageV2() {
   const [selectedExistingId, setSelectedExistingId] = useState<string | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
 
-  // Step 2 — Cart
-  const [cart, setCart] = useState<CartConfig>({});
+  // Step 2 — Catalog-driven cart
+  const [cycle, setCycle] = useState<BillingCycle>("monthly");
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [consultingPick, setConsultingPick] = useState<ConsultingPick | null>(null);
+  const [arionPlans, setArionPlans] = useState<PlanCatalogEntry[]>([]);
+  const [oliverCat, setOliverCat] = useState<SignupCatalog | null>(null);
+  const [sparkCat, setSparkCat] = useState<SignupCatalog | null>(null);
   const [consultingProducts, setConsultingProducts] = useState<ConsultingProduct[] | null>(null);
+  const [catLoading, setCatLoading] = useState(true);
+  const [arionSiteType, setArionSiteType] = useState<ArionSiteType>("new");
+  const [arionSiteUrl, setArionSiteUrl] = useState("");
 
-  // Step 3 — Checkout
+  // Step 3 — Coupon
   const [couponQuery, setCouponQuery] = useState("");
   const [couponOptions, setCouponOptions] = useState<CouponOption[]>([]);
   const [selectedCoupon, setSelectedCoupon] = useState<CouponOption | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
   const [collectionMethod, setCollectionMethod] = useState<"charge_automatically" | "send_invoice">("charge_automatically");
 
-  // Step 4 — Business profile
+  // Step 4 — Profile
   const [profile, setProfile] = useState<BusinessProfile>({
     address_street: "", address_line2: "", address_city: "", address_state: "", address_zip: "",
     phone: "", website: "", industry: "", primary_color: "#EF6C33", accent_color: "#0B1C24", logo_url: "",
   });
-
-  // Required top-level identity (drives tenant create)
   const [businessName, setBusinessName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
 
-  // Step 5 — Owner account
+  // Step 5 — Account
   const tzGuess = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Chicago", []);
   const [account, setAccount] = useState<OwnerAccount>({
     first_name: "", last_name: "", display_name: "", title: "", mobile: "",
@@ -191,29 +172,43 @@ export function ConsultingOnboardClientPageV2() {
     notif_email: true, notif_sms: false,
   });
 
-  // ─── Helpers ──────────────────────────────────────────────────────────
+  // ─── Catalog fetch (single source of truth — DO NOT hardcode prices) ──
 
-  // Prefill cart with sensible defaults when product toggled on.
-  const toggleProduct = (p: Product) => {
-    const next = { ...cart };
-    if (p in next) { delete (next as Record<string, unknown>)[p]; setCart(next); return; }
-    if (p === "arion") next.arion = { plan: "standard", seo: "", siteType: "new" };
-    if (p === "spark") next.spark = { volume: "5k", addon: "" };
-    if (p === "oliver") next.oliver = { tier: "standard" };
-    if (p === "consulting") {
-      const first = consultingProducts?.[0];
-      const monthly = first?.prices.find((pr) => pr.interval === "month");
-      next.consulting = {
-        productId: first?.product_id || "",
-        productName: first?.name || "",
-        interval: "month",
-        unitAmount: monthly?.unit_amount ?? 0,
-      };
-    }
-    setCart(next);
+  useEffect(() => {
+    let cancelled = false;
+    setCatLoading(true);
+    Promise.all([
+      fetchPlanCatalog("arion").catch(() => []),
+      fetchSignupCatalog("oliver", cycle).catch(() => null),
+      fetchSignupCatalog("spark", cycle).catch(() => null),
+      get<{ data: ConsultingProduct[] }>("/admin/onboard-client/consulting-products")
+        .then((r) => r.data).catch(() => []),
+    ]).then(([ap, oc, sc, cp]) => {
+      if (cancelled) return;
+      setArionPlans(ap || []);
+      setOliverCat(oc);
+      setSparkCat(sc);
+      setConsultingProducts(cp || []);
+      setCatLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [cycle, get]);
+
+  // ─── Cart helpers (work against canonical CartItem types) ─────────────
+
+  const findCart = <P extends CartItem["product"]>(p: P) =>
+    cart.find((it) => it.product === p) as Extract<CartItem, { product: P }> | undefined;
+
+  const upsertCart = (item: CartItem) => {
+    setCart((prev) => [...prev.filter((it) => it.product !== item.product), item]);
   };
 
-  // Stripe customer search (existing-mode)
+  const removeCart = (product: CartItem["product"]) => {
+    setCart((prev) => prev.filter((it) => it.product !== product));
+  };
+
+  // ─── Stripe customer search (existing mode) ───────────────────────────
+
   const runStripeSearch = async () => {
     if (!searchEmail.includes("@")) return;
     setSearchLoading(true);
@@ -229,7 +224,8 @@ export function ConsultingOnboardClientPageV2() {
     }
   };
 
-  // Coupon autocomplete (debounced)
+  // ─── Coupon autocomplete (debounced) ──────────────────────────────────
+
   useEffect(() => {
     let cancelled = false;
     const t = setTimeout(async () => {
@@ -243,68 +239,70 @@ export function ConsultingOnboardClientPageV2() {
     return () => { cancelled = true; clearTimeout(t); };
   }, [couponQuery, get]);
 
-  // Load consulting products on mount (used in step 2)
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await get<{ data: ConsultingProduct[] }>("/admin/onboard-client/consulting-products");
-        setConsultingProducts(r.data || []);
-      } catch { /* swallow */ }
-    })();
-  }, [get]);
+  // ─── Submit ───────────────────────────────────────────────────────────
 
-  // Compute submit body
   const submit = async () => {
     setSubmitting(true);
     setError(null);
     try {
-      const products: Product[] = [];
-      if (cart.arion) products.push("arion");
-      if (cart.oliver) products.push("oliver");
-      if (cart.spark) products.push("spark");
-      if (cart.consulting) products.push("consulting");
+      const arion = findCart("arion");
+      const oliver = findCart("oliver");
+      const spark = findCart("spark");
 
-      // subscription_items — single subscription, multiple line items.
-      // Stripe constraint: items must share interval. UI in step 3
-      // enforces a single billing interval globally.
-      const subscriptionItems: Array<Record<string, unknown>> = [];
-      // TODO: map ARION/SPARK/OLIVER tier → real Stripe price_id catalogue.
-      // For Rolling In It (100%-off path) the items array can be empty if
-      // the operator opts for "no_charge" — subscription create skips.
-      if (cart.consulting && cart.consulting.unitAmount > 0) {
-        subscriptionItems.push({
-          product_id: cart.consulting.productId,
-          unit_amount: cart.consulting.unitAmount,
-          interval: cart.consulting.interval,
-        });
-      }
-
-      const body = {
-        // Identity
+      // 1. Founder tenant create (+ Stripe customer + coupon + profile + consulting sub)
+      const adminBody: Record<string, unknown> = {
         business_name: businessName,
         contact_email: contactEmail,
         contact_name: account.display_name || `${account.first_name} ${account.last_name}`.trim() || undefined,
         contact_phone: account.mobile || undefined,
-        // Cart
-        products: products.filter((p) => p !== "consulting"), // products[] = legacy (arion/oliver/spark)
-        arion_plan: cart.arion?.plan,
-        arion_seo: cart.arion?.seo || undefined,
-        oliver_tier: cart.oliver?.tier,
-        spark_volume: cart.spark?.volume,
-        spark_addon: cart.spark?.addon || undefined,
-        wp_site_url: cart.arion?.wpSiteUrl || undefined,
-        arion_site_type: cart.arion?.siteType,
-        // Stripe
+        products: [arion, oliver, spark].filter(Boolean).map((it) => it!.product),
+        arion_plan: arion?.plan,
+        arion_seo: arion?.seo || undefined,
+        oliver_tier: oliver?.plan,
+        spark_volume: spark?.volume,
+        spark_addon: spark?.featureAddon || undefined,
+        wp_site_url: arion ? arionSiteUrl || undefined : undefined,
+        arion_site_type: arion ? arionSiteType : undefined,
         stripe_action: customerMode === "existing" ? "link_existing" : "create_new_with_coupon",
         coupon_code: selectedCoupon?.id,
-        subscription_items: subscriptionItems.length > 0 ? subscriptionItems : undefined,
         collection_method: collectionMethod,
-        // Profile + account passthroughs
         business_profile: profile,
         owner_account: account,
       };
-      const r = await post<{ data: OnboardResult }>("/admin/onboard-client", body);
-      setResult(r.data);
+      // Consulting flows through subscription_items (uses price_data override)
+      if (consultingPick && consultingPick.unitAmount > 0) {
+        adminBody.subscription_items = [{
+          product_id: consultingPick.productId,
+          unit_amount: consultingPick.unitAmount,
+          interval: consultingPick.interval,
+        }];
+      }
+      const adminResp = await post<{ data: OnboardResult }>("/admin/onboard-client", adminBody);
+      setResult(adminResp.data);
+
+      // 2. For ARION/SPARK/OLIVER, fire createSignupCartCheckout to get
+      // the real Stripe Checkout URL (bundle discount auto-applied). The
+      // URL gets shown to the founder to copy/send to the client.
+      // Public /pricing uses the exact same endpoint — single source of truth.
+      const cartItems = cart.map((it) => {
+        if (it.product === "arion")  return { product: "arion" as const,  plan: it.plan, seo: it.seo || null };
+        if (it.product === "oliver") return { product: "oliver" as const, plan: it.plan };
+        return {
+          product: "spark" as const, volume: it.volume,
+          featureAddon: it.featureAddon || null,
+          leads: it.leads || null,
+          ...(it.leads ? { leadsSelected: it.leadsSelected } : {}),
+        };
+      });
+      if (cartItems.length > 0) {
+        const r = await createSignupCartCheckout({
+          email: contactEmail,
+          name: account.display_name || businessName,
+          billing_cycle: cycle,
+          items: cartItems,
+        });
+        setCheckoutUrl(r.checkout_url);
+      }
       setStep(7);
     } catch (e) {
       setError((e as Error).message);
@@ -313,11 +311,16 @@ export function ConsultingOnboardClientPageV2() {
     }
   };
 
-  // Validation gates per step
+  // ─── Gates ────────────────────────────────────────────────────────────
+
   const canProceedStep1 = customerMode === "new" || (customerMode === "existing" && selectedExistingId !== null);
-  const cartCount = (cart.arion ? 1 : 0) + (cart.spark ? 1 : 0) + (cart.oliver ? 1 : 0) + (cart.consulting ? 1 : 0);
-  const canProceedStep2 = cartCount > 0 && (!cart.arion || cart.arion.siteType === "new" || (cart.arion.wpSiteUrl || "").length > 5);
-  const canProceedStep3 = true; // coupon and payment are both optional
+  const cartCount = cart.length + (consultingPick ? 1 : 0);
+  const canProceedStep2 = cartCount > 0 && (
+    !findCart("arion")
+    || arionSiteType === "new"
+    || arionSiteUrl.trim().length > 5
+  );
+  const canProceedStep3 = true;
   const canProceedStep4 = Boolean(
     businessName.trim().length > 1
     && contactEmail.includes("@")
@@ -326,8 +329,6 @@ export function ConsultingOnboardClientPageV2() {
   );
   const canProceedStep5 = account.first_name.trim().length > 0 && account.last_name.trim().length > 0;
   const canProceedStep6 = Boolean(canProceedStep1 && canProceedStep2 && canProceedStep4 && canProceedStep5);
-
-  // ─── Render ───────────────────────────────────────────────────────────
 
   return (
     <OliverPageWrapper title="Onboard Client (V2)" subtitle="IA Consulting · 7-step founder wizard" error={error} loading={submitting}>
@@ -347,8 +348,14 @@ export function ConsultingOnboardClientPageV2() {
 
         {step === 2 && (
           <Step2Cart
-            cart={cart} setCart={setCart} toggle={toggleProduct}
-            consultingProducts={consultingProducts}
+            cart={cart} upsertCart={upsertCart} removeCart={removeCart}
+            cycle={cycle} setCycle={setCycle}
+            arionPlans={arionPlans}
+            oliverCat={oliverCat} sparkCat={sparkCat}
+            consultingProducts={consultingProducts} consultingPick={consultingPick} setConsultingPick={setConsultingPick}
+            loading={catLoading}
+            arionSiteType={arionSiteType} setArionSiteType={setArionSiteType}
+            arionSiteUrl={arionSiteUrl} setArionSiteUrl={setArionSiteUrl}
             onBack={() => setStep(1)} onContinue={() => setStep(3)} canContinue={canProceedStep2}
           />
         )}
@@ -368,7 +375,7 @@ export function ConsultingOnboardClientPageV2() {
             profile={profile} setProfile={setProfile}
             businessName={businessName} setBusinessName={setBusinessName}
             contactEmail={contactEmail} setContactEmail={setContactEmail}
-            cart={cart}
+            arionInCart={!!findCart("arion")}
             onBack={() => setStep(3)} onContinue={() => setStep(5)} canContinue={canProceedStep4}
           />
         )}
@@ -382,7 +389,8 @@ export function ConsultingOnboardClientPageV2() {
 
         {step === 6 && (
           <Step6Review
-            cart={cart} profile={profile} account={account}
+            cart={cart} consultingPick={consultingPick} cycle={cycle}
+            profile={profile} account={account}
             businessName={businessName} contactEmail={contactEmail}
             coupon={selectedCoupon} customerMode={customerMode}
             collectionMethod={collectionMethod}
@@ -392,7 +400,15 @@ export function ConsultingOnboardClientPageV2() {
         )}
 
         {step === 7 && result && (
-          <Step7Progress result={result} businessName={businessName} onReset={() => { setStep(1); setResult(null); setCart({}); setBusinessName(""); setContactEmail(""); setSelectedCoupon(null); setCustomerMode(null); }} />
+          <Step7Progress
+            result={result}
+            checkoutUrl={checkoutUrl}
+            businessName={businessName}
+            onReset={() => {
+              setStep(1); setResult(null); setCheckoutUrl(null); setCart([]); setConsultingPick(null);
+              setBusinessName(""); setContactEmail(""); setSelectedCoupon(null); setCustomerMode(null);
+            }}
+          />
         )}
       </div>
     </OliverPageWrapper>
@@ -519,146 +535,334 @@ function ModeCard({ active, onClick, title, desc }: { active: boolean; onClick: 
   );
 }
 
-// ─── Step 2 — Cart ───────────────────────────────────────────────────────
+// ─── Step 2 — Catalog-driven cart ────────────────────────────────────────
 
-function Step2Cart({ cart, setCart, toggle, consultingProducts, onBack, onContinue, canContinue }: {
-  cart: CartConfig; setCart: (c: CartConfig) => void; toggle: (p: Product) => void;
+function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, oliverCat, sparkCat, consultingProducts, consultingPick, setConsultingPick, loading, arionSiteType, setArionSiteType, arionSiteUrl, setArionSiteUrl, onBack, onContinue, canContinue }: {
+  cart: CartItem[];
+  upsertCart: (it: CartItem) => void;
+  removeCart: (p: CartItem["product"]) => void;
+  cycle: BillingCycle; setCycle: (c: BillingCycle) => void;
+  arionPlans: PlanCatalogEntry[];
+  oliverCat: SignupCatalog | null;
+  sparkCat: SignupCatalog | null;
   consultingProducts: ConsultingProduct[] | null;
+  consultingPick: ConsultingPick | null;
+  setConsultingPick: (p: ConsultingPick | null) => void;
+  loading: boolean;
+  arionSiteType: ArionSiteType; setArionSiteType: (t: ArionSiteType) => void;
+  arionSiteUrl: string; setArionSiteUrl: (v: string) => void;
   onBack: () => void; onContinue: () => void; canContinue: boolean;
 }) {
+  const arionInCart = cart.find((it) => it.product === "arion") as Extract<CartItem, { product: "arion" }> | undefined;
+  const oliverInCart = cart.find((it) => it.product === "oliver") as Extract<CartItem, { product: "oliver" }> | undefined;
+  const sparkInCart = cart.find((it) => it.product === "spark") as Extract<CartItem, { product: "spark" }> | undefined;
+  const bundle = bundleDiscountPercent(cart);
+
+  if (loading) return <StepShell title="Configure cart" onBack={onBack}><div className="text-center text-gray-500 py-12">Loading catalog from OLIVER Products &amp; Services…</div></StepShell>;
+
   return (
-    <StepShell title="Which products?" subtitle="Multi-select. One subscription, one line item per product (Brandon's rule)." onBack={onBack} onNext={onContinue} canNext={canContinue}>
-      <ProductRow active={!!cart.arion} onToggle={() => toggle("arion")} name="ARION" tagline="AI-built websites + SEO automation"
-        expanded={
-          cart.arion && (
-            <div className="space-y-3 mt-3">
-              <Picker label="Plan" options={ARION_PLANS.map((p) => ({ id: p.id, label: `${p.label} (${p.price})` }))}
-                value={cart.arion.plan}
-                onChange={(v) => setCart({ ...cart, arion: { ...cart.arion!, plan: v as typeof cart.arion.plan } })}
-              />
-              <Picker label="SEO add-on" options={ARION_SEO_ADDONS.map((s) => ({ id: s.id, label: `${s.label} (${s.price})` }))}
-                value={cart.arion.seo}
-                onChange={(v) => setCart({ ...cart, arion: { ...cart.arion!, seo: v as typeof cart.arion.seo } })}
-              />
-              <Picker label="Site type" options={[
-                { id: "new", label: "New site (we build it)" },
-                { id: "existing", label: "Existing WP on Hostinger (we plugin-install only)" },
-                { id: "migrate", label: "Migrate from elsewhere (founder-assisted)" },
-              ]} value={cart.arion.siteType}
-                onChange={(v) => setCart({ ...cart, arion: { ...cart.arion!, siteType: v as ArionSiteType } })}
-              />
-              {(cart.arion.siteType === "existing" || cart.arion.siteType === "migrate") && (
-                <Field label="WordPress site URL" required value={cart.arion.wpSiteUrl || ""}
-                  onChange={(v) => setCart({ ...cart, arion: { ...cart.arion!, wpSiteUrl: v } })}
-                  placeholder="https://example.com" />
-              )}
+    <StepShell title="Configure cart" subtitle="Live prices from OLIVER Products & Services. Bundle discount auto-applies (5% for 2 platforms, 7% for 3+)." onBack={onBack} onNext={onContinue} canNext={canContinue}>
+      {/* Billing cycle toggle */}
+      <div className="flex items-center gap-3 mb-4">
+        <span className="text-xs font-semibold text-slate-700">Billing cycle:</span>
+        <div className="inline-flex rounded-full bg-gray-100 p-1">
+          <button onClick={() => setCycle("monthly")} className={`px-4 py-1.5 rounded-full text-xs font-medium ${cycle === "monthly" ? "bg-white shadow text-gray-900" : "text-gray-600"}`}>Monthly</button>
+          <button onClick={() => setCycle("annual")} className={`px-4 py-1.5 rounded-full text-xs font-medium ${cycle === "annual" ? "bg-white shadow text-gray-900" : "text-gray-600"}`}>Annual <span className="text-[#EF6C33] ml-0.5">save 10%</span></button>
+        </div>
+        {bundle > 0 && (
+          <span className="ml-auto inline-block rounded-full bg-emerald-100 text-emerald-700 px-2.5 py-1 text-[10px] font-bold uppercase">
+            Bundle −{bundle}%
+          </span>
+        )}
+      </div>
+
+      {/* ARION — driven by fetchPlanCatalog('arion') */}
+      <ProductSection title="ARION" tagline="AI-built websites + SEO automation" inCart={!!arionInCart} onRemove={() => removeCart("arion")}>
+        {arionPlans.length === 0 ? (
+          <div className="text-xs text-amber-600">ARION plans not available — check arion-api /onboarding/checkout/catalog.</div>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+              {arionPlans.map((p) => {
+                const active = arionInCart?.plan === p.key;
+                const price = cycle === "annual" ? p.pricing.annual_per_month_usd : p.pricing.monthly_usd;
+                return (
+                  <button key={p.key}
+                    onClick={() => upsertCart({ product: "arion", plan: p.key, seo: arionInCart?.seo || "" })}
+                    className={`p-3 rounded-lg border-2 text-left text-xs ${active ? "bg-white shadow" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                    style={active ? { borderColor: ACCENT } : {}}
+                  >
+                    <div className="font-bold uppercase tracking-wide text-slate-500 text-[10px]">{p.name}</div>
+                    <div className="text-base font-bold text-slate-900 mt-1">{money(price)}<span className="text-[10px] font-normal text-slate-500">/mo</span></div>
+                  </button>
+                );
+              })}
             </div>
-          )
-        }
-      />
-      <ProductRow active={!!cart.oliver} onToggle={() => toggle("oliver")} name="OLIVER" tagline="Field service + jobs + invoicing"
-        expanded={
-          cart.oliver && (
-            <Picker label="Tier" options={OLIVER_TIERS.map((t) => ({ id: t.id, label: `${t.label} (${t.price})` }))}
-              value={cart.oliver.tier}
-              onChange={(v) => setCart({ ...cart, oliver: { tier: v as typeof cart.oliver.tier } })}
-            />
-          )
-        }
-      />
-      <ProductRow active={!!cart.spark} onToggle={() => toggle("spark")} name="SPARK" tagline="CRM + email marketing"
-        expanded={
-          cart.spark && (
-            <div className="space-y-3">
-              <Picker label="Contact volume" options={SPARK_VOLUMES.map((v) => ({ id: v, label: v }))}
-                value={cart.spark.volume}
-                onChange={(v) => setCart({ ...cart, spark: { ...cart.spark!, volume: v as typeof cart.spark.volume } })}
-              />
-              <Picker label="Add-on" options={[{ id: "", label: "None" }, { id: "pro", label: "Pro" }, { id: "business", label: "Business" }]}
-                value={cart.spark.addon}
-                onChange={(v) => setCart({ ...cart, spark: { ...cart.spark!, addon: v as typeof cart.spark.addon } })}
-              />
-            </div>
-          )
-        }
-      />
-      <ProductRow active={!!cart.consulting} onToggle={() => toggle("consulting")} name="Consulting" tagline="Monthly retainer — Build Your Brand/Clarity/Engine/Foundation"
-        expanded={
-          cart.consulting && consultingProducts && (
-            <div className="space-y-3">
-              <Picker label="Engagement" options={consultingProducts.map((p) => ({ id: p.product_id, label: p.name }))}
-                value={cart.consulting.productId}
-                onChange={(v) => {
-                  const prod = consultingProducts.find((p) => p.product_id === v);
-                  const interval = cart.consulting!.interval;
-                  const matchingPrice = prod?.prices.find((pr) => pr.interval === interval);
-                  setCart({ ...cart, consulting: { ...cart.consulting!, productId: v, productName: prod?.name || "", unitAmount: matchingPrice?.unit_amount ?? cart.consulting!.unitAmount } });
-                }}
-              />
-              <Picker label="Billing interval" options={[{ id: "month", label: "Monthly" }, { id: "year", label: "Annual" }]}
-                value={cart.consulting.interval}
-                onChange={(v) => {
-                  const prod = consultingProducts.find((p) => p.product_id === cart.consulting!.productId);
-                  const matchingPrice = prod?.prices.find((pr) => pr.interval === v);
-                  setCart({ ...cart, consulting: { ...cart.consulting!, interval: v as Interval, unitAmount: matchingPrice?.unit_amount ?? cart.consulting!.unitAmount } });
-                }}
-              />
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Custom price (this tenant only) — USD
-                </label>
-                <input type="number" min={0} step={0.01} value={(cart.consulting.unitAmount / 100).toFixed(2)}
-                  onChange={(e) => setCart({ ...cart, consulting: { ...cart.consulting!, unitAmount: Math.round(parseFloat(e.target.value || "0") * 100) } })}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-                <div className="text-[10px] text-slate-500 mt-1">
-                  Stripe inline price_data override — base product price stays unchanged.
+            {arionInCart && (
+              <>
+                {/* SEO add-on — surfaced labels match public /pricing
+                    (essentials/growth/authority). Exact pricing comes from
+                    Stripe at checkout time. */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">SEO add-on (optional)</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(["", "essentials", "growth", "authority"] as const).map((k) => (
+                      <button key={k || "none"}
+                        onClick={() => upsertCart({ product: "arion", plan: arionInCart.plan, seo: k })}
+                        className={`p-2 rounded-lg border-2 text-xs ${arionInCart.seo === k || (!arionInCart.seo && k === "") ? "bg-white shadow" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                        style={(arionInCart.seo === k || (!arionInCart.seo && k === "")) ? { borderColor: "#38BDF8" } : {}}
+                      >
+                        {k === "" ? "None" : k[0].toUpperCase() + k.slice(1)}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            </div>
-          )
-        }
-      />
+                {/* Site type */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Site type</label>
+                  <select value={arionSiteType} onChange={(e) => setArionSiteType(e.target.value as ArionSiteType)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
+                    <option value="new">New site (we build it)</option>
+                    <option value="existing">Existing WP on Hostinger (plugin install)</option>
+                    <option value="migrate">Migrate from elsewhere (founder-assisted)</option>
+                  </select>
+                </div>
+                {(arionSiteType === "existing" || arionSiteType === "migrate") && (
+                  <Field label="WordPress site URL" required value={arionSiteUrl} onChange={setArionSiteUrl} placeholder="https://example.com" />
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </ProductSection>
+
+      {/* OLIVER — driven by fetchSignupCatalog('oliver') */}
+      <ProductSection title="OLIVER" tagline="Field service + jobs + invoicing" inCart={!!oliverInCart} onRemove={() => removeCart("oliver")}>
+        {!oliverCat?.plans || oliverCat.plans.length === 0 ? (
+          <div className="text-xs text-amber-600">OLIVER plans not available — Stripe prices not configured.</div>
+        ) : (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            {oliverCat.plans.map((p) => {
+              const active = oliverInCart?.plan === p.key;
+              return (
+                <button key={p.key}
+                  onClick={() => upsertCart({ product: "oliver", plan: p.key })}
+                  className={`p-3 rounded-lg border-2 text-left text-xs ${active ? "bg-white shadow" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                  style={active ? { borderColor: ACCENT } : {}}
+                >
+                  <div className="font-bold uppercase tracking-wide text-slate-500 text-[10px]">{p.name}</div>
+                  <div className="text-base font-bold text-slate-900 mt-1">{money(p.monthly_usd)}<span className="text-[10px] font-normal text-slate-500">/mo</span></div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </ProductSection>
+
+      {/* SPARK — driven by fetchSignupCatalog('spark') */}
+      <ProductSection title="SPARK" tagline="CRM + email marketing + Lead Gen add-on" inCart={!!sparkInCart} onRemove={() => removeCart("spark")}>
+        <SparkPicker cat={sparkCat} item={sparkInCart} upsert={(it) => upsertCart(it)} />
+      </ProductSection>
+
+      {/* Consulting — founder-only, separate from /pricing */}
+      <ProductSection title="Consulting" tagline="Monthly retainer (Build Your Brand/Clarity/Engine/Foundation) — founder picks Stripe product, price overridable per tenant"
+        inCart={!!consultingPick} onRemove={() => setConsultingPick(null)}>
+        {!consultingProducts || consultingProducts.length === 0 ? (
+          <div className="text-xs text-amber-600">No consulting products returned. Check Stripe.</div>
+        ) : (
+          <ConsultingPicker products={consultingProducts} pick={consultingPick} setPick={setConsultingPick} />
+        )}
+      </ProductSection>
     </StepShell>
   );
 }
 
-function ProductRow({ active, onToggle, name, tagline, expanded }: {
-  active: boolean; onToggle: () => void; name: string; tagline: string; expanded?: React.ReactNode;
+function ProductSection({ title, tagline, inCart, onRemove, children }: {
+  title: string; tagline: string; inCart: boolean; onRemove: () => void; children: React.ReactNode;
 }) {
   return (
-    <div className={`rounded-xl border-2 ${active ? "" : "border-slate-200"}`} style={active ? { borderColor: ACCENT } : {}}>
-      <button onClick={onToggle} className="w-full text-left p-4 flex items-center gap-3">
-        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0`}
-          style={active ? { borderColor: ACCENT, background: ACCENT } : { borderColor: "#cbd5e1" }}
-        >
-          {active && <span className="text-white text-xs">✓</span>}
-        </div>
-        <div className="flex-1">
-          <div className="text-base font-bold" style={{ color: INK }}>{name}</div>
+    <div className={`rounded-xl border-2 p-4 ${inCart ? "" : "border-slate-200"}`} style={inCart ? { borderColor: ACCENT } : {}}>
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="text-base font-bold" style={{ color: INK }}>{title}</div>
           <div className="text-xs text-slate-500">{tagline}</div>
         </div>
-      </button>
-      {active && expanded && <div className="px-4 pb-4">{expanded}</div>}
+        {inCart && (
+          <button onClick={onRemove} className="text-[11px] text-rose-600 hover:text-rose-700 underline">Remove</button>
+        )}
+      </div>
+      {children}
     </div>
   );
 }
 
-function Picker({ label, options, value, onChange }: {
-  label: string; options: Array<{ id: string; label: string }>;
-  value: string; onChange: (v: string) => void;
+function SparkPicker({ cat, item, upsert }: {
+  cat: SignupCatalog | null;
+  item: Extract<CartItem, { product: "spark" }> | undefined;
+  upsert: (it: CartItem) => void;
 }) {
+  const volumes = cat?.volumes || [];
+  const currentVolume = item?.volume || volumes[0]?.volume || "";
+  const volIndex = Math.max(0, volumes.findIndex((v) => v.volume === currentVolume));
+  const currentVol = volumes[volIndex];
+  const leadsMeta = item?.leads && cat?.leads ? cat.leads[item.leads] : null;
+  const leadsCount = item?.leadsSelected ?? (leadsMeta?.included || 0);
+
+  const setItem = (patch: Partial<Extract<CartItem, { product: "spark" }>>) => {
+    upsert({
+      product: "spark",
+      volume: currentVolume,
+      featureAddon: "",
+      leads: "",
+      ...(item || {}),
+      ...patch,
+    } as CartItem);
+  };
+
+  if (volumes.length === 0) {
+    return <div className="text-xs text-amber-600">SPARK volumes not available — Stripe prices not configured.</div>;
+  }
+
   return (
-    <div>
-      <label className="block text-xs font-semibold text-slate-700 mb-1">{label}</label>
-      <select value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
-        {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-      </select>
+    <div className="space-y-3">
+      {/* Volume slider */}
+      <div>
+        <div className="flex items-baseline gap-3 mb-1">
+          <span className="text-xl font-bold text-slate-900">{currentVolume}</span>
+          <span className="text-xs text-slate-500">emails/mo</span>
+          <span className="ml-auto text-lg font-bold text-[#EF6C33]">{money(currentVol?.monthly_usd || 0)}<span className="text-[10px] font-normal text-slate-500">/mo</span></span>
+        </div>
+        <input type="range" min={0} max={volumes.length - 1} step={1} value={volIndex}
+          onChange={(e) => setItem({ volume: volumes[Number(e.target.value)].volume })}
+          className="w-full accent-[#EF6C33]" />
+        <div className="flex justify-between text-[9px] text-slate-400 mt-0.5 px-0.5">
+          {volumes.map((v) => <span key={v.volume} className={v.volume === currentVolume ? "font-bold text-[#EF6C33]" : ""}>{v.volume}</span>)}
+        </div>
+      </div>
+
+      {/* Feature add-on */}
+      <div>
+        <label className="block text-[11px] font-semibold text-slate-700 mb-1">Feature add-on</label>
+        <div className="grid grid-cols-3 gap-2">
+          {(["", "pro", "business"] as const).map((k) => {
+            const meta = k ? cat?.featureAddons?.[k] : null;
+            const active = (item?.featureAddon || "") === k;
+            const disabled = k !== "" && !meta;
+            return (
+              <button key={k || "std"} disabled={disabled}
+                onClick={() => !disabled && setItem({ featureAddon: k })}
+                className={`p-2 rounded-lg border-2 text-xs ${active ? "bg-white shadow" : "border-slate-200 bg-white hover:border-slate-300"} ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                style={active ? { borderColor: ACCENT } : {}}
+              >
+                <div className="font-bold uppercase tracking-wide text-slate-500 text-[10px]">{k === "" ? "Standard" : k}</div>
+                <div className="text-xs text-slate-900 mt-0.5">{k === "" ? "Included" : meta ? `+${money(meta.monthly_usd)}` : "—"}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Lead Gen */}
+      <div>
+        <label className="block text-[11px] font-semibold text-slate-700 mb-1">Lead Generation (optional)</label>
+        <select value={item?.leads || ""}
+          onChange={(e) => setItem({ leads: e.target.value as "" | "essentials" | "growth" | "authority", leadsSelected: 0 })}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
+          <option value="">No lead generation</option>
+          {Object.entries(cat?.leads || {}).map(([k, v]) => (
+            <option key={k} value={k}>{v.name} — {money(v.monthly_usd)}/mo (incl. {v.included} leads)</option>
+          ))}
+        </select>
+        {leadsMeta && (
+          <div className="mt-2">
+            <label className="block text-[10px] text-slate-600 mb-1">
+              Leads/mo: <strong>{leadsCount}</strong>
+              {" "}(incl. {leadsMeta.included}; +{money(leadsMeta.addon_unit_usd || 0)} per {leadsMeta.increment})
+            </label>
+            <input type="range"
+              min={leadsMeta.included}
+              max={leadsMeta.included + leadsMeta.increment * 40}
+              step={leadsMeta.increment}
+              value={leadsCount}
+              onChange={(e) => setItem({ leadsSelected: Number(e.target.value) })}
+              className="w-full accent-[#EF6C33]" />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-// ─── Step 3 — Checkout (coupon + payment method) ─────────────────────────
+function ConsultingPicker({ products, pick, setPick }: {
+  products: ConsultingProduct[];
+  pick: ConsultingPick | null;
+  setPick: (p: ConsultingPick | null) => void;
+}) {
+  const [productId, setProductId] = useState<string>(pick?.productId || products[0]?.product_id || "");
+  const [interval, setInterval_] = useState<"month" | "year">(pick?.interval || "month");
+  const prod = products.find((p) => p.product_id === productId);
+  const defaultPrice = prod?.prices.find((pr) => pr.interval === interval);
+  const [amount, setAmount] = useState<number>(pick?.unitAmount ?? (defaultPrice?.unit_amount ?? 0));
+
+  useEffect(() => {
+    const dp = prod?.prices.find((pr) => pr.interval === interval);
+    if (!pick) setAmount(dp?.unit_amount ?? 0);
+  }, [productId, interval, prod, pick]);
+
+  const commit = () => {
+    if (!prod) return;
+    setPick({
+      productId: prod.product_id,
+      productName: prod.name,
+      interval,
+      unitAmount: amount,
+    });
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        {products.map((p) => (
+          <button key={p.product_id}
+            onClick={() => setProductId(p.product_id)}
+            className={`p-3 rounded-lg border-2 text-left text-xs ${productId === p.product_id ? "bg-white shadow" : "border-slate-200 bg-white hover:border-slate-300"}`}
+            style={productId === p.product_id ? { borderColor: ACCENT } : {}}
+          >
+            <div className="font-bold text-slate-900 text-[11px]">{p.name}</div>
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-[11px] font-semibold text-slate-700 mb-1">Billing interval</label>
+          <select value={interval} onChange={(e) => setInterval_(e.target.value as "month" | "year")}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
+            <option value="month">Monthly</option>
+            <option value="year">Annual</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+            Custom price (this tenant only) — USD
+          </label>
+          <input type="number" min={0} step={0.01} value={(amount / 100).toFixed(2)}
+            onChange={(e) => setAmount(Math.round(parseFloat(e.target.value || "0") * 100))}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <div className="text-[10px] text-slate-500 mt-0.5">
+            Default for {prod?.name}: {defaultPrice ? money(defaultPrice.unit_amount / 100) : "—"}/{interval}
+          </div>
+        </div>
+      </div>
+      <button onClick={commit} disabled={!prod}
+        className="w-full px-4 py-2 rounded-lg text-white font-semibold text-sm disabled:opacity-50"
+        style={{ background: pick ? "#1D9E75" : ACCENT }}
+      >
+        {pick ? "✓ In cart — update" : "Add to cart"}
+      </button>
+    </div>
+  );
+}
+
+// ─── Step 3 — Coupon + payment method ────────────────────────────────────
 
 function Step3Checkout({ couponQuery, setCouponQuery, couponOptions, couponLoading, selectedCoupon, setSelectedCoupon, collectionMethod, setCollectionMethod, onBack, onContinue, canContinue }: {
   couponQuery: string; setCouponQuery: (v: string) => void;
@@ -668,7 +872,7 @@ function Step3Checkout({ couponQuery, setCouponQuery, couponOptions, couponLoadi
   onBack: () => void; onContinue: () => void; canContinue: boolean;
 }) {
   return (
-    <StepShell title="Checkout" subtitle="Apply a coupon and choose how the client pays." onBack={onBack} onNext={onContinue} canNext={canContinue}>
+    <StepShell title="Checkout setup" subtitle="Apply a coupon (optional) and choose how the client pays." onBack={onBack} onNext={onContinue} canNext={canContinue}>
       <div>
         <label className="block text-xs font-semibold text-slate-700 mb-1">Coupon (optional)</label>
         <input type="text" value={couponQuery} onChange={(e) => setCouponQuery(e.target.value)}
@@ -706,8 +910,8 @@ function Step3Checkout({ couponQuery, setCouponQuery, couponOptions, couponLoadi
         <div className="space-y-2">
           <PaymentChoice active={collectionMethod === "charge_automatically"}
             onClick={() => setCollectionMethod("charge_automatically")}
-            title="Charge automatically"
-            desc="Client enters card via secure Stripe link. Card stays on file for recurring billing." />
+            title="Charge automatically (Stripe Checkout link)"
+            desc="Stripe Checkout URL is generated. Client clicks it, enters card, card stays on file for recurring billing." />
           <PaymentChoice active={collectionMethod === "send_invoice"}
             onClick={() => setCollectionMethod("send_invoice")}
             title="Send invoice"
@@ -732,14 +936,13 @@ function PaymentChoice({ active, onClick, title, desc }: { active: boolean; onCl
 
 // ─── Step 4 — Business profile ───────────────────────────────────────────
 
-function Step4BusinessProfile({ profile, setProfile, businessName, setBusinessName, contactEmail, setContactEmail, cart, onBack, onContinue, canContinue }: {
+function Step4BusinessProfile({ profile, setProfile, businessName, setBusinessName, contactEmail, setContactEmail, arionInCart, onBack, onContinue, canContinue }: {
   profile: BusinessProfile; setProfile: (p: BusinessProfile) => void;
   businessName: string; setBusinessName: (v: string) => void;
   contactEmail: string; setContactEmail: (v: string) => void;
-  cart: CartConfig;
+  arionInCart: boolean;
   onBack: () => void; onContinue: () => void; canContinue: boolean;
 }) {
-  const arionSelected = !!cart.arion;
   return (
     <StepShell title="Business profile" subtitle="Drives ARION region binding (city/state for Google D/M), WP brand swap, and SPARK sender." onBack={onBack} onNext={onContinue} canNext={canContinue}>
       <div className="grid grid-cols-2 gap-3">
@@ -750,9 +953,9 @@ function Step4BusinessProfile({ profile, setProfile, businessName, setBusinessNa
       <Field label="Suite / unit" value={profile.address_line2} onChange={(v) => setProfile({ ...profile, address_line2: v })} placeholder="optional" />
       <div className="grid grid-cols-3 gap-3">
         <Field label="City" required value={profile.address_city} onChange={(v) => setProfile({ ...profile, address_city: v })}
-          hint={arionSelected ? "Used as ARION SE Ranking region" : undefined} />
+          hint={arionInCart ? "Used as ARION SE Ranking region" : undefined} />
         <Field label="State" required value={profile.address_state} onChange={(v) => setProfile({ ...profile, address_state: v })}
-          placeholder="IA, AZ, CA …" />
+          placeholder="IA, AZ, CA…" />
         <Field label="ZIP" value={profile.address_zip} onChange={(v) => setProfile({ ...profile, address_zip: v })} />
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -763,13 +966,11 @@ function Step4BusinessProfile({ profile, setProfile, businessName, setBusinessNa
       <div className="grid grid-cols-3 gap-3">
         <div>
           <label className="block text-xs font-semibold text-slate-700 mb-1">Primary color</label>
-          <input type="color" value={profile.primary_color} onChange={(e) => setProfile({ ...profile, primary_color: e.target.value })}
-            className="w-full h-10 rounded-lg border border-gray-300" />
+          <input type="color" value={profile.primary_color} onChange={(e) => setProfile({ ...profile, primary_color: e.target.value })} className="w-full h-10 rounded-lg border border-gray-300" />
         </div>
         <div>
           <label className="block text-xs font-semibold text-slate-700 mb-1">Accent color</label>
-          <input type="color" value={profile.accent_color} onChange={(e) => setProfile({ ...profile, accent_color: e.target.value })}
-            className="w-full h-10 rounded-lg border border-gray-300" />
+          <input type="color" value={profile.accent_color} onChange={(e) => setProfile({ ...profile, accent_color: e.target.value })} className="w-full h-10 rounded-lg border border-gray-300" />
         </div>
         <Field label="Logo URL" value={profile.logo_url} onChange={(v) => setProfile({ ...profile, logo_url: v })} placeholder="https://…" />
       </div>
@@ -785,7 +986,7 @@ function Step5Account({ account, setAccount, fallbackEmail, onBack, onContinue, 
   onBack: () => void; onContinue: () => void; canContinue: boolean;
 }) {
   return (
-    <StepShell title="Owner account" subtitle="The owner identity that lands in the CIAM directory. Beefed from display-name-only." onBack={onBack} onNext={onContinue} canNext={canContinue}>
+    <StepShell title="Owner account" subtitle="The owner identity that lands in the CIAM directory." onBack={onBack} onNext={onContinue} canNext={canContinue}>
       <div className="grid grid-cols-2 gap-3">
         <Field label="First name" required value={account.first_name} onChange={(v) => setAccount({ ...account, first_name: v })} />
         <Field label="Last name" required value={account.last_name} onChange={(v) => setAccount({ ...account, last_name: v })} />
@@ -808,11 +1009,11 @@ function Step5Account({ account, setAccount, fallbackEmail, onBack, onContinue, 
         )}
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={account.notif_email} onChange={(e) => setAccount({ ...account, notif_email: e.target.checked })} />
-          Email notifications (operational + product updates)
+          Email notifications
         </label>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={account.notif_sms} onChange={(e) => setAccount({ ...account, notif_sms: e.target.checked })} />
-          SMS notifications (urgent only — appointment confirmations, etc.)
+          SMS notifications
         </label>
       </div>
     </StepShell>
@@ -821,13 +1022,22 @@ function Step5Account({ account, setAccount, fallbackEmail, onBack, onContinue, 
 
 // ─── Step 6 — Review ─────────────────────────────────────────────────────
 
-function Step6Review({ cart, profile, account, businessName, contactEmail, coupon, customerMode, collectionMethod, onBack, onSubmit, submitting, error, canSubmit }: {
-  cart: CartConfig; profile: BusinessProfile; account: OwnerAccount;
+function Step6Review({ cart, consultingPick, cycle, profile, account, businessName, contactEmail, coupon, customerMode, collectionMethod, onBack, onSubmit, submitting, error, canSubmit }: {
+  cart: CartItem[]; consultingPick: ConsultingPick | null;
+  cycle: BillingCycle;
+  profile: BusinessProfile; account: OwnerAccount;
   businessName: string; contactEmail: string;
   coupon: CouponOption | null; customerMode: CustomerMode | null;
   collectionMethod: "charge_automatically" | "send_invoice";
   onBack: () => void; onSubmit: () => void; submitting: boolean; error: string | null; canSubmit: boolean;
 }) {
+  const labelFor = (it: CartItem): string => {
+    if (it.product === "oliver") return `OLIVER ${it.plan}`;
+    if (it.product === "arion")  return `ARION ${it.plan}${it.seo ? ` + SEO ${it.seo}` : ""}`;
+    const fa = it.featureAddon ? ` + ${it.featureAddon}` : "";
+    const lg = it.leads ? ` + Leads ${it.leads}${it.leadsSelected ? ` (${it.leadsSelected}/mo)` : ""}` : "";
+    return `SPARK ${it.volume}${fa}${lg}`;
+  };
   return (
     <StepShell title="Review" subtitle="Last chance before we provision." onBack={onBack} onNext={onSubmit} canNext={canSubmit} nextLabel="Onboard client →" nextBusy={submitting}>
       <Card>
@@ -837,11 +1047,10 @@ function Step6Review({ cart, profile, account, businessName, contactEmail, coupo
         <Row label="Owner" value={`${account.first_name} ${account.last_name} (${account.title || "—"})`} />
         <Row label="Location" value={`${profile.address_city}, ${profile.address_state} ${profile.address_zip}`} />
       </Card>
-      <Card title="Cart">
-        {cart.arion && <Row label="ARION" value={`${cart.arion.plan}${cart.arion.seo ? ` + SEO ${cart.arion.seo}` : ""} · ${cart.arion.siteType} site`} />}
-        {cart.oliver && <Row label="OLIVER" value={cart.oliver.tier} />}
-        {cart.spark && <Row label="SPARK" value={`${cart.spark.volume}${cart.spark.addon ? ` + ${cart.spark.addon} add-on` : ""}`} />}
-        {cart.consulting && <Row label="Consulting" value={`${cart.consulting.productName} · $${(cart.consulting.unitAmount / 100).toFixed(2)}/${cart.consulting.interval}`} />}
+      <Card title={`Cart (${cycle})`}>
+        {cart.map((it) => <Row key={it.product} label={it.product.toUpperCase()} value={labelFor(it)} />)}
+        {consultingPick && <Row label="CONSULTING" value={`${consultingPick.productName} · ${money(consultingPick.unitAmount / 100)}/${consultingPick.interval}`} />}
+        {cart.length === 0 && !consultingPick && <Row label="—" value="No items" />}
       </Card>
       <Card title="Billing">
         <Row label="Coupon" value={coupon ? `${coupon.id} (${coupon.percent_off != null ? `${coupon.percent_off}% off` : `$${(coupon.amount_off ?? 0) / 100} off`}, ${coupon.duration})` : "None"} />
@@ -871,7 +1080,9 @@ function Row({ label, value }: { label: string; value: string }) {
 
 // ─── Step 7 — Progress + handoff ─────────────────────────────────────────
 
-function Step7Progress({ result, businessName, onReset }: { result: OnboardResult; businessName: string; onReset: () => void }) {
+function Step7Progress({ result, checkoutUrl, businessName, onReset }: {
+  result: OnboardResult; checkoutUrl: string | null; businessName: string; onReset: () => void;
+}) {
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-bold" style={{ color: INK }}>✓ {businessName} onboarded</h2>
@@ -880,6 +1091,28 @@ function Step7Progress({ result, businessName, onReset }: { result: OnboardResul
         <div className="text-sm"><strong>Slug:</strong> {result.slug}</div>
         {result.stripe_customer_id && <div className="text-sm"><strong>Stripe customer:</strong> <code className="text-xs">{result.stripe_customer_id}</code></div>}
       </Card>
+      {checkoutUrl && (
+        <Card title="Stripe Checkout link for the client">
+          <div className="text-xs text-slate-600 mb-2">
+            Send this to the client so they can complete payment + start recurring billing. Bundle discount auto-applied if 2+ platforms.
+          </div>
+          <div className="flex gap-2 items-stretch">
+            <input readOnly value={checkoutUrl} className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-xs bg-slate-50" />
+            <button onClick={() => navigator.clipboard?.writeText(checkoutUrl)}
+              className="px-3 py-2 rounded-lg text-white font-semibold text-xs"
+              style={{ background: INK }}
+            >
+              Copy
+            </button>
+            <a href={checkoutUrl} target="_blank" rel="noreferrer"
+              className="px-3 py-2 rounded-lg text-white font-semibold text-xs"
+              style={{ background: ACCENT }}
+            >
+              Open
+            </a>
+          </div>
+        </Card>
+      )}
       <Card title="Steps executed">
         <ul className="text-sm space-y-1">
           {result.steps.map((s, i) => (
