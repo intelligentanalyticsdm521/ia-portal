@@ -183,14 +183,11 @@ export function ConsultingOnboardClientPageV2() {
       fetchPlanCatalog("arion").catch(() => []),
       fetchSignupCatalog("oliver", cycle).catch(() => null),
       fetchSignupCatalog("spark", cycle).catch(() => null),
-      // Capture the actual error instead of silently swallowing to []
-      // so we can SEE what's wrong with the consulting endpoint.
-      get<{ data: ConsultingProduct[] }>("/admin/onboard-client/consulting-products")
-        .then((r) => {
-          // eslint-disable-next-line no-console
-          console.log("[wizard] consulting-products response:", r);
-          return { data: r.data, err: null as string | null };
-        })
+      // NOTE: useOliverApi().get auto-unwraps the {data:...} envelope inside
+      // oliverApi.ts (see "data" in json check at line ~74). So the returned
+      // value is the ConsultingProduct[] directly — do NOT access .data on it.
+      get<ConsultingProduct[]>("/admin/onboard-client/consulting-products")
+        .then((r) => ({ data: Array.isArray(r) ? r : [], err: null as string | null }))
         .catch((e) => {
           // eslint-disable-next-line no-console
           console.error("[wizard] consulting-products FAILED:", e);
@@ -228,8 +225,9 @@ export function ConsultingOnboardClientPageV2() {
     setSearchLoading(true);
     setSearchedYet(true);
     try {
-      const r = await get<{ data: StripeCustomerMatch[] }>(`/admin/onboard-client/stripe-customer-search?email=${encodeURIComponent(searchEmail)}`);
-      setSearchResults(r.data || []);
+      // oliverFetch auto-unwraps the {data:...} envelope; r IS the array.
+      const r = await get<StripeCustomerMatch[]>(`/admin/onboard-client/stripe-customer-search?email=${encodeURIComponent(searchEmail)}`);
+      setSearchResults(Array.isArray(r) ? r : []);
     } catch (e) {
       setError((e as Error).message);
       setSearchResults([]);
@@ -245,8 +243,9 @@ export function ConsultingOnboardClientPageV2() {
     const t = setTimeout(async () => {
       setCouponLoading(true);
       try {
-        const r = await get<{ data: CouponOption[] }>(`/admin/onboard-client/coupons?q=${encodeURIComponent(couponQuery)}`);
-        if (!cancelled) setCouponOptions(r.data || []);
+        // oliverFetch auto-unwraps {data:...}; r IS the CouponOption array.
+        const r = await get<CouponOption[]>(`/admin/onboard-client/coupons?q=${encodeURIComponent(couponQuery)}`);
+        if (!cancelled) setCouponOptions(Array.isArray(r) ? r : []);
       } catch { /* swallow */ }
       finally { if (!cancelled) setCouponLoading(false); }
     }, 250);
@@ -294,8 +293,9 @@ export function ConsultingOnboardClientPageV2() {
           interval: consultingPick.interval,
         }];
       }
-      const adminResp = await post<{ data: OnboardResult }>("/admin/onboard-client", adminBody);
-      setResult(adminResp.data);
+      // oliverFetch auto-unwraps {data:...}; adminResp IS the OnboardResult.
+      const adminResp = await post<OnboardResult>("/admin/onboard-client", adminBody);
+      setResult(adminResp);
 
       // 2. For ARION/SPARK/OLIVER, fire createSignupCartCheckout to get
       // the real Stripe Checkout URL (bundle discount auto-applied). The
