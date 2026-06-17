@@ -318,14 +318,19 @@ export function ConsultingOnboardClientPageV2() {
   const cartCount = (cart.arion ? 1 : 0) + (cart.spark ? 1 : 0) + (cart.oliver ? 1 : 0) + (cart.consulting ? 1 : 0);
   const canProceedStep2 = cartCount > 0 && (!cart.arion || cart.arion.siteType === "new" || (cart.arion.wpSiteUrl || "").length > 5);
   const canProceedStep3 = true; // coupon and payment are both optional
-  const canProceedStep4 = businessName.trim().length > 1 && contactEmail.includes("@") && profile.address_city && profile.address_state;
+  const canProceedStep4 = Boolean(
+    businessName.trim().length > 1
+    && contactEmail.includes("@")
+    && profile.address_city.trim()
+    && profile.address_state.trim()
+  );
   const canProceedStep5 = account.first_name.trim().length > 0 && account.last_name.trim().length > 0;
-  const canProceedStep6 = canProceedStep1 && canProceedStep2 && canProceedStep4 && canProceedStep5;
+  const canProceedStep6 = Boolean(canProceedStep1 && canProceedStep2 && canProceedStep4 && canProceedStep5);
 
   // ─── Render ───────────────────────────────────────────────────────────
 
   return (
-    <OliverPageWrapper title="Onboard Client (V2)" subtitle="IA Consulting · 7-step founder wizard">
+    <OliverPageWrapper title="Onboard Client (V2)" subtitle="IA Consulting · 7-step founder wizard" error={error} loading={submitting}>
       <div className="max-w-4xl mx-auto">
         <ProgressStrip current={step} total={7} />
 
