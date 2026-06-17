@@ -1745,10 +1745,20 @@ export async function researchKeyword(p: { baseUrl: string; bearerToken: string;
   });
 }
 
+// SE Ranking's GET /sites/{id}/keywords returns rows shaped like:
+//   { "id": "2952764", "name": "Web Design", "group_id": "50465",
+//     "link": null, "first_check_date": null, "tags": [...] }
+// IDs come back as strings. Volume/difficulty are NOT on this endpoint
+// (they live on the Data API keyword overview). Verified live 2026-06-17.
 export interface SeoTrackedKeyword {
-  keyword_id: number;
-  keyword: string;
-  group_id?: number | null;
+  id: string | number;
+  name: string;
+  group_id?: string | number | null;
+  link?: string | null;
+  first_check_date?: string | null;
+  tags?: string[];
+  // Optional fields that may appear in some payload shapes (kept for
+  // forward-compat; UI falls back gracefully if missing):
   volume?: number;
   difficulty?: number;
   position?: number | null;

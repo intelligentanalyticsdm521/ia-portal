@@ -52,8 +52,16 @@ export function SeoKeywords() {
   const [addError, setAddError] = React.useState<string | null>(null);
   const [addSuccess, setAddSuccess] = React.useState<string | null>(null);
 
+  // ── Paste-many state ──────────────────────────────────────────────
+  const [pasteText, setPasteText] = React.useState('');
+  const [pasteLoading, setPasteLoading] = React.useState(false);
+  const [pasteError, setPasteError] = React.useState<string | null>(null);
+  const [pasteSuccess, setPasteSuccess] = React.useState<string | null>(null);
+
   // ── Remove selection state ─────────────────────────────────────────
-  const [selectedToRemove, setSelectedToRemove] = React.useState<Set<number>>(new Set());
+  // SE Ranking returns keyword ids as strings; we keep the set as strings
+  // and only convert to number when calling the API.
+  const [selectedToRemove, setSelectedToRemove] = React.useState<Set<string>>(new Set());
   const [removeLoading, setRemoveLoading] = React.useState(false);
 
   if (loadingTracked) return <Loading />;
@@ -133,7 +141,10 @@ export function SeoKeywords() {
     if (!activeSiteId || selectedToRemove.size === 0) return;
     setRemoveLoading(true);
     try {
-      await arionApi.removeTrackedKeywords(activeSiteId, Array.from(selectedToRemove));
+      await arionApi.removeTrackedKeywords(
+        activeSiteId,
+        Array.from(selectedToRemove).map((s) => Number(s))
+      );
       setSelectedToRemove(new Set());
       setRefreshKey((k) => k + 1);
     } catch (err: unknown) {
@@ -141,6 +152,55 @@ export function SeoKeywords() {
       setAddError(msg);
     } finally {
       setRemoveLoading(false);
+    }
+  }
+
+  // Parse pasted text into a clean keyword list. Supports newline AND
+  // comma delimited input. Strips empties, dedupes against existing
+  // tracked keywords (case-insensitive), trims whitespace.
+  function parsePastedKeywords(raw: string): string[] {
+    const lines = raw
+      .split(/[\n,]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.length >= 2 && s.length <= 80);
+    // Dedupe within the input
+    const seen = new Set<string>();
+    const unique: string[] = [];
+    for (const kw of lines) {
+      if (!seen.has(kw)) {
+        seen.add(kw);
+        unique.push(kw);
+      }
+    }
+    // Dedupe vs existing tracked
+    const existingSet = new Set(existingKeywords.map((k) => String(k.name || '').toLowerCase()));
+    return unique.filter((kw) => !existingSet.has(kw));
+  }
+
+  async function addPastedKeywords() {
+    if (!activeSiteId || !pasteText.trim()) return;
+    const candidates = parsePastedKeywords(pasteText);
+    if (candidates.length === 0) {
+      setPasteError('No new keywords found in the pasted text (or all are already tracked).');
+      return;
+    }
+    if (existingKeywords.length + candidates.length > cap) {
+      setPasteError(`Adding ${candidates.length} would exceed your ${tier} cap of ${cap} keywords (currently ${existingKeywords.length}).`);
+      return;
+    }
+    setPasteLoading(true);
+    setPasteError(null);
+    setPasteSuccess(null);
+    try {
+      await arionApi.addTrackedKeywords(activeSiteId, candidates);
+      setPasteSuccess(`Added ${candidates.length} keyword${candidates.length === 1 ? '' : 's'} to tracking.`);
+      setPasteText('');
+      setRefreshKey((k) => k + 1);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setPasteError(msg);
+    } finally {
+      setPasteLoading(false);
     }
   }
 
@@ -153,11 +213,12 @@ export function SeoKeywords() {
     });
   }
 
-  function toggleTrackedSelection(keywordId: number) {
+  function toggleTrackedSelection(keywordId: string | number) {
+    const id = String(keywordId);
     setSelectedToRemove((prev) => {
       const next = new Set(prev);
-      if (next.has(keywordId)) next.delete(keywordId);
-      else next.add(keywordId);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
@@ -286,7 +347,7 @@ export function SeoKeywords() {
                   </thead>
                   <tbody>
                     {activeRows.map((row, idx) => {
-                      const alreadyTracked = existingKeywords.some((k) => k.keyword?.toLowerCase() === row.keyword.toLowerCase());
+                      const alreadyTracked = existingKeywords.some((k) => String(k.name || '').toLowerCase() === row.keyword.toLowerCase());
                       const checked = selectedToAdd.has(row.keyword);
                       return (
                         <tr
@@ -362,6 +423,59 @@ export function SeoKeywords() {
         )}
       </Card>
 
+      {/* ───────────── Paste-many Add Panel ───────────── */}
+      <Card>
+        <h2 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Add Keywords Directly</h2>
+        <p style={{ color: '#5e6473', fontSize: '0.875rem', marginTop: 0 }}>
+          Paste keywords below — one per line, OR comma-separated. Duplicates and already-tracked
+          keywords are filtered automatically.
+        </p>
+        <textarea
+          value={pasteText}
+          onChange={(e) => setPasteText(e.target.value)}
+          placeholder={'mobile detailing des moines\nauto detailing near me\nceramic coating, paint correction, interior cleaning'}
+          rows={4}
+          style={{
+            width: '100%',
+            padding: '0.5rem 0.75rem',
+            border: '1px solid #d1d5db',
+            borderRadius: 6,
+            fontSize: '0.875rem',
+            fontFamily: 'inherit',
+            resize: 'vertical',
+            boxSizing: 'border-box',
+          }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
+          <span style={{ fontSize: '0.8125rem', color: '#6b7280' }}>
+            {pasteText.trim()
+              ? `${parsePastedKeywords(pasteText).length} new candidate${parsePastedKeywords(pasteText).length === 1 ? '' : 's'} parsed`
+              : `${remaining} slot${remaining === 1 ? '' : 's'} remaining`}
+          </span>
+          <button
+            onClick={addPastedKeywords}
+            disabled={!pasteText.trim() || pasteLoading || remaining === 0}
+            style={{
+              padding: '0.5rem 1rem',
+              background: '#16a34a',
+              color: 'white',
+              border: 'none',
+              borderRadius: 6,
+              cursor: !pasteText.trim() || pasteLoading || remaining === 0 ? 'not-allowed' : 'pointer',
+              opacity: !pasteText.trim() || pasteLoading || remaining === 0 ? 0.6 : 1,
+            }}
+          >
+            {pasteLoading ? 'Adding…' : 'Add to tracking'}
+          </button>
+        </div>
+        {pasteError && <ErrorBanner message={pasteError} />}
+        {pasteSuccess && (
+          <div style={{ marginTop: '0.5rem', padding: '0.5rem 0.75rem', background: '#dcfce7', color: '#166534', borderRadius: 6, fontSize: '0.875rem' }}>
+            {pasteSuccess}
+          </div>
+        )}
+      </Card>
+
       {/* ───────────── Tracked Keywords List ───────────── */}
       <Card>
         <h2 style={{ marginTop: 0, marginBottom: '0.5rem' }}>
@@ -371,7 +485,7 @@ export function SeoKeywords() {
           Currently tracked in your SE Ranking project. Select rows to remove.
         </p>
         {existingKeywords.length === 0 ? (
-          <EmptyPanel message="No keywords tracked yet. Run keyword research above to find candidates." />
+          <EmptyPanel message="No keywords tracked yet. Paste some above or run keyword research." />
         ) : (
           <>
             <div style={{ maxHeight: 600, overflow: 'auto', border: '1px solid #e5e7eb', borderRadius: 6 }}>
@@ -380,25 +494,29 @@ export function SeoKeywords() {
                   <tr>
                     <th style={th}> </th>
                     <th style={{ ...th, textAlign: 'left' }}>Keyword</th>
-                    <th style={th}>Volume / mo</th>
-                    <th style={th}>Difficulty</th>
-                    <th style={th}>Current Position</th>
+                    <th style={th}>First Check</th>
+                    <th style={th}>Group</th>
+                    <th style={th}>Tags</th>
                   </tr>
                 </thead>
                 <tbody>
                   {existingKeywords.map((k) => (
-                    <tr key={k.keyword_id} style={{ borderTop: '1px solid #e5e7eb' }}>
+                    <tr key={String(k.id)} style={{ borderTop: '1px solid #e5e7eb' }}>
                       <td style={{ ...td, textAlign: 'center' }}>
                         <input
                           type="checkbox"
-                          checked={selectedToRemove.has(k.keyword_id)}
-                          onChange={() => toggleTrackedSelection(k.keyword_id)}
+                          checked={selectedToRemove.has(String(k.id))}
+                          onChange={() => toggleTrackedSelection(k.id)}
                         />
                       </td>
-                      <td style={td}>{k.keyword}</td>
-                      <td style={{ ...td, textAlign: 'right' }}>{(k.volume || 0).toLocaleString()}</td>
-                      <td style={{ ...td, textAlign: 'right' }}>{k.difficulty || '—'}</td>
-                      <td style={{ ...td, textAlign: 'right' }}>{k.position != null ? k.position : '—'}</td>
+                      <td style={td}>{k.name || <em style={{ color: '#9ca3af' }}>(unnamed #{String(k.id)})</em>}</td>
+                      <td style={{ ...td, textAlign: 'right', color: k.first_check_date ? '#111827' : '#9ca3af' }}>
+                        {k.first_check_date || 'pending'}
+                      </td>
+                      <td style={{ ...td, textAlign: 'right', color: '#6b7280' }}>{k.group_id ? String(k.group_id) : '—'}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>
+                        {Array.isArray(k.tags) && k.tags.length > 0 ? k.tags.join(', ') : '—'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
