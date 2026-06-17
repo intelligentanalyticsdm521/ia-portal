@@ -2,9 +2,9 @@ import { useEffect, useState, useCallback } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
-import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkTable } from "../../components/spark/SparkTable";
 import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
+import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { Star, MessageSquare, ThumbsUp, ThumbsDown, ExternalLink } from "lucide-react";
 import { ComingSoonBanner } from "../../components/ComingSoonBanner";
 
@@ -149,21 +149,22 @@ export function SparkReviewsPage() {
         }
       />
 
-      <SparkDrawer
+      <IadmModal
         open={!!responding}
         onClose={() => setResponding(null)}
+        product="spark"
         title="Respond to review"
         subtitle={responding ? `${responding.source} · ${responding.rating || "—"} ★ by ${responding.reviewer_name || "Anonymous"}` : ""}
-        width="wide"
+        size="info"
         footer={
           <>
-            <button onClick={() => setResponding(null)} className="spark-btn spark-btn-secondary">Cancel</button>
-            <button onClick={submitResponse} disabled={!responseText.trim()} className="spark-btn spark-btn-primary">Save response</button>
+            <IadmButton variant="ghost" onClick={() => setResponding(null)}>Cancel</IadmButton>
+            <IadmButton variant="accent" product="spark" onClick={submitResponse} disabled={!responseText.trim()}>Save response</IadmButton>
           </>
         }
       >
         {responding && (
-          <>
+          <div className="p-5">
             <div className="bg-slate-50 rounded-md p-3 mb-3 border border-slate-200">
               {responding.title && <div className="font-semibold text-sm mb-1">{responding.title}</div>}
               <div className="text-sm text-slate-700">{responding.body || "—"}</div>
@@ -178,9 +179,9 @@ export function SparkReviewsPage() {
                 coming in v2.
               </p>
             </div>
-          </>
+          </div>
         )}
-      </SparkDrawer>
+      </IadmModal>
     </SparkPageShell>
   );
 }

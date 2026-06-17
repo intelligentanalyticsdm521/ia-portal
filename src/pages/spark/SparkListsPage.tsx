@@ -2,10 +2,10 @@ import { useEffect, useState, useCallback } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
-import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkTable } from "../../components/spark/SparkTable";
 import { SparkSearchBox } from "../../components/spark/SparkSearchBox";
 import { SparkListDetailModal } from "../../components/spark/SparkListDetailModal";
+import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { List as ListIcon, Plus, Users, Send } from "lucide-react";
 
 interface ContactList {
@@ -146,32 +146,36 @@ export function SparkListsPage() {
         />
       )}
 
-      <SparkDrawer
+      <IadmModal
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        product="spark"
         title="New list"
         subtitle="Static lists hold a manually-curated set of contacts. For dynamic filtering, use Segments."
+        size="info"
         footer={
           <>
-            <button onClick={() => setDrawerOpen(false)} className="spark-btn spark-btn-secondary">Cancel</button>
-            <button onClick={handleCreate} disabled={saving || !form.name.trim()} className="spark-btn spark-btn-primary">
+            <IadmButton variant="ghost" onClick={() => setDrawerOpen(false)}>Cancel</IadmButton>
+            <IadmButton variant="accent" product="spark" onClick={handleCreate} disabled={saving || !form.name.trim()}>
               {saving ? "Creating…" : "Create list"}
-            </button>
+            </IadmButton>
           </>
         }
       >
-        <div className="spark-field">
-          <label className="spark-field-label">List name</label>
-          <input className="spark-field-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Holiday VIPs / Conference attendees" autoFocus />
+        <div className="p-5 space-y-3">
+          <div className="spark-field">
+            <label className="spark-field-label">List name</label>
+            <input className="spark-field-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Holiday VIPs / Conference attendees" autoFocus />
+          </div>
+          <div className="spark-field">
+            <label className="spark-field-label">Description</label>
+            <textarea className="spark-field-textarea" rows={3} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="What this list is for (optional)" />
+          </div>
+          <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md p-3">
+            After creating the list, add contacts to it from the <strong>Contacts</strong> page using the bulk-action toolbar.
+          </div>
         </div>
-        <div className="spark-field">
-          <label className="spark-field-label">Description</label>
-          <textarea className="spark-field-textarea" rows={3} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="What this list is for (optional)" />
-        </div>
-        <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md p-3">
-          After creating the list, add contacts to it from the <strong>Contacts</strong> page using the bulk-action toolbar.
-        </div>
-      </SparkDrawer>
+      </IadmModal>
 
       <SparkListDetailModal
         open={detailListId !== null}

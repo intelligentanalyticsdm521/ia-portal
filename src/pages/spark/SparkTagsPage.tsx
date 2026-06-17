@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
-import { SparkDrawer } from "../../components/spark/SparkDrawer";
+import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { Plus, Tag as TagIcon, Users } from "lucide-react";
 
 interface Tag {
@@ -106,52 +106,56 @@ export function SparkTagsPage() {
         </div>
       )}
 
-      <SparkDrawer
+      <IadmModal
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        product="spark"
         title="New tag"
         subtitle="Tags let you organize contacts beyond lists/segments — apply many tags to one contact."
+        size="info"
         footer={
           <>
-            <button onClick={() => setDrawerOpen(false)} className="spark-btn spark-btn-secondary">Cancel</button>
-            <button onClick={handleAdd} disabled={saving || !form.name.trim()} className="spark-btn spark-btn-primary">
+            <IadmButton variant="ghost" onClick={() => setDrawerOpen(false)}>Cancel</IadmButton>
+            <IadmButton variant="accent" product="spark" onClick={handleAdd} disabled={saving || !form.name.trim()}>
               {saving ? "Saving…" : "Create tag"}
-            </button>
+            </IadmButton>
           </>
         }
       >
-        <div className="spark-field">
-          <label className="spark-field-label">Name</label>
-          <input className="spark-field-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="VIP / Hot lead / Newsletter" autoFocus />
-        </div>
-        <div className="spark-field">
-          <label className="spark-field-label">Color</label>
-          <div className="flex flex-wrap gap-2">
-            {TAG_COLORS.map(c => (
-              <button
-                key={c.value}
-                type="button"
-                onClick={() => setForm({ ...form, color: c.value })}
-                className={`h-9 w-9 rounded-md transition-all flex items-center justify-center ${
-                  form.color === c.value ? "ring-2 ring-offset-2 ring-slate-900 scale-105" : "hover:scale-105"
-                }`}
-                style={{ backgroundColor: c.value + "22", color: c.value }}
-                title={c.label}
-              >
-                <TagIcon className="h-4 w-4" />
-              </button>
-            ))}
+        <div className="p-5 space-y-3">
+          <div className="spark-field">
+            <label className="spark-field-label">Name</label>
+            <input className="spark-field-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="VIP / Hot lead / Newsletter" autoFocus />
           </div>
-        </div>
+          <div className="spark-field">
+            <label className="spark-field-label">Color</label>
+            <div className="flex flex-wrap gap-2">
+              {TAG_COLORS.map(c => (
+                <button
+                  key={c.value}
+                  type="button"
+                  onClick={() => setForm({ ...form, color: c.value })}
+                  className={`h-9 w-9 rounded-md transition-all flex items-center justify-center ${
+                    form.color === c.value ? "ring-2 ring-offset-2 ring-slate-900 scale-105" : "hover:scale-105"
+                  }`}
+                  style={{ backgroundColor: c.value + "22", color: c.value }}
+                  title={c.label}
+                >
+                  <TagIcon className="h-4 w-4" />
+                </button>
+              ))}
+            </div>
+          </div>
 
-        {/* Preview */}
-        <div className="spark-field">
-          <label className="spark-field-label">Preview</label>
-          <div className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full" style={{ backgroundColor: form.color + "22", color: form.color }}>
-            <TagIcon className="h-3 w-3" /> {form.name || "Your tag"}
+          {/* Preview */}
+          <div className="spark-field">
+            <label className="spark-field-label">Preview</label>
+            <div className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full" style={{ backgroundColor: form.color + "22", color: form.color }}>
+              <TagIcon className="h-3 w-3" /> {form.name || "Your tag"}
+            </div>
           </div>
         </div>
-      </SparkDrawer>
+      </IadmModal>
     </SparkPageShell>
   );
 }

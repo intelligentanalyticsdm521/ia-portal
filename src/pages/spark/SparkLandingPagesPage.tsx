@@ -2,9 +2,9 @@ import { useEffect, useState, useCallback } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
-import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkTable } from "../../components/spark/SparkTable";
 import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
+import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { Plus, FileText, Eye, Send, ExternalLink } from "lucide-react";
 
 interface LandingPage {
@@ -128,32 +128,36 @@ export function SparkLandingPagesPage() {
         ) : null}
       />
 
-      <SparkDrawer
+      <IadmModal
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        product="spark"
         title="New landing page"
         subtitle="Create a draft. Block editor coming in v2 — for now, the page is a placeholder you can publish + capture submissions on."
+        size="info"
         footer={
           <>
-            <button onClick={() => setDrawerOpen(false)} className="spark-btn spark-btn-secondary">Cancel</button>
-            <button onClick={create} disabled={!form.slug || !form.name} className="spark-btn spark-btn-primary">Create draft</button>
+            <IadmButton variant="ghost" onClick={() => setDrawerOpen(false)}>Cancel</IadmButton>
+            <IadmButton variant="accent" product="spark" onClick={create} disabled={!form.slug || !form.name}>Create draft</IadmButton>
           </>
         }
       >
-        <div className="spark-field">
-          <label className="spark-field-label">Slug</label>
-          <input className="spark-field-input" value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value })} placeholder="summer-promo" autoFocus />
-          <p className="text-[11px] text-slate-500 mt-0.5">Lowercase letters, numbers, hyphens. Page URL will be /landing/&lt;tenant&gt;/{form.slug || "your-slug"}</p>
+        <div className="p-5 space-y-3">
+          <div className="spark-field">
+            <label className="spark-field-label">Slug</label>
+            <input className="spark-field-input" value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value })} placeholder="summer-promo" autoFocus />
+            <p className="text-[11px] text-slate-500 mt-0.5">Lowercase letters, numbers, hyphens. Page URL will be /landing/&lt;tenant&gt;/{form.slug || "your-slug"}</p>
+          </div>
+          <div className="spark-field">
+            <label className="spark-field-label">Internal name</label>
+            <input className="spark-field-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Summer Promo 2026" />
+          </div>
+          <div className="spark-field">
+            <label className="spark-field-label">Page title (browser tab)</label>
+            <input className="spark-field-input" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Get 30% off this summer" />
+          </div>
         </div>
-        <div className="spark-field">
-          <label className="spark-field-label">Internal name</label>
-          <input className="spark-field-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Summer Promo 2026" />
-        </div>
-        <div className="spark-field">
-          <label className="spark-field-label">Page title (browser tab)</label>
-          <input className="spark-field-input" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Get 30% off this summer" />
-        </div>
-      </SparkDrawer>
+      </IadmModal>
     </SparkPageShell>
   );
 }

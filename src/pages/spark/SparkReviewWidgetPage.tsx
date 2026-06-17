@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMsal } from "@azure/msal-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { Plus, Star, Trash2, Copy, Check, ExternalLink } from "lucide-react";
 
 interface Review {
@@ -208,32 +209,38 @@ export function SparkReviewWidgetPage() {
         </div>
       )}
 
-      {adding && (
-        <div className="fixed inset-0 bg-slate-900/30 z-50 flex items-center justify-center p-4" onClick={() => setAdding(false)}>
-          <div className="bg-white rounded-xl w-full max-w-md p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
-            <div className="text-base font-semibold">Add review destination</div>
-            <div>
-              <label className="text-[10px] uppercase font-semibold text-slate-500">Platform</label>
-              <select value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })} className="w-full text-sm border border-slate-300 rounded p-1.5 mt-0.5">
-                {PLATFORMS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-[10px] uppercase font-semibold text-slate-500">Label (optional)</label>
-              <input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} className="w-full text-sm border border-slate-300 rounded p-1.5 mt-0.5" placeholder="Defaults to platform name" />
-            </div>
-            <div>
-              <label className="text-[10px] uppercase font-semibold text-slate-500">URL</label>
-              <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="w-full text-sm border border-slate-300 rounded p-1.5 mt-0.5" placeholder="https://g.page/r/.../review" />
-              <p className="text-[10px] text-slate-500 mt-1">For Google: use your "Get more reviews" short link from Business Profile.</p>
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setAdding(false)} className="text-sm px-3 py-1.5 rounded border border-slate-200">Cancel</button>
-              <button onClick={addDest} disabled={!form.url} className="text-sm px-3 py-1.5 rounded bg-[#EF6C33] text-white disabled:opacity-50">Add</button>
-            </div>
+      <IadmModal
+        open={adding}
+        onClose={() => setAdding(false)}
+        product="spark"
+        title="Add review destination"
+        subtitle="Promoters (4-5 star) will be offered these links after submitting."
+        size="info"
+        footer={
+          <>
+            <IadmButton variant="ghost" onClick={() => setAdding(false)}>Cancel</IadmButton>
+            <IadmButton variant="accent" product="spark" onClick={addDest} disabled={!form.url}>Add destination</IadmButton>
+          </>
+        }
+      >
+        <div className="p-5 space-y-3">
+          <div>
+            <label className="text-[10px] uppercase font-semibold text-slate-500">Platform</label>
+            <select value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })} className="w-full text-sm border border-slate-300 rounded p-1.5 mt-0.5">
+              {PLATFORMS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] uppercase font-semibold text-slate-500">Label (optional)</label>
+            <input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} className="w-full text-sm border border-slate-300 rounded p-1.5 mt-0.5" placeholder="Defaults to platform name" />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase font-semibold text-slate-500">URL</label>
+            <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="w-full text-sm border border-slate-300 rounded p-1.5 mt-0.5" placeholder="https://g.page/r/.../review" />
+            <p className="text-[10px] text-slate-500 mt-1">For Google: use your "Get more reviews" short link from Business Profile.</p>
           </div>
         </div>
-      )}
+      </IadmModal>
     </SparkPageShell>
   );
 }

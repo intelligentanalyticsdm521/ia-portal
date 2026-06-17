@@ -29,9 +29,15 @@ import {
 } from './pages/settings/SettingsRoutes';
 import { PlatformAdminPage } from './pages/PlatformAdminPage';
 import { ArionOnboardExistingPage } from './pages/admin/ArionOnboardExistingPage';
+import { AdminLeadgenPage } from './pages/admin/AdminLeadgenPage';
 
 // NEW: SPARK pricing page route
 import { SparkPricingPage } from './pages/spark/SparkPricingPage';
+
+// Tenant contact-intelligence weight tuning page. Lives at a dedicated
+// /app/spark/contact-scoring route (rather than the service-key router)
+// because it's a tenant-level settings surface, not a feature page.
+import { SparkContactScoringPage } from './pages/spark/SparkContactScoringPage';
 
 // SPARK Lead Gen V1 (F-150/F-163) — dedicated routes because the job page
 // takes an :id path param that doesn't fit the service-key router.
@@ -137,12 +143,20 @@ export function App() {
                 cleanup, schema migrations, etc. */}
             <Route path="admin" element={<PlatformAdminPage />} />
             <Route path="admin/onboard-arion-existing" element={<ArionOnboardExistingPage />} />
+            <Route path="admin/leadgen" element={<AdminLeadgenPage />} />
 
             {/* Personal account settings (hamburger menu items) */}
             <Route path="account" element={<PersonalSettings />} />
 
             {/* NEW: SPARK pricing page used by subscribe buttons */}
             <Route path="spark/pricing" element={<SparkPricingPage />} />
+
+            {/* Tenant contact-intelligence weight tuning (6 sliders, sum=100).
+                Lives outside the service-key router because it's a tenant-
+                level settings surface (like spark/pricing) rather than a
+                feature page. Also reachable via the spark_contact_scoring
+                service-catalog entry which routes to the same component. */}
+            <Route path="spark/contact-scoring" element={<SparkContactScoringPage />} />
 
             {/* SPARK Lead Gen V1 (F-150/F-163) — search form, job progress,
                 saved searches. The job page needs an :id path param so these

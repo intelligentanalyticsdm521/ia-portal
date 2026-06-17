@@ -2,8 +2,8 @@ import { useEffect, useState, useCallback } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
-import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkTable } from "../../components/spark/SparkTable";
+import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { Plus, Filter, Users, Zap, Sparkles } from "lucide-react";
 
 interface Segment {
@@ -161,38 +161,42 @@ export function SparkSegmentsPage() {
         />
       )}
 
-      <SparkDrawer
+      <IadmModal
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        product="spark"
         title="New segment"
         subtitle="Visual filter builder coming in v2. For now, describe your filter in plain English — IA Intelligence will compile it."
+        size="info"
         footer={
           <>
-            <button onClick={() => setDrawerOpen(false)} className="spark-btn spark-btn-secondary">Cancel</button>
-            <button onClick={handleCreate} disabled={saving || !form.name.trim()} className="spark-btn spark-btn-primary">
+            <IadmButton variant="ghost" onClick={() => setDrawerOpen(false)}>Cancel</IadmButton>
+            <IadmButton variant="accent" product="spark" onClick={handleCreate} disabled={saving || !form.name.trim()}>
               {saving ? "Creating…" : "Create segment"}
-            </button>
+            </IadmButton>
           </>
         }
       >
-        <div className="spark-field">
-          <label className="spark-field-label">Name</label>
-          <input className="spark-field-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="VIP customers in Texas" autoFocus />
-        </div>
-        <div className="spark-field">
-          <label className="spark-field-label">Filter description</label>
-          <textarea className="spark-field-textarea" rows={4} value={form.filter_summary} onChange={e => setForm({ ...form, filter_summary: e.target.value })} placeholder='Plain English: "Contacts tagged VIP, in Texas, who opened an email in the last 30 days"' />
-        </div>
-        <div className="text-xs text-slate-500 bg-violet-50 border border-violet-200 rounded-md p-3">
-          <div className="flex items-start gap-2">
-            <Sparkles className="h-3.5 w-3.5 text-violet-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <strong className="text-violet-900">Visual filter builder coming in v2</strong>
-              <p className="mt-1">Pick fields, operators, and values from dropdowns. AND/OR logic. Saved filter sets reusable across segments.</p>
+        <div className="p-5 space-y-3">
+          <div className="spark-field">
+            <label className="spark-field-label">Name</label>
+            <input className="spark-field-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="VIP customers in Texas" autoFocus />
+          </div>
+          <div className="spark-field">
+            <label className="spark-field-label">Filter description</label>
+            <textarea className="spark-field-textarea" rows={4} value={form.filter_summary} onChange={e => setForm({ ...form, filter_summary: e.target.value })} placeholder='Plain English: "Contacts tagged VIP, in Texas, who opened an email in the last 30 days"' />
+          </div>
+          <div className="text-xs text-slate-500 bg-violet-50 border border-violet-200 rounded-md p-3">
+            <div className="flex items-start gap-2">
+              <Sparkles className="h-3.5 w-3.5 text-violet-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <strong className="text-violet-900">Visual filter builder coming in v2</strong>
+                <p className="mt-1">Pick fields, operators, and values from dropdowns. AND/OR logic. Saved filter sets reusable across segments.</p>
+              </div>
             </div>
           </div>
         </div>
-      </SparkDrawer>
+      </IadmModal>
     </SparkPageShell>
   );
 }

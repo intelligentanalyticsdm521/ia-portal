@@ -204,6 +204,11 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_leadgen_new', displayName: 'New Lead Search', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/spark/leadgen/new', description: 'Build a B2B lead search with a live preview panel — see expanded keywords, resolved cities, estimated cost, and runtime before you pay.' },
   { key: 'spark_leadgen_saved', displayName: 'Saved Lead Searches', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/spark/leadgen/saved', description: 'Saved Lead Gen profiles. Re-run any with one click.' },
   { key: 'spark_intelligence', displayName: 'Contact Scoring', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_intelligence', description: 'X/Y/Z contact intelligence with OLIVER cross-platform signals.' },
+  // Tenant-level tuning surface for the 6-dimension contact score weights.
+  // Six sliders that must sum to 100; live re-rank preview of the top 20
+  // contacts. Routes to the dedicated /app/spark/contact-scoring page via
+  // ServiceRouter (NOT a generic feature page).
+  { key: 'spark_contact_scoring', displayName: 'Contact Score Tuning', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/spark/contact-scoring', description: 'Tune the 6-dimension contact intelligence weights (engagement, lifecycle, revenue, recency, channel diversity, quality flags). Sliders must sum to 100; preview shows how the top 20 contacts re-rank under the new weights.' },
   { key: 'spark_usage', displayName: 'Plan & Pricing', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_usage', description: 'SPARK volume + feature tier + Lead Gen picker with live total. Current usage shown at top for reference.' },
   { key: 'spark_usage_report', displayName: 'Usage', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_usage_report', description: 'Email, SMS, contact, and lead usage vs your plan limits.' },
   // SPARK Pro tier

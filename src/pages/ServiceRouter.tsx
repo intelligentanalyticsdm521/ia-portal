@@ -109,6 +109,7 @@ const SparkAutomationsPage = lazyNamed(() => import('./spark/SparkAutomationsPag
 const SparkLeadsPage = lazyNamed(() => import('./spark/SparkLeadsPage'), 'SparkLeadsPage');
 const SparkSearchProfilesPage = lazyNamed(() => import('./spark/SparkSearchProfilesPage'), 'SparkSearchProfilesPage');
 const SparkIntelligencePage = lazyNamed(() => import('./spark/SparkIntelligencePage'), 'SparkIntelligencePage');
+const SparkContactScoringPage = lazyNamed(() => import('./spark/SparkContactScoringPage'), 'SparkContactScoringPage');
 const SparkUsagePage = lazyNamed(() => import('./spark/SparkUsagePage'), 'SparkUsagePage');
 const SparkUsageReportPage = lazyNamed(() => import('./spark/SparkUsageReportPage'), 'SparkUsageReportPage');
 // SPARK Pro
@@ -476,6 +477,7 @@ export function ServiceRouter() {
       case 'spark_leads': sparkPage = <SparkLeadsPage />; break;
       case 'spark_search_profiles': sparkPage = <SparkSearchProfilesPage />; break;
       case 'spark_intelligence': sparkPage = <SparkIntelligencePage />; break;
+      case 'spark_contact_scoring': sparkPage = <SparkContactScoringPage />; break;
       case 'spark_usage': sparkPage = <SparkUsagePage />; break;
       case 'spark_usage_report': sparkPage = <SparkUsageReportPage />; break;
       // SPARK Pro
