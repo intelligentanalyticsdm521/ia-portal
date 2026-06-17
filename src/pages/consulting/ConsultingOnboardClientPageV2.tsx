@@ -125,9 +125,44 @@ function money(usd: number) { return `$${usd.toFixed(2)}`; }
 
 // ─── Component ────────────────────────────────────────────────────────────
 
+interface InProgressOnboarding {
+  tenant_id: string;
+  business_name: string;
+  contact_email: string;
+  status: string;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  signup_product: string | null;
+  billing_cycle: string | null;
+  brand_color: string | null;
+  city: string | null;
+  state_province: string | null;
+  created_at: string;
+  needs_attention: {
+    no_stripe_customer: boolean;
+    no_stripe_subscription: boolean;
+  };
+}
+
 export function ConsultingOnboardClientPageV2() {
   const { post, get } = useOliverApi();
   const navigate = useNavigate();
+
+  // Top-level page mode — list of in-progress onboardings vs. wizard open.
+  const [view, setView] = useState<"list" | "wizard">("list");
+  const [inProgress, setInProgress] = useState<InProgressOnboarding[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+
+  useEffect(() => {
+    if (view !== "list") return;
+    let cancelled = false;
+    setListLoading(true);
+    get<InProgressOnboarding[]>("/admin/onboard-client/in-progress")
+      .then((r) => { if (!cancelled) setInProgress(Array.isArray(r) ? r : []); })
+      .catch(() => { if (!cancelled) setInProgress([]); })
+      .finally(() => { if (!cancelled) setListLoading(false); });
+    return () => { cancelled = true; };
+  }, [view, get]);
 
   // Wizard state
   const [step, setStep] = useState(1);
@@ -412,10 +447,28 @@ export function ConsultingOnboardClientPageV2() {
 
   const cfg = stepConfig[step];
 
+  const resetWizardState = () => {
+    setStep(1); setResult(null); setCheckoutUrl(null); setCart([]); setConsultingPick(null);
+    setBusinessName(""); setContactEmail(""); setSelectedCoupon(null); setCustomerMode(null);
+    setError(null);
+  };
+  const closeWizardToList = () => {
+    resetWizardState();
+    setView("list");
+  };
+
   return (
+    <>
+      {view === "list" && (
+        <OnboardingsList
+          rows={inProgress}
+          loading={listLoading}
+          onNew={() => setView("wizard")}
+        />
+      )}
     <IadmModal
-      open={true}
-      onClose={() => navigate("/app/services/consulting_overview")}
+      open={view === "wizard"}
+      onClose={closeWizardToList}
       product="oliver"
       eyebrow="IA Consulting · Onboard Client"
       title={cfg.title}
@@ -544,11 +597,102 @@ export function ConsultingOnboardClientPageV2() {
               return false;
             }
           }}
-          onClose={() => navigate("/app/services/consulting_onboard_client")}
+          onClose={closeWizardToList}
         />
       )}
       </div>
     </IadmModal>
+    </>
+  );
+}
+
+// ─── Landing page list of in-progress onboardings ────────────────────────
+
+function OnboardingsList({ rows, loading, onNew }: {
+  rows: InProgressOnboarding[];
+  loading: boolean;
+  onNew: () => void;
+}) {
+  return (
+    <div className="max-w-6xl mx-auto p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold" style={{ color: INK }}>Onboard Client</h1>
+          <p className="text-xs text-slate-500 mt-1">Recent onboardings + resume any in-progress flow.</p>
+        </div>
+        <button onClick={onNew}
+          className="px-5 py-2.5 rounded-lg text-white font-semibold text-sm"
+          style={{ background: CORE_BLUE }}
+        >
+          + New onboarding
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="text-center text-sm text-slate-500 py-12">Loading onboardings…</div>
+      ) : rows.length === 0 ? (
+        <div className="rounded-xl border-2 border-dashed border-slate-300 p-10 text-center bg-slate-50">
+          <div className="text-sm font-semibold text-slate-700">No recent onboardings</div>
+          <div className="text-xs text-slate-500 mt-1">Click "New onboarding" to start one.</div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-slate-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="text-left text-[10px] font-bold uppercase tracking-wide text-slate-500 px-4 py-2">Business</th>
+                <th className="text-left text-[10px] font-bold uppercase tracking-wide text-slate-500 px-4 py-2">Contact</th>
+                <th className="text-left text-[10px] font-bold uppercase tracking-wide text-slate-500 px-4 py-2">Location</th>
+                <th className="text-left text-[10px] font-bold uppercase tracking-wide text-slate-500 px-4 py-2">Stripe</th>
+                <th className="text-left text-[10px] font-bold uppercase tracking-wide text-slate-500 px-4 py-2">Status</th>
+                <th className="text-right text-[10px] font-bold uppercase tracking-wide text-slate-500 px-4 py-2">Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const needsCustomer = r.needs_attention.no_stripe_customer;
+                const needsSub = r.needs_attention.no_stripe_subscription;
+                const incomplete = needsCustomer || needsSub;
+                return (
+                  <tr key={r.tenant_id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-slate-900">{r.business_name}</div>
+                      <div className="text-[10px] text-slate-500 font-mono">{r.tenant_id.slice(0, 8)}…</div>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-700">{r.contact_email}</td>
+                    <td className="px-4 py-3 text-xs text-slate-700">
+                      {r.city ? `${r.city}, ${r.state_province}` : <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        <span className={needsCustomer ? "text-rose-600" : "text-emerald-700"}>
+                          {needsCustomer ? "✗ No customer" : "✓ Customer"}
+                        </span>
+                        <span className={needsSub ? "text-rose-600" : "text-emerald-700"}>
+                          {needsSub ? "✗ No subscription" : "✓ Subscription"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                        incomplete ? "bg-amber-100 text-amber-700" :
+                        r.status === "active" ? "bg-emerald-100 text-emerald-700" :
+                        "bg-slate-100 text-slate-600"
+                      }`}>
+                        {incomplete ? "Incomplete" : r.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-[10px] text-slate-500 text-right">
+                      {new Date(r.created_at).toLocaleDateString()}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 
