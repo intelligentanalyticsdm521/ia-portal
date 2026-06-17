@@ -464,6 +464,24 @@ export function ConsultingOnboardClientPageV2() {
           rows={inProgress}
           loading={listLoading}
           onNew={() => setView("wizard")}
+          onContinue={(t) => {
+            // Best-available continuation point: jump straight into the tenant's
+            // ARION/OLIVER/SPARK dashboard for further setup. Wizard-state resume
+            // (re-opening at the step they were on) requires the draft-save layer
+            // which is its own task — until then, "Continue" lands the founder on
+            // the product surface where the rest of provisioning happens.
+            const product = t.signup_product || "oliver";
+            navigate(`/app/services/${product}_dashboard?tenant=${t.tenant_id}`);
+          }}
+          onCancel={async (t) => {
+            if (!window.confirm(`Cancel onboarding for ${t.business_name}? This will cancel all Stripe subscriptions and mark the tenant cancelled.`)) return;
+            try {
+              await post("/admin/onboard-client/cancel", { tenant_id: t.tenant_id, reason: "Founder cancelled from onboard-client list" });
+              setInProgress((rows) => rows.filter((r) => r.tenant_id !== t.tenant_id));
+            } catch (e) {
+              alert(`Cancel failed: ${(e as Error).message}`);
+            }
+          }}
         />
       )}
     <IadmModal
@@ -608,10 +626,12 @@ export function ConsultingOnboardClientPageV2() {
 
 // ─── Landing page list of in-progress onboardings ────────────────────────
 
-function OnboardingsList({ rows, loading, onNew }: {
+function OnboardingsList({ rows, loading, onNew, onCancel, onContinue }: {
   rows: InProgressOnboarding[];
   loading: boolean;
   onNew: () => void;
+  onCancel: (tenant: InProgressOnboarding) => void;
+  onContinue: (tenant: InProgressOnboarding) => void;
 }) {
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -646,6 +666,7 @@ function OnboardingsList({ rows, loading, onNew }: {
                 <th className="text-left text-[10px] font-bold uppercase tracking-wide text-slate-500 px-4 py-2">Stripe</th>
                 <th className="text-left text-[10px] font-bold uppercase tracking-wide text-slate-500 px-4 py-2">Status</th>
                 <th className="text-right text-[10px] font-bold uppercase tracking-wide text-slate-500 px-4 py-2">Created</th>
+                <th className="text-right text-[10px] font-bold uppercase tracking-wide text-slate-500 px-4 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -682,8 +703,17 @@ function OnboardingsList({ rows, loading, onNew }: {
                         {incomplete ? "Incomplete" : r.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-[10px] text-slate-500 text-right">
+                    <td className="px-4 py-3 text-[10px] text-slate-500 text-right whitespace-nowrap">
                       {new Date(r.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <button onClick={() => onContinue(r)}
+                        className="text-[11px] font-semibold text-white px-3 py-1 rounded-md mr-1"
+                        style={{ background: CORE_BLUE }}
+                      >Continue</button>
+                      <button onClick={() => onCancel(r)}
+                        className="text-[11px] font-semibold text-rose-700 hover:text-rose-900 px-3 py-1 rounded-md border border-rose-300"
+                      >Cancel</button>
                     </td>
                   </tr>
                 );
