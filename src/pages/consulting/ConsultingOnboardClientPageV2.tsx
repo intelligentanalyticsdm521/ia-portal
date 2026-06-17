@@ -145,6 +145,7 @@ export function ConsultingOnboardClientPageV2() {
   const [oliverCat, setOliverCat] = useState<SignupCatalog | null>(null);
   const [sparkCat, setSparkCat] = useState<SignupCatalog | null>(null);
   const [consultingProducts, setConsultingProducts] = useState<ConsultingProduct[] | null>(null);
+  const [consultingError, setConsultingError] = useState<string | null>(null);
   const [catLoading, setCatLoading] = useState(true);
   const [arionSiteType, setArionSiteType] = useState<ArionSiteType>("new");
   const [arionSiteUrl, setArionSiteUrl] = useState("");
@@ -177,18 +178,31 @@ export function ConsultingOnboardClientPageV2() {
   useEffect(() => {
     let cancelled = false;
     setCatLoading(true);
+    setConsultingError(null);
     Promise.all([
       fetchPlanCatalog("arion").catch(() => []),
       fetchSignupCatalog("oliver", cycle).catch(() => null),
       fetchSignupCatalog("spark", cycle).catch(() => null),
+      // Capture the actual error instead of silently swallowing to []
+      // so we can SEE what's wrong with the consulting endpoint.
       get<{ data: ConsultingProduct[] }>("/admin/onboard-client/consulting-products")
-        .then((r) => r.data).catch(() => []),
+        .then((r) => {
+          // eslint-disable-next-line no-console
+          console.log("[wizard] consulting-products response:", r);
+          return { data: r.data, err: null as string | null };
+        })
+        .catch((e) => {
+          // eslint-disable-next-line no-console
+          console.error("[wizard] consulting-products FAILED:", e);
+          return { data: [] as ConsultingProduct[], err: (e as Error).message || String(e) };
+        }),
     ]).then(([ap, oc, sc, cp]) => {
       if (cancelled) return;
       setArionPlans(ap || []);
       setOliverCat(oc);
       setSparkCat(sc);
-      setConsultingProducts(cp || []);
+      setConsultingProducts(cp.data || []);
+      setConsultingError(cp.err);
       setCatLoading(false);
     });
     return () => { cancelled = true; };
@@ -670,10 +684,23 @@ function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, 
       </ProductSection>
 
       {/* Consulting — founder-only, separate from /pricing */}
-      <ProductSection title="Consulting" tagline="Monthly retainer (Build Your Brand/Clarity/Engine/Foundation) — founder picks Stripe product, price overridable per tenant"
+      <ProductSection title="Consulting" tagline="Monthly retainer — sourced from OLIVER service offerings (Build Your Brand/Clarity/Engine/Foundation). Founder picks engagement; price overridable per tenant."
         inCart={!!consultingPick} onRemove={() => setConsultingPick(null)}>
         {!consultingProducts || consultingProducts.length === 0 ? (
-          <div className="text-xs text-amber-600">No consulting products returned. Check Stripe.</div>
+          <div className="text-xs space-y-1">
+            <div className="text-amber-700 font-semibold">No consulting offerings returned.</div>
+            {consultingError ? (
+              <div className="text-rose-600">Endpoint error: <code className="text-[11px]">{consultingError}</code></div>
+            ) : (
+              <div className="text-slate-600">
+                Endpoint returned an empty list. Make sure OLIVER has offerings under the founder tenant
+                whose name starts with "Build Your" or contains "Consulting", and that they're set to is_active.
+              </div>
+            )}
+            <div className="text-[10px] text-slate-500 mt-2">
+              Debug: open browser devtools → Network tab → look at <code>/admin/onboard-client/consulting-products</code> response.
+            </div>
+          </div>
         ) : (
           <ConsultingPicker products={consultingProducts} pick={consultingPick} setPick={setConsultingPick} />
         )}
