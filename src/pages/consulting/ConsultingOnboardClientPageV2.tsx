@@ -269,8 +269,11 @@ export function ConsultingOnboardClientPageV2() {
         business_profile: profile,
         owner_account: account,
       };
-      // Consulting flows through subscription_items (uses price_data override)
-      if (consultingPick && consultingPick.unitAmount > 0) {
+      // Consulting flows through subscription_items (uses price_data override).
+      // Send whatever unit_amount the founder typed (including 0 for fully
+      // discounted engagements). The backend handles 0-amount by not creating
+      // a Stripe subscription line item.
+      if (consultingPick) {
         adminBody.subscription_items = [{
           product_id: consultingPick.productId,
           unit_amount: consultingPick.unitAmount,
@@ -800,67 +803,92 @@ function ConsultingPicker({ products, pick, setPick }: {
   pick: ConsultingPick | null;
   setPick: (p: ConsultingPick | null) => void;
 }) {
-  const [productId, setProductId] = useState<string>(pick?.productId || products[0]?.product_id || "");
-  const [interval, setInterval_] = useState<"month" | "year">(pick?.interval || "month");
-  const prod = products.find((p) => p.product_id === productId);
-  const defaultPrice = prod?.prices.find((pr) => pr.interval === interval);
-  const [amount, setAmount] = useState<number>(pick?.unitAmount ?? (defaultPrice?.unit_amount ?? 0));
-
-  useEffect(() => {
-    const dp = prod?.prices.find((pr) => pr.interval === interval);
-    if (!pick) setAmount(dp?.unit_amount ?? 0);
-  }, [productId, interval, prod, pick]);
-
-  const commit = () => {
-    if (!prod) return;
+  // Click a product card → instantly add to cart with the default (monthly)
+  // price. Mirrors ARION/OLIVER pickers — implicit add, not explicit "Add to
+  // cart" button. Interval + price edit inline and auto-save.
+  const selectProduct = (p: ConsultingProduct, interval: "month" | "year" = "month") => {
+    const defaultPrice = p.prices.find((pr) => pr.interval === interval)
+      ?? p.prices.find((pr) => pr.interval === "month")
+      ?? p.prices[0];
     setPick({
-      productId: prod.product_id,
-      productName: prod.name,
+      productId: p.product_id,
+      productName: p.name,
       interval,
-      unitAmount: amount,
+      unitAmount: defaultPrice?.unit_amount ?? 0,
     });
   };
+
+  const updateInterval = (newInterval: "month" | "year") => {
+    if (!pick) return;
+    const prod = products.find((p) => p.product_id === pick.productId);
+    if (!prod) return;
+    const defaultPrice = prod.prices.find((pr) => pr.interval === newInterval);
+    setPick({
+      ...pick,
+      interval: newInterval,
+      // Pull the catalog default for the new interval so the price input
+      // reflects what's actually configured in OLIVER for monthly vs annual.
+      unitAmount: defaultPrice?.unit_amount ?? pick.unitAmount,
+    });
+  };
+
+  const updateAmount = (newCents: number) => {
+    if (!pick) return;
+    setPick({ ...pick, unitAmount: newCents });
+  };
+
+  const activeProd = pick ? products.find((p) => p.product_id === pick.productId) : null;
+  const catalogPriceForInterval = activeProd?.prices.find((pr) => pr.interval === pick?.interval);
 
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-        {products.map((p) => (
-          <button key={p.product_id}
-            onClick={() => setProductId(p.product_id)}
-            className={`p-3 rounded-lg border-2 text-left text-xs ${productId === p.product_id ? "bg-white shadow" : "border-slate-200 bg-white hover:border-slate-300"}`}
-            style={productId === p.product_id ? { borderColor: ACCENT } : {}}
-          >
-            <div className="font-bold text-slate-900 text-[11px]">{p.name}</div>
-          </button>
-        ))}
+        {products.map((p) => {
+          const active = pick?.productId === p.product_id;
+          const defaultMonthlyPrice = p.prices.find((pr) => pr.interval === "month");
+          return (
+            <button key={p.product_id}
+              onClick={() => selectProduct(p)}
+              className={`p-3 rounded-lg border-2 text-left ${active ? "bg-white shadow" : "border-slate-200 bg-white hover:border-slate-300"}`}
+              style={active ? { borderColor: ACCENT } : {}}
+            >
+              <div className="font-bold text-slate-900 text-[11px]">{p.name}</div>
+              <div className="text-[10px] text-slate-500 mt-1">
+                {defaultMonthlyPrice ? `from ${money(defaultMonthlyPrice.unit_amount / 100)}/mo` : "price TBD"}
+              </div>
+            </button>
+          );
+        })}
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-[11px] font-semibold text-slate-700 mb-1">Billing interval</label>
-          <select value={interval} onChange={(e) => setInterval_(e.target.value as "month" | "year")}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
-            <option value="month">Monthly</option>
-            <option value="year">Annual</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-            Custom price (this tenant only) — USD
-          </label>
-          <input type="number" min={0} step={0.01} value={(amount / 100).toFixed(2)}
-            onChange={(e) => setAmount(Math.round(parseFloat(e.target.value || "0") * 100))}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-          <div className="text-[10px] text-slate-500 mt-0.5">
-            Default for {prod?.name}: {defaultPrice ? money(defaultPrice.unit_amount / 100) : "—"}/{interval}
+
+      {pick && activeProd && (
+        <div className="space-y-3 p-3 rounded-lg bg-slate-50 border border-slate-200">
+          <div className="text-[11px] font-semibold text-slate-700">
+            Configuring: <span style={{ color: ACCENT }}>{pick.productName}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">Billing interval</label>
+              <select value={pick.interval} onChange={(e) => updateInterval(e.target.value as "month" | "year")}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
+                <option value="month">Monthly</option>
+                <option value="year">Annual</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                Price (this tenant only) — USD
+              </label>
+              <input type="number" min={0} step={0.01} value={(pick.unitAmount / 100).toFixed(2)}
+                onChange={(e) => updateAmount(Math.round(parseFloat(e.target.value || "0") * 100))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+              <div className="text-[10px] text-slate-500 mt-0.5">
+                OLIVER default: {catalogPriceForInterval ? money(catalogPriceForInterval.unit_amount / 100) : "—"}/{pick.interval === "month" ? "mo" : "yr"}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-      <button onClick={commit} disabled={!prod}
-        className="w-full px-4 py-2 rounded-lg text-white font-semibold text-sm disabled:opacity-50"
-        style={{ background: pick ? "#1D9E75" : ACCENT }}
-      >
-        {pick ? "✓ In cart — update" : "Add to cart"}
-      </button>
+      )}
     </div>
   );
 }
