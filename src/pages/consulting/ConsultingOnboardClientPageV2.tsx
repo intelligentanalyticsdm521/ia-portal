@@ -300,6 +300,9 @@ export function ConsultingOnboardClientPageV2() {
           name: account.display_name || businessName,
           billing_cycle: cycle,
           items: cartItems,
+          // Founder override — wins over the auto-applied MP5R/MP7R bundle
+          // when present. Bundle still auto-applies if founder picks no coupon.
+          coupon_code: selectedCoupon?.id,
         });
         setCheckoutUrl(r.checkout_url);
       }

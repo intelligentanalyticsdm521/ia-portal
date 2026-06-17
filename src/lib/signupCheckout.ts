@@ -69,6 +69,10 @@ export interface SignupCartCheckoutInput {
     | { product: "spark"; volume: string; featureAddon?: string | null; leads?: string | null; leadsSelected?: number }
     | { product: "arion"; plan: string; seo?: string | null }
   >;
+  /** Founder-only: explicit Stripe coupon ID. Overrides the auto-applied
+   *  MP5R/MP7R bundle when present (Stripe subscription-level discounts are
+   *  mutually exclusive — only one wins). */
+  coupon_code?: string;
 }
 export interface SignupCartCheckoutResult {
   checkout_url: string;
@@ -76,6 +80,10 @@ export interface SignupCartCheckoutResult {
   cart: Array<{ product: string; items: number }>;
   bundle_coupon: string | null;
   bundle_coupon_applied: boolean;
+  /** Whichever coupon actually applies to the Checkout Session (founder
+   *  override > auto-bundle > none). Null if no coupon active. */
+  applied_coupon?: string | null;
+  coupon_source?: "founder" | "bundle" | null;
 }
 
 export function createSignupCartCheckout(input: SignupCartCheckoutInput) {
