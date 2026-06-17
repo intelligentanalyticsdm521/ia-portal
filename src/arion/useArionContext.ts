@@ -663,6 +663,49 @@ export function useArionContext() {
         const b = await base();
         return portalGetPagespeedHistory({ ...b, siteId });
       },
+
+      /* SE Ranking productization 2026-06-17 — keyword research, mgmt, AI prompts */
+      async researchKeyword(siteId: string, seed: string, opts?: { region?: string; limit?: number }) {
+        const b = await base();
+        const { researchKeyword } = await import('../lib/arionApi');
+        return researchKeyword({ ...b, siteId, seed, region: opts?.region, limit: opts?.limit });
+      },
+
+      async getTrackedKeywords(siteId: string) {
+        const b = await base();
+        const { getTrackedKeywords } = await import('../lib/arionApi');
+        return getTrackedKeywords({ ...b, siteId });
+      },
+
+      async addTrackedKeywords(siteId: string, keywords: string[], groupId?: number) {
+        const b = await base();
+        const { addTrackedKeywords } = await import('../lib/arionApi');
+        return addTrackedKeywords({ ...b, siteId, keywords, groupId });
+      },
+
+      async removeTrackedKeywords(siteId: string, keywordIds: number[]) {
+        const b = await base();
+        const { removeTrackedKeywords } = await import('../lib/arionApi');
+        return removeTrackedKeywords({ ...b, siteId, keywordIds });
+      },
+
+      async getAIPrompts(siteId: string) {
+        const b = await base();
+        const { getAIPrompts } = await import('../lib/arionApi');
+        return getAIPrompts({ ...b, siteId });
+      },
+
+      async addAIPrompt(siteId: string, prompt: string, engines?: string[]) {
+        const b = await base();
+        const { addAIPrompt } = await import('../lib/arionApi');
+        return addAIPrompt({ ...b, siteId, prompt, engines });
+      },
+
+      async removeAIPrompt(siteId: string, promptId: string | number) {
+        const b = await base();
+        const { removeAIPrompt } = await import('../lib/arionApi');
+        return removeAIPrompt({ ...b, siteId, promptId });
+      },
     };
   }, [activeTenantId, apiBaseUrl, getToken]);
 

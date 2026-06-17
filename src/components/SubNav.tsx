@@ -231,10 +231,12 @@ const ARION_NAV: SubNavConfig = {
       label: "SEO", icon: TrendingUp, collapsible: true, sectionId: "seo",
       items: [
         { key: "arion_seo_overview", label: "Overview", route: "/app/services/arion_seo_overview" },
+        { key: "arion_seo_keywords", label: "Keywords", route: "/app/services/arion_seo_keywords" },
         { key: "arion_seo_rankings", label: "Rankings", route: "/app/services/arion_seo_rankings" },
         { key: "arion_seo_site_audit", label: "Site Audit", route: "/app/services/arion_seo_site_audit" },
         { key: "arion_seo_competitors", label: "Competitors", route: "/app/services/arion_seo_competitors" },
         { key: "arion_seo_ai_search", label: "AI Search Results", route: "/app/services/arion_seo_ai_search" },
+        { key: "arion_seo_ai_prompts", label: "AI Prompts", route: "/app/services/arion_seo_ai_prompts" },
         { key: "arion_seo_market_monitor", label: "Market Monitor", route: "/app/services/arion_seo_market_monitor" },
       ],
     },

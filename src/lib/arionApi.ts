@@ -1711,3 +1711,108 @@ export async function setPluginAutoUpdateConfig(p: { baseUrl: string; bearerToke
     body: p.body,
   });
 }
+
+// ────────────────────────────────────────────────────────────────
+// SE Ranking productization 2026-06-17 — keyword research + management + AI prompts
+// ────────────────────────────────────────────────────────────────
+
+export interface SeoKeywordResearchRow {
+  keyword: string;
+  volume: number;
+  difficulty: number;
+  cpc: number;
+  competition: number;
+}
+
+export interface SeoKeywordResearchResponse {
+  data: {
+    seed: string;
+    overview: SeoKeywordResearchRow | null;
+    suggestions: SeoKeywordResearchRow[];
+    related: SeoKeywordResearchRow[];
+    longtail: SeoKeywordResearchRow[];
+    questions: SeoKeywordResearchRow[];
+  };
+  meta: { tier: string; cap: number; used: number; remaining: number };
+}
+
+export async function researchKeyword(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; seed: string; region?: string; limit?: number }) {
+  return requestJson<SeoKeywordResearchResponse>({
+    ...p,
+    method: 'POST',
+    path: `/arion/seo/keywords/research`,
+    body: { seed: p.seed, region: p.region || 'us', limit: p.limit || 25, siteId: p.siteId },
+  });
+}
+
+export interface SeoTrackedKeyword {
+  keyword_id: number;
+  keyword: string;
+  group_id?: number | null;
+  volume?: number;
+  difficulty?: number;
+  position?: number | null;
+}
+
+export interface SeoTrackedKeywordsResponse {
+  data: SeoTrackedKeyword[];
+  project_id: string | number | null;
+  tier?: string;
+}
+
+export async function getTrackedKeywords(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<SeoTrackedKeywordsResponse>({ ...p, path: `/arion/seo/keywords?siteId=${encodeURIComponent(p.siteId)}` });
+}
+
+export async function addTrackedKeywords(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; keywords: string[]; groupId?: number }) {
+  return requestJson<{ data: any; project_id: string | number }>({
+    ...p,
+    method: 'POST',
+    path: `/arion/seo/keywords/add`,
+    body: { siteId: p.siteId, keywords: p.keywords, groupId: p.groupId },
+  });
+}
+
+export async function removeTrackedKeywords(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; keywordIds: number[] }) {
+  return requestJson<{ ok: boolean; removed: number }>({
+    ...p,
+    method: 'DELETE',
+    path: `/arion/seo/keywords`,
+    body: { siteId: p.siteId, keywordIds: p.keywordIds },
+  });
+}
+
+export interface SeoAIPromptEntry {
+  prompt_id: string | number;
+  prompt: string;
+  engines: string[];
+}
+
+export interface SeoAIPromptsResponse {
+  data: SeoAIPromptEntry[];
+  project_id: string | number | null;
+  tier: string;
+  cap: number;
+  allowed_engines: string[];
+}
+
+export async function getAIPrompts(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<SeoAIPromptsResponse>({ ...p, path: `/arion/seo/ai-prompts?siteId=${encodeURIComponent(p.siteId)}` });
+}
+
+export async function addAIPrompt(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; prompt: string; engines?: string[] }) {
+  return requestJson<{ data: any }>({
+    ...p,
+    method: 'POST',
+    path: `/arion/seo/ai-prompts`,
+    body: { siteId: p.siteId, prompt: p.prompt, engines: p.engines },
+  });
+}
+
+export async function removeAIPrompt(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; promptId: string | number }) {
+  return requestJson<{ ok: boolean }>({
+    ...p,
+    method: 'DELETE',
+    path: `/arion/seo/ai-prompts/${encodeURIComponent(String(p.promptId))}?siteId=${encodeURIComponent(p.siteId)}`,
+  });
+}

@@ -65,6 +65,8 @@ const SeoCompetitors = lazyNamed(() => import('../arion/pages/seo/SeoCompetitors
 const SeoAiSearch = lazyNamed(() => import('../arion/pages/seo/SeoAiSearch'), 'SeoAiSearch');
 const SeoMarketMonitor = lazyNamed(() => import('../arion/pages/seo/SeoMarketMonitor'), 'SeoMarketMonitor');
 const SeoReports = lazyNamed(() => import('../arion/pages/seo/SeoReports'), 'SeoReports');
+const SeoKeywords = lazyNamed(() => import('../arion/pages/seo/SeoKeywords'), 'SeoKeywords');
+const SeoAIPrompts = lazyNamed(() => import('../arion/pages/seo/SeoAIPrompts'), 'SeoAIPrompts');
 // Search
 const SearchPerformance = lazyNamed(() => import('../arion/pages/search/SearchPerformance'), 'SearchPerformance');
 const SearchIndexing = lazyNamed(() => import('../arion/pages/search/SearchIndexing'), 'SearchIndexing');
@@ -328,6 +330,8 @@ export function ServiceRouter() {
       case 'arion_seo_site_audit': arionPage = <SeoSiteAudit />; break;
       case 'arion_seo_competitors': arionPage = <SeoCompetitors />; break;
       case 'arion_seo_ai_search': arionPage = <SeoAiSearch />; break;
+      case 'arion_seo_keywords': arionPage = <SeoKeywords />; break;
+      case 'arion_seo_ai_prompts': arionPage = <SeoAIPrompts />; break;
       case 'arion_seo_market_monitor': arionPage = <SeoMarketMonitor />; break;
       // Opportunities was folded into IA Insights Search Intelligence modal
       // (whitespace + SERP-feature gap sections). Old links redirect to the
