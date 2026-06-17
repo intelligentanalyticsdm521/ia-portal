@@ -669,10 +669,11 @@ function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
             {oliverCat.plans.map((p) => {
               const active = oliverInCart?.plan === p.key;
-              // fetchSignupCatalog(product, cycle) returns monthly_usd that
-              // represents the per-month-equivalent for the selected cycle.
-              // Multiply by 12 for the full annual cost when in annual mode.
-              const displayPrice = cycle === "annual" ? p.monthly_usd * 12 : p.monthly_usd;
+              // GOTCHA: fetchSignupCatalog returns monthly_usd which is
+              // MISNAMED — in annual mode it's the FULL annual price (Stripe
+              // unit_amount / 100 of the year-interval row, NOT divided by 12).
+              // So display monthly_usd directly in both modes.
+              const displayPrice = p.monthly_usd;
               return (
                 <button key={p.key}
                   onClick={() => upsertCart({ product: "oliver", plan: p.key })}
@@ -744,8 +745,10 @@ function SparkPicker({ cat, item, upsert, cycle }: {
   upsert: (it: CartItem) => void;
   cycle: BillingCycle;
 }) {
+  // GOTCHA: catalog's monthly_usd is misnamed — in annual mode it's the
+  // FULL annual price (Stripe year-interval unit_amount / 100). Show it
+  // as-is with /yr label. Do NOT multiply by 12.
   const unitLabel = cycle === "annual" ? "yr" : "mo";
-  const multiplier = cycle === "annual" ? 12 : 1;
   const volumes = cat?.volumes || [];
   const currentVolume = item?.volume || volumes[0]?.volume || "";
   const volIndex = Math.max(0, volumes.findIndex((v) => v.volume === currentVolume));
@@ -775,7 +778,7 @@ function SparkPicker({ cat, item, upsert, cycle }: {
         <div className="flex items-baseline gap-3 mb-1">
           <span className="text-xl font-bold text-slate-900">{currentVolume}</span>
           <span className="text-xs text-slate-500">emails/mo</span>
-          <span className="ml-auto text-lg font-bold text-[#EF6C33]">{money((currentVol?.monthly_usd || 0) * multiplier)}<span className="text-[10px] font-normal text-slate-500">/{unitLabel}</span></span>
+          <span className="ml-auto text-lg font-bold text-[#EF6C33]">{money(currentVol?.monthly_usd || 0)}<span className="text-[10px] font-normal text-slate-500">/{unitLabel}</span></span>
         </div>
         <input type="range" min={0} max={volumes.length - 1} step={1} value={volIndex}
           onChange={(e) => setItem({ volume: volumes[Number(e.target.value)].volume })}
@@ -800,7 +803,7 @@ function SparkPicker({ cat, item, upsert, cycle }: {
                 style={active ? { borderColor: ACCENT } : {}}
               >
                 <div className="font-bold uppercase tracking-wide text-slate-500 text-[10px]">{k === "" ? "Standard" : k}</div>
-                <div className="text-xs text-slate-900 mt-0.5">{k === "" ? "Included" : meta ? `+${money(meta.monthly_usd * multiplier)}/${unitLabel}` : "—"}</div>
+                <div className="text-xs text-slate-900 mt-0.5">{k === "" ? "Included" : meta ? `+${money(meta.monthly_usd)}/${unitLabel}` : "—"}</div>
               </button>
             );
           })}
@@ -815,7 +818,7 @@ function SparkPicker({ cat, item, upsert, cycle }: {
           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
           <option value="">No lead generation</option>
           {Object.entries(cat?.leads || {}).map(([k, v]) => (
-            <option key={k} value={k}>{v.name} — {money(v.monthly_usd * multiplier)}/{unitLabel} (incl. {v.included} leads)</option>
+            <option key={k} value={k}>{v.name} — {money(v.monthly_usd)}/{unitLabel} (incl. {v.included} leads)</option>
           ))}
         </select>
         {leadsMeta && (
