@@ -467,6 +467,7 @@ export function ConsultingOnboardClientPageV2() {
         )
       }
     >
+      <div className="px-6 py-5">
       <ProgressStrip current={step} total={7} />
       {error && <div className="mb-3 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
 
@@ -534,8 +535,28 @@ export function ConsultingOnboardClientPageV2() {
           result={result}
           checkoutUrl={checkoutUrl}
           businessName={businessName}
+          contactEmail={contactEmail}
+          cart={cart}
+          consultingPick={consultingPick}
+          onSendLink={async () => {
+            if (!checkoutUrl || !result?.tenant_id) return;
+            try {
+              await post("/admin/onboard-client/send-payment-link", {
+                tenant_id: result.tenant_id,
+                contact_email: contactEmail,
+                checkout_url: checkoutUrl,
+                business_name: businessName,
+              });
+              return true;
+            } catch (e) {
+              setError((e as Error).message);
+              return false;
+            }
+          }}
+          onClose={() => navigate("/app/services/consulting_onboard_client")}
         />
       )}
+      </div>
     </IadmModal>
   );
 }
@@ -708,21 +729,32 @@ function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, 
             </div>
             {arionInCart && (
               <>
-                {/* SEO add-on — surfaced labels match public /pricing
-                    (essentials/growth/authority). Exact pricing comes from
-                    Stripe at checkout time. */}
+                {/* SEO add-on — same display "from $X/mo" pattern as public
+                    /pricing State 2. Exact pricing confirmed at Stripe
+                    checkout (varies with billing cycle). */}
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 mb-1">SEO add-on (optional)</label>
                   <div className="grid grid-cols-4 gap-2">
-                    {(["", "essentials", "growth", "authority"] as const).map((k) => (
-                      <button key={k || "none"}
-                        onClick={() => upsertCart({ product: "arion", plan: arionInCart.plan, seo: k })}
-                        className={`p-2 rounded-lg border-2 text-xs ${arionInCart.seo === k || (!arionInCart.seo && k === "") ? "bg-white shadow" : "border-slate-200 bg-white hover:border-slate-300"}`}
-                        style={(arionInCart.seo === k || (!arionInCart.seo && k === "")) ? { borderColor: "#38BDF8" } : {}}
-                      >
-                        {k === "" ? "None" : k[0].toUpperCase() + k.slice(1)}
-                      </button>
-                    ))}
+                    {([
+                      { key: "", label: "None", from: null },
+                      { key: "essentials", label: "Essentials", from: 29 },
+                      { key: "growth", label: "Growth", from: 79 },
+                      { key: "authority", label: "Authority", from: 149 },
+                    ] as Array<{ key: "" | "essentials" | "growth" | "authority"; label: string; from: number | null }>).map((opt) => {
+                      const active = arionInCart.seo === opt.key || (!arionInCart.seo && opt.key === "");
+                      return (
+                        <button key={opt.key || "none"}
+                          onClick={() => upsertCart({ product: "arion", plan: arionInCart.plan, seo: opt.key })}
+                          className={`p-2 rounded-lg border-2 text-xs text-left ${active ? "bg-white shadow" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                          style={active ? { borderColor: "#38BDF8" } : {}}
+                        >
+                          <div className="font-bold text-slate-900 text-[11px]">{opt.label}</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            {opt.from == null ? "—" : `from $${opt.from}/mo`}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
                 {/* Site type */}
@@ -1292,11 +1324,112 @@ function Row({ label, value }: { label: string; value: string }) {
 
 // ─── Step 7 — Progress + handoff ─────────────────────────────────────────
 
-function Step7Progress({ result, checkoutUrl, businessName }: {
-  result: OnboardResult; checkoutUrl: string | null; businessName: string;
+function Step7Progress({ result, checkoutUrl, businessName, contactEmail, cart, consultingPick, onSendLink, onClose }: {
+  result: OnboardResult;
+  checkoutUrl: string | null;
+  businessName: string;
+  contactEmail: string;
+  cart: CartItem[];
+  consultingPick: ConsultingPick | null;
+  onSendLink: () => Promise<boolean | void>;
+  onClose: () => void;
 }) {
+  const [sendingLink, setSendingLink] = useState(false);
+  const [linkSent, setLinkSent] = useState(false);
+  const arionInCart = cart.some((it) => it.product === "arion");
+  const sparkInCart = cart.some((it) => it.product === "spark");
+  const oliverInCart = cart.some((it) => it.product === "oliver");
+
   return (
     <div className="space-y-4">
+      <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4">
+        <div className="font-bold text-emerald-900">✓ {businessName} tenant created</div>
+        <div className="text-xs text-emerald-800 mt-1">
+          Tenant ID <code className="text-[10px]">{result.tenant_id}</code>
+          {result.stripe_customer_id && <> · Stripe customer <code className="text-[10px]">{result.stripe_customer_id}</code></>}
+        </div>
+        <div className="text-xs text-emerald-800 mt-1">
+          You can continue setting up products while the client completes payment — provisioning
+          kicks off automatically when the Stripe webhook fires.
+        </div>
+      </div>
+
+      {checkoutUrl && (
+        <Card title="Payment link for the client">
+          <div className="text-xs text-slate-600 mb-2">
+            Bundle discount auto-applied if 2+ platforms. Founder-picked coupon overrides bundle when present.
+          </div>
+          <div className="flex gap-2 items-stretch mb-2">
+            <input readOnly value={checkoutUrl} className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-xs bg-slate-50" />
+            <button onClick={() => navigator.clipboard?.writeText(checkoutUrl)}
+              className="px-3 py-2 rounded-lg text-white font-semibold text-xs"
+              style={{ background: INK }}
+            >
+              Copy
+            </button>
+          </div>
+          <div className="flex gap-2 items-stretch">
+            <button onClick={async () => {
+              setSendingLink(true);
+              const ok = await onSendLink();
+              setSendingLink(false);
+              if (ok !== false) setLinkSent(true);
+            }} disabled={sendingLink || linkSent}
+              className="flex-1 px-3 py-2 rounded-lg text-white font-semibold text-xs disabled:opacity-60"
+              style={{ background: CORE_BLUE }}
+            >
+              {sendingLink ? "Sending…" : linkSent ? `✓ Sent to ${contactEmail}` : `📧 Email to ${contactEmail}`}
+            </button>
+            <a href={checkoutUrl} target="_blank" rel="noreferrer"
+              className="px-3 py-2 rounded-lg text-white font-semibold text-xs text-center"
+              style={{ background: ACCENT }}
+            >
+              Open
+            </a>
+          </div>
+        </Card>
+      )}
+
+      <Card title="Continue setup">
+        <div className="text-xs text-slate-600 mb-2">
+          Move on to product-specific setup while payment is in flight. Each link opens that product's onboarding for {businessName}.
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {arionInCart && (
+            <a href={`/app/services/arion_dashboard?tenant=${result.tenant_id}`}
+              className="p-3 rounded-lg border-2 border-slate-200 hover:border-sky-400 bg-white text-left">
+              <div className="text-xs font-bold text-slate-900">ARION setup →</div>
+              <div className="text-[10px] text-slate-500">Questionnaire, domain, plugin install</div>
+            </a>
+          )}
+          {sparkInCart && (
+            <a href={`/app/services/spark_dashboard?tenant=${result.tenant_id}`}
+              className="p-3 rounded-lg border-2 border-slate-200 hover:border-amber-400 bg-white text-left">
+              <div className="text-xs font-bold text-slate-900">SPARK setup →</div>
+              <div className="text-[10px] text-slate-500">Contacts import, brand voice</div>
+            </a>
+          )}
+          {oliverInCart && (
+            <a href={`/app/services/oliver_dashboard?tenant=${result.tenant_id}`}
+              className="p-3 rounded-lg border-2 border-slate-200 hover:border-yellow-400 bg-white text-left">
+              <div className="text-xs font-bold text-slate-900">OLIVER setup →</div>
+              <div className="text-[10px] text-slate-500">Customer list, Stripe Connect</div>
+            </a>
+          )}
+          {consultingPick && (
+            <a href={`/app/services/consulting_tickets?tenant=${result.tenant_id}`}
+              className="p-3 rounded-lg border-2 border-slate-200 hover:border-emerald-400 bg-white text-left">
+              <div className="text-xs font-bold text-slate-900">Consulting setup →</div>
+              <div className="text-[10px] text-slate-500">Open {consultingPick.productName} engagement</div>
+            </a>
+          )}
+        </div>
+        <button onClick={onClose}
+          className="w-full mt-3 px-3 py-2 rounded-lg border border-gray-300 text-slate-700 font-semibold text-xs">
+          Save & return to Onboard Client
+        </button>
+      </Card>
+
       <Card>
         <div className="text-sm"><strong>Tenant ID:</strong> <code className="text-xs">{result.tenant_id}</code></div>
         <div className="text-sm"><strong>Slug:</strong> {result.slug}</div>
