@@ -21,7 +21,9 @@
 //                                  (bundle coupon auto-applied server-side)
 
 import { useEffect, useMemo, useState } from "react";
-import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { useNavigate } from "react-router-dom";
+import { IadmModal, CORE_BLUE, PRODUCT_ACCENT } from "../../components/IadmModal";
+import { LogoPicker } from "../../components/oliver/LogoPicker";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { fetchPlanCatalog, type PlanCatalogEntry } from "../../lib/onboardingApi";
 import {
@@ -29,6 +31,7 @@ import {
   type SignupCatalog,
 } from "../../lib/signupCheckout";
 import { bundleDiscountPercent, type CartItem } from "../../lib/signupCart";
+import { formatPhone } from "../../lib/formatPhone";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -68,7 +71,10 @@ interface BusinessProfile {
   phone: string;
   website: string;
   industry: string;
+  // Three-color brand scheme — matches core.tenants schema
+  // (brand_color / brand_color_secondary / brand_color_accent)
   primary_color: string;
+  secondary_color: string;
   accent_color: string;
   logo_url: string;
 }
@@ -121,6 +127,7 @@ function money(usd: number) { return `$${usd.toFixed(2)}`; }
 
 export function ConsultingOnboardClientPageV2() {
   const { post, get } = useOliverApi();
+  const navigate = useNavigate();
 
   // Wizard state
   const [step, setStep] = useState(1);
@@ -157,10 +164,12 @@ export function ConsultingOnboardClientPageV2() {
   const [couponLoading, setCouponLoading] = useState(false);
   const [collectionMethod, setCollectionMethod] = useState<"charge_automatically" | "send_invoice">("charge_automatically");
 
-  // Step 4 — Profile
+  // Step 4 — Profile (defaults match OLIVER OrganizationTab + canonical brand palette)
   const [profile, setProfile] = useState<BusinessProfile>({
     address_street: "", address_line2: "", address_city: "", address_state: "", address_zip: "",
-    phone: "", website: "", industry: "", primary_color: "#EF6C33", accent_color: "#0B1C24", logo_url: "",
+    phone: "", website: "", industry: "",
+    primary_color: "#1A3A4A", secondary_color: "#FEC82C", accent_color: "#1A7DB5",
+    logo_url: "",
   });
   const [businessName, setBusinessName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
@@ -350,89 +359,184 @@ export function ConsultingOnboardClientPageV2() {
   const canProceedStep5 = account.first_name.trim().length > 0 && account.last_name.trim().length > 0;
   const canProceedStep6 = Boolean(canProceedStep1 && canProceedStep2 && canProceedStep4 && canProceedStep5);
 
+  // Step-driven nav config — drives the IadmModal footer per step. Each step's
+  // content is rendered separately as the modal body; back/continue/submit live
+  // in the (sticky) modal footer so we never run off the viewport.
+  const stepConfig: Record<number, {
+    title: string;
+    subtitle?: string;
+    canNext: boolean;
+    onNext?: () => void;
+    nextLabel?: string;
+    onBack?: () => void;
+  }> = {
+    1: {
+      title: "New or existing client?",
+      subtitle: `Step 1 of 7`,
+      canNext: canProceedStep1,
+      onNext: () => setStep(2),
+    },
+    2: {
+      title: "Configure cart",
+      subtitle: `Step 2 of 7 · Live OLIVER catalog. Bundle discount auto-applies (5% for 2 platforms, 7% for 3+).`,
+      canNext: canProceedStep2,
+      onNext: () => setStep(3),
+      onBack: () => setStep(1),
+    },
+    3: {
+      title: "Checkout setup",
+      subtitle: `Step 3 of 7 · Coupon + payment method`,
+      canNext: canProceedStep3,
+      onNext: () => setStep(4),
+      onBack: () => setStep(2),
+    },
+    4: {
+      title: "Business profile",
+      subtitle: `Step 4 of 7 · Drives ARION region binding, WP brand swap, SPARK sender. Shared across all products.`,
+      canNext: canProceedStep4,
+      onNext: () => setStep(5),
+      onBack: () => setStep(3),
+    },
+    5: {
+      title: "Owner account",
+      subtitle: `Step 5 of 7 · The owner identity that lands in the CIAM directory.`,
+      canNext: canProceedStep5,
+      onNext: () => setStep(6),
+      onBack: () => setStep(4),
+    },
+    6: {
+      title: "Review",
+      subtitle: `Step 6 of 7 · Last chance before we provision.`,
+      canNext: canProceedStep6,
+      onNext: submit,
+      nextLabel: submitting ? "Onboarding…" : "Onboard client →",
+      onBack: () => setStep(5),
+    },
+    7: {
+      title: result ? `✓ ${businessName} onboarded` : "Provisioning…",
+      subtitle: `Step 7 of 7`,
+      canNext: false,
+    },
+  };
+
+  const cfg = stepConfig[step];
+
   return (
-    <OliverPageWrapper title="Onboard Client (V2)" subtitle="IA Consulting · 7-step founder wizard" error={error} loading={submitting}>
-      <div className="max-w-4xl mx-auto">
-        <ProgressStrip current={step} total={7} />
+    <IadmModal
+      open={true}
+      onClose={() => navigate("/app/services/consulting_overview")}
+      product="oliver"
+      eyebrow="IA Consulting · Onboard Client"
+      title={cfg.title}
+      subtitle={cfg.subtitle}
+      size="info"
+      footer={
+        step === 7 ? (
+          <div className="flex justify-end w-full">
+            <button
+              onClick={() => {
+                setStep(1); setResult(null); setCheckoutUrl(null); setCart([]); setConsultingPick(null);
+                setBusinessName(""); setContactEmail(""); setSelectedCoupon(null); setCustomerMode(null);
+              }}
+              className="px-5 py-2 rounded-lg border border-gray-300 text-slate-700 font-semibold text-sm"
+            >
+              Onboard another client
+            </button>
+          </div>
+        ) : (
+          <div className="flex justify-between w-full">
+            {cfg.onBack ? (
+              <button
+                onClick={cfg.onBack}
+                className="px-5 py-2 rounded-lg border border-gray-300 text-slate-700 font-semibold text-sm"
+              >
+                ← Back
+              </button>
+            ) : <span />}
+            {cfg.onNext && (
+              <button
+                onClick={cfg.onNext}
+                disabled={!cfg.canNext || submitting}
+                className="px-5 py-2 rounded-lg text-white font-semibold text-sm disabled:opacity-50"
+                style={{ background: step === 6 ? PRODUCT_ACCENT.oliver : CORE_BLUE, color: step === 6 ? INK : "#fff" }}
+              >
+                {cfg.nextLabel || "Continue →"}
+              </button>
+            )}
+          </div>
+        )
+      }
+    >
+      <ProgressStrip current={step} total={7} />
+      {error && <div className="mb-3 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
 
-        {step === 1 && (
-          <Step1Customer
-            mode={customerMode} setMode={setCustomerMode}
-            searchEmail={searchEmail} setSearchEmail={setSearchEmail}
-            results={searchResults} loading={searchLoading} searchedYet={searchedYet}
-            selectedId={selectedExistingId} setSelectedId={setSelectedExistingId}
-            onSearch={runStripeSearch}
-            onContinue={() => setStep(2)} canContinue={canProceedStep1}
-          />
-        )}
+      {step === 1 && (
+        <Step1Customer
+          mode={customerMode} setMode={setCustomerMode}
+          searchEmail={searchEmail} setSearchEmail={setSearchEmail}
+          results={searchResults} loading={searchLoading} searchedYet={searchedYet}
+          selectedId={selectedExistingId} setSelectedId={setSelectedExistingId}
+          onSearch={runStripeSearch}
+        />
+      )}
 
-        {step === 2 && (
-          <Step2Cart
-            cart={cart} upsertCart={upsertCart} removeCart={removeCart}
-            cycle={cycle} setCycle={setCycle}
-            arionPlans={arionPlans}
-            oliverCat={oliverCat} sparkCat={sparkCat}
-            consultingProducts={consultingProducts} consultingPick={consultingPick} setConsultingPick={setConsultingPick}
-            consultingError={consultingError}
-            loading={catLoading}
-            arionSiteType={arionSiteType} setArionSiteType={setArionSiteType}
-            arionSiteUrl={arionSiteUrl} setArionSiteUrl={setArionSiteUrl}
-            onBack={() => setStep(1)} onContinue={() => setStep(3)} canContinue={canProceedStep2}
-          />
-        )}
+      {step === 2 && (
+        <Step2Cart
+          cart={cart} upsertCart={upsertCart} removeCart={removeCart}
+          cycle={cycle} setCycle={setCycle}
+          arionPlans={arionPlans}
+          oliverCat={oliverCat} sparkCat={sparkCat}
+          consultingProducts={consultingProducts} consultingPick={consultingPick} setConsultingPick={setConsultingPick}
+          consultingError={consultingError}
+          loading={catLoading}
+          arionSiteType={arionSiteType} setArionSiteType={setArionSiteType}
+          arionSiteUrl={arionSiteUrl} setArionSiteUrl={setArionSiteUrl}
+        />
+      )}
 
-        {step === 3 && (
-          <Step3Checkout
-            couponQuery={couponQuery} setCouponQuery={setCouponQuery}
-            couponOptions={couponOptions} couponLoading={couponLoading}
-            selectedCoupon={selectedCoupon} setSelectedCoupon={setSelectedCoupon}
-            collectionMethod={collectionMethod} setCollectionMethod={setCollectionMethod}
-            onBack={() => setStep(2)} onContinue={() => setStep(4)} canContinue={canProceedStep3}
-          />
-        )}
+      {step === 3 && (
+        <Step3Checkout
+          couponQuery={couponQuery} setCouponQuery={setCouponQuery}
+          couponOptions={couponOptions} couponLoading={couponLoading}
+          selectedCoupon={selectedCoupon} setSelectedCoupon={setSelectedCoupon}
+          collectionMethod={collectionMethod} setCollectionMethod={setCollectionMethod}
+        />
+      )}
 
-        {step === 4 && (
-          <Step4BusinessProfile
-            profile={profile} setProfile={setProfile}
-            businessName={businessName} setBusinessName={setBusinessName}
-            contactEmail={contactEmail} setContactEmail={setContactEmail}
-            arionInCart={!!findCart("arion")}
-            onBack={() => setStep(3)} onContinue={() => setStep(5)} canContinue={canProceedStep4}
-          />
-        )}
+      {step === 4 && (
+        <Step4BusinessProfile
+          profile={profile} setProfile={setProfile}
+          businessName={businessName} setBusinessName={setBusinessName}
+          contactEmail={contactEmail} setContactEmail={setContactEmail}
+          arionInCart={!!findCart("arion")}
+          api={{ get, post }}
+        />
+      )}
 
-        {step === 5 && (
-          <Step5Account
-            account={account} setAccount={setAccount} fallbackEmail={contactEmail}
-            onBack={() => setStep(4)} onContinue={() => setStep(6)} canContinue={canProceedStep5}
-          />
-        )}
+      {step === 5 && (
+        <Step5Account
+          account={account} setAccount={setAccount} fallbackEmail={contactEmail}
+        />
+      )}
 
-        {step === 6 && (
-          <Step6Review
-            cart={cart} consultingPick={consultingPick} cycle={cycle}
-            profile={profile} account={account}
-            businessName={businessName} contactEmail={contactEmail}
-            coupon={selectedCoupon} customerMode={customerMode}
-            collectionMethod={collectionMethod}
-            onBack={() => setStep(5)} onSubmit={submit} submitting={submitting} error={error}
-            canSubmit={canProceedStep6}
-          />
-        )}
+      {step === 6 && (
+        <Step6Review
+          cart={cart} consultingPick={consultingPick} cycle={cycle}
+          profile={profile} account={account}
+          businessName={businessName} contactEmail={contactEmail}
+          coupon={selectedCoupon} customerMode={customerMode}
+          collectionMethod={collectionMethod}
+        />
+      )}
 
-        {step === 7 && result && (
-          <Step7Progress
-            result={result}
-            checkoutUrl={checkoutUrl}
-            businessName={businessName}
-            onReset={() => {
-              setStep(1); setResult(null); setCheckoutUrl(null); setCart([]); setConsultingPick(null);
-              setBusinessName(""); setContactEmail(""); setSelectedCoupon(null); setCustomerMode(null);
-            }}
-          />
-        )}
-      </div>
-    </OliverPageWrapper>
+      {step === 7 && result && (
+        <Step7Progress
+          result={result}
+          checkoutUrl={checkoutUrl}
+          businessName={businessName}
+        />
+      )}
+    </IadmModal>
   );
 }
 
@@ -450,32 +554,10 @@ function ProgressStrip({ current, total }: { current: number; total: number }) {
   );
 }
 
-function StepShell({ title, subtitle, children, onBack, onNext, nextLabel = "Continue →", backLabel = "← Back", canNext = true, nextBusy }: {
-  title: string; subtitle?: string; children: React.ReactNode;
-  onBack?: () => void; onNext?: () => void; nextLabel?: string; backLabel?: string; canNext?: boolean; nextBusy?: boolean;
-}) {
-  return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-bold" style={{ color: INK }}>{title}</h2>
-        {subtitle && <p className="text-xs text-slate-500 mt-1">{subtitle}</p>}
-      </div>
-      {children}
-      <div className="pt-4 flex justify-between">
-        {onBack ? (
-          <button onClick={onBack} className="px-6 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-semibold">{backLabel}</button>
-        ) : <span />}
-        {onNext && (
-          <button onClick={onNext} disabled={!canNext || !!nextBusy}
-            className="px-6 py-2.5 rounded-lg text-white font-semibold disabled:opacity-50"
-            style={{ background: ACCENT }}
-          >
-            {nextBusy ? "Working…" : nextLabel}
-          </button>
-        )}
-      </div>
-    </div>
-  );
+// StepShell — content wrapper only. Title/subtitle live in the modal header;
+// navigation lives in the modal footer. This just provides consistent spacing.
+function StepShell({ children }: { children: React.ReactNode }) {
+  return <div className="space-y-4">{children}</div>;
 }
 
 function Field({ label, value, onChange, type = "text", placeholder, required, hint }: {
@@ -496,15 +578,16 @@ function Field({ label, value, onChange, type = "text", placeholder, required, h
 
 // ─── Step 1 — Customer mode ──────────────────────────────────────────────
 
-function Step1Customer({ mode, setMode, searchEmail, setSearchEmail, results, loading, searchedYet, selectedId, setSelectedId, onSearch, onContinue, canContinue }: {
+function Step1Customer({ mode, setMode, searchEmail, setSearchEmail, results, loading, searchedYet, selectedId, setSelectedId, onSearch }: {
   mode: CustomerMode | null; setMode: (m: CustomerMode) => void;
   searchEmail: string; setSearchEmail: (v: string) => void;
   results: StripeCustomerMatch[] | null; loading: boolean; searchedYet: boolean;
   selectedId: string | null; setSelectedId: (id: string | null) => void;
-  onSearch: () => void; onContinue: () => void; canContinue: boolean;
+  onSearch: () => void;
 }) {
   return (
-    <StepShell title="New or existing client?" subtitle="Existing = already has a Stripe customer record (we'll link the new tenant to them)." onNext={onContinue} canNext={canContinue}>
+    <StepShell>
+      <p className="text-xs text-slate-500">Existing = already has a Stripe customer record (we'll link the new tenant to them).</p>
       <div className="grid grid-cols-2 gap-3">
         <ModeCard active={mode === "new"} onClick={() => setMode("new")} title="New" desc="Brand new client. We'll create a Stripe customer + send onboarding link." />
         <ModeCard active={mode === "existing"} onClick={() => setMode("existing")} title="Existing" desc="Already in Stripe. We'll link a new tenant to the existing customer record." />
@@ -558,7 +641,7 @@ function ModeCard({ active, onClick, title, desc }: { active: boolean; onClick: 
 
 // ─── Step 2 — Catalog-driven cart ────────────────────────────────────────
 
-function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, oliverCat, sparkCat, consultingProducts, consultingPick, setConsultingPick, consultingError, loading, arionSiteType, setArionSiteType, arionSiteUrl, setArionSiteUrl, onBack, onContinue, canContinue }: {
+function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, oliverCat, sparkCat, consultingProducts, consultingPick, setConsultingPick, consultingError, loading, arionSiteType, setArionSiteType, arionSiteUrl, setArionSiteUrl }: {
   cart: CartItem[];
   upsertCart: (it: CartItem) => void;
   removeCart: (p: CartItem["product"]) => void;
@@ -573,17 +656,16 @@ function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, 
   loading: boolean;
   arionSiteType: ArionSiteType; setArionSiteType: (t: ArionSiteType) => void;
   arionSiteUrl: string; setArionSiteUrl: (v: string) => void;
-  onBack: () => void; onContinue: () => void; canContinue: boolean;
 }) {
   const arionInCart = cart.find((it) => it.product === "arion") as Extract<CartItem, { product: "arion" }> | undefined;
   const oliverInCart = cart.find((it) => it.product === "oliver") as Extract<CartItem, { product: "oliver" }> | undefined;
   const sparkInCart = cart.find((it) => it.product === "spark") as Extract<CartItem, { product: "spark" }> | undefined;
   const bundle = bundleDiscountPercent(cart);
 
-  if (loading) return <StepShell title="Configure cart" onBack={onBack}><div className="text-center text-gray-500 py-12">Loading catalog from OLIVER Products &amp; Services…</div></StepShell>;
+  if (loading) return <StepShell><div className="text-center text-gray-500 py-12">Loading catalog from OLIVER Products &amp; Services…</div></StepShell>;
 
   return (
-    <StepShell title="Configure cart" subtitle="Live prices from OLIVER Products & Services. Bundle discount auto-applies (5% for 2 platforms, 7% for 3+)." onBack={onBack} onNext={onContinue} canNext={canContinue}>
+    <StepShell>
       {/* Billing cycle toggle */}
       <div className="flex items-center gap-3 mb-4">
         <span className="text-xs font-semibold text-slate-700">Billing cycle:</span>
@@ -960,15 +1042,14 @@ function ConsultingPicker({ products, pick, setPick, cycle }: {
 
 // ─── Step 3 — Coupon + payment method ────────────────────────────────────
 
-function Step3Checkout({ couponQuery, setCouponQuery, couponOptions, couponLoading, selectedCoupon, setSelectedCoupon, collectionMethod, setCollectionMethod, onBack, onContinue, canContinue }: {
+function Step3Checkout({ couponQuery, setCouponQuery, couponOptions, couponLoading, selectedCoupon, setSelectedCoupon, collectionMethod, setCollectionMethod }: {
   couponQuery: string; setCouponQuery: (v: string) => void;
   couponOptions: CouponOption[]; couponLoading: boolean;
   selectedCoupon: CouponOption | null; setSelectedCoupon: (c: CouponOption | null) => void;
   collectionMethod: "charge_automatically" | "send_invoice"; setCollectionMethod: (m: "charge_automatically" | "send_invoice") => void;
-  onBack: () => void; onContinue: () => void; canContinue: boolean;
 }) {
   return (
-    <StepShell title="Checkout setup" subtitle="Apply a coupon (optional) and choose how the client pays." onBack={onBack} onNext={onContinue} canNext={canContinue}>
+    <StepShell>
       <div>
         <label className="block text-xs font-semibold text-slate-700 mb-1">Coupon (optional)</label>
         <input type="text" value={couponQuery} onChange={(e) => setCouponQuery(e.target.value)}
@@ -1032,15 +1113,17 @@ function PaymentChoice({ active, onClick, title, desc }: { active: boolean; onCl
 
 // ─── Step 4 — Business profile ───────────────────────────────────────────
 
-function Step4BusinessProfile({ profile, setProfile, businessName, setBusinessName, contactEmail, setContactEmail, arionInCart, onBack, onContinue, canContinue }: {
+function Step4BusinessProfile({ profile, setProfile, businessName, setBusinessName, contactEmail, setContactEmail, arionInCart, api }: {
   profile: BusinessProfile; setProfile: (p: BusinessProfile) => void;
   businessName: string; setBusinessName: (v: string) => void;
   contactEmail: string; setContactEmail: (v: string) => void;
   arionInCart: boolean;
-  onBack: () => void; onContinue: () => void; canContinue: boolean;
+  api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, body?: unknown) => Promise<T> };
 }) {
   return (
-    <StepShell title="Business profile" subtitle="Drives ARION region binding (city/state for Google D/M), WP brand swap, and SPARK sender." onBack={onBack} onNext={onContinue} canNext={canContinue}>
+    <StepShell>
+      <p className="text-xs text-slate-500">Drives ARION region binding (city/state for Google D/M), WP brand swap, and SPARK sender. Shared across all products.</p>
+
       <div className="grid grid-cols-2 gap-3">
         <Field label="Business name" required value={businessName} onChange={setBusinessName} />
         <Field label="Primary contact email" type="email" required value={contactEmail} onChange={setContactEmail} />
@@ -1055,20 +1138,50 @@ function Step4BusinessProfile({ profile, setProfile, businessName, setBusinessNa
         <Field label="ZIP" value={profile.address_zip} onChange={(v) => setProfile({ ...profile, address_zip: v })} />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Phone" value={profile.phone} onChange={(v) => setProfile({ ...profile, phone: v })} />
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">Phone</label>
+          <input type="tel" value={profile.phone}
+            onChange={(e) => setProfile({ ...profile, phone: formatPhone(e.target.value) })}
+            placeholder="+1 (555) 555-5555"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+        </div>
         <Field label="Website" value={profile.website} onChange={(v) => setProfile({ ...profile, website: v })} placeholder="https://…" />
       </div>
       <Field label="Industry" value={profile.industry} onChange={(v) => setProfile({ ...profile, industry: v })} placeholder="e.g. Roller skating rink, Roofing, Restaurant" />
-      <div className="grid grid-cols-3 gap-3">
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">Primary color</label>
-          <input type="color" value={profile.primary_color} onChange={(e) => setProfile({ ...profile, primary_color: e.target.value })} className="w-full h-10 rounded-lg border border-gray-300" />
+
+      {/* Logo — full LogoPicker (upload / website scan / paste URL) */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-1">Logo</label>
+        <LogoPicker
+          value={profile.logo_url || null}
+          onChange={(url) => setProfile({ ...profile, logo_url: url || "" })}
+          api={api}
+          website={profile.website || undefined}
+        />
+      </div>
+
+      {/* Brand colors — Primary / Secondary / Accent (matches core.tenants schema) */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700">Brand colors</label>
+        <p className="mt-0.5 text-[10px] text-slate-500">Used across invoices, quotes, portals, and WP brand swap. Accent highlights links + buttons.</p>
+        <div className="mt-2 space-y-2">
+          {([
+            ["Primary", "primary_color", "#1A3A4A"],
+            ["Secondary", "secondary_color", "#FEC82C"],
+            ["Accent", "accent_color", "#1A7DB5"],
+          ] as Array<[string, "primary_color" | "secondary_color" | "accent_color", string]>).map(([label, key, fb]) => (
+            <div key={key} className="flex items-center gap-3">
+              <span className="w-20 text-xs text-slate-700">{label}</span>
+              <input type="color" value={profile[key] || fb}
+                onChange={(e) => setProfile({ ...profile, [key]: e.target.value })}
+                className="h-9 w-12 cursor-pointer rounded border border-gray-300" />
+              <input type="text" value={profile[key] || ""}
+                onChange={(e) => setProfile({ ...profile, [key]: e.target.value })}
+                className="w-32 rounded-lg border border-gray-300 px-3 py-2 text-xs font-mono"
+                placeholder={fb} />
+            </div>
+          ))}
         </div>
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">Accent color</label>
-          <input type="color" value={profile.accent_color} onChange={(e) => setProfile({ ...profile, accent_color: e.target.value })} className="w-full h-10 rounded-lg border border-gray-300" />
-        </div>
-        <Field label="Logo URL" value={profile.logo_url} onChange={(v) => setProfile({ ...profile, logo_url: v })} placeholder="https://…" />
       </div>
     </StepShell>
   );
@@ -1076,13 +1189,12 @@ function Step4BusinessProfile({ profile, setProfile, businessName, setBusinessNa
 
 // ─── Step 5 — Owner account ──────────────────────────────────────────────
 
-function Step5Account({ account, setAccount, fallbackEmail, onBack, onContinue, canContinue }: {
+function Step5Account({ account, setAccount, fallbackEmail }: {
   account: OwnerAccount; setAccount: (a: OwnerAccount) => void;
   fallbackEmail: string;
-  onBack: () => void; onContinue: () => void; canContinue: boolean;
 }) {
   return (
-    <StepShell title="Owner account" subtitle="The owner identity that lands in the CIAM directory." onBack={onBack} onNext={onContinue} canNext={canContinue}>
+    <StepShell>
       <div className="grid grid-cols-2 gap-3">
         <Field label="First name" required value={account.first_name} onChange={(v) => setAccount({ ...account, first_name: v })} />
         <Field label="Last name" required value={account.last_name} onChange={(v) => setAccount({ ...account, last_name: v })} />
@@ -1092,7 +1204,13 @@ function Step5Account({ account, setAccount, fallbackEmail, onBack, onContinue, 
         <Field label="Title / role" value={account.title} onChange={(v) => setAccount({ ...account, title: v })} placeholder="Owner, Founder, GM…" />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Mobile phone" value={account.mobile} onChange={(v) => setAccount({ ...account, mobile: v })} />
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile phone</label>
+          <input type="tel" value={account.mobile}
+            onChange={(e) => setAccount({ ...account, mobile: formatPhone(e.target.value) })}
+            placeholder="+1 (555) 555-5555"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+        </div>
         <Field label="Time zone" value={account.time_zone} onChange={(v) => setAccount({ ...account, time_zone: v })} hint="Auto-detected from your browser" />
       </div>
       <div className="space-y-2">
@@ -1118,14 +1236,13 @@ function Step5Account({ account, setAccount, fallbackEmail, onBack, onContinue, 
 
 // ─── Step 6 — Review ─────────────────────────────────────────────────────
 
-function Step6Review({ cart, consultingPick, cycle, profile, account, businessName, contactEmail, coupon, customerMode, collectionMethod, onBack, onSubmit, submitting, error, canSubmit }: {
+function Step6Review({ cart, consultingPick, cycle, profile, account, businessName, contactEmail, coupon, customerMode, collectionMethod }: {
   cart: CartItem[]; consultingPick: ConsultingPick | null;
   cycle: BillingCycle;
   profile: BusinessProfile; account: OwnerAccount;
   businessName: string; contactEmail: string;
   coupon: CouponOption | null; customerMode: CustomerMode | null;
   collectionMethod: "charge_automatically" | "send_invoice";
-  onBack: () => void; onSubmit: () => void; submitting: boolean; error: string | null; canSubmit: boolean;
 }) {
   const labelFor = (it: CartItem): string => {
     if (it.product === "oliver") return `OLIVER ${it.plan}`;
@@ -1135,7 +1252,7 @@ function Step6Review({ cart, consultingPick, cycle, profile, account, businessNa
     return `SPARK ${it.volume}${fa}${lg}`;
   };
   return (
-    <StepShell title="Review" subtitle="Last chance before we provision." onBack={onBack} onNext={onSubmit} canNext={canSubmit} nextLabel="Onboard client →" nextBusy={submitting}>
+    <StepShell>
       <Card>
         <Row label="Customer mode" value={customerMode === "new" ? "New" : "Existing (linked)"} />
         <Row label="Business" value={businessName} />
@@ -1152,7 +1269,6 @@ function Step6Review({ cart, consultingPick, cycle, profile, account, businessNa
         <Row label="Coupon" value={coupon ? `${coupon.id} (${coupon.percent_off != null ? `${coupon.percent_off}% off` : `$${(coupon.amount_off ?? 0) / 100} off`}, ${coupon.duration})` : "None"} />
         <Row label="Method" value={collectionMethod === "charge_automatically" ? "Charge automatically (Stripe link)" : "Send invoice"} />
       </Card>
-      {error && <div className="text-sm text-rose-600">{error}</div>}
     </StepShell>
   );
 }
@@ -1176,12 +1292,11 @@ function Row({ label, value }: { label: string; value: string }) {
 
 // ─── Step 7 — Progress + handoff ─────────────────────────────────────────
 
-function Step7Progress({ result, checkoutUrl, businessName, onReset }: {
-  result: OnboardResult; checkoutUrl: string | null; businessName: string; onReset: () => void;
+function Step7Progress({ result, checkoutUrl, businessName }: {
+  result: OnboardResult; checkoutUrl: string | null; businessName: string;
 }) {
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold" style={{ color: INK }}>✓ {businessName} onboarded</h2>
       <Card>
         <div className="text-sm"><strong>Tenant ID:</strong> <code className="text-xs">{result.tenant_id}</code></div>
         <div className="text-sm"><strong>Slug:</strong> {result.slug}</div>
@@ -1239,9 +1354,6 @@ function Step7Progress({ result, checkoutUrl, businessName, onReset }: {
           </div>
         </Card>
       )}
-      <button onClick={onReset} className="px-6 py-2.5 rounded-lg border border-gray-300 text-slate-700 font-semibold">
-        Onboard another client
-      </button>
     </div>
   );
 }
