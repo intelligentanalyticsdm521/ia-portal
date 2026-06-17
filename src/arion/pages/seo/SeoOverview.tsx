@@ -255,6 +255,15 @@ export function SeoOverview() {
         </div>
       </div>
 
+      {/* Project Settings — engines locked (Brandon decision 2026-06-17),
+          tenant manages keywords/prompts/competitors only. */}
+      <ProjectSettingsCard
+        tier={tier}
+        standardCards={standardCanonicalCards}
+        aiPromptsAvailable={tier === 'growth' || tier === 'authority'}
+        onNavigate={(p) => navigate(p)}
+      />
+
       {/* Standard Search Engines — label + toggle below + always-visible cards */}
       <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary, #0B1C24)', marginBottom: 6, display: 'inline-flex', alignItems: 'center' }}>
         Standard Search Engines
@@ -767,6 +776,157 @@ function CompetitorsMiniTable({ competitors }: { competitors: any[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/**
+ * Project Settings panel — sits above the engine cards. Surfaces the locked
+ * search-engine model + quick-action buttons to the management pages.
+ * Brandon's locked decision 2026-06-17: tenants never change engines.
+ */
+function ProjectSettingsCard({
+  tier,
+  standardCards,
+  aiPromptsAvailable,
+  onNavigate,
+}: {
+  tier: string;
+  standardCards: Array<{ canonical: { id: string; label: string }; card: SeoHeroEngineCard | null }>;
+  aiPromptsAvailable: boolean;
+  onNavigate: (path: string) => void;
+}) {
+  const tierLabel = tier ? tier[0].toUpperCase() + tier.slice(1) : 'Not set';
+
+  const getRegion = (engineId: string): string => {
+    if (engineId === 'bing') return 'Nationwide · United States';
+    const card = standardCards.find((sc) => sc.canonical.id === engineId)?.card;
+    if (card?.region) return card.region;
+    if (card?.longLabel && /,\s+[A-Z]{2}/.test(card.longLabel)) return card.longLabel;
+    return 'Your service area';
+  };
+
+  const btnStyle: React.CSSProperties = {
+    padding: '8px 12px',
+    fontSize: 11,
+    fontWeight: 600,
+    background: '#0B1C24',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 5,
+    cursor: 'pointer',
+    textAlign: 'left',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  };
+  const btnDisabledStyle: React.CSSProperties = {
+    ...btnStyle,
+    opacity: 0.55,
+    cursor: 'not-allowed',
+    background: '#5A7A8A',
+  };
+
+  const engines = [
+    { id: 'google_desktop', label: 'Google Desktop' },
+    { id: 'google_mobile', label: 'Google Mobile' },
+    { id: 'bing', label: 'Bing' },
+  ];
+
+  return (
+    <div style={{
+      background: '#fff',
+      border: '1px solid #e2e8f0',
+      borderRadius: 10,
+      padding: '14px 18px',
+      marginBottom: 18,
+      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#0B1C24' }}>Project Settings</div>
+        <div style={{
+          fontSize: 10,
+          fontWeight: 600,
+          color: '#0C4A60',
+          background: '#E8F1F4',
+          padding: '4px 10px',
+          borderRadius: 12,
+          textTransform: 'uppercase',
+          letterSpacing: 0.4,
+        }}>
+          {tierLabel} tier
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 18 }}>
+        <div>
+          <div style={{
+            fontSize: 10,
+            color: '#5A7A8A',
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+            fontWeight: 600,
+            marginBottom: 8,
+          }}>
+            Tracked Search Engines (locked)
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {engines.map((e) => (
+              <div key={e.id} style={{ fontSize: 12, color: '#0B1C24', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{
+                  display: 'inline-block',
+                  width: 6,
+                  height: 6,
+                  background: '#2D9CDB',
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                }} />
+                <strong>{e.label}</strong>
+                <span style={{ color: '#5A7A8A' }}>· {getRegion(e.id)}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 10, lineHeight: 1.5 }}>
+            Engine selection is fixed by IA so historical tracking stays consistent.
+            To change your service area, contact your IA strategist.
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{
+            fontSize: 10,
+            color: '#5A7A8A',
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+            fontWeight: 600,
+            marginBottom: 2,
+          }}>
+            Manage your project
+          </div>
+          <button
+            onClick={() => onNavigate('/app/services/arion_seo_keywords')}
+            style={btnStyle}
+          >
+            <span>Keywords</span><span>→</span>
+          </button>
+          <button
+            onClick={() => aiPromptsAvailable && onNavigate('/app/services/arion_seo_ai_prompts')}
+            disabled={!aiPromptsAvailable}
+            style={aiPromptsAvailable ? btnStyle : btnDisabledStyle}
+            title={!aiPromptsAvailable ? 'Upgrade to Growth tier to manage AI prompts' : undefined}
+          >
+            <span>AI Prompts</span>
+            <span>{aiPromptsAvailable ? '→' : '🔒'}</span>
+          </button>
+          <button
+            onClick={() => onNavigate('/app/services/arion_seo_competitors')}
+            style={btnStyle}
+          >
+            <span>Competitors</span><span>→</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
