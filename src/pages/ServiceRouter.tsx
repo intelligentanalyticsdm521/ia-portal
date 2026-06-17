@@ -256,7 +256,11 @@ const ConsultingOverviewPage = lazyNamed(() => import('./consulting/ConsultingOv
 const ConsultingCalendarPage = lazyNamed(() => import('./consulting/ConsultingCalendarPage'), 'ConsultingCalendarPage');
 const ConsultingWorkspacePage = lazyNamed(() => import('./consulting/ConsultingWorkspacePage'), 'ConsultingWorkspacePage');
 const ConsultingAccessLogPage = lazyNamed(() => import('./consulting/ConsultingAccessLogPage'), 'ConsultingAccessLogPage');
-const ConsultingOnboardClientPage = lazyNamed(() => import('./consulting/ConsultingOnboardClientPage'), 'ConsultingOnboardClientPage');
+// F-Onboard-v2 (2026-06-17): swap to ConsultingOnboardClientPageV2 — 7-step
+// rebuild (customer mode, multi-product cart w/ consulting price override,
+// dynamic coupon autocomplete, deep business profile, beefed account, review,
+// progress). Original V1 file kept in repo for one cycle as rollback path.
+const ConsultingOnboardClientPage = lazyNamed(() => import('./consulting/ConsultingOnboardClientPageV2'), 'ConsultingOnboardClientPageV2');
 const ConsultingTicketsBoardPage = lazyNamed(() => import('./consulting/ConsultingTicketsBoardPage'), 'ConsultingTicketsBoardPage');
 const ConsultingProjectsBoardPage = lazyNamed(() => import('./consulting/ConsultingProjectsBoardPage'), 'ConsultingProjectsBoardPage');
 const ConsultingDeliverablesPage = lazyNamed(() => import('./consulting/ConsultingDeliverablesPage'), 'ConsultingDeliverablesPage');
