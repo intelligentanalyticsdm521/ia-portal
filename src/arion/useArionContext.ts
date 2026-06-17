@@ -695,16 +695,22 @@ export function useArionContext() {
         return getAIPrompts({ ...b, siteId });
       },
 
-      async addAIPrompt(siteId: string, prompt: string, engines?: string[]) {
+      async setupAIPrompts(siteId: string, brand?: string) {
         const b = await base();
-        const { addAIPrompt } = await import('../lib/arionApi');
-        return addAIPrompt({ ...b, siteId, prompt, engines });
+        const { setupAIPrompts } = await import('../lib/arionApi');
+        return setupAIPrompts({ ...b, siteId, brand });
       },
 
-      async removeAIPrompt(siteId: string, promptId: string | number) {
+      async addAIPrompt(siteId: string, prompt: string, engine: string) {
+        const b = await base();
+        const { addAIPrompt } = await import('../lib/arionApi');
+        return addAIPrompt({ ...b, siteId, prompt, engine });
+      },
+
+      async removeAIPrompt(siteId: string, k2siteLlmId: string | number, llmId: string | number) {
         const b = await base();
         const { removeAIPrompt } = await import('../lib/arionApi');
-        return removeAIPrompt({ ...b, siteId, promptId });
+        return removeAIPrompt({ ...b, siteId, k2siteLlmId, llmId });
       },
     };
   }, [activeTenantId, apiBaseUrl, getToken]);

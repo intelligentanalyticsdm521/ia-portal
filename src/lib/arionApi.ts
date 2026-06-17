@@ -1782,37 +1782,68 @@ export async function removeTrackedKeywords(p: { baseUrl: string; bearerToken: s
   });
 }
 
-export interface SeoAIPromptEntry {
-  prompt_id: string | number;
-  prompt: string;
-  engines: string[];
+export interface SeoAIPromptItem {
+  k2site_llm_id: number;
+  keyword: string;
+  search_volume?: number;
+  intent?: string;
+}
+
+export interface SeoAIPromptsByEngine {
+  llm_id: number;
+  engine_base_name: string;
+  country_code?: string;
+  lang_code?: string;
+  region_name?: string;
+  prompts: SeoAIPromptItem[];
+}
+
+export interface SeoAIEngineRecord {
+  llm_id: number;
+  base_name: string;
+  country_code: string;
+  lang_code: string;
+  region_name?: string;
 }
 
 export interface SeoAIPromptsResponse {
-  data: SeoAIPromptEntry[];
+  data: SeoAIPromptsByEngine[];
+  engines: SeoAIEngineRecord[];
+  brand: string | null;
   project_id: string | number | null;
   tier: string;
   cap: number;
   allowed_engines: string[];
+  total_prompts: number;
 }
 
 export async function getAIPrompts(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<SeoAIPromptsResponse>({ ...p, path: `/arion/seo/ai-prompts?siteId=${encodeURIComponent(p.siteId)}` });
 }
 
-export async function addAIPrompt(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; prompt: string; engines?: string[] }) {
-  return requestJson<{ data: any }>({
+/** One-shot: sets brand + enables every tier-allowed AI engine on the project. */
+export async function setupAIPrompts(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; brand?: string }) {
+  return requestJson<{ brand: string; brand_set: boolean; enabled: Array<{ base_name: string; llm_id: number }>; skipped: string[]; tier: string; cap: number }>({
     ...p,
     method: 'POST',
-    path: `/arion/seo/ai-prompts`,
-    body: { siteId: p.siteId, prompt: p.prompt, engines: p.engines },
+    path: `/arion/seo/ai-prompts/setup`,
+    body: { siteId: p.siteId, brand: p.brand },
   });
 }
 
-export async function removeAIPrompt(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; promptId: string | number }) {
+export async function addAIPrompt(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; prompt: string; engine: string }) {
+  return requestJson<{ data: any; engine: string; llm_id: number }>({
+    ...p,
+    method: 'POST',
+    path: `/arion/seo/ai-prompts`,
+    body: { siteId: p.siteId, prompt: p.prompt, engine: p.engine },
+  });
+}
+
+export async function removeAIPrompt(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; k2siteLlmId: string | number; llmId: string | number }) {
   return requestJson<{ ok: boolean }>({
     ...p,
     method: 'DELETE',
-    path: `/arion/seo/ai-prompts/${encodeURIComponent(String(p.promptId))}?siteId=${encodeURIComponent(p.siteId)}`,
+    path: `/arion/seo/ai-prompts/${encodeURIComponent(String(p.k2siteLlmId))}?siteId=${encodeURIComponent(p.siteId)}&llmId=${encodeURIComponent(String(p.llmId))}`,
   });
 }
