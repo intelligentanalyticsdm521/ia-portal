@@ -373,6 +373,7 @@ export function ConsultingOnboardClientPageV2() {
             arionPlans={arionPlans}
             oliverCat={oliverCat} sparkCat={sparkCat}
             consultingProducts={consultingProducts} consultingPick={consultingPick} setConsultingPick={setConsultingPick}
+            consultingError={consultingError}
             loading={catLoading}
             arionSiteType={arionSiteType} setArionSiteType={setArionSiteType}
             arionSiteUrl={arionSiteUrl} setArionSiteUrl={setArionSiteUrl}
@@ -557,7 +558,7 @@ function ModeCard({ active, onClick, title, desc }: { active: boolean; onClick: 
 
 // ─── Step 2 — Catalog-driven cart ────────────────────────────────────────
 
-function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, oliverCat, sparkCat, consultingProducts, consultingPick, setConsultingPick, loading, arionSiteType, setArionSiteType, arionSiteUrl, setArionSiteUrl, onBack, onContinue, canContinue }: {
+function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, oliverCat, sparkCat, consultingProducts, consultingPick, setConsultingPick, consultingError, loading, arionSiteType, setArionSiteType, arionSiteUrl, setArionSiteUrl, onBack, onContinue, canContinue }: {
   cart: CartItem[];
   upsertCart: (it: CartItem) => void;
   removeCart: (p: CartItem["product"]) => void;
@@ -568,6 +569,7 @@ function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, 
   consultingProducts: ConsultingProduct[] | null;
   consultingPick: ConsultingPick | null;
   setConsultingPick: (p: ConsultingPick | null) => void;
+  consultingError: string | null;
   loading: boolean;
   arionSiteType: ArionSiteType; setArionSiteType: (t: ArionSiteType) => void;
   arionSiteUrl: string; setArionSiteUrl: (v: string) => void;
