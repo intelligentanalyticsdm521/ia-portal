@@ -271,7 +271,24 @@ export function ConsultingOnboardClientPageV2() {
       const oliver = findCart("oliver");
       const spark = findCart("spark");
 
-      // 1. Founder tenant create (+ Stripe customer + coupon + profile + consulting sub)
+      // SINGLE backend call. /admin/onboard-client now creates the tenant +
+      // Stripe customer + ONE Stripe subscription with ALL line items
+      // (ARION, OLIVER, SPARK, Consulting) + applies the coupon + persists
+      // the shared profile + saves saas_stripe_customer_id +
+      // saas_stripe_subscription_id on core.tenants. No more Stripe Checkout
+      // URL handoff — the subscription is real and active the moment
+      // submit returns.
+      const cartItems = cart.map((it) => {
+        if (it.product === "arion") return { product: "arion" as const, plan: it.plan, seo: it.seo || null };
+        if (it.product === "oliver") return { product: "oliver" as const, plan: it.plan };
+        return {
+          product: "spark" as const, volume: it.volume,
+          featureAddon: it.featureAddon || null,
+          leads: it.leads || null,
+          ...(it.leads ? { leadsSelected: it.leadsSelected } : {}),
+        };
+      });
+
       const adminBody: Record<string, unknown> = {
         business_name: businessName,
         contact_email: contactEmail,
@@ -288,13 +305,11 @@ export function ConsultingOnboardClientPageV2() {
         stripe_action: customerMode === "existing" ? "link_existing" : "create_new_with_coupon",
         coupon_code: selectedCoupon?.id,
         collection_method: collectionMethod,
+        billing_cycle: cycle,
+        cart_items: cartItems,
         business_profile: profile,
         owner_account: account,
       };
-      // Consulting flows through subscription_items (uses price_data override).
-      // Send whatever unit_amount the founder typed (including 0 for fully
-      // discounted engagements). The backend handles 0-amount by not creating
-      // a Stripe subscription line item.
       if (consultingPick) {
         adminBody.subscription_items = [{
           product_id: consultingPick.productId,
@@ -302,36 +317,12 @@ export function ConsultingOnboardClientPageV2() {
           interval: consultingPick.interval,
         }];
       }
-      // oliverFetch auto-unwraps {data:...}; adminResp IS the OnboardResult.
-      const adminResp = await post<OnboardResult>("/admin/onboard-client", adminBody);
+      const adminResp = await post<OnboardResult & { invoice_url?: string | null }>("/admin/onboard-client", adminBody);
       setResult(adminResp);
-
-      // 2. For ARION/SPARK/OLIVER, fire createSignupCartCheckout to get
-      // the real Stripe Checkout URL (bundle discount auto-applied). The
-      // URL gets shown to the founder to copy/send to the client.
-      // Public /pricing uses the exact same endpoint — single source of truth.
-      const cartItems = cart.map((it) => {
-        if (it.product === "arion")  return { product: "arion" as const,  plan: it.plan, seo: it.seo || null };
-        if (it.product === "oliver") return { product: "oliver" as const, plan: it.plan };
-        return {
-          product: "spark" as const, volume: it.volume,
-          featureAddon: it.featureAddon || null,
-          leads: it.leads || null,
-          ...(it.leads ? { leadsSelected: it.leadsSelected } : {}),
-        };
-      });
-      if (cartItems.length > 0) {
-        const r = await createSignupCartCheckout({
-          email: contactEmail,
-          name: account.display_name || businessName,
-          billing_cycle: cycle,
-          items: cartItems,
-          // Founder override — wins over the auto-applied MP5R/MP7R bundle
-          // when present. Bundle still auto-applies if founder picks no coupon.
-          coupon_code: selectedCoupon?.id,
-        });
-        setCheckoutUrl(r.checkout_url);
-      }
+      // Hosted invoice URL as a payment-fallback link for clients who didn't
+      // pick the send_invoice path. With charge_automatically + 100%-off
+      // coupon there's nothing to pay so this stays null.
+      if (adminResp.invoice_url) setCheckoutUrl(adminResp.invoice_url);
       setStep(7);
     } catch (e) {
       setError((e as Error).message);
