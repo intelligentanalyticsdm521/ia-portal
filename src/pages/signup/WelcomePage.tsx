@@ -53,8 +53,11 @@ export function WelcomePage() {
           setSite(body.site || null);
           setStatus('success');
           // Brief pause so the customer sees confirmation, then bounce to signup.
+          // signup completes MSAL → routes to /app/services/command which
+          // auto-opens the unified onboarding modal via ?welcome=1 query param.
+          // Result: the customer never leaves a guided flow.
           setTimeout(() => {
-            const target = body.signup_url || `/signup?prefill_email=${encodeURIComponent(email)}&activated=1`;
+            const target = body.signup_url || `/signup?prefill_email=${encodeURIComponent(email)}&activated=1&post_signup_redirect=${encodeURIComponent("/app/services/command?welcome=1")}`;
             // External URL or in-app? The activate endpoint always returns an
             // absolute https URL on portal.intelligentanalyticsdm.com — if the
             // current host matches, use the in-app navigator to avoid a full

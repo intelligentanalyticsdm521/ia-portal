@@ -257,7 +257,7 @@ export function ClientTenantModal({ open, tenantId, tenantName, mode, cart, onCl
   return (
     <ClientTenantProvider value={ctx}>
       {mode === "onboarding"
-        ? <UnifiedOnboarding tenantId={tenantId} tenantName={tenantName} cart={cart || ["arion","spark","oliver"]} onClose={onClose} onFinished={onFinished} />
+        ? <UnifiedOnboarding tenantId={tenantId} tenantName={tenantName} cart={cart} onClose={onClose} onFinished={onFinished} />
         : <ConsultingModeShell tenantId={tenantId} tenantName={tenantName} onClose={onClose} />}
     </ClientTenantProvider>
   );
@@ -266,14 +266,20 @@ export function ClientTenantModal({ open, tenantId, tenantName, mode, cart, onCl
 // ─── Unified onboarding ──────────────────────────────────────────────────
 
 function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: {
-  tenantId: string; tenantName?: string; cart: ProductKey[];
+  tenantId: string; tenantName?: string; cart: ProductKey[] | undefined;
   onClose: () => void; onFinished?: () => void;
 }) {
   // get/post/patch are CLIENT-scoped (header = client tenant_id) — used for
   // Stripe Connect, PATCH /settings (business profile), etc.
   // getFounder/postFounder are FOUNDER-scoped — used for /admin/onboard-client/*.
   const { get, post, patch, getFounder, postFounder } = useOliverApi();
-  const sections = useMemo(() => buildSections(cart), [cart]);
+  // Cart can come from props (explicit) OR be derived from the prefill payload
+  // (core.tenants.signup_product → ["arion"|"spark"|"oliver"|"consulting"]
+  // OR all four for multi). Default ["arion","spark","oliver"] is a final
+  // fallback only when nothing is known — never the first choice. This is
+  // what Brandon complained about: SPARK-only buyers seeing ARION/OLIVER.
+  const [effectiveCart, setEffectiveCart] = useState<ProductKey[]>(cart && cart.length ? cart : ["arion","spark","oliver"]);
+  const sections = useMemo(() => buildSections(effectiveCart), [effectiveCart]);
   const [stepIdx, setStepIdx] = useState(0);
   const [state, setState] = useState<OnboardingState>(EMPTY_STATE);
   const [loading, setLoading] = useState(true);
@@ -301,6 +307,16 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
           if (data?.state)   merged = mergeState(merged, data.state);
           return merged;
         });
+        // Cart override from prefill — backend reads signup_product +
+        // canonical-table presence and tells us which products are in scope.
+        // Only override if caller didn't pass an explicit cart prop.
+        if (!cart || !cart.length) {
+          const prefillCart = (data as { prefill?: { cart?: ProductKey[] } } | undefined)?.prefill?.cart;
+          if (Array.isArray(prefillCart) && prefillCart.length) {
+            setEffectiveCart(prefillCart.filter((p): p is ProductKey =>
+              p === "arion" || p === "spark" || p === "oliver" || p === "consulting"));
+          }
+        }
         if (typeof data?.step === "number" && data.step >= 0 && data.step < sections.length) {
           setStepIdx(data.step);
         }
@@ -308,7 +324,8 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
       .catch(() => { /* fresh start ok */ })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [tenantId, getFounder, sections.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, getFounder]);
 
   async function persist(mode: "continue" | "close" | "finish") {
     setSaving(true); setErr(null);

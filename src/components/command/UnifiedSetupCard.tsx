@@ -14,6 +14,8 @@ import { Sparkles } from "lucide-react";
 import { useAppState } from "../../app/AppState";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { ClientTenantModal } from "../consulting/ClientTenantModal";
+import { WalkthroughRunner } from "../walkthroughs/WalkthroughRunner";
+import { findWalkthrough, Walkthrough } from "../walkthroughs/walkthroughRegistry";
 
 interface OnboardingProgress {
   state?: Record<string, unknown> | null;
@@ -32,6 +34,26 @@ export function UnifiedSetupCard() {
   const [progress, setProgress] = useState<OnboardingProgress | null>(null);
   const [reachable, setReachable] = useState<boolean | null>(null);
   const [open, setOpen] = useState(false);
+  // After Finish, auto-fire a queue of walkthroughs the user just unlocked
+  // (one per product they bought). Plays them in order; user can skip any.
+  const [walkthroughQueue, setWalkthroughQueue] = useState<Walkthrough[]>([]);
+  const [activeWalkthrough, setActiveWalkthrough] = useState<Walkthrough | null>(null);
+
+  // Auto-open the modal when we just landed from /welcome (post-CIAM activation)
+  // OR when ?welcome=1 / ?onboarding=1 is in the URL. Self-serve clients see
+  // the modal pop the moment they sign in. Strip the query param so refresh
+  // doesn't loop it back open.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("welcome") || params.has("onboarding")) {
+      setOpen(true);
+      params.delete("welcome");
+      params.delete("onboarding");
+      const newSearch = params.toString();
+      const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : "") + window.location.hash;
+      window.history.replaceState({}, "", newUrl);
+    }
+  }, []);
 
   const reload = useCallback(async () => {
     if (!ready || !activeTenantId) return;
@@ -99,7 +121,48 @@ export function UnifiedSetupCard() {
             : undefined)
         }
         onClose={() => { setOpen(false); reload(); }}
-        onFinished={() => { setOpen(false); reload(); }}
+        onFinished={() => {
+          setOpen(false);
+          reload();
+          // Build a walkthrough queue based on what the tenant has access to.
+          // We use the same prefill.cart that drove the modal sections, so
+          // the user sees walkthroughs for every product they actually bought.
+          const cart: string[] = Array.isArray(progress?.prefill?.cart) ? (progress!.prefill!.cart as string[]) : [];
+          const queue: Walkthrough[] = [];
+          if (cart.includes("arion")) {
+            ["arion-site", "arion-integrations", "arion-insights"].forEach((id) => {
+              const w = findWalkthrough(id); if (w) queue.push(w);
+            });
+          }
+          if (cart.includes("spark")) {
+            ["spark-contacts", "spark-templates", "spark-lifecycle", "spark-campaigns"].forEach((id) => {
+              const w = findWalkthrough(id); if (w) queue.push(w);
+            });
+          }
+          if (cart.includes("oliver")) {
+            ["oliver-customers", "oliver-jobs", "oliver-invoicing", "oliver-subscriptions"].forEach((id) => {
+              const w = findWalkthrough(id); if (w) queue.push(w);
+            });
+          }
+          if (queue.length) {
+            setWalkthroughQueue(queue.slice(1));
+            setActiveWalkthrough(queue[0]);
+          }
+        }}
+      />
+      <WalkthroughRunner
+        open={!!activeWalkthrough}
+        walkthrough={activeWalkthrough}
+        onClose={() => {
+          setActiveWalkthrough(null);
+          setWalkthroughQueue([]);
+        }}
+        onComplete={() => {
+          // Pop the next walkthrough off the queue (if any) or end.
+          const next = walkthroughQueue[0] || null;
+          setWalkthroughQueue((q) => q.slice(1));
+          setActiveWalkthrough(next);
+        }}
       />
     </>
   );
