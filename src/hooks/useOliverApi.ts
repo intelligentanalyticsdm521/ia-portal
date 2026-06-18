@@ -55,10 +55,23 @@ export function useOliverApi() {
     [instance, account, tenantOverride]
   );
 
+  // Founder-scoped variants. These IGNORE the ClientTenantModal override
+  // and always send the caller's own tenant_id (from their JWT). Used
+  // inside the modal for `/admin/onboard-client/*` endpoints, which are
+  // gated by requireFounder (caller tenant must = FOUNDER_TENANT_ID).
+  const getFounder = useCallback(
+    <T>(path: string) => oliverGet<T>(instance, account, path, null),
+    [instance, account]
+  );
+  const postFounder = useCallback(
+    <T>(path: string, body?: unknown) => oliverPost<T>(instance, account, path, body, null),
+    [instance, account]
+  );
+
   // Stable object identity — prevents consumers keyed on this hook's result
   // from re-fetching on every render (fetch once per page, not per render).
   return useMemo(
-    () => ({ get, post, patch, put, del, ready: !!account }),
-    [get, post, patch, put, del, account]
+    () => ({ get, post, patch, put, del, getFounder, postFounder, ready: !!account }),
+    [get, post, patch, put, del, getFounder, postFounder, account]
   );
 }
