@@ -260,6 +260,7 @@ const ConsultingAccessLogPage = lazyNamed(() => import('./consulting/ConsultingA
 // dynamic coupon autocomplete, deep business profile, beefed account, review,
 // progress). Original V1 file kept in repo for one cycle as rollback path.
 const ConsultingOnboardClientPage = lazyNamed(() => import('./consulting/ConsultingOnboardClientPageV2'), 'ConsultingOnboardClientPageV2');
+const ConsultingClientsPage = lazyNamed(() => import('./consulting/ConsultingClientsPage'), 'default');
 const ConsultingTicketsBoardPage = lazyNamed(() => import('./consulting/ConsultingTicketsBoardPage'), 'ConsultingTicketsBoardPage');
 const ConsultingProjectsBoardPage = lazyNamed(() => import('./consulting/ConsultingProjectsBoardPage'), 'ConsultingProjectsBoardPage');
 const ConsultingDeliverablesPage = lazyNamed(() => import('./consulting/ConsultingDeliverablesPage'), 'ConsultingDeliverablesPage');
@@ -588,6 +589,7 @@ export function ServiceRouter() {
       case 'consulting_deliverables':     consultingPage = <ConsultingDeliverablesPage />; break;
       case 'consulting_calendar':         consultingPage = <ConsultingCalendarPage />; break;
       case 'consulting_onboard_client':   consultingPage = <ConsultingOnboardClientPage />; break;
+      case 'consulting_workspace':        consultingPage = <ConsultingClientsPage />; break;
       // Founder-only utility surfaces (still accessible by URL)
       case 'consulting_access_log':       consultingPage = <ConsultingAccessLogPage />; break;
       // Legacy "Build Your X" per-engagement task/deliverable pages —

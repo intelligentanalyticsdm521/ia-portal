@@ -7,11 +7,11 @@
 //     is complete, OR there's no OLIVER for this tenant at all.
 //   - if the status call fails or is slow, but OLIVER is active, STILL show
 //     it (onboarding is presumably outstanding) rather than disappear.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { useAppState } from "../../app/AppState";
 import { useOliverApi } from "../../hooks/useOliverApi";
-import { OliverOnboardingWizard } from "../oliver/OliverOnboardingWizard";
+import { ClientTenantModal } from "../consulting/ClientTenantModal";
 
 interface OnboardingStatus {
   onboarding_completed_at: string | null;
@@ -22,11 +22,9 @@ interface OnboardingStatus {
 }
 
 export function OliverSetupCard() {
-  const { enabledServices } = useAppState();
-  const { get, post, patch, ready } = useOliverApi();
+  const { enabledServices, activeTenantId } = useAppState();
+  const { get, post, ready } = useOliverApi();
   const hasOliver = enabledServices.has("oliver_dashboard") || enabledServices.has("oliver_jobs");
-  // Stable api object so the wizard never re-mounts/reloads from prop churn.
-  const api = useMemo(() => ({ get, post, patch }), [get, post, patch]);
 
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   // null = unknown yet, true/false once we've tried.
@@ -121,13 +119,13 @@ export function OliverSetupCard() {
         </div>
       </div>
 
-      {open && (
-        <OliverOnboardingWizard
-          api={api}
-          onClose={() => { setOpen(false); reload(); }}
-          onFinished={() => { setOpen(false); reload(); }}
-        />
-      )}
+      <ClientTenantModal
+        open={open}
+        tenantId={activeTenantId || null}
+        mode="onboarding"
+        onClose={() => { setOpen(false); reload(); }}
+        onFinished={() => { setOpen(false); reload(); }}
+      />
     </>
   );
 }

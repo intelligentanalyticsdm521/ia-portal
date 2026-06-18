@@ -12,7 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { useAppState } from "../../app/AppState";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { SparkOnboardingWizard } from "../spark/SparkOnboardingWizard";
+import { ClientTenantModal } from "../consulting/ClientTenantModal";
 
 interface Checklist {
   steps: Array<{ key: string; label: string; required: boolean; done: boolean; locked?: boolean }>;
@@ -20,7 +20,7 @@ interface Checklist {
 }
 
 export function SparkSetupCard() {
-  const { enabledServices } = useAppState();
+  const { enabledServices, activeTenantId } = useAppState();
   const { get, ready } = useSparkApi();
   const hasSpark = enabledServices.has("spark_overview") || enabledServices.has("spark_contacts");
 
@@ -93,7 +93,13 @@ export function SparkSetupCard() {
           )}
         </div>
       </div>
-      <SparkOnboardingWizard open={wizardOpen} onClose={() => setWizardOpen(false)} />
+      <ClientTenantModal
+        open={wizardOpen}
+        tenantId={activeTenantId || null}
+        mode="onboarding"
+        onClose={() => setWizardOpen(false)}
+        onFinished={() => setWizardOpen(false)}
+      />
     </>
   );
 }
