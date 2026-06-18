@@ -475,14 +475,17 @@ export function ConsultingOnboardClientPageV2() {
             // tenant to the client. Without this the founder lands on their
             // OWN product dashboard instead of the client's.
             setActingTenant(t.tenant_id, t.business_name);
-            // ARION first — Brandon onboards by getting the WP site built,
-            // then SPARK + OLIVER. Hard reload so all API hooks re-init
-            // with the x-acting-tenant header.
+            // Land on the product's ONBOARDING page (the per-product setup
+            // wizard / checklist), NOT the steady-state dashboard. The
+            // dashboards are where the tenant operates day-to-day — they
+            // assume setup is done. The _onboarding routes walk through
+            // the rest of provisioning (ARION questionnaire/domain/install,
+            // SPARK sender+contact import, OLIVER customer list+Stripe Connect).
             const product = t.signup_product || "arion";
             const landingMap: Record<string, string> = {
-              arion:  "/app/services/arion_dashboard",
-              spark:  "/app/services/spark_dashboard",
-              oliver: "/app/services/oliver_dashboard",
+              arion:  "/app/services/arion_onboarding",
+              spark:  "/app/services/spark_onboarding",
+              oliver: "/app/services/oliver_onboarding",
             };
             window.location.href = landingMap[product] || landingMap.arion;
           }}
@@ -1610,21 +1613,21 @@ function Step7Progress({ result, checkoutUrl, businessName, contactEmail, cart, 
         </div>
         <div className="grid grid-cols-2 gap-2">
           {arionInCart && (
-            <button onClick={() => { setActingTenant(result.tenant_id, businessName); window.location.href = "/app/services/arion_dashboard"; }}
+            <button onClick={() => { setActingTenant(result.tenant_id, businessName); window.location.href = "/app/services/arion_onboarding"; }}
               className="p-3 rounded-lg border-2 border-slate-200 hover:border-sky-400 bg-white text-left">
               <div className="text-xs font-bold text-slate-900">ARION setup →</div>
               <div className="text-[10px] text-slate-500">Questionnaire, domain, plugin install</div>
             </button>
           )}
           {sparkInCart && (
-            <button onClick={() => { setActingTenant(result.tenant_id, businessName); window.location.href = "/app/services/spark_dashboard"; }}
+            <button onClick={() => { setActingTenant(result.tenant_id, businessName); window.location.href = "/app/services/spark_onboarding"; }}
               className="p-3 rounded-lg border-2 border-slate-200 hover:border-amber-400 bg-white text-left">
               <div className="text-xs font-bold text-slate-900">SPARK setup →</div>
               <div className="text-[10px] text-slate-500">Contacts import, brand voice</div>
             </button>
           )}
           {oliverInCart && (
-            <button onClick={() => { setActingTenant(result.tenant_id, businessName); window.location.href = "/app/services/oliver_dashboard"; }}
+            <button onClick={() => { setActingTenant(result.tenant_id, businessName); window.location.href = "/app/services/oliver_onboarding"; }}
               className="p-3 rounded-lg border-2 border-slate-200 hover:border-yellow-400 bg-white text-left">
               <div className="text-xs font-bold text-slate-900">OLIVER setup →</div>
               <div className="text-[10px] text-slate-500">Customer list, Stripe Connect</div>
