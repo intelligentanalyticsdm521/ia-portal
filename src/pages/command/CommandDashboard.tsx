@@ -7,9 +7,7 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { useAccessToken } from "../../auth/useAccessToken";
 import { Sparkline } from "../../components/iainsights/Sparkline";
 import { GetStartedCard } from "../../components/command/GetStartedCard";
-import { OliverSetupCard } from "../../components/command/OliverSetupCard";
-import { SparkSetupCard } from "../../components/command/SparkSetupCard";
-import { ArionSetupCard } from "../../components/command/ArionSetupCard";
+import { UnifiedSetupCard } from "../../components/command/UnifiedSetupCard";
 
 // Each card pulls one piece of data; failures degrade gracefully (card shows "—").
 interface OliverDashboardToday {
@@ -115,10 +113,9 @@ export function CommandDashboard() {
 
   return (
     <div className="space-y-4">
-      {/* Product onboarding nudges — fail-open, hide only when genuinely done. */}
-      <OliverSetupCard />
-      <SparkSetupCard />
-      <ArionSetupCard />
+      {/* Onboarding — ONE unified card opens the unified ClientTenantModal.
+          Replaces the three legacy per-product setup cards. */}
+      <UnifiedSetupCard />
 
       {/* v7.0 — Get Started checklist (moved here from per-product Trends pages). */}
       <GetStartedCard />

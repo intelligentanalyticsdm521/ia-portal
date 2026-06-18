@@ -26,7 +26,8 @@ import { ArionPageWrapper } from '../arion/ArionPageWrapper';
 
 // ARION pages — lazy-loaded; each becomes its own chunk
 const ArionOverviewPage = lazyNamed(() => import('./arion/ArionOverviewPage'), 'ArionOverviewPage');
-const ArionOnboardingPage = lazyNamed(() => import('./arion/ArionOnboardingPage'), 'ArionOnboardingPage');
+// ArionOnboardingPage removed 2026-06-17 — unified flow via UnifiedSetupCard on Command Center.
+const ArionOnboardingPage = () => <Navigate to="/app" replace />;
 // Website
 const WebsiteOverview = lazyNamed(() => import('../arion/pages/website/WebsiteOverview'), 'WebsiteOverview');
 const WebsiteContent = lazyNamed(() => import('../arion/pages/website/WebsiteContent'), 'WebsiteContent');
@@ -156,7 +157,8 @@ const SparkAudienceSyncPage = lazyNamed(() => import('./spark/SparkAudienceSyncP
 const SparkJourneyBuilderPage = lazyNamed(() => import('./spark/SparkJourneyBuilderPage'), 'SparkJourneyBuilderPage');
 const SparkTrackingPage = lazyNamed(() => import('./spark/SparkTrackingPage'), 'SparkTrackingPage');
 const SparkSenderDomainsPage = lazyNamed(() => import('./spark/SparkSenderDomainsPage'), 'SparkSenderDomainsPage');
-const SparkOnboardingPage = lazyNamed(() => import('./spark/SparkOnboardingPage'), 'SparkOnboardingPage');
+// SparkOnboardingPage removed 2026-06-17 — unified flow via UnifiedSetupCard on Command Center.
+const SparkOnboardingPage = () => <Navigate to="/app" replace />;
 const SparkAccountProfilePage = lazyNamed(() => import('./spark/SparkAccountProfilePage'), 'SparkAccountProfilePage');
 const SparkTemplatesPage = lazyNamed(() => import('./spark/SparkTemplatesPage'), 'SparkTemplatesPage');
 const SparkRulesPage = lazyNamed(() => import('./spark/SparkRulesPage'), 'SparkRulesPage');
@@ -218,7 +220,8 @@ const OliverServiceCategoriesPage = lazyNamed(() => import('./oliver/OliverServi
 const OliverWorkflowSettingsPage = lazyNamed(() => import('./oliver/OliverWorkflowSettingsPage'), 'OliverWorkflowSettingsPage');
 const OliverBillingOverviewPage = lazyNamed(() => import('./oliver/OliverBillingOverviewPage'), 'OliverBillingOverviewPage');
 const OliverRemindersPage = lazyNamed(() => import('./oliver/OliverRemindersPage'), 'OliverRemindersPage');
-const OliverOnboardingPage = lazyNamed(() => import('./oliver/OliverOnboardingPage'), 'OliverOnboardingPage');
+// OliverOnboardingPage removed 2026-06-17 — unified flow via UnifiedSetupCard on Command Center.
+const OliverOnboardingPage = () => <Navigate to="/app" replace />;
 const OliverTeamAccessPage = lazyNamed(() => import('./oliver/OliverTeamAccessPage'), 'OliverTeamAccessPage');
 const OliverCouponsPage = lazyNamed(() => import('./oliver/OliverCouponsPage'), 'OliverCouponsPage');
 const OliverInsightsPage = lazyNamed(() => import('./oliver/OliverInsightsPage'), 'OliverInsightsPage');

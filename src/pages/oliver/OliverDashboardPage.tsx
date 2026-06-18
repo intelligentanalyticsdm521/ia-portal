@@ -9,7 +9,8 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button, StatusBadge } from "../../components/oliver/ui";
 import { Sparkline } from "../../components/iainsights/Sparkline";
-import { OliverSetupCard } from "../../components/command/OliverSetupCard";
+// OliverSetupCard removed 2026-06-17 — single onboarding nag lives on
+// Command Center (UnifiedSetupCard). Don't add it back here.
 import { SetupHints, type SetupHint } from "../../components/SetupHints";
 import { Sparkles, ArrowUpRight, Calendar as CalendarIcon, Users as UsersIcon, Globe, Zap, MessageSquare } from "lucide-react";
 import { CalendarModal } from "../../components/oliver/customer/CalendarModal";
@@ -255,7 +256,6 @@ export function OliverDashboardPage() {
 
   const topBanner: React.ReactNode = (
     <>
-      <OliverSetupCard />
       <SetupHints hints={oliverHints} />
       {stripeRegressed && (
       <div className="card" style={{

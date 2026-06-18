@@ -14,7 +14,8 @@ import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { TimeRangeSelector, rangeForPreset } from "../../components/oliver/ui";
 import { ArgusInsightBox } from "../../components/oliver/ArgusInsightBox";
 import { Sparkline } from "../../components/iainsights/Sparkline";
-import { SparkSetupCard } from "../../components/command/SparkSetupCard";
+// SparkSetupCard removed 2026-06-17 — single onboarding nag lives on
+// Command Center (UnifiedSetupCard). Don't add it back here.
 import { SetupHints, type SetupHint } from "../../components/SetupHints";
 import { Globe as GlobeIcon, Zap as ZapIcon } from "lucide-react";
 
@@ -187,13 +188,9 @@ export function SparkOverviewPage() {
     <SparkPageShell title="SPARK Overview" subtitle="Your marketing + sales command center" error={error} loading={loading}>
       <div className="p-6 space-y-6">
 
-        {/* F-87 — Get Started banner. Self-hides when required steps are
-            done. Replaces the "Get Started" nav item; opens the wizard
-            modal in-place rather than navigating to a separate page. */}
-        <SparkSetupCard />
+        {/* Onboarding nag lives on Command Center only (UnifiedSetupCard). */}
 
-        {/* F-118 — lightweight, dismissable setup hints. Complements the
-            big setup card; surfaces high-value optional next steps. */}
+        {/* F-118 — lightweight, dismissable setup hints. */}
         <SetupHints hints={[
           {
             id: "spark_no_contacts",

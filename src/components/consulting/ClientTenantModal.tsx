@@ -205,11 +205,18 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    getFounder<{ data?: { state?: Partial<OnboardingState>; step?: number } }>(`/admin/onboard-client/onboarding-progress?tenant_id=${encodeURIComponent(tenantId)}`)
+    getFounder<{ data?: { state?: Partial<OnboardingState>; prefill?: Partial<OnboardingState>; step?: number } }>(`/admin/onboard-client/onboarding-progress?tenant_id=${encodeURIComponent(tenantId)}`)
       .then((r) => {
         if (cancelled) return;
-        const data = (r as { data?: { state?: Partial<OnboardingState>; step?: number } })?.data;
-        if (data?.state) setState((s) => mergeState(s, data.state!));
+        const data = (r as { data?: { state?: Partial<OnboardingState>; prefill?: Partial<OnboardingState>; step?: number } })?.data;
+        // Merge order: defaults → prefill (from existing tables) → saved state (wins).
+        // Per Brandon's rule: don't make users re-enter data the system has.
+        setState((s) => {
+          let merged = s;
+          if (data?.prefill) merged = mergeState(merged, data.prefill);
+          if (data?.state)   merged = mergeState(merged, data.state);
+          return merged;
+        });
         if (typeof data?.step === "number" && data.step >= 0 && data.step < sections.length) {
           setStepIdx(data.step);
         }

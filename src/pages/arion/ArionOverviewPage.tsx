@@ -12,7 +12,8 @@ import { SetupHints } from '../../components/SetupHints';
 import { Globe, Search as SearchIcon, MapPin, Layout } from 'lucide-react';
 // Task #173 — dashboard onboarding banner that replaced the removed
 // "Get Started" nav entry. Self-gating (checks checklist + localStorage dismiss).
-import { ArionDashboardSetupBanner } from '../../components/arion/ArionDashboardSetupBanner';
+// ArionDashboardSetupBanner removed 2026-06-17 — single onboarding nag
+// lives on Command Center (UnifiedSetupCard).
 
 
 interface Props { service: PortalService; status: ServiceStatus }
@@ -114,7 +115,6 @@ export function ArionOverviewPage({ service, status }: Props) {
           {/* Task #173 — ARION Get Started banner replacing the removed nav
               entry. Hides itself when setup is genuinely complete OR the user
               has dismissed it on this device (localStorage). */}
-          <ArionDashboardSetupBanner />
 
           {/* F-118 — lightweight setup hints. Each hint is dismissable and
               survives across pageloads via localStorage. */}
