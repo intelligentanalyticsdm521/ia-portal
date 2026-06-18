@@ -40,6 +40,8 @@ type Tab = "overview" | "jobs" | "quotes" | "invoices" | "payments" | "subscript
 interface ContactDetail {
   contact_id: string;
   legacy_oliver_uuid?: string;
+  /** F-184 — Stripe's top-level customer.name. Shows on invoices. */
+  display_name?: string | null;
   first_name?: string | null;
   last_name?: string | null;
   email?: string | null;
@@ -614,6 +616,11 @@ function CustomerInfoCard({
   onSaved: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  // 3-field model (mirrors Stripe Dashboard's "More options" + invoice display):
+  //   displayName = Stripe customer.name (appears on invoices)
+  //   company     = Stripe metadata.business_name (the legal entity)
+  //   first/last  = Stripe metadata.individual_name (the human contact)
+  const [displayName, setDisplayName] = useState(detail.display_name || "");
   const [first, setFirst] = useState(detail.first_name || "");
   const [last, setLast] = useState(detail.last_name || "");
   const [email, setEmail] = useState(detail.email || "");
@@ -625,6 +632,7 @@ function CustomerInfoCard({
   const [err, setErr] = useState<string | null>(null);
 
   function startEdit() {
+    setDisplayName(detail.display_name || "");
     setFirst(detail.first_name || "");
     setLast(detail.last_name || "");
     setEmail(detail.email || "");
@@ -637,14 +645,15 @@ function CustomerInfoCard({
 
   async function save() {
     setErr(null);
-    if (!first.trim() && !last.trim() && !company.trim()) {
-      setErr("Need at least a name or a company.");
+    if (!first.trim() && !last.trim() && !company.trim() && !displayName.trim()) {
+      setErr("Need at least a display name, customer name, or business name.");
       return;
     }
     setSaving(true);
     try {
       const targetId = detail.legacy_oliver_uuid || detail.contact_id;
       await api.patch(`/contacts/${targetId}`, {
+        display_name: displayName.trim() || null,
         first_name: first.trim() || null,
         last_name: last.trim() || null,
         email: email.trim() || null,
@@ -688,12 +697,20 @@ function CustomerInfoCard({
       {editing ? (
         <div style={{ marginTop: 12 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>
-              <label style={labelS}>First name</label>
-              <input value={first} onChange={(e) => setFirst(e.target.value)} style={inputS} />
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={labelS}>Display name <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#7C97A6" }}>— appears on invoices</span></label>
+              <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} style={inputS} placeholder="e.g. Rolling In It, LLC" />
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={labelS}>Business name</label>
+              <input value={company} onChange={(e) => setCompany(e.target.value)} style={inputS} placeholder="The legal entity, e.g. Rolling In It, LLC" />
             </div>
             <div>
-              <label style={labelS}>Last name</label>
+              <label style={labelS}>Customer first name</label>
+              <input value={first} onChange={(e) => setFirst(e.target.value)} style={inputS} placeholder="Owner / primary contact" />
+            </div>
+            <div>
+              <label style={labelS}>Customer last name</label>
               <input value={last} onChange={(e) => setLast(e.target.value)} style={inputS} />
             </div>
             <div>
@@ -703,10 +720,6 @@ function CustomerInfoCard({
             <div>
               <label style={labelS}>Phone</label>
               <input type="tel" value={phone} onChange={(e) => setPhone(formatPhone(e.target.value))} style={inputS} />
-            </div>
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label style={labelS}>Company</label>
-              <input value={company} onChange={(e) => setCompany(e.target.value)} style={inputS} />
             </div>
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={labelS}>Internal notes (crew only — auto-prefills new jobs)</label>
@@ -729,8 +742,9 @@ function CustomerInfoCard({
       ) : (
         <>
           <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-            <InfoRow label="Name" value={[detail.first_name, detail.last_name].filter(Boolean).join(" ") || "—"} />
-            <InfoRow label="Company" value={detail.company_name || "—"} />
+            <InfoRow label="Display name" value={detail.display_name || detail.company_name || [detail.first_name, detail.last_name].filter(Boolean).join(" ") || "—"} />
+            <InfoRow label="Business name" value={detail.company_name || "—"} />
+            <InfoRow label="Customer name" value={[detail.first_name, detail.last_name].filter(Boolean).join(" ") || "—"} />
             <InfoRow label="Email" value={detail.email || "—"} />
             <InfoRow label="Phone" value={detail.phone ? formatPhone(detail.phone) : "—"} />
           </div>

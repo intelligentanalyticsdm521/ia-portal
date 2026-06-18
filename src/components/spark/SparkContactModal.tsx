@@ -28,6 +28,8 @@ import { IadmModal, IadmButton } from "../IadmModal";
 
 export interface ContactLite {
   id: number;
+  /** F-184 — Stripe's top-level customer.name. Appears on invoices. */
+  display_name?: string;
   first_name?: string;
   last_name?: string;
   email?: string;
@@ -221,7 +223,7 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
     try {
       const payload: Partial<ContactFull> = {};
       const fields: (keyof ContactFull)[] = [
-        "first_name", "last_name", "email", "phone", "company", "title",
+        "display_name", "first_name", "last_name", "email", "phone", "company", "title",
         "address_street", "address_city", "address_state", "address_zip",
       ];
       for (const f of fields) {
@@ -361,6 +363,14 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
                   )}
                 </div>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                  <div className="col-span-2">
+                    <Field label="Display name (invoice / billing)" value={contact.display_name} editing={editing}
+                      onChange={(v) => setDraft({ ...draft, display_name: v })} draft={draft.display_name} />
+                  </div>
+                  <div className="col-span-2">
+                    <Field label="Business name" value={contact.account_name || contact.company} editing={editing} icon={Building2}
+                      onChange={(v) => setDraft({ ...draft, company: v })} draft={draft.company} />
+                  </div>
                   <Field label="First name" value={contact.first_name} editing={editing}
                     onChange={(v) => setDraft({ ...draft, first_name: v })} draft={draft.first_name} />
                   <Field label="Last name" value={contact.last_name} editing={editing}
@@ -369,8 +379,6 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
                     onChange={(v) => setDraft({ ...draft, email: v })} draft={draft.email} />
                   <Field label="Phone" value={contact.phone} editing={editing} icon={Phone}
                     onChange={(v) => setDraft({ ...draft, phone: v })} draft={draft.phone} />
-                  <Field label="Company" value={contact.account_name || contact.company} editing={editing} icon={Building2}
-                    onChange={(v) => setDraft({ ...draft, company: v })} draft={draft.company} />
                   <Field label="Title" value={contact.title} editing={editing}
                     onChange={(v) => setDraft({ ...draft, title: v })} draft={draft.title} />
                 </div>

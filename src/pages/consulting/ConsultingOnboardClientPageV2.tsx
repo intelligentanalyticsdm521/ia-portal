@@ -26,6 +26,7 @@ import { IadmModal, CORE_BLUE, PRODUCT_ACCENT } from "../../components/IadmModal
 import { LogoPicker } from "../../components/oliver/LogoPicker";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { fetchPlanCatalog, type PlanCatalogEntry } from "../../lib/onboardingApi";
+import { setActingTenant } from "../../lib/consultingSession";
 import {
   fetchSignupCatalog, createSignupCartCheckout,
   type SignupCatalog,
@@ -328,6 +329,8 @@ export function ConsultingOnboardClientPageV2() {
         business_name: businessName,
         contact_email: contactEmail,
         contact_name: account.display_name || `${account.first_name} ${account.last_name}`.trim() || undefined,
+        contact_first_name: account.first_name.trim() || undefined,
+        contact_last_name: account.last_name.trim() || undefined,
         contact_phone: account.mobile || undefined,
         products: [arion, oliver, spark].filter(Boolean).map((it) => it!.product),
         arion_plan: arion?.plan,
@@ -465,13 +468,22 @@ export function ConsultingOnboardClientPageV2() {
           loading={listLoading}
           onNew={() => setView("wizard")}
           onContinue={(t) => {
-            // Best-available continuation point: jump straight into the tenant's
-            // ARION/OLIVER/SPARK dashboard for further setup. Wizard-state resume
-            // (re-opening at the step they were on) requires the draft-save layer
-            // which is its own task — until then, "Continue" lands the founder on
-            // the product surface where the rest of provisioning happens.
-            const product = t.signup_product || "oliver";
-            navigate(`/app/services/${product}_dashboard?tenant=${t.tenant_id}`);
+            // Start an acting-tenant session so every API call gets
+            // x-acting-tenant: <client tenant id>. The server re-validates the
+            // founder's grant on every request and rewrites the request's
+            // tenant to the client. Without this the founder lands on their
+            // OWN product dashboard instead of the client's.
+            setActingTenant(t.tenant_id, t.business_name);
+            // ARION first — Brandon onboards by getting the WP site built,
+            // then SPARK + OLIVER. Hard reload so all API hooks re-init
+            // with the x-acting-tenant header.
+            const product = t.signup_product || "arion";
+            const landingMap: Record<string, string> = {
+              arion:  "/app/services/arion_dashboard",
+              spark:  "/app/services/spark_dashboard",
+              oliver: "/app/services/oliver_dashboard",
+            };
+            window.location.href = landingMap[product] || landingMap.arion;
           }}
           onCancel={async (t) => {
             if (!window.confirm(`Cancel onboarding for ${t.business_name}? This will cancel all Stripe subscriptions and mark the tenant cancelled.`)) return;
@@ -1557,36 +1569,36 @@ function Step7Progress({ result, checkoutUrl, businessName, contactEmail, cart, 
 
       <Card title="Continue setup">
         <div className="text-xs text-slate-600 mb-2">
-          Move on to product-specific setup while payment is in flight. Each link opens that product's onboarding for {businessName}.
+          Move on to product-specific setup while payment is in flight. Each link opens that product's onboarding for {businessName} (acting-as-tenant).
         </div>
         <div className="grid grid-cols-2 gap-2">
           {arionInCart && (
-            <a href={`/app/services/arion_dashboard?tenant=${result.tenant_id}`}
+            <button onClick={() => { setActingTenant(result.tenant_id, businessName); window.location.href = "/app/services/arion_dashboard"; }}
               className="p-3 rounded-lg border-2 border-slate-200 hover:border-sky-400 bg-white text-left">
               <div className="text-xs font-bold text-slate-900">ARION setup →</div>
               <div className="text-[10px] text-slate-500">Questionnaire, domain, plugin install</div>
-            </a>
+            </button>
           )}
           {sparkInCart && (
-            <a href={`/app/services/spark_dashboard?tenant=${result.tenant_id}`}
+            <button onClick={() => { setActingTenant(result.tenant_id, businessName); window.location.href = "/app/services/spark_dashboard"; }}
               className="p-3 rounded-lg border-2 border-slate-200 hover:border-amber-400 bg-white text-left">
               <div className="text-xs font-bold text-slate-900">SPARK setup →</div>
               <div className="text-[10px] text-slate-500">Contacts import, brand voice</div>
-            </a>
+            </button>
           )}
           {oliverInCart && (
-            <a href={`/app/services/oliver_dashboard?tenant=${result.tenant_id}`}
+            <button onClick={() => { setActingTenant(result.tenant_id, businessName); window.location.href = "/app/services/oliver_dashboard"; }}
               className="p-3 rounded-lg border-2 border-slate-200 hover:border-yellow-400 bg-white text-left">
               <div className="text-xs font-bold text-slate-900">OLIVER setup →</div>
               <div className="text-[10px] text-slate-500">Customer list, Stripe Connect</div>
-            </a>
+            </button>
           )}
           {consultingPick && (
-            <a href={`/app/services/consulting_tickets?tenant=${result.tenant_id}`}
+            <button onClick={() => { setActingTenant(result.tenant_id, businessName); window.location.href = "/app/services/consulting_tickets"; }}
               className="p-3 rounded-lg border-2 border-slate-200 hover:border-emerald-400 bg-white text-left">
               <div className="text-xs font-bold text-slate-900">Consulting setup →</div>
               <div className="text-[10px] text-slate-500">Open {consultingPick.productName} engagement</div>
-            </a>
+            </button>
           )}
         </div>
         <button onClick={onClose}
