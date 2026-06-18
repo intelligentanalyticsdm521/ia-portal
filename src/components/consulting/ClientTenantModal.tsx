@@ -208,10 +208,10 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
   tenantId: string; tenantName?: string; cart: ProductKey[];
   onClose: () => void; onFinished?: () => void;
 }) {
-  // get/post are CLIENT-scoped (header = client tenant_id) — used for Stripe Connect etc.
-  // getFounder/postFounder are FOUNDER-scoped (header = founder tenant_id) —
-  // used for /admin/onboard-client/* endpoints which require requireFounder.
-  const { get, post, getFounder, postFounder } = useOliverApi();
+  // get/post/patch are CLIENT-scoped (header = client tenant_id) — used for
+  // Stripe Connect, PATCH /settings (business profile), etc.
+  // getFounder/postFounder are FOUNDER-scoped — used for /admin/onboard-client/*.
+  const { get, post, patch, getFounder, postFounder } = useOliverApi();
   const sections = useMemo(() => buildSections(cart), [cart]);
   const [stepIdx, setStepIdx] = useState(0);
   const [state, setState] = useState<OnboardingState>(EMPTY_STATE);
@@ -252,6 +252,12 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
   async function persist(mode: "continue" | "close" | "finish") {
     setSaving(true); setErr(null);
     try {
+      // Per-section canonical-table writes (G1 confirmed: save then continue).
+      // Best-effort — if a write fails, log + continue so Save & Continue
+      // never blocks. The JSON-blob save below is the durable record.
+      try { await flushSectionToCanonical(current.id, state, { patch }); }
+      catch (e) { console.warn("[onboarding] canonical write failed for", current.id, e); }
+
       await postFounder("/admin/onboard-client/save-onboarding", {
         tenant_id: tenantId, step: stepIdx, section: current.id, state, mode,
       });
@@ -905,6 +911,66 @@ function HelpFooter() {
       </a>
     </div>
   );
+}
+
+// flushSectionToCanonical — when a section is saved, ALSO write its data to
+// the destination tables/services (not just the JSON blob). Best-effort; the
+// blob save in persist() is the durable backstop. Per Brandon's G1 decision:
+// Save & Continue = save then continue, not just save the blob.
+//
+// Section-by-section:
+//   profile          → PATCH /settings on oliver-api (owns core.tenants R/W)
+//   owner            → JSON blob only (CIAM trigger consumes at finish)
+//   arion            → JSON blob only tonight; ARION fan-out is overnight
+//                      (needs arion-api site config endpoint mapping)
+//   spark            → JSON blob only tonight; LUMEN tenant settings overnight
+//   oliver_*         → PATCH /settings for portal config; catalog separately overnight
+//   consulting       → JSON blob only
+//   finish           → no-op (the finish endpoint handles fan-out + CIAM)
+async function flushSectionToCanonical(
+  sectionId: SectionId,
+  state: OnboardingState,
+  api: { patch: <T>(p: string, b: unknown) => Promise<T> }
+): Promise<void> {
+  if (sectionId === "profile") {
+    const p = state.profile;
+    // Map modal shape → /settings shape (see OrganizationTab in TenantSettings.tsx).
+    // Address is a single string in core.tenants; we join the modal's parts.
+    const address = [p.address_street, p.address_line2, [p.address_city, p.address_state, p.address_zip].filter(Boolean).join(" ")]
+      .filter(Boolean).join(", ");
+    await api.patch("/settings", {
+      tenantFullName: p.business_name || "",
+      email: p.primary_contact_email || "",
+      website: p.website || "",
+      phone: p.phone || "",
+      address,
+      logoUrl: p.logo_url || "",
+      brandColor: p.primary_color || "",
+      brandColorSecondary: p.secondary_color || "",
+      brandColorAccent: p.accent_color || "",
+    });
+    return;
+  }
+  if (sectionId === "oliver_customer_portal" || sectionId === "oliver_employee_portal") {
+    // OLIVER portal config goes to oliver.tenant_settings via PATCH /settings
+    // (same endpoint extends with portal_* fields). Backend tonight may not
+    // yet accept these keys — the call is wrapped in try/catch in the caller.
+    const v = sectionId === "oliver_customer_portal"
+      ? state.oliver.customer_portal
+      : state.oliver.employee_portal;
+    const prefix = sectionId === "oliver_customer_portal" ? "customer" : "employee";
+    await api.patch("/settings", {
+      [`${prefix}PortalWelcome`]: v.welcome || "",
+      [`${prefix}PortalLogo`]: v.logo_override || "",
+      [`${prefix}PortalHeaderColor`]: v.header_color || "",
+      [`${prefix}PortalShowA`]: v.show_a,
+      [`${prefix}PortalShowB`]: v.show_b,
+    });
+    return;
+  }
+  // owner / arion / spark / oliver_payments / oliver_templates / oliver_catalog /
+  // consulting / finish — JSON blob only tonight; canonical-table fan-out
+  // happens at finish-onboarding (or is queued for overnight per SCOPE_WORKING.md).
 }
 
 // Merge persisted (partial) state into full default state without crashing on missing keys.
