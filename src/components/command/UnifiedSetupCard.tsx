@@ -17,12 +17,14 @@ import { ClientTenantModal } from "../consulting/ClientTenantModal";
 
 interface OnboardingProgress {
   state?: Record<string, unknown> | null;
-  prefill?: Record<string, unknown> | null;
+  prefill?: { cart?: string[]; signup_product?: string | null } & Record<string, unknown>;
   step?: number;
   section_id?: string | null;
   finished_at?: string | null;
   last_saved_at?: string | null;
 }
+
+type ProductKey = "arion" | "spark" | "oliver" | "consulting";
 
 export function UnifiedSetupCard() {
   const { activeTenantId } = useAppState();
@@ -89,6 +91,13 @@ export function UnifiedSetupCard() {
         open={open}
         tenantId={activeTenantId}
         mode="onboarding"
+        cart={
+          (Array.isArray(progress?.prefill?.cart) && progress!.prefill!.cart!.length
+            ? (progress!.prefill!.cart as string[]).filter(
+                (k): k is ProductKey => k === "arion" || k === "spark" || k === "oliver" || k === "consulting"
+              )
+            : undefined)
+        }
         onClose={() => { setOpen(false); reload(); }}
         onFinished={() => { setOpen(false); reload(); }}
       />

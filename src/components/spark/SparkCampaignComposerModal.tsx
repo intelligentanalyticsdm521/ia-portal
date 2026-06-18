@@ -5,10 +5,11 @@
 // POST /api/v1/campaigns so the user can refine + send later from the
 // campaigns list. Matches the modal-driven creation pattern: one entry
 // point, no navigation between pages to start a new campaign.
-import { useEffect, useState, useCallback } from "react";
-import { Mail, MessageSquare, ArrowRight, ArrowLeft } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Mail, MessageSquare, ArrowRight, ArrowLeft, Eye } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal, IadmButton } from "../IadmModal";
+import { MergeTagPicker, renderMergeTagPreview } from "./MergeTagPicker";
 
 type Channel = "email" | "sms";
 type Step = "channel" | "compose";
@@ -47,6 +48,12 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated }: Props) 
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Refs for MergeTagPicker — used to insert tokens at the cursor position.
+  const subjectRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const smsRef = useRef<HTMLTextAreaElement>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   // Reset state when modal opens.
   useEffect(() => {
@@ -198,8 +205,12 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated }: Props) 
               {channel === "email" && (
                 <>
                   <div>
-                    <label className="block text-[10px] uppercase font-semibold text-slate-500 mb-1">Subject</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[10px] uppercase font-semibold text-slate-500">Subject</label>
+                      <MergeTagPicker targetRef={subjectRef} value={subject} onChange={setSubject} compact />
+                    </div>
                     <input
+                      ref={subjectRef}
                       value={subject}
                       onChange={(e) => setSubject(e.target.value)}
                       placeholder="Subject line"
@@ -227,23 +238,47 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated }: Props) 
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[10px] uppercase font-semibold text-slate-500 mb-1">Body (HTML)</label>
-                    <textarea
-                      value={contentHtml}
-                      onChange={(e) => setContentHtml(e.target.value)}
-                      rows={6}
-                      placeholder={'<p>Hi {{contact.first_name}},</p>'}
-                      className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
-                    />
-                    <p className="text-[11px] text-slate-500 mt-0.5">A richer block editor is available after saving the draft — this field is fine for a stub.</p>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[10px] uppercase font-semibold text-slate-500">Body</label>
+                      <div className="flex items-center gap-1.5">
+                        <button type="button"
+                          onClick={() => setShowPreview((v) => !v)}
+                          className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white hover:bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                          <Eye className="h-2.5 w-2.5" /> {showPreview ? "Edit" : "Preview"}
+                        </button>
+                        <MergeTagPicker targetRef={bodyRef} value={contentHtml} onChange={setContentHtml} compact />
+                      </div>
+                    </div>
+                    {showPreview ? (
+                      <div
+                        className="w-full min-h-[10rem] rounded border border-slate-300 px-3 py-2 text-sm bg-slate-50 prose prose-sm max-w-none"
+                        dangerouslySetInnerHTML={{ __html: renderMergeTagPreview(contentHtml) }}
+                      />
+                    ) : (
+                      <textarea
+                        ref={bodyRef}
+                        value={contentHtml}
+                        onChange={(e) => setContentHtml(e.target.value)}
+                        rows={6}
+                        placeholder={'<p>Hi {{contact.first_name}},</p>'}
+                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
+                      />
+                    )}
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Click <span className="font-semibold">Insert</span> to add personalization that fills automatically per recipient.
+                    </p>
                   </div>
                 </>
               )}
 
               {channel === "sms" && (
                 <div>
-                  <label className="block text-[10px] uppercase font-semibold text-slate-500 mb-1">SMS body</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[10px] uppercase font-semibold text-slate-500">SMS body</label>
+                    <MergeTagPicker targetRef={smsRef} value={contentSms} onChange={setContentSms} compact />
+                  </div>
                   <textarea
+                    ref={smsRef}
                     value={contentSms}
                     onChange={(e) => setContentSms(e.target.value)}
                     rows={4}
