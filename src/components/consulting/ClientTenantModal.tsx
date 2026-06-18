@@ -973,20 +973,44 @@ async function flushSectionToCanonical(
   // happens at finish-onboarding (or is queued for overnight per SCOPE_WORKING.md).
 }
 
-// Merge persisted (partial) state into full default state without crashing on missing keys.
+// Merge partial state into base WITHOUT letting empty values overwrite
+// non-empty ones. This is critical for the prefill flow: defaults → prefill
+// → saved-state. A saved state with `business_name: ""` (because the user
+// never typed there) must NOT clobber the prefill's `"Brandon's Biz"` from
+// core.tenants. Empty string / null / undefined in the partial = "not provided",
+// keep the base value. Arrays of strings are kept whole only if they contain
+// at least one non-empty entry.
+function mergeStrict<T>(base: T, partial: Partial<T> | undefined): T {
+  if (!partial) return base;
+  const out = { ...(base as Record<string, unknown>) };
+  for (const [k, v] of Object.entries(partial as Record<string, unknown>)) {
+    if (v === undefined || v === null) continue;
+    if (typeof v === "string" && v.trim() === "") continue;
+    if (Array.isArray(v)) {
+      const hasContent = v.some((x) => x !== "" && x !== null && x !== undefined);
+      if (!hasContent) continue;
+    }
+    out[k] = v;
+  }
+  return out as T;
+}
+
 function mergeState(base: OnboardingState, partial: Partial<OnboardingState>): OnboardingState {
+  const oliverPartial = (partial.oliver || {}) as Partial<OnboardingState["oliver"]>;
   return {
-    profile: { ...base.profile, ...(partial.profile || {}) },
-    owner: { ...base.owner, ...(partial.owner || {}) },
-    arion: { ...base.arion, ...(partial.arion || {}) },
-    spark: { ...base.spark, ...(partial.spark || {}) },
+    profile:    mergeStrict(base.profile,    partial.profile),
+    owner:      mergeStrict(base.owner,      partial.owner),
+    arion:      mergeStrict(base.arion,      partial.arion),
+    spark:      mergeStrict(base.spark,      partial.spark),
     oliver: {
-      ...base.oliver, ...(partial.oliver || {}),
-      customer_portal: { ...base.oliver.customer_portal, ...((partial.oliver as Partial<OnboardingState["oliver"]>)?.customer_portal || {}) },
-      employee_portal: { ...base.oliver.employee_portal, ...((partial.oliver as Partial<OnboardingState["oliver"]>)?.employee_portal || {}) },
-      catalog: ((partial.oliver as Partial<OnboardingState["oliver"]>)?.catalog) || base.oliver.catalog,
+      ...mergeStrict(base.oliver, oliverPartial),
+      customer_portal: mergeStrict(base.oliver.customer_portal, oliverPartial.customer_portal),
+      employee_portal: mergeStrict(base.oliver.employee_portal, oliverPartial.employee_portal),
+      catalog: (Array.isArray(oliverPartial.catalog) && oliverPartial.catalog.some((r) => r && (r.name || r.price)))
+        ? oliverPartial.catalog
+        : base.oliver.catalog,
     },
-    consulting: { ...base.consulting, ...(partial.consulting || {}) },
+    consulting: mergeStrict(base.consulting, partial.consulting),
   };
 }
 
