@@ -28,10 +28,11 @@ async function sparkFetch<T>(
   msal: IPublicClientApplication,
   account: AccountInfo,
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  tenantOverride?: string | null
 ): Promise<T> {
   const token = await getToken(msal, account);
-  const tenantId = getTenantId(token);
+  const tenantId = (tenantOverride && tenantOverride.trim()) || getTenantId(token);
 
   const res = await fetch(`${SPARK_API_BASE}${path}`, {
     ...init,
@@ -64,22 +65,22 @@ async function sparkFetch<T>(
   return json as T;
 }
 
-export function sparkGet<T>(msal: IPublicClientApplication, account: AccountInfo, path: string) {
-  return sparkFetch<T>(msal, account, path, { method: "GET" });
+export function sparkGet<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, tenantOverride?: string | null) {
+  return sparkFetch<T>(msal, account, path, { method: "GET" }, tenantOverride);
 }
 
-export function sparkPost<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, body?: unknown) {
-  return sparkFetch<T>(msal, account, path, { method: "POST", body: body ? JSON.stringify(body) : undefined });
+export function sparkPost<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, body?: unknown, tenantOverride?: string | null) {
+  return sparkFetch<T>(msal, account, path, { method: "POST", body: body ? JSON.stringify(body) : undefined }, tenantOverride);
 }
 
-export function sparkPut<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, body: unknown) {
-  return sparkFetch<T>(msal, account, path, { method: "PUT", body: JSON.stringify(body) });
+export function sparkPut<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, body: unknown, tenantOverride?: string | null) {
+  return sparkFetch<T>(msal, account, path, { method: "PUT", body: JSON.stringify(body) }, tenantOverride);
 }
 
-export function sparkPatch<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, body: unknown) {
-  return sparkFetch<T>(msal, account, path, { method: "PATCH", body: JSON.stringify(body) });
+export function sparkPatch<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, body: unknown, tenantOverride?: string | null) {
+  return sparkFetch<T>(msal, account, path, { method: "PATCH", body: JSON.stringify(body) }, tenantOverride);
 }
 
-export function sparkDelete<T>(msal: IPublicClientApplication, account: AccountInfo, path: string) {
-  return sparkFetch<T>(msal, account, path, { method: "DELETE" });
+export function sparkDelete<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, tenantOverride?: string | null) {
+  return sparkFetch<T>(msal, account, path, { method: "DELETE" }, tenantOverride);
 }

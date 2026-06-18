@@ -27,6 +27,7 @@ import { LogoPicker } from "../../components/oliver/LogoPicker";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { fetchPlanCatalog, type PlanCatalogEntry } from "../../lib/onboardingApi";
 import { InfoTip } from "../../components/InfoTip";
+import { ClientTenantModal } from "../../components/consulting/ClientTenantModal";
 import {
   fetchSignupCatalog, createSignupCartCheckout,
   type SignupCatalog,
@@ -160,6 +161,12 @@ export function ConsultingOnboardClientPageV2() {
   const [view, setView] = useState<"list" | "wizard">("list");
   const [inProgress, setInProgress] = useState<InProgressOnboarding[]>([]);
   const [listLoading, setListLoading] = useState(true);
+  // Client tenant modal — opens via Continue button on the list. Null = closed.
+  const [clientModal, setClientModal] = useState<{
+    tenantId: string;
+    tenantName: string;
+    mode: "onboarding" | "consulting";
+  } | null>(null);
 
   useEffect(() => {
     if (view !== "list") return;
@@ -475,29 +482,11 @@ export function ConsultingOnboardClientPageV2() {
           loading={listLoading}
           onNew={() => setView("wizard")}
           onContinue={(t) => {
-            // Reopen the wizard at the saved step. Set acting-tenant so any
-            // API calls inside the wizard target the client's tenant. The
-            // wizard hydrates from the tenant row's saved state on entry.
-            // TODO: open ClientTenantModal with t.tenant_id (next build phase).
-            // For now: hydrate result so step 7 shows the right tenant context.
-            setResult({
-              tenant_id: t.tenant_id,
-              stripe_customer_id: t.stripe_customer_id || undefined,
-              stripe_subscription_id: t.stripe_subscription_id || undefined,
-              steps: [],
-            });
-            setBusinessName(t.business_name || "");
-            setContactEmail(t.contact_email || "");
-            // If the tenant has any onboarding_state saved, restore the
-            // cart + consulting pick so step 7's product tiles light up.
-            const s = (t.onboarding_state || {}) as { cart?: CartItem[]; consultingPick?: ConsultingPick };
-            if (Array.isArray(s.cart)) setCart(s.cart);
-            if (s.consultingPick) setConsultingPick(s.consultingPick);
-            // Jump straight to step 7 (post-create handoff) regardless of
-            // whether the tenant has finished — step 7 is where product
-            // setup buttons + Save & Finish/Close live.
-            setStep(7);
-            setView("wizard");
+            // Open the ClientTenantModal in onboarding mode. All API calls
+            // inside it scope to the client's tenant via ClientTenantContext
+            // (no localStorage, no x-acting-tenant header). Audit columns
+            // server-side still stamp the founder's identity.
+            setClientModal({ tenantId: t.tenant_id, tenantName: t.business_name, mode: "onboarding" });
           }}
           onCancel={async (t) => {
             if (!window.confirm(`Cancel onboarding for ${t.business_name}? This will cancel all Stripe subscriptions and mark the tenant cancelled.`)) return;
@@ -510,6 +499,18 @@ export function ConsultingOnboardClientPageV2() {
           }}
         />
       )}
+
+      {/* Client tenant modal — opens via Continue on the list. All API calls
+          inside it scope to the client's tenant via React context (no
+          localStorage, no x-acting-tenant header). */}
+      <ClientTenantModal
+        open={!!clientModal}
+        tenantId={clientModal?.tenantId || null}
+        tenantName={clientModal?.tenantName}
+        mode={clientModal?.mode || "onboarding"}
+        onClose={() => setClientModal(null)}
+      />
+
     <IadmModal
       open={view === "wizard"}
       onClose={closeWizardToList}

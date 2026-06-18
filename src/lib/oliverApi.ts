@@ -30,10 +30,13 @@ async function oliverFetch<T>(
   msal: IPublicClientApplication,
   account: AccountInfo,
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  tenantOverride?: string | null
 ): Promise<T> {
   const token = await getToken(msal, account);
-  const tenantId = getTenantId(token);
+  // tenantOverride wins when set (founder operating on a client). Otherwise
+  // the caller operates on their own tenant from the JWT.
+  const tenantId = (tenantOverride && tenantOverride.trim()) || getTenantId(token);
 
   const res = await fetch(`${OLIVER_API_BASE}${path}`, {
     ...init,
@@ -71,33 +74,33 @@ async function oliverFetch<T>(
   return (json && typeof json === "object" && "data" in json ? json.data : json) as T;
 }
 
-export function oliverGet<T>(msal: IPublicClientApplication, account: AccountInfo, path: string) {
-  return oliverFetch<T>(msal, account, path, { method: "GET" });
+export function oliverGet<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, tenantOverride?: string | null) {
+  return oliverFetch<T>(msal, account, path, { method: "GET" }, tenantOverride);
 }
 
-export function oliverPost<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, body?: unknown) {
+export function oliverPost<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, body?: unknown, tenantOverride?: string | null) {
   return oliverFetch<T>(msal, account, path, {
     method: "POST",
     body: body ? JSON.stringify(body) : undefined,
-  });
+  }, tenantOverride);
 }
 
-export function oliverPatch<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, body: unknown) {
+export function oliverPatch<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, body: unknown, tenantOverride?: string | null) {
   return oliverFetch<T>(msal, account, path, {
     method: "PATCH",
     body: JSON.stringify(body),
-  });
+  }, tenantOverride);
 }
 
-export function oliverPut<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, body: unknown) {
+export function oliverPut<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, body: unknown, tenantOverride?: string | null) {
   return oliverFetch<T>(msal, account, path, {
     method: "PUT",
     body: JSON.stringify(body),
-  });
+  }, tenantOverride);
 }
 
-export function oliverDelete<T>(msal: IPublicClientApplication, account: AccountInfo, path: string) {
-  return oliverFetch<T>(msal, account, path, { method: "DELETE" });
+export function oliverDelete<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, tenantOverride?: string | null) {
+  return oliverFetch<T>(msal, account, path, { method: "DELETE" }, tenantOverride);
 }
 
 // Raw fetch for binary responses (PDFs, blobs). Caller is responsible for
