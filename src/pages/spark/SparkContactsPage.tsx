@@ -16,8 +16,10 @@ import {
 
 interface Contact {
   id: number;
+  display_name?: string | null;
   first_name: string;
   last_name: string;
+  title?: string | null;
   email: string;
   phone: string;
   company: string;
@@ -32,6 +34,27 @@ interface Contact {
   tag_names?: string | null;
   created_at: string;
   updated_at?: string;
+}
+
+// Resolve the best-available label for a contact row.
+// Order: display_name → company → first+last → email → "—"
+// Matches the B2B-aware data shape after the 2026-06-18 Stripe sync fix:
+// businesses have display_name + company set, first/last NULL; individuals
+// have first/last set, company NULL.
+function contactLabel(c: Contact): string {
+  if (c.display_name?.trim()) return c.display_name.trim();
+  if (c.company?.trim()) return c.company.trim();
+  const fullName = `${c.first_name || ""} ${c.last_name || ""}`.trim();
+  if (fullName) return fullName;
+  return c.email || "—";
+}
+
+function contactInitials(c: Contact): string {
+  const label = contactLabel(c);
+  const parts = label.split(/\s+/);
+  const a = (parts[0]?.[0] || "?").toUpperCase();
+  const b = (parts[1]?.[0] || "").toUpperCase();
+  return a + b;
 }
 
 type SortKey = "name" | "email" | "score" | "company" | "created";
@@ -97,7 +120,7 @@ export function SparkContactsPage() {
     const sorted = [...rows].sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
       switch (sortKey) {
-        case "name": return dir * (`${a.last_name || ""} ${a.first_name || ""}`).localeCompare(`${b.last_name || ""} ${b.first_name || ""}`);
+        case "name": return dir * contactLabel(a).localeCompare(contactLabel(b));
         case "email": return dir * (a.email || "").localeCompare(b.email || "");
         case "score": return dir * ((a.contact_intelligence_score || 0) - (b.contact_intelligence_score || 0));
         case "company": return dir * ((a.account_name || a.company || "").localeCompare(b.account_name || b.company || ""));
@@ -302,11 +325,11 @@ export function SparkContactsPage() {
         <div className="flex items-center gap-2 min-w-0">
           <div className="h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
             <span className="text-[11px] font-semibold text-slate-700">
-              {(c.first_name?.[0] || "?").toUpperCase()}{(c.last_name?.[0] || "").toUpperCase()}
+              {contactInitials(c)}
             </span>
           </div>
           <div className="min-w-0">
-            <div className="font-medium truncate text-slate-900">{c.first_name || ""} {c.last_name || "—"}</div>
+            <div className="font-medium truncate text-slate-900">{contactLabel(c)}</div>
             {c.email_unsubscribed && <div className="text-[10px] text-rose-600">Unsubscribed</div>}
             {c.email_invalid && <div className="text-[10px] text-amber-600">Invalid email</div>}
           </div>

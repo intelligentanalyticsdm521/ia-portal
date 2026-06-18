@@ -21,7 +21,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Mail, Phone, Building2, MapPin, Tag as TagIcon, List as ListIcon,
   Activity as ActivityIcon, FileText, AlertTriangle, Edit3, Save, Trash2,
-  Plus,
+  Plus, X,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal, IadmButton } from "../IadmModal";
@@ -128,6 +128,12 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
   // Notes
   const [newNote, setNewNote] = useState("");
   const [postingNote, setPostingNote] = useState(false);
+
+  // Tag management (uses lumen-api bulk endpoints with single id)
+  const [allTags, setAllTags] = useState<Array<{ id: number; name: string }>>([]);
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  const [newTagName, setNewTagName] = useState("");
+  const [tagBusy, setTagBusy] = useState<null | "add" | "remove" | "create" | "inactive">(null);
 
   const reload = useCallback(async () => {
     if (!ready || !contactId) return;
@@ -270,6 +276,79 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
     } catch (err) {
       setError(err);
     }
+  }
+
+  // ── Tag management — uses lumen-api bulk endpoints with single contact_id.
+  // GET /tags → list / POST /tags { name } → create
+  // POST /contacts/bulk/tag   { contact_ids: [id], tag_id }
+  // POST /contacts/bulk/untag { contact_ids: [id], tag_id }
+  const loadAllTags = useCallback(async () => {
+    try {
+      const r = await get<{ data: Array<{ id: number; name: string }> }>("/api/v1/tags");
+      setAllTags((r as { data?: Array<{ id: number; name: string }> })?.data || []);
+    } catch { /* tolerate empty */ }
+  }, [get]);
+
+  async function addTag(tagId: number) {
+    if (!contactId) return;
+    setTagBusy("add");
+    try {
+      await post("/api/v1/contacts/bulk/tag", { contact_ids: [contactId], tag_id: tagId });
+      setTagPickerOpen(false);
+      await reload();
+    } catch (err) { alert(`Add tag failed: ${(err as Error)?.message || "unknown"}`); }
+    finally { setTagBusy(null); }
+  }
+
+  async function createAndAddTag() {
+    const name = newTagName.trim();
+    if (!name || !contactId) return;
+    setTagBusy("create");
+    try {
+      const created = await post<{ data: { id: number; name: string } }>("/api/v1/tags", { name });
+      const tagId = (created as { data?: { id: number } })?.data?.id;
+      if (!tagId) throw new Error("Tag create returned no id");
+      setAllTags((tags) => [...tags, { id: tagId, name }]);
+      setNewTagName("");
+      await post("/api/v1/contacts/bulk/tag", { contact_ids: [contactId], tag_id: tagId });
+      setTagPickerOpen(false);
+      await reload();
+    } catch (err) { alert(`Create tag failed: ${(err as Error)?.message || "unknown"}`); }
+    finally { setTagBusy(null); }
+  }
+
+  async function removeTag(tagId: number) {
+    if (!contactId) return;
+    setTagBusy("remove");
+    try {
+      await post("/api/v1/contacts/bulk/untag", { contact_ids: [contactId], tag_id: tagId });
+      await reload();
+    } catch (err) { alert(`Remove tag failed: ${(err as Error)?.message || "unknown"}`); }
+    finally { setTagBusy(null); }
+  }
+
+  async function markInactive() {
+    if (!contactId) return;
+    setTagBusy("inactive");
+    try {
+      // Ensure tag exists.
+      if (!allTags.length) await loadAllTags();
+      let tag = allTags.find((t) => t.name.toLowerCase() === "inactive");
+      if (!tag) {
+        const created = await post<{ data: { id: number; name: string } }>("/api/v1/tags", { name: "inactive" });
+        const id = (created as { data?: { id: number } })?.data?.id;
+        if (!id) throw new Error("Could not create 'inactive' tag");
+        tag = { id, name: "inactive" };
+        setAllTags((tags) => [...tags, tag!]);
+      }
+      // Apply only if not already tagged.
+      const already = contact?.tags?.some((t) => t.id === tag!.id);
+      if (!already) {
+        await post("/api/v1/contacts/bulk/tag", { contact_ids: [contactId], tag_id: tag.id });
+        await reload();
+      }
+    } catch (err) { alert(`Mark inactive failed: ${(err as Error)?.message || "unknown"}`); }
+    finally { setTagBusy(null); }
   }
 
   if (!open) return null;
@@ -561,20 +640,97 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
           )}
 
           {tab === "tags" && contact && (
-            <div>
-              {contact.tags && contact.tags.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {contact.tags.map((t) => (
-                    <span key={t.id} className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                      {t.name}
-                    </span>
-                  ))}
+            <div className="space-y-3">
+              {/* Quick actions */}
+              <div className="flex items-center gap-2 pb-1 border-b border-slate-100">
+                <button
+                  onClick={markInactive}
+                  disabled={tagBusy !== null}
+                  className="text-xs px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-50 inline-flex items-center gap-1 disabled:opacity-50"
+                  title="Apply the 'inactive' tag (creates it if missing)"
+                >
+                  {tagBusy === "inactive" ? "Marking…" : "Mark inactive"}
+                </button>
+                <button
+                  onClick={() => { setTagPickerOpen((v) => !v); if (!allTags.length) loadAllTags(); }}
+                  disabled={tagBusy !== null}
+                  className="text-xs px-3 py-1.5 rounded bg-[#EF6C33] text-white hover:bg-[#d85a25] inline-flex items-center gap-1 disabled:opacity-50"
+                >
+                  <TagIcon className="h-3 w-3" /> Add tag
+                </button>
+              </div>
+
+              {/* Active tags with remove button each */}
+              <div>
+                <div className="text-[10px] uppercase font-semibold text-slate-500 mb-1">Active tags</div>
+                {contact.tags && contact.tags.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {contact.tags.map((t) => (
+                      <span key={t.id} className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 inline-flex items-center gap-1">
+                        {t.name}
+                        <button
+                          onClick={() => removeTag(t.id)}
+                          disabled={tagBusy !== null}
+                          className="hover:bg-rose-100 hover:text-rose-700 rounded p-0.5 disabled:opacity-50"
+                          title={`Remove "${t.name}"`}
+                          aria-label={`Remove tag ${t.name}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-sm text-slate-500 italic">No tags on this contact.</div>
+                )}
+              </div>
+
+              {/* Tag picker */}
+              {tagPickerOpen && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                  <div className="text-[10px] uppercase font-semibold text-slate-500">Pick a tag</div>
+                  <div className="max-h-40 overflow-auto space-y-0.5">
+                    {allTags.length === 0 ? (
+                      <div className="text-xs text-slate-500 italic">No tags exist yet. Create one below.</div>
+                    ) : (
+                      allTags
+                        .filter((t) => !contact.tags?.some((ct) => ct.id === t.id))
+                        .map((t) => (
+                          <button
+                            key={t.id}
+                            onClick={() => addTag(t.id)}
+                            disabled={tagBusy !== null}
+                            className="w-full text-left px-2 py-1 rounded text-xs hover:bg-orange-50 hover:text-orange-900 disabled:opacity-50"
+                          >
+                            {t.name}
+                          </button>
+                        ))
+                    )}
+                  </div>
+                  <div className="pt-2 border-t border-slate-200">
+                    <div className="text-[10px] uppercase font-semibold text-slate-500 mb-1">Create new tag</div>
+                    <div className="flex gap-1">
+                      <input
+                        value={newTagName}
+                        onChange={(e) => setNewTagName(e.target.value)}
+                        placeholder="Tag name"
+                        className="flex-1 rounded border border-slate-300 px-2 py-1 text-xs"
+                        onKeyDown={(e) => { if (e.key === "Enter") createAndAddTag(); }}
+                      />
+                      <button
+                        onClick={createAndAddTag}
+                        disabled={!newTagName.trim() || tagBusy !== null}
+                        className="px-2 py-1 rounded text-[10px] font-semibold bg-orange-500 text-white disabled:opacity-40"
+                      >
+                        {tagBusy === "create" ? "Creating…" : "Create + add"}
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              ) : (
-                <div className="text-sm text-slate-500 italic">No tags on this contact.</div>
               )}
-              <p className="mt-3 text-[11px] text-slate-500">
-                Manage tag taxonomy on the <a href="/app/services/spark_tags" className="text-[#EF6C33] hover:underline">Tags page</a> · auto-tag rules live under Workflow & Automations.
+
+              <p className="text-[11px] text-slate-500">
+                Manage tag taxonomy + auto-tag rules on the <a href="/app/services/spark_tags" className="text-[#EF6C33] hover:underline">Tags page</a>.
               </p>
             </div>
           )}
