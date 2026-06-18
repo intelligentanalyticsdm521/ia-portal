@@ -26,7 +26,7 @@ import { IadmModal, CORE_BLUE, PRODUCT_ACCENT } from "../../components/IadmModal
 import { LogoPicker } from "../../components/oliver/LogoPicker";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { fetchPlanCatalog, type PlanCatalogEntry } from "../../lib/onboardingApi";
-import { setActingTenant } from "../../lib/consultingSession";
+import { setActingTenant, clearActingTenant, getActingTenant } from "../../lib/consultingSession";
 import { InfoTip } from "../../components/InfoTip";
 import {
   fetchSignupCatalog, createSignupCartCheckout,
@@ -154,6 +154,18 @@ export function ConsultingOnboardClientPageV2() {
   const [view, setView] = useState<"list" | "wizard">("list");
   const [inProgress, setInProgress] = useState<InProgressOnboarding[]>([]);
   const [listLoading, setListLoading] = useState(true);
+
+  // Founder list assumes you are operating as YOURSELF, not acting in a client
+  // tenant. If acting-tenant is stuck in localStorage from a prior Continue,
+  // clear it on mount — otherwise every API call from this page sends the
+  // x-acting-tenant header and we 403 on the in-progress endpoint.
+  useEffect(() => {
+    if (getActingTenant()) {
+      clearActingTenant();
+      // Hard reload so all API hooks re-init without the header.
+      window.location.reload();
+    }
+  }, []);
 
   useEffect(() => {
     if (view !== "list") return;
