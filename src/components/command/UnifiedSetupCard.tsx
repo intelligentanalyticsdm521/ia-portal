@@ -40,20 +40,30 @@ export function UnifiedSetupCard() {
   const [activeWalkthrough, setActiveWalkthrough] = useState<Walkthrough | null>(null);
 
   // Auto-open the modal when we just landed from /welcome (post-CIAM activation)
-  // OR when ?welcome=1 / ?onboarding=1 is in the URL. Self-serve clients see
-  // the modal pop the moment they sign in. Strip the query param so refresh
-  // doesn't loop it back open.
+  // OR when ?welcome=1 / ?onboarding=1 is in the URL. Self-serve buyers see
+  // the modal pop the moment they sign in. Founder-onboarded clients who
+  // arrive here AFTER their founder already onboarded them must NOT see the
+  // modal — finished_at being set is the suppression signal.
   useEffect(() => {
+    if (progress === null) return; // wait until we've read progress once
     const params = new URLSearchParams(window.location.search);
-    if (params.has("welcome") || params.has("onboarding")) {
-      setOpen(true);
+    const wantsOpen = params.has("welcome") || params.has("onboarding");
+    if (!wantsOpen) return;
+    if (progress?.finished_at) {
+      // Founder already onboarded this tenant — nothing for the client to fill.
+      // Strip the param so the URL is clean and we don't keep trying.
       params.delete("welcome");
       params.delete("onboarding");
       const newSearch = params.toString();
-      const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : "") + window.location.hash;
-      window.history.replaceState({}, "", newUrl);
+      window.history.replaceState({}, "", window.location.pathname + (newSearch ? `?${newSearch}` : "") + window.location.hash);
+      return;
     }
-  }, []);
+    setOpen(true);
+    params.delete("welcome");
+    params.delete("onboarding");
+    const newSearch = params.toString();
+    window.history.replaceState({}, "", window.location.pathname + (newSearch ? `?${newSearch}` : "") + window.location.hash);
+  }, [progress]);
 
   const reload = useCallback(async () => {
     if (!ready || !activeTenantId) return;
