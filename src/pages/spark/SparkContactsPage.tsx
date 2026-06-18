@@ -56,6 +56,10 @@ export function SparkContactsPage() {
 
   // Selection state (bulk actions)
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState<null | "tag" | "untag" | "delete" | "inactive">(null);
+  const [tagMenuOpen, setTagMenuOpen] = useState(false);
+  const [availableTags, setAvailableTags] = useState<Array<{ id: number; name: string }>>([]);
+  const [newTagName, setNewTagName] = useState("");
 
   // Drawer state
   const [drawer, setDrawer] = useState<"add" | "import" | "detail" | null>(null);
@@ -130,6 +134,93 @@ export function SparkContactsPage() {
     else setSelected(new Set(filtered.map(c => c.id)));
   }
   function clearSelection() { setSelected(new Set()); }
+
+  // ── Bulk-action wiring (lumen-api endpoints exist; this just hooks them up).
+  // Backend contracts (lumen-api routes/contactBulk.js):
+  //   POST /contacts/bulk/tag      { contact_ids, tag_id }
+  //   POST /contacts/bulk/untag    { contact_ids, tag_id }
+  //   POST /contacts/bulk/delete   { contact_ids }  (soft-delete: is_deleted=1)
+  //   GET  /tags                                  (list)
+  //   POST /tags                   { name }       (create)
+  const loadTags = useCallback(async () => {
+    try {
+      const r = await get<{ data: Array<{ id: number; name: string }> }>("/api/v1/tags");
+      setAvailableTags((r as { data?: Array<{ id: number; name: string }> })?.data || []);
+    } catch { /* empty list is fine */ }
+  }, [get]);
+
+  const applyBulkTag = useCallback(async (tagId: number, tagName: string) => {
+    if (selected.size === 0) return;
+    setBulkBusy("tag");
+    try {
+      await post("/api/v1/contacts/bulk/tag", { contact_ids: Array.from(selected), tag_id: tagId });
+      clearSelection();
+      await load();
+      // eslint-disable-next-line no-console
+      console.log(`[bulk] tagged ${selected.size} contacts with "${tagName}"`);
+    } catch (e) {
+      alert(`Tagging failed: ${(e as Error)?.message || "unknown"}`);
+    } finally { setBulkBusy(null); }
+    // intentionally not adding `load` to deps — outer load pattern handles it
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, post]);
+
+  const createAndApplyTag = useCallback(async () => {
+    const name = newTagName.trim();
+    if (!name || selected.size === 0) return;
+    setBulkBusy("tag");
+    try {
+      const created = await post<{ data: { id: number; name: string } }>("/api/v1/tags", { name });
+      const tagId = (created as { data?: { id: number } })?.data?.id;
+      if (!tagId) throw new Error("Tag create returned no id");
+      await post("/api/v1/contacts/bulk/tag", { contact_ids: Array.from(selected), tag_id: tagId });
+      setNewTagName("");
+      setTagMenuOpen(false);
+      setAvailableTags((tags) => [...tags, { id: tagId, name }]);
+      clearSelection();
+      await load();
+    } catch (e) {
+      alert(`Tag create failed: ${(e as Error)?.message || "unknown"}`);
+    } finally { setBulkBusy(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newTagName, selected, post]);
+
+  const markInactive = useCallback(async () => {
+    if (selected.size === 0) return;
+    setBulkBusy("inactive");
+    try {
+      // Ensure the "inactive" tag exists; create if not.
+      if (!availableTags.length) await loadTags();
+      let inactiveTag = availableTags.find((t) => t.name.toLowerCase() === "inactive");
+      if (!inactiveTag) {
+        const created = await post<{ data: { id: number; name: string } }>("/api/v1/tags", { name: "inactive" });
+        const id = (created as { data?: { id: number } })?.data?.id;
+        if (!id) throw new Error("Could not create 'inactive' tag");
+        inactiveTag = { id, name: "inactive" };
+        setAvailableTags((tags) => [...tags, inactiveTag!]);
+      }
+      await post("/api/v1/contacts/bulk/tag", { contact_ids: Array.from(selected), tag_id: inactiveTag.id });
+      clearSelection();
+      await load();
+    } catch (e) {
+      alert(`Mark inactive failed: ${(e as Error)?.message || "unknown"}`);
+    } finally { setBulkBusy(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, availableTags, post, loadTags]);
+
+  const confirmAndBulkDelete = useCallback(async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`Soft-delete ${selected.size} contacts? They'll be hidden from lists but retained for 90 days.`)) return;
+    setBulkBusy("delete");
+    try {
+      await post("/api/v1/contacts/bulk/delete", { contact_ids: Array.from(selected) });
+      clearSelection();
+      await load();
+    } catch (e) {
+      alert(`Delete failed: ${(e as Error)?.message || "unknown"}`);
+    } finally { setBulkBusy(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, post]);
 
   async function handleAdd() {
     if (!form.first_name && !form.email) return;
@@ -317,36 +408,58 @@ export function SparkContactsPage() {
             <span><strong>{selected.size}</strong> selected</span>
             <button onClick={clearSelection} className="text-xs text-slate-400 hover:text-white underline">Clear</button>
           </div>
-          <div className="flex items-center gap-1">
-            {/*
-              Bulk Tag / Add-to-list / Delete are not wired yet (audit 2026-06-12).
-              Showing as disabled with a "Coming soon" title — kept visible so the
-              UI surface tells the truth instead of pretending. Send campaign DOES
-              work — it deep-links into the campaigns composer.
-            */}
+          <div className="flex items-center gap-1 relative">
+            {/* Tag dropdown — applies existing or new tag to selection */}
             <button
-              disabled
-              title="Bulk tagging — coming soon in v1.1"
-              className="px-2 py-1 rounded text-xs flex items-center gap-1 opacity-40 cursor-not-allowed"
+              onClick={() => { setTagMenuOpen((v) => !v); if (!availableTags.length) loadTags(); }}
+              disabled={bulkBusy !== null}
+              className="px-2 py-1 rounded hover:bg-white/10 text-xs flex items-center gap-1 disabled:opacity-40"
+              title="Apply a tag to all selected contacts"
             >
-              <TagIcon className="h-3 w-3" /> Tag <span className="text-[9px] uppercase tracking-wide ml-1">Soon</span>
+              <TagIcon className="h-3 w-3" /> Tag
             </button>
-            <button
-              disabled
-              title="Bulk add-to-list — coming soon in v1.1"
-              className="px-2 py-1 rounded text-xs flex items-center gap-1 opacity-40 cursor-not-allowed"
-            >
-              <ListPlus className="h-3 w-3" /> Add to list <span className="text-[9px] uppercase tracking-wide ml-1">Soon</span>
+            {tagMenuOpen && (
+              <div className="absolute right-32 top-full mt-1 z-50 w-64 max-h-72 overflow-auto rounded-lg border border-slate-200 bg-white text-slate-800 shadow-lg p-2">
+                <div className="text-[10px] uppercase font-bold text-slate-500 px-2 pb-1">Apply tag</div>
+                {availableTags.length === 0 && <div className="text-xs text-slate-400 px-2 py-1">No tags yet. Create one below.</div>}
+                {availableTags.map((t) => (
+                  <button key={t.id} type="button"
+                    onClick={() => { setTagMenuOpen(false); applyBulkTag(t.id, t.name); }}
+                    className="w-full text-left px-2 py-1 rounded hover:bg-orange-50 text-xs">
+                    {t.name}
+                  </button>
+                ))}
+                <div className="border-t border-slate-100 mt-1 pt-1.5 px-2">
+                  <div className="text-[10px] uppercase font-semibold text-slate-500 mb-1">Create new tag</div>
+                  <div className="flex gap-1">
+                    <input
+                      value={newTagName}
+                      onChange={(e) => setNewTagName(e.target.value)}
+                      placeholder="Tag name"
+                      className="flex-1 rounded border border-slate-300 px-1.5 py-0.5 text-xs text-slate-800"
+                    />
+                    <button type="button"
+                      onClick={createAndApplyTag}
+                      disabled={!newTagName.trim()}
+                      className="px-2 py-0.5 rounded text-[10px] font-semibold bg-orange-500 text-white disabled:opacity-40">
+                      Create
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            <button onClick={markInactive} disabled={bulkBusy !== null}
+              className="px-2 py-1 rounded hover:bg-white/10 text-xs flex items-center gap-1 disabled:opacity-40"
+              title="Apply the 'inactive' tag to all selected contacts">
+              <Activity className="h-3 w-3" /> Mark inactive
             </button>
             <button onClick={() => navigate("/app/services/spark_campaigns")} className="px-2 py-1 rounded hover:bg-white/10 text-xs flex items-center gap-1">
               <Send className="h-3 w-3" /> Send campaign
             </button>
-            <button
-              disabled
-              title="Bulk delete — coming soon in v1.1. Use the single-row delete on each contact for now."
-              className="px-2 py-1 rounded text-xs flex items-center gap-1 text-rose-300 opacity-40 cursor-not-allowed"
-            >
-              <Trash2 className="h-3 w-3" /> Delete <span className="text-[9px] uppercase tracking-wide ml-1">Soon</span>
+            <button onClick={confirmAndBulkDelete} disabled={bulkBusy !== null}
+              className="px-2 py-1 rounded text-xs flex items-center gap-1 text-rose-300 hover:bg-rose-500/20 disabled:opacity-40"
+              title="Soft-delete all selected contacts">
+              <Trash2 className="h-3 w-3" /> Delete
             </button>
           </div>
         </div>
