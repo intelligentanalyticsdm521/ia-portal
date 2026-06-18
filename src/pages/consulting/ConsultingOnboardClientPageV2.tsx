@@ -103,12 +103,13 @@ interface StripeCustomerMatch {
 
 interface OnboardResult {
   tenant_id: string;
-  slug: string;
+  slug?: string;
   stripe_customer_id?: string;
+  stripe_subscription_id?: string;
   site_id?: string;
   provision_code?: string;
   steps: Array<{ step: string; status: string; detail: string }>;
-  handoff: {
+  handoff?: {
     arion?: {
       site_url: string;
       provision_code: string;
@@ -494,16 +495,16 @@ export function ConsultingOnboardClientPageV2() {
             // Hydrate result so step 7 shows the right tenant context.
             setResult({
               tenant_id: t.tenant_id,
-              stripe_customer_id: t.stripe_customer_id || null,
-              stripe_subscription_id: t.stripe_subscription_id || null,
+              stripe_customer_id: t.stripe_customer_id || undefined,
+              stripe_subscription_id: t.stripe_subscription_id || undefined,
               steps: [],
             });
             setBusinessName(t.business_name || "");
             setContactEmail(t.contact_email || "");
             // If the tenant has any onboarding_state saved, restore the
             // cart + consulting pick so step 7's product tiles light up.
-            const s = t.onboarding_state || {};
-            if (s.cart && Array.isArray(s.cart)) setCart(s.cart);
+            const s = (t.onboarding_state || {}) as { cart?: CartItem[]; consultingPick?: ConsultingPick };
+            if (Array.isArray(s.cart)) setCart(s.cart);
             if (s.consultingPick) setConsultingPick(s.consultingPick);
             // Jump straight to step 7 (post-create handoff) regardless of
             // whether the tenant has finished — step 7 is where product
