@@ -62,12 +62,17 @@ interface PlatformCardSpec {
     | { kind: 'disabled'; reason: string };
 }
 
+// fromUsd is null on every active platform card — the live "From $X/mo"
+// price is computed from the catalog API on State 1 mount (per
+// feedback_no_fabricated_catalog: never hardcode prices). The fallback path
+// shows "Loading…" until the catalog responds, then locks in the real min
+// monthly. Coming-soon / proposal-only cards stay null forever.
 const PLATFORM_CARDS: PlatformCardSpec[] = [
   {
     key: 'arion',
     name: 'ARION',
     tagline: 'AI-built websites + SEO automation. Done in minutes.',
-    fromUsd: 29,
+    fromUsd: null,
     accent: '#EF6C33',
     status: 'active',
     select: { kind: 'state2', platform: 'arion' },
@@ -76,7 +81,7 @@ const PLATFORM_CARDS: PlatformCardSpec[] = [
     key: 'spark',
     name: 'SPARK',
     tagline: 'CRM, email marketing, and lead capture in one workspace.',
-    fromUsd: 19,
+    fromUsd: null,
     accent: '#F4B400',
     status: 'active',
     select: { kind: 'state2', platform: 'spark' },
@@ -85,8 +90,7 @@ const PLATFORM_CARDS: PlatformCardSpec[] = [
     key: 'oliver',
     name: 'OLIVER',
     tagline: 'Field-service operations: jobs, scheduling, invoicing.',
-    // LOCKED 2026-05-26 — Lite respec from $39.99 to $19.99 (invoicing + jobs only)
-    fromUsd: 19.99,
+    fromUsd: null,
     accent: '#FEC82C',
     status: 'active',
     select: { kind: 'state2', platform: 'oliver' },
@@ -219,6 +223,40 @@ export function SignupPage() {
 
   // OLIVER / SPARK (unified oliver-api catalog)
   const [cat, setCat] = useState<SignupCatalog | null>(null);
+
+  // State 1 live "From $X/mo" prices — fetched once on mount so the selector
+  // grid never shows a stale or fabricated number. Per
+  // feedback_no_fabricated_catalog: ALWAYS pull from catalog APIs. The
+  // resulting prices are the MIN monthly across each product's catalog,
+  // applied to PLATFORM_CARDS.fromUsd at render time.
+  const [livePrices, setLivePrices] = useState<{ arion: number | null; oliver: number | null; spark: number | null }>({
+    arion: null, oliver: null, spark: null,
+  });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [arionP, oliverP, sparkP] = await Promise.all([
+        fetchPlanCatalog('arion').catch(() => []),
+        fetchSignupCatalog('oliver', 'monthly').catch(() => null),
+        fetchSignupCatalog('spark', 'monthly').catch(() => null),
+      ]);
+      if (cancelled) return;
+      const arionMin = arionP
+        .map((p: PlanCatalogEntry) => p.pricing?.monthly_usd ?? null)
+        .filter((n: number | null): n is number => typeof n === 'number')
+        .sort((a, b) => a - b)[0] ?? null;
+      const oliverMin = oliverP?.plans
+        ?.map((p) => p.monthly_usd)
+        .filter((n): n is number => typeof n === 'number')
+        .sort((a, b) => a - b)[0] ?? null;
+      const sparkMin = sparkP?.volumes
+        ?.map((v) => v.monthly_usd)
+        .filter((n): n is number => typeof n === 'number')
+        .sort((a, b) => a - b)[0] ?? null;
+      setLivePrices({ arion: arionMin, oliver: oliverMin, spark: sparkMin });
+    })();
+    return () => { cancelled = true; };
+  }, []);
   const [oliverPlan, setOliverPlan] = useState<string>(params.plan || 'standard');
   const [volume, setVolume] = useState<string>('5k');
   const [featureAddon, setFeatureAddon] = useState<'' | 'pro' | 'business'>('');
@@ -502,11 +540,30 @@ export function SignupPage() {
                     </div>
                   </div>
                   <p className="text-sm text-gray-600 flex-1">{card.tagline}</p>
-                  {card.fromUsd != null && (
-                    <div className="mt-4 text-sm text-gray-500">
-                      From <span className="text-gray-900 font-semibold">{money(card.fromUsd)}</span>/mo
-                    </div>
-                  )}
+                  {(() => {
+                    // Live price from State 1 catalog fetch, falls back to
+                    // the static card.fromUsd (which is null for active
+                    // products — they wait for the catalog). Coming-soon
+                    // cards have no price and skip the block entirely.
+                    const live = card.key === 'arion' ? livePrices.arion
+                               : card.key === 'oliver' ? livePrices.oliver
+                               : card.key === 'spark' ? livePrices.spark
+                               : null;
+                    const price = live ?? card.fromUsd;
+                    if (price == null) {
+                      // Active products that haven't loaded yet — show
+                      // skeleton instead of a fake number.
+                      if (card.status === 'active') {
+                        return <div className="mt-4 text-sm text-gray-400">Loading price…</div>;
+                      }
+                      return null;
+                    }
+                    return (
+                      <div className="mt-4 text-sm text-gray-500">
+                        From <span className="text-gray-900 font-semibold">{money(price)}</span>/mo
+                      </div>
+                    );
+                  })()}
                   <button
                     onClick={onSelect}
                     disabled={disabled && !isWaitlist}
