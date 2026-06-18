@@ -107,6 +107,23 @@ interface OnboardingState {
     negotiation_trigger: "manual" | "on_counter_reply" | null;
     confirmed: boolean;
   };
+  arion_integrations: {
+    gbp_connected: boolean;
+    gsc_connected: boolean;
+    google_ads_linked: boolean;
+    bing_connected: boolean;
+    apple_claimed: boolean;
+    se_ranking_project_created: boolean;
+    skipped: boolean;
+  };
+  spark_welcome_email: {
+    template_choice: "system_default" | "custom" | "skip";
+    subject: string;
+    preview_text: string;
+    body: string;
+    sender_name: string;
+    sender_email: string;
+  };
 }
 
 const EMPTY_STATE: OnboardingState = {
@@ -149,6 +166,23 @@ const EMPTY_STATE: OnboardingState = {
     negotiation_trigger: null,
     confirmed: false,
   },
+  arion_integrations: {
+    gbp_connected: false,
+    gsc_connected: false,
+    google_ads_linked: false,
+    bing_connected: false,
+    apple_claimed: false,
+    se_ranking_project_created: false,
+    skipped: false,
+  },
+  spark_welcome_email: {
+    template_choice: "system_default",
+    subject: "Welcome to {{tenant.business_name}}",
+    preview_text: "We're so glad you're here.",
+    body: "",
+    sender_name: "",
+    sender_email: "",
+  },
 };
 
 // ─── Section model ───────────────────────────────────────────────────────
@@ -156,8 +190,8 @@ const EMPTY_STATE: OnboardingState = {
 type ProductKey = "arion" | "spark" | "oliver" | "consulting";
 type SectionId =
   | "profile" | "owner" | "lifecycle"
-  | "arion"
-  | "spark"
+  | "arion" | "arion_integrations"
+  | "spark" | "spark_welcome_email"
   | "oliver_payments" | "oliver_templates" | "oliver_customer_portal" | "oliver_employee_portal" | "oliver_catalog"
   | "consulting"
   | "finish";
@@ -179,8 +213,14 @@ function buildSections(cart: ProductKey[]): Section[] {
   if (cart.includes("spark") || cart.includes("oliver")) {
     out.push({ id: "lifecycle", title: "Sales workflow", required: true });
   }
-  if (cart.includes("arion")) out.push({ id: "arion", title: "ARION setup", product: "arion" });
-  if (cart.includes("spark")) out.push({ id: "spark", title: "SPARK setup", product: "spark" });
+  if (cart.includes("arion")) {
+    out.push({ id: "arion", title: "ARION setup", product: "arion" });
+    out.push({ id: "arion_integrations", title: "ARION · Integrations", product: "arion", required: true });
+  }
+  if (cart.includes("spark")) {
+    out.push({ id: "spark", title: "SPARK setup", product: "spark" });
+    out.push({ id: "spark_welcome_email", title: "SPARK · Welcome email", product: "spark", required: true });
+  }
   if (cart.includes("oliver")) {
     out.push({ id: "oliver_payments",        title: "OLIVER · Payments",        product: "oliver" });
     out.push({ id: "oliver_templates",       title: "OLIVER · Templates",       product: "oliver" });
@@ -343,7 +383,7 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
         {loading ? (
           <div className="text-sm text-slate-500">Loading saved progress…</div>
         ) : (
-          <SectionBody section={current} state={state} setState={setState} api={{ get, post }} accent={accent} />
+          <SectionBody section={current} state={state} setState={setState} api={{ get, post }} accent={accent} tenantId={tenantId} />
         )}
         <HelpFooter />
       </div>
@@ -373,19 +413,22 @@ function StepStrip({ current, sections, accent }: { current: number; sections: S
 
 // ─── Section dispatcher ──────────────────────────────────────────────────
 
-function SectionBody({ section, state, setState, api, accent }: {
+function SectionBody({ section, state, setState, api, accent, tenantId }: {
   section: Section;
   state: OnboardingState;
   setState: (s: OnboardingState | ((prev: OnboardingState) => OnboardingState)) => void;
   api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T> };
   accent: string;
+  tenantId: string;
 }) {
   switch (section.id) {
     case "profile":                return <ProfileSection profile={state.profile} setProfile={(p) => setState((s) => ({ ...s, profile: p }))} api={api} />;
     case "owner":                  return <OwnerSection owner={state.owner} setOwner={(o) => setState((s) => ({ ...s, owner: o }))} />;
     case "lifecycle":              return <LifecycleSection v={state.lifecycle} setV={(v) => setState((s) => ({ ...s, lifecycle: v }))} />;
     case "arion":                  return <ArionSection v={state.arion} setV={(v) => setState((s) => ({ ...s, arion: v }))} />;
+    case "arion_integrations":     return <ArionIntegrationsSection v={state.arion_integrations} setV={(v) => setState((s) => ({ ...s, arion_integrations: v }))} tenantId={tenantId} />;
     case "spark":                  return <SparkSection v={state.spark} setV={(v) => setState((s) => ({ ...s, spark: v }))} />;
+    case "spark_welcome_email":    return <SparkWelcomeEmailSection v={state.spark_welcome_email} setV={(v) => setState((s) => ({ ...s, spark_welcome_email: v }))} profile={state.profile} owner={state.owner} />;
     case "oliver_payments":        return <OliverPaymentsSection v={state.oliver} setV={(v) => setState((s) => ({ ...s, oliver: v }))} accent={accent} api={api} />;
     case "oliver_templates":       return <OliverTemplatesSection profile={state.profile} />;
     case "oliver_customer_portal": return <OliverPortalSection title="Customer portal" v={state.oliver.customer_portal} setV={(p) => setState((s) => ({ ...s, oliver: { ...s.oliver, customer_portal: p } }))} fallback={state.profile} />;
@@ -802,6 +845,252 @@ function ArionSection({ v, setV }: { v: OnboardingState["arion"]; setV: (v: Onbo
   );
 }
 
+// ─── Section: ARION · Integrations ───────────────────────────────────────
+//
+// Connect Google Business Profile, Google Search Console, Google Ads, Bing
+// Webmaster Tools, Apple Business Connect, and create the SE Ranking project.
+// Each is a button that opens a connect flow (OAuth or in-app form). State
+// reflects what's already linked so we don't re-prompt for things that are
+// done.
+//
+// API: GET /api/v1/arion/sites?primary=1 → site_id, then
+//      GET /api/v1/portal/arion/sites/:site_id/linked-business-profiles for status,
+//      POST /api/v1/portal/arion/sites/:site_id/connect-google to start OAuth.
+// We use raw fetch for now so we don't have to add to the modal's api shape.
+function ArionIntegrationsSection({ v, setV, tenantId }: {
+  v: OnboardingState["arion_integrations"];
+  setV: (v: OnboardingState["arion_integrations"]) => void;
+  tenantId: string;
+}) {
+  const [siteId, setSiteId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/v1/arion/sites?tenant_id=${encodeURIComponent(tenantId)}&primary=1`, { credentials: "include" });
+        const j = await res.json().catch(() => null);
+        const id = j?.data?.[0]?.site_id || j?.data?.[0]?.id || null;
+        if (!cancelled) setSiteId(id);
+        if (id) {
+          const statusRes = await fetch(`/api/v1/arion/sites/${id}/integrations-status`, { credentials: "include" });
+          const status = await statusRes.json().catch(() => null);
+          if (!cancelled && status?.data) {
+            setV({
+              ...v,
+              gbp_connected: !!status.data.gbp_connected,
+              gsc_connected: !!status.data.gsc_connected,
+              google_ads_linked: !!status.data.google_ads_linked,
+              bing_connected: !!status.data.bing_connected,
+              apple_claimed: !!status.data.apple_claimed,
+              se_ranking_project_created: !!status.data.se_ranking_project_created,
+            });
+          }
+        }
+      } catch { /* fresh */ }
+      finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId]);
+
+  async function startGoogleOAuth() {
+    if (!siteId) return;
+    setWorking("google");
+    try {
+      const returnUrl = window.location.href;
+      const res = await fetch(`/api/v1/portal/arion/sites/${siteId}/connect-google`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ setupMode: "ARION_AUTO_SETUP", returnUrl }),
+      });
+      const j = await res.json().catch(() => null);
+      const url = j?.data?.authUrl || j?.authUrl;
+      if (url) window.location.href = url;
+    } finally { setWorking(null); }
+  }
+
+  async function createSeProject() {
+    if (!siteId) return;
+    setWorking("seranking");
+    try {
+      const res = await fetch(`/api/v1/portal/arion/sites/${siteId}/se-ranking/projects`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) setV({ ...v, se_ranking_project_created: true });
+    } finally { setWorking(null); }
+  }
+
+  const Row = ({ label, desc, connected, onClick, busyKey, cta }: { label: string; desc: string; connected: boolean; onClick?: () => void; busyKey?: string; cta?: string }) => (
+    <div className="flex items-center justify-between gap-3 border border-slate-200 rounded-lg p-3">
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+          {label}
+          {connected && <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5"><CheckCircle2 className="h-3 w-3" /> Connected</span>}
+        </div>
+        <div className="text-xs text-slate-600 mt-0.5">{desc}</div>
+      </div>
+      {onClick && (
+        <button
+          type="button"
+          onClick={onClick}
+          disabled={working === busyKey}
+          className="text-xs px-3 py-1.5 rounded-md border border-slate-300 bg-white hover:border-slate-500 disabled:opacity-50 whitespace-nowrap"
+        >
+          {working === busyKey ? "Working…" : (connected ? "Re-connect" : (cta || "Connect"))}
+        </button>
+      )}
+    </div>
+  );
+
+  if (loading) return <div className="text-sm text-slate-500">Loading integration status…</div>;
+  if (!siteId) {
+    return (
+      <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        ARION site not provisioned yet. Finish the ARION setup section first, then come back here.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-slate-500">
+        Connect the data sources ARION pulls insights from. You can skip any of these and add them later from <code>ARION → Integrations</code>.
+      </p>
+      <div className="space-y-2">
+        <Row
+          label="Google (GBP + GSC + Ads)"
+          desc="One OAuth covers Business Profile, Search Console, and Ads. Powers Local Presence + Search Performance + Conversion reports."
+          connected={v.gbp_connected && v.gsc_connected}
+          onClick={startGoogleOAuth}
+          busyKey="google"
+        />
+        <Row
+          label="Bing Webmaster Tools"
+          desc="Bing search performance + indexing. Optional but recommended."
+          connected={v.bing_connected}
+          onClick={() => window.open(`/app/arion/integrations?connect=bing&site_id=${siteId}`, "_blank")}
+        />
+        <Row
+          label="Apple Business Connect"
+          desc="Apple Maps + Spotlight listing. Optional for service businesses."
+          connected={v.apple_claimed}
+          onClick={() => window.open(`/app/arion/integrations?connect=apple&site_id=${siteId}`, "_blank")}
+        />
+        <Row
+          label="SE Ranking Project"
+          desc="Keyword rank tracking + competitor analysis. Auto-creates a project tied to your domain."
+          connected={v.se_ranking_project_created}
+          onClick={createSeProject}
+          busyKey="seranking"
+          cta="Create project"
+        />
+      </div>
+      <label className="flex items-center gap-2 text-xs text-slate-600 pt-2">
+        <input type="checkbox" checked={v.skipped} onChange={(e) => setV({ ...v, skipped: e.target.checked })} />
+        I'll connect the rest later in <code>ARION → Integrations</code>.
+      </label>
+    </div>
+  );
+}
+
+// ─── Section: SPARK · Welcome email ──────────────────────────────────────
+//
+// First nurture: the email a new contact gets after they sign up / get
+// imported. We pre-fill with a system default that pulls the tenant's
+// business name + owner name. Tenant can edit, pick "system default" to
+// use ours as-is, or skip and write it later.
+function SparkWelcomeEmailSection({ v, setV, profile, owner }: {
+  v: OnboardingState["spark_welcome_email"];
+  setV: (v: OnboardingState["spark_welcome_email"]) => void;
+  profile: BusinessProfile;
+  owner: OwnerAccount;
+}) {
+  // Live-fill sender defaults when blank — only on initial mount of section.
+  useEffect(() => {
+    const senderName = v.sender_name || `${owner.first_name || ""} ${owner.last_name || ""}`.trim() || profile.business_name;
+    const senderEmail = v.sender_email || profile.primary_contact_email;
+    if (senderName !== v.sender_name || senderEmail !== v.sender_email) {
+      setV({ ...v, sender_name: senderName || "", sender_email: senderEmail || "" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const businessName = profile.business_name || "your business";
+  const ownerFirst = owner.first_name || owner.display_name || "the team";
+  const defaultBody =
+`Hi {{contact.first_name|"there"}},
+
+Welcome to ${businessName}! I'm ${ownerFirst}, and I wanted to personally say thanks for connecting with us.
+
+Here's what to expect next:
+• A short note from us each month with what we're working on
+• First access to anything new we ship
+• Zero spam — unsubscribe link in every email
+
+If there's anything specific you'd like help with, just hit reply.
+
+Talk soon,
+${ownerFirst}
+${businessName}`;
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-slate-500">
+        The email a new contact gets the moment they're added. You can use our system default, customize it now, or skip and write it later in SPARK → Templates.
+      </p>
+
+      <div className="grid grid-cols-3 gap-2">
+        {([
+          { id: "system_default", label: "Use system default", desc: "We've written a friendly one for you." },
+          { id: "custom",         label: "Write my own",        desc: "Edit it right here." },
+          { id: "skip",           label: "Skip for now",        desc: "I'll do it later in SPARK." },
+        ] as const).map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => setV({ ...v, template_choice: opt.id })}
+            className={`text-left rounded-lg border-2 p-2 transition ${v.template_choice === opt.id ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-400"}`}
+          >
+            <div className="text-sm font-semibold">{opt.label}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">{opt.desc}</div>
+          </button>
+        ))}
+      </div>
+
+      {v.template_choice !== "skip" && (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Sender name" value={v.sender_name} onChange={(s) => setV({ ...v, sender_name: s })} placeholder="Who it's from" />
+            <Field label="Sender email" value={v.sender_email} onChange={(s) => setV({ ...v, sender_email: s })} placeholder="hello@yourdomain.com" />
+          </div>
+          <Field label="Subject line" value={v.subject} onChange={(s) => setV({ ...v, subject: s })} hint="Use {{tenant.business_name}} or {{contact.first_name}}" />
+          <Field label="Preview text" value={v.preview_text} onChange={(s) => setV({ ...v, preview_text: s })} hint="Inbox snippet under the subject line." />
+          <div>
+            <label className="text-xs font-semibold text-slate-700">Email body</label>
+            <textarea
+              value={v.template_choice === "system_default" ? defaultBody : (v.body || defaultBody)}
+              onChange={(e) => setV({ ...v, body: e.target.value, template_choice: "custom" })}
+              rows={14}
+              className="w-full mt-1 rounded-md border border-slate-300 px-3 py-2 text-sm font-mono"
+              readOnly={v.template_choice === "system_default"}
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Use <code>{"{{contact.first_name}}"}</code> for personalization. Falls back to <em>there</em> if blank.
+            </p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Section: SPARK ──────────────────────────────────────────────────────
 
 function SparkSection({ v, setV }: { v: OnboardingState["spark"]; setV: (v: OnboardingState["spark"]) => void }) {
@@ -1175,6 +1464,34 @@ async function flushSectionToCanonical(
     });
     return;
   }
+  if (sectionId === "spark_welcome_email") {
+    // POST /api/v1/templates creates a SPARK email template. The system-default
+    // path stamps a known name we can find later; custom uses the tenant's
+    // typed body. "skip" leaves a placeholder template flagged as needs_review.
+    const v = (state as OnboardingState).spark_welcome_email;
+    if (v.template_choice === "skip") return;
+    const body = v.template_choice === "system_default"
+      ? `Hi {{contact.first_name|"there"}},\n\nWelcome to ${state.profile.business_name || "us"}! Thanks for connecting.\n\nTalk soon,\n${state.owner.first_name || state.profile.business_name}`
+      : (v.body || "");
+    try {
+      await api.patch("/api/v1/templates/welcome-email", {
+        kind: "email",
+        slug: "welcome",
+        subject: v.subject,
+        preview_text: v.preview_text,
+        body_html: body,
+        sender_name: v.sender_name,
+        sender_email: v.sender_email,
+        source: "onboarding_modal",
+      });
+    } catch (e) { console.warn("[onboarding] welcome email save deferred:", e); }
+    return;
+  }
+  if (sectionId === "arion_integrations") {
+    // Nothing to flush — state mutations are written as the OAuth callbacks
+    // land. JSON blob save covers the user's current checkbox state.
+    return;
+  }
   if (sectionId === "lifecycle") {
     // PUT /lifecycle/config writes core.tenant_lifecycle_config for this
     // tenant — preset, qualify_trigger, oliver_create_trigger, past_customer_days,
@@ -1233,6 +1550,8 @@ function mergeState(base: OnboardingState, partial: Partial<OnboardingState>): O
     },
     consulting: mergeStrict(base.consulting, partial.consulting),
     lifecycle:  mergeStrict(base.lifecycle,  partial.lifecycle),
+    arion_integrations: mergeStrict(base.arion_integrations, partial.arion_integrations),
+    spark_welcome_email: mergeStrict(base.spark_welcome_email, partial.spark_welcome_email),
   };
 }
 

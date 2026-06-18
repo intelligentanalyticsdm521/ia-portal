@@ -47,6 +47,7 @@ import { SparkLeadGenSavedPage } from './pages/spark/SparkLeadGenSavedPage';
 import SparkCustomerFlowPage from './pages/spark/SparkCustomerFlowPage';
 import SparkLifecyclePage from './pages/spark/SparkLifecyclePage';
 import SparkSyncIssuesPage from './pages/spark/SparkSyncIssuesPage';
+import WalkthroughsPage from './pages/settings/WalkthroughsPage';
 
 // Platform admin: team access (role + product gating)
 import { PlatformTeamAccess } from './pages/settings/PlatformTeamAccess';
@@ -137,6 +138,7 @@ export function App() {
             <Route path="settings/team-members" element={<TeamMembersSettingsPage />} />
             <Route path="settings/integrations" element={<IntegrationsSettingsPage />} />
             <Route path="settings/notifications" element={<NotificationsSettingsPage />} />
+            <Route path="settings/walkthroughs" element={<WalkthroughsPage />} />
             <Route path="settings/security" element={<SecuritySettingsPage />} />
             <Route path="settings/data-privacy" element={<DataPrivacySettingsPage />} />
 
