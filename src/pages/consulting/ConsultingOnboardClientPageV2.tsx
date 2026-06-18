@@ -27,6 +27,7 @@ import { LogoPicker } from "../../components/oliver/LogoPicker";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { fetchPlanCatalog, type PlanCatalogEntry } from "../../lib/onboardingApi";
 import { setActingTenant } from "../../lib/consultingSession";
+import { InfoTip } from "../../components/InfoTip";
 import {
   fetchSignupCatalog, createSignupCartCheckout,
   type SignupCatalog,
@@ -630,6 +631,15 @@ export function ConsultingOnboardClientPageV2() {
           onClose={closeWizardToList}
         />
       )}
+      {/* F-258 — Persistent help footer on every step. Mirrors the bottom-of-page
+          tagline planned for self-serve onboarding so the founder wizard reads
+          the same way the public-facing one will. */}
+      <div className="mt-6 pt-4 border-t border-slate-200 text-center text-[11px] text-slate-500">
+        Need help? <a href="https://book.intelligentanalyticsdm.com" target="_blank" rel="noreferrer"
+          className="font-semibold underline" style={{ color: CORE_BLUE }}>
+          Book an Intelligent Analytics consultation today →
+        </a>
+      </div>
       </div>
     </IadmModal>
     </>
@@ -758,14 +768,17 @@ function StepShell({ children }: { children: React.ReactNode }) {
   return <div className="space-y-4">{children}</div>;
 }
 
-function Field({ label, value, onChange, type = "text", placeholder, required, hint }: {
+function Field({ label, value, onChange, type = "text", placeholder, required, hint, tip }: {
   label: string; value: string; onChange: (v: string) => void;
   type?: string; placeholder?: string; required?: boolean; hint?: string;
+  /** Inline help-tip (?) shown next to the label. For longer / contextual explanations. */
+  tip?: string;
 }) {
   return (
     <div>
       <label className="block text-xs font-semibold text-slate-700 mb-1">
         {label}{required && <span className="text-rose-500"> *</span>}
+        {tip && <InfoTip text={tip} />}
       </label>
       <input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
@@ -1334,33 +1347,46 @@ function Step4BusinessProfile({ profile, setProfile, businessName, setBusinessNa
       <p className="text-xs text-slate-500">Drives ARION region binding (city/state for Google D/M), WP brand swap, and SPARK sender. Shared across all products.</p>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Business name" required value={businessName} onChange={setBusinessName} />
-        <Field label="Primary contact email" type="email" required value={contactEmail} onChange={setContactEmail} />
+        <Field label="Business name" required value={businessName} onChange={setBusinessName}
+          tip="The legal entity name. Appears on invoices, ARION SEO project, SPARK sender name, and OLIVER customer portals." />
+        <Field label="Primary contact email" type="email" required value={contactEmail} onChange={setContactEmail}
+          tip="The owner's email. Used to send the CIAM welcome link + payment receipts. Becomes their portal login." />
       </div>
-      <Field label="Street address" value={profile.address_street} onChange={(v) => setProfile({ ...profile, address_street: v })} placeholder="123 Main St" />
+      <Field label="Street address" value={profile.address_street} onChange={(v) => setProfile({ ...profile, address_street: v })} placeholder="123 Main St"
+        tip="Service address. Used on quotes/invoices and to map ARION SEO local-pack targeting." />
       <Field label="Suite / unit" value={profile.address_line2} onChange={(v) => setProfile({ ...profile, address_line2: v })} placeholder="optional" />
       <div className="grid grid-cols-3 gap-3">
         <Field label="City" required value={profile.address_city} onChange={(v) => setProfile({ ...profile, address_city: v })}
-          hint={arionInCart ? "Used as ARION SE Ranking region" : undefined} />
+          hint={arionInCart ? "Used as ARION SE Ranking region" : undefined}
+          tip="Drives ARION's Google Desktop/Mobile region binding (city + state ⇒ SE Ranking region ID). Get this right or rankings won't track." />
         <Field label="State" required value={profile.address_state} onChange={(v) => setProfile({ ...profile, address_state: v })}
-          placeholder="IA, AZ, CA…" />
+          placeholder="IA, AZ, CA…"
+          tip="Two-letter state code. Combined with City to resolve the SE Ranking region for ARION." />
         <Field label="ZIP" value={profile.address_zip} onChange={(v) => setProfile({ ...profile, address_zip: v })} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">Phone</label>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">
+            Phone
+            <InfoTip text="Used on OLIVER customer-facing invoices/portals and SPARK SMS sender (Pro tier). Auto-formats as you type." />
+          </label>
           <input type="tel" value={profile.phone}
             onChange={(e) => setProfile({ ...profile, phone: formatPhone(e.target.value) })}
             placeholder="+1 (555) 555-5555"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
         </div>
-        <Field label="Website" value={profile.website} onChange={(v) => setProfile({ ...profile, website: v })} placeholder="https://…" />
+        <Field label="Website" value={profile.website} onChange={(v) => setProfile({ ...profile, website: v })} placeholder="https://…"
+          tip="Existing website URL. Used by the logo-picker's site-scan + as the canonical URL for ARION SE Ranking. Leave blank if you'll spin one up via ARION." />
       </div>
-      <Field label="Industry" value={profile.industry} onChange={(v) => setProfile({ ...profile, industry: v })} placeholder="e.g. Roller skating rink, Roofing, Restaurant" />
+      <Field label="Industry" value={profile.industry} onChange={(v) => setProfile({ ...profile, industry: v })} placeholder="e.g. Roller skating rink, Roofing, Restaurant"
+        tip="Picks the ARION starter-template family + brand voice for AI-generated copy. Be specific — 'Roller skating rink' beats 'Entertainment'." />
 
       {/* Logo — full LogoPicker (upload / website scan / paste URL) */}
       <div>
-        <label className="block text-xs font-semibold text-slate-700 mb-1">Logo</label>
+        <label className="block text-xs font-semibold text-slate-700 mb-1">
+          Logo
+          <InfoTip text="Upload a file, scan their website for one, or paste a URL. Used on customer-facing invoices, quotes, OLIVER portals, the ARION WordPress build, and SPARK email headers. Transparent PNG works best." />
+        </label>
         <LogoPicker
           value={profile.logo_url || null}
           onChange={(url) => setProfile({ ...profile, logo_url: url || "" })}
@@ -1371,7 +1397,10 @@ function Step4BusinessProfile({ profile, setProfile, businessName, setBusinessNa
 
       {/* Brand colors — Primary / Secondary / Accent (matches core.tenants schema) */}
       <div>
-        <label className="block text-xs font-semibold text-slate-700">Brand colors</label>
+        <label className="block text-xs font-semibold text-slate-700">
+          Brand colors
+          <InfoTip text="Primary = main brand color (page headers, CTA buttons). Secondary = supporting accent (sub-headers, badges). Accent = highlights for links + small UI flourishes. Applied automatically to invoices, portals, the ARION WP build, and SPARK templates." />
+        </label>
         <p className="mt-0.5 text-[10px] text-slate-500">Used across invoices, quotes, portals, and WP brand swap. Accent highlights links + buttons.</p>
         <div className="mt-2 space-y-2">
           {([
@@ -1405,22 +1434,30 @@ function Step5Account({ account, setAccount, fallbackEmail }: {
   return (
     <StepShell>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="First name" required value={account.first_name} onChange={(v) => setAccount({ ...account, first_name: v })} />
-        <Field label="Last name" required value={account.last_name} onChange={(v) => setAccount({ ...account, last_name: v })} />
+        <Field label="First name" required value={account.first_name} onChange={(v) => setAccount({ ...account, first_name: v })}
+          tip="The human owner's first name. Goes to Stripe metadata.individual_name + CIAM user record. Distinct from the business name." />
+        <Field label="Last name" required value={account.last_name} onChange={(v) => setAccount({ ...account, last_name: v })}
+          tip="The human owner's last name. Pairs with first name on Stripe metadata + CIAM directory." />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Display name" value={account.display_name} onChange={(v) => setAccount({ ...account, display_name: v })} hint="How they're addressed across products" />
-        <Field label="Title / role" value={account.title} onChange={(v) => setAccount({ ...account, title: v })} placeholder="Owner, Founder, GM…" />
+        <Field label="Display name" value={account.display_name} onChange={(v) => setAccount({ ...account, display_name: v })} hint="How they're addressed across products"
+          tip="Optional friendly name shown in OLIVER chat, SPARK personalisation, and customer-portal greetings (e.g. 'Cam'). Defaults to first name if blank." />
+        <Field label="Title / role" value={account.title} onChange={(v) => setAccount({ ...account, title: v })} placeholder="Owner, Founder, GM…"
+          tip="Shown on internal admin views + on the team-members list inside their tenant. Helps staff know who's in charge." />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile phone</label>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">
+            Mobile phone
+            <InfoTip text="Primary contact number. Used for SMS notifications, the OLIVER customer portal, and the Stripe customer phone field. Auto-formats as you type." />
+          </label>
           <input type="tel" value={account.mobile}
             onChange={(e) => setAccount({ ...account, mobile: formatPhone(e.target.value) })}
             placeholder="+1 (555) 555-5555"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
         </div>
-        <Field label="Time zone" value={account.time_zone} onChange={(v) => setAccount({ ...account, time_zone: v })} hint="Auto-detected from your browser" />
+        <Field label="Time zone" value={account.time_zone} onChange={(v) => setAccount({ ...account, time_zone: v })} hint="Auto-detected from your browser"
+          tip="Drives scheduled-email send times, booking page slot windows, ARION cron-based reports, and OLIVER overdue calculations." />
       </div>
       <div className="space-y-2">
         <label className="flex items-center gap-2 text-sm">
