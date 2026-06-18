@@ -42,7 +42,7 @@ export function SparkIntelligencePage() {
       try {
         const [summaryRaw, contactsRaw] = await Promise.all([
           get<{ data: IntelligenceSummary }>("/api/v1/intelligence/summary"),
-          get<{ data: IntelligenceContact[] }>("/api/v1/contacts?limit=50"),
+          get<{ data: IntelligenceContact[] }>("/api/v1/intelligence/contacts?limit=50"),
         ]);
         if (!cancelled) {
           setSummary(summaryRaw.data || null);
