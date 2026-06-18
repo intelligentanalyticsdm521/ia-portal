@@ -140,9 +140,15 @@ interface InProgressOnboarding {
   city: string | null;
   state_province: string | null;
   created_at: string;
+  onboarding_step?: number | null;
+  onboarding_state?: Record<string, unknown> | null;
+  onboarding_finished_at?: string | null;
+  onboarding_closed_at?: string | null;
+  onboarding_completed_at?: string | null;
   needs_attention: {
     no_stripe_customer: boolean;
     no_stripe_subscription: boolean;
+    no_welcome_sent?: boolean;
   };
 }
 
@@ -481,25 +487,29 @@ export function ConsultingOnboardClientPageV2() {
           loading={listLoading}
           onNew={() => setView("wizard")}
           onContinue={(t) => {
-            // Start an acting-tenant session so every API call gets
-            // x-acting-tenant: <client tenant id>. The server re-validates the
-            // founder's grant on every request and rewrites the request's
-            // tenant to the client. Without this the founder lands on their
-            // OWN product dashboard instead of the client's.
+            // Reopen the wizard at the saved step. Set acting-tenant so any
+            // API calls inside the wizard target the client's tenant. The
+            // wizard hydrates from the tenant row's saved state on entry.
             setActingTenant(t.tenant_id, t.business_name);
-            // Land on the product's ONBOARDING page (the per-product setup
-            // wizard / checklist), NOT the steady-state dashboard. The
-            // dashboards are where the tenant operates day-to-day — they
-            // assume setup is done. The _onboarding routes walk through
-            // the rest of provisioning (ARION questionnaire/domain/install,
-            // SPARK sender+contact import, OLIVER customer list+Stripe Connect).
-            const product = t.signup_product || "arion";
-            const landingMap: Record<string, string> = {
-              arion:  "/app/services/arion_onboarding",
-              spark:  "/app/services/spark_onboarding",
-              oliver: "/app/services/oliver_onboarding",
-            };
-            window.location.href = landingMap[product] || landingMap.arion;
+            // Hydrate result so step 7 shows the right tenant context.
+            setResult({
+              tenant_id: t.tenant_id,
+              stripe_customer_id: t.stripe_customer_id || null,
+              stripe_subscription_id: t.stripe_subscription_id || null,
+              steps: [],
+            });
+            setBusinessName(t.business_name || "");
+            setContactEmail(t.contact_email || "");
+            // If the tenant has any onboarding_state saved, restore the
+            // cart + consulting pick so step 7's product tiles light up.
+            const s = t.onboarding_state || {};
+            if (s.cart && Array.isArray(s.cart)) setCart(s.cart);
+            if (s.consultingPick) setConsultingPick(s.consultingPick);
+            // Jump straight to step 7 (post-create handoff) regardless of
+            // whether the tenant has finished — step 7 is where product
+            // setup buttons + Save & Finish/Close live.
+            setStep(7);
+            setView("wizard");
           }}
           onCancel={async (t) => {
             if (!window.confirm(`Cancel onboarding for ${t.business_name}? This will cancel all Stripe subscriptions and mark the tenant cancelled.`)) return;
@@ -522,16 +532,52 @@ export function ConsultingOnboardClientPageV2() {
       size="info"
       footer={
         step === 7 ? (
-          <div className="flex justify-end w-full">
+          <div className="flex justify-between w-full gap-2">
             <button
               onClick={() => {
                 setStep(1); setResult(null); setCheckoutUrl(null); setCart([]); setConsultingPick(null);
                 setBusinessName(""); setContactEmail(""); setSelectedCoupon(null); setCustomerMode(null);
               }}
-              className="px-5 py-2 rounded-lg border border-gray-300 text-slate-700 font-semibold text-sm"
+              className="px-4 py-2 rounded-lg border border-gray-300 text-slate-700 font-semibold text-sm"
             >
-              Onboard another client
+              + Onboard another
             </button>
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  if (!result?.tenant_id) { closeWizardToList(); return; }
+                  try {
+                    await post("/admin/onboard-client/save-step", {
+                      tenant_id: result.tenant_id, step: 7,
+                      state: { cart, consultingPick, businessName, contactEmail },
+                      mode: "close",
+                    });
+                  } catch (e) { console.warn("save-step failed", e); }
+                  closeWizardToList();
+                }}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-slate-700 font-semibold text-sm"
+              >
+                Save &amp; Close
+              </button>
+              <button
+                onClick={async () => {
+                  if (!result?.tenant_id) return;
+                  if (!window.confirm(`Send the CIAM welcome email to ${contactEmail || "the client"} now? They'll use it to sign up and start the walkthrough.`)) return;
+                  try {
+                    const r = await post<{ ok: boolean; welcome_email: string }>("/admin/onboard-client/finish", {
+                      tenant_id: result.tenant_id, step: 7,
+                      state: { cart, consultingPick, businessName, contactEmail },
+                    });
+                    alert(`Onboarding finished. Welcome email: ${r?.welcome_email || "queued"}`);
+                  } catch (e) { alert(`Finish failed: ${(e as Error).message}`); return; }
+                  closeWizardToList();
+                }}
+                className="px-4 py-2 rounded-lg text-white font-semibold text-sm"
+                style={{ background: CORE_BLUE }}
+              >
+                Save &amp; Finish (send welcome)
+              </button>
+            </div>
           </div>
         ) : (
           <div className="flex justify-between w-full">
