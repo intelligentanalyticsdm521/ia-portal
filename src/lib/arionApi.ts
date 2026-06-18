@@ -1,4 +1,17 @@
-import { consultingHeaders } from './consultingSession';
+import { consultingHeaders, clearActingTenant, getActingTenant } from './consultingSession';
+
+// Self-heal stale acting-tenant: if the operator no longer has a grant
+// for the tenant in localStorage, drop the flag + reload so subsequent
+// requests fire without the header.
+function handleConsultingAuthFailure(body: unknown): void {
+  if (!getActingTenant()) return;
+  const err = (body && typeof body === 'object' && 'error' in body) ? (body as { error: unknown }).error : null;
+  const code = typeof err === 'string' ? err : (err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '');
+  if (code === 'consulting_not_authorized' || code === 'consulting_no_identity') {
+    clearActingTenant();
+    window.location.href = '/';
+  }
+}
 
 export type SetupMode = 'ARION_AUTO_SETUP' | 'EXISTING_INTEGRATION';
 
@@ -268,6 +281,7 @@ async function requestJson<T>(params: {
   const body = text ? safeJsonParse(text) : null;
 
   if (!res.ok) {
+    if (res.status === 403) handleConsultingAuthFailure(body);
     // Error bodies come in two shapes:
     //   { error: "string" }
     //   { error: { code, message, status } }
