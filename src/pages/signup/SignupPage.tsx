@@ -201,6 +201,14 @@ export function SignupPage() {
   const initialBuyer = useMemo(() => cartReadBuyer(), []);
   const [email, setEmail] = useState(initialBuyer.email);
   const [name, setName] = useState(initialBuyer.name);
+  // Promo code field — passed straight through to oliver-api as
+  // body.coupon_code (per 43_FOUNDER_WIZARD_CATALOG_ARCHITECTURE coupon
+  // precedence: founder coupon overrides auto-bundle). Use cases the user
+  // cares about: FF_100 = 100% off first invoice (friends-and-family),
+  // kgzALoKz = permanent 100% off (founder testing). Marketing campaigns
+  // can issue any custom Stripe coupon.
+  const [couponCode, setCouponCode] = useState('');
+  const [showCoupon, setShowCoupon] = useState(false);
   const [cycle, setCycle] = useState<BillingCycle>(() => {
     const stored = cartReadCycle();
     return stored || params.billing;
@@ -389,49 +397,19 @@ export function SignupPage() {
         return;
       }
 
-      // F-133 — all guest-checkout paths go through oliver-api (the single
-      // Stripe owner). The legacy arion-api /onboarding/checkout/create-session
-      // path is dead (never had Stripe env vars in prod and threw "Stripe not
-      // configured" for ARION-only-no-SEO carts). One checkout endpoint, one
-      // Stripe customer, one invoice — bundle discount auto-applied server-side
-      // when the cart has 2+ products. The domain-purchase wizard (if/when we
-      // re-enable it) belongs in the ARION onboarding step AFTER Stripe checkout.
-      if (baseCart.length === 1) {
-        const only = baseCart[0];
-        if (only.product === 'arion') {
-          const s = await createSignupCartCheckout({
-            email, name: name || undefined, billing_cycle: cycle,
-            items: [{ product: 'arion', plan: only.plan, seo: only.seo || null }],
-          });
-          window.location.href = s.checkout_url;
-          return;
-        }
-        if (only.product === 'oliver') {
-          const s = await createSignupCheckout({
-            product: 'oliver', email, name: name || undefined,
-            billing_cycle: cycle, plan: only.plan,
-          });
-          window.location.href = s.checkout_url;
-          return;
-        }
-        // SPARK single
-        const s = await createSignupCheckout({
-          product: 'spark', email, name: name || undefined,
-          billing_cycle: cycle,
-          volume: only.volume,
-          featureAddon: (only.featureAddon || null) as 'pro' | 'business' | null,
-          leads: (only.leads || null) as 'essentials' | 'growth' | 'authority' | null,
-          leadsSelected: only.leads ? only.leadsSelected : undefined,
-        });
-        window.location.href = s.checkout_url;
-        return;
-      }
-
-      // 2+ items → unified cart checkout. One customer, one invoice,
-      // bundle discount auto-applied server-side.
+      // F-133 — every guest-checkout path goes through oliver-api
+      // /signup/checkout-cart (single Stripe owner, single customer, single
+      // invoice). createSignupCartCheckout handles 1+ items; the multi-item
+      // bundle discount auto-applies server-side. Promo code from the UI
+      // field is passed through as coupon_code (founder coupon overrides
+      // auto-bundle per 43_FOUNDER_WIZARD_CATALOG_ARCHITECTURE.md). The
+      // legacy single-product /signup/checkout was kept for OLIVER + SPARK
+      // historically; now retired — every product flows through the cart.
+      const trimmedCoupon = couponCode.trim() || undefined;
       const s = await createSignupCartCheckout({
         email, name: name || undefined,
         billing_cycle: cycle,
+        ...(trimmedCoupon ? { coupon_code: trimmedCoupon } : {}),
         items: baseCart.map((it) => {
           if (it.product === 'arion') return { product: 'arion', plan: it.plan, seo: it.seo || null };
           if (it.product === 'oliver') return { product: 'oliver', plan: it.plan };
@@ -654,6 +632,23 @@ export function SignupPage() {
             className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm shadow-sm focus:border-[#EF6C33] focus:ring-1 focus:ring-[#EF6C33]" />
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@yourbusiness.com *"
             className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm shadow-sm focus:border-[#EF6C33] focus:ring-1 focus:ring-[#EF6C33]" />
+          {!showCoupon ? (
+            <button type="button" onClick={() => setShowCoupon(true)}
+              className="text-xs text-gray-500 hover:text-gray-700 self-start underline">
+              Have a promo code?
+            </button>
+          ) : (
+            <div className="flex gap-2">
+              <input type="text" value={couponCode}
+                onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                placeholder="Promo code"
+                className="flex-1 rounded-lg border border-gray-300 px-4 py-3 text-sm shadow-sm focus:border-[#EF6C33] focus:ring-1 focus:ring-[#EF6C33] uppercase tracking-wide" />
+              <button type="button" onClick={() => { setShowCoupon(false); setCouponCode(''); }}
+                className="text-xs text-gray-500 hover:text-gray-700 px-2">
+                Remove
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="flex justify-center mb-8">
