@@ -45,6 +45,8 @@ import { SparkLeadGenNewPage } from './pages/spark/SparkLeadGenNewPage';
 import { SparkLeadGenJobPage } from './pages/spark/SparkLeadGenJobPage';
 import { SparkLeadGenSavedPage } from './pages/spark/SparkLeadGenSavedPage';
 import SparkCustomerFlowPage from './pages/spark/SparkCustomerFlowPage';
+import SparkLifecyclePage from './pages/spark/SparkLifecyclePage';
+import SparkSyncIssuesPage from './pages/spark/SparkSyncIssuesPage';
 
 // Platform admin: team access (role + product gating)
 import { PlatformTeamAccess } from './pages/settings/PlatformTeamAccess';
@@ -165,6 +167,8 @@ export function App() {
             <Route path="spark/leadgen/jobs/:id" element={<SparkLeadGenJobPage />} />
             <Route path="spark/leadgen/saved" element={<SparkLeadGenSavedPage />} />
             <Route path="spark/customer-flow" element={<SparkCustomerFlowPage />} />
+            <Route path="spark/lifecycle" element={<SparkLifecyclePage />} />
+            <Route path="spark/sync-issues" element={<SparkSyncIssuesPage />} />
 
             {/* Platform admin: team access */}
             <Route path="team-access" element={<PlatformTeamAccess />} />

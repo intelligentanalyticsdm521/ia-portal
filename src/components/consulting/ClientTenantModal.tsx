@@ -99,6 +99,14 @@ interface OnboardingState {
     catalog: Array<{ name: string; price: string }>;
   };
   consulting: { engagement_type: string; first_meeting_notes: string };
+  lifecycle: {
+    preset: "simple" | "moderate" | "detailed";
+    qualify_trigger: "manual" | "on_quote_or_meeting" | "every_lead";
+    oliver_create_trigger: "eager" | "on_prospect" | "manual";
+    past_customer_days: number;
+    negotiation_trigger: "manual" | "on_counter_reply" | null;
+    confirmed: boolean;
+  };
 }
 
 const EMPTY_STATE: OnboardingState = {
@@ -133,13 +141,21 @@ const EMPTY_STATE: OnboardingState = {
     catalog: [{ name: "", price: "" }],
   },
   consulting: { engagement_type: "", first_meeting_notes: "" },
+  lifecycle: {
+    preset: "simple",
+    qualify_trigger: "manual",
+    oliver_create_trigger: "on_prospect",
+    past_customer_days: 90,
+    negotiation_trigger: null,
+    confirmed: false,
+  },
 };
 
 // ─── Section model ───────────────────────────────────────────────────────
 
 type ProductKey = "arion" | "spark" | "oliver" | "consulting";
 type SectionId =
-  | "profile" | "owner"
+  | "profile" | "owner" | "lifecycle"
   | "arion"
   | "spark"
   | "oliver_payments" | "oliver_templates" | "oliver_customer_portal" | "oliver_employee_portal" | "oliver_catalog"
@@ -158,6 +174,11 @@ function buildSections(cart: ProductKey[]): Section[] {
     { id: "profile", title: "Business profile", required: true },
     { id: "owner",   title: "Owner account",    required: true },
   ];
+  // Customer Lifecycle step — shown to any tenant whose cart includes SPARK or
+  // OLIVER (consulting-only tenants don't have a CRM funnel to configure).
+  if (cart.includes("spark") || cart.includes("oliver")) {
+    out.push({ id: "lifecycle", title: "Sales workflow", required: true });
+  }
   if (cart.includes("arion")) out.push({ id: "arion", title: "ARION setup", product: "arion" });
   if (cart.includes("spark")) out.push({ id: "spark", title: "SPARK setup", product: "spark" });
   if (cart.includes("oliver")) {
@@ -362,6 +383,7 @@ function SectionBody({ section, state, setState, api, accent }: {
   switch (section.id) {
     case "profile":                return <ProfileSection profile={state.profile} setProfile={(p) => setState((s) => ({ ...s, profile: p }))} api={api} />;
     case "owner":                  return <OwnerSection owner={state.owner} setOwner={(o) => setState((s) => ({ ...s, owner: o }))} />;
+    case "lifecycle":              return <LifecycleSection v={state.lifecycle} setV={(v) => setState((s) => ({ ...s, lifecycle: v }))} />;
     case "arion":                  return <ArionSection v={state.arion} setV={(v) => setState((s) => ({ ...s, arion: v }))} />;
     case "spark":                  return <SparkSection v={state.spark} setV={(v) => setState((s) => ({ ...s, spark: v }))} />;
     case "oliver_payments":        return <OliverPaymentsSection v={state.oliver} setV={(v) => setState((s) => ({ ...s, oliver: v }))} accent={accent} api={api} />;
@@ -428,6 +450,191 @@ function ProfileSection({ profile, setProfile, api }: { profile: BusinessProfile
 }
 
 // ─── Section: Owner account ──────────────────────────────────────────────
+
+// ─── Section: Sales workflow (Customer Lifecycle) ────────────────────────
+//
+// 4 sub-blocks in one scrollable section (per the unified-modal pattern):
+//   1. Pick a preset (Simple / Moderate / Detailed)
+//   2. Auto-transitions explainer (read-only; past-customer days slider)
+//   3. Configurable transitions (qualify trigger + OLIVER customer trigger
+//      + negotiation trigger for Detailed)
+//   4. Confirm flow visualization
+//
+// White-label rule: the tenant never sees "Stripe." Every customer-create
+// is framed as "become an OLIVER customer."
+function LifecycleSection({ v, setV }: { v: OnboardingState["lifecycle"]; setV: (v: OnboardingState["lifecycle"]) => void }) {
+  const isModerate = v.preset === "moderate";
+  const isDetailed = v.preset === "detailed";
+  const promotionLabel = isModerate || isDetailed ? "Qualified Prospect" : "Prospect";
+
+  function Pick({ id, title, summary, stages }: { id: "simple" | "moderate" | "detailed"; title: string; summary: string; stages: string }) {
+    const active = v.preset === id;
+    return (
+      <button
+        type="button"
+        onClick={() => setV({ ...v, preset: id, negotiation_trigger: id === "detailed" ? (v.negotiation_trigger || "manual") : null })}
+        className={`w-full text-left rounded-lg border-2 p-3 transition ${active ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-400"}`}
+      >
+        <div className="flex items-start gap-2">
+          <span className={`mt-1 inline-block h-3 w-3 rounded-full border-2 ${active ? "bg-slate-900 border-slate-900" : "border-slate-400"}`} />
+          <div className="flex-1">
+            <div className="font-semibold text-sm">{title}</div>
+            <div className="text-xs text-slate-600 mt-0.5">{stages}</div>
+            <div className="text-xs text-slate-500 mt-1">{summary}</div>
+          </div>
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-500">
+        How you track customers from first contact through paid. You can change any of this later in Settings → CRM → Lifecycle.
+      </p>
+
+      {/* Sub-block 1: pick a preset */}
+      <div className="space-y-2">
+        <div className="text-sm font-semibold text-slate-700">1. Pick the flow that matches your business</div>
+        <Pick
+          id="simple"
+          title="Simple — 5 stages (recommended for most)"
+          stages="Lead → Prospect → Active Customer → Past Customer → Repeat Customer"
+          summary="Best for: solo operators, service businesses, anyone without a formal sales process."
+        />
+        <Pick
+          id="moderate"
+          title="Moderate — 7 stages"
+          stages="Lead → Engaged → Qualified → Active → Past → Repeat"
+          summary="Best for: B2B with a sales cycle; separates warm leads from qualified prospects."
+        />
+        <Pick
+          id="detailed"
+          title="Detailed — 9 stages"
+          stages="Lead → Engaged → Qualified → Proposal → Negotiation → Active → Past → Repeat"
+          summary="Best for: agencies, consultants, high-touch B2B with formal proposal/negotiation phases."
+        />
+      </div>
+
+      {/* Sub-block 2: auto transitions explainer */}
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+        <div className="text-sm font-semibold text-slate-700">2. These happen automatically — no action needed</div>
+        <ul className="text-xs text-slate-700 space-y-1.5 list-none pl-0">
+          <li>✓ Anyone who fills a form, gets imported, or you add manually starts as a <b>Lead</b>.</li>
+          {(isModerate || isDetailed) && (
+            <li>✓ When they reply, book a meeting, or open 2+ emails they become an <b>Engaged Prospect</b>.</li>
+          )}
+          {isDetailed && (
+            <li>✓ When you send them a quote or invoice they become <b>Proposal Sent</b>.</li>
+          )}
+          <li>✓ When they pay for the first time they become an <b>Active Customer</b>.</li>
+          <li>
+            ✓ When they cancel everything AND go quiet for{" "}
+            <b>{v.past_customer_days} days</b> they move to <b>Past Customer</b>.
+            <div className="mt-1 flex items-center gap-2">
+              <input
+                type="range"
+                min={30}
+                max={365}
+                step={1}
+                value={v.past_customer_days}
+                onChange={(e) => setV({ ...v, past_customer_days: Number(e.target.value) })}
+                className="flex-1"
+              />
+              <span className="text-xs text-slate-500 w-20 text-right">{v.past_customer_days} days</span>
+            </div>
+          </li>
+          <li>✓ If a Past Customer pays again, they automatically become a <b>Repeat Customer</b>.</li>
+        </ul>
+      </div>
+
+      {/* Sub-block 3: configurable transitions */}
+      <div className="space-y-3">
+        <div className="text-sm font-semibold text-slate-700">3. When YOU decide a Lead is ready</div>
+        <div className="space-y-1.5">
+          {[
+            { id: "manual",                label: "I'll click \"Qualify\" myself  (recommended)" },
+            { id: "on_quote_or_meeting",   label: "Auto-qualify when they request a quote or book a meeting" },
+            { id: "every_lead",            label: "Every Lead is automatically a Prospect (treat everyone as a sales opportunity)" },
+          ].map((opt) => (
+            <label key={opt.id} className="flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="qualify_trigger"
+                checked={v.qualify_trigger === opt.id}
+                onChange={() => setV({ ...v, qualify_trigger: opt.id as OnboardingState["lifecycle"]["qualify_trigger"] })}
+                className="mt-1"
+              />
+              <span>{opt.label}</span>
+            </label>
+          ))}
+        </div>
+
+        <div className="text-sm font-semibold text-slate-700 pt-2">When should they be added as an OLIVER customer?</div>
+        <div className="space-y-1.5">
+          {[
+            { id: "on_prospect", label: `When they become a ${promotionLabel}  (recommended — keeps your customer list clean, ready to send proposals and invoices)` },
+            { id: "eager",       label: "Right away when they're a Lead  (every contact is also an OLIVER customer)" },
+            { id: "manual",      label: "Only when I click \"Add to OLIVER\"" },
+          ].map((opt) => (
+            <label key={opt.id} className="flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="oliver_create_trigger"
+                checked={v.oliver_create_trigger === opt.id}
+                onChange={() => setV({ ...v, oliver_create_trigger: opt.id as OnboardingState["lifecycle"]["oliver_create_trigger"] })}
+                className="mt-1"
+              />
+              <span>{opt.label}</span>
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-slate-500">
+          Why this matters: Contacts live in SPARK from day one for lead nurture. They only appear in OLIVER (where you send proposals, invoices, and schedule jobs) once they're ready to be billed.
+        </p>
+
+        {isDetailed && (
+          <>
+            <div className="text-sm font-semibold text-slate-700 pt-2">When does a Proposal move to Negotiation?</div>
+            <div className="space-y-1.5">
+              {[
+                { id: "manual",           label: "I'll move it manually  (recommended)" },
+                { id: "on_counter_reply", label: "Auto when they reply to the proposal with changes  (Coming soon)" },
+              ].map((opt) => (
+                <label key={opt.id} className="flex items-start gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="negotiation_trigger"
+                    checked={(v.negotiation_trigger || "manual") === opt.id}
+                    onChange={() => setV({ ...v, negotiation_trigger: opt.id as OnboardingState["lifecycle"]["negotiation_trigger"] })}
+                    className="mt-1"
+                    disabled={opt.id === "on_counter_reply"}
+                  />
+                  <span className={opt.id === "on_counter_reply" ? "text-slate-400" : ""}>{opt.label}</span>
+                </label>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Sub-block 4: confirm flow */}
+      <div className="rounded-lg border-2 border-slate-300 bg-white p-3 space-y-2">
+        <div className="text-sm font-semibold text-slate-700">4. Your flow at a glance</div>
+        <div className="font-mono text-xs text-slate-700 whitespace-pre-line leading-5">
+{`Lead ──(${v.qualify_trigger === "manual" ? "you qualify manually" : v.qualify_trigger === "on_quote_or_meeting" ? "quote/meeting triggers it" : "every Lead auto-qualifies"})──→ ${promotionLabel}${v.oliver_create_trigger === "on_prospect" ? " [now in OLIVER]" : ""}
+     ──(auto on first payment)──→ Active Customer
+     ──(subs cancelled + ${v.past_customer_days}d)──→ Past Customer
+     ──(auto on next payment)──→ Repeat Customer`}
+        </div>
+        <label className="flex items-center gap-2 text-xs text-slate-600">
+          <input type="checkbox" checked={v.confirmed} onChange={(e) => setV({ ...v, confirmed: e.target.checked })} />
+          Looks good — apply this flow
+        </label>
+      </div>
+    </div>
+  );
+}
 
 function OwnerSection({ owner, setOwner }: { owner: OwnerAccount; setOwner: (o: OwnerAccount) => void }) {
   return (
@@ -965,6 +1172,20 @@ async function flushSectionToCanonical(
       [`${prefix}PortalHeaderColor`]: v.header_color || "",
       [`${prefix}PortalShowA`]: v.show_a,
       [`${prefix}PortalShowB`]: v.show_b,
+    });
+    return;
+  }
+  if (sectionId === "lifecycle") {
+    // PUT /lifecycle/config writes core.tenant_lifecycle_config for this
+    // tenant — preset, qualify_trigger, oliver_create_trigger, past_customer_days,
+    // negotiation_trigger. Backend lives on oliver-api at /lifecycle/*.
+    const v = state.lifecycle;
+    await api.patch("/lifecycle/config", {
+      preset: v.preset,
+      qualify_trigger: v.qualify_trigger,
+      oliver_create_trigger: v.oliver_create_trigger,
+      past_customer_days: v.past_customer_days,
+      negotiation_trigger: v.negotiation_trigger,
     });
     return;
   }
