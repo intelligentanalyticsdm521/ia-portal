@@ -26,7 +26,6 @@ import { IadmModal, CORE_BLUE, PRODUCT_ACCENT } from "../../components/IadmModal
 import { LogoPicker } from "../../components/oliver/LogoPicker";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { fetchPlanCatalog, type PlanCatalogEntry } from "../../lib/onboardingApi";
-import { setActingTenant, clearActingTenant, getActingTenant } from "../../lib/consultingSession";
 import { InfoTip } from "../../components/InfoTip";
 import {
   fetchSignupCatalog, createSignupCartCheckout,
@@ -161,18 +160,6 @@ export function ConsultingOnboardClientPageV2() {
   const [view, setView] = useState<"list" | "wizard">("list");
   const [inProgress, setInProgress] = useState<InProgressOnboarding[]>([]);
   const [listLoading, setListLoading] = useState(true);
-
-  // Founder list assumes you are operating as YOURSELF, not acting in a client
-  // tenant. If acting-tenant is stuck in localStorage from a prior Continue,
-  // clear it on mount — otherwise every API call from this page sends the
-  // x-acting-tenant header and we 403 on the in-progress endpoint.
-  useEffect(() => {
-    if (getActingTenant()) {
-      clearActingTenant();
-      // Hard reload so all API hooks re-init without the header.
-      window.location.reload();
-    }
-  }, []);
 
   useEffect(() => {
     if (view !== "list") return;
@@ -491,8 +478,8 @@ export function ConsultingOnboardClientPageV2() {
             // Reopen the wizard at the saved step. Set acting-tenant so any
             // API calls inside the wizard target the client's tenant. The
             // wizard hydrates from the tenant row's saved state on entry.
-            setActingTenant(t.tenant_id, t.business_name);
-            // Hydrate result so step 7 shows the right tenant context.
+            // TODO: open ClientTenantModal with t.tenant_id (next build phase).
+            // For now: hydrate result so step 7 shows the right tenant context.
             setResult({
               tenant_id: t.tenant_id,
               stripe_customer_id: t.stripe_customer_id || undefined,
@@ -1672,28 +1659,28 @@ function Step7Progress({ result, checkoutUrl, businessName, contactEmail, cart, 
         </div>
         <div className="grid grid-cols-2 gap-2">
           {arionInCart && (
-            <button onClick={() => { setActingTenant(result.tenant_id, businessName); window.location.href = "/app/services/arion_onboarding"; }}
+            <button onClick={() => { alert("Client modal coming — for now use the standalone product pages."); }}
               className="p-3 rounded-lg border-2 border-slate-200 hover:border-sky-400 bg-white text-left">
               <div className="text-xs font-bold text-slate-900">ARION setup →</div>
               <div className="text-[10px] text-slate-500">Questionnaire, domain, plugin install</div>
             </button>
           )}
           {sparkInCart && (
-            <button onClick={() => { setActingTenant(result.tenant_id, businessName); window.location.href = "/app/services/spark_onboarding"; }}
+            <button onClick={() => { alert("Client modal coming — for now use the standalone product pages."); }}
               className="p-3 rounded-lg border-2 border-slate-200 hover:border-amber-400 bg-white text-left">
               <div className="text-xs font-bold text-slate-900">SPARK setup →</div>
               <div className="text-[10px] text-slate-500">Contacts import, brand voice</div>
             </button>
           )}
           {oliverInCart && (
-            <button onClick={() => { setActingTenant(result.tenant_id, businessName); window.location.href = "/app/services/oliver_onboarding"; }}
+            <button onClick={() => { alert("Client modal coming — for now use the standalone product pages."); }}
               className="p-3 rounded-lg border-2 border-slate-200 hover:border-yellow-400 bg-white text-left">
               <div className="text-xs font-bold text-slate-900">OLIVER setup →</div>
               <div className="text-[10px] text-slate-500">Customer list, Stripe Connect</div>
             </button>
           )}
           {consultingPick && (
-            <button onClick={() => { setActingTenant(result.tenant_id, businessName); window.location.href = "/app/services/consulting_tickets"; }}
+            <button onClick={() => { alert("Client modal coming — for now use the standalone product pages."); }}
               className="p-3 rounded-lg border-2 border-slate-200 hover:border-emerald-400 bg-white text-left">
               <div className="text-xs font-bold text-slate-900">Consulting setup →</div>
               <div className="text-[10px] text-slate-500">Open {consultingPick.productName} engagement</div>

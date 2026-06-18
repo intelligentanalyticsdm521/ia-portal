@@ -7,24 +7,6 @@
 
 import type { IPublicClientApplication, AccountInfo } from "@azure/msal-browser";
 import { authScopes } from "../auth/msalConfig";
-import { consultingHeaders, clearActingTenant, getActingTenant } from "./consultingSession";
-
-// If an API call returns consulting_not_authorized while x-acting-tenant is
-// set, the localStorage acting-tenant is stale — the operator no longer has
-// a grant for that tenant. Self-heal by clearing it + reloading so all
-// hooks re-init without the header on the next page load.
-function handleConsultingAuthFailure(text: string): void {
-  if (!getActingTenant()) return;
-  try {
-    const body = JSON.parse(text);
-    if (body.error === "consulting_not_authorized" || body.error === "consulting_no_identity") {
-      clearActingTenant();
-      // Hard reload — the page will re-render without the bad header.
-      // Bounce to root so we don't land on a page that depends on acting state.
-      window.location.href = "/";
-    }
-  } catch { /* not JSON — skip */ }
-}
 
 const OLIVER_API_BASE =
   (import.meta.env.VITE_OLIVER_API_BASE as string) ||
@@ -59,7 +41,6 @@ async function oliverFetch<T>(
       Authorization: `Bearer ${token}`,
       "x-tenant-key": tenantId,
       "Content-Type": "application/json",
-      ...consultingHeaders(),
       ...(init?.headers as Record<string, string>),
     },
   });
@@ -67,10 +48,6 @@ async function oliverFetch<T>(
   if (!res.ok) {
     const text = await res.text();
     if (res.status === 403) {
-      // Stale acting-tenant self-heal: if the operator no longer has a
-      // grant for the tenant being acted-on, drop the localStorage flag
-      // and reload — restores normal access without DevTools surgery.
-      handleConsultingAuthFailure(text);
       // Parse tier-gate 403s into a structured error the UI can handle
       try {
         const body = JSON.parse(text);

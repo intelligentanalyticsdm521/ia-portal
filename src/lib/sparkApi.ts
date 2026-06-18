@@ -4,18 +4,6 @@
 
 import type { IPublicClientApplication, AccountInfo } from "@azure/msal-browser";
 import { authScopes } from "../auth/msalConfig";
-import { consultingHeaders, clearActingTenant, getActingTenant } from "./consultingSession";
-
-function handleConsultingAuthFailure(text: string): void {
-  if (!getActingTenant()) return;
-  try {
-    const body = JSON.parse(text);
-    if (body.error === "consulting_not_authorized" || body.error === "consulting_no_identity") {
-      clearActingTenant();
-      window.location.href = "/";
-    }
-  } catch { /* not JSON */ }
-}
 
 const SPARK_API_BASE =
   (import.meta.env.VITE_SPARK_API_BASE as string) ||
@@ -51,7 +39,6 @@ async function sparkFetch<T>(
       Authorization: `Bearer ${token}`,
       "x-tenant-id": tenantId,
       "Content-Type": "application/json",
-      ...consultingHeaders(),
       ...(init?.headers as Record<string, string>),
     },
   });
@@ -59,7 +46,6 @@ async function sparkFetch<T>(
   if (!res.ok) {
     const text = await res.text();
     if (res.status === 403) {
-      handleConsultingAuthFailure(text);
       try {
         const body = JSON.parse(text);
         if (body.error === "feature_not_available") {

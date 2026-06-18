@@ -5,30 +5,6 @@ import { IconRail, type ProductKey } from "./IconRail";
 import { SubNav, SUB_NAV_CONFIGS, SETTINGS_KEYS, type SubNavConfig } from "./SubNav";
 import { useOliverRole } from "../hooks/useOliverRole";
 import { ArgusChatbot } from "./argus/ArgusChatbot";
-import { getActingTenant, getActingTenantName, clearActingTenant } from "../lib/consultingSession";
-import { ShieldCheck, LogOut } from "lucide-react";
-
-// F-257 — Sticky banner shown across every page when the operator is acting
-// inside a client tenant. Clicking Exit clears the localStorage flag + reloads
-// so all API hooks re-init without the x-acting-tenant header.
-function ActingTenantBanner() {
-  const acting = getActingTenant();
-  const name = getActingTenantName();
-  if (!acting) return null;
-  return (
-    <div className="shrink-0 flex items-center justify-between px-4 py-2 text-xs font-medium"
-         style={{ background: "#FEF3C7", borderBottom: "1px solid #FCD34D", color: "#78350F" }}>
-      <span className="inline-flex items-center gap-2">
-        <ShieldCheck className="h-4 w-4" />
-        Acting as <strong>{name || acting}</strong> — every change writes to their tenant. All actions are logged.
-      </span>
-      <button onClick={() => { clearActingTenant(); window.location.href = "/app/services/consulting_onboard_client"; }}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold hover:bg-amber-200">
-        <LogOut className="h-3.5 w-3.5" /> Exit
-      </button>
-    </div>
-  );
-}
 
 // Strip OLIVER nav items that aren't in allowedServiceKeys, and drop any
 // group that becomes empty. Returns the original config when no filter
@@ -119,10 +95,6 @@ export function AppShell() {
     // flex-1 height is a definite number — otherwise IconRail/SubNav fall back to
     // content height and the Settings gear sits mid-viewport with empty space below.
     <div className="iadm-shell flex h-screen flex-col overflow-hidden">
-      {/* F-257 — Acting-tenant banner. Always visible when the operator has
-          stepped into a client tenant; gives a one-click exit. Without this,
-          founders can't tell at a glance whose tenant they're editing. */}
-      <ActingTenantBanner />
       {/* Top header */}
       <header className="iadm-header shrink-0">
         <HeaderBar />

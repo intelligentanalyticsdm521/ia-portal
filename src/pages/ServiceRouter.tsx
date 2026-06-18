@@ -254,7 +254,6 @@ const ArionPluginProvisioningPage = lazyNamed(() => import('./arion/ArionPluginP
 // CONSULTING — lazy-loaded
 const ConsultingOverviewPage = lazyNamed(() => import('./consulting/ConsultingOverviewPage'), 'ConsultingOverviewPage');
 const ConsultingCalendarPage = lazyNamed(() => import('./consulting/ConsultingCalendarPage'), 'ConsultingCalendarPage');
-const ConsultingWorkspacePage = lazyNamed(() => import('./consulting/ConsultingWorkspacePage'), 'ConsultingWorkspacePage');
 const ConsultingAccessLogPage = lazyNamed(() => import('./consulting/ConsultingAccessLogPage'), 'ConsultingAccessLogPage');
 // F-Onboard-v2 (2026-06-17): swap to ConsultingOnboardClientPageV2 — 7-step
 // rebuild (customer mode, multi-product cart w/ consulting price override,
@@ -590,7 +589,6 @@ export function ServiceRouter() {
       case 'consulting_calendar':         consultingPage = <ConsultingCalendarPage />; break;
       case 'consulting_onboard_client':   consultingPage = <ConsultingOnboardClientPage />; break;
       // Founder-only utility surfaces (still accessible by URL)
-      case 'consulting_workspace':        consultingPage = <ConsultingWorkspacePage />; break;
       case 'consulting_access_log':       consultingPage = <ConsultingAccessLogPage />; break;
       // Legacy "Build Your X" per-engagement task/deliverable pages —
       // redirected to the unified Requests Board with an engagement filter.
