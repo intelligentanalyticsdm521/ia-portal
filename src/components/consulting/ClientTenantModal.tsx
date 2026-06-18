@@ -69,16 +69,28 @@ interface OnboardingState {
   profile: BusinessProfile;
   owner: OwnerAccount;
   arion: {
+    // Domain
     domain_choice: "byo" | "purchase" | "subdomain" | "";
     domain: string;
-    services: string;
-    audience: string;
-    voice: string;
+    has_existing_website: boolean;
+    // Questionnaire (drives WP template + AI copy + SE Ranking seeds)
+    industry: string;
+    description: string;
+    services: string[];        // up to 3
+    target_audience: string;
+    location: string;          // city/region
+    brand_voice: "Professional" | "Friendly" | "Bold" | "Premium" | "Casual";
+    style_preference: "Modern" | "Classic" | "Minimal" | "Bold";
+    pages: string[];           // multi-select
+    tagline: string;
   };
   spark: {
     sender_domain: string;
-    contacts_imported: number;
     brand_voice: string;
+    contact_import_method: "csv" | "paste" | "sync" | "later" | "";
+    send_time_preference: "morning" | "midday" | "afternoon" | "evening" | "";
+    first_campaign_goal: string;
+    audience_size_estimate: string;
   };
   oliver: {
     stripe_connect_started: boolean;
@@ -101,8 +113,19 @@ const EMPTY_STATE: OnboardingState = {
     time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Chicago",
     billing_email: "", notif_email: true, notif_sms: false,
   },
-  arion: { domain_choice: "", domain: "", services: "", audience: "", voice: "" },
-  spark: { sender_domain: "", contacts_imported: 0, brand_voice: "" },
+  arion: {
+    domain_choice: "", domain: "", has_existing_website: false,
+    industry: "", description: "", services: ["", "", ""],
+    target_audience: "", location: "",
+    brand_voice: "Professional", style_preference: "Modern",
+    pages: ["Home", "About", "Services", "Contact"],
+    tagline: "",
+  },
+  spark: {
+    sender_domain: "", brand_voice: "",
+    contact_import_method: "", send_time_preference: "",
+    first_campaign_goal: "", audience_size_estimate: "",
+  },
   oliver: {
     stripe_connect_started: false,
     customer_portal: { welcome: "", show_a: true, show_b: true, logo_override: "", header_color: "" },
@@ -427,10 +450,34 @@ function OwnerSection({ owner, setOwner }: { owner: OwnerAccount; setOwner: (o: 
 
 // ─── Section: ARION ──────────────────────────────────────────────────────
 
+const ARION_INDUSTRY_OPTIONS: { value: string; label: string }[] = [
+  { value: "service_business", label: "Service business (plumber, electrician, HVAC, cleaner, contractor)" },
+  { value: "consulting", label: "Consulting / professional services" },
+  { value: "healthcare", label: "Healthcare / wellness (dental, chiro, gym, therapy)" },
+  { value: "restaurant", label: "Restaurant / food" },
+  { value: "tech_saas", label: "Tech / SaaS / software" },
+  { value: "retail", label: "Retail / online shop" },
+  { value: "real_estate", label: "Real estate" },
+  { value: "creative", label: "Creative / agency / portfolio" },
+  { value: "other", label: "Other" },
+];
+const ARION_VOICE_OPTIONS = ["Professional", "Friendly", "Bold", "Premium", "Casual"] as const;
+const ARION_STYLE_OPTIONS = ["Modern", "Classic", "Minimal", "Bold"] as const;
+const ARION_PAGE_OPTIONS = ["Home", "About", "Services", "Contact", "Blog", "Shop", "Portfolio", "FAQ"];
+
 function ArionSection({ v, setV }: { v: OnboardingState["arion"]; setV: (v: OnboardingState["arion"]) => void }) {
+  const toggleService = (i: number, val: string) => {
+    const next = [...v.services]; next[i] = val; setV({ ...v, services: next });
+  };
+  const togglePage = (page: string) => {
+    const next = v.pages.includes(page) ? v.pages.filter((p) => p !== page) : [...v.pages, page];
+    setV({ ...v, pages: next });
+  };
   return (
-    <div className="space-y-3">
-      <p className="text-xs text-slate-500">Domain + the questionnaire that drives WP starter template + brand voice. Every field optional — skip what you don't know.</p>
+    <div className="space-y-4">
+      <p className="text-xs text-slate-500">Domain + the questionnaire that drives the WP starter template, AI-generated copy, brand voice, and SE Ranking seeds. Skip anything you don't know.</p>
+
+      {/* Domain */}
       <div>
         <label className="block text-xs font-semibold text-slate-700 mb-2">Domain</label>
         <div className="grid grid-cols-3 gap-2">
@@ -442,16 +489,102 @@ function ArionSection({ v, setV }: { v: OnboardingState["arion"]; setV: (v: Onbo
           ))}
         </div>
         {v.domain_choice && (
-          <Field label={v.domain_choice === "subdomain" ? "Subdomain prefix" : "Domain"} value={v.domain} onChange={(d) => setV({ ...v, domain: d })}
-            placeholder={v.domain_choice === "subdomain" ? "rollinginit (becomes rollinginit.ia-dm.com)" : "example.com"} />
+          <div className="mt-2">
+            <Field label={v.domain_choice === "subdomain" ? "Subdomain prefix" : "Domain"}
+              value={v.domain} onChange={(d) => setV({ ...v, domain: d })}
+              placeholder={v.domain_choice === "subdomain" ? "rollinginit (becomes rollinginit.ia-dm.com)" : "example.com"} />
+            {v.domain_choice === "byo" && (
+              <label className="flex items-center gap-2 text-xs mt-2">
+                <input type="checkbox" checked={v.has_existing_website}
+                  onChange={(e) => setV({ ...v, has_existing_website: e.target.checked })} />
+                I already have a working WordPress site at this domain (install the IA Plugin only — don't import a template or copy)
+              </label>
+            )}
+          </div>
         )}
       </div>
-      <Field label="Services offered" value={v.services} onChange={(s) => setV({ ...v, services: s })}
-        placeholder="e.g. private parties, public skating, lessons, league nights" hint="Feeds the AI-generated website copy + SE Ranking keyword seeds" />
-      <Field label="Target audience" value={v.audience} onChange={(a) => setV({ ...v, audience: a })}
-        placeholder="e.g. families with kids 5-15, birthday parties, corporate events" />
-      <Field label="Brand voice / tone" value={v.voice} onChange={(t) => setV({ ...v, voice: t })}
-        placeholder="e.g. playful, family-friendly, energetic — fun-first not corporate" />
+
+      {/* Industry */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-1">Industry</label>
+        <select value={v.industry} onChange={(e) => setV({ ...v, industry: e.target.value })}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
+          <option value="">Select an industry…</option>
+          {ARION_INDUSTRY_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        <div className="text-[10px] text-slate-500 mt-1">Drives WP starter template + keyword seeds.</div>
+      </div>
+
+      {/* Description */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-1">What does your business do? <span className="text-slate-400">(20+ chars feeds the AI copy generator)</span></label>
+        <textarea value={v.description} onChange={(e) => setV({ ...v, description: e.target.value })}
+          rows={3} placeholder="Family-owned roller skating rink in Marshalltown, IA. We host private parties, public skate sessions, league nights, and birthdays for kids 5-15."
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+      </div>
+
+      {/* Top 3 services */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-1">Top 3 services / offerings</label>
+        <div className="space-y-1.5">
+          {v.services.map((s, i) => (
+            <input key={i} value={s} onChange={(e) => toggleService(i, e.target.value)}
+              placeholder={`Service ${i + 1}`}
+              className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm" />
+          ))}
+        </div>
+      </div>
+
+      <Field label="Target audience" value={v.target_audience} onChange={(a) => setV({ ...v, target_audience: a })}
+        placeholder="Families with kids 5-15 within 30 miles, birthday parties, corporate events" />
+      <Field label="Primary location / service area" value={v.location} onChange={(l) => setV({ ...v, location: l })}
+        placeholder="Marshalltown, IA + surrounding 30 mi" />
+
+      {/* Brand voice */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-1">Brand voice</label>
+        <div className="flex flex-wrap gap-1.5">
+          {ARION_VOICE_OPTIONS.map((vo) => (
+            <button key={vo} type="button"
+              onClick={() => setV({ ...v, brand_voice: vo })}
+              className={`px-3 py-1.5 rounded text-xs font-semibold border ${v.brand_voice === vo ? "border-sky-500 bg-sky-50 text-sky-900" : "border-slate-300 bg-white text-slate-700"}`}>
+              {vo}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Style preference */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-1">Style preference</label>
+        <div className="flex flex-wrap gap-1.5">
+          {ARION_STYLE_OPTIONS.map((st) => (
+            <button key={st} type="button"
+              onClick={() => setV({ ...v, style_preference: st })}
+              className={`px-3 py-1.5 rounded text-xs font-semibold border ${v.style_preference === st ? "border-sky-500 bg-sky-50 text-sky-900" : "border-slate-300 bg-white text-slate-700"}`}>
+              {st}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Pages */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-1">Pages you want</label>
+        <div className="flex flex-wrap gap-1.5">
+          {ARION_PAGE_OPTIONS.map((p) => (
+            <button key={p} type="button" onClick={() => togglePage(p)}
+              className={`px-3 py-1 rounded-full text-xs border ${v.pages.includes(p) ? "border-sky-500 bg-sky-50 text-sky-900 font-semibold" : "border-slate-300 bg-white text-slate-700"}`}>
+              {p}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Field label="Tagline (optional)" value={v.tagline} onChange={(t) => setV({ ...v, tagline: t })}
+        placeholder="Where Marshalltown rolls together since 1998" hint="Goes in the hero, used by the AI copy generator" />
     </div>
   );
 }
@@ -460,15 +593,63 @@ function ArionSection({ v, setV }: { v: OnboardingState["arion"]; setV: (v: Onbo
 
 function SparkSection({ v, setV }: { v: OnboardingState["spark"]; setV: (v: OnboardingState["spark"]) => void }) {
   return (
-    <div className="space-y-3">
-      <p className="text-xs text-slate-500">Sender domain verification, contact import, brand voice for AI Writer. All optional.</p>
+    <div className="space-y-4">
+      <p className="text-xs text-slate-500">Sender setup, contact-import plan, brand voice for AI Writer, and first-campaign goal. Skip what doesn't apply.</p>
+
       <Field label="Sender domain" value={v.sender_domain} onChange={(d) => setV({ ...v, sender_domain: d })}
-        placeholder="send.example.com" hint="If blank, campaigns send from @send.ia-dm.com (shared, lower deliverability)" />
+        placeholder="send.example.com" hint="If blank, campaigns send from @send.ia-dm.com (shared inbox — lower deliverability)" />
+
+      {/* Contact import method */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-1">How will you import your contacts?</label>
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            ["csv","Upload a CSV (recommended)"],
+            ["paste","Paste a list of emails"],
+            ["sync","Sync from OLIVER customers"],
+            ["later","I'll add them later"],
+          ] as const).map(([id, label]) => (
+            <button key={id} type="button"
+              onClick={() => setV({ ...v, contact_import_method: id })}
+              className={`p-3 rounded-lg border-2 text-left text-xs ${v.contact_import_method === id ? "border-orange-500 bg-orange-50" : "border-slate-200 bg-white"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="text-[10px] text-slate-500 mt-1">Actual import happens at SPARK · Contacts after you finish.</div>
+      </div>
+
+      <Field label="Estimated audience size" value={v.audience_size_estimate} onChange={(s) => setV({ ...v, audience_size_estimate: s })}
+        placeholder="e.g. 1,200 customers" hint="Drives volume tier recommendations" />
+
+      {/* Send time preference */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-1">Preferred send time</label>
+        <div className="flex flex-wrap gap-1.5">
+          {([
+            ["morning","Morning (8-10am)"],
+            ["midday","Midday (11-1pm)"],
+            ["afternoon","Afternoon (2-4pm)"],
+            ["evening","Evening (5-7pm)"],
+          ] as const).map(([id, label]) => (
+            <button key={id} type="button"
+              onClick={() => setV({ ...v, send_time_preference: id })}
+              className={`px-3 py-1.5 rounded text-xs font-semibold border ${v.send_time_preference === id ? "border-orange-500 bg-orange-50 text-orange-900" : "border-slate-300 bg-white text-slate-700"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="text-[10px] text-slate-500 mt-1">Used as default for "schedule send" in campaign composer (in your time zone).</div>
+      </div>
+
       <Field label="Brand voice for AI Writer" value={v.brand_voice} onChange={(b) => setV({ ...v, brand_voice: b })}
-        placeholder="e.g. friendly + concise, never use exclamation points" hint="Used by SPARK's AI campaign writer + STELLA optimisations" />
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-        Contact import (CSV upload, paste list, or sync from a connected source) lands after you finish onboarding —
-        it lives at SPARK · Contacts and stays the source of truth for segments + automations.
+        placeholder="Friendly + concise, never use exclamation points, always sign off with the owner's name" hint="Used by SPARK's AI campaign writer + STELLA optimizations" />
+
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-1">Goal of your first campaign (optional)</label>
+        <textarea value={v.first_campaign_goal} onChange={(e) => setV({ ...v, first_campaign_goal: e.target.value })}
+          rows={2} placeholder="Welcome existing customers + announce summer league signups opening April 1."
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
       </div>
     </div>
   );
