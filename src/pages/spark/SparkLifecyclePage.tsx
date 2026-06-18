@@ -111,11 +111,13 @@ export default function SparkLifecyclePage() {
   }
 
   function confirmPresetSwitch(newPreset: Preset) {
-    if (newPreset === draft.preset) return;
+    if (!draft) return;
+    const d = draft;
+    if (newPreset === d.preset) return;
     // Show confirmation if downgrading away from a stage that has contacts.
     const downgrade =
-      (draft.preset === "detailed" && (newPreset === "moderate" || newPreset === "simple")) ||
-      (draft.preset === "moderate" && newPreset === "simple");
+      (d.preset === "detailed" && (newPreset === "moderate" || newPreset === "simple")) ||
+      (d.preset === "moderate" && newPreset === "simple");
     const collapseStages = downgrade
       ? Object.entries(counts).filter(([s, n]) => n > 0 && !["lead","active_customer","past_customer","repeat_customer","disqualified","prospect"].includes(s)).map(([s, n]) => `${STAGE_LABELS[s]} (${n})`)
       : [];
@@ -123,7 +125,7 @@ export default function SparkLifecyclePage() {
       setPendingPreset(newPreset);
       return;
     }
-    setDraft({ ...draft, preset: newPreset, negotiation_trigger: newPreset === "detailed" ? (draft.negotiation_trigger || "manual") : null });
+    setDraft({ ...d, preset: newPreset, negotiation_trigger: newPreset === "detailed" ? (d.negotiation_trigger || "manual") : null });
   }
 
   return (

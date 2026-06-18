@@ -1232,6 +1232,7 @@ function mergeState(base: OnboardingState, partial: Partial<OnboardingState>): O
         : base.oliver.catalog,
     },
     consulting: mergeStrict(base.consulting, partial.consulting),
+    lifecycle:  mergeStrict(base.lifecycle,  partial.lifecycle),
   };
 }
 
