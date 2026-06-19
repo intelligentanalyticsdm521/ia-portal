@@ -699,10 +699,15 @@ export function SignupPage() {
             </button>
           ) : (
             <div className="flex gap-2">
+              {/* 2026-06-20 — removed .toUpperCase(). Stripe coupon IDs are
+                  CASE-SENSITIVE (e.g. 'kgzALoKz' is a valid auto-generated
+                  Coupon ID — uppercasing it to 'KGZALOKZ' silently 404s).
+                  Promotion codes are also case-sensitive at the Stripe
+                  Checkout page. Let the user type whatever they were sent. */}
               <input type="text" value={couponCode}
-                onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                onChange={(e) => setCouponCode(e.target.value)}
                 placeholder="Promo code"
-                className="flex-1 rounded-lg border border-gray-300 px-4 py-3 text-sm shadow-sm focus:border-[#EF6C33] focus:ring-1 focus:ring-[#EF6C33] uppercase tracking-wide" />
+                className="flex-1 rounded-lg border border-gray-300 px-4 py-3 text-sm shadow-sm focus:border-[#EF6C33] focus:ring-1 focus:ring-[#EF6C33] tracking-wide" />
               <button type="button" onClick={() => { setShowCoupon(false); setCouponCode(''); }}
                 className="text-xs text-gray-500 hover:text-gray-700 px-2">
                 Remove
