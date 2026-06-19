@@ -209,17 +209,16 @@ export function SparkLeadGenJobPage() {
     return () => clearTimeout(t);
   }, [status?.status, navigate]);
 
-  // Load leads once the job completes.
+  // Leads now live in the Lead Inbox (/app/services/spark_leads). The page
+  // auto-redirects there 1.5s after completion (see the F-LG.14 effect
+  // above) so we don't need a leads loader here — the orphan
+  // /leadgen/jobs/:id/leads endpoint was never implemented anyway. Keep
+  // the empty state setter so the review-queue section just renders the
+  // brief "all leads have been actioned" placeholder during the redirect
+  // window instead of attempting an unimplemented fetch.
   const loadLeads = useCallback(async () => {
-    if (!ready || !jobId) return;
-    try {
-      // TODO(leadgen-api): GET /leadgen/jobs/:id/leads → { data: LeadRow[] }
-      const r = await get<{ data: LeadRow[] }>(`/leadgen/jobs/${jobId}/leads`);
-      setLeads(r?.data || []);
-    } catch (err) {
-      setError(err);
-    }
-  }, [get, ready, jobId]);
+    setLeads([]);
+  }, []);
 
   useEffect(() => {
     if (status?.status === "complete") loadLeads();
