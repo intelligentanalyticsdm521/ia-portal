@@ -7,11 +7,21 @@ interface ArionPageHeaderProps {
 }
 
 export function ArionPageHeader({ section, page }: ArionPageHeaderProps) {
-  const { selectedSite, activeSiteId, arionApi } = useArionContext();
+  // 2026-06-20 — lift the ACTIVE SITE dropdown from ArionServiceLayout
+  // (only the dashboard route uses it) into this header (every ARION
+  // sub-page uses it). Brandon's complaint: "select test-site → click
+  // any other page → reverts to intelligentanalyticsdm.com". Two
+  // fixes combine: (a) the persistence + case-normalize in
+  // useArionContext, (b) putting the picker on every page so selection
+  // is always visible. WP Admin button now keys off activeSiteId via
+  // getAdminLink (already correct) — but the fallback now uses the
+  // selected site's wp_admin_url, not a guessed path off the domain.
+  const { selectedSite, activeSiteId, sites, setSelectedSiteId, arionApi } = useArionContext();
 
   const domain = selectedSite?.primaryDomain || '--';
   const created = selectedSite?.createdAt ? new Date(selectedSite.createdAt).toLocaleDateString() : '--';
-  const updated = selectedSite?.updatedAt ? new Date(selectedSite.updatedAt).toLocaleDateString() : '--';
+  const lastActivityIso = selectedSite?.lastContentChangeAt || selectedSite?.updatedAt;
+  const lastActivity = lastActivityIso ? new Date(lastActivityIso).toLocaleDateString() : '--';
 
   const handleWpAdmin = async () => {
     if (!activeSiteId) return;
@@ -19,9 +29,11 @@ export function ArionPageHeader({ section, page }: ArionPageHeaderProps) {
       const res = await arionApi.getAdminLink(activeSiteId) as any;
       const url = res?.data?.admin_url || res?.admin_url || res?.url;
       if (url) window.open(url, '_blank');
-      else window.open(`https://${domain}/wp-admin`, '_blank');
+      else if (selectedSite?.wpUrl) window.open(selectedSite.wpUrl, '_blank');
+      else window.open(`https://${domain}/wp-admin/`, '_blank');
     } catch {
-      window.open(`https://${domain}/wp-admin`, '_blank');
+      if (selectedSite?.wpUrl) window.open(selectedSite.wpUrl, '_blank');
+      else window.open(`https://${domain}/wp-admin/`, '_blank');
     }
   };
 
@@ -31,7 +43,7 @@ export function ArionPageHeader({ section, page }: ArionPageHeaderProps) {
       background: '#fff', border: '1px solid rgba(45,156,219,0.12)',
       borderRadius: 10, padding: '14px 18px', marginBottom: 16,
     }}>
-      {/* LEFT: Site info */}
+      {/* LEFT: Site info + selector (only render selector when more than one site) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{
           width: 32, height: 32, borderRadius: 7, background: '#F1F5F9',
@@ -40,16 +52,32 @@ export function ArionPageHeader({ section, page }: ArionPageHeaderProps) {
         }}>W</div>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <a href={`https://${domain}`} target="_blank" rel="noopener noreferrer"
-              style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', textDecoration: 'none' }}>
-              {domain}
-            </a>
+            {sites && sites.length > 1 ? (
+              <select
+                value={activeSiteId || ''}
+                onChange={(e) => setSelectedSiteId(e.target.value)}
+                style={{
+                  fontSize: 14, fontWeight: 600, color: '#0B1C24',
+                  background: '#fff', border: '1px solid #D1D5DB',
+                  borderRadius: 6, padding: '2px 6px', cursor: 'pointer',
+                }}
+              >
+                {sites.map((s) => (
+                  <option key={s.siteId} value={s.siteId}>{s.primaryDomain || s.siteId}</option>
+                ))}
+              </select>
+            ) : (
+              <a href={`https://${domain}`} target="_blank" rel="noopener noreferrer"
+                style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', textDecoration: 'none' }}>
+                {domain}
+              </a>
+            )}
             <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="#2D9CDB" strokeWidth="1.5">
               <path d="M4.5 1.5H2a.5.5 0 00-.5.5v8a.5.5 0 00.5.5h8a.5.5 0 00.5-.5V7.5M7.5 1.5H10.5V4.5M10.5 1.5L5 7"/>
             </svg>
           </div>
           <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 1 }}>
-            Created: {created} &middot; Last updated: {updated}
+            Created: {created} &middot; Last activity: {lastActivity}
           </div>
         </div>
       </div>

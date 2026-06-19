@@ -143,10 +143,26 @@ export function useArionContext() {
   const [error, setError] = useState<string | null>(null);
   const apiBaseUrl = import.meta.env.VITE_ARION_API_BASE_URL as string;
 
-  const selectedSiteId = searchParams.get('siteId');
+  // 2026-06-20 — normalize on lowercase. SQL Server UNIQUEIDENTIFIER
+  // round-trips uppercase through the mssql driver, but URL params/
+  // localStorage may carry lowercase from copy/paste or older state.
+  // A case-sensitive === comparison was causing selectedSite to fall
+  // through to sites[0] silently — every dropdown click looked like
+  // it "reverted" to intelligentanalyticsdm.com.
+  const norm = (s?: string | null) => (s || '').toLowerCase();
+
+  // Persist across page navigation. Brandon's complaint: selection
+  // didn't survive clicking from Overview to SEO etc. because the
+  // SubNav uses <NavLink to={item.route}> which drops query strings.
+  // localStorage keyed on tenant_id is the cleanest fix — survives
+  // bookmarks, navigation, and tab refreshes.
+  const storageKey = activeTenantId ? `arion.activeSiteId.${activeTenantId.toLowerCase()}` : null;
+  const urlSiteId = searchParams.get('siteId');
+  const storedSiteId = storageKey ? (typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null) : null;
+  const selectedSiteId = urlSiteId || storedSiteId;
 
   const selectedSite = useMemo(
-    () => sites.find((site) => site.siteId === selectedSiteId) || sites[0] || null,
+    () => sites.find((site) => norm(site.siteId) === norm(selectedSiteId)) || sites[0] || null,
     [selectedSiteId, sites],
   );
 
@@ -155,8 +171,11 @@ export function useArionContext() {
       const next = new URLSearchParams(searchParams);
       next.set('siteId', siteId);
       setSearchParams(next, { replace: true });
+      if (storageKey && typeof window !== 'undefined') {
+        try { localStorage.setItem(storageKey, siteId); } catch { /* quota or private mode — ok */ }
+      }
     },
-    [searchParams, setSearchParams],
+    [searchParams, setSearchParams, storageKey],
   );
 
   const refresh = useCallback(async () => {
@@ -181,14 +200,28 @@ export function useArionContext() {
       const nextSites = response.sites || [];
       setSites(nextSites);
 
-      const current = searchParams.get('siteId');
+      // 2026-06-20 — also normalize on lowercase here. Match the
+      // selectedSite memo above so a real stored selection isn't
+      // mistakenly considered "missing" + reset to sites[0].
+      const current = searchParams.get('siteId') || (storageKey ? localStorage.getItem(storageKey) : null);
       if (!current && nextSites[0]?.siteId) {
         const next = new URLSearchParams(searchParams);
         next.set('siteId', nextSites[0].siteId);
         setSearchParams(next, { replace: true });
-      } else if (current && !nextSites.some((site) => site.siteId === current) && nextSites[0]?.siteId) {
+        if (storageKey) {
+          try { localStorage.setItem(storageKey, nextSites[0].siteId); } catch { /* ignore */ }
+        }
+      } else if (current && !nextSites.some((site) => norm(site.siteId) === norm(current)) && nextSites[0]?.siteId) {
         const next = new URLSearchParams(searchParams);
         next.set('siteId', nextSites[0].siteId);
+        setSearchParams(next, { replace: true });
+        if (storageKey) {
+          try { localStorage.setItem(storageKey, nextSites[0].siteId); } catch { /* ignore */ }
+        }
+      } else if (current && !searchParams.get('siteId')) {
+        // Hydrate URL from localStorage so deep-linkable URLs stay correct.
+        const next = new URLSearchParams(searchParams);
+        next.set('siteId', current);
         setSearchParams(next, { replace: true });
       }
     } catch (err) {

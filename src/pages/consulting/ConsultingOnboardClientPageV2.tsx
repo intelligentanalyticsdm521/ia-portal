@@ -1415,16 +1415,24 @@ function Step3Checkout({ couponQuery, setCouponQuery, couponOptions, couponLoadi
         {couponOptions.length > 0 && (
           <div className="mt-2 space-y-1 max-h-48 overflow-auto">
             {couponOptions.map((c) => (
-              <button key={c.id} onClick={() => { setSelectedCoupon(c); setCouponQuery(c.id); }}
+              <button key={c.id} onClick={() => { setSelectedCoupon(c); setCouponQuery(c.name || c.id); }}
                 className={`w-full text-left p-2 rounded-lg border-2 ${selectedCoupon?.id === c.id ? "bg-white" : "border-slate-200 bg-white hover:border-slate-300"}`}
                 style={selectedCoupon?.id === c.id ? { borderColor: ACCENT } : {}}
               >
-                <div className="text-sm font-semibold">
-                  {c.id} {c.name && <span className="text-slate-500 font-normal">· {c.name}</span>}
+                {/* 2026-06-20 — Brandon: "what is kgzALoKz?" Answer: it's
+                    Stripe's auto-generated Coupon ID — internal plumbing,
+                    not the customer-facing code. Display priority now:
+                    name (the human label) > customer-facing code > ID
+                    (last-resort, mono small). */}
+                <div className="text-sm font-semibold text-slate-900">
+                  {c.name || (c as { customer_facing_code?: string }).customer_facing_code || c.id}
                 </div>
-                <div className="text-[10px] text-slate-500">
+                <div className="text-[10px] text-slate-500 mt-0.5">
                   {c.percent_off != null ? `${c.percent_off}% off` : `$${(c.amount_off ?? 0) / 100} off`}
                   {" · "}{c.duration === "forever" ? "forever" : c.duration === "once" ? "once" : `${c.duration_in_months} months`}
+                  {(c as { customer_facing_code?: string }).customer_facing_code && (
+                    <> · code <span className="font-mono text-slate-700">{(c as { customer_facing_code?: string }).customer_facing_code}</span></>
+                  )}
                 </div>
               </button>
             ))}
@@ -1432,7 +1440,9 @@ function Step3Checkout({ couponQuery, setCouponQuery, couponOptions, couponLoadi
         )}
         {selectedCoupon && (
           <div className="mt-2 flex items-center gap-2 text-xs">
-            <span className="text-emerald-600 font-semibold">✓ {selectedCoupon.id}</span>
+            <span className="text-emerald-600 font-semibold">
+              ✓ {selectedCoupon.name || (selectedCoupon as { customer_facing_code?: string }).customer_facing_code || selectedCoupon.id}
+            </span>
             <button onClick={() => { setSelectedCoupon(null); setCouponQuery(""); }} className="text-rose-500 underline">remove</button>
           </div>
         )}

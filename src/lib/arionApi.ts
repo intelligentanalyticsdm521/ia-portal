@@ -12,6 +12,10 @@ export interface ArionSiteSummary {
   isEcommerceEnabled: boolean;
   createdAt: string;
   updatedAt: string;
+  /** 2026-06-20 — real WP content activity (MAX of arion.site_content_change.
+   *  changed_at), falling back to plugin heartbeat, then row mtime. Replaces
+   *  the misleading "last updated" that only flipped on admin edits. */
+  lastContentChangeAt?: string | null;
   integrationCount?: number;
   arionTier: string;
   seoAddonTier: string | null;
