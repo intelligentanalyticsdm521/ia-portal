@@ -52,6 +52,13 @@ export function WelcomePage() {
         if (res.status === 200 && body.ok) {
           setSite(body.site || null);
           setStatus('success');
+          // F-SEC1.5 (2026-06-19): PRG scrub. Token validation succeeded
+          // server-side; drop setup_token (and the rest of the activation
+          // params) from the URL so they don't leak via Referer, browser
+          // history, third-party scripts, or window.location reads. The
+          // server-side records token-used-at, so even if the token
+          // resurfaces it's already rotated/consumed.
+          try { window.history.replaceState({}, '', '/welcome'); } catch { /* ignore */ }
           // Brief pause so the customer sees confirmation, then bounce to signup.
           // signup completes MSAL → routes to /app/services/command which
           // auto-opens the unified onboarding modal via ?welcome=1 query param.

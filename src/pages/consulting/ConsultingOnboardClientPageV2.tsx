@@ -146,6 +146,16 @@ interface InProgressOnboarding {
   onboarding_finished_at?: string | null;
   onboarding_closed_at?: string | null;
   onboarding_completed_at?: string | null;
+  // F-LIFE.2 (2026-06-19): onboarding lifecycle fields surfaced from
+  // oliver.tenant_onboarding_state via /admin/onboard-client/in-progress.
+  onboarded_by_founder?: boolean;
+  finished_at?: string | null;
+  welcome_sent_at?: string | null;
+  welcome_expires_at?: string | null;
+  welcome_expired?: boolean;
+  client_first_login_at?: string | null;
+  lifecycle_status?: "in_progress" | "finished" | "waiting_on_client" | "client_active";
+  can_resend_welcome?: boolean;
   needs_attention: {
     no_stripe_customer: boolean;
     no_stripe_subscription: boolean;
@@ -497,6 +507,27 @@ export function ConsultingOnboardClientPageV2() {
               alert(`Cancel failed: ${(e as Error).message}`);
             }
           }}
+          onResendWelcome={async (t) => {
+            // F-B.4: regenerate token + resend Path B welcome email for a
+            // finished tenant whose client hasn't logged in yet. Updates the
+            // row's welcome_sent_at + welcome_expires_at on success.
+            try {
+              const r = await post<{ ok: boolean; welcome?: { sent?: boolean } }>(
+                "/admin/onboard-client/finish-onboarding/resend",
+                { tenant_id: t.tenant_id }
+              );
+              const sent = !!(r as { ok?: boolean; welcome?: { sent?: boolean } })?.welcome?.sent;
+              alert(sent ? `Welcome email resent to ${t.contact_email}.` : "Resend returned without confirmation — check ACS logs.");
+              if (sent) {
+                setInProgress((rows) => rows.map((row) => row.tenant_id === t.tenant_id
+                  ? { ...row, welcome_sent_at: new Date().toISOString(), welcome_expired: false }
+                  : row
+                ));
+              }
+            } catch (e) {
+              alert(`Resend failed: ${(e as Error).message}`);
+            }
+          }}
         />
       )}
 
@@ -696,14 +727,64 @@ export function ConsultingOnboardClientPageV2() {
   );
 }
 
+// ─── Lifecycle pill (F-LIFE.2) ──────────────────────────────────────────
+//
+// Visual status for each row on the Onboard Client list. Built from
+// /admin/onboard-client/in-progress lifecycle_status (which the backend
+// derives from finished_at + onboarded_by_founder + client_first_login_at).
+// Falls back to the legacy Incomplete/Stripe-status pill if lifecycle data
+// is unavailable (e.g. a Path A tenant with no onboarding row).
+function LifecyclePill({ row, fallbackIncomplete, fallbackStatus }: {
+  row: InProgressOnboarding;
+  fallbackIncomplete: boolean;
+  fallbackStatus: string;
+}) {
+  if (row.lifecycle_status === "client_active") {
+    return <Pill bg="bg-emerald-100" text="text-emerald-800" label="✓ Client active" tip={row.client_first_login_at ? `Client first logged in ${new Date(row.client_first_login_at).toLocaleString()}` : undefined} />;
+  }
+  if (row.lifecycle_status === "waiting_on_client") {
+    const tipBits: string[] = [];
+    if (row.welcome_sent_at) tipBits.push(`Welcome sent ${new Date(row.welcome_sent_at).toLocaleString()}`);
+    if (row.welcome_expired) tipBits.push("Activation link expired — Resend will rotate it");
+    else if (row.welcome_expires_at) tipBits.push(`Link expires ${new Date(row.welcome_expires_at).toLocaleString()}`);
+    return <Pill bg={row.welcome_expired ? "bg-amber-200" : "bg-amber-100"} text="text-amber-900" label={row.welcome_expired ? "⏳ Link expired" : "⏳ Waiting on client"} tip={tipBits.join(" · ") || undefined} />;
+  }
+  if (row.lifecycle_status === "finished") {
+    return <Pill bg="bg-sky-100" text="text-sky-800" label="✓ Finished" />;
+  }
+  if (row.lifecycle_status === "in_progress" && row.onboarded_by_founder !== undefined) {
+    return <Pill bg="bg-slate-100" text="text-slate-700" label="In progress" />;
+  }
+  // Fallback (no onboarding row at all — Path A tenant before they reached the modal)
+  return (
+    <Pill
+      bg={fallbackIncomplete ? "bg-amber-100" : fallbackStatus === "active" ? "bg-emerald-100" : "bg-slate-100"}
+      text={fallbackIncomplete ? "text-amber-700" : fallbackStatus === "active" ? "text-emerald-700" : "text-slate-600"}
+      label={fallbackIncomplete ? "Incomplete" : fallbackStatus}
+    />
+  );
+}
+
+function Pill({ bg, text, label, tip }: { bg: string; text: string; label: string; tip?: string }) {
+  return (
+    <span
+      title={tip}
+      className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${bg} ${text}`}
+    >
+      {label}
+    </span>
+  );
+}
+
 // ─── Landing page list of in-progress onboardings ────────────────────────
 
-function OnboardingsList({ rows, loading, onNew, onCancel, onContinue }: {
+function OnboardingsList({ rows, loading, onNew, onCancel, onContinue, onResendWelcome }: {
   rows: InProgressOnboarding[];
   loading: boolean;
   onNew: () => void;
   onCancel: (tenant: InProgressOnboarding) => void;
   onContinue: (tenant: InProgressOnboarding) => void;
+  onResendWelcome: (tenant: InProgressOnboarding) => void;
 }) {
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -767,18 +848,21 @@ function OnboardingsList({ rows, loading, onNew, onCancel, onContinue }: {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                        incomplete ? "bg-amber-100 text-amber-700" :
-                        r.status === "active" ? "bg-emerald-100 text-emerald-700" :
-                        "bg-slate-100 text-slate-600"
-                      }`}>
-                        {incomplete ? "Incomplete" : r.status}
-                      </span>
+                      <LifecyclePill row={r} fallbackIncomplete={incomplete} fallbackStatus={r.status} />
                     </td>
                     <td className="px-4 py-3 text-[10px] text-slate-500 text-right whitespace-nowrap">
                       {new Date(r.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {r.can_resend_welcome && (
+                        <button onClick={() => onResendWelcome(r)}
+                          title={r.welcome_expired ? "Welcome link expired — send a new one" : "Send another activation email"}
+                          className="text-[11px] font-semibold text-white px-3 py-1 rounded-md mr-1"
+                          style={{ background: r.welcome_expired ? "#b45309" : "#6366f1" }}
+                        >
+                          {r.welcome_expired ? "Resend (expired)" : "Resend welcome"}
+                        </button>
+                      )}
                       <button onClick={() => onContinue(r)}
                         className="text-[11px] font-semibold text-white px-3 py-1 rounded-md mr-1"
                         style={{ background: CORE_BLUE }}
