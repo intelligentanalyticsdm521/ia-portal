@@ -19,8 +19,8 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import {
-  fetchPlanCatalog,
-  type PlanCatalogEntry, type BillingCycle, type SignupProduct,
+  fetchPlanCatalog, fetchArionSeoAddons,
+  type PlanCatalogEntry, type ArionSeoAddonEntry, type BillingCycle, type SignupProduct,
 } from '../../lib/onboardingApi';
 import {
   fetchSignupCatalog, createSignupCheckout, createSignupCartCheckout, type SignupCatalog,
@@ -155,6 +155,49 @@ function readParams(): { plan: string | null; billing: BillingCycle; cancelled: 
 
 const money = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+// 2026-06-20 cycle-aware price rendering helpers. Brandon flagged that the
+// public /pricing page was showing the FULL ANNUAL price with a /mo label
+// when the toggle was on Annual. Root cause: oliver-api `/signup/catalog?
+// billing=annual` returns `monthly_usd = unit_amount / 100` of the
+// year-interval Stripe price (the full yearly total) — see
+// `lib/signupPricing.js` and the gotcha comment in
+// `overnight-report/43_FOUNDER_WIZARD_CATALOG_ARCHITECTURE.md` lines 146-163.
+// Backend now returns a `pricing` envelope on every row carrying both
+// monthly_usd and annual_per_month_usd, so the UI just picks the right one.
+//
+// The `monthly_usd` fallback path (when `p.pricing` is absent) preserves
+// the OLD buggy behavior so this code keeps working against a stale
+// upstream — but with the pricing envelope present, /mo is correct.
+type CatalogEntryWithPricing = {
+  monthly_usd?: number | null;
+  pricing?: {
+    monthly_usd?: number | null;
+    annual_usd?: number | null;
+    annual_per_month_usd?: number | null;
+    annual_savings_pct?: number | null;
+  } | null;
+};
+function perMonth(row: CatalogEntryWithPricing | null | undefined, cycle: 'monthly' | 'annual'): number {
+  if (!row) return 0;
+  const sp = row.pricing;
+  if (cycle === 'annual') {
+    if (sp && typeof sp.annual_per_month_usd === 'number') return sp.annual_per_month_usd;
+    if (sp && typeof sp.monthly_usd === 'number') return sp.monthly_usd;
+    return Number(row.monthly_usd) || 0;
+  }
+  if (sp && typeof sp.monthly_usd === 'number') return sp.monthly_usd;
+  return Number(row.monthly_usd) || 0;
+}
+function perYear(row: CatalogEntryWithPricing | null | undefined, cycle: 'monthly' | 'annual'): number {
+  if (!row) return 0;
+  const sp = row.pricing;
+  if (sp && typeof sp.annual_usd === 'number') return sp.annual_usd;
+  const m = perMonth(row, cycle === 'annual' ? 'monthly' : cycle) || 0;
+  // Fall back to ARION's locked 10% annual discount when the backend
+  // hasn't supplied the actual annual amount.
+  return Math.round(m * 12 * 0.9 * 100) / 100;
+}
+
 export function SignupPage() {
   const params = useMemo(readParams, []);
 
@@ -219,6 +262,7 @@ export function SignupPage() {
 
   // ARION (existing arion-api catalog)
   const [arionPlans, setArionPlans] = useState<PlanCatalogEntry[]>([]);
+  const [arionSeoAddons, setArionSeoAddons] = useState<Record<string, ArionSeoAddonEntry> | null>(null);
   const [arionPlan, setArionPlan] = useState<string>(params.plan || '');
   // F-109 — optional ARION SEO add-on selected at signup. Auth'd
   // ArionUsagePage has its own picker; this is the public mirror so new
@@ -276,8 +320,15 @@ export function SignupPage() {
     if (!selectedPlatform) { setLoading(false); return; }
     setLoading(true); setError(null);
     if (product === 'arion') {
-      fetchPlanCatalog('arion')
-        .then((d) => { setArionPlans(d); if (!d.some((x) => x.key === params.plan)) setArionPlan(d.find((x) => x.key === 'standard') ? 'standard' : (d[0]?.key || '')); })
+      Promise.all([
+        fetchPlanCatalog('arion'),
+        fetchArionSeoAddons().catch(() => ({})),
+      ])
+        .then(([d, seo]) => {
+          setArionPlans(d);
+          setArionSeoAddons(seo);
+          if (!d.some((x) => x.key === params.plan)) setArionPlan(d.find((x) => x.key === 'standard') ? 'standard' : (d[0]?.key || ''));
+        })
         .catch((e) => setError(e.message)).finally(() => setLoading(false));
     } else {
       fetchSignupCatalog(product as 'oliver' | 'spark', cycle)
@@ -326,17 +377,26 @@ export function SignupPage() {
   }, [leadsPkg]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sparkTotal = useMemo(() => {
+    // Returns the per-month total (so /mo label is always accurate). Annual
+    // mode uses each row's annual_per_month_usd; monthly mode uses
+    // monthly_usd. Caller multiplies by 12 to display "billed annually $Y/yr".
     if (product !== 'spark' || !cat) return 0;
-    let t = cat.volumes?.find((v) => v.volume === volume)?.monthly_usd || 0;
-    if (featureAddon) t += cat.featureAddons?.[featureAddon]?.monthly_usd || 0;
+    const vol = cat.volumes?.find((v) => v.volume === volume);
+    let t = perMonth(vol, cycle);
+    if (featureAddon) t += perMonth(cat.featureAddons?.[featureAddon] || null, cycle);
     if (leadsPkg && leadsMeta) {
-      t += leadsMeta.monthly_usd;
+      t += perMonth(leadsMeta, cycle);
       const extra = Math.max(0, leadsCount - leadsMeta.included);
       const qty = Math.ceil(extra / leadsMeta.increment);
-      if (qty > 0 && leadsMeta.addon_unit_usd) t += qty * leadsMeta.addon_unit_usd;
+      if (qty > 0) {
+        const addonPerUnit = leadsMeta.addon_pricing
+          ? perMonth({ monthly_usd: leadsMeta.addon_unit_usd, pricing: leadsMeta.addon_pricing }, cycle)
+          : (leadsMeta.addon_unit_usd || 0);
+        t += qty * addonPerUnit;
+      }
     }
     return t;
-  }, [product, cat, volume, featureAddon, leadsPkg, leadsCount, leadsMeta]);
+  }, [product, cat, volume, featureAddon, leadsPkg, leadsCount, leadsMeta, cycle]);
 
   // F-108 — build the cart item for the currently-configured State 2 platform.
   function snapshotCurrentItem(): CartItem | null {
@@ -663,15 +723,22 @@ export function SignupPage() {
         ) : product === 'arion' ? (
           <>
             <div className="grid gap-4 lg:grid-cols-4">
-              {arionPlans.map((p) => (
-                <button key={p.key} onClick={() => setArionPlan(p.key)}
-                  className={`text-left rounded-xl p-6 border-2 transition ${arionPlan === p.key ? 'border-[#EF6C33] bg-white shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
-                  <div className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{p.name}</div>
-                  <div className="mt-3 text-3xl font-bold text-gray-900">${cycle === 'annual' ? p.pricing.annual_per_month_usd.toFixed(0) : p.pricing.monthly_usd.toFixed(0)}<span className="ml-1 text-sm text-gray-500">/mo</span></div>
-                  <p className="mt-3 text-sm text-gray-600">{p.description}</p>
-                  <ul className="mt-4 space-y-2 text-xs text-gray-700">{p.features.map((f) => <li key={f} className="flex gap-2"><span className="text-[#EF6C33]">✓</span><span>{f}</span></li>)}</ul>
-                </button>
-              ))}
+              {arionPlans.map((p) => {
+                const perMo = cycle === 'annual' ? p.pricing.annual_per_month_usd : p.pricing.monthly_usd;
+                const perYr = p.pricing.annual_per_month_usd * 12;
+                return (
+                  <button key={p.key} onClick={() => setArionPlan(p.key)}
+                    className={`text-left rounded-xl p-6 border-2 transition ${arionPlan === p.key ? 'border-[#EF6C33] bg-white shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                    <div className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{p.name}</div>
+                    <div className="mt-3 text-3xl font-bold text-gray-900">{money(perMo)}<span className="ml-1 text-sm text-gray-500">/mo</span></div>
+                    {cycle === 'annual' && (
+                      <div className="mt-1 text-xs text-gray-500">billed annually {money(perYr)}/yr</div>
+                    )}
+                    <p className="mt-3 text-sm text-gray-600">{p.description}</p>
+                    <ul className="mt-4 space-y-2 text-xs text-gray-700">{p.features.map((f) => <li key={f} className="flex gap-2"><span className="text-[#EF6C33]">✓</span><span>{f}</span></li>)}</ul>
+                  </button>
+                );
+              })}
             </div>
 
             {/* F-109 — ARION SEO add-on selector. Optional; default "Skip".
@@ -688,44 +755,81 @@ export function SignupPage() {
                   <button type="button" onClick={() => setArionSeo('')} className="text-xs text-gray-500 hover:text-gray-700 underline">Remove</button>
                 )}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {([
-                  { key: 'essentials', label: 'Essentials', blurb: '10 keywords · site audit · monthly report', from: 29 },
-                  { key: 'growth',     label: 'Growth',     blurb: '25 keywords · competitors · Google AI Mode', from: 79 },
-                  { key: 'authority',  label: 'Authority',  blurb: '60 keywords · all AI engines · weekly digest', from: 149 },
-                ] as const).map((opt) => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => setArionSeo(opt.key)}
-                    className={`text-left rounded-lg border-2 p-3 transition ${
-                      arionSeo === opt.key ? 'border-[#38BDF8] bg-sky-50' : 'border-gray-200 bg-white hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="flex items-baseline justify-between">
-                      <div className="text-sm font-bold text-gray-900">{opt.label}</div>
-                      <div className="text-xs text-gray-500">from {money(opt.from)}/mo</div>
+              {/* SEO add-on cards. Prices come from oliver-api /signup/catalog?product=arion
+                  via arion-api proxy — see lib/signupPricing.js arionSeoPriceByTier()
+                  resolving Stripe products matching /^arion seo\b/ + tier. Keyword
+                  counts pulled from arion-api/lib/seoOnboardingsig.js TIER_CONFIG via
+                  the canonical pricing matrix (50_PRICING_TIER_MATRIX_CANONICAL.md §1B):
+                  Starter = 10 / Essentials = 25 / Growth = 60 / Authority = 150. */}
+              {(() => {
+                const SEO_BLURBS: Record<string, string> = {
+                  starter: '10 keywords · site audit · monthly report',
+                  essentials: '25 keywords · competitors · monthly report',
+                  growth: '60 keywords · Google AI Mode · weekly digest',
+                  authority: '150 keywords · all AI engines · daily digest',
+                };
+                const SEO_LABELS: Record<string, string> = {
+                  starter: 'Starter', essentials: 'Essentials', growth: 'Growth', authority: 'Authority',
+                };
+                const seoCat = arionSeoAddons;
+                const tiers = seoCat && Object.keys(seoCat).length > 0
+                  ? Object.keys(seoCat)
+                  : ['starter', 'essentials', 'growth', 'authority'];
+                return (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      {tiers.map((key) => {
+                        const row = seoCat?.[key] || null;
+                        const perMo = row ? (cycle === 'annual'
+                          ? (row.pricing.annual_per_month_usd ?? row.pricing.monthly_usd ?? 0)
+                          : (row.pricing.monthly_usd ?? 0)) : 0;
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            disabled={!row || perMo === 0}
+                            onClick={() => setArionSeo(key as 'essentials' | 'growth' | 'authority')}
+                            className={`text-left rounded-lg border-2 p-3 transition ${
+                              arionSeo === key ? 'border-[#38BDF8] bg-sky-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                            } ${!row || perMo === 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
+                          >
+                            <div className="flex items-baseline justify-between">
+                              <div className="text-sm font-bold text-gray-900">{SEO_LABELS[key] || key}</div>
+                              <div className="text-xs text-gray-500">{row && perMo > 0 ? `${money(perMo)}/mo` : '—'}</div>
+                            </div>
+                            <p className="mt-1 text-[11px] text-gray-600 leading-snug">{SEO_BLURBS[key] || ''}</p>
+                          </button>
+                        );
+                      })}
                     </div>
-                    <p className="mt-1 text-[11px] text-gray-600 leading-snug">{opt.blurb}</p>
-                  </button>
-                ))}
-              </div>
-              <p className="mt-3 text-[11px] text-gray-500">
-                Exact pricing depends on your billing cycle and is confirmed at checkout.
-              </p>
+                    {!seoCat && (
+                      <p className="mt-3 text-[11px] text-amber-600">
+                        SEO add-on prices loading from catalog…
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </>
         ) : product === 'oliver' ? (
           <div className="grid gap-4 lg:grid-cols-4">
-            {(cat?.plans || []).map((p) => (
-              <button key={p.key} onClick={() => setOliverPlan(p.key)}
-                className={`text-left rounded-xl p-6 border-2 transition ${oliverPlan === p.key ? 'border-[#EF6C33] bg-white shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
-                <div className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{p.name}</div>
-                <div className="mt-3 text-3xl font-bold text-gray-900">{money(p.monthly_usd)}<span className="ml-1 text-sm text-gray-500">/mo</span></div>
-                <p className="mt-3 text-sm text-gray-600">{p.description}</p>
-                <ul className="mt-4 space-y-2 text-xs text-gray-700">{p.features.map((f) => <li key={f} className="flex gap-2"><span className="text-[#EF6C33]">✓</span><span>{f}</span></li>)}</ul>
-              </button>
-            ))}
+            {(cat?.plans || []).map((p) => {
+              const perMo = perMonth(p, cycle);
+              const perYr = perYear(p, cycle);
+              return (
+                <button key={p.key} onClick={() => setOliverPlan(p.key)}
+                  className={`text-left rounded-xl p-6 border-2 transition ${oliverPlan === p.key ? 'border-[#EF6C33] bg-white shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                  <div className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{p.name}</div>
+                  <div className="mt-3 text-3xl font-bold text-gray-900">{money(perMo)}<span className="ml-1 text-sm text-gray-500">/mo</span></div>
+                  {cycle === 'annual' && (
+                    <div className="mt-1 text-xs text-gray-500">billed annually {money(perYr)}/yr</div>
+                  )}
+                  <p className="mt-3 text-sm text-gray-600">{p.description}</p>
+                  <ul className="mt-4 space-y-2 text-xs text-gray-700">{p.features.map((f) => <li key={f} className="flex gap-2"><span className="text-[#EF6C33]">✓</span><span>{f}</span></li>)}</ul>
+                </button>
+              );
+            })}
             {(cat?.plans || []).length === 0 && <div className="col-span-4 text-center text-amber-600 text-sm">No plans available — Stripe prices not configured.</div>}
           </div>
         ) : (
@@ -756,8 +860,11 @@ export function SignupPage() {
                       <div className="flex items-baseline gap-3 mb-3">
                         <span className="text-4xl font-bold text-gray-900">{currentVol?.volume}</span>
                         <span className="text-base text-gray-500">emails/mo</span>
-                        <span className="ml-auto text-2xl font-bold text-[#EF6C33]">{money(currentVol?.monthly_usd || 0)}<span className="text-sm font-normal text-gray-500">/mo</span></span>
+                        <span className="ml-auto text-2xl font-bold text-[#EF6C33]">{money(perMonth(currentVol, cycle))}<span className="text-sm font-normal text-gray-500">/mo</span></span>
                       </div>
+                      {cycle === 'annual' && currentVol && (
+                        <div className="-mt-2 mb-3 text-xs text-gray-500 text-right">billed annually {money(perYear(currentVol, cycle))}/yr</div>
+                      )}
                       <input
                         type="range"
                         min={0}
@@ -785,6 +892,8 @@ export function SignupPage() {
                   <div className="text-sm font-semibold text-gray-700 mb-2">Upgrade for more features (optional)</div>
                   <div className="grid gap-3 sm:grid-cols-3">
                     {/* Standard (included) */}
+                    {/* Standard card — pull features from catalog 5k volume row.
+                        Falls back to canonical bullet list if catalog omits them. */}
                     <button
                       type="button"
                       onClick={() => setFeatureAddon('')}
@@ -793,13 +902,12 @@ export function SignupPage() {
                       <div className="text-xs font-bold uppercase tracking-wide text-gray-500">Standard</div>
                       <div className="mt-1 text-base font-bold text-gray-900">Included</div>
                       <ul className="mt-3 space-y-1.5 text-[11px] text-gray-700">
-                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Full CRM + contacts</li>
-                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Email + SMS campaigns</li>
-                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Forms + UTM tracking</li>
-                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>ARION form → SPARK auto-flow</li>
+                        {((cat?.volumes?.find((v) => v.volume === '5k')?.features) || ['Full CRM + contacts', 'Email + SMS campaigns', 'Forms + UTM tracking', 'ARION form → SPARK auto-flow']).map((f) => (
+                          <li key={f} className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>{f}</li>
+                        ))}
                       </ul>
                     </button>
-                    {/* Pro */}
+                    {/* Pro — price + features both from catalog */}
                     <button
                       type="button"
                       disabled={!proAddon}
@@ -807,15 +915,17 @@ export function SignupPage() {
                       className={`text-left rounded-xl p-4 border-2 transition ${featureAddon === 'pro' ? 'border-[#EF6C33] bg-white shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'} ${!proAddon ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       <div className="text-xs font-bold uppercase tracking-wide text-gray-500">Pro</div>
-                      <div className="mt-1 text-base font-bold text-gray-900">+{money(proAddon?.monthly_usd || 0)}<span className="text-xs font-normal text-gray-500">/mo</span></div>
+                      <div className="mt-1 text-base font-bold text-gray-900">+{money(perMonth(proAddon, cycle))}<span className="text-xs font-normal text-gray-500">/mo</span></div>
+                      {cycle === 'annual' && proAddon && (
+                        <div className="text-[10px] text-gray-500">+{money(perYear(proAddon, cycle))}/yr</div>
+                      )}
                       <ul className="mt-3 space-y-1.5 text-[11px] text-gray-700">
-                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Sales Pipeline + Deals</li>
-                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Newsletter Studio + WP publish</li>
-                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Social scheduler</li>
-                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Landing pages, NPS, referrals</li>
+                        {(proAddon?.features || ['Sales Pipeline + Deals', 'Newsletter Studio + WP publish', 'Social scheduler', 'Landing pages, NPS, referrals']).map((f) => (
+                          <li key={f} className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>{f}</li>
+                        ))}
                       </ul>
                     </button>
-                    {/* Business */}
+                    {/* Business — price + features both from catalog */}
                     <button
                       type="button"
                       disabled={!bizAddon}
@@ -823,12 +933,14 @@ export function SignupPage() {
                       className={`text-left rounded-xl p-4 border-2 transition ${featureAddon === 'business' ? 'border-[#EF6C33] bg-white shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'} ${!bizAddon ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       <div className="text-xs font-bold uppercase tracking-wide text-gray-500">Business</div>
-                      <div className="mt-1 text-base font-bold text-gray-900">+{money(bizAddon?.monthly_usd || 0)}<span className="text-xs font-normal text-gray-500">/mo</span></div>
+                      <div className="mt-1 text-base font-bold text-gray-900">+{money(perMonth(bizAddon, cycle))}<span className="text-xs font-normal text-gray-500">/mo</span></div>
+                      {cycle === 'annual' && bizAddon && (
+                        <div className="text-[10px] text-gray-500">+{money(perYear(bizAddon, cycle))}/yr</div>
+                      )}
                       <ul className="mt-3 space-y-1.5 text-[11px] text-gray-700">
-                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Everything in Pro</li>
-                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>AI Writer (full)</li>
-                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>OLIVER-cross segments</li>
-                        <li className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>Revenue attribution + B2B</li>
+                        {(bizAddon?.features || ['Everything in Pro', 'AI Writer (full)', 'OLIVER-cross segments', 'Revenue attribution + B2B']).map((f) => (
+                          <li key={f} className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>{f}</li>
+                        ))}
                       </ul>
                     </button>
                   </div>
@@ -839,21 +951,37 @@ export function SignupPage() {
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Lead Generation (optional)</label>
                   <select value={leadsPkg} onChange={(e) => setLeadsPkg(e.target.value as '' | 'essentials' | 'growth' | 'authority')} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
                     <option value="">No lead generation</option>
-                    {Object.entries(cat?.leads || {}).map(([k, v]) => <option key={k} value={k}>{v.name} — {money(v.monthly_usd)}/mo (incl. {v.included} leads)</option>)}
+                    {Object.entries(cat?.leads || {}).map(([k, v]) => <option key={k} value={k}>{v.name} — {money(perMonth(v, cycle))}/mo (incl. {v.included} leads)</option>)}
                   </select>
-                  {leadsMeta && (
-                    <div className="mt-3">
-                      <label className="block text-xs text-gray-600 mb-1">Leads per month: <strong>{leadsCount}</strong> (includes {leadsMeta.included}; extra billed per {leadsMeta.increment} at {leadsMeta.addon_unit_usd != null ? money(leadsMeta.addon_unit_usd) : '—'})</label>
-                      <input type="range" min={leadsMeta.included} max={leadsMeta.included + leadsMeta.increment * 40} step={leadsMeta.increment}
-                        value={leadsCount} onChange={(e) => setLeadsCount(Number(e.target.value))} className="w-full accent-[#EF6C33]" />
-                    </div>
-                  )}
+                  {leadsMeta && (() => {
+                    const addonPerUnit = leadsMeta.addon_pricing
+                      ? perMonth({ monthly_usd: leadsMeta.addon_unit_usd, pricing: leadsMeta.addon_pricing }, cycle)
+                      : leadsMeta.addon_unit_usd;
+                    return (
+                      <div className="mt-3">
+                        <label className="block text-xs text-gray-600 mb-1">Leads per month: <strong>{leadsCount}</strong> (includes {leadsMeta.included}; extra billed per {leadsMeta.increment} at {addonPerUnit != null ? money(addonPerUnit) : '—'}/mo)</label>
+                        <input type="range" min={leadsMeta.included} max={leadsMeta.included + leadsMeta.increment * 40} step={leadsMeta.increment}
+                          value={leadsCount} onChange={(e) => setLeadsCount(Number(e.target.value))} className="w-full accent-[#EF6C33]" />
+                      </div>
+                    );
+                  })()}
                 </div>
 
-                {/* Total */}
-                <div className="rounded-xl bg-[#0B1C24] text-white p-5 flex items-center justify-between">
-                  <span className="text-sm text-white/70">Estimated {cycle}</span>
-                  <span className="text-2xl font-bold">{money(sparkTotal)}<span className="text-sm font-normal text-white/60">/mo</span></span>
+                {/* Total — sparkTotal is the per-month equivalent; multiply by
+                    12 in annual mode to show the actual yearly invoice amount.
+                    Brandon's locked rule: /mo number is the comparison number;
+                    the secondary line shows what they actually pay annually. */}
+                <div className="rounded-xl bg-[#0B1C24] text-white p-5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-white/70">{cycle === 'annual' ? 'Estimated /mo (billed annually)' : 'Estimated monthly'}</span>
+                    <span className="text-2xl font-bold">{money(sparkTotal)}<span className="text-sm font-normal text-white/60">/mo</span></span>
+                  </div>
+                  {cycle === 'annual' && (
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-xs text-white/50">Annual invoice</span>
+                      <span className="text-sm font-semibold text-white/80">{money(sparkTotal * 12)}<span className="text-xs font-normal text-white/50">/yr</span></span>
+                    </div>
+                  )}
                 </div>
               </div>
             );

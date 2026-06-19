@@ -75,6 +75,26 @@ export async function fetchPlanCatalog(product: SignupProduct = 'arion'): Promis
   return data.plans;
 }
 
+// ARION SEO add-ons live on the same /catalog endpoint but in a separate
+// `seoAddons` envelope. Returns an empty map if upstream doesn't expose
+// them (deploy lag or Stripe products missing). Tiers per locked matrix:
+// starter | essentials | growth | authority.
+export interface ArionSeoAddonEntry {
+  key: string;
+  name: string;
+  pricing: {
+    monthly_usd: number | null;
+    annual_usd: number | null;
+    annual_per_month_usd: number | null;
+    annual_savings_pct?: number | null;
+  };
+}
+export async function fetchArionSeoAddons(): Promise<Record<string, ArionSeoAddonEntry>> {
+  const data = await getJson<{ seoAddons?: Record<string, ArionSeoAddonEntry> }>(
+    `/onboarding/checkout/catalog?product=arion`);
+  return data.seoAddons || {};
+}
+
 export interface CheckoutSessionInput {
   email: string;
   name?: string;

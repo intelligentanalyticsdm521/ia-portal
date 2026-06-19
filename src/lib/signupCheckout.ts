@@ -9,19 +9,60 @@ const OLIVER_API_BASE =
 export type SignupProductU = "oliver" | "spark";
 export type BillingCycleU = "monthly" | "annual";
 
-export interface OliverPlan {
-  key: string; name: string; description: string; features: string[]; monthly_usd: number;
+// 2026-06-20 — every catalog row now ships with a `pricing` envelope so
+// the UI can pick monthly vs annual without a refetch and without trusting
+// the misnamed legacy `monthly_usd` field (which used to hold the FULL
+// annual price when billing=annual). Legacy top-level `monthly_usd` stays
+// for back-compat but is now ALWAYS the monthly amount.
+export interface PriceEnvelope {
+  monthly_usd: number | null;
+  annual_usd: number | null;
+  annual_per_month_usd: number | null;
+  annual_savings_pct: number | null;
 }
-export interface SparkVolume { key: string; volume: string; name: string; monthly_usd: number; }
+
+export interface OliverPlan {
+  key: string; name: string; description: string; features: string[];
+  monthly_usd: number;
+  pricing?: PriceEnvelope;
+}
+export interface SparkVolume {
+  key: string; volume: string; name: string;
+  monthly_usd: number;
+  pricing?: PriceEnvelope;
+  description?: string | null;
+  features?: string[] | null;
+}
 export interface SparkLeads {
-  name: string; monthly_usd: number; included: number; increment: number; addon_unit_usd: number | null;
+  name: string;
+  monthly_usd: number;
+  included: number;
+  increment: number;
+  addon_unit_usd: number | null;
+  pricing?: PriceEnvelope;
+  addon_pricing?: PriceEnvelope;
+  description?: string | null;
+  features?: string[] | null;
+}
+export interface SparkFeatureAddon {
+  name: string;
+  monthly_usd: number;
+  pricing?: PriceEnvelope;
+  description?: string | null;
+  features?: string[] | null;
+}
+export interface ArionSeoAddon {
+  key: string;
+  name: string;
+  pricing: PriceEnvelope;
 }
 export interface SignupCatalog {
   product: string;
-  plans?: OliverPlan[];                                   // oliver
+  plans?: OliverPlan[];                                   // oliver / arion
   volumes?: SparkVolume[];                                 // spark
-  featureAddons?: Record<string, { name: string; monthly_usd: number }>; // spark
+  featureAddons?: Record<string, SparkFeatureAddon>;       // spark
   leads?: Record<string, SparkLeads>;                      // spark
+  seoAddons?: Record<string, ArionSeoAddon>;               // arion
 }
 
 async function j<T>(path: string, init?: RequestInit): Promise<T> {
