@@ -5,14 +5,17 @@ import { EmbeddedReportChart, type ReportSeriesResponse } from "../../components
 import { SparkCampaignComposerModal } from "../../components/spark/SparkCampaignComposerModal";
 
 interface Campaign {
-  id: string;
+  id: number;
   name: string;
-  channel: "email" | "sms";
+  // DB column is `type`, not `channel` — V1 list page was filtering by a
+  // non-existent field and showed "No campaigns yet" even though create
+  // worked.
+  type: "email" | "sms";
   status: string;
-  total_recipients: number;
-  total_sent: number;
-  total_opened: number;
-  total_clicked: number;
+  // List endpoint returns recipient_count only; opens/sent come from
+  // /campaigns/:id/stats. Don't reference total_recipients / total_sent /
+  // total_opened on a list row — those are undefined and would crash render.
+  recipient_count?: number;
   sent_at: string | null;
   created_at: string;
 }
@@ -42,7 +45,7 @@ export function SparkCampaignsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const filtered = campaigns.filter((c) => c.channel === tab);
+  const filtered = campaigns.filter((c) => c.type === tab);
 
   // v7.2 — Embedded campaign performance chart. Fetcher closes over the
   // current tab (email vs sms) so toggling the tab refreshes the chart.
@@ -126,8 +129,8 @@ export function SparkCampaignsPage() {
                 <tr key={c.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
                   <td className="px-4 py-3">{statusBadge(c.status)}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.total_recipients.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.total_sent ? `${Math.round((c.total_opened / c.total_sent) * 100)}%` : "—"}</td>
+                  <td className="px-4 py-3 text-slate-600">{(c.recipient_count ?? 0).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-slate-600">—</td>
                   <td className="px-4 py-3 text-slate-400 text-xs">{c.sent_at ? new Date(c.sent_at).toLocaleDateString() : "—"}</td>
                 </tr>
               ))}
