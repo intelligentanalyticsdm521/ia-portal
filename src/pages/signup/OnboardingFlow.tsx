@@ -18,6 +18,31 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchSessionInfo, type SignupSessionInfo } from '../../lib/onboardingApi';
 import { fetchSignupSession, createSignupComplete } from '../../lib/signupCheckout';
+import { getMsalInitialized } from '../../auth/pca';
+import { authScopes } from '../../auth/msalConfig';
+
+// Inline US phone formatter — strips non-digits, caps at 10, renders
+// (XXX) XXX-XXXX as the user types. Same shape every other Portal phone
+// field will get (Task #245). Drop-in safe: returns whatever the user
+// typed if it already starts with '+' (international, leave alone).
+function formatUsPhone(raw: string): string {
+  if (raw.trim().startsWith('+')) return raw;
+  const d = raw.replace(/\D/g, '').slice(0, 10);
+  if (d.length === 0) return '';
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
+  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+}
+
+// Strip formatting for backend submission. Keeps a leading '+' for E.164,
+// otherwise digits only. /signup/complete writes to a NVarChar(50) column
+// so unformatted is the canonical wire shape.
+function unformatPhone(formatted: string): string {
+  const t = formatted.trim();
+  if (!t) return '';
+  if (t.startsWith('+')) return '+' + t.slice(1).replace(/\D/g, '');
+  return t.replace(/\D/g, '');
+}
 import {
   StepIndicator,
   DomainStep,
@@ -234,9 +259,17 @@ export function OnboardingFlow() {
 }
 
 // ── OLIVER/SPARK post-payment: company profile → create tenant → sign in ──
+//
+// Website status — three answers we expect from a brand-new OLIVER/SPARK
+// customer. Drives whether we ask for a URL and whether onboarding should
+// later offer ARION provisioning. Persisted as `websiteStatus` in the
+// `/signup/complete` payload; oliver-api stores it on core.tenants.
+type WebsiteStatus = '' | 'existing_ia' | 'migrate' | 'new';
+
 function ProductSignupFlow({ sessionId, email, product }: { sessionId: string; email: string; product: string }) {
   const [businessName, setBusinessName] = useState('');
   const [phone, setPhone] = useState('');
+  const [websiteStatus, setWebsiteStatus] = useState<WebsiteStatus>('');
   const [website, setWebsite] = useState('');
   const [city, setCity] = useState('');
   const [stateProv, setStateProv] = useState('');
@@ -248,18 +281,58 @@ function ProductSignupFlow({ sessionId, email, product }: { sessionId: string; e
     setErr(null);
     if (!businessName.trim()) { setErr('Business name is required.'); return; }
     setBusy(true);
-    try {
-      await createSignupComplete(sessionId, {
-        businessName: businessName.trim(),
-        primaryContactPhone: phone || undefined,
-        websiteUrl: website || undefined,
-        city: city || undefined,
-        stateProvince: stateProv || undefined,
-      });
-      setDone(true);
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally { setBusy(false); }
+
+    // Retry on intent_not_found / pending — Stripe's checkout.session.completed
+    // webhook can take a few seconds to land. Without this the user would have
+    // to click Finish, fail, retry manually. 5 tries with 2s backoff = up to
+    // ~10s wall clock before we surface the error to the user.
+    const maxTries = 6;
+    let attempt = 0;
+    while (attempt < maxTries) {
+      try {
+        await createSignupComplete(sessionId, {
+          businessName: businessName.trim(),
+          primaryContactPhone: unformatPhone(phone) || undefined,
+          websiteUrl: websiteStatus === 'existing_ia' || websiteStatus === 'migrate' ? website.trim() || undefined : undefined,
+          city: city.trim() || undefined,
+          stateProvince: stateProv.trim() || undefined,
+          // Backend persists this on core.tenants.website_status (migration 088).
+          ...(websiteStatus ? { websiteStatus } : {}),
+        } as Parameters<typeof createSignupComplete>[1]);
+        setDone(true);
+        // After tenant is provisioned, drive MSAL straight into CIAM with
+        // the buyer email pre-filled so they see signup, not a "what's your
+        // email" prompt. Entra External ID's combined sign-in/sign-up UI
+        // routes unknown emails to the create-account path automatically.
+        try {
+          const pca = await getMsalInitialized();
+          await pca.loginRedirect({
+            scopes: authScopes,
+            loginHint: email,
+            extraQueryParameters: { login_hint: email },
+          });
+        } catch (msalErr) {
+          // If MSAL redirect fails (rare — usually a misconfig), fall back
+          // to the click-through success page so the user has a manual path.
+          console.warn('[onboarding] MSAL redirect failed:', msalErr);
+        }
+        return;
+      } catch (e) {
+        const msg = (e as Error).message || '';
+        const retryable = /intent_not_found|pending|HTTP 202|HTTP 404/i.test(msg);
+        attempt += 1;
+        if (retryable && attempt < maxTries) {
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
+        }
+        setErr(retryable
+          ? "We haven't received your payment confirmation from Stripe yet. Please wait a moment and try again."
+          : msg);
+        setBusy(false);
+        return;
+      }
+    }
+    setBusy(false);
   }
 
   const productLabel = product === 'spark' ? 'SPARK' : 'OLIVER';
@@ -271,17 +344,25 @@ function ProductSignupFlow({ sessionId, email, product }: { sessionId: string; e
           <div className="text-3xl mb-3">🎉</div>
           <h1 className="text-2xl font-bold text-gray-900">You're all set</h1>
           <p className="mt-2 text-gray-600">
-            Your {productLabel} account is ready. Sign in with <strong>{email}</strong> to finish setup —
-            you'll be prompted to create your password.
+            Your {productLabel} account is ready. We're redirecting you to create your password with <strong>{email}</strong>…
           </p>
+          {/* Fallback link in case the MSAL redirect doesn't fire (popup blocker, MSAL init failed, etc.) */}
           <a href="/" className="inline-block mt-6 rounded-lg bg-[#EF6C33] px-6 py-3 text-white font-semibold hover:bg-[#d75a25]">
-            Sign in to your account →
+            Continue manually →
           </a>
-          <p className="mt-3 text-xs text-gray-500">Use the same email you paid with so we link your subscription.</p>
+          <p className="mt-3 text-xs text-gray-500">Sign up with the same email you paid with so we link your subscription.</p>
         </div>
       </div>
     );
   }
+
+  const wsBtn = (k: WebsiteStatus, label: string, sub: string) => (
+    <button type="button" onClick={() => setWebsiteStatus(k)}
+      className={`text-left rounded-lg border px-3 py-2 ${websiteStatus === k ? 'border-[#EF6C33] bg-[#EF6C33]/5' : 'border-gray-300 hover:border-gray-400'}`}>
+      <div className="text-sm font-semibold text-gray-900">{label}</div>
+      <div className="text-xs text-gray-500">{sub}</div>
+    </button>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -297,11 +378,29 @@ function ProductSignupFlow({ sessionId, email, product }: { sessionId: string; e
         <div className="bg-white rounded-2xl shadow p-6 space-y-4">
           <Field label="Business name *">
             <input value={businessName} onChange={(e) => setBusinessName(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Rolling In It LLC" />
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Your business name" />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Phone"><input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></Field>
-            <Field label="Website"><input value={website} onChange={(e) => setWebsite(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="https://" /></Field>
+          <Field label="Phone">
+            <input value={phone} onChange={(e) => setPhone(formatUsPhone(e.target.value))}
+              inputMode="tel" autoComplete="tel"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              placeholder="(555) 555-5555" />
+          </Field>
+          <div>
+            <span className="block text-xs font-semibold text-gray-600 mb-2">Your website</span>
+            <div className="grid grid-cols-3 gap-2">
+              {wsBtn('existing_ia', 'Existing IA site', 'Hosted by Intelligent Analytics')}
+              {wsBtn('migrate', 'Migrate a site', "You have one elsewhere; we'll move it")}
+              {wsBtn('new', 'I need a new site', 'Start fresh with ARION')}
+            </div>
+            {(websiteStatus === 'existing_ia' || websiteStatus === 'migrate') && (
+              <input value={website} onChange={(e) => setWebsite(e.target.value)}
+                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                placeholder="https://yoursite.com" />
+            )}
+            {websiteStatus === 'new' && (
+              <div className="mt-2 text-xs text-gray-500">We'll help you pick a domain after you sign in.</div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="City"><input value={city} onChange={(e) => setCity(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></Field>

@@ -147,6 +147,8 @@ export interface SignupProfileInput {
   primaryContactPhone?: string;
   addressLine1?: string; city?: string; stateProvince?: string;
   postalCode?: string; countryRegion?: string; websiteUrl?: string;
+  /** Post-checkout site picker — drives ARION provisioning gating later. */
+  websiteStatus?: 'existing_ia' | 'migrate' | 'new';
 }
 export function createSignupComplete(sessionId: string, profile: SignupProfileInput) {
   return j<{ tenant_id: string; product: string; email?: string; already?: boolean }>(
