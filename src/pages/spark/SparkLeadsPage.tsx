@@ -13,9 +13,26 @@
 //
 // Bulk actions land in F-LG.2.4 (next pass). Detail drawer in F-LG.2.6.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Sparkles, MoreVertical, Search, X } from "lucide-react";
+import { Sparkles, MoreVertical, Search, X, CheckCircle2 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+
+interface RecentRun {
+  run_id: number;
+  target_count: number | null;
+  leads_found: number | null;
+  cache_hits: number | null;
+  status: string;
+  completed_at: string | null;
+  summary: null | {
+    delivered: number;
+    flagged_review: number;
+    from_cache: number;
+    skipped: { no_email: number; already_in_inbox: number; insert_failed: number };
+    target_count: number;
+    raw_qualified: number;
+  };
+}
 
 type Tier = "hot" | "warm" | "cold";
 
@@ -65,6 +82,15 @@ export function SparkLeadsPage() {
   const [search, setSearch] = useState("");
   const [actionMenuOpen, setActionMenuOpen] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  // F-LG.10: Run Summary honesty pane — banner shown after the most recent
+  // completed sweep. Auto-dismisses after the user closes it; we remember
+  // dismissed run_ids in sessionStorage so it doesn't haunt them across
+  // page navigations within the same session.
+  const [recentRun, setRecentRun] = useState<RecentRun | null>(null);
+  const [dismissedRunIds, setDismissedRunIds] = useState<Set<number>>(() => {
+    try { return new Set(JSON.parse(sessionStorage.getItem("leadgen_dismissed_runs") || "[]")); }
+    catch { return new Set(); }
+  });
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -86,6 +112,27 @@ export function SparkLeadsPage() {
   }, [get, ready, page, tierFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  // F-LG.10: fetch the most recent completed run to render the summary banner
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    get<{ data: RecentRun | null }>("/api/v1/leadgen/runs/recent")
+      .then((r) => {
+        if (cancelled) return;
+        const d = (r as { data?: RecentRun | null })?.data || null;
+        setRecentRun(d);
+      })
+      .catch(() => { if (!cancelled) setRecentRun(null); });
+    return () => { cancelled = true; };
+  }, [get, ready]);
+
+  const dismissRecentRun = (runId: number) => {
+    const next = new Set(dismissedRunIds);
+    next.add(runId);
+    setDismissedRunIds(next);
+    try { sessionStorage.setItem("leadgen_dismissed_runs", JSON.stringify([...next])); } catch { /* ignore */ }
+  };
 
   const filteredLeads = useMemo(() => {
     if (!search.trim()) return leads;
@@ -151,6 +198,53 @@ export function SparkLeadsPage() {
   return (
     <SparkPageShell title="Lead Inbox" subtitle="B2B leads — discovery, review, and CRM hand-off" error={error} loading={loading}>
       <div className="p-6 space-y-4">
+        {/* F-LG.10: Run Summary honesty pane — shown after a sweep completes.
+            Locked Brandon 2026-06-19: customer must see exactly what was
+            delivered vs. skipped (already-in-inbox, no-email, blocklisted)
+            so the inbox feels honest not black-box. */}
+        {recentRun && recentRun.status === "completed" && !dismissedRunIds.has(recentRun.run_id) && (
+          <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-emerald-900 text-sm">
+                    Run #{recentRun.run_id} complete — {recentRun.summary?.delivered ?? recentRun.leads_found ?? 0} of {recentRun.summary?.target_count ?? recentRun.target_count ?? 0} delivered
+                    {(recentRun.summary?.from_cache ?? 0) > 0 && (
+                      <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-700">{recentRun.summary?.from_cache} cached</span>
+                    )}
+                    {(recentRun.summary?.flagged_review ?? 0) > 0 && (
+                      <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900">{recentRun.summary?.flagged_review} flagged for review</span>
+                    )}
+                  </div>
+                  {recentRun.summary && (recentRun.summary.skipped.already_in_inbox + recentRun.summary.skipped.no_email + recentRun.summary.skipped.insert_failed) > 0 && (
+                    <div className="mt-1 text-xs text-emerald-800">
+                      Skipped:
+                      {recentRun.summary.skipped.already_in_inbox > 0 && (
+                        <span className="ml-2">{recentRun.summary.skipped.already_in_inbox} already in your inbox</span>
+                      )}
+                      {recentRun.summary.skipped.no_email > 0 && (
+                        <span className="ml-2">· {recentRun.summary.skipped.no_email} no email</span>
+                      )}
+                      {recentRun.summary.skipped.insert_failed > 0 && (
+                        <span className="ml-2">· {recentRun.summary.skipped.insert_failed} other</span>
+                      )}
+                    </div>
+                  )}
+                  {(recentRun.summary?.delivered ?? 0) < (recentRun.summary?.target_count ?? 0) && (
+                    <div className="mt-1 text-xs text-emerald-800">
+                      Under-delivered — try expanding your search (broader radius, more terms, or Search Mode = Broad).
+                    </div>
+                  )}
+                </div>
+              </div>
+              <button onClick={() => dismissRecentRun(recentRun.run_id)} className="text-emerald-700 hover:text-emerald-900 flex-shrink-0" title="Dismiss">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Filter chips + search + new run */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
