@@ -20,7 +20,15 @@ export interface SessionVerifyResponse {
     firstName: string | null;
     lastName: string | null;
     displayName: string | null;
+    /** 2026-06-20 — SUPER_ADMIN role on core.user_platform_roles. Only
+     *  super-users see the tenant picker; everyone else auto-routes to
+     *  their home tenant (per Brandon's locked rule). */
+    isSuperUser?: boolean;
   };
+  /** 2026-06-20 — the tenant we should land on by default if the user
+   *  isn't a super-user. For IA team always the founder tenant; for client
+   *  users their oldest active membership. */
+  homeTenantId?: string | null;
   tenants?: Array<{
     tenantId: string;
     tenantName: string;

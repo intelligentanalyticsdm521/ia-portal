@@ -127,15 +127,43 @@ export function AppGate({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        // 2) Determine active tenant
+        // 2) Determine active tenant.
+        //
+        // 2026-06-20 — only super-user (info@intelligentanalyticsdm.com)
+        // sees the tenant picker. Brandon's rule: "this should only be a
+        // super user function". For everyone else (Brandon.Sheriff +
+        // client users), auto-route to their home tenant — never show
+        // the picker, even if they accidentally have memberships in
+        // multiple tenants (e.g. test invitations that slipped through
+        // the new founder-team guard in onboardClient.js / verify.js).
+        //
+        // Order of preference:
+        //   (a) explicit stored choice (Switch Tenant button) — but only
+        //       for super-user; non-super-user stored values are ignored
+        //   (b) sole membership
+        //   (c) backend-supplied homeTenantId (IA team → founder tenant,
+        //       clients → oldest active membership)
+        //   (d) first membership as last-resort fallback
         const stored = appState.activeTenantId;
         const storedMatch = stored ? tenants.find((t) => t.tenantId === stored) : null;
+        const homeMatch = v.homeTenantId
+          ? tenants.find((t) => t.tenantId === v.homeTenantId)
+          : null;
+        const isSuperUser = !!v.user?.isSuperUser;
 
-        const tenantToSelect =
-          storedMatch?.tenantId || (tenants.length === 1 ? tenants[0].tenantId : null);
+        let tenantToSelect: string | null = null;
+        if (tenants.length === 1) {
+          tenantToSelect = tenants[0].tenantId;
+        } else if (isSuperUser) {
+          // Super-user: respect stored choice; otherwise show picker.
+          tenantToSelect = storedMatch?.tenantId || null;
+        } else {
+          // Non-super-user: ALWAYS auto-route to home tenant.
+          tenantToSelect = homeMatch?.tenantId || tenants[0].tenantId;
+        }
 
         if (!tenantToSelect) {
-          // user must select tenant — show picker
+          // Only reached for super-user with no stored choice — show picker.
           appState.setActive(null);
           bootstrapDoneRef.current = true;
           return;

@@ -365,29 +365,38 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
       subtitle={`Step ${stepIdx + 1} of ${sections.length}${current.required ? " · required" : " · optional — skip anytime"}`}
       size="info"
       footer={
+        // 2026-06-20 — also disable on `loading`. Clicking Save before
+        // prefill finished was flushing EMPTY_STATE to PATCH /settings
+        // and wiping the tenant's business profile. Gating on both saving
+        // AND loading closes the race; the omit-empty payload in
+        // flushSectionToCanonical and the empty-string guard in
+        // settings.js are the deeper fixes.
         <div className="flex justify-between w-full gap-2">
           {!isFirst ? (
-            <button onClick={() => setStepIdx((i) => Math.max(i - 1, 0))} disabled={saving}
+            <button onClick={() => setStepIdx((i) => Math.max(i - 1, 0))} disabled={saving || loading}
               className="px-4 py-2 rounded-lg border border-gray-300 text-slate-700 font-semibold text-sm disabled:opacity-50">
               ← Back
             </button>
           ) : <span />}
           <div className="flex gap-2">
-            <button onClick={() => persist("close")} disabled={saving}
-              className="px-4 py-2 rounded-lg border border-gray-300 text-slate-700 font-semibold text-sm disabled:opacity-50">
+            <button onClick={() => persist("close")} disabled={saving || loading}
+              className="px-4 py-2 rounded-lg border border-gray-300 text-slate-700 font-semibold text-sm disabled:opacity-50"
+              title={loading ? "Loading existing data — please wait" : undefined}>
               Save & Close
             </button>
             {isLast ? (
-              <button onClick={() => persist("finish")} disabled={saving}
+              <button onClick={() => persist("finish")} disabled={saving || loading}
                 className="px-4 py-2 rounded-lg text-white font-semibold text-sm disabled:opacity-50"
-                style={{ background: "#0F766E" }}>
-                {saving ? "Finishing…" : "Save & Finish (send welcome) →"}
+                style={{ background: "#0F766E" }}
+                title={loading ? "Loading existing data — please wait" : undefined}>
+                {loading ? "Loading…" : saving ? "Finishing…" : "Save & Finish (send welcome) →"}
               </button>
             ) : (
-              <button onClick={() => persist("continue")} disabled={saving}
+              <button onClick={() => persist("continue")} disabled={saving || loading}
                 className="px-4 py-2 rounded-lg text-white font-semibold text-sm disabled:opacity-50"
-                style={{ background: accent }}>
-                {saving ? "Saving…" : "Save & Continue →"}
+                style={{ background: accent }}
+                title={loading ? "Loading existing data — please wait" : undefined}>
+                {loading ? "Loading…" : saving ? "Saving…" : "Save & Continue →"}
               </button>
             )}
           </div>
@@ -1447,21 +1456,27 @@ async function flushSectionToCanonical(
 ): Promise<void> {
   if (sectionId === "profile") {
     const p = state.profile;
-    // Map modal shape → /settings shape (see OrganizationTab in TenantSettings.tsx).
-    // Address is a single string in core.tenants; we join the modal's parts.
+    // 2026-06-20 — only include populated fields. Sending blank strings
+    // for every field used to wipe the entire core.tenants row when the
+    // user clicked Save before prefill loaded (initial state EMPTY_STATE
+    // has every field as ""). The settings.js PATCH handler now also
+    // guards against empty strings as a belt-and-suspenders fix, but this
+    // is the source.
     const address = [p.address_street, p.address_line2, [p.address_city, p.address_state, p.address_zip].filter(Boolean).join(" ")]
       .filter(Boolean).join(", ");
-    await api.patch("/settings", {
-      tenantFullName: p.business_name || "",
-      email: p.primary_contact_email || "",
-      website: p.website || "",
-      phone: p.phone || "",
-      address,
-      logoUrl: p.logo_url || "",
-      brandColor: p.primary_color || "",
-      brandColorSecondary: p.secondary_color || "",
-      brandColorAccent: p.accent_color || "",
-    });
+    const present = (v: unknown) => typeof v === "string" && v.trim() !== "";
+    const payload: Record<string, unknown> = {};
+    if (present(p.business_name))         payload.tenantFullName = p.business_name;
+    if (present(p.primary_contact_email)) payload.email = p.primary_contact_email;
+    if (present(p.website))               payload.website = p.website;
+    if (present(p.phone))                 payload.phone = p.phone;
+    if (present(address))                 payload.address = address;
+    if (present(p.logo_url))              payload.logoUrl = p.logo_url;
+    if (present(p.primary_color))         payload.brandColor = p.primary_color;
+    if (present(p.secondary_color))       payload.brandColorSecondary = p.secondary_color;
+    if (present(p.accent_color))          payload.brandColorAccent = p.accent_color;
+    if (Object.keys(payload).length === 0) return; // no-op when nothing to send
+    await api.patch("/settings", payload);
     return;
   }
   if (sectionId === "oliver_customer_portal" || sectionId === "oliver_employee_portal") {
