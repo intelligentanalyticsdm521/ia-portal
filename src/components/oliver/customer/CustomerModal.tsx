@@ -67,6 +67,14 @@ interface ContactDetail {
     service_types?: string | null;
   };
   overdue_balance?: number;
+  /** 2026-06-20 — oliver-api /contacts/:id now returns spark_only:true
+   *  when the UUID resolves to a SPARK-prospect that's filtered out of the
+   *  OLIVER customer view (migration 080: is_oliver_customer = 1). Render
+   *  a yellow "Still a SPARK prospect" banner + a "View in SPARK" CTA so
+   *  Weekly Glance / Jobs board clicks no longer surface a hard 404. */
+  spark_only?: boolean;
+  spark_contact_id?: number;
+  lifecycle_stage?: string | null;
 }
 
 interface Activity {
@@ -269,6 +277,50 @@ export function CustomerModal({
         <div style={{ color: "#5A7A8A", padding: 20 }}>Loading customer…</div>
       ) : (
         <>
+          {/* 2026-06-20 — spark_only contact banner. The OLIVER /contacts/:id
+              endpoint returns spark_only:true when the contact is still a
+              SPARK prospect (not promoted to OLIVER customer yet — typical
+              for a fresh booking before first paid invoice). Without this
+              banner the modal was showing an empty Jobs/Invoices view with
+              no explanation. */}
+          {detail.spark_only && (
+            <div style={{
+              background: "#FEF3C7",
+              border: "1px solid #FCD34D",
+              color: "#78350F",
+              borderRadius: 8,
+              padding: "10px 14px",
+              fontSize: 13,
+              marginBottom: 14,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}>
+              <div>
+                <strong>Still a SPARK prospect.</strong> No OLIVER jobs/invoices yet —
+                this customer hasn't been promoted to OLIVER (typically on first
+                paid invoice). Current lifecycle: <code style={{ background: "#FDE68A", padding: "1px 6px", borderRadius: 4 }}>{detail.lifecycle_stage || "lead"}</code>
+              </div>
+              <a
+                href={detail.spark_contact_id
+                  ? `/app/services/spark_contacts?contactId=${detail.spark_contact_id}`
+                  : "/app/services/spark_contacts"}
+                style={{
+                  background: "#92400E",
+                  color: "#FFF",
+                  padding: "6px 12px",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  textDecoration: "none",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                View in SPARK →
+              </a>
+            </div>
+          )}
           {/* Section tabs */}
           <div className="ptabs" style={{ marginBottom: 16 }}>
             <button className={`ptab${tab === "overview" ? " active" : ""}`} onClick={() => { setTab("overview"); setFocusedJobId(null); setFocusedSubId(null); }}>Overview</button>

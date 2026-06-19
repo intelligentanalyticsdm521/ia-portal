@@ -46,8 +46,12 @@ export function ConsultingCalendarPage() {
         const start = today.toISOString().slice(0, 10);
         const end = new Date(today.getTime() + 84 * 86400_000).toISOString().slice(0, 10);
         const kinds = "project_phase,project_target,consulting";
-        const raw = await get<{ data: CalendarEvent[] }>(`/calendar/unified?start=${start}&end=${end}&kinds=${kinds}`);
-        if (!cancelled) setEvents(raw?.data ?? []);
+        // 2026-06-20 envelope fix: useOliverApi.get auto-unwraps {data:…}.
+        // Old code read raw?.data as if it were the events array, but
+        // /calendar/unified returns {data: {events, range, counts_by_kind}}.
+        // After auto-unwrap the client sees {events, range, counts_by_kind}.
+        const raw = await get<{ events: CalendarEvent[] }>(`/calendar/unified?start=${start}&end=${end}&kinds=${kinds}`);
+        if (!cancelled) setEvents(raw?.events ?? []);
       } catch (err) {
         if (!cancelled) setError(err);
       } finally {

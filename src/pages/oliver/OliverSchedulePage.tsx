@@ -44,8 +44,12 @@ export function OliverSchedulePage() {
         end: ymd(windowEnd),
         kinds: "job,booking",
       });
-      const r = await get<{ data: { events: UnifiedEvent[] } }>(`/calendar/unified?${qs}`);
-      setEvents(r.data?.events || []);
+      // 2026-06-20 envelope fix: useOliverApi.get auto-unwraps the
+      // {data:...} envelope (lib/oliverApi.ts:74). Reading r.data?.events
+      // was always undefined → KPI strip showed 0/0/0/0 and the schedule
+      // grid stayed empty.
+      const r = await get<{ events: UnifiedEvent[] }>(`/calendar/unified?${qs}`);
+      setEvents(r?.events || []);
     } catch (err) {
       setError(err);
     } finally {

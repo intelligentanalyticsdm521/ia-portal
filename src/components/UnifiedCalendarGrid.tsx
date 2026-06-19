@@ -86,8 +86,15 @@ export function UnifiedCalendarGrid({ kinds, className }: Props) {
         end: ymd(gridEnd),
       });
       if (kinds) qs.set("kinds", kinds);
-      const r = await get<{ data: { events: UnifiedEvent[] } }>(`/calendar/unified?${qs}`);
-      setEvents(r.data?.events || []);
+      // 2026-06-20 envelope fix: useOliverApi.get already strips the
+      // {data:…} envelope (lib/oliverApi.ts:74 — see memory feedback
+      // oliver_api_envelope_unwrap). Reading r.data?.events was always
+      // undefined; the calendar silently rendered zero events even when
+      // bookings/jobs were in range. Brandon's test booking appeared on
+      // OLIVER Jobs board (separate endpoint) but never on the calendar —
+      // this is why.
+      const r = await get<{ events: UnifiedEvent[] }>(`/calendar/unified?${qs}`);
+      setEvents(r?.events || []);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -166,10 +173,10 @@ export function UnifiedCalendarGrid({ kinds, className }: Props) {
           return (
             <button
               key={dayKey}
-              onClick={() => dayEvents.length > 0 && setOpenDay(dayKey)}
+              onClick={() => setOpenDay(dayKey)}
               className={`bg-white min-h-[88px] p-1.5 text-left flex flex-col gap-0.5 transition-colors ${
                 inCurrentMonth ? "" : "bg-slate-50"
-              } ${dayEvents.length > 0 ? "hover:bg-slate-50 cursor-pointer" : "cursor-default"} ${
+              } hover:bg-slate-50 cursor-pointer ${
                 isToday ? "ring-2 ring-inset ring-[#FEC82C]" : ""
               }`}
             >
