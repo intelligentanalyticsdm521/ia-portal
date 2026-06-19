@@ -72,6 +72,70 @@ interface JobStatusResponse {
     keyword_count?: number;
     mode?: string;
   };
+  // F-LG.14: surface when an orchestrator budget cap halted the run early
+  // (CSE = target × 10, Hunter = target × 5). Banner explains under-delivery
+  // instead of leaving the user puzzling over the gap.
+  budget_stopped?: boolean;
+  budget_stop_reason?: string | null;
+}
+
+// Raw row shape from GET /api/v1/leadgen/jobs/:id — what lumen.search_job
+// actually serves up. Adapter below maps to the page-facing
+// JobStatusResponse so the UI stays unchanged.
+interface RawJobRow {
+  id: number;
+  tenant_id: string;
+  profile_id: number | null;
+  target_count: number | null;
+  leads_found: number | null;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  progress_pct: number | null;
+  progress_step: string | null;
+  delivered_so_far: number | null;
+  cse_calls: number | null;
+  hunter_calls: number | null;
+  budget_stopped: boolean | number | null;
+  budget_stop_reason: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+}
+
+const STEP_TO_PHASE: Record<string, JobPhase> = {
+  starting: "queued",
+  loading_filters: "queued",
+  checking_cache: "queued",
+  discovering: "discovery",
+  scoring: "scoring",
+  enriching: "enriching",
+  persisting: "finalizing",
+  completed: "complete",
+};
+
+function adaptRow(row: RawJobRow): JobStatusResponse {
+  // 'completed' in DB → 'complete' for the page's phase tracker; everything
+  // else (queued/running/failed/cancelled) passes through unchanged.
+  const pageStatus: JobStatus =
+    row.status === "completed" ? "complete" : (row.status as JobStatus);
+  const phase: JobPhase =
+    row.status === "completed"
+      ? "complete"
+      : row.status === "failed"
+        ? "failed"
+        : STEP_TO_PHASE[row.progress_step || ""] || "queued";
+  return {
+    job_id: String(row.id),
+    status: pageStatus,
+    phase,
+    progress_pct: row.progress_pct ?? 0,
+    delivered_count: row.delivered_so_far ?? row.leads_found ?? 0,
+    target_count: row.target_count ?? 0,
+    started_at: row.started_at ?? undefined,
+    completed_at: row.completed_at ?? undefined,
+    error: row.error_message,
+    budget_stopped: !!row.budget_stopped,
+    budget_stop_reason: row.budget_stop_reason,
+  };
 }
 
 interface LeadContact { email?: string; phone?: string; verification_status?: string }
@@ -103,11 +167,14 @@ export function SparkLeadGenJobPage() {
   const [bulkActing, setBulkActing] = useState(false);
 
   // Poll status every 3s while running.
+  // Endpoint: GET /api/v1/leadgen/jobs/:id returns the raw lumen.search_job row;
+  // adaptRow() maps it into the page-facing JobStatusResponse so the
+  // existing UI stays unchanged.
   const fetchStatus = useCallback(async () => {
     if (!ready || !jobId) return;
     try {
-      // TODO(leadgen-api): GET /leadgen/jobs/:id/status
-      const r = await get<JobStatusResponse>(`/leadgen/jobs/${jobId}/status`);
+      const raw = await get<RawJobRow>(`/api/v1/leadgen/jobs/${jobId}`);
+      const r = adaptRow(raw);
       setStatus(r);
       setError(null);
       return r;
@@ -130,6 +197,17 @@ export function SparkLeadGenJobPage() {
       return () => clearInterval(t);
     }
   }, [status, fetchStatus]);
+
+  // F-LG.14: when the job completes, send the user to the Lead Inbox where
+  // the Run Summary banner and the new rows live. Delay 1.5s so they get to
+  // see the progress tracker hit 100% and the "Search complete" header
+  // before we navigate — Brandon's locked rule is "results on completion
+  // only, no live reveal" so the Lead Inbox is the destination.
+  useEffect(() => {
+    if (status?.status !== "complete") return;
+    const t = setTimeout(() => navigate("/app/services/spark_leads"), 1500);
+    return () => clearTimeout(t);
+  }, [status?.status, navigate]);
 
   // Load leads once the job completes.
   const loadLeads = useCallback(async () => {
@@ -292,6 +370,30 @@ export function SparkLeadGenJobPage() {
                 {status.error}
               </div>
             )}
+          </div>
+        )}
+
+        {/* F-LG.14: budget-cap banner. Triggers when the orchestrator halted
+            the run because target × N call budget hit zero — typically a
+            Hunter Domain Search cap. Without this, an under-delivered run
+            looks like "we just couldn't find more" when the truth is "your
+            budget said stop". */}
+        {isComplete && status?.budget_stopped && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-rose-700 mt-0.5 flex-shrink-0" />
+            <div>
+              <div className="text-sm font-semibold text-rose-900">
+                Run stopped early — {status.budget_stop_reason === "hunter_cap"
+                  ? "Hunter contact-lookup budget cap"
+                  : status.budget_stop_reason === "cse_cap"
+                    ? "Google search budget cap"
+                    : "internal budget cap"}
+              </div>
+              <p className="text-[12px] text-rose-800 mt-0.5">
+                We hit our hard safety cap of {status.budget_stop_reason === "hunter_cap" ? "5×" : "10×"} the requested target.
+                {" "}This protects you from runaway API charges. Narrow your terms or radius and try again.
+              </p>
+            </div>
           </div>
         )}
 
