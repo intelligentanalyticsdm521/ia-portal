@@ -28,6 +28,11 @@ export function SparkCampaignsPage() {
   const [tab, setTab] = useState<"email" | "sms">("email");
   // F-90 — dead "Create Campaign" button now opens the composer modal.
   const [composerOpen, setComposerOpen] = useState(false);
+  // 2026-06-20 — click a row to open the composer in edit mode. Brandon
+  // flagged the campaign list rows were dead clicks: drafts couldn't be
+  // re-opened to refine or send. editCampaignId drives the modal — null
+  // when creating, set when editing/viewing an existing campaign.
+  const [editCampaignId, setEditCampaignId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -106,7 +111,7 @@ export function SparkCampaignsPage() {
             ))}
           </div>
           <button
-            onClick={() => setComposerOpen(true)}
+            onClick={() => { setEditCampaignId(null); setComposerOpen(true); }}
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
             + New campaign
@@ -126,7 +131,12 @@ export function SparkCampaignsPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.map((c) => (
-                <tr key={c.id} className="hover:bg-gray-50">
+                <tr
+                  key={c.id}
+                  onClick={() => { setEditCampaignId(c.id); setComposerOpen(true); }}
+                  className="hover:bg-gray-50 cursor-pointer"
+                  title={c.status === "draft" ? "Open to edit + send" : "Open to view"}
+                >
                   <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
                   <td className="px-4 py-3">{statusBadge(c.status)}</td>
                   <td className="px-4 py-3 text-slate-600">{(c.recipient_count ?? 0).toLocaleString()}</td>
@@ -148,8 +158,9 @@ export function SparkCampaignsPage() {
 
       <SparkCampaignComposerModal
         open={composerOpen}
-        onClose={() => setComposerOpen(false)}
-        onCreated={() => { setComposerOpen(false); load(); }}
+        onClose={() => { setComposerOpen(false); setEditCampaignId(null); }}
+        onCreated={() => { setComposerOpen(false); setEditCampaignId(null); load(); }}
+        editCampaignId={editCampaignId}
       />
     </SparkPageShell>
   );

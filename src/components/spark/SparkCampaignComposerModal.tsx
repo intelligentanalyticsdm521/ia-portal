@@ -21,12 +21,23 @@ interface Props {
   onClose: () => void;
   /** Called after a successful create so the parent can refresh + (optionally) open the draft. */
   onCreated?: (campaignId: number) => void;
+  /**
+   * When set, the modal opens in EDIT mode: skips the channel picker, fetches
+   * GET /campaigns/:id, prefills the form, and saves with PUT instead of
+   * POST. Sending a draft is allowed via the Send button. Backend already
+   * supports GET/PUT/POST-send (campaigns.js routes 249/284/372); the modal
+   * just wasn't wired for re-open until now (Brandon flagged 2026-06-20:
+   * "I can see my test campaign in draft… but I can't open it to edit it
+   * and make it active or see the suggestions").
+   */
+  editCampaignId?: number | null;
 }
 
-export function SparkCampaignComposerModal({ open, onClose, onCreated }: Props) {
-  const { get, post, ready } = useSparkApi() as {
+export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampaignId = null }: Props) {
+  const { get, post, put, ready } = useSparkApi() as {
     get: <T>(p: string) => Promise<T>;
     post: <T>(p: string, body?: unknown) => Promise<T>;
+    put: <T>(p: string, body: unknown) => Promise<T>;
     ready: boolean;
   };
 
@@ -47,7 +58,14 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated }: Props) 
   const [lists, setLists] = useState<List[]>([]);
 
   const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Edit mode: the existing campaign row. Status drives what actions are
+  // allowed (only 'draft' can be edited or sent; sent/sending/failed render
+  // a read-only summary so the user can see what was queued without
+  // clobbering it).
+  const [editStatus, setEditStatus] = useState<string | null>(null);
+  const isEditMode = !!editCampaignId;
 
   // Refs for MergeTagPicker — used to insert tokens at the cursor position.
   const subjectRef = useRef<HTMLInputElement>(null);
@@ -58,15 +76,41 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated }: Props) 
   // Reset state when modal opens.
   useEffect(() => {
     if (!open) return;
+    // Reset baseline. Edit-mode load below will overwrite as needed.
     setStep("channel");
     setChannel(null);
     setName(""); setSubject(""); setFromName(""); setFromEmail(""); setReplyTo("");
     setContentHtml(""); setContentSms(""); setListId("");
+    setEditStatus(null);
     setError(null);
-    if (ready) {
-      get<{ data: List[] }>("/api/v1/lists").then((r) => setLists(r?.data || [])).catch(() => setLists([]));
+    if (!ready) return;
+    get<{ data: List[] }>("/api/v1/lists").then((r) => setLists(r?.data || [])).catch(() => setLists([]));
+
+    // Edit mode: GET /campaigns/:id, prefill, skip the channel picker.
+    if (editCampaignId) {
+      get<{ data: any }>(`/api/v1/campaigns/${editCampaignId}`)
+        .then((r) => {
+          const c = r?.data;
+          if (!c) {
+            setError("Couldn't load this campaign.");
+            return;
+          }
+          const t = c.type as Channel;
+          setChannel(t);
+          setStep("compose");
+          setName(c.name || "");
+          setSubject(c.subject || "");
+          setFromName(c.from_name || "");
+          setFromEmail(c.from_email || "");
+          setReplyTo(c.reply_to || "");
+          setContentHtml(c.content_html || "");
+          setContentSms(c.content_sms || "");
+          setListId(c.recipient_list_id ?? "");
+          setEditStatus(c.status || null);
+        })
+        .catch((err) => setError(String((err as Error)?.message || err)));
     }
-  }, [open, ready, get]);
+  }, [open, ready, get, editCampaignId]);
 
   // Esc + click-outside close handled by IadmModal.
 
@@ -77,32 +121,76 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated }: Props) 
     return true;
   }, [name, channel, subject, contentHtml, contentSms]);
 
+  function buildPayload(): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
+      name: name.trim(),
+      type: channel,
+      recipient_list_id: listId === "" ? null : listId,
+    };
+    if (channel === "email") {
+      payload.subject = subject.trim() || null;
+      payload.from_name = fromName.trim() || null;
+      payload.from_email = fromEmail.trim() || null;
+      payload.reply_to = replyTo.trim() || null;
+      payload.content_html = contentHtml || null;
+    } else {
+      payload.content_sms = contentSms || null;
+    }
+    return payload;
+  }
+
   async function saveDraft() {
     if (!channel || !canSave()) return;
     setSaving(true);
     setError(null);
     try {
-      const payload: Record<string, unknown> = {
-        name: name.trim(),
-        type: channel,
-        recipient_list_id: listId === "" ? null : listId,
-      };
-      if (channel === "email") {
-        payload.subject = subject.trim() || null;
-        payload.from_name = fromName.trim() || null;
-        payload.from_email = fromEmail.trim() || null;
-        payload.reply_to = replyTo.trim() || null;
-        payload.content_html = contentHtml || null;
+      const payload = buildPayload();
+      if (isEditMode && editCampaignId) {
+        // PUT /campaigns/:id only accepts edits on status='draft' rows; the
+        // row-click handler on the list page guards against non-draft, but
+        // the backend rejects too if it slips through.
+        await put<{ data: { id: number } }>(`/api/v1/campaigns/${editCampaignId}`, payload);
+        onCreated?.(editCampaignId);
       } else {
-        payload.content_sms = contentSms || null;
+        const r = await post<{ data: { id: number } }>("/api/v1/campaigns", payload);
+        onCreated?.(r?.data?.id);
       }
-      const r = await post<{ data: { id: number } }>("/api/v1/campaigns", payload);
-      onCreated?.(r?.data?.id);
       onClose();
     } catch (err) {
       setError(String((err as Error)?.message || err));
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Send a draft NOW — saves any pending edits first, then fires POST
+  // /campaigns/:id/send. Only meaningful in edit mode for status='draft'.
+  // The button is hidden otherwise.
+  async function sendNow() {
+    if (!isEditMode || !editCampaignId) return;
+    if (!confirm("Send this campaign now? This will go to every recipient on the list.")) return;
+    setSending(true);
+    setError(null);
+    try {
+      // Save any pending edits first so the send uses the latest content,
+      // then fire the send. Backend's POST /campaigns/:id/send accepts an
+      // empty body and returns { sent, failed } stats.
+      if (canSave()) {
+        await put<{ data: unknown }>(`/api/v1/campaigns/${editCampaignId}`, buildPayload());
+      }
+      const r = await post<{ data: { sent: number; failed: number } }>(
+        `/api/v1/campaigns/${editCampaignId}/send`,
+        {},
+      );
+      onCreated?.(editCampaignId);
+      onClose();
+      const sent = (r as any)?.data?.sent ?? 0;
+      const failed = (r as any)?.data?.failed ?? 0;
+      alert(`Campaign sent — ${sent} delivered${failed ? `, ${failed} failed` : ""}.`);
+    } catch (err) {
+      setError(String((err as Error)?.message || err));
+    } finally {
+      setSending(false);
     }
   }
 
@@ -113,16 +201,32 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated }: Props) 
       open={open}
       onClose={onClose}
       product="spark"
-      eyebrow="SPARK · NEW CAMPAIGN"
-      title={step === "channel" ? "Pick a channel" : `Compose · ${channel?.toUpperCase()}`}
-      subtitle={step === "channel" ? "Email or SMS — saved as a draft you can refine" : undefined}
+      eyebrow={
+        isEditMode
+          ? `SPARK · ${editStatus === "draft" ? "EDIT DRAFT" : `CAMPAIGN · ${(editStatus || "VIEW").toUpperCase()}`}`
+          : "SPARK · NEW CAMPAIGN"
+      }
+      title={
+        step === "channel"
+          ? "Pick a channel"
+          : isEditMode
+            ? `${name || "Untitled"} · ${channel?.toUpperCase()}`
+            : `Compose · ${channel?.toUpperCase()}`
+      }
+      subtitle={
+        step === "channel"
+          ? "Email or SMS — saved as a draft you can refine"
+          : isEditMode && editStatus && editStatus !== "draft"
+            ? `Read-only — campaigns can only be edited while in draft. Current status: ${editStatus}.`
+            : undefined
+      }
       // F-107 — dynamic size: nav-sized picker on step 1, info-sized form on
       // step 2. The picker is a 2-card grid; the compose form needs the full
       // standard canvas to match every other SPARK form modal.
       size={step === "channel" ? "nav" : "info"}
       footer={
         <>
-          {step === "compose" && (
+          {step === "compose" && !isEditMode && (
             <button
               onClick={() => setStep("channel")}
               className="mr-auto text-xs text-slate-500 hover:text-slate-700 inline-flex items-center gap-1"
@@ -130,16 +234,28 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated }: Props) 
               <ArrowLeft className="h-3 w-3" /> Back
             </button>
           )}
-          <IadmButton variant="ghost" onClick={onClose}>Cancel</IadmButton>
-          {step === "compose" && (
+          <IadmButton variant="ghost" onClick={onClose}>
+            {isEditMode && editStatus !== "draft" ? "Close" : "Cancel"}
+          </IadmButton>
+          {step === "compose" && (!isEditMode || editStatus === "draft") && (
             <IadmButton
               variant="accent"
               product="spark"
               onClick={saveDraft}
-              disabled={saving || !canSave()}
+              disabled={saving || sending || !canSave()}
               icon={<ArrowRight className="h-3 w-3" />}
             >
-              {saving ? "Saving…" : "Save draft"}
+              {saving ? "Saving…" : isEditMode ? "Save changes" : "Save draft"}
+            </IadmButton>
+          )}
+          {step === "compose" && isEditMode && editStatus === "draft" && (
+            <IadmButton
+              variant="accent"
+              product="spark"
+              onClick={sendNow}
+              disabled={sending || saving || !canSave()}
+            >
+              {sending ? "Sending…" : "Send now"}
             </IadmButton>
           )}
         </>
