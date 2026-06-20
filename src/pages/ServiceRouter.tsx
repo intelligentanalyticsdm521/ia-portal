@@ -266,6 +266,7 @@ const ConsultingOnboardClientPage = lazyNamed(() => import('./consulting/Consult
 const ConsultingClientsPage = lazyNamed(() => import('./consulting/ConsultingClientsPage'), 'default');
 const ConsultingTicketsBoardPage = lazyNamed(() => import('./consulting/ConsultingTicketsBoardPage'), 'ConsultingTicketsBoardPage');
 const ConsultingProjectsBoardPage = lazyNamed(() => import('./consulting/ConsultingProjectsBoardPage'), 'ConsultingProjectsBoardPage');
+const ConsultingProjectWorkspacePage = lazyNamed(() => import('./consulting/ConsultingProjectWorkspacePage'), 'ConsultingProjectWorkspacePage');
 const ConsultingDeliverablesPage = lazyNamed(() => import('./consulting/ConsultingDeliverablesPage'), 'ConsultingDeliverablesPage');
 
 // Shared loading fallback used by every Suspense boundary in this router.
@@ -589,6 +590,10 @@ export function ServiceRouter() {
       case 'consulting_overview':         consultingPage = <ConsultingOverviewPage />; break;
       case 'consulting_tickets':          consultingPage = <ConsultingTicketsBoardPage />; break;
       case 'consulting_projects':         consultingPage = <ConsultingProjectsBoardPage />; break;
+      // Phase 1 v0 — 4-tier workspace (Project → Phase → Feature → Task).
+      // List + drill-in read-only view. Backend feature/task endpoints
+      // still pending; page renders a clear inline banner if missing.
+      case 'consulting_project_workspace': consultingPage = <ConsultingProjectWorkspacePage />; break;
       case 'consulting_deliverables':     consultingPage = <ConsultingDeliverablesPage />; break;
       case 'consulting_calendar':         consultingPage = <ConsultingCalendarPage />; break;
       case 'consulting_onboard_client':   consultingPage = <ConsultingOnboardClientPage />; break;
