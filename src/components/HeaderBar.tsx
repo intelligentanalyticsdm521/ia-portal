@@ -4,6 +4,7 @@ import { Search } from 'lucide-react';
 import { useAppState } from '../app/AppState';
 import { useAccessToken } from '../auth/useAccessToken';
 import { AccountMenu } from './AccountMenu';
+import { ArgusBalanceBadge } from './ArgusBalanceBadge';
 import { GlobalSearch } from './GlobalSearch';
 import { GuidedTourLauncher } from './GuidedTourLauncher';
 
@@ -51,6 +52,9 @@ export function HeaderBar() {
 
           {/* F-119 — guided tours launcher */}
           <GuidedTourLauncher />
+
+          {/* ARGUS AI credit balance badge — clickable popover w/ buy + usage */}
+          <ArgusBalanceBadge />
 
           <div className="hidden md:block iadm-header-tenant" aria-label="Tenant greeting">
             <span className="text-white/70">Welcome,</span> <span className="font-medium text-white">{tenantLabel}</span>
