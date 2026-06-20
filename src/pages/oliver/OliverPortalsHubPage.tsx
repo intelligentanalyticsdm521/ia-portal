@@ -773,18 +773,35 @@ function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: Po
 }
 
 // ── WorkflowTabStub → inline workflow rules (F-114 Phase 2) ───────────────
-function WorkflowTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind; accent: string; onSaved: () => void }) {
+type WorkflowShape = { reschedule_mode: string; reschedule_advance_notice_hours: number; reschedule_cutoff_hours: number; reschedule_max_count: number; booking_auto_create_invoice: string; booking_auto_send_confirmation: boolean; booking_auto_assign_worker: string };
+
+const WORKFLOW_DEFAULTS: WorkflowShape = {
+  reschedule_mode: "admin_approval",
+  reschedule_advance_notice_hours: 24,
+  reschedule_cutoff_hours: 4,
+  reschedule_max_count: 2,
+  booking_auto_create_invoice: "on_confirm",
+  booking_auto_send_confirmation: true,
+  booking_auto_assign_worker: "none",
+};
+
+function WorkflowTabStub({ portalKind: _portalKind, accent, onSaved }: { portalKind: PortalKind; accent: string; onSaved: () => void }) {
   const { get, patch, ready } = useOliverApi();
-  const [wf, setWf] = useState<{ reschedule_mode: string; reschedule_advance_notice_hours: number; reschedule_cutoff_hours: number; reschedule_max_count: number; booking_auto_create_invoice: string; booking_auto_send_confirmation: boolean; booking_auto_assign_worker: string } | null>(null);
+  const [wf, setWf] = useState<WorkflowShape | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ready) return;
-    get<typeof wf>("/workflow-settings").then((r) => setWf(r)).catch(() => setWf(null));
+    get<WorkflowShape>("/workflow-settings").then((r) => setWf(r)).catch(() => setWf(null));
   }, [ready, get]);
 
   if (!wf) return <div className="text-xs text-slate-500">Loading workflow…</div>;
+
+  const reset = () => {
+    if (!window.confirm("Reset workflow rules to the platform defaults? You'll still need to click Save to persist.")) return;
+    setWf({ ...WORKFLOW_DEFAULTS });
+  };
 
   const save = async () => {
     setSaving(true);
@@ -860,9 +877,20 @@ function WorkflowTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKi
 
       <div className="flex items-center justify-between pt-2 border-t border-slate-200">
         {savedMsg && <span className="text-xs text-emerald-700">{savedMsg}</span>}
-        <button onClick={save} disabled={saving} className="ml-auto inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50" style={{ background: accent, color: accent === "#FEC82C" ? "#1A3A4A" : "#fff" }}>
-          <Settings className="h-3 w-3" /> {saving ? "Saving…" : "Save workflow"}
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={reset}
+            disabled={saving}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            title="Revert workflow rules to platform defaults"
+          >
+            Reset to defaults
+          </button>
+          <button onClick={save} disabled={saving} className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50" style={{ background: accent, color: accent === "#FEC82C" ? "#1A3A4A" : "#fff" }}>
+            <Settings className="h-3 w-3" /> {saving ? "Saving…" : "Save workflow"}
+          </button>
+        </div>
       </div>
     </div>
   );
