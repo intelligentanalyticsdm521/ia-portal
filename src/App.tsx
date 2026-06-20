@@ -28,6 +28,7 @@ import {
   DataPrivacySettingsPage,
 } from './pages/settings/SettingsRoutes';
 import { ArgusDataPlanPage } from './pages/settings/ArgusDataPlanPage';
+import { ArgusMarginPage } from './pages/admin/ArgusMarginPage';
 import { PlatformAdminPage } from './pages/PlatformAdminPage';
 import { ArionOnboardExistingPage } from './pages/admin/ArionOnboardExistingPage';
 import { AdminLeadgenPage } from './pages/admin/AdminLeadgenPage';
@@ -143,6 +144,7 @@ export function App() {
             <Route path="settings/security" element={<SecuritySettingsPage />} />
             <Route path="settings/data-privacy" element={<DataPrivacySettingsPage />} />
             <Route path="settings/argus-data-plan" element={<ArgusDataPlanPage />} />
+            <Route path="admin/argus-margin" element={<ArgusMarginPage />} />
 
             {/* Platform admin (SUPER_ADMIN only — gear icon target).
                 Stub for now; founder-only UI for cross-tenant ops, dead-tenant

@@ -68,11 +68,33 @@ export function ArgusDataPlanPage() {
   const packCents = useMemo(() => packPriceCents(packSize, mode), [packSize, mode]);
   const packDiscountPct = (PACK_DISCOUNTS[packSize] || 0) * 100;
 
-  function startCheckout() {
-    // Placeholder: real implementation creates a Stripe Checkout Session via
-    // a new oliver-api endpoint that knows the price IDs by (credits, mode).
-    // Until that endpoint lands, surface the intent so the user knows their click registered.
-    alert(`Coming soon: Stripe Checkout for ${packSize} credits (${mode}) = ${fmtUsd(packCents)}.\nUntil then, contact us to purchase.`);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  async function startCheckout() {
+    if (!activeTenantId) return;
+    setCheckoutBusy(true);
+    try {
+      const token = await getToken();
+      const OLIVER_API_BASE = (import.meta.env.VITE_OLIVER_API_BASE as string)
+        || 'https://app-oliver-api-prod-eaffhyhqgrgbcfh0.centralus-01.azurewebsites.net';
+      const res = await fetch(`${OLIVER_API_BASE}/argus/checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token.accessToken}`,
+          'x-tenant-id': activeTenantId,
+        },
+        body: JSON.stringify({ credits: packSize, mode }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.data?.checkout_url) {
+        throw new Error(body?.error?.message || `HTTP ${res.status}`);
+      }
+      window.location.href = body.data.checkout_url;
+    } catch (e) {
+      alert(`Couldn't start checkout: ${(e as Error).message}`);
+    } finally {
+      setCheckoutBusy(false);
+    }
   }
 
   return (
@@ -157,10 +179,15 @@ export function ArgusDataPlanPage() {
         <button
           type="button"
           onClick={startCheckout}
-          className="w-full rounded-lg bg-[#EF6C33] px-6 py-3 text-white font-semibold hover:bg-[#d75a25]"
+          disabled={checkoutBusy}
+          className="w-full rounded-lg bg-[#EF6C33] px-6 py-3 text-white font-semibold hover:bg-[#d75a25] disabled:opacity-60"
         >
-          {mode === 'onetime' ? 'Buy ' : mode === 'monthly' ? 'Subscribe to ' : 'Subscribe annually to '}
-          {packSize.toLocaleString()} credits — {fmtUsd(packCents)}
+          {checkoutBusy ? 'Starting checkout…' : (
+            <>
+              {mode === 'onetime' ? 'Buy ' : mode === 'monthly' ? 'Subscribe to ' : 'Subscribe annually to '}
+              {packSize.toLocaleString()} credits — {fmtUsd(packCents)}
+            </>
+          )}
         </button>
       </div>
 
