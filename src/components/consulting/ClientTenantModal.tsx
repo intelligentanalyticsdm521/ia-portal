@@ -558,9 +558,15 @@ function LifecycleSection({ v, setV }: { v: OnboardingState["lifecycle"]; setV: 
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-slate-500">
-        How you track customers from first contact through paid. You can change any of this later in Settings → CRM → Lifecycle.
-      </p>
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-slate-700 space-y-1">
+        <div className="font-semibold text-slate-800">What this controls</div>
+        <p>
+          Every contact you collect (form fills, manual adds, CSV imports, leads) flows through these stages.
+          Your choice here drives <b>which SPARK lists they land in</b>, <b>when they auto-flow into OLIVER for billing</b>,
+          and <b>which lifecycle-aware campaigns fire</b> (welcome, nurture, win-back). You can change any of this later
+          in Settings → CRM → Lifecycle.
+        </p>
+      </div>
 
       {/* Sub-block 1: pick a preset */}
       <div className="space-y-2">
@@ -573,13 +579,13 @@ function LifecycleSection({ v, setV }: { v: OnboardingState["lifecycle"]; setV: 
         />
         <Pick
           id="moderate"
-          title="Moderate — 7 stages"
+          title="Moderate — 6 stages"
           stages="Lead → Engaged → Qualified → Active → Past → Repeat"
           summary="Best for: B2B with a sales cycle; separates warm leads from qualified prospects."
         />
         <Pick
           id="detailed"
-          title="Detailed — 9 stages"
+          title="Detailed — 8 stages"
           stages="Lead → Engaged → Qualified → Proposal → Negotiation → Active → Past → Repeat"
           summary="Best for: agencies, consultants, high-touch B2B with formal proposal/negotiation phases."
         />
@@ -622,9 +628,9 @@ function LifecycleSection({ v, setV }: { v: OnboardingState["lifecycle"]; setV: 
         <div className="text-sm font-semibold text-slate-700">3. When YOU decide a Lead is ready</div>
         <div className="space-y-1.5">
           {[
-            { id: "manual",                label: "I'll click \"Qualify\" myself  (recommended)" },
-            { id: "on_quote_or_meeting",   label: "Auto-qualify when they request a quote or book a meeting" },
-            { id: "every_lead",            label: "Every Lead is automatically a Prospect (treat everyone as a sales opportunity)" },
+            { id: "manual",                label: "I'll click \"Qualify\" myself", sub: "Recommended. You stay in control — review every lead before promoting them to a sales opportunity. Best for low-volume / high-touch businesses." },
+            { id: "on_quote_or_meeting",   label: "Auto-qualify when they request a quote or book a meeting", sub: "Action signals intent. Anyone who books a call or asks for pricing gets auto-promoted. Best for service businesses with quote/booking forms." },
+            { id: "every_lead",            label: "Every Lead is automatically a Prospect", sub: "Treat every inbound contact as a sales opportunity. Best for high-volume B2C or e-commerce where you don't need to qualify." },
           ].map((opt) => (
             <label key={opt.id} className="flex items-start gap-2 text-sm">
               <input
@@ -634,7 +640,10 @@ function LifecycleSection({ v, setV }: { v: OnboardingState["lifecycle"]; setV: 
                 onChange={() => setV({ ...v, qualify_trigger: opt.id as OnboardingState["lifecycle"]["qualify_trigger"] })}
                 className="mt-1"
               />
-              <span>{opt.label}</span>
+              <div className="flex-1">
+                <div>{opt.label}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{opt.sub}</div>
+              </div>
             </label>
           ))}
         </div>
@@ -1050,8 +1059,15 @@ function SparkWelcomeEmailSection({ v, setV, profile, owner }: {
 
   const businessName = profile.business_name || "your business";
   const ownerFirst = owner.first_name || owner.display_name || "the team";
+  // 2026-06-20 — Brandon flagged: the previous default used
+  // `\{\{contact.first_name|"there"\}\}` (Handlebars-style fallback), but
+  // LUMEN-API's interpolate() at lib/emailSender.js:56 only matches
+  // `\{\{\\s*[\w.]+\\s*\}\}` — no pipe syntax — so the whole tag rendered
+  // verbatim to the recipient. Switched to the simple `\{\{first_name\}\}`
+  // shape; the merge-tag picker (Phase 2) will write this for the user.
+  // Fallback "there" is handled in the renderer when first_name is null.
   const defaultBody =
-`Hi {{contact.first_name|"there"}},
+`Hi {{first_name}},
 
 Welcome to ${businessName}! I'm ${ownerFirst}, and I wanted to personally say thanks for connecting with us.
 
@@ -1096,7 +1112,7 @@ ${businessName}`;
             <Field label="Sender name" value={v.sender_name} onChange={(s) => setV({ ...v, sender_name: s })} placeholder="Who it's from" />
             <Field label="Sender email" value={v.sender_email} onChange={(s) => setV({ ...v, sender_email: s })} placeholder="hello@yourdomain.com" />
           </div>
-          <Field label="Subject line" value={v.subject} onChange={(s) => setV({ ...v, subject: s })} hint="Use {{tenant.business_name}} or {{contact.first_name}}" />
+          <Field label="Subject line" value={v.subject} onChange={(s) => setV({ ...v, subject: s })} hint="Use {{business_name}} or {{first_name}} to personalize" />
           <Field label="Preview text" value={v.preview_text} onChange={(s) => setV({ ...v, preview_text: s })} hint="Inbox snippet under the subject line." />
           <div>
             <label className="text-xs font-semibold text-slate-700">Email body</label>
@@ -1108,7 +1124,9 @@ ${businessName}`;
               readOnly={v.template_choice === "system_default"}
             />
             <p className="text-[11px] text-slate-500 mt-1">
-              Use <code>{"{{contact.first_name}}"}</code> for personalization. Falls back to <em>there</em> if blank.
+              Type <code>{"{{first_name}}"}</code> or <code>{"{{business_name}}"}</code> anywhere to personalize. Falls back to <em>there</em> if a contact has no first name.
+              <br />
+              <span className="text-slate-400">A full merge-tag picker (type {"{{"} to browse all available fields) is coming in the next build.</span>
             </p>
           </div>
         </>
@@ -1124,8 +1142,21 @@ function SparkSection({ v, setV }: { v: OnboardingState["spark"]; setV: (v: Onbo
     <div className="space-y-4">
       <p className="text-xs text-slate-500">Sender setup, contact-import plan, brand voice for AI Writer, and first-campaign goal. Skip what doesn't apply.</p>
 
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-slate-700 space-y-1">
+        <div className="font-semibold text-slate-800">What "sender domain" means</div>
+        <p>
+          Every email SPARK sends on your behalf — marketing campaigns, transactional notices (welcome,
+          invoice, appointment reminder, past-due) — leaves from this domain.
+          {" "}
+          <b>Using your own domain (e.g. <code>send.yourbusiness.com</code>)</b> gets better deliverability
+          and shows your brand in the From line.
+          {" "}
+          <b>Leaving blank</b> falls back to our shared <code>@send.ia-dm.com</code> domain — works fine for
+          low volume, lower deliverability for larger sends.
+        </p>
+      </div>
       <Field label="Sender domain" value={v.sender_domain} onChange={(d) => setV({ ...v, sender_domain: d })}
-        placeholder="send.example.com" hint="If blank, campaigns send from @send.ia-dm.com (shared inbox — lower deliverability)" />
+        placeholder="send.yourbusiness.com" hint="You'll add a DNS record after onboarding to verify it." />
 
       {/* Contact import method */}
       <div>
