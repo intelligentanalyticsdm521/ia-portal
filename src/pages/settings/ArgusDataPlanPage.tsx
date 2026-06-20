@@ -10,7 +10,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAppState } from '../../app/AppState';
 import { useAccessToken } from '../../auth/useAccessToken';
-import { getArgusBalance, getArgusUsage, getArgusPricing, type ArgusBalance, type ArgusUsage, type ArgusPricingRow } from '../../lib/arionApi';
+import {
+  getArgusBalance,
+  getArgusUsage,
+  getArgusPricing,
+  getArgusAutoTopoff,
+  patchArgusAutoTopoff,
+  type ArgusBalance,
+  type ArgusUsage,
+  type ArgusPricingRow,
+  type ArgusAutoTopoffConfig,
+} from '../../lib/arionApi';
 
 const ARION_API_BASE = (import.meta.env.VITE_ARION_API_BASE_URL as string)
   || 'https://app-arion-api-prod-e6fuc9gzd8f3hqfe.centralus-01.azurewebsites.net';
@@ -44,26 +54,78 @@ export function ArgusDataPlanPage() {
   const [mode, setMode] = useState<'onetime' | 'monthly' | 'annual'>('onetime');
   const [usageDays, setUsageDays] = useState(30);
 
+  // Auto-topoff config — off by default. Server seeds a defaults row the
+  // first time we GET, so we can treat the response as authoritative.
+  const [autoTopoff, setAutoTopoff] = useState<ArgusAutoTopoffConfig | null>(null);
+  const [autoTopoffDraft, setAutoTopoffDraft] = useState<ArgusAutoTopoffConfig | null>(null);
+  const [autoTopoffSaving, setAutoTopoffSaving] = useState(false);
+  const [autoTopoffSavedAt, setAutoTopoffSavedAt] = useState<number | null>(null);
+  const [autoTopoffError, setAutoTopoffError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!activeTenantId) return;
     let cancelled = false;
     (async () => {
       try {
         const token = await getToken();
-        const [b, u, p] = await Promise.all([
+        const [b, u, p, at] = await Promise.all([
           getArgusBalance({ baseUrl: ARION_API_BASE, bearerToken: token.accessToken, tenantId: activeTenantId }),
           getArgusUsage({ baseUrl: ARION_API_BASE, bearerToken: token.accessToken, tenantId: activeTenantId, days: usageDays }),
           getArgusPricing({ baseUrl: ARION_API_BASE, bearerToken: token.accessToken, tenantId: activeTenantId }),
+          getArgusAutoTopoff({ baseUrl: ARION_API_BASE, bearerToken: token.accessToken, tenantId: activeTenantId }),
         ]);
         if (!cancelled) {
           setBalance(b.data);
           setUsage(u.data);
           setPricing(p.data);
+          setAutoTopoff(at.data);
+          setAutoTopoffDraft(at.data);
         }
       } catch (e) { console.error('[argus data plan]', e); }
     })();
     return () => { cancelled = true; };
   }, [activeTenantId, getToken, usageDays]);
+
+  // One-time pack price the auto-topoff would charge at the chosen size,
+  // shown next to the dropdown so the user knows what each refill will cost.
+  function autoTopoffPackUsd(credits: number): number {
+    return packPriceCents(credits, 'onetime') / 100;
+  }
+
+  async function saveAutoTopoff() {
+    if (!activeTenantId || !autoTopoffDraft) return;
+    setAutoTopoffSaving(true);
+    setAutoTopoffError(null);
+    try {
+      const token = await getToken();
+      const r = await patchArgusAutoTopoff({
+        baseUrl: ARION_API_BASE, bearerToken: token.accessToken, tenantId: activeTenantId,
+        body: {
+          enabled: autoTopoffDraft.enabled,
+          threshold_credits: autoTopoffDraft.threshold_credits,
+          refill_pack_size: autoTopoffDraft.refill_pack_size,
+          max_per_month_usd: autoTopoffDraft.max_per_month_usd,
+        },
+      });
+      setAutoTopoff(r.data);
+      setAutoTopoffDraft(r.data);
+      setAutoTopoffSavedAt(Date.now());
+    } catch (e) {
+      setAutoTopoffError((e as Error).message);
+    } finally {
+      setAutoTopoffSaving(false);
+    }
+  }
+
+  const autoTopoffDirty = useMemo(() => {
+    if (!autoTopoff || !autoTopoffDraft) return false;
+    return (
+      autoTopoff.enabled !== autoTopoffDraft.enabled ||
+      autoTopoff.threshold_credits !== autoTopoffDraft.threshold_credits ||
+      autoTopoff.refill_pack_size !== autoTopoffDraft.refill_pack_size ||
+      autoTopoff.max_per_month_usd !== autoTopoffDraft.max_per_month_usd
+    );
+  }, [autoTopoff, autoTopoffDraft]);
 
   const packCents = useMemo(() => packPriceCents(packSize, mode), [packSize, mode]);
   const packDiscountPct = (PACK_DISCOUNTS[packSize] || 0) * 100;
@@ -189,6 +251,142 @@ export function ArgusDataPlanPage() {
             </>
           )}
         </button>
+      </div>
+
+      {/* Auto top-off — refill credits automatically when balance gets low */}
+      <div className="rounded-lg border border-slate-200 bg-white p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-slate-900">Auto top-off</h2>
+            <span
+              className="text-xs text-slate-400 cursor-help"
+              title="Automatically refill credits when you run low"
+            >
+              (?)
+            </span>
+          </div>
+          {autoTopoffDraft && (
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+              <span className="text-xs font-semibold text-slate-700">
+                {autoTopoffDraft.enabled ? 'On' : 'Off'}
+              </span>
+              <span className="relative">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={autoTopoffDraft.enabled}
+                  onChange={(e) => setAutoTopoffDraft({ ...autoTopoffDraft, enabled: e.target.checked })}
+                />
+                <span className="block w-10 h-5 rounded-full bg-slate-300 peer-checked:bg-emerald-500 transition-colors" />
+                <span className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5" />
+              </span>
+            </label>
+          )}
+        </div>
+
+        {!autoTopoffDraft ? (
+          <div className="text-sm text-slate-500">Loading…</div>
+        ) : (
+          <>
+            <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 transition-opacity ${autoTopoffDraft.enabled ? 'opacity-100' : 'opacity-60'}`}>
+              {/* Threshold */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Refill when balance drops below
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={100000}
+                    value={autoTopoffDraft.threshold_credits}
+                    onChange={(e) => setAutoTopoffDraft({
+                      ...autoTopoffDraft,
+                      threshold_credits: Math.max(1, Math.min(100000, Number(e.target.value) || 0)),
+                    })}
+                    className="w-28 rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                  />
+                  <span className="text-xs text-slate-500">credits</span>
+                </div>
+              </div>
+
+              {/* Refill pack size */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Refill with
+                </label>
+                <select
+                  value={autoTopoffDraft.refill_pack_size}
+                  onChange={(e) => setAutoTopoffDraft({
+                    ...autoTopoffDraft,
+                    refill_pack_size: Number(e.target.value),
+                  })}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                >
+                  {PACK_SIZES.map((s) => (
+                    <option key={s} value={s}>
+                      {s.toLocaleString()} credits / ${autoTopoffPackUsd(s).toFixed(2)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Monthly cap */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Cap auto-purchases at
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-500">$</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100000}
+                    step={10}
+                    value={autoTopoffDraft.max_per_month_usd}
+                    onChange={(e) => setAutoTopoffDraft({
+                      ...autoTopoffDraft,
+                      max_per_month_usd: Math.max(0, Math.min(100000, Math.round(Number(e.target.value) || 0))),
+                    })}
+                    className="w-28 rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                  />
+                  <span className="text-xs text-slate-500">/ month</span>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Auto-topoff uses your default Stripe payment method. Disable any time.
+            </p>
+
+            {autoTopoff && autoTopoff.last_charge_at && (
+              <div className="text-xs text-slate-500">
+                Last auto-refill: {new Date(autoTopoff.last_charge_at).toLocaleString()}
+                {autoTopoff.last_charge_amount_usd != null && (
+                  <> — ${autoTopoff.last_charge_amount_usd.toFixed(2)}</>
+                )}
+                {' '}· This month: ${Number(autoTopoff.month_spent_usd || 0).toFixed(2)} of ${autoTopoff.max_per_month_usd}
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={saveAutoTopoff}
+                disabled={!autoTopoffDirty || autoTopoffSaving}
+                className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {autoTopoffSaving ? 'Saving…' : 'Save auto top-off'}
+              </button>
+              {autoTopoffSavedAt && Date.now() - autoTopoffSavedAt < 4000 && (
+                <span className="text-xs font-semibold text-emerald-700">Saved</span>
+              )}
+              {autoTopoffError && (
+                <span className="text-xs font-semibold text-red-700">Error: {autoTopoffError}</span>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Action pricing reference */}

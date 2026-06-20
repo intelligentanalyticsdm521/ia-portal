@@ -372,6 +372,31 @@ export async function getArgusMargin(params: { baseUrl: string; bearerToken: str
   return requestJson<ArgusMargin>({ ...params, path: `/argus/margin?days=${params.days || 30}` });
 }
 
+// ARGUS Auto-Topoff config — per-tenant auto-refill rules. Off by default.
+export interface ArgusAutoTopoffConfig {
+  enabled: boolean;
+  threshold_credits: number;
+  refill_pack_size: number;
+  max_per_month_usd: number;
+  month_spent_usd: number;
+  month_period_start: string;
+  last_charge_at: string | null;
+  last_charge_amount_usd: number | null;
+}
+
+export async function getArgusAutoTopoff(params: { baseUrl: string; bearerToken: string; tenantId: string }) {
+  return requestJson<{ data: ArgusAutoTopoffConfig }>({ ...params, path: '/argus/auto-topoff' });
+}
+
+export async function patchArgusAutoTopoff(params: {
+  baseUrl: string; bearerToken: string; tenantId: string;
+  body: Partial<Pick<ArgusAutoTopoffConfig, 'enabled' | 'threshold_credits' | 'refill_pack_size' | 'max_per_month_usd'>>;
+}) {
+  return requestJson<{ data: ArgusAutoTopoffConfig }>({
+    ...params, path: '/argus/auto-topoff', method: 'PATCH', body: params.body,
+  });
+}
+
 export async function postArgusGrant(params: {
   baseUrl: string; bearerToken: string; tenantId: string;
   body: { tenant_id: string; credits: number; grant_type?: string; notes?: string; expires_at?: string };
