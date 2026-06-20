@@ -277,18 +277,30 @@ function PortalEditorModal({
 // Each tab loads its own slice on mount, edits in-place, and PATCHes on Save.
 
 // ── DesignTabStub → inline design editor + live preview (F-114 Phase 2) ───
+type DesignShape = { primary_color: string; accent_color: string; logo_url: string; button_radius: number; font_family: string; header_text: string; footer_text: string; custom_css: string };
+
 function DesignTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind; accent: string; onSaved: () => void }) {
   const { get, patch, ready } = useOliverApi();
-  const [design, setDesign] = useState<{ primary_color: string; accent_color: string; logo_url: string; button_radius: number; font_family: string; header_text: string; footer_text: string; custom_css: string } | null>(null);
+  const [design, setDesign] = useState<DesignShape | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
 
+  const defaults: DesignShape = useMemo(
+    () => ({ primary_color: "#1A3A4A", accent_color: accent, logo_url: "", button_radius: 6, font_family: "Inter", header_text: "", footer_text: "", custom_css: "" }),
+    [accent]
+  );
+
   useEffect(() => {
     if (!ready) return;
-    get<{ data: typeof design }>(`/portals/design?kind=${portalKind}`)
-      .then((r) => setDesign(r.data || { primary_color: "#1A3A4A", accent_color: accent, logo_url: "", button_radius: 6, font_family: "Inter", header_text: "", footer_text: "", custom_css: "" }))
-      .catch(() => setDesign({ primary_color: "#1A3A4A", accent_color: accent, logo_url: "", button_radius: 6, font_family: "Inter", header_text: "", footer_text: "", custom_css: "" }));
-  }, [ready, portalKind, accent, get]);
+    get<{ data: DesignShape }>(`/portals/design?kind=${portalKind}`)
+      .then((r) => setDesign(r.data || defaults))
+      .catch(() => setDesign(defaults));
+  }, [ready, portalKind, get, defaults]);
+
+  const reset = () => {
+    if (!window.confirm("Reset all design fields to the platform defaults? You'll still need to click Save to persist.")) return;
+    setDesign({ ...defaults });
+  };
 
   if (!design) return <div className="text-xs text-slate-500">Loading design…</div>;
 
@@ -376,9 +388,20 @@ function DesignTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind
 
       <div className="flex items-center justify-between pt-2 border-t border-slate-200">
         {savedMsg && <span className="text-xs text-emerald-700">{savedMsg}</span>}
-        <button onClick={save} disabled={saving} className="ml-auto inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50" style={{ background: accent, color: accent === "#FEC82C" ? "#1A3A4A" : "#fff" }}>
-          <Palette className="h-3 w-3" /> {saving ? "Saving…" : "Save design"}
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={reset}
+            disabled={saving}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            title="Revert all fields to platform defaults"
+          >
+            Reset to defaults
+          </button>
+          <button onClick={save} disabled={saving} className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50" style={{ background: accent, color: accent === "#FEC82C" ? "#1A3A4A" : "#fff" }}>
+            <Palette className="h-3 w-3" /> {saving ? "Saving…" : "Save design"}
+          </button>
+        </div>
       </div>
     </div>
   );
