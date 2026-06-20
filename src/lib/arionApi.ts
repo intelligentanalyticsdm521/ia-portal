@@ -290,6 +290,97 @@ export async function listArionSites(params: { baseUrl: string; bearerToken: str
   return requestJson<{ tenant: OverviewResponse['tenant']; sites: ArionSiteSummary[] }>({ ...params, path: '/arion/sites' });
 }
 
+// ─── ARGUS AI Data Pack ──────────────────────────────────────────────────
+// All ARGUS endpoints live at /argus (no /arion prefix — they cover
+// cross-product credit tracking even for tenants without ARION).
+export interface ArgusBalance {
+  data: {
+    tenant_id: string;
+    balance: number;
+    lifetime_granted: number;
+    lifetime_spent: number;
+    lifetime_refunded: number;
+    monthly_allocation: number;
+    pool_base: number;
+    pool_bonus: number;
+    base_tier: string;
+    badge_color: 'green' | 'yellow' | 'red';
+  };
+}
+
+export async function getArgusBalance(params: { baseUrl: string; bearerToken: string; tenantId: string }) {
+  return requestJson<ArgusBalance>({ ...params, path: '/argus/balance' });
+}
+
+export interface ArgusUsage {
+  data: {
+    days: number;
+    by_action: Array<{
+      action_type: string;
+      call_count: number;
+      credits_spent: number;
+      cost_basis_total: number;
+      refunded_count: number;
+    }>;
+  };
+}
+
+export async function getArgusUsage(params: { baseUrl: string; bearerToken: string; tenantId: string; days?: number }) {
+  return requestJson<ArgusUsage>({ ...params, path: `/argus/usage?days=${params.days || 30}` });
+}
+
+export interface ArgusPricingRow {
+  action_type: string;
+  credits_per_call: number;
+  description: string | null;
+  outlier_cap_usd: number;
+  is_active: boolean;
+  updated_at: string;
+}
+
+export async function getArgusPricing(params: { baseUrl: string; bearerToken: string; tenantId: string }) {
+  return requestJson<{ data: ArgusPricingRow[] }>({ ...params, path: '/argus/pricing' });
+}
+
+export async function patchArgusPricing(params: {
+  baseUrl: string; bearerToken: string; tenantId: string;
+  actionType: string;
+  body: { credits_per_call?: number; outlier_cap_usd?: number; description?: string; is_active?: boolean };
+}) {
+  return requestJson<{ data: { action_type: string; updated: boolean } }>({
+    ...params, path: `/argus/pricing/${encodeURIComponent(params.actionType)}`, method: 'PATCH', body: params.body,
+  });
+}
+
+export interface ArgusMargin {
+  data: {
+    days: number;
+    by_action: Array<{
+      action_type: string;
+      call_count: number;
+      credits_sold: number;
+      cost_basis_total: number;
+      avg_cost_basis: number;
+      cost_ratio: number;
+      margin_ratio: number;
+      outlier_count: number;
+    }>;
+  };
+}
+
+export async function getArgusMargin(params: { baseUrl: string; bearerToken: string; tenantId: string; days?: number }) {
+  return requestJson<ArgusMargin>({ ...params, path: `/argus/margin?days=${params.days || 30}` });
+}
+
+export async function postArgusGrant(params: {
+  baseUrl: string; bearerToken: string; tenantId: string;
+  body: { tenant_id: string; credits: number; grant_type?: string; notes?: string; expires_at?: string };
+}) {
+  return requestJson<{ data: { grant_id: string } }>({
+    ...params, path: '/argus/grant', method: 'POST', body: params.body,
+  });
+}
+
 export interface ProvisionCodeResponse {
   data: {
     code: string;
