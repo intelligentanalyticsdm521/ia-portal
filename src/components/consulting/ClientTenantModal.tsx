@@ -455,7 +455,7 @@ function SectionBody({ section, state, setState, api, accent, tenantId }: {
     case "profile":                return <ProfileSection profile={state.profile} setProfile={(p) => setState((s) => ({ ...s, profile: p }))} api={api} />;
     case "owner":                  return <OwnerSection owner={state.owner} setOwner={(o) => setState((s) => ({ ...s, owner: o }))} />;
     case "lifecycle":              return <LifecycleSection v={state.lifecycle} setV={(v) => setState((s) => ({ ...s, lifecycle: v }))} />;
-    case "arion":                  return <ArionSection v={state.arion} setV={(v) => setState((s) => ({ ...s, arion: v }))} />;
+    case "arion":                  return <ArionSection v={state.arion} setV={(v) => setState((s) => ({ ...s, arion: v }))} tenantId={tenantId} />;
     case "arion_integrations":     return <ArionIntegrationsSection v={state.arion_integrations} setV={(v) => setState((s) => ({ ...s, arion_integrations: v }))} tenantId={tenantId} />;
     case "spark":                  return <SparkSection v={state.spark} setV={(v) => setState((s) => ({ ...s, spark: v }))} />;
     case "spark_welcome_email":    return <SparkWelcomeEmailSection v={state.spark_welcome_email} setV={(v) => setState((s) => ({ ...s, spark_welcome_email: v }))} profile={state.profile} owner={state.owner} />;
@@ -790,7 +790,32 @@ const ARION_VOICE_OPTIONS = BRAND_VOICE_CATALOG.map(v => v.key);
 const ARION_STYLE_OPTIONS = ["Modern", "Classic", "Minimal", "Bold"] as const;
 const ARION_PAGE_OPTIONS = ["Home", "About", "Services", "Contact", "Blog", "Shop", "Portfolio", "FAQ"];
 
-function ArionSection({ v, setV }: { v: OnboardingState["arion"]; setV: (v: OnboardingState["arion"]) => void }) {
+function ArionSection({ v, setV, tenantId }: { v: OnboardingState["arion"]; setV: (v: OnboardingState["arion"]) => void; tenantId: string }) {
+  // 2026-06-21 — skip-if-provisioned. Brandon hit this himself:
+  // ARION onboarding shouldn't re-prompt for site setup if arion.site already
+  // has a row for this tenant. Probe on mount; if found, render a compact
+  // "Already provisioned" panel with an Edit affordance instead of the full
+  // questionnaire.
+  const [existingSite, setExistingSite] = useState<{ site_id: string; domain: string | null } | null>(null);
+  const [siteCheckLoading, setSiteCheckLoading] = useState(true);
+  const [forceEdit, setForceEdit] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/v1/arion/sites?tenant_id=${encodeURIComponent(tenantId)}&primary=1`, { credentials: "include" });
+        const j = await res.json().catch(() => null);
+        const site = j?.data?.[0];
+        if (!cancelled && site?.site_id) {
+          setExistingSite({ site_id: site.site_id, domain: site.domain || site.primary_domain || null });
+        }
+      } catch { /* fall through to questionnaire */ }
+      finally { if (!cancelled) setSiteCheckLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [tenantId]);
+
   const toggleService = (i: number, val: string) => {
     const next = [...v.services]; next[i] = val; setV({ ...v, services: next });
   };
@@ -798,8 +823,43 @@ function ArionSection({ v, setV }: { v: OnboardingState["arion"]; setV: (v: Onbo
     const next = v.pages.includes(page) ? v.pages.filter((p) => p !== page) : [...v.pages, page];
     setV({ ...v, pages: next });
   };
+
+  // Show "already provisioned" panel unless user clicks Edit.
+  if (!siteCheckLoading && existingSite && !forceEdit) {
+    return (
+      <div className="space-y-3">
+        <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50 p-4">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-emerald-900">ARION site already provisioned</div>
+              <div className="text-xs text-emerald-800 mt-1">
+                {existingSite.domain ? <>Site for <code className="font-mono">{existingSite.domain}</code> is set up.</> : "A site is set up for this tenant."}
+                {" "}Skip the questionnaire and head straight to integrations — Google Business Profile, Search Console, Bing, SE Ranking.
+              </div>
+              <button
+                type="button"
+                onClick={() => setForceEdit(true)}
+                className="mt-2 text-xs font-semibold text-emerald-900 underline hover:text-emerald-700"
+              >
+                Edit ARION configuration anyway →
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
+      {existingSite && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <b>Heads up:</b> An ARION site is already provisioned for this tenant. Editing here won't re-provision —
+          it just updates the brand voice + content seeds used by future AI generation.
+          <button type="button" onClick={() => setForceEdit(false)} className="ml-2 underline font-semibold">Back to provisioned view</button>
+        </div>
+      )}
       <p className="text-xs text-slate-500">Domain + the questionnaire that drives the WP starter template, AI-generated copy, brand voice, and SE Ranking seeds. Skip anything you don't know.</p>
 
       {/* Domain */}
@@ -1014,8 +1074,21 @@ function ArionIntegrationsSection({ v, setV, tenantId }: {
   if (loading) return <div className="text-sm text-slate-500">Loading integration status…</div>;
   if (!siteId) {
     return (
-      <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-        ARION site not provisioned yet. Finish the ARION setup section first, then come back here.
+      <div className="space-y-3">
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+          <div className="text-sm font-semibold text-amber-900">No ARION site detected yet</div>
+          <div className="text-xs text-amber-800 mt-1">
+            The site provisioning may still be running, or this tenant hasn't been pushed through ARION setup yet.
+            Integrations connect after a site exists in our system.
+          </div>
+          <div className="text-xs text-amber-800 mt-2">
+            Two ways forward:
+          </div>
+          <ul className="text-xs text-amber-800 mt-1 ml-4 list-disc space-y-0.5">
+            <li>Finish the ARION setup section first (you may have skipped it)</li>
+            <li>If you just finished setup, refresh this page — provisioning takes ~30s to land in our DB</li>
+          </ul>
+        </div>
       </div>
     );
   }
@@ -1023,31 +1096,35 @@ function ArionIntegrationsSection({ v, setV, tenantId }: {
   return (
     <div className="space-y-3">
       <p className="text-xs text-slate-500">
-        Connect the data sources ARION pulls insights from. You can skip any of these and add them later from <code>ARION → Integrations</code>.
+        Connect the data sources ARION pulls insights from. <b>Each row uses YOUR own Google/Bing/Apple account</b> — you authenticate, we just read.
+        You can skip any of these and add them later from <code>ARION → Integrations</code>.
       </p>
       <div className="space-y-2">
         <Row
-          label="Google (GBP + GSC + Ads)"
-          desc="One OAuth covers Business Profile, Search Console, and Ads. Powers Local Presence + Search Performance + Conversion reports."
+          label="Google — your account (GBP + GSC + Ads)"
+          desc="One OAuth on YOUR Google account covers Business Profile, Search Console, and Ads. Powers Local Presence + Search Performance + Conversion reports."
           connected={v.gbp_connected && v.gsc_connected}
           onClick={startGoogleOAuth}
           busyKey="google"
+          cta="Connect my Google"
         />
         <Row
-          label="Bing Webmaster Tools"
-          desc="Bing search performance + indexing. Optional but recommended."
+          label="Bing — your Bing Webmaster Tools"
+          desc="Bing search performance + indexing from YOUR Bing Webmaster account. Optional but recommended."
           connected={v.bing_connected}
           onClick={() => window.open(`/app/arion/integrations?connect=bing&site_id=${siteId}`, "_blank")}
+          cta="Connect my Bing"
         />
         <Row
           label="Apple Business Connect"
-          desc="Apple Maps + Spotlight listing. Optional for service businesses."
+          desc="Apple Maps + Spotlight listing from YOUR Apple Business account. Optional for service businesses."
           connected={v.apple_claimed}
           onClick={() => window.open(`/app/arion/integrations?connect=apple&site_id=${siteId}`, "_blank")}
+          cta="Connect Apple"
         />
         <Row
-          label="SE Ranking Project"
-          desc="Keyword rank tracking + competitor analysis. Auto-creates a project tied to your domain."
+          label="SE Ranking Project (we manage this)"
+          desc="Keyword rank tracking + competitor analysis on OUR SE Ranking account — no external login needed. We auto-create a project tied to your domain."
           connected={v.se_ranking_project_created}
           onClick={createSeProject}
           busyKey="seranking"
