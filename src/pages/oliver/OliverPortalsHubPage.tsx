@@ -520,7 +520,32 @@ function CopyButton({ value, label = "Copy" }: { value: string; label?: string }
 }
 
 function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: PortalKind; status: PortalStatus; accent: string; onSaved: () => void }) {
-  const { get, post, ready } = useOliverApi();
+  const { get, post, del, ready } = useOliverApi();
+  const [unbinding, setUnbinding] = useState(false);
+
+  const unbind = async () => {
+    if (!status.custom_domain) return;
+    if (!window.confirm(`Remove ${status.custom_domain}? This unbinds it from Azure + removes the DNS validation record. Your default subdomain stays bound.`)) {
+      return;
+    }
+    setUnbinding(true);
+    try {
+      const list = await get<{ data: Array<{ domain_id: string; hostname: string; portal_kind: string }> }>("/portal-domains");
+      const rows = (list as { data?: Array<{ domain_id: string; hostname: string; portal_kind: string }> }).data || [];
+      const match = rows.find((r) => r.hostname === status.custom_domain && r.portal_kind === portalKind);
+      if (!match) {
+        window.alert("Couldn't find that domain in the list — it may have already been removed. Refreshing.");
+        onSaved();
+        return;
+      }
+      await del(`/portal-domains/${match.domain_id}`);
+      onSaved();
+    } catch (e) {
+      window.alert(`Unbind failed: ${(e as Error).message}`);
+    } finally {
+      setUnbinding(false);
+    }
+  };
   const [customDomain, setCustomDomain] = useState(status.custom_domain || "");
   const [binding, setBinding] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -613,11 +638,44 @@ function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: Po
           <div className="text-[10px] uppercase font-semibold text-slate-500 mb-1">Default subdomain</div>
           <div className="font-mono text-slate-900 text-sm">{status.subdomain_slug || "(not set)"}<span className="text-slate-400">.{portalKind}.ia-dm.com</span></div>
           <div className="text-[10px] text-slate-500 mt-1">Auto-bound. No DNS required.</div>
+          {status.subdomain_slug && (
+            <a
+              href={`https://${status.subdomain_slug}.${portalKind}.ia-dm.com`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[10px] text-blue-600 hover:underline inline-flex items-center gap-1 mt-1"
+            >
+              Open portal in new tab →
+            </a>
+          )}
         </div>
         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-          <div className="text-[10px] uppercase font-semibold text-slate-500 mb-1">Custom domain status</div>
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] uppercase font-semibold text-slate-500 mb-1">Custom domain status</div>
+            {status.custom_domain && (
+              <button
+                type="button"
+                onClick={unbind}
+                disabled={unbinding}
+                className="text-[10px] font-semibold px-2 py-0.5 rounded border border-rose-300 bg-white hover:bg-rose-50 text-rose-700 disabled:opacity-50"
+                title="Remove this custom domain (default subdomain stays bound)"
+              >
+                {unbinding ? "Removing…" : "Unbind"}
+              </button>
+            )}
+          </div>
           <div className="font-mono text-slate-900 text-sm">{status.custom_domain || "—"}</div>
           <div className="text-[10px] text-slate-500 mt-1">{status.custom_domain_status === "ready" ? "✓ Live" : status.custom_domain_status === "pending" ? "Validating…" : status.custom_domain_status === "failed" ? "Failed — check CNAME" : "Not configured"}</div>
+          {status.custom_domain && status.custom_domain_status === "ready" && (
+            <a
+              href={`https://${status.custom_domain}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[10px] text-blue-600 hover:underline inline-flex items-center gap-1 mt-1"
+            >
+              Open portal in new tab →
+            </a>
+          )}
         </div>
       </div>
 
