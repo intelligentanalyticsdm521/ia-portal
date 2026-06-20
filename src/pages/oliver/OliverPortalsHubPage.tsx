@@ -271,24 +271,12 @@ function PortalEditorModal({
   );
 }
 
-// ── Tab content stubs ─────────────────────────────────────────────────────────
+// ── Tab content (F-114 Phase 2) ──────────────────────────────────────────────
 //
-// Each tab currently links out to the existing scattered page until F-114
-// phase 2 absorbs their content inline. This keeps F-114 phase 1 shippable
-// tonight while preserving deep-link safety.
+// All four tabs are fully inline — no deep-links to legacy /portal-* pages.
+// Each tab loads its own slice on mount, edits in-place, and PATCHes on Save.
 
-function StubLink({ label, route, icon: Icon }: { label: string; route: string; icon: typeof Brush }) {
-  return (
-    <a
-      href={route}
-      className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-    >
-      <Icon className="h-3 w-3" /> {label}
-    </a>
-  );
-}
-
-// ── DesignTabStub → inline design editor (F-127) ──────────────────────────
+// ── DesignTabStub → inline design editor + live preview (F-114 Phase 2) ───
 function DesignTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind; accent: string; onSaved: () => void }) {
   const { get, patch, ready } = useOliverApi();
   const [design, setDesign] = useState<{ primary_color: string; accent_color: string; logo_url: string; button_radius: number; font_family: string; header_text: string; footer_text: string; custom_css: string } | null>(null);
@@ -320,9 +308,12 @@ function DesignTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold text-slate-900">Design</h3>
-        <p className="text-xs text-slate-600">Logo, colors, buttons, header/footer copy. Available on Standard+. Custom CSS unlocked on Pro+.</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Design</h3>
+          <p className="text-xs text-slate-600">Logo, colors, buttons, header/footer copy. Available on Standard+. Custom CSS unlocked on Pro+.</p>
+        </div>
+        <DesignLivePreview design={design} portalKind={portalKind} />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -393,7 +384,59 @@ function DesignTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind
   );
 }
 
-// ── SignupTabStub → inline signup form builder (F-127) ────────────────────
+// ── DesignLivePreview — instant rendering of color/logo/font (F-114 Phase 2)
+//
+// Pure-CSS mock of the portal header + a primary button so the user sees the
+// effect of their edits before saving. Width-constrained so it sits next to
+// the form column without stealing layout.
+function DesignLivePreview({
+  design, portalKind,
+}: {
+  design: { primary_color: string; accent_color: string; logo_url: string; button_radius: number; font_family: string; header_text: string };
+  portalKind: PortalKind;
+}) {
+  const headerText = design.header_text || `Welcome to ${portalKind === "customer" ? "your portal" : "Crew"}`;
+  return (
+    <div className="hidden md:block w-[220px] shrink-0">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Live preview</div>
+      <div
+        className="rounded-md border border-slate-200 overflow-hidden bg-white shadow-sm"
+        style={{ fontFamily: design.font_family || "Inter" }}
+      >
+        <div
+          className="px-3 py-2 flex items-center gap-2"
+          style={{ background: design.primary_color || "#1A3A4A", color: "#fff" }}
+        >
+          {design.logo_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={design.logo_url} alt="" className="h-5 w-5 rounded-sm bg-white object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          ) : (
+            <div className="h-5 w-5 rounded-sm bg-white/30" />
+          )}
+          <span className="text-[11px] font-semibold truncate">{headerText}</span>
+        </div>
+        <div className="p-3 space-y-2">
+          <div className="h-2 w-full bg-slate-200 rounded" />
+          <div className="h-2 w-2/3 bg-slate-200 rounded" />
+          <button
+            type="button"
+            className="text-[10px] font-semibold px-3 py-1.5"
+            style={{
+              background: design.accent_color || "#FEC82C",
+              color: (design.accent_color || "#FEC82C").toLowerCase() === "#fec82c" ? "#1A3A4A" : "#fff",
+              borderRadius: `${Math.max(0, Math.min(40, Number(design.button_radius) || 6))}px`,
+              border: 0,
+            }}
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── SignupTabStub → inline signup form builder (F-114 Phase 2) ────────────
 function SignupTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind; accent: string; onSaved: () => void }) {
   const { get, patch, ready } = useOliverApi();
   const [config, setConfig] = useState<SignupConfigFull | null>(null);
@@ -446,7 +489,7 @@ function SignupTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind
   );
 }
 
-// ── DomainTabStub → inline domain binding (F-127) ─────────────────────────
+// ── DomainTabStub → inline domain binding (F-114 Phase 2) ─────────────────
 function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: PortalKind; status: PortalStatus; accent: string; onSaved: () => void }) {
   const { post, ready } = useOliverApi();
   const [customDomain, setCustomDomain] = useState(status.custom_domain || "");
