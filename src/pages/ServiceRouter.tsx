@@ -23,6 +23,7 @@ import { SERVICE_CATALOG, resolveServiceStatus, type PortalService, type Service
 // ARION page below. Lazy-loading it would just add a network round-trip
 // without saving bytes.
 import { ArionPageWrapper } from '../arion/ArionPageWrapper';
+import { PageErrorBoundary } from '../components/PageErrorBoundary';
 
 // ARION pages — lazy-loaded; each becomes its own chunk
 const ArionOverviewPage = lazyNamed(() => import('./arion/ArionOverviewPage'), 'ArionOverviewPage');
@@ -371,9 +372,11 @@ export function ServiceRouter() {
     }
     if (arionPage) {
       return (
-        <Suspense fallback={<RouteLoading />}>
-          <ArionPageWrapper>{arionPage}</ArionPageWrapper>
-        </Suspense>
+        <PageErrorBoundary scope={`arion/${service.key}`}>
+          <Suspense fallback={<RouteLoading />}>
+            <ArionPageWrapper>{arionPage}</ArionPageWrapper>
+          </Suspense>
+        </PageErrorBoundary>
       );
     }
   }
@@ -447,7 +450,11 @@ export function ServiceRouter() {
       case 'argus_ia_insights': oliverPage = <ArgusIAInsightsPage />; break;
     }
     if (oliverPage) {
-      return <Suspense fallback={<RouteLoading />}>{oliverPage}</Suspense>;
+      return (
+        <PageErrorBoundary scope={`oliver/${service.key}`}>
+          <Suspense fallback={<RouteLoading />}>{oliverPage}</Suspense>
+        </PageErrorBoundary>
+      );
     }
   }
 
@@ -579,7 +586,11 @@ export function ServiceRouter() {
       default: break;
     }
     if (sparkPage) {
-      return <Suspense fallback={<RouteLoading />}>{sparkPage}</Suspense>;
+      return (
+        <PageErrorBoundary scope={`spark/${service.key}`}>
+          <Suspense fallback={<RouteLoading />}>{sparkPage}</Suspense>
+        </PageErrorBoundary>
+      );
     }
   }
 
@@ -614,7 +625,11 @@ export function ServiceRouter() {
       default: break;
     }
     if (consultingPage) {
-      return <Suspense fallback={<RouteLoading />}>{consultingPage}</Suspense>;
+      return (
+        <PageErrorBoundary scope={`consulting/${service.key}`}>
+          <Suspense fallback={<RouteLoading />}>{consultingPage}</Suspense>
+        </PageErrorBoundary>
+      );
     }
   }
 
