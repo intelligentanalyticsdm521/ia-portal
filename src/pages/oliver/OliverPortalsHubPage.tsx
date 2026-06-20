@@ -490,21 +490,66 @@ function SignupTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind
 }
 
 // ── DomainTabStub → inline domain binding (F-114 Phase 2) ─────────────────
+interface BindResponse {
+  hostname: string;
+  portal_kind: string;
+  status: string;
+  azure_status: string | null;
+  requires_manual_dns: boolean;
+  instructions: { type?: string; host?: string; target?: string; txt_name?: string; txt_value?: string } | null;
+  validation_token: string | null;
+  error: string | null;
+}
+
+function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        navigator.clipboard.writeText(value).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }).catch(() => { /* clipboard blocked — silent */ });
+      }}
+      className="text-[10px] font-semibold px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-50 text-slate-700"
+    >
+      {copied ? "Copied!" : label}
+    </button>
+  );
+}
+
 function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: PortalKind; status: PortalStatus; accent: string; onSaved: () => void }) {
   const { post, ready } = useOliverApi();
   const [customDomain, setCustomDomain] = useState(status.custom_domain || "");
   const [binding, setBinding] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [bindResult, setBindResult] = useState<BindResponse | null>(null);
 
   const bind = async () => {
-    if (!customDomain.match(/^[a-z0-9.-]+\.[a-z]{2,}$/i)) {
+    // Permissive hostname regex matches what the backend accepts. Normalize
+    // to lowercase before validating so users typing "Portal.Acme.com" work.
+    const normalized = customDomain.toLowerCase().trim();
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(normalized)) {
       setMsg("Enter a valid hostname like portal.acme.com");
       return;
     }
-    setBinding(true); setMsg(null);
+    if (normalized.endsWith(".ia-dm.com")) {
+      setMsg("That's an IA hostname — use the default subdomain card above instead.");
+      return;
+    }
+    setBinding(true); setMsg(null); setBindResult(null);
     try {
-      await post(`/portal-domains/custom`, { portal_kind: portalKind, hostname: customDomain });
-      setMsg("Binding submitted — Azure is validating the CNAME (1-5 min).");
+      const r = await post<{ data: BindResponse }>(`/portal-domains/custom`, { portal_kind: portalKind, hostname: normalized });
+      const data = (r as { data?: BindResponse })?.data ?? (r as unknown as BindResponse);
+      setBindResult(data);
+      if (data?.error) {
+        setMsg(`Error: ${data.error}`);
+      } else if (data?.requires_manual_dns) {
+        setMsg("Add the DNS records below at your provider, then refresh — Azure will validate within 1–5 min.");
+      } else {
+        setMsg("Binding submitted — Azure is validating (1–5 min).");
+      }
       onSaved();
     } catch (e) {
       setMsg(`Error: ${(e as Error).message}`);
@@ -538,13 +583,14 @@ function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: Po
       <div className="rounded-md border border-slate-200 bg-white p-3">
         <div className="text-[10px] uppercase font-semibold text-slate-500 mb-2">Bind a custom domain (Pro+)</div>
         <div className="text-[11px] text-slate-600 mb-2">
-          Add a CNAME at your DNS provider: <code className="font-mono bg-slate-100 px-1">your-host → {portalKind === "customer" ? "<customer-portal>.azurestaticapps.net" : "<crew-portal>.azurestaticapps.net"}</code> then enter the hostname here.
+          Enter the hostname you want to use (e.g. <code className="font-mono bg-slate-100 px-1">portal.acme.com</code>).
+          After you click Bind, the exact CNAME + TXT records you need to add at your DNS provider will appear below — with Copy buttons.
         </div>
         <div className="flex items-center gap-2">
           <input
             type="text"
             value={customDomain}
-            onChange={(e) => setCustomDomain(e.target.value.toLowerCase().trim())}
+            onChange={(e) => setCustomDomain(e.target.value)}
             placeholder={`portal.yourcompany.com`}
             className="flex-1 text-xs px-2 py-1.5 rounded border border-slate-300 font-mono"
             disabled={!ready}
@@ -554,12 +600,46 @@ function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: Po
           </button>
         </div>
         {msg && <div className="text-[11px] text-slate-700 mt-2">{msg}</div>}
+
+        {bindResult && (bindResult.instructions || bindResult.validation_token) && (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 space-y-2">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-900">Add these DNS records</div>
+            {bindResult.instructions?.host && bindResult.instructions?.target && (
+              <div className="grid grid-cols-[60px_1fr_auto] items-center gap-2 text-[11px]">
+                <span className="font-semibold text-slate-600">CNAME</span>
+                <code className="font-mono bg-white border border-amber-200 rounded px-2 py-1 break-all">{bindResult.instructions.host}</code>
+                <CopyButton value={bindResult.instructions.host} />
+                <span />
+                <code className="font-mono bg-white border border-amber-200 rounded px-2 py-1 break-all">→ {bindResult.instructions.target}</code>
+                <CopyButton value={bindResult.instructions.target} />
+              </div>
+            )}
+            {bindResult.instructions?.txt_name && bindResult.instructions?.txt_value && (
+              <div className="grid grid-cols-[60px_1fr_auto] items-center gap-2 text-[11px]">
+                <span className="font-semibold text-slate-600">TXT</span>
+                <code className="font-mono bg-white border border-amber-200 rounded px-2 py-1 break-all">{bindResult.instructions.txt_name}</code>
+                <CopyButton value={bindResult.instructions.txt_name} />
+                <span />
+                <code className="font-mono bg-white border border-amber-200 rounded px-2 py-1 break-all">{bindResult.instructions.txt_value}</code>
+                <CopyButton value={bindResult.instructions.txt_value} />
+              </div>
+            )}
+            {bindResult.validation_token && !bindResult.instructions?.txt_value && (
+              <div className="grid grid-cols-[60px_1fr_auto] items-center gap-2 text-[11px]">
+                <span className="font-semibold text-slate-600">Token</span>
+                <code className="font-mono bg-white border border-amber-200 rounded px-2 py-1 break-all">{bindResult.validation_token}</code>
+                <CopyButton value={bindResult.validation_token} />
+              </div>
+            )}
+            <div className="text-[10px] text-amber-900/70">DNS propagation typically takes 1–5 min; refresh this page once you've added the records.</div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-// ── WorkflowTabStub → inline workflow rules (F-127) ───────────────────────
+// ── WorkflowTabStub → inline workflow rules (F-114 Phase 2) ───────────────
 function WorkflowTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind; accent: string; onSaved: () => void }) {
   const { get, patch, ready } = useOliverApi();
   const [wf, setWf] = useState<{ reschedule_mode: string; reschedule_advance_notice_hours: number; reschedule_cutoff_hours: number; reschedule_max_count: number; booking_auto_create_invoice: string; booking_auto_send_confirmation: boolean; booking_auto_assign_worker: string } | null>(null);
