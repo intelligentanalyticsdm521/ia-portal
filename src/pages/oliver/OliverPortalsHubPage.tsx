@@ -520,11 +520,52 @@ function CopyButton({ value, label = "Copy" }: { value: string; label?: string }
 }
 
 function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: PortalKind; status: PortalStatus; accent: string; onSaved: () => void }) {
-  const { post, ready } = useOliverApi();
+  const { get, post, ready } = useOliverApi();
   const [customDomain, setCustomDomain] = useState(status.custom_domain || "");
   const [binding, setBinding] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [bindResult, setBindResult] = useState<BindResponse | null>(null);
+  const [liveStatus, setLiveStatus] = useState<string | null>(null);
+
+  // Poll /portal-domains/status while a bind is in-flight so the user sees
+  // the row flip from "validating…" → "ready" without manually refreshing.
+  // Azure cert issuance usually takes 1–5 min after DNS is in place; we
+  // poll every 20s and stop on terminal state (ready / failed) or after
+  // 5 min (15 polls) to avoid burning quota forever.
+  useEffect(() => {
+    if (!bindResult?.hostname || !ready) return;
+    if (bindResult.status === "ready" || bindResult.status === "failed") {
+      setLiveStatus(bindResult.status);
+      return;
+    }
+    let polls = 0;
+    let cancelled = false;
+    const tick = async () => {
+      polls += 1;
+      try {
+        const r = await get<{ data?: { status?: string; ok?: boolean } }>(
+          `/portal-domains/status?hostname=${encodeURIComponent(bindResult.hostname)}&portal_kind=${bindResult.portal_kind}`
+        );
+        const azure = r?.data?.status || null;
+        if (cancelled) return;
+        if (azure === "Ready") {
+          setLiveStatus("ready");
+          onSaved();
+          return;
+        }
+        if (azure === "Failed") {
+          setLiveStatus("failed");
+          onSaved();
+          return;
+        }
+        if (polls < 15) setTimeout(tick, 20_000);
+      } catch {
+        if (polls < 15 && !cancelled) setTimeout(tick, 20_000);
+      }
+    };
+    const id = setTimeout(tick, 20_000);
+    return () => { cancelled = true; clearTimeout(id); };
+  }, [bindResult, get, ready, onSaved]);
 
   const bind = async () => {
     // Permissive hostname regex matches what the backend accepts. Normalize
@@ -603,7 +644,18 @@ function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: Po
 
         {bindResult && (bindResult.instructions || bindResult.validation_token) && (
           <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 space-y-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-900">Add these DNS records</div>
+            <div className="flex items-center justify-between">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-900">Add these DNS records</div>
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase border ${
+                  liveStatus === "ready" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                  liveStatus === "failed" ? "bg-rose-50 text-rose-700 border-rose-200" :
+                  "bg-amber-100 text-amber-800 border-amber-300"
+                }`}
+              >
+                {liveStatus === "ready" ? "✓ Live" : liveStatus === "failed" ? "Failed" : "Validating…"}
+              </span>
+            </div>
             {bindResult.instructions?.host && bindResult.instructions?.target && (
               <div className="grid grid-cols-[60px_1fr_auto] items-center gap-2 text-[11px]">
                 <span className="font-semibold text-slate-600">CNAME</span>
