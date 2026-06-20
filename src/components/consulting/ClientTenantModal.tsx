@@ -79,14 +79,18 @@ interface OnboardingState {
     services: string[];        // up to 3
     target_audience: string;
     location: string;          // city/region
-    brand_voice: "Professional" | "Friendly" | "Bold" | "Premium" | "Casual";
+    // 2026-06-21 — multi-select, max 3, from 12-voice catalog. Was single value.
+    // Free-text custom voice can be appended (joined with ',' on save).
+    brand_voice: string[];
+    brand_voice_custom: string;
     style_preference: "Modern" | "Classic" | "Minimal" | "Bold";
     pages: string[];           // multi-select
     tagline: string;
   };
   spark: {
     sender_domain: string;
-    brand_voice: string;
+    brand_voice: string[];
+    brand_voice_custom: string;
     contact_import_method: "csv" | "paste" | "sync" | "later" | "";
     send_time_preference: "morning" | "midday" | "afternoon" | "evening" | "";
     first_campaign_goal: string;
@@ -142,12 +146,12 @@ const EMPTY_STATE: OnboardingState = {
     domain_choice: "", domain: "", has_existing_website: false,
     industry: "", description: "", services: ["", "", ""],
     target_audience: "", location: "",
-    brand_voice: "Professional", style_preference: "Modern",
+    brand_voice: ["Professional"], brand_voice_custom: "", style_preference: "Modern",
     pages: ["Home", "About", "Services", "Contact"],
     tagline: "",
   },
   spark: {
-    sender_domain: "", brand_voice: "",
+    sender_domain: "", brand_voice: [], brand_voice_custom: "",
     contact_import_method: "", send_time_preference: "",
     first_campaign_goal: "", audience_size_estimate: "",
   },
@@ -752,7 +756,37 @@ const ARION_INDUSTRY_OPTIONS: { value: string; label: string }[] = [
   { value: "creative", label: "Creative / agency / portfolio" },
   { value: "other", label: "Other" },
 ];
-const ARION_VOICE_OPTIONS = ["Professional", "Friendly", "Bold", "Premium", "Casual"] as const;
+// 2026-06-21 — 12-voice catalog with descriptions + 2-sentence examples.
+// Used as multi-select (max 3) across ARION + SPARK onboarding sections.
+// Powers My Brand voice profile (Q4) when that ships — same shape.
+export const BRAND_VOICE_CATALOG: { key: string; description: string; example: string }[] = [
+  { key: "Professional", description: "Polished, credible, business-formal. Trust signals dominate.",
+    example: "Our team delivers measured solutions backed by ten years of industry results. Every engagement begins with a thorough discovery to define success." },
+  { key: "Friendly", description: "Warm and approachable. Reads like a neighbor.",
+    example: "Hey there! We're so glad you're here — let's figure out the right fit for what you need. No pressure, just real help." },
+  { key: "Knowledgeable", description: "Expert-led and educational. Teaches as it sells.",
+    example: "Three factors typically drive the cost difference here: material grade, install complexity, and warranty duration. We'll walk you through each before quoting." },
+  { key: "Bold", description: "Confident and direct. Doesn't hedge.",
+    example: "Stop guessing. We fix it right the first time, or you don't pay. That's it." },
+  { key: "Premium", description: "Refined, exclusive, quality-forward. Luxury-adjacent.",
+    example: "Discerning clients trust our atelier for bespoke results that endure. Every detail is considered; nothing is rushed." },
+  { key: "Casual", description: "Conversational and informal. Reads like a text message.",
+    example: "We get it — life's busy. Tell us what's broken and we'll come fix it. Easy." },
+  { key: "Playful", description: "Witty and fun. Doesn't take itself too seriously.",
+    example: "Plumbing emergencies always happen at 2 AM on a holiday weekend. Lucky for you, we drink a lot of coffee." },
+  { key: "Authoritative", description: "Commanding and decisive. The expert in the room.",
+    example: "This is what works, and here's why. Forty years of practice has taught us exactly which approaches save you money and which cost you in the long run." },
+  { key: "Warm", description: "Caring and empathetic. Feelings first, then facts.",
+    example: "Going through a renovation can be overwhelming — we know. Our promise is that you'll never feel left in the dark, and we'll treat your home like our own." },
+  { key: "Witty", description: "Clever wordplay and humor. Smart without being snarky.",
+    example: "We've been called the 'WD-40 of accounting' — applies to anything that's squeaking. Numbers, tax forms, that quarterly meeting you've been dreading." },
+  { key: "Direct", description: "Plain-spoken and efficient. No fluff, no jargon.",
+    example: "Quote in 24 hours. Work starts within a week. Done in three. Pay when satisfied." },
+  { key: "Inspirational", description: "Aspirational and visionary. Frames product as part of a bigger story.",
+    example: "Your business deserves to be seen. We help small operations punch above their weight by giving you the tools the big guys take for granted." },
+];
+
+const ARION_VOICE_OPTIONS = BRAND_VOICE_CATALOG.map(v => v.key);
 const ARION_STYLE_OPTIONS = ["Modern", "Classic", "Minimal", "Bold"] as const;
 const ARION_PAGE_OPTIONS = ["Home", "About", "Services", "Contact", "Blog", "Shop", "Portfolio", "FAQ"];
 
@@ -833,19 +867,12 @@ function ArionSection({ v, setV }: { v: OnboardingState["arion"]; setV: (v: Onbo
       <Field label="Primary location / service area" value={v.location} onChange={(l) => setV({ ...v, location: l })}
         placeholder="Marshalltown, IA + surrounding 30 mi" />
 
-      {/* Brand voice */}
-      <div>
-        <label className="block text-xs font-semibold text-slate-700 mb-1">Brand voice</label>
-        <div className="flex flex-wrap gap-1.5">
-          {ARION_VOICE_OPTIONS.map((vo) => (
-            <button key={vo} type="button"
-              onClick={() => setV({ ...v, brand_voice: vo })}
-              className={`px-3 py-1.5 rounded text-xs font-semibold border ${v.brand_voice === vo ? "border-sky-500 bg-sky-50 text-sky-900" : "border-slate-300 bg-white text-slate-700"}`}>
-              {vo}
-            </button>
-          ))}
-        </div>
-      </div>
+      <BrandVoicePicker
+        selected={v.brand_voice}
+        custom={v.brand_voice_custom}
+        onSelectedChange={(arr) => setV({ ...v, brand_voice: arr })}
+        onCustomChange={(s) => setV({ ...v, brand_voice_custom: s })}
+      />
 
       {/* Style preference */}
       <div>
@@ -1115,7 +1142,16 @@ ${businessName}`;
           <Field label="Subject line" value={v.subject} onChange={(s) => setV({ ...v, subject: s })} hint="Use {{business_name}} or {{first_name}} to personalize" />
           <Field label="Preview text" value={v.preview_text} onChange={(s) => setV({ ...v, preview_text: s })} hint="Inbox snippet under the subject line." />
           <div>
-            <label className="text-xs font-semibold text-slate-700">Email body</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-slate-700">Email body</label>
+              <MergeTagDropdown
+                context="spark_welcome"
+                onInsert={(tag) => {
+                  const cur = v.template_choice === "system_default" ? defaultBody : (v.body || defaultBody);
+                  setV({ ...v, body: cur + tag, template_choice: "custom" });
+                }}
+              />
+            </div>
             <textarea
               value={v.template_choice === "system_default" ? defaultBody : (v.body || defaultBody)}
               onChange={(e) => setV({ ...v, body: e.target.value, template_choice: "custom" })}
@@ -1124,9 +1160,7 @@ ${businessName}`;
               readOnly={v.template_choice === "system_default"}
             />
             <p className="text-[11px] text-slate-500 mt-1">
-              Type <code>{"{{first_name}}"}</code> or <code>{"{{business_name}}"}</code> anywhere to personalize. Falls back to <em>there</em> if a contact has no first name.
-              <br />
-              <span className="text-slate-400">A full merge-tag picker (type {"{{"} to browse all available fields) is coming in the next build.</span>
+              Click <b>Insert merge tag ▾</b> to add fields like first name, business name. Falls back to <em>there</em> when a contact has no first name.
             </p>
           </div>
         </>
@@ -1201,8 +1235,13 @@ function SparkSection({ v, setV }: { v: OnboardingState["spark"]; setV: (v: Onbo
         <div className="text-[10px] text-slate-500 mt-1">Used as default for "schedule send" in campaign composer (in your time zone).</div>
       </div>
 
-      <Field label="Brand voice for AI Writer" value={v.brand_voice} onChange={(b) => setV({ ...v, brand_voice: b })}
-        placeholder="Friendly + concise, never use exclamation points, always sign off with the owner's name" hint="Used by SPARK's AI campaign writer + STELLA optimizations" />
+      <BrandVoicePicker
+        selected={v.brand_voice}
+        custom={v.brand_voice_custom}
+        onSelectedChange={(arr) => setV({ ...v, brand_voice: arr })}
+        onCustomChange={(s) => setV({ ...v, brand_voice_custom: s })}
+        hint="Used by SPARK's AI campaign writer + STELLA optimizations"
+      />
 
       <div>
         <label className="block text-xs font-semibold text-slate-700 mb-1">Goal of your first campaign (optional)</label>
@@ -1423,6 +1462,140 @@ function ConsultingModeShell({ tenantId, tenantName, onClose }: { tenantId: stri
 }
 
 // ─── Shared field components ─────────────────────────────────────────────
+
+// 2026-06-21 — Brand voice multi-select picker.
+// Max 3 voices from BRAND_VOICE_CATALOG + optional custom free-text.
+// Cards show voice name, description, and a 2-sentence example.
+function BrandVoicePicker({ selected, custom, onSelectedChange, onCustomChange, hint }: {
+  selected: string[];
+  custom: string;
+  onSelectedChange: (s: string[]) => void;
+  onCustomChange: (s: string) => void;
+  hint?: string;
+}) {
+  const MAX = 3;
+  function toggle(key: string) {
+    if (selected.includes(key)) {
+      onSelectedChange(selected.filter((k) => k !== key));
+    } else if (selected.length < MAX) {
+      onSelectedChange([...selected, key]);
+    }
+  }
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-slate-700 mb-1">
+        Brand voice <span className="text-slate-400 font-normal">— pick up to 3</span>
+      </label>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        {BRAND_VOICE_CATALOG.map((v) => {
+          const active = selected.includes(v.key);
+          const disabled = !active && selected.length >= MAX;
+          return (
+            <button
+              key={v.key}
+              type="button"
+              onClick={() => toggle(v.key)}
+              disabled={disabled}
+              className={`text-left rounded-lg border-2 p-2.5 transition ${
+                active ? "border-sky-500 bg-sky-50" :
+                disabled ? "border-slate-200 bg-slate-50 opacity-40 cursor-not-allowed" :
+                "border-slate-200 bg-white hover:border-slate-400"
+              }`}
+            >
+              <div className="flex items-start gap-2">
+                <input type="checkbox" readOnly checked={active} disabled={disabled} className="mt-1" />
+                <div className="flex-1">
+                  <div className="text-sm font-semibold text-slate-900">{v.key}</div>
+                  <div className="text-xs text-slate-600 mt-0.5">{v.description}</div>
+                  <div className="text-[11px] italic text-slate-500 mt-1 leading-snug">"{v.example}"</div>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-2">
+        <label className="block text-xs font-semibold text-slate-700 mb-1">Custom voice notes (optional)</label>
+        <input
+          type="text"
+          value={custom}
+          onChange={(e) => onCustomChange(e.target.value)}
+          placeholder="e.g. Sign off as 'The Team' not 'Owner Name', avoid exclamation points"
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        />
+      </div>
+      {hint && <div className="text-[10px] text-slate-500 mt-1">{hint}</div>}
+    </div>
+  );
+}
+
+// 2026-06-21 — Curated, per-context merge-tag picker.
+// Triggered by "{{" in an input. Shows friendly field names + descriptions.
+// Subscription-gated: only shows fields the tenant has product access to.
+export const MERGE_TAG_CATALOG: Record<string, { tag: string; friendly: string; description: string; product?: "spark" | "oliver" | "arion" }[]> = {
+  spark_welcome: [
+    { tag: "{{first_name}}", friendly: "Contact First Name", description: "Renders 'there' when blank" },
+    { tag: "{{last_name}}", friendly: "Contact Last Name", description: "Renders blank when missing" },
+    { tag: "{{business_name}}", friendly: "Your Business Name", description: "From your tenant profile" },
+    { tag: "{{sender_name}}", friendly: "Sender Name", description: "The 'From' name on this email" },
+    { tag: "{{unsubscribe_link}}", friendly: "Unsubscribe Link", description: "Required by law for marketing emails" },
+  ],
+  oliver_overdue: [
+    { tag: "{{customer_name}}", friendly: "Customer Name", description: "Their first name (preferred)", product: "oliver" },
+    { tag: "{{balance_due}}", friendly: "Balance Due", description: "Formatted as $X.XX", product: "oliver" },
+    { tag: "{{days_overdue}}", friendly: "Days Overdue", description: "Integer", product: "oliver" },
+    { tag: "{{pay_link}}", friendly: "Pay Link", description: "Stripe-hosted invoice URL", product: "oliver" },
+    { tag: "{{business_name}}", friendly: "Your Business Name", description: "From your tenant profile" },
+  ],
+  oliver_appointment: [
+    { tag: "{{customer_name}}", friendly: "Customer Name", description: "First name", product: "oliver" },
+    { tag: "{{appointment_date}}", friendly: "Appointment Date", description: "Friendly format (Mon, Jun 24)", product: "oliver" },
+    { tag: "{{appointment_time}}", friendly: "Appointment Time", description: "12-hour clock", product: "oliver" },
+    { tag: "{{worker_name}}", friendly: "Worker Name", description: "Tech assigned", product: "oliver" },
+    { tag: "{{business_name}}", friendly: "Your Business Name", description: "From your tenant profile" },
+  ],
+};
+
+// 2026-06-21 — Inline merge-tag dropdown. Opens a panel with curated
+// per-context fields. Clicking a field inserts the canonical tag at the
+// end of the current value via onInsert.
+function MergeTagDropdown({ context, onInsert }: {
+  context: keyof typeof MERGE_TAG_CATALOG;
+  onInsert: (tag: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const tags = MERGE_TAG_CATALOG[context] || [];
+  return (
+    <div className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="text-xs font-semibold text-sky-700 hover:text-sky-900"
+      >
+        Insert merge tag ▾
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-1 w-72 rounded-lg border border-slate-200 bg-white shadow-lg z-10">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500 px-3 pt-2">Available fields</div>
+          <div className="max-h-72 overflow-auto py-1">
+            {tags.map((t) => (
+              <button
+                key={t.tag}
+                type="button"
+                onClick={() => { onInsert(t.tag); setOpen(false); }}
+                className="w-full text-left px-3 py-1.5 hover:bg-sky-50"
+              >
+                <div className="text-xs font-semibold text-slate-900">{t.friendly}</div>
+                <div className="text-[10px] text-slate-500">{t.description}</div>
+                <code className="text-[10px] text-sky-700">{t.tag}</code>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Field({ label, value, onChange, type = "text", placeholder, hint, tip }: {
   label: string; value: string; onChange: (v: string) => void;
