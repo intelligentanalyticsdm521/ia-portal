@@ -1,4 +1,4 @@
-// SparkLeadsPage — B2B Lead Inbox (F-LG.2 + F-LG.5 + F-LG.7 + F-LG.8 + F-LG.10)
+// SparkLeadsPage — B2B Lead Inbox (F-LG.2 + F-LG.5 + F-LG.6.6 + F-LG.7 + F-LG.8 + F-LG.10)
 //
 // Live page replacing the F-124 "Coming Soon" pause. Lists leads from the
 // existing /api/v1/leads endpoint with filter chips (All / Hot / Warm /
@@ -11,9 +11,16 @@
 //     again by this tenant
 //   • Same-contact-diff-business review_flag surfaces as an amber pill
 //
+// F-LG.6.6 Since-last-visit pill: top of page renders "🔔 X new leads
+// since your last visit" when the API reports meta.since_last_visit_count
+// > 0. Pill dismisses on click and ALSO auto-dismisses when the user
+// clicks any lead row (clear engagement signal). Both paths fire
+// POST /api/v1/leadgen/inbox/visit to reset the server-side timestamp so
+// the next load returns 0 until new scheduled-run leads arrive.
+//
 // Bulk actions land in F-LG.2.4 (next pass). Detail drawer in F-LG.2.6.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Sparkles, MoreVertical, Search, X, CheckCircle2 } from "lucide-react";
+import { Sparkles, MoreVertical, Search, X, CheckCircle2, Bell } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 
@@ -62,7 +69,16 @@ interface Lead {
 
 interface LeadListResponse {
   data: Lead[];
-  meta: { total: number; page: number; per_page: number; total_pages: number };
+  meta: {
+    total: number;
+    page: number;
+    per_page: number;
+    total_pages: number;
+    // F-LG.6.6 — count of new lumen.lead rows since the caller's
+    // last_leads_inbox_visit_at. 0 when the user has no prior visit
+    // record (first ever load) or when the column is null.
+    since_last_visit_count?: number;
+  };
 }
 
 const TIER_BADGE: Record<Tier, string> = {
@@ -91,6 +107,12 @@ export function SparkLeadsPage() {
     try { return new Set(JSON.parse(sessionStorage.getItem("leadgen_dismissed_runs") || "[]")); }
     catch { return new Set(); }
   });
+  // F-LG.6.6: "X new leads since your last visit" pill state. The count comes
+  // from the leads list response (meta.since_last_visit_count). Once the user
+  // dismisses it OR clicks a lead row, we POST /leadgen/inbox/visit and zero
+  // it locally so it doesn't re-flash until the next page load.
+  const [sinceLastVisit, setSinceLastVisit] = useState<number>(0);
+  const [visitPillDismissed, setVisitPillDismissed] = useState<boolean>(false);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -104,6 +126,12 @@ export function SparkLeadsPage() {
       const r = await get<LeadListResponse>(`/api/v1/leads?${qs.toString()}`);
       setLeads(r.data || []);
       setMeta(r.meta || null);
+      // F-LG.6.6: only set the count on the initial (page=1) load — paginating
+      // shouldn't re-display the pill, and changing filters shouldn't either.
+      if (page === 1 && tierFilter === "all") {
+        setSinceLastVisit(r.meta?.since_last_visit_count ?? 0);
+        setVisitPillDismissed(false);
+      }
     } catch (err) {
       setError(err);
     } finally {
@@ -133,6 +161,17 @@ export function SparkLeadsPage() {
     setDismissedRunIds(next);
     try { sessionStorage.setItem("leadgen_dismissed_runs", JSON.stringify([...next])); } catch { /* ignore */ }
   };
+
+  // F-LG.6.6: dismiss the since-last-visit pill AND tell the server we just
+  // visited so the count resets on next load. Idempotent — safe to call
+  // multiple times (server MERGEs on (tenant_id, user_id)).
+  const dismissVisitPill = useCallback(() => {
+    if (visitPillDismissed) return;
+    setVisitPillDismissed(true);
+    setSinceLastVisit(0);
+    // Fire and forget — UI shouldn't block on the visit recording.
+    post("/api/v1/leadgen/inbox/visit", {}).catch(() => { /* ignore */ });
+  }, [post, visitPillDismissed]);
 
   const filteredLeads = useMemo(() => {
     if (!search.trim()) return leads;
@@ -198,6 +237,28 @@ export function SparkLeadsPage() {
   return (
     <SparkPageShell title="Lead Inbox" subtitle="B2B leads — discovery, review, and CRM hand-off" error={error} loading={loading}>
       <div className="p-6 space-y-4">
+        {/* F-LG.6.6: "X new leads since your last visit" pill. Renders only
+            when meta.since_last_visit_count > 0 AND the user hasn't dismissed
+            it this session. Click resets the server timestamp via
+            POST /leadgen/inbox/visit; clicking any lead row does the same
+            (handled in <tr onClick={dismissVisitPill}> below). */}
+        {sinceLastVisit > 0 && !visitPillDismissed && (
+          <button
+            type="button"
+            onClick={dismissVisitPill}
+            className="group inline-flex items-center gap-2 rounded-full bg-[#EF6C33]/10 px-4 py-1.5 text-sm font-semibold text-[#B84817] ring-1 ring-[#EF6C33]/30 hover:bg-[#EF6C33]/15 transition"
+            title="Mark as seen"
+          >
+            <Bell className="h-3.5 w-3.5" />
+            <span>
+              {sinceLastVisit === 1
+                ? "1 new lead since your last visit"
+                : `${sinceLastVisit} new leads since your last visit`}
+            </span>
+            <X className="h-3.5 w-3.5 opacity-60 group-hover:opacity-100" />
+          </button>
+        )}
+
         {/* F-LG.10: Run Summary honesty pane — shown after a sweep completes.
             Locked Brandon 2026-06-19: customer must see exactly what was
             delivered vs. skipped (already-in-inbox, no-email, blocklisted)
@@ -309,7 +370,11 @@ export function SparkLeadsPage() {
                   (l.score_findability != null ? ` · Findability ${l.score_findability}` : "") +
                   (l.score_enrichment_depth != null ? ` · Enrich ${l.score_enrichment_depth}` : "");
                 return (
-                  <tr key={l.id} className="hover:bg-slate-50 relative">
+                  <tr
+                    key={l.id}
+                    className="hover:bg-slate-50 relative"
+                    onClick={dismissVisitPill}
+                  >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div>
