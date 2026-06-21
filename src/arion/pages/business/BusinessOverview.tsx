@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { Card, StatCard, InfoCard, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
@@ -11,6 +12,14 @@ export function BusinessOverview() {
   const { data, loading, refetch } = useArionData(
     () => activeSiteId ? arionApi.getGbpBusiness(activeSiteId).catch(e => ({ error: e.message })) : Promise.resolve(null),
     [activeSiteId]
+  );
+
+  // 2026-06-20 — pull the tenant-wide multi-location count so we can hint at
+  // the new Locations page when more than one listing was auto-imported.
+  // Backend: GET /arion/business-locations (commit c296d6b).
+  const { data: locData } = useArionData(
+    () => arionApi.listBusinessLocations().catch(() => null),
+    [activeSiteId],
   );
 
   const [editing, setEditing] = React.useState(false);
@@ -26,6 +35,8 @@ export function BusinessOverview() {
   const business = d?.business || {};
   const metrics = d?.metrics || {};
   const daily = (d?.dailyBreakdown || []) as any[];
+  const locCount: number = Array.isArray((locData as any)?.data) ? (locData as any).data.length : 0;
+  const primaryLocId: string | null = (locData as any)?.meta?.primary || null;
 
   const openEdit = () => {
     setForm({
@@ -136,6 +147,18 @@ export function BusinessOverview() {
         )}
         {toast && <div style={{ marginTop: 10, fontSize: 12, color: '#5A7A8A' }}>{toast}</div>}
       </Card>
+
+      {locCount > 1 && (
+        <Card title="Multiple business locations detected">
+          <p style={{ margin: 0, marginBottom: 10, fontSize: 13, color: '#334155' }}>
+            {locCount} Google Business Profile location{locCount === 1 ? '' : 's'} are imported for this tenant.
+            {primaryLocId ? ' The current primary anchors the Overview, Reviews, and Insights tabs.' : ' Pick a primary to anchor the Overview, Reviews, and Insights tabs.'}
+          </p>
+          <Link to="/app/services/arion_business_locations" className="abtn abtn-sky" style={{ textDecoration: 'none', display: 'inline-block' }}>
+            Manage locations →
+          </Link>
+        </Card>
+      )}
 
       {trend.length > 0 && (
         <Card title="30-day trend">

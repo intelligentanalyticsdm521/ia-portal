@@ -114,6 +114,10 @@ import {
   listGbpLocations as portalListGbpLocations,
   selectGbpLocation as portalSelectGbpLocation,
   disconnectGbp as portalDisconnectGbp,
+  // Onboarding V3 Phase 3 — tenant-scoped multi-location store
+  listBusinessLocations as portalListBusinessLocations,
+  setBusinessLocationPrimary as portalSetBusinessLocationPrimary,
+  syncBusinessLocations as portalSyncBusinessLocations,
   getPluginContentPace as portalGetPluginContentPace,
   getPluginContentAgeDist as portalGetPluginContentAgeDist,
   getPluginContentAuthors as portalGetPluginContentAuthors,
@@ -442,6 +446,10 @@ export function useArionContext() {
       async listGbpLocations(siteId: string) { const b = await base(); return portalListGbpLocations({ ...b, siteId }); },
       async selectGbpLocation(siteId: string, locationName: string) { const b = await base(); return portalSelectGbpLocation({ ...b, siteId, locationName }); },
       async disconnectGbp(siteId: string) { const b = await base(); return portalDisconnectGbp({ ...b, siteId }); },
+      // ── Onboarding V3 Phase 3 — tenant-wide multi-location store ──
+      async listBusinessLocations() { const b = await base(); return portalListBusinessLocations(b); },
+      async setBusinessLocationPrimary(locationId: string) { const b = await base(); return portalSetBusinessLocationPrimary({ ...b, locationId }); },
+      async syncBusinessLocations(siteId?: string | null) { const b = await base(); return portalSyncBusinessLocations({ ...b, siteId: siteId || null }); },
       async getPluginContentPace(siteId: string) { const b = await base(); return portalGetPluginContentPace({ ...b, siteId }); },
       async getPluginContentAgeDist(siteId: string) { const b = await base(); return portalGetPluginContentAgeDist({ ...b, siteId }); },
       async getPluginContentAuthors(siteId: string) { const b = await base(); return portalGetPluginContentAuthors({ ...b, siteId }); },

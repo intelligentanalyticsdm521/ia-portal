@@ -253,6 +253,7 @@ const ARION_NAV: SubNavConfig = {
       label: "Business Profile", icon: MapPin, collapsible: true, sectionId: "business",
       items: [
         { key: "arion_business_overview", label: "Overview", route: "/app/services/arion_business_overview" },
+        { key: "arion_business_locations", label: "Locations", route: "/app/services/arion_business_locations" },
         { key: "arion_business_reviews", label: "Reviews", route: "/app/services/arion_business_reviews" },
         { key: "arion_business_insights", label: "Insights", route: "/app/services/arion_business_insights" },
         { key: "arion_business_posts", label: "Posts", route: "/app/services/arion_business_posts", gated: true },

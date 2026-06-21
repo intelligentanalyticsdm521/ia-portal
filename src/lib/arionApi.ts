@@ -1760,6 +1760,70 @@ export async function disconnectGbp(p: { baseUrl: string; bearerToken: string; t
   });
 }
 
+// ── Onboarding V3 Phase 3 — tenant-scoped GBP multi-location store ─────────
+// Backend commit c296d6b. The legacy per-site selectGbpLocation path keeps
+// working (picks which location a single SITE is anchored to). These new
+// endpoints expose the tenant-wide row-per-location store so a tenant can
+// see + manage every GBP location they own and pick which one is primary.
+export interface BusinessLocation {
+  location_id: string;
+  tenant_id: string;
+  site_id: string | null;
+  gbp_account_id: string | null;
+  gbp_location_id: string | null;
+  location_name: string | null;
+  display_name: string | null;
+  address_line1: string | null;
+  city: string | null;
+  region: string | null;
+  postal_code: string | null;
+  country: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  phone: string | null;
+  website: string | null;
+  primary_category: string | null;
+  place_id: string | null;
+  review_uri: string | null;
+  is_primary: boolean | number;
+  is_verified: boolean | number;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listBusinessLocations(p: { baseUrl: string; bearerToken: string; tenantId: string }) {
+  return requestJson<{
+    data: BusinessLocation[];
+    meta: { tenant_id: string; count: number; primary: string | null; timestamp: string };
+  }>({ ...p, path: '/arion/business-locations' });
+}
+
+export async function setBusinessLocationPrimary(p: { baseUrl: string; bearerToken: string; tenantId: string; locationId: string }) {
+  return requestJson<{
+    data: { primary_location_id: string; updated: boolean };
+    meta: { tenant_id: string; timestamp: string };
+  }>({
+    ...p,
+    method: 'POST',
+    path: `/arion/business-locations/${encodeURIComponent(p.locationId)}/set-primary`,
+    body: {},
+  });
+}
+
+export async function syncBusinessLocations(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId?: string | null }) {
+  const qp = p.siteId ? `?siteId=${encodeURIComponent(p.siteId)}` : '';
+  return requestJson<{
+    data: { added: number; updated: number; removed: number; total: number; primary: string | null };
+    meta: { tenant_id: string; timestamp: string };
+  }>({
+    ...p,
+    method: 'POST',
+    path: `/arion/business-locations/sync${qp}`,
+    body: {},
+  });
+}
+
 export async function applyPluginIADefaults(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<PluginEnvelope<{ applied_at: string; results: Record<string, { applied: number; total?: number; errors?: string[]; skipped?: string }> }>>({
     ...p,

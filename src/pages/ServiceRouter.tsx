@@ -77,6 +77,7 @@ const SearchBingCopilot = lazyNamed(() => import('../arion/pages/search/SearchBi
 const SearchBingIndexNow = lazyNamed(() => import('../arion/pages/search/SearchBingIndexNow'), 'SearchBingIndexNow');
 // Business
 const BusinessOverview = lazyNamed(() => import('../arion/pages/business/BusinessOverview'), 'BusinessOverview');
+const BusinessLocations = lazyNamed(() => import('../arion/pages/business/BusinessLocations'), 'BusinessLocations');
 const BusinessReviews = lazyNamed(() => import('../arion/pages/business/BusinessReviews'), 'BusinessReviews');
 const BusinessInsights = lazyNamed(() => import('../arion/pages/business/BusinessInsights'), 'BusinessInsights');
 const BusinessPosts = lazyNamed(() => import('../arion/pages/business/BusinessPosts'), 'BusinessPosts');
@@ -359,6 +360,7 @@ export function ServiceRouter() {
       case 'arion_search_bing_copilot': arionPage = <SearchBingCopilot />; break;
       case 'arion_search_bing_indexnow': arionPage = <SearchBingIndexNow />; break;
       case 'arion_business_overview': arionPage = <BusinessOverview />; break;
+      case 'arion_business_locations': arionPage = <BusinessLocations />; break;
       case 'arion_business_reviews': arionPage = <BusinessReviews />; break;
       case 'arion_business_insights': arionPage = <BusinessInsights />; break;
       case 'arion_business_posts': arionPage = <BusinessPosts />; break;

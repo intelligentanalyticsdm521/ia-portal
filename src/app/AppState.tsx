@@ -81,6 +81,7 @@ function buildEnabledServices(active: SelectTenantResponse | null): Set<string> 
     keys.add('arion_search_bing_copilot');
     keys.add('arion_search_bing_indexnow');
     keys.add('arion_business_overview');
+    keys.add('arion_business_locations');
     keys.add('arion_business_reviews');
     keys.add('arion_business_insights');
     keys.add('arion_business_posts');
