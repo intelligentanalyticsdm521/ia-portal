@@ -5,6 +5,11 @@ import { IconRail, type ProductKey } from "./IconRail";
 import { SubNav, SUB_NAV_CONFIGS, SETTINGS_KEYS, type SubNavConfig } from "./SubNav";
 import { useOliverRole } from "../hooks/useOliverRole";
 import { ArgusChatbot } from "./argus/ArgusChatbot";
+import { EmergencyActAsBanner } from "./EmergencyActAsBanner";
+// Onboarding V3 Phase 3 — slim "next thing to do" strip for first-time
+// users. Self-hides once dismissed (session-scoped) or once there are no
+// pending tasks. Co-exists with all existing setup banners.
+import { WalkthroughPanel } from "./walkthroughs/WalkthroughPanel";
 
 // Strip OLIVER nav items that aren't in allowedServiceKeys, and drop any
 // group that becomes empty. Returns the original config when no filter
@@ -95,10 +100,23 @@ export function AppShell() {
     // flex-1 height is a definite number — otherwise IconRail/SubNav fall back to
     // content height and the Settings gear sits mid-viewport with empty space below.
     <div className="iadm-shell flex h-screen flex-col overflow-hidden">
+      {/* Founder-only emergency act-as banner — renders above the header
+          while a 30-min read-only session is open. shrink-0 so it never
+          gets squeezed by the main content area. */}
+      <div className="shrink-0">
+        <EmergencyActAsBanner />
+      </div>
+
       {/* Top header */}
       <header className="iadm-header shrink-0">
         <HeaderBar />
       </header>
+
+      {/* Onboarding V3 Phase 3 — sticky "next task" strip for first-time
+          users. The component returns null (no wrapper) when dismissed or
+          when there are no pending tasks, so this slot collapses cleanly. */}
+      <WalkthroughPanel variant="header" />
+
 
       {/* Main layout: icon rail + sub-nav + content. Default align-items:stretch
           on this flex row causes IconRail and SubNav to fill the full row height. */}

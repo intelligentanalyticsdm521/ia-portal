@@ -5,6 +5,8 @@
 //   { mode:'checkout', url }  → redirect to Stripe Checkout
 //   { mode:'updated', message } → show message (billed next invoice)
 //   { mode:'owner', message }   → platform account, nothing to buy
+import { emergencyActAsHeaders } from "./emergencyActAs";
+
 const OLIVER_API_BASE =
   (import.meta.env.VITE_OLIVER_API_BASE as string) ||
   "https://app-oliver-api-prod-eaffhyhqgrgbcfh0.centralus-01.azurewebsites.net";
@@ -34,6 +36,9 @@ export async function changePlan(params: {
       Authorization: `Bearer ${params.token}`,
       "x-tenant-key": params.tenantId,
       "Content-Type": "application/json",
+      // Founder emergency act-as: backend will 403 this POST while a 30-min
+      // read-only session is open. No-op for every other user.
+      ...emergencyActAsHeaders(),
     },
     body: JSON.stringify(params.body),
   });
