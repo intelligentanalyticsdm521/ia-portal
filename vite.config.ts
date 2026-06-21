@@ -22,15 +22,24 @@ export default defineConfig({
           // MSAL is heavy and only loaded once at auth time
           if (id.includes('@azure/msal')) return 'vendor-msal';
 
-          // Recharts pulls in d3-* subpackages — group them all together
-          if (
-            id.includes('recharts') ||
-            id.includes('victory-vendor') ||
-            id.includes('reselect') ||
-            /[\\/]d3-/.test(id)
-          ) {
-            return 'vendor-recharts';
-          }
+          // Recharts 3.x ships its own internal Redux store and calls
+          // createSlice / createAction / createListenerMiddleware / createSelector
+          // at module-init time. Previous attempts to split recharts + its
+          // transitive deps into a dedicated chunk consistently produced ESM
+          // cycles between vendor-recharts and the generic vendor chunk, with
+          // the imported binding undefined at module-init → "TypeError: X is
+          // not a function" → React never mounts → white screen.
+          //
+          // After two failed surgical fixes (commits 34f3c41 narrowed +
+          // broader transitive deps list — both still cycled), the safe and
+          // guaranteed fix is to STOP splitting recharts away from its deps:
+          // let it flow into the generic vendor chunk along with @reduxjs/
+          // toolkit, react-redux, reselect, immer, et al. No split = no cycle
+          // possible. Cost is initial vendor chunk grows ~460KB / 130KB gzip;
+          // that's acceptable when measured against repeat outages.
+          //
+          // Keep d3-* in the recharts chunk for the FEW non-recharts d3 users
+          // — d3 is a leaf dep that doesn't import back, so it's cycle-safe.
 
           // Chart.js + react-chartjs-2 (used in a few legacy ARION pages)
           if (id.includes('chart.js') || id.includes('react-chartjs-2')) {
