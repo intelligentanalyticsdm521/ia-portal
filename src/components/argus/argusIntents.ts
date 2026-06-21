@@ -27,18 +27,20 @@ export interface ArgusIntent {
 
 export const ARGUS_INTENTS: ArgusIntent[] = [
   // ── Tours ────────────────────────────────────────────────────────────────
+  // Tour ids must match the exported TourDef.id values in components/GuidedTour.tsx
+  // (ALL_TOURS). Mismatch = silent no-op when ARGUS hands off to GuidedTour.
   { id: "tour_oliver",
     keywords: ["tour oliver", "show oliver", "walk oliver", "how oliver works", "teach oliver"],
     reply: "Starting your OLIVER tour. Watch the highlighted spots and click Next to advance — should take about a minute.",
-    tour: "oliver_quick_v1" },
+    tour: "oliver_full_v1" },
   { id: "tour_spark",
     keywords: ["tour spark", "show spark", "walk spark", "how spark works", "teach spark"],
     reply: "Kicking off the SPARK tour — I'll show you Contacts, Campaigns, Automations, and Insights.",
-    tour: "spark_quick_v1" },
+    tour: "spark_full_v1" },
   { id: "tour_arion",
     keywords: ["tour arion", "show arion", "walk arion", "how arion works", "teach arion"],
     reply: "ARION tour incoming — Analytics, SEO, Business Profile, and Insights in about a minute.",
-    tour: "arion_quick_v1" },
+    tour: "arion_full_v1" },
 
   // ── Tickets / stuck ──────────────────────────────────────────────────────
   { id: "ticket_open",
@@ -61,8 +63,8 @@ export const ARGUS_INTENTS: ArgusIntent[] = [
     cta: { label: "Open Business Profile", to: "/app/settings/business-profile" } },
   { id: "team_members",
     keywords: ["team", "invite teammate", "add user", "manage users", "team access"],
-    reply: "Team management lives in the hamburger menu. OLIVER also has its own Team Access page for worker roles.",
-    cta: { label: "Open Team", to: "/app/settings/team" } },
+    reply: "Team Members lives in the hamburger menu. OLIVER also has its own Team Access page for worker roles.",
+    cta: { label: "Open Team Members", to: "/app/settings/team-members" } },
 
   // ── OLIVER routes ────────────────────────────────────────────────────────
   { id: "oliver_job_board", keywords: ["job board", "jobs board", "see jobs", "find jobs"],
