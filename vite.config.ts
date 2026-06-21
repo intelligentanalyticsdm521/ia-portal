@@ -26,6 +26,7 @@ export default defineConfig({
           if (
             id.includes('recharts') ||
             id.includes('victory-vendor') ||
+            id.includes('reselect') ||
             /[\\/]d3-/.test(id)
           ) {
             return 'vendor-recharts';
