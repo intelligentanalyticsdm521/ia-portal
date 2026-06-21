@@ -1,11 +1,13 @@
-// ArionIAInsightsHealthPage — IA Insights Health (v6.12).
+// ArionIAInsightsHealthPage — IA Insights Health (v6.13, equal-weight).
 //
-// Per the May-2026 handoff doc as clarified by the user:
+// Per the May-2026 handoff doc as clarified by Brandon (2026-06-21):
 //   Health = the 4-gauge + 2 bar-chart header, full-width, by itself.
 //   Drill into the Trend or Intelligence gauge to reach the report list.
 //
-// Score data is fetched the same way the Trends page fetches it — running
-// the 8 engines client-side. We share that work via the engines module.
+// Brandon 2026-06-21 — Business Pulse is sourced from platform-api
+// /argus/business-pulse ONLY. Per-product Business Pulse calculation is
+// REMOVED — every product reads the canonical ARGUS value. The ARION trend
+// engines below still drive Platform/Trend gauges (ARION-only data).
 import { useEffect, useMemo, useState } from "react";
 import { useArionContext } from "../../useArionContext";
 import { useAnalyticsData } from "../../analytics/useAnalyticsData";
@@ -99,6 +101,29 @@ export function ArionIAInsightsHealthPage() {
     return () => { cancelled = true; };
   }, [activeSiteId, activeTenantId, getToken]);
 
+  // Brandon 2026-06-21 — canonical Business Pulse from ARGUS endpoint.
+  const [businessPulse, setBusinessPulse] = useState<number | null>(null);
+  const [businessPulsePrev, setBusinessPulsePrev] = useState<number | null>(null);
+  useEffect(() => {
+    if (!activeTenantId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const platBase = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string).replace(/\/$/, "");
+        const r = await globalThis.fetch(`${platBase}/argus/business-pulse`, {
+          headers: { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId },
+        });
+        if (r.ok && !cancelled) {
+          const body = await r.json();
+          setBusinessPulse(body?.data?.pulse ?? null);
+          setBusinessPulsePrev(body?.data?.previous_pulse ?? null);
+        }
+      } catch { /* swallow — gauge shows insufficient_data */ }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTenantId, getToken]);
+
   // Prior scores for ghost-bar deltas
   useEffect(() => {
     if (!activeSiteId || !activeTenantId) return;
@@ -133,9 +158,14 @@ export function ArionIAInsightsHealthPage() {
 
   const headerData: IAInsightsHeaderData = useMemo(() => ({
     product: "arion",
+    // Brandon 2026-06-21 — overall (Business Pulse) sourced from ARGUS endpoint,
+    // not from ARION-only trend math. ONE number across every product page.
     overall: {
-      score: trendScore, previousScore: priorScores.presence, band: bandFromScore(trendScore),
-      state: "ok", message: "Composite from ARGUS across active products.",
+      score: businessPulse ?? 0,
+      previousScore: businessPulsePrev,
+      band: bandFromScore(businessPulse ?? 0),
+      state: businessPulse == null ? "insufficient_data" : "ok",
+      message: "Cross-product Business Pulse (sourced from ARGUS).",
       drillTo: "/app/services/argus_health",
     },
     platform: {
@@ -171,7 +201,7 @@ export function ArionIAInsightsHealthPage() {
       ? [{ severity: "warn", message: "Connect Google Analytics 4 in Settings → Connected Accounts to populate Trend Score and observations.", action: { label: "Open Settings", route: "/app/settings/connections" } }]
       : [],
     meta: { generatedAt: new Date().toISOString(), periodStart: data?.dateRange?.start, periodEnd: data?.dateRange?.end, tier },
-  }), [reports, data, tier, intelligenceLocked, intelligenceScoreVal, trendScore, priorScores]);
+  }), [reports, data, tier, intelligenceLocked, intelligenceScoreVal, trendScore, priorScores, businessPulse, businessPulsePrev]);
 
   if (loading && !data) return <div className="p-4 text-sm text-slate-500">Loading IA Insights…</div>;
 
