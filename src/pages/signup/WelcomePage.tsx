@@ -30,6 +30,21 @@ export function WelcomePage() {
   const setupToken = params.get('setup_token') || '';
   const tenantId = params.get('tenant_id') || '';
 
+  // F-SEC1.4 (2026-06-21): Defense-in-depth fallback for Referrer-Policy.
+  // The SWA staticwebapp.config.json sets the header authoritatively for
+  // /welcome*, but we also inject a <meta name="referrer" content="no-referrer">
+  // here in case the SWA route config drifts. This prevents the activation URL
+  // (which carries email + setup_token + tenant_id) from leaking via the
+  // Referer header when the user clicks any outbound link from this page —
+  // including the CIAM/MSAL signup redirect.
+  useEffect(() => {
+    const meta = document.createElement('meta');
+    meta.name = 'referrer';
+    meta.content = 'no-referrer';
+    document.head.appendChild(meta);
+    return () => { try { document.head.removeChild(meta); } catch { /* ignore */ } };
+  }, []);
+
   useEffect(() => {
     if (!email || !setupToken || !tenantId) {
       setStatus('invalid');
