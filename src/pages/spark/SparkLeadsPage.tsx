@@ -20,7 +20,7 @@
 //
 // Bulk actions land in F-LG.2.4 (next pass). Detail drawer in F-LG.2.6.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Sparkles, MoreVertical, Search, X, CheckCircle2, Bell, ShieldCheck, ShieldX, ArrowUpDown } from "lucide-react";
+import { Sparkles, MoreVertical, Search, X, CheckCircle2, Bell, ShieldCheck, ShieldX, ShieldAlert, ArrowUpDown } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 
@@ -65,11 +65,13 @@ interface Lead {
   cache_age_days: number | null;
   contact_id: number | null;
   // F-LG.15 adversarial verify (migration 043, batch 7 / commit d23ecfa).
-  //   'verified'   → both verifiers (SMTP + domain freshness) agreed legit
-  //   'suppressed' → at least one verifier refuted; lead was kept on the
-  //                  record but suppressed from default views downstream
-  //   null         → not yet verified (legacy rows, or verify ran offline)
-  verification_status: "verified" | "suppressed" | null;
+  //   'verified'                → both verifiers (SMTP + domain freshness) agreed legit
+  //   'suppressed'              → at least one verifier refuted; lead was kept on the
+  //                               record but suppressed from default views downstream
+  //   'verification_unavailable'→ both verifiers errored (fail-closed); lead admitted
+  //                               but flagged so the reviewer knows the gate didn't run
+  //   null                      → not yet verified (legacy rows, or verify ran offline)
+  verification_status: "verified" | "suppressed" | "verification_unavailable" | null;
   // JSON array of { verifier, refuted, reason, latency_ms, errored }.
   // We parse + show the failure reasons in the Verified column tooltip
   // when verification_status='suppressed'.
@@ -505,11 +507,12 @@ export function SparkLeadsPage() {
                     <td className="px-4 py-3 text-xs text-slate-700">{l.lifecycle_stage || "lead"}</td>
                     <td className="px-4 py-3 text-[10px] text-slate-500">{l.source || l.sources_found || "—"}</td>
                     <td className="px-4 py-3 text-[10px] text-slate-500 whitespace-nowrap">{new Date(l.created_at).toLocaleDateString()}</td>
-                    {/* F-LG.15: Verified badge cell. Three states map to a
+                    {/* F-LG.15: Verified badge cell. Four states map to a
                         small ring badge:
-                          verified   → green check + "Passed SMTP + domain freshness"
-                          suppressed → red X    + first refusal reason from JSON
-                          null       → grey dash + "Not yet verified"
+                          verified                → green check  + "Passed SMTP + domain freshness"
+                          suppressed              → red X        + first refusal reason from JSON
+                          verification_unavailable→ yellow alert + "Verifiers down; admitted via fail-closed"
+                          null                    → grey dash    + "Not yet verified"
                         The whole badge is title-tooltipped — Brandon's call
                         to keep these inline (no hover drawer) so they're
                         scannable in a long list. */}
@@ -530,6 +533,15 @@ export function SparkLeadsPage() {
                         >
                           <ShieldX className="h-3 w-3" />
                           Failed
+                        </span>
+                      )}
+                      {l.verification_status === "verification_unavailable" && (
+                        <span
+                          title="Verifiers temporarily unavailable; lead promoted on fail-closed."
+                          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-800 ring-1 ring-amber-200"
+                        >
+                          <ShieldAlert className="h-3 w-3" />
+                          Unverified
                         </span>
                       )}
                       {l.verification_status == null && (
