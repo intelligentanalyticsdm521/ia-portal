@@ -492,12 +492,14 @@ function CreateProjectModal({ types, onClose, onCreated }: { types: ProjectType[
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [targetDate, setTargetDate] = useState("");
+  const [budgetAmount, setBudgetAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    get<{ data: { clients: any[] } }>("/consulting-tickets/_/clients")
-      .then(r => setClients(r.data?.clients || []))
+    // Envelope auto-stripped — type the inner shape directly.
+    get<{ clients: any[] }>("/consulting-tickets/_/clients")
+      .then(r => setClients(r?.clients || []))
       .catch(() => {});
   }, [get]);
 
@@ -505,10 +507,14 @@ function CreateProjectModal({ types, onClose, onCreated }: { types: ProjectType[
     if (!type || !clientId || !title) { setErr("Type, client, title required"); return; }
     setBusy(true); setErr(null);
     try {
+      const budgetNum = budgetAmount ? Number(budgetAmount) : undefined;
       await post("/consulting-projects", {
         project_type: type, client_tenant_id: clientId, title,
         description: description || undefined,
         target_completion_date: targetDate || undefined,
+        // F1.8 — budget_amount_usd pre-fills the auto-seeded 40/30/30 invoice
+        // schedule with dollar amounts. Founder can edit after create.
+        budget_amount_usd: Number.isFinite(budgetNum) && (budgetNum as number) > 0 ? budgetNum : undefined,
       });
       onCreated();
     } catch (e) { setErr((e as Error).message); }
@@ -552,6 +558,21 @@ function CreateProjectModal({ types, onClose, onCreated }: { types: ProjectType[
           <label className="block text-xs font-semibold text-slate-700 mb-1">Target completion</label>
           <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)}
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">
+            Total budget (USD)
+            <span className="font-normal text-slate-500"> — used to pre-fill 40/30/30 invoice schedule (optional)</span>
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="e.g. 9000"
+            value={budgetAmount}
+            onChange={(e) => setBudgetAmount(e.target.value)}
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+          />
         </div>
         {err && <div className="text-sm text-rose-600">{err}</div>}
         <div className="flex justify-end gap-2 pt-2">

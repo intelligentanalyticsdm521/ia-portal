@@ -453,6 +453,11 @@ const SPARK_NAV: SubNavConfig = {
   ],
 };
 
+// CONSULTING_NAV — F1.1 + F1.7 + F1.10
+//   - F1.1: "Requests Board" → "Service Requests"
+//   - F1.10: Calendar & Events removed (timeline rendered inside Project Workspace)
+//   - F1.9: "Onboard Client" is filtered out for non-founders by
+//           applyConsultingNavFilter (AppShell.tsx)
 const CONSULTING_NAV: SubNavConfig = {
   productName: "Consulting",
   tagline: "IA Work & Deliverables",
@@ -460,11 +465,11 @@ const CONSULTING_NAV: SubNavConfig = {
     {
       label: "",
       items: [
-        { key: "consulting_overview",     label: "Overview",          route: "/app/services/consulting_overview" },
-        { key: "consulting_tickets",      label: "Requests Board",    route: "/app/services/consulting_tickets" },
-        { key: "consulting_projects",     label: "Projects",          route: "/app/services/consulting_projects" },
-        { key: "consulting_deliverables", label: "Deliverables",      route: "/app/services/consulting_deliverables" },
-        { key: "consulting_calendar",     label: "Calendar & Events", route: "/app/services/consulting_calendar" },
+        { key: "consulting_overview",          label: "Overview",          route: "/app/services/consulting_overview" },
+        { key: "consulting_tickets",           label: "Service Requests",  route: "/app/services/consulting_tickets" },
+        { key: "consulting_projects",          label: "Projects",          route: "/app/services/consulting_projects" },
+        { key: "consulting_project_workspace", label: "Project Workspace", route: "/app/services/consulting_project_workspace" },
+        { key: "consulting_deliverables",      label: "Deliverables",      route: "/app/services/consulting_deliverables" },
       ],
     },
     {

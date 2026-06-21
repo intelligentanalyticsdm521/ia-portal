@@ -4,6 +4,7 @@ import { HeaderBar } from "./HeaderBar";
 import { IconRail, type ProductKey } from "./IconRail";
 import { SubNav, SUB_NAV_CONFIGS, SETTINGS_KEYS, type SubNavConfig } from "./SubNav";
 import { useOliverRole } from "../hooks/useOliverRole";
+import { useAppState } from "../app/AppState";
 import { ArgusChatbot } from "./argus/ArgusChatbot";
 import { EmergencyActAsBanner } from "./EmergencyActAsBanner";
 import { EmergencyActAsToast } from "./EmergencyActAsToast";
@@ -23,6 +24,27 @@ function applyOliverNavFilter(
   const allowSet = new Set(allowedServiceKeys);
   const filteredGroups = config.groups
     .map((g) => ({ ...g, items: g.items.filter((i) => allowSet.has(i.key)) }))
+    .filter((g) => g.items.length > 0);
+  return { ...config, groups: filteredGroups };
+}
+
+// F1.9 — Hide founder-only Consulting items (Onboard Client + Access Log +
+// Clients picker + Tenant Workspace) for non-super-users. Per locked rule:
+// "Onboard Client button hidden from non-founder users".
+const CONSULTING_FOUNDER_ONLY = new Set<string>([
+  "consulting_onboard_client",
+  "consulting_access_log",
+  "consulting_workspace",
+  "consulting_tenant_workspace",
+]);
+
+function applyConsultingNavFilter(
+  config: SubNavConfig,
+  isSuperUser: boolean,
+): SubNavConfig {
+  if (isSuperUser) return config;
+  const filteredGroups = config.groups
+    .map((g) => ({ ...g, items: g.items.filter((i) => !CONSULTING_FOUNDER_ONLY.has(i.key)) }))
     .filter((g) => g.items.length > 0);
   return { ...config, groups: filteredGroups };
 }
@@ -87,14 +109,22 @@ export function AppShell() {
   // once per session; defaults to 'admin' until resolved so the full nav
   // doesn't briefly flash a restricted view for real admins.
   const { roleInfo } = useOliverRole();
+  const appState = useAppState();
+  const isSuperUser = !!appState.bootstrap?.user?.isSuperUser;
 
   const rawSubNavConfig =
     activeProduct !== "overview" ? SUB_NAV_CONFIGS[activeProduct] : null;
   const subNavConfig = useMemo(() => {
     if (!rawSubNavConfig) return null;
-    if (activeProduct !== "oliver") return rawSubNavConfig;
-    return applyOliverNavFilter(rawSubNavConfig, roleInfo.allowedServiceKeys);
-  }, [rawSubNavConfig, activeProduct, roleInfo.allowedServiceKeys]);
+    if (activeProduct === "oliver") {
+      return applyOliverNavFilter(rawSubNavConfig, roleInfo.allowedServiceKeys);
+    }
+    if (activeProduct === "consulting") {
+      // F1.9 — Onboard Client (and other founder-tools) hidden for non-founders
+      return applyConsultingNavFilter(rawSubNavConfig, isSuperUser);
+    }
+    return rawSubNavConfig;
+  }, [rawSubNavConfig, activeProduct, roleInfo.allowedServiceKeys, isSuperUser]);
 
   return (
     // h-screen (not min-h-screen) locks the shell to exactly 100vh so the nav row's

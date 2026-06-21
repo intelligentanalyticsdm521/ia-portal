@@ -209,7 +209,7 @@ export function ConsultingTicketsBoardPage() {
   }
 
   return (
-    <OliverPageWrapper title="Requests Board" subtitle="IA Consulting · Client work pipeline" error={error} loading={loading}>
+    <OliverPageWrapper title="Service Requests" subtitle="IA Consulting · Client work pipeline" error={error} loading={loading}>
       <div className="space-y-3">
         {/* Header / actions */}
         <div className="flex flex-wrap items-center gap-2">

@@ -1,32 +1,47 @@
-// ConsultingDeliverablesPage — F-140 redesign.
+// ConsultingDeliverablesPage — F1.7
 //
-// Unified artifact library for the consulting hub. Pulls client-visible
-// artifacts from EVERY active project and presents them in a filterable
-// grid. Tags by Build Your Series (engagement_type from parent project)
-// for the user-requested categorization.
+// Cross-cutting Deliverables view. Per SCOPE_WORKING.md:
+//   "Top-nav entry 'Deliverables' → flat list of all in-review items across
+//    Service Requests + Project nodes. Filters: status, project, due window.
+//    Click any row → opens owning context (Service Request ticket OR Project
+//    workspace scrolled to the feature/task)."
+//
+// Backend: GET /consulting-deliverables (shipped 2026-06-21). Returns both
+// project artifacts AND ticket deliverables in one flat list with an
+// `open_url` that deep-links to the owning surface.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 
-interface Deliverable {
-  artifact_id: string;
-  project_id: string;
-  project_number: string;
-  project_title: string;
-  project_engagement_type?: string | null;
-  project_type_display: string;
-  client_business_name?: string | null;
+interface CrossDeliverable {
+  deliverable_kind: "project_artifact" | "request_deliverable";
+  deliverable_id: string;
+  project_id: string | null;
+  project_number?: string | null;
+  project_title?: string | null;
+  engagement_type?: string | null;
+  project_type?: string | null;
+  parent_phase_id?: number | null;
+  parent_feature_id?: number | null;
+  parent_task_id?: number | null;
+  parent_ticket_id?: string | null;
+  parent_ticket_number?: string | null;
+  parent_ticket_title?: string | null;
+  parent_ticket_status?: string | null;
   kind: string;
   title: string;
-  description?: string;
-  file_url?: string;
-  external_link?: string;
+  description?: string | null;
+  file_url?: string | null;
+  external_link?: string | null;
   status: string;
   is_client_visible: boolean;
   uploaded_by_kind: string;
-  uploaded_by_name?: string;
-  created_at: string;
+  uploaded_by_name?: string | null;
+  created_at: string | null;
+  revision_notes?: string | null;
+  reviewed_at?: string | null;
+  open_url: string;
 }
 
 const ENGAGEMENT_COLORS: Record<string, string> = {
@@ -37,13 +52,31 @@ const ENGAGEMENT_COLORS: Record<string, string> = {
 };
 
 const KIND_ICON: Record<string, string> = {
-  proposal: "📄", design: "🎨", contract: "📝", brief: "📋",
-  spec: "📐", code: "💻", copy: "✍️", other: "📎",
+  proposal: "📄",
+  design: "🎨",
+  contract: "📝",
+  brief: "📋",
+  spec: "📐",
+  code: "💻",
+  copy: "✍️",
+  ticket_deliverable: "📦",
+  other: "📎",
+};
+
+const STATUS_COLOR: Record<string, string> = {
+  delivered: "#10b981",
+  draft: "#94a3b8",
+  submitted: "#3b82f6",
+  in_review: "#8b5cf6",
+  revision_requested: "#f59e0b",
+  approved: "#10b981",
 };
 
 export function ConsultingDeliverablesPage() {
   const { get, ready } = useOliverApi();
-  const [items, setItems] = useState<Deliverable[]>([]);
+  const [items, setItems] = useState<CrossDeliverable[]>([]);
+  const [sourceFilter, setSourceFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("");
   const [kindFilter, setKindFilter] = useState<string>("");
   const [tagFilter, setTagFilter] = useState<string>("");
   const [search, setSearch] = useState("");
@@ -52,109 +85,264 @@ export function ConsultingDeliverablesPage() {
 
   const load = useCallback(async () => {
     if (!ready) return;
-    setLoading(true); setError(null);
+    setLoading(true);
+    setError(null);
     try {
-      const r = await get<{ data: { projects: any[] } }>("/consulting-projects?include_archived=1");
-      const projects = r.data?.projects || [];
-      const all: Deliverable[] = [];
-      for (const p of projects) {
-        try {
-          const pd = await get<{ data: any }>(`/consulting-projects/${p.project_id}`);
-          for (const a of (pd.data?.artifacts || [])) {
-            all.push({
-              ...a,
-              project_id: p.project_id,
-              project_number: p.project_number,
-              project_title: p.title,
-              project_engagement_type: p.engagement_type,
-              project_type_display: p.project_type_display,
-              client_business_name: p.client_business_name,
-            });
-          }
-        } catch { /* skip projects we can't load */ }
-      }
-      all.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      setItems(all);
-    } catch (e) { setError((e as Error).message); }
-    finally { setLoading(false); }
-  }, [get, ready]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const filtered = useMemo(() => items.filter(i => {
-    if (kindFilter && i.kind !== kindFilter) return false;
-    if (tagFilter && i.project_engagement_type !== tagFilter) return false;
-    if (search) {
-      const s = search.toLowerCase();
-      if (!i.title.toLowerCase().includes(s) &&
-          !(i.project_title || "").toLowerCase().includes(s) &&
-          !(i.client_business_name || "").toLowerCase().includes(s)) return false;
+      const qs = new URLSearchParams();
+      if (sourceFilter) qs.set("source", sourceFilter);
+      if (statusFilter) qs.set("status", statusFilter);
+      // Envelope auto-stripped by useOliverApi — type the inner shape directly.
+      const r = await get<{ deliverables: CrossDeliverable[] }>(
+        `/consulting-deliverables?${qs}`
+      );
+      setItems(r?.deliverables || []);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
     }
-    return true;
-  }), [items, kindFilter, tagFilter, search]);
+  }, [get, ready, sourceFilter, statusFilter]);
 
-  const kinds = useMemo(() => Array.from(new Set(items.map(i => i.kind))), [items]);
-  const tags = useMemo(() => Array.from(new Set(items.map(i => i.project_engagement_type).filter(Boolean) as string[])), [items]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const filtered = useMemo(
+    () =>
+      items.filter((i) => {
+        if (kindFilter && i.kind !== kindFilter) return false;
+        if (tagFilter && i.engagement_type !== tagFilter) return false;
+        if (search) {
+          const s = search.toLowerCase();
+          if (
+            !(i.title || "").toLowerCase().includes(s) &&
+            !(i.project_title || "").toLowerCase().includes(s) &&
+            !(i.parent_ticket_title || "").toLowerCase().includes(s)
+          ) {
+            return false;
+          }
+        }
+        return true;
+      }),
+    [items, kindFilter, tagFilter, search]
+  );
+
+  const kinds = useMemo(() => Array.from(new Set(items.map((i) => i.kind))), [items]);
+  const tags = useMemo(
+    () =>
+      Array.from(
+        new Set(items.map((i) => i.engagement_type).filter(Boolean) as string[])
+      ),
+    [items]
+  );
+
+  const statuses = useMemo(
+    () => Array.from(new Set(items.map((i) => i.status).filter(Boolean))),
+    [items]
+  );
+
+  const counts = useMemo(() => {
+    let pendingReview = 0;
+    let revisionRequested = 0;
+    for (const i of items) {
+      if (i.status === "submitted" || i.status === "in_review") pendingReview++;
+      if (i.status === "revision_requested") revisionRequested++;
+    }
+    return { pendingReview, revisionRequested, total: items.length };
+  }, [items]);
 
   return (
-    <OliverPageWrapper title="Deliverables" subtitle="IA Consulting · Unified artifact library" error={error} loading={loading}>
+    <OliverPageWrapper
+      title="Deliverables"
+      subtitle="IA Consulting · Cross-cutting library (Projects + Service Requests)"
+      error={error}
+      loading={loading}
+    >
       <div className="space-y-3">
+        {/* Counts strip */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">
+            <strong>{counts.total}</strong> total
+          </span>
+          {counts.pendingReview > 0 && (
+            <span className="rounded-full bg-purple-100 px-3 py-1 text-purple-700">
+              <strong>{counts.pendingReview}</strong> pending review
+            </span>
+          )}
+          {counts.revisionRequested > 0 && (
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-700">
+              <strong>{counts.revisionRequested}</strong> revision requested
+            </span>
+          )}
+        </div>
+
+        {/* Filter row */}
         <div className="flex flex-wrap items-center gap-2">
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…"
-            className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-48" />
-          <select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}
-            className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search title or project…"
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-56"
+          />
+          <select
+            value={sourceFilter}
+            onChange={(e) => setSourceFilter(e.target.value)}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          >
+            <option value="">All sources</option>
+            <option value="project">Project artifacts only</option>
+            <option value="request">Service Request deliverables only</option>
+          </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          >
+            <option value="">All statuses</option>
+            {statuses.map((s) => (
+              <option key={s} value={s}>
+                {s.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
+          <select
+            value={kindFilter}
+            onChange={(e) => setKindFilter(e.target.value)}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          >
             <option value="">All types</option>
-            {kinds.map(k => <option key={k} value={k}>{KIND_ICON[k] || ""} {k}</option>)}
+            {kinds.map((k) => (
+              <option key={k} value={k}>
+                {KIND_ICON[k] || ""} {k}
+              </option>
+            ))}
           </select>
-          <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}
-            className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
-            <option value="">All engagements</option>
-            {tags.map(t => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
-          </select>
-          <span className="ml-auto text-xs text-slate-500">{filtered.length} of {items.length} deliverable{items.length === 1 ? "" : "s"}</span>
+          {tags.length > 0 && (
+            <select
+              value={tagFilter}
+              onChange={(e) => setTagFilter(e.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">All engagements</option>
+              {tags.map((t) => (
+                <option key={t} value={t}>
+                  {t.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+          )}
+          <span className="ml-auto text-xs text-slate-500">
+            {filtered.length} of {items.length} deliverable
+            {items.length === 1 ? "" : "s"}
+          </span>
         </div>
 
         {filtered.length === 0 ? (
           <div className="rounded-xl bg-slate-50 border border-slate-200 px-6 py-12 text-center text-sm text-slate-500">
-            {items.length === 0 ? "No deliverables yet — upload them from inside a project." : "No matches for current filters."}
+            {items.length === 0
+              ? "No deliverables yet — they'll appear here when you upload project artifacts or attach files to Service Request tickets."
+              : "No matches for current filters."}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filtered.map(d => {
-              const tagColor = d.project_engagement_type ? ENGAGEMENT_COLORS[d.project_engagement_type] : "#94a3b8";
+            {filtered.map((d) => {
+              const tagColor = d.engagement_type
+                ? ENGAGEMENT_COLORS[d.engagement_type]
+                : "#94a3b8";
+              const statusColor = STATUS_COLOR[d.status] || "#94a3b8";
+              const isTicket = d.deliverable_kind === "request_deliverable";
               return (
-                <div key={d.artifact_id} className="bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md transition">
+                <div
+                  key={`${d.deliverable_kind}-${d.deliverable_id}`}
+                  className="bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md transition flex flex-col"
+                >
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-2xl">{KIND_ICON[d.kind] || "📎"}</span>
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs uppercase font-bold text-slate-500">{d.kind}</div>
-                      <div className="text-sm font-semibold text-slate-900 truncate">{d.title}</div>
+                      <div className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-2">
+                        <span>{d.kind}</span>
+                        <span
+                          className="px-1.5 py-0.5 rounded text-white font-bold"
+                          style={{ background: isTicket ? "#0EA5E9" : "#64748b" }}
+                        >
+                          {isTicket ? "Request" : "Project"}
+                        </span>
+                      </div>
+                      <div className="text-sm font-semibold text-slate-900 truncate">
+                        {d.title}
+                      </div>
                     </div>
+                    <span
+                      className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded text-white"
+                      style={{ background: statusColor }}
+                    >
+                      {d.status.replace(/_/g, " ")}
+                    </span>
                   </div>
-                  {d.description && <div className="text-xs text-slate-600 mb-2 line-clamp-2">{d.description}</div>}
+
+                  {d.description && (
+                    <div className="text-xs text-slate-600 mb-2 line-clamp-2">
+                      {d.description}
+                    </div>
+                  )}
+
+                  {d.revision_notes && (
+                    <div className="text-[11px] text-amber-700 bg-amber-50 rounded p-2 mb-2">
+                      <strong>Revision notes:</strong> {d.revision_notes}
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap items-center gap-1 mb-2">
-                    {d.project_engagement_type && (
-                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded text-white" style={{ background: tagColor }}>
-                        {d.project_engagement_type.replace(/_/g, " ").replace("build your ", "")}
+                    {d.engagement_type && (
+                      <span
+                        className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded text-white"
+                        style={{ background: tagColor }}
+                      >
+                        {d.engagement_type
+                          .replace(/_/g, " ")
+                          .replace("build your ", "")}
                       </span>
                     )}
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">{d.project_type_display}</span>
+                    {d.project_type && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                        {d.project_type}
+                      </span>
+                    )}
                   </div>
+
                   <div className="text-[11px] text-slate-500 mb-2">
-                    {d.client_business_name && <>📁 {d.client_business_name} · </>}
-                    <a href={`/app/services/consulting_projects?open=${d.project_id}`} className="text-blue-600 hover:underline">
-                      {d.project_number}
+                    {isTicket && d.parent_ticket_number && (
+                      <>📨 {d.parent_ticket_number} · {d.parent_ticket_title} · </>
+                    )}
+                    {!isTicket && d.project_number && (
+                      <>📁 {d.project_title || d.project_number} ({d.project_number}) · </>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 mt-auto">
+                    {(d.file_url || d.external_link) && (
+                      <a
+                        href={d.file_url || d.external_link || "#"}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-semibold text-blue-600 hover:underline"
+                      >
+                        Open file ↗
+                      </a>
+                    )}
+                    <a
+                      href={d.open_url}
+                      className="text-xs font-semibold text-[#EF6C33] hover:underline"
+                    >
+                      Go to {isTicket ? "request" : "workspace"} →
                     </a>
                   </div>
-                  {(d.file_url || d.external_link) && (
-                    <a href={d.file_url || d.external_link} target="_blank" rel="noreferrer"
-                      className="text-xs font-semibold text-blue-600 hover:underline">
-                      Open ↗
-                    </a>
-                  )}
+
                   <div className="mt-2 text-[10px] text-slate-400">
-                    {new Date(d.created_at).toLocaleDateString()} · by {d.uploaded_by_kind}
+                    {d.created_at
+                      ? new Date(d.created_at).toLocaleDateString()
+                      : "—"}{" "}
+                    · by {d.uploaded_by_kind}
                   </div>
                 </div>
               );
