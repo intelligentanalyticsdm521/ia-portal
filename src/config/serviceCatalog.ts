@@ -262,6 +262,11 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_rules', displayName: 'Rules', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/services/spark_rules', description: 'Unified scoring + routing + auto-tag rules library. Replaces 3 separate pages.' },
   // Phase 3A merger — one page for Automations (triggers) + Rules.
   { key: 'spark_workflows_automations', displayName: 'Workflows & Automations', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/services/spark_workflows_automations', description: 'Single inventory for trigger-based automations + passive rules (scoring, routing, auto-tag). One New Workflow button opens the unified chooser modal.' },
+  // F-CS.6 — admin surface for the lumen.spark_task rows referenced by
+  // automation steps of kind `task_call`. Backs the F-CS.3 dropdown in
+  // the IL Customize editor. Phase 1: create/rename/delete + read-only
+  // step list. Step editing ships in Phase 2.
+  { key: 'spark_tasks', displayName: 'Tasks', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/services/spark_tasks', description: 'Reusable named sub-automations. Any IL automation step of kind `task_call` invokes a row from this list by id.' },
   { key: 'spark_api_keys', displayName: 'API Keys', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_api_keys', description: 'Issue API keys for Zapier / n8n / custom integrations. Scoped + revocable.' },
   { key: 'spark_review_widget', displayName: 'Review Widget', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_review_widget', description: 'Public review widget URL + collected reviews + per-platform deep-links (Google/Yelp/Facebook). Auto-fires after every NPS promoter.' },
   // Phase 3A (2026-06-16) — UI now shows a Coming Soon banner pending our

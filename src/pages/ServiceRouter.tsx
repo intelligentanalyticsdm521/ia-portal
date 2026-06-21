@@ -165,6 +165,9 @@ const SparkTemplatesPage = lazyNamed(() => import('./spark/SparkTemplatesPage'),
 const SparkRulesPage = lazyNamed(() => import('./spark/SparkRulesPage'), 'SparkRulesPage');
 // Phase 3A merger — unified Workflows + Rules list page.
 const SparkWorkflowsAutomationsPage = lazyNamed(() => import('./spark/SparkWorkflowsAutomationsPage'), 'SparkWorkflowsAutomationsPage');
+// F-CS.6 Phase 1 admin surface for lumen.spark_task rows (named sub-automations
+// invoked via task_call). Backs the F-CS.3 dropdown in the IL Customize editor.
+const SparkTasksPage = lazyNamed(() => import('./spark/SparkTasksPage'), 'SparkTasksPage');
 const SparkApiKeysPage = lazyNamed(() => import('./spark/SparkApiKeysPage'), 'SparkApiKeysPage');
 const SparkReviewWidgetPage = lazyNamed(() => import('./spark/SparkReviewWidgetPage'), 'SparkReviewWidgetPage');
 const SparkWebhooksPage = lazyNamed(() => import('./spark/SparkWebhooksPage'), 'SparkWebhooksPage');
@@ -493,6 +496,8 @@ export function ServiceRouter() {
       case 'spark_automations':
       case 'spark_workflow_triggers':
         sparkPage = <SparkWorkflowsAutomationsPage />; break;
+      // F-CS.6 — named-task admin (lumen.spark_task)
+      case 'spark_tasks': sparkPage = <SparkTasksPage />; break;
       case 'spark_leads': sparkPage = <SparkLeadsPage />; break;
       case 'spark_search_profiles': sparkPage = <SparkSearchProfilesPage />; break;
       case 'spark_intelligence': sparkPage = <SparkIntelligencePage />; break;
