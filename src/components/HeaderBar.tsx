@@ -5,12 +5,14 @@ import { useAppState } from '../app/AppState';
 import { useAccessToken } from '../auth/useAccessToken';
 import { AccountMenu } from './AccountMenu';
 import { ArgusBalanceBadge } from './ArgusBalanceBadge';
+import { FounderTenantPicker } from './FounderTenantPicker';
 import { GlobalSearch } from './GlobalSearch';
 import { GuidedTourLauncher } from './GuidedTourLauncher';
 
 export function HeaderBar() {
-  const { active } = useAppState();
+  const { active, bootstrap } = useAppState();
   const { activeAccount, logout } = useAccessToken();
+  const isSuperUser = !!bootstrap?.user?.isSuperUser;
   const [searchOpen, setSearchOpen] = useState(false);
 
   const tenantLabel = active?.tenant?.tenantFullName || active?.tenant?.tenantName || 'Your account';
@@ -56,9 +58,19 @@ export function HeaderBar() {
           {/* ARGUS AI credit balance badge — clickable popover w/ buy + usage */}
           <ArgusBalanceBadge />
 
-          <div className="hidden md:block iadm-header-tenant" aria-label="Tenant greeting">
-            <span className="text-white/70">Welcome,</span> <span className="font-medium text-white">{tenantLabel}</span>
-          </div>
+          {/* Founder super-user tenant picker — Design Option C. Only rendered
+              when bootstrap.user.isSuperUser is true (SUPER_ADMIN platform
+              role). Replaces the static "Welcome, X" tenant greeting so the
+              founder can switch context without leaving their auth session. */}
+          {isSuperUser ? (
+            <div className="hidden md:block">
+              <FounderTenantPicker />
+            </div>
+          ) : (
+            <div className="hidden md:block iadm-header-tenant" aria-label="Tenant greeting">
+              <span className="text-white/70">Welcome,</span> <span className="font-medium text-white">{tenantLabel}</span>
+            </div>
+          )}
 
           <AccountMenu userLabel={userLabel} userEmail={userEmail} onSignOut={() => logout()} />
         </div>
