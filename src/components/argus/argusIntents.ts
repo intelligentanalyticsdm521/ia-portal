@@ -29,17 +29,20 @@ export const ARGUS_INTENTS: ArgusIntent[] = [
   // ── Tours ────────────────────────────────────────────────────────────────
   // Tour ids must match the exported TourDef.id values in components/GuidedTour.tsx
   // (ALL_TOURS). Mismatch = silent no-op when ARGUS hands off to GuidedTour.
+  // These point at the *_full_v1 tours — the only tours that exist today
+  // (~20-30 steps, ~2 minutes each). If a shorter *_quick_v1 tour is ever
+  // added, point the chatbot at that instead (or expose both via separate intents).
   { id: "tour_oliver",
     keywords: ["tour oliver", "show oliver", "walk oliver", "how oliver works", "teach oliver"],
-    reply: "Starting your OLIVER tour. Watch the highlighted spots and click Next to advance — should take about a minute.",
+    reply: "Starting your full OLIVER tour. Watch the highlighted spots and click Next to advance — about 2 minutes; skip anytime.",
     tour: "oliver_full_v1" },
   { id: "tour_spark",
     keywords: ["tour spark", "show spark", "walk spark", "how spark works", "teach spark"],
-    reply: "Kicking off the SPARK tour — I'll show you Contacts, Campaigns, Automations, and Insights.",
+    reply: "Kicking off the full SPARK tour — Contacts, Campaigns, Automations, Sales, and Insights. About 2 minutes.",
     tour: "spark_full_v1" },
   { id: "tour_arion",
     keywords: ["tour arion", "show arion", "walk arion", "how arion works", "teach arion"],
-    reply: "ARION tour incoming — Analytics, SEO, Business Profile, and Insights in about a minute.",
+    reply: "Full ARION tour incoming — Website, Hosting, Analytics, SEO, Business Profile, and Insights. About 2 minutes.",
     tour: "arion_full_v1" },
 
   // ── Tickets / stuck ──────────────────────────────────────────────────────
@@ -109,6 +112,16 @@ export const ARGUS_INTENTS: ArgusIntent[] = [
   { id: "oliver_stripe", keywords: ["connect stripe", "stripe setup", "stripe connect", "payouts"],
     reply: "Stripe lives in OLIVER Business Setup. Standard if you already have a Stripe, Express if not — Express is built in.",
     cta: { label: "Open Business Setup", to: "/app/services/oliver_settings" } },
+  // OLIVER Quotes / Proposals — F-120 Batch 8 coverage expansion (3 intents)
+  { id: "oliver_create_quote", keywords: ["create quote", "new quote", "send quote", "build quote", "quote customer"],
+    reply: "Quotes & Proposals is where you build a priced estimate, send it to the customer, and convert it to an invoice once accepted.",
+    cta: { label: "Open Quotes & Proposals", to: "/app/services/oliver_quotes" } },
+  { id: "oliver_view_proposals", keywords: ["view proposals", "see proposals", "proposal list", "outstanding proposals", "my proposals"],
+    reply: "Proposals lists every multi-option proposal you've sent — status, viewed/accepted timestamps, and the win-rate breakdown.",
+    cta: { label: "Open Proposals", to: "/app/services/oliver_proposals" } },
+  { id: "oliver_convert_proposal", keywords: ["convert proposal", "proposal to invoice", "accept proposal", "turn proposal into invoice"],
+    reply: "Open the proposal in Quotes & Proposals — once the customer accepts an option, the 'Convert to invoice' button generates the invoice in OLIVER Invoices and links it back to the source proposal.",
+    cta: { label: "Open Quotes & Proposals", to: "/app/services/oliver_quotes" } },
 
   // ── SPARK routes ─────────────────────────────────────────────────────────
   { id: "spark_contacts", keywords: ["spark contacts", "marketing contacts", "crm contacts"],
@@ -144,6 +157,16 @@ export const ARGUS_INTENTS: ArgusIntent[] = [
   { id: "spark_reviews", keywords: ["reputation", "spark reviews", "review responses"],
     reply: "Reputation Hub aggregates reviews across channels with AI-assisted response drafts.",
     cta: { label: "Open Reputation Hub", to: "/app/services/spark_reviews" } },
+  // SPARK SMS — F-120 Batch 8 coverage expansion (3 intents)
+  { id: "spark_sms_send", keywords: ["send sms campaign", "send text campaign", "sms blast", "text blast", "new sms campaign"],
+    reply: "SMS Campaigns is where you compose and send a one-off text broadcast — pick the list, pick the template, send.",
+    cta: { label: "Open SMS Campaigns", to: "/app/services/spark_sms_campaigns" } },
+  { id: "spark_sms_unsubscribes", keywords: ["sms unsubscribes", "sms opt out", "sms suppression", "stop list", "text opt out"],
+    reply: "Lead Suppression holds every email + phone that's opted out (STOP replies and unsubscribes are merged in here). Anyone on this list is excluded from outbound sends.",
+    cta: { label: "Open Lead Suppression", to: "/app/services/spark_lead_suppression" } },
+  { id: "spark_sms_log", keywords: ["sms log", "text log", "sms history", "sent texts", "sms inbox"],
+    reply: "SMS Inbox shows every inbound + outbound text — replies, delivery status, and the conversation thread per contact.",
+    cta: { label: "Open SMS Inbox", to: "/app/services/spark_sms_inbox" } },
 
   // ── ARION routes ─────────────────────────────────────────────────────────
   { id: "arion_analytics", keywords: ["ga4", "google analytics", "site traffic", "visitors"],
@@ -173,6 +196,29 @@ export const ARGUS_INTENTS: ArgusIntent[] = [
   { id: "arion_domain", keywords: ["domain", "dns", "dns records", "subdomain"],
     reply: "Domain & DNS in ARION shows your domain, DNS records, SSL status, and propagation.",
     cta: { label: "Open Domain & DNS", to: "/app/services/arion_hosting_domain_dns" } },
+  // ARION Search Indexing — F-120 Batch 8 coverage expansion (2 intents)
+  { id: "arion_submit_url", keywords: ["submit url", "submit to google", "submit to bing", "indexnow", "ping search engine", "request indexing"],
+    reply: "Bing IndexNow pushes new + changed URLs to Bing instantly (Google picks them up on its own schedule). Submit a single URL or let the daily job sweep new pages automatically.",
+    cta: { label: "Open Bing IndexNow", to: "/app/services/arion_search_bing_indexnow" } },
+  { id: "arion_indexing_status", keywords: ["check indexing", "indexing status", "is my page indexed", "page indexed", "indexed pages", "coverage status"],
+    reply: "Search Indexing shows which pages are indexed across Google + Bing, plus coverage issues and your sitemap submission history.",
+    cta: { label: "Open Search Indexing", to: "/app/services/arion_search_indexing" } },
+
+  // ── STELLA (coming soon) ─────────────────────────────────────────────────
+  { id: "stella_view", keywords: ["view stella", "open stella", "what is stella", "stella overview", "stella reporting"],
+    reply: "STELLA is the cross-product reporting + business-intelligence layer — coming soon. The placeholder page has the rebuild scope and you'll see it light up during STELLA build sessions. Stay tuned.",
+    cta: { label: "Open STELLA Overview", to: "/app/services/stella_coming" } },
+
+  // ── CONSULTING ───────────────────────────────────────────────────────────
+  { id: "consulting_service_request", keywords: ["submit service request", "new service request", "request consulting", "submit consulting ticket", "consulting ticket", "request work"],
+    reply: "Service Requests is the kanban for recurring Build-Your-Business work — blog posts, monthly SEO reviews, content refreshes. Drop a new ticket in the 'New' column and the founder will pick it up.",
+    cta: { label: "Open Service Requests", to: "/app/services/consulting_tickets" } },
+  { id: "consulting_projects_view", keywords: ["view consulting projects", "my consulting projects", "consulting work", "consulting engagements", "see projects"],
+    reply: "Projects shows every multi-phase consulting engagement — Custom Software, Agentic Builds, Full SEO Setup — with phase tracker, deliverables, and the Phase → Feature → Task drill-down.",
+    cta: { label: "Open Projects", to: "/app/services/consulting_projects" } },
+  { id: "consulting_invoice_schedule", keywords: ["invoice schedule", "billing schedule", "upcoming invoices", "next invoice", "billing cycle"],
+    reply: "Your invoice schedule (recurring charges, next billing dates, monthly retainers) lives in Plan & Pricing. OLIVER subscriptions for your own customers are on Subscriptions.",
+    cta: { label: "Open Plan & Pricing", to: "/app/settings/plan-pricing" } },
 
   // ── Cross-product ─────────────────────────────────────────────────────────
   { id: "ia_insights", keywords: ["ia insights", "intelligence", "insights"],
