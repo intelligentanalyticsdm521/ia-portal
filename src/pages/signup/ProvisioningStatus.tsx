@@ -37,6 +37,13 @@ type Phase =
   | 'creating_editor_user'
   | 'installing_plugins'
   | 'applying_branding'
+  // V2 AI Website Builder phases (Astra dropped; Elementor page tree generated from AI)
+  | 'generating_copy'
+  | 'setting_brand_globals'
+  | 'generating_images'
+  | 'generating_pages'
+  | 'publishing_pages'
+  | 'finalizing_homepage'
   | 'finishing_up'
   | 'sending_welcome'
   | 'ready'
@@ -76,6 +83,13 @@ const PHASE_LABEL: Partial<Record<Phase, string>> = {
   creating_editor_user: 'Creating your login',
   installing_plugins: 'Installing your plugin suite',
   applying_branding: 'Integrating your brand',
+  // V2 AI Website Builder
+  generating_copy: 'Writing your website copy',
+  setting_brand_globals: 'Applying your brand colors and fonts',
+  generating_images: 'Generating your site imagery',
+  generating_pages: 'Designing your pages',
+  publishing_pages: 'Publishing your pages',
+  finalizing_homepage: 'Setting your homepage',
   finishing_up: 'Wrapping things up',
   sending_welcome: 'Sending your welcome email',
   ready: "Your site is ready!",
@@ -112,6 +126,15 @@ const PHASE_INDEX: Partial<Record<Phase, number>> = (() => {
   out.resetting_admin_password = 2;
   out.stripping_hostinger = 4;
   out.creating_editor_user = 4;
+  // V2 AI Website Builder — all collapse to the "Integrating your brand" slot
+  // (we keep one visible row so the UI stays readable; the active phase label
+  // above the bar still shows the precise V2 sub-step).
+  out.generating_copy = 5;
+  out.setting_brand_globals = 5;
+  out.generating_images = 5;
+  out.generating_pages = 5;
+  out.publishing_pages = 5;
+  out.finalizing_homepage = 5;
   out.finishing_up = 6;
   return out;
 })();

@@ -29,6 +29,17 @@ type ProvisioningPhase =
   | 'plugin_deploy'
   | 'auto_redeem_trigger'
   | 'bootstrap_running'
+  // V2 AI Website Builder phases (Astra dropped; Elementor page tree generated from AI)
+  | 'installing_plugins'
+  | 'generating_copy'
+  | 'setting_brand_globals'
+  | 'generating_images'
+  | 'generating_pages'
+  | 'publishing_pages'
+  | 'finalizing_homepage'
+  | 'applying_branding'
+  | 'finishing_up'
+  | 'sending_welcome'
   | 'ready'
   | 'ready_partial'
   | 'failed';
@@ -46,6 +57,17 @@ const PHASE_LABELS: Record<string, string> = {
   plugin_deploy: 'Installing IA Plugin',
   auto_redeem_trigger: 'Linking your site',
   bootstrap_running: 'Configuring plugins and security',
+  // V2 AI Website Builder
+  installing_plugins: 'Installing your plugin suite',
+  generating_copy: 'Writing your website copy',
+  setting_brand_globals: 'Applying your brand colors and fonts',
+  generating_images: 'Generating your site imagery',
+  generating_pages: 'Designing your pages',
+  publishing_pages: 'Publishing your pages',
+  finalizing_homepage: 'Setting your homepage',
+  applying_branding: 'Integrating your brand',
+  finishing_up: 'Wrapping things up',
+  sending_welcome: 'Sending your welcome email',
   ready: 'Site ready!',
   ready_partial: 'Site ready (with warnings)',
   failed: 'Something went wrong',
@@ -56,6 +78,22 @@ const VISIBLE_PHASES: ProvisioningPhase[] = [
   'ai_builder_prompt', 'ai_builder_finalize', 'plugin_deploy',
   'bootstrap_running', 'ready',
 ];
+
+// V2 AI Website Builder phases collapse into the existing visible slots so the
+// progress bar moves naturally. The active label above the bar still shows the
+// precise V2 sub-step.
+const V2_PHASE_TO_VISIBLE_SLOT: Partial<Record<ProvisioningPhase, ProvisioningPhase>> = {
+  installing_plugins: 'plugin_deploy',
+  generating_copy: 'ai_builder_finalize',
+  setting_brand_globals: 'ai_builder_finalize',
+  generating_images: 'ai_builder_finalize',
+  generating_pages: 'ai_builder_finalize',
+  publishing_pages: 'ai_builder_finalize',
+  finalizing_homepage: 'ai_builder_finalize',
+  applying_branding: 'bootstrap_running',
+  finishing_up: 'bootstrap_running',
+  sending_welcome: 'bootstrap_running',
+};
 
 export function SiteProvisioningStatus() {
   const apiBaseUrl = import.meta.env.VITE_ARION_API_BASE_URL as string;
@@ -100,7 +138,10 @@ export function SiteProvisioningStatus() {
   const phase = (status?.phase || 'queued') as ProvisioningPhase;
   const isFinished = phase === 'ready' || phase === 'ready_partial';
   const isFailed = phase === 'failed';
-  const phaseIdx = useMemo(() => Math.max(0, VISIBLE_PHASES.findIndex((p) => p === phase)), [phase]);
+  const phaseIdx = useMemo(() => {
+    const mapped = V2_PHASE_TO_VISIBLE_SLOT[phase] ?? phase;
+    return Math.max(0, VISIBLE_PHASES.findIndex((p) => p === mapped));
+  }, [phase]);
 
   return (
     <div className="min-h-screen bg-gray-50">
