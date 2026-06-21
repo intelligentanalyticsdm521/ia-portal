@@ -49,11 +49,14 @@ export function IAInsightsHeader({ data, mode = "product", activeProducts }: Pro
 
       {/* v9.0 — Gauges
           Product mode: 5 gauges (Business Pulse, Platform Score, Trend Score,
-            Intelligence Score, Cross-Channel Score).
+            Intelligence Score, ARGUS Intelligence Score).
           ARGUS mode (§1.6): 4 gauges (Business Pulse, ARGUS Platform Score,
             Trend Score, Intelligence Score) + active-products indicator.
           When crossChannel is undefined in product mode, the 5th gauge
-          renders the activation-prompt empty state per §1.7. */}
+          renders the activation-prompt empty state per §1.7.
+          2026-06-21: visible "Cross-Channel" label renamed to "ARGUS
+          Intelligence" — per Brandon's rename. The underlying data field
+          name (crossChannel) stays for code-side back-compat. */}
       <div className={`grid grid-cols-2 ${isArgus ? "md:grid-cols-5" : "md:grid-cols-5"} gap-3`}>
         <Gauge label="Business Pulse" gauge={data.overall} icon={Award} accent={PRODUCT_COLORS.argus} />
         <Gauge label={isArgus ? "ARGUS Platform Score" : `${data.product.toUpperCase()} Score`} gauge={data.platform} icon={Sparkles} accent={PRODUCT_COLORS[isArgus ? "argus" : data.product]} />
@@ -63,8 +66,8 @@ export function IAInsightsHeader({ data, mode = "product", activeProducts }: Pro
           <ActiveProductsIndicator products={activeProducts || []} />
         ) : (
           <Gauge
-            label="Cross-Channel Score"
-            gauge={data.crossChannel || { score: 0, band: "unknown", state: "insufficient_data", message: "Add a second platform to unlock cross-channel insights.", drillTo: "/app/services/argus_cross_channel" }}
+            label="ARGUS Intelligence"
+            gauge={data.crossChannel || { score: 0, band: "unknown", state: "insufficient_data", message: "Add a second platform to unlock multi-platform intelligence.", drillTo: "/app/services/argus_cross_channel" }}
             icon={BarChart3}
             accent={PRODUCT_COLORS.argus}
           />
@@ -72,14 +75,14 @@ export function IAInsightsHeader({ data, mode = "product", activeProducts }: Pro
       </div>
 
       {/* v9.0 — Bar charts.
-          Product mode: 3 bars (Trend / Intelligence / Cross-Channel).
-          ARGUS mode: 2 bars (Trend / Intelligence) — no Cross-Channel bar
-          since ARGUS IS the cross-channel home. */}
+          Product mode: 3 bars (Trend / Intelligence / ARGUS Intelligence).
+          ARGUS mode: 2 bars (Trend / Intelligence) — no ARGUS gauge since
+          ARGUS IS the cross-platform home. */}
       <div className={`mt-4 grid grid-cols-1 ${isArgus ? "md:grid-cols-2" : "md:grid-cols-3"} gap-3`}>
         <ScoreBarChart title="Trend breakdown" bars={data.trendBreakdown} accent={PRODUCT_COLORS[isArgus ? "argus" : data.product]} />
         <ScoreBarChart title="Intelligence breakdown" bars={data.intelligenceBreakdown} accent={PRODUCT_COLORS[isArgus ? "argus" : data.product]} />
         {!isArgus && (
-          <ScoreBarChart title="Cross-Channel breakdown" bars={data.crossChannelBreakdown || []} accent={PRODUCT_COLORS.argus} emptyStateMessage="Connect a second platform to populate cross-channel reports." />
+          <ScoreBarChart title="ARGUS Intelligence breakdown" bars={data.crossChannelBreakdown || []} accent={PRODUCT_COLORS.argus} emptyStateMessage="Connect a second platform to populate ARGUS Intelligence reports." />
         )}
       </div>
 

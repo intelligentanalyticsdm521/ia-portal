@@ -222,8 +222,8 @@ export const ARGUS_INTENTS: ArgusIntent[] = [
 
   // ── Cross-product ─────────────────────────────────────────────────────────
   { id: "ia_insights", keywords: ["ia insights", "intelligence", "insights"],
-    reply: "Every product has the same 4-step IA Insights pattern: Health → Trends → Intelligence → Cross-Channel.",
-    cta: { label: "Open ARGUS Cross-Channel", to: "/app/services/argus_cross_channel" } },
+    reply: "Every product has the same IA Insights pattern: Health → Trends → Intelligence. ARGUS Intelligence aggregates multi-platform reports.",
+    cta: { label: "Open ARGUS Intelligence", to: "/app/services/argus_cross_channel" } },
   { id: "settings_hub", keywords: ["settings", "configuration", "preferences"],
     reply: "Settings has its own dedicated IconRail entry on the left — gear icon at the bottom.",
     cta: { label: "Open Settings", to: "/app/services/arion_brand" } },

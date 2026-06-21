@@ -245,7 +245,7 @@ function IAInsightsStrip({
             <span className="font-semibold text-slate-900 text-sm">IA Insights — Business Health</span>
           </div>
           <Link to="/app/services/argus_cross_channel" className="text-xs text-[#EF6C33] hover:underline flex items-center gap-0.5">
-            ARGUS Cross-Channel <ArrowUpRight className="h-3 w-3" />
+            ARGUS Intelligence <ArrowUpRight className="h-3 w-3" />
           </Link>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

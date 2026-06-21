@@ -95,7 +95,10 @@ const ArgusIAInsightsPage = lazyNamed(() => import('./argus/ArgusIAInsightsPage'
 const ArgusHealthPage = lazyNamed(() => import('./argus/ArgusHealthPage'), 'ArgusHealthPage');
 const ArgusTrendsPage = lazyNamed(() => import('./argus/ArgusTrendsPage'), 'ArgusTrendsPage');
 const ArgusIntelligencePage = lazyNamed(() => import('./argus/ArgusIntelligencePage'), 'ArgusIntelligencePage');
-const ArgusCrossChannelPage = lazyNamed(() => import('./argus/ArgusCrossChannelPage'), 'ArgusCrossChannelPage');
+// 2026-06-21: ArgusCrossChannelPage renamed to ArgusIAInsightsIntelligencePage
+// to align with the per-platform Insights pattern. Service key stays
+// `argus_cross_channel` so existing serviceCatalog entries / nav don't break.
+const ArgusIAInsightsIntelligencePage = lazyNamed(() => import('./argus/ArgusIAInsightsIntelligencePage'), 'ArgusIAInsightsIntelligencePage');
 const SparkIAInsightsHealthPage = lazyNamed(() => import('./spark/SparkIAInsightsHealthPage'), 'SparkIAInsightsHealthPage');
 const SparkIAInsightsTrendsPage = lazyNamed(() => import('./spark/SparkIAInsightsTrendsPage'), 'SparkIAInsightsTrendsPage');
 const SparkIAInsightsIntelligencePage = lazyNamed(() => import('./spark/SparkIAInsightsIntelligencePage'), 'SparkIAInsightsIntelligencePage');
@@ -481,7 +484,7 @@ export function ServiceRouter() {
     return <Suspense fallback={<RouteLoading />}><ArgusIntelligencePage /></Suspense>;
   }
   if (service.key === 'argus_cross_channel') {
-    return <Suspense fallback={<RouteLoading />}><ArgusCrossChannelPage /></Suspense>;
+    return <Suspense fallback={<RouteLoading />}><ArgusIAInsightsIntelligencePage /></Suspense>;
   }
 
   if (service.section === 'LUMEN') {

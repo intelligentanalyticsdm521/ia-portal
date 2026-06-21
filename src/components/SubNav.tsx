@@ -150,7 +150,7 @@ const OLIVER_NAV: SubNavConfig = {
         { key: "oliver_ia_insights_health", label: "Health", route: "/app/services/oliver_ia_insights_health" },
         { key: "oliver_ia_insights_trends", label: "Trends", route: "/app/services/oliver_ia_insights_trends", tag: { label: "OLIVER", color: "#FEC82C" } },
         { key: "oliver_ia_insights_intelligence", label: "Intelligence", route: "/app/services/oliver_ia_insights_intelligence", tag: { label: "OLIVER", color: "#FEC82C" } },
-        { key: "argus_cross_channel", label: "Cross-Channel", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
+        { key: "argus_cross_channel", label: "Intelligence", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
       ],
     },
     {
@@ -224,7 +224,7 @@ const ARION_NAV: SubNavConfig = {
         { key: "arion_ia_insights_health", label: "Health", route: "/app/services/arion_ia_insights_health" },
         { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends", tag: { label: "ARION", color: "#38BDF8" } },
         { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#38BDF8" } },
-        { key: "argus_cross_channel", label: "Cross-Channel", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
+        { key: "argus_cross_channel", label: "Intelligence", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
         { key: "arion_service_area", label: "Service Area Config", route: "/app/services/arion_service_area" },
       ],
     },
@@ -420,7 +420,7 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends", tag: { label: "SPARK", color: "#EF6C33" } },
         { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" } },
         { key: "spark_stella", label: "STELLA Send Intelligence", route: "/app/services/spark_stella", tag: { label: "STELLA", color: "#EF6C33" } },
-        { key: "argus_cross_channel", label: "Cross-Channel", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
+        { key: "argus_cross_channel", label: "Intelligence", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
       ],
     },
     {
@@ -616,19 +616,26 @@ export const SETTINGS_KEYS = new Set<string>(
 );
 
 // v9.2 — ARGUS as full product per spec §2 (uniform nav). Single IA Insights
-// group with the 4 spec sub-items: Health → Trends → Intelligence →
-// Cross-Channel. Matches the uniform pattern used by ARION/SPARK/OLIVER.
+// group with the 4 spec sub-items: Health → Trends → Intelligence (the live
+// multi-platform 6-report page) → ARGUS Internal Intelligence (coming soon —
+// platform connectivity, automation ROI, etc.). Matches the uniform pattern
+// used by ARION/SPARK/OLIVER.
+//
+// 2026-06-21: dropped the "Cross-Channel" label from visible nav. The live
+// 6-report page is now just "Intelligence" — matches the per-platform pages.
+// The ARGUS-internal (still-coming) report set moved to "Platform Diagnostics"
+// to remove the duplicate label.
 const ARGUS_NAV: SubNavConfig = {
   productName: "ARGUS",
-  tagline: "Cross-Channel Intelligence",
+  tagline: "Multi-platform Intelligence",
   groups: [
     {
       label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "argus_ia_insights",
       items: [
-        { key: "argus_health",        label: "Health",        route: "/app/services/argus_health" },
-        { key: "argus_trends",        label: "Trends",        route: "/app/services/argus_trends" },
-        { key: "argus_intelligence",  label: "Intelligence",  route: "/app/services/argus_intelligence", tag: { label: "ARGUS", color: "#84CC16" } },
-        { key: "argus_cross_channel", label: "Cross-Channel", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
+        { key: "argus_health",        label: "Health",                  route: "/app/services/argus_health" },
+        { key: "argus_trends",        label: "Trends",                  route: "/app/services/argus_trends" },
+        { key: "argus_cross_channel", label: "Intelligence",            route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
+        { key: "argus_intelligence",  label: "Platform Diagnostics",    route: "/app/services/argus_intelligence", tag: { label: "ARGUS", color: "#84CC16" } },
       ],
     },
   ],
