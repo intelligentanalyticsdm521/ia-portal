@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useIsAuthenticated } from '@azure/msal-react';
+import { useIsAuthenticated, useMsal } from '@azure/msal-react';
 import { BrowserAuthError } from '@azure/msal-browser';
 import { useAccessToken } from '../auth/useAccessToken';
 import { useAppState } from './AppState';
 import { PlatformApiError, selectTenant, sessionVerify } from '../lib/platformApi';
+import { getCurrentActAsSession } from '../lib/founderApi';
+import {
+  setEmergencyActAsState,
+  getEmergencyActAsState,
+} from '../lib/emergencyActAs';
 
 /**
  * Clear stale MSAL interaction-tracking flags from session/local storage.
@@ -57,6 +62,7 @@ const BOOTSTRAP_STEP_TIMEOUT_MS = 12_000;
 
 export function AppGate({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useIsAuthenticated();
+  const { instance: msal } = useMsal();
   const { activeAccount, login, getToken } = useAccessToken();
   const appState = useAppState();
 
@@ -185,6 +191,44 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         bootstrapDoneRef.current = true;
         // Clear any leftover auto-recovery flag from a prior broken session
         try { sessionStorage.removeItem('iadm.portal.auth_auto_recovery'); } catch {}
+
+        // ── Emergency act-as rehydrate ─────────────────────────────────────
+        // If this user is super-user (founder), ask oliver-api whether they
+        // currently have an open 30-min emergency session. If so, repopulate
+        // the in-memory singleton so:
+        //   - the banner re-renders after a hard reload / new tab
+        //   - every API client starts sending x-actas-mode: emergency again
+        // For non-super-users this block is skipped — they can never have
+        // an emergency session.
+        //
+        // We do this AFTER the tenant context is set so getCurrentActAsSession
+        // has a valid x-tenant-key to send (oliver-api requires it). The
+        // sessionStorage mirror in emergencyActAs.ts already covers
+        // same-tab reloads; this network round-trip covers new tabs (where
+        // sessionStorage is per-tab) and ensures the backend is the source
+        // of truth on whether the session is still open.
+        if (isSuperUser && !getEmergencyActAsState() && activeAccount) {
+          try {
+            const cur = await getCurrentActAsSession(msal, activeAccount, tenantToSelect);
+            if (cur.session && cur.session.mode === 'emergency' && cur.session.expires_at) {
+              // expires_at returned as ISO; Date.parse > now means still live.
+              if (Date.parse(cur.session.expires_at) > Date.now()) {
+                setEmergencyActAsState({
+                  sessionId: cur.session.actas_log_id,
+                  tenantId: cur.session.tenant_id,
+                  tenantName: cur.session.tenant_full_name || cur.session.tenant_name,
+                  startedAt: cur.session.started_at,
+                  expiresAt: cur.session.expires_at,
+                  reason: cur.session.reason,
+                });
+              }
+            }
+          } catch (rehydrateErr) {
+            // Non-fatal — without a rehydrated session the user just sees the
+            // normal Portal. They can re-open emergency from the picker.
+            console.warn('[AppGate] emergency act-as rehydrate failed:', rehydrateErr);
+          }
+        }
       } catch (err) {
         if (err instanceof PlatformApiError) {
           if (err.status === 401) {

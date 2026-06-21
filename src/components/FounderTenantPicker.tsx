@@ -219,6 +219,23 @@ export function FounderTenantPicker() {
         reason,
       });
 
+      // Phase 2 followup #4 — one-shot toast for parity with other flows.
+      // The success path navigates immediately to /app/overview, so we stash
+      // the message in sessionStorage and let the EmergencyActAsToast picker
+      // (mounted in AppShell) render + auto-dismiss it after the navigation.
+      try {
+        sessionStorage.setItem(
+          "iadm.portal.emergencyActAs.toast",
+          JSON.stringify({
+            kind: "entered",
+            tenantLabel: emergencyTarget.full_name || emergencyTarget.name || emergencyTarget.tenant_id,
+            at: Date.now(),
+          })
+        );
+      } catch {
+        // Storage denied — non-fatal, banner still signals the mode.
+      }
+
       // Also switch active tenant context so the rest of the Portal renders
       // the target tenant's data (read-only) under emergency mode.
       const { accessToken } = await getToken();

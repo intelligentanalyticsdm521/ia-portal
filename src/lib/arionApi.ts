@@ -1,3 +1,4 @@
+import { emergencyActAsHeaders } from './emergencyActAs';
 
 export type SetupMode = 'ARION_AUTO_SETUP' | 'EXISTING_INTEGRATION';
 
@@ -262,6 +263,11 @@ async function requestJson<T>(params: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json',
       'x-tenant-key': params.tenantId,
+      // Founder emergency act-as — no-op header outside an active 30-min
+      // emergency session. While active, the backend middleware on arion-api
+      // (TODO — see followups) will be able to 403 non-GET mutations against
+      // arion routes. For oliver-api the middleware is already in place.
+      ...emergencyActAsHeaders(),
     },
     body: params.body === undefined ? undefined : JSON.stringify(params.body)
   }, params.timeoutMs || defaultTimeout);

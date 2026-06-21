@@ -12,6 +12,8 @@
  * - We do NOT send x-portal-context.
  */
 
+import { emergencyActAsHeaders } from "./emergencyActAs";
+
 export interface SessionVerifyResponse {
   surface: 'iadm_portal' | 'employee_portal' | 'customer_portal';
   user: {
@@ -300,7 +302,8 @@ export async function getProfile(params: {
     headers: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json',
-      'x-tenant-key': params.tenantId
+      'x-tenant-key': params.tenantId,
+      ...emergencyActAsHeaders(),
     }
   });
 
@@ -356,6 +359,7 @@ export async function getMeAccess(params: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json',
       'x-tenant-key': params.tenantId,
+      ...emergencyActAsHeaders(),
     },
   });
   const body = safeJsonParse(await res.text());
@@ -380,6 +384,7 @@ export async function listTenantUsers(params: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json',
       'x-tenant-key': params.tenantId,
+      ...emergencyActAsHeaders(),
     },
   });
   const body = safeJsonParse(await res.text());
@@ -406,6 +411,7 @@ export async function updateTenantUserRole(params: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json',
       'x-tenant-key': params.tenantId,
+      ...emergencyActAsHeaders(),
     },
     body: JSON.stringify({ role: params.role }),
   });
@@ -433,6 +439,7 @@ export async function updateTenantUserProducts(params: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json',
       'x-tenant-key': params.tenantId,
+      ...emergencyActAsHeaders(),
     },
     body: JSON.stringify({ products: params.products }),
   });
@@ -458,7 +465,8 @@ export async function updateProfile(params: {
     headers: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json',
-      'x-tenant-key': params.tenantId
+      'x-tenant-key': params.tenantId,
+      ...emergencyActAsHeaders(),
     },
     body: JSON.stringify(params.payload)
   });
@@ -505,7 +513,8 @@ async function consultingGet<T>(params: {
     headers: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json',
-      'x-tenant-key': params.tenantId
+      'x-tenant-key': params.tenantId,
+      ...emergencyActAsHeaders(),
     }
   });
   const body = safeJsonParse(await res.text());
@@ -544,7 +553,8 @@ export async function setConsultingManaged(params: {
     headers: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json',
-      'x-tenant-key': params.tenantId
+      'x-tenant-key': params.tenantId,
+      ...emergencyActAsHeaders(),
     },
     body: JSON.stringify({ enabled: params.enabled })
   });

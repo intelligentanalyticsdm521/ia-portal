@@ -17,6 +17,7 @@ import { MessageSquare, Send, X, ExternalLink, Play, Ticket } from "lucide-react
 import { matchIntent, type ArgusIntent } from "./argusIntents";
 import { ALL_TOURS, GuidedTour, type TourDef } from "../GuidedTour";
 import { useAppState } from "../../app/AppState";
+import { emergencyActAsHeaders } from "../../lib/emergencyActAs";
 
 type Sender = "user" | "argus";
 
@@ -326,7 +327,13 @@ function InlineTicketForm({ onClose, onSubmitted }: { onClose: () => void; onSub
       const payload = { ...draft, context };
       const res = await fetch(`${apiBase}/api/v1/argus/tickets`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          // Founder emergency act-as: ticket creation is a write — if the
+          // founder is in 30-min read-only mode, LUMEN-API will 403 once its
+          // middleware lands (followup). No-op outside emergency mode.
+          ...emergencyActAsHeaders(),
+        },
         credentials: "include",
         body: JSON.stringify(payload),
       });

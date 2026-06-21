@@ -67,6 +67,7 @@ export async function fetchPendingChange(params: {
     headers: {
       Authorization: `Bearer ${params.token}`,
       "x-tenant-key": params.tenantId,
+      ...emergencyActAsHeaders(),
     },
   });
   const j = await res.json().catch(() => ({}));
@@ -100,6 +101,7 @@ export async function fetchSubscriptions(params: {
     headers: {
       Authorization: `Bearer ${params.token}`,
       "x-tenant-key": params.tenantId,
+      ...emergencyActAsHeaders(),
     },
   });
   const j = await res.json().catch(() => ({}));
@@ -124,6 +126,9 @@ export async function createPortalSession(params: {
       Authorization: `Bearer ${params.token}`,
       "x-tenant-key": params.tenantId,
       "Content-Type": "application/json",
+      // Founder emergency act-as: backend blocks portal-session creation
+      // during read-only mode (it would write a Stripe portal session row).
+      ...emergencyActAsHeaders(),
     },
     body: JSON.stringify(body),
   });
@@ -142,6 +147,8 @@ export async function cancelPendingChange(params: {
     headers: {
       Authorization: `Bearer ${params.token}`,
       "x-tenant-key": params.tenantId,
+      // Founder emergency act-as: backend blocks this DELETE in read-only mode.
+      ...emergencyActAsHeaders(),
     },
   });
   const j = await res.json().catch(() => ({}));

@@ -4,6 +4,7 @@
 
 import type { IPublicClientApplication, AccountInfo } from "@azure/msal-browser";
 import { authScopes } from "../auth/msalConfig";
+import { emergencyActAsHeaders } from "./emergencyActAs";
 
 const SPARK_API_BASE =
   (import.meta.env.VITE_SPARK_API_BASE as string) ||
@@ -40,6 +41,11 @@ async function sparkFetch<T>(
       Authorization: `Bearer ${token}`,
       "x-tenant-id": tenantId,
       "Content-Type": "application/json",
+      // Founder emergency act-as — no-op outside an active 30-min emergency
+      // session. LUMEN-API does NOT yet have the read-only middleware
+      // (followup). Sending the header now is forward-compat so backend can
+      // start enforcing without another Portal release.
+      ...emergencyActAsHeaders(),
       ...(init?.headers as Record<string, string>),
     },
   });

@@ -6,6 +6,7 @@ import { SubNav, SUB_NAV_CONFIGS, SETTINGS_KEYS, type SubNavConfig } from "./Sub
 import { useOliverRole } from "../hooks/useOliverRole";
 import { ArgusChatbot } from "./argus/ArgusChatbot";
 import { EmergencyActAsBanner } from "./EmergencyActAsBanner";
+import { EmergencyActAsToast } from "./EmergencyActAsToast";
 // Onboarding V3 Phase 3 — slim "next thing to do" strip for first-time
 // users. Self-hides once dismissed (session-scoped) or once there are no
 // pending tasks. Co-exists with all existing setup banners.
@@ -135,6 +136,11 @@ export function AppShell() {
 
       {/* F-120 — floating ARGUS chatbot, always available on authenticated pages */}
       <ArgusChatbot />
+
+      {/* Phase 2 followup #4 — one-shot success toast after entering emergency
+          mode. Reads the sessionStorage stash set by FounderTenantPicker just
+          before its hard navigation. Returns null when nothing's stashed. */}
+      <EmergencyActAsToast />
     </div>
   );
 }
