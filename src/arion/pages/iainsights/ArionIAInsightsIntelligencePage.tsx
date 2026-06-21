@@ -1,36 +1,44 @@
-// ArionIAInsightsIntelligencePage — v9.5 LIVE.
+// ArionIAInsightsIntelligencePage — v10.0 SINGLE-SOURCE LIVE.
 //
-// All 6 ARION Intelligence reports now run on real engines. Engines read
-// the same multi-source data the ARION Trends page consumes (GA4, GSC,
-// GBP, Bing, SE Ranking, IA Plugin) and produce IntelligenceReport.
+// Brandon's locked architecture (2026-06-21): 6 single-source ARION
+// Intelligence reports rendered from arion-api's /arion/sites/:siteId/
+// intelligence aggregator. Multi-platform reports (Lead Source Quality,
+// Content ROI, Reputation → Revenue) have relocated to ARGUS Cross-
+// Channel Intelligence and no longer render on this page.
+//
+// All scoring runs server-side; the page is a thin renderer with a 12h
+// cached fetch + on-demand refresh button.
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useArionContext } from "../../useArionContext";
-import { useAnalyticsData } from "../../analytics/useAnalyticsData";
 import { useAccessToken } from "../../../auth/useAccessToken";
 import { useAppState } from "../../../app/AppState";
-import { useProductTier, tierMeets } from "../../../hooks/useProductTier";
-import { Lock, TrendingUp, Users, DollarSign, Activity, Target, ArrowRight, X } from "lucide-react";
-import { runAllArionIntelligence, type IntelligenceReport, type ArionIntelKey } from "../../analytics/arionIntelligenceEngines";
-import type { EngineInput } from "../../analytics/trendEngines";
+import { Lock, ArrowRight, X, RefreshCw, ShieldAlert, TrendingUp, Target, Compass, Code2, Gauge } from "lucide-react";
+import {
+  ARION_INTEL_META,
+  ARION_INTEL_KEYS,
+  normalizeAggregateResponse,
+  type ArionIntelKey,
+  type IntelligenceReport,
+  type IntelReportMeta,
+  type IntelligenceAggregateResponse,
+} from "../../analytics/arionIntelligenceEngines";
 
-interface IntelReportMeta {
-  key: ArionIntelKey;
-  label: string;
-  question: string;
-  icon: typeof TrendingUp;
-  modelType: string;
-  minTier: "pro" | "business";
-}
+const TIER_LABEL: Record<string, string> = {
+  starter:    "Starter",
+  essentials: "Essentials",
+  growth:     "Growth",
+  authority:  "Authority",
+};
 
-const INTEL_REPORTS: IntelReportMeta[] = [
-  { key: "acquisition",     label: "Acquisition Efficiency",     question: "Is my digital presence producing customers, not just traffic?",      icon: TrendingUp,  modelType: "Visit → form → contact → job funnel (partial without SPARK/OLIVER)",     minTier: "pro" },
-  { key: "lead_source",     label: "Lead Source Quality",        question: "Which channels produce the highest-LTV customers?",                   icon: Users,       modelType: "Source × LTV matrix (requires SPARK + OLIVER for full output)",          minTier: "business" },
-  { key: "content_roi",     label: "Content ROI",                question: "Which content investments produce measurable business outcomes?",     icon: DollarSign,  modelType: "Per-page traffic + conversion + (SPARK) contact creation rate",          minTier: "pro" },
-  { key: "rep_revenue",     label: "Reputation → Revenue",       question: "Does my online reputation measurably affect conversion?",             icon: Activity,    modelType: "GBP review signals × OLIVER booking rate correlation",                   minTier: "business" },
-  { key: "visibility_traj", label: "Visibility Trajectory",      question: "Where will my search presence be in 90 days at current trajectory?",  icon: TrendingUp,  modelType: "Linear regression v1 on GSC impression history; Holt-Winters at 12mo",   minTier: "pro" },
-  { key: "competitive",     label: "Competitive Presence Gap",   question: "How does my online presence compare to local market benchmarks?",     icon: Target,      modelType: "ARION trend scores × category benchmark dataset (radar comparison)",     minTier: "pro" },
-];
+const ICON_BY_KEY: Record<ArionIntelKey, typeof TrendingUp> = {
+  seo_authority:          ShieldAlert,
+  visibility_trajectory:  TrendingUp,
+  competitive_presence:   Target,
+  crawl_depth:            Compass,
+  schema_coverage:        Code2,
+  pagespeed_distribution: Gauge,
+};
 
 function stateColor(state: IntelligenceReport["state"]): string {
   switch (state) {
@@ -58,108 +66,113 @@ function stateLabel(state: IntelligenceReport["state"]): string {
 }
 
 export function ArionIAInsightsIntelligencePage() {
-  const { activeSiteId, arionApi } = useArionContext();
-  const { data } = useAnalyticsData(activeSiteId, 90);
+  const { activeSiteId } = useArionContext();
   const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
-  const { tier, ready: tierReady } = useProductTier("arion");
-  const [searchData, setSearchData] = useState<any>(null);
-  const [gbpData, setGbpData] = useState<any>(null);
-  const [gbpReviews, setGbpReviews] = useState<any>(null);
-  const [bingData, setBingData] = useState<any>(null);
-  const [seoData, setSeoData] = useState<any>(null);
-  const [pluginData, setPluginData] = useState<any>(null);
-  const [benchmarks, setBenchmarks] = useState<Record<string, number>>({});
+  const [data, setData] = useState<IntelligenceAggregateResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<ArionIntelKey | null>(null);
 
-  // Fetch the multi-source data the engines need (same fetches as Trends page).
-  useEffect(() => {
-    if (!activeSiteId || !activeTenantId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const [search, gbp, reviews, bing, seo, pluginContent] = await Promise.all([
-          arionApi.getSearchPerformance('google', activeSiteId, { period: 90, groupBy: 'all' }).catch(() => null),
-          arionApi.getGbpBusiness(activeSiteId).catch(() => null),
-          arionApi.getGbpReviewsLive(activeSiteId).catch(() => null),
-          arionApi.getBingPerformance(activeSiteId, 90).catch(() => null),
-          arionApi.getSeoRankings(activeSiteId, { range: '30d' }).catch(() => null),
-          arionApi.getPluginContentAggregate(activeSiteId).catch(() => null),
-        ]);
-        if (cancelled) return;
-        setSearchData(search);
-        setGbpData(gbp);
-        setGbpReviews(reviews);
-        setBingData(bing);
-        setSeoData(seo);
-        setPluginData(pluginContent);
-      } catch { /* swallow */ }
-    })();
-    return () => { cancelled = true; };
-  }, [activeSiteId, activeTenantId, arionApi]);
+  const apiBase = (import.meta.env.VITE_ARION_API_BASE_URL as string)?.replace(/\/$/, "");
 
-  // Fetch benchmarks from arion-api (best-effort).
-  useEffect(() => {
-    if (!activeTenantId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const token = await getToken();
-        const apiBase = (import.meta.env.VITE_ARION_API_BASE_URL as string)?.replace(/\/$/, "");
-        if (!apiBase) return;
-        const res = await globalThis.fetch(`${apiBase}/arion/ia-insights/benchmarks`, {
-          headers: { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId },
-        });
-        if (res.ok && !cancelled) {
-          const body = await res.json();
-          if (body?.data) setBenchmarks(body.data);
-        }
-      } catch { /* swallow */ }
-    })();
-    return () => { cancelled = true; };
-  }, [activeTenantId, getToken]);
+  // Fetch — used by initial load + manual refresh.
+  const load = async (forceRefresh: boolean) => {
+    if (!activeSiteId || !activeTenantId || !apiBase) return;
+    setError(null);
+    if (forceRefresh) setRefreshing(true); else setLoading(true);
+    try {
+      const token = await getToken();
+      const url = forceRefresh
+        ? `${apiBase}/arion/sites/${activeSiteId}/intelligence/refresh`
+        : `${apiBase}/arion/sites/${activeSiteId}/intelligence`;
+      const res = await globalThis.fetch(url, {
+        method: forceRefresh ? "POST" : "GET",
+        headers: { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = await res.json();
+      const normalized = normalizeAggregateResponse(body?.data ?? body);
+      setData(normalized);
+    } catch (e: any) {
+      setError(e?.message || "Failed to load Intelligence reports.");
+      console.error("[ArionIntelligencePage]", e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
-  const reports = useMemo(() => {
-    const input: EngineInput = {
-      d: data,
-      searchData,
-      gbpData,
-      gbpReviews,
-      bingData,
-      seoData,
-      pluginData,
-      sparkConnected: false,  // TODO v9.6: read from tenant context
-      benchmarks,
-    };
-    return runAllArionIntelligence(input);
-  }, [data, searchData, gbpData, gbpReviews, bingData, seoData, pluginData, benchmarks]);
+  useEffect(() => {
+    void load(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSiteId, activeTenantId]);
+
+  const reports = data?.reports;
+  const tier = data?.tier || null;
+
+  const intelligenceScoreDisplay = useMemo(() => {
+    if (!data) return "—";
+    if (data.intelligenceScore == null) return "—";
+    return String(data.intelligenceScore);
+  }, [data]);
 
   return (
     <div className="p-4 max-w-7xl mx-auto">
-      <div className="mb-3">
-        <h1 className="text-2xl font-bold text-slate-900">IA Insights — Intelligence</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Modelled cross-product reports. Engines run on live data; reports auto-upgrade from "insufficient data" → "partial" → "live" as your data and product mix accumulates.</p>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">IA Insights — Intelligence</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Six single-source ARION reports. Each runs on one ARION-owned data feed — no cross-platform blends. Cross-channel intelligence lives in ARGUS.</p>
+        </div>
+        <button
+          onClick={() => void load(true)}
+          disabled={refreshing || loading}
+          className="inline-flex items-center gap-1.5 rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+          {refreshing ? "Refreshing..." : "Refresh"}
+        </button>
       </div>
 
-      <div className="mb-4 rounded-md border-l-4 border-blue-400 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-        <strong>How reports unlock:</strong> Most ARION Intelligence reports compose data across products. Reports run today with ARION-side data in partial mode; connecting SPARK + OLIVER promotes them to full-live state. Each card shows its current state + what's missing.
+      <div className="mb-4 rounded-md border-l-4 border-blue-400 bg-blue-50 px-4 py-3 text-sm text-blue-900 flex items-center gap-4">
+        <div className="flex-1">
+          <strong>ARION Intelligence Score: {intelligenceScoreDisplay}</strong>
+          {data?.intelligenceTier && (
+            <span className="ml-2 inline-flex items-center text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">Tier {data.intelligenceTier}</span>
+          )}
+          <span className="ml-3 text-xs text-blue-800">{data ? `${data.activeReports} of ${data.totalReports} reports active` : "Loading..."}</span>
+          {tier && <span className="ml-3 text-xs text-blue-800">SEO tier: {TIER_LABEL[tier] || tier}</span>}
+        </div>
+        <div className="text-xs text-blue-800">
+          {data?.source === "cache" ? "Cached (12h TTL)" : data?.source === "fresh" ? "Just calculated" : ""}
+        </div>
       </div>
+
+      {error && (
+        <div className="mb-4 rounded-md border-l-4 border-red-400 bg-red-50 px-4 py-3 text-sm text-red-900">
+          Failed to load Intelligence reports: {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-        {INTEL_REPORTS.map((m) => {
-          const r: IntelligenceReport = reports[m.key] ?? {
-            score: 0, state: "insufficient_data",
-            headline: "Collecting data — check back in 24 hours",
+        {ARION_INTEL_META.map((m) => {
+          const r: IntelligenceReport = reports?.[m.key] ?? {
+            score: null, state: loading ? "insufficient_data" : "insufficient_data",
+            headline: loading ? "Loading..." : "Not yet calculated",
             scoreInputs: [], observations: [], actions: [],
-            dataGap: "Awaiting first data refresh.",
+            dataGap: loading ? undefined : "Awaiting first calculation.",
           };
-          const tierLocked = tierReady && !tierMeets(tier, m.minTier);
-          const effectiveState: IntelligenceReport["state"] = tierLocked ? "locked" : r.state;
-          const Icon = m.icon;
-          const color = stateColor(effectiveState);
-          const bg = stateBg(effectiveState);
+          const Icon = ICON_BY_KEY[m.key];
+          const color = stateColor(r.state);
+          const bg = stateBg(r.state);
+          const isLocked = r.state === "locked";
           return (
-            <button key={m.key} onClick={() => setOpen(m.key)} className={`text-left rounded-lg border-2 p-4 transition-shadow hover:shadow-md ${bg}`}>
+            <button
+              key={m.key}
+              onClick={() => setOpen(m.key)}
+              className={`text-left rounded-lg border-2 p-4 transition-shadow hover:shadow-md ${bg}`}
+            >
               <div className="flex items-start gap-2 mb-2">
                 <div className="flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center" style={{ background: `${color}1A`, color }}>
                   <Icon className="h-5 w-5" />
@@ -167,35 +180,41 @@ export function ArionIAInsightsIntelligencePage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="font-semibold text-sm text-slate-900">{m.label}</span>
-                    <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${m.minTier === "business" ? "bg-violet-100 text-violet-700" : "bg-blue-100 text-blue-700"}`}>{m.minTier}</span>
+                    <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${
+                      m.minTier === "authority" ? "bg-violet-100 text-violet-700"
+                      : m.minTier === "growth" ? "bg-blue-100 text-blue-700"
+                      : m.minTier === "essentials" ? "bg-emerald-100 text-emerald-700"
+                      : "bg-slate-200 text-slate-700"
+                    }`}>{m.minTier}</span>
                   </div>
                   <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-2">{m.question}</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5 italic">Source: {m.source}</p>
                 </div>
               </div>
 
               <div className="flex items-center justify-between mt-3 mb-2">
                 <div className="flex items-center gap-2">
-                  {!tierLocked && (effectiveState === "ok" || effectiveState === "partial") ? (
-                    <span className="text-3xl font-bold tabular-nums" style={{ color }}>{(r.score ?? 0).toFixed(0)}</span>
+                  {!isLocked && r.score != null ? (
+                    <span className="text-3xl font-bold tabular-nums" style={{ color }}>{r.score}</span>
                   ) : (
                     <span className="text-2xl font-bold text-slate-300">—</span>
                   )}
                   <span className="flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ background: `${color}1A`, color }}>
-                    {effectiveState === "ok" && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
-                    {effectiveState === "partial" && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
-                    {(effectiveState === "insufficient_data" || effectiveState === "locked") && <Lock className="h-3 w-3" />}
-                    {tierLocked ? `Requires ${m.minTier}` : stateLabel(effectiveState)}
+                    {r.state === "ok" && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
+                    {r.state === "partial" && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
+                    {(r.state === "insufficient_data" || r.state === "locked") && <Lock className="h-3 w-3" />}
+                    {isLocked ? `Requires ${m.minTier}` : stateLabel(r.state)}
                   </span>
                 </div>
                 <ArrowRight className="h-4 w-4 text-slate-400" />
               </div>
 
               <p className="text-xs text-slate-700 leading-snug line-clamp-2">
-                {tierLocked
-                  ? `Upgrade to ${m.minTier === "business" ? "Business" : "Pro"} to unlock this report.`
-                  : (r.headline || "Collecting data — check back in 24 hours")}
+                {isLocked
+                  ? `Upgrade to the ${TIER_LABEL[m.minTier] || m.minTier} SEO tier to unlock this report.`
+                  : (r.headline || "Awaiting first calculation.")}
               </p>
-              {tierLocked ? (
+              {isLocked ? (
                 <Link to="/pricing?platform=arion" onClick={(e) => e.stopPropagation()} className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-violet-700 hover:underline">
                   Upgrade to unlock <ArrowRight className="h-3 w-3" />
                 </Link>
@@ -208,25 +227,24 @@ export function ArionIAInsightsIntelligencePage() {
       </div>
 
       {open && (() => {
-        const m = INTEL_REPORTS.find((x) => x.key === open);
+        const m = ARION_INTEL_META.find((x) => x.key === open);
         if (!m) return null;
-        const r: IntelligenceReport = reports[open] ?? {
-          score: 0, state: "insufficient_data",
-          headline: "Collecting data — check back in 24 hours",
+        const r: IntelligenceReport = reports?.[open] ?? {
+          score: null, state: "insufficient_data",
+          headline: "Not yet calculated",
           scoreInputs: [], observations: [], actions: [],
-          dataGap: "Awaiting first data refresh.",
+          dataGap: "Awaiting first calculation.",
         };
-        const tierLocked = tierReady && !tierMeets(tier, m.minTier);
-        return <IntelligenceModal meta={m} report={r} tierLocked={tierLocked} onClose={() => setOpen(null)} />;
+        return <IntelligenceModal meta={m} report={r} onClose={() => setOpen(null)} />;
       })()}
     </div>
   );
 }
 
-function IntelligenceModal({ meta, report, tierLocked, onClose }: { meta: IntelReportMeta; report: IntelligenceReport; tierLocked?: boolean; onClose: () => void }) {
-  const Icon = meta.icon;
-  const effectiveState: IntelligenceReport["state"] = tierLocked ? "locked" : report.state;
-  const color = stateColor(effectiveState);
+function IntelligenceModal({ meta, report, onClose }: { meta: IntelReportMeta; report: IntelligenceReport; onClose: () => void }) {
+  const Icon = ICON_BY_KEY[meta.key];
+  const isLocked = report.state === "locked";
+  const color = stateColor(report.state);
   const scoreInputs = report.scoreInputs ?? [];
   const observations = report.observations ?? [];
   const actions = report.actions ?? [];
@@ -241,45 +259,45 @@ function IntelligenceModal({ meta, report, tierLocked, onClose }: { meta: IntelR
             <div className="min-w-0">
               <h2 className="text-lg font-bold text-slate-900">{meta.label}</h2>
               <p className="text-xs text-slate-500 mt-0.5">{meta.question}</p>
-              <p className="text-[10px] text-slate-400 mt-1 italic">Model: {meta.modelType}</p>
+              <p className="text-[10px] text-slate-400 mt-1 italic">Single source: {meta.source}</p>
             </div>
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
             <div className="text-right">
-              {!tierLocked && (effectiveState === "ok" || effectiveState === "partial") ? (
-                <div className="text-2xl font-bold tabular-nums" style={{ color }}>{(report.score ?? 0).toFixed(0)}</div>
+              {!isLocked && report.score != null ? (
+                <div className="text-2xl font-bold tabular-nums" style={{ color }}>{report.score}</div>
               ) : (
                 <div className="text-xl text-slate-300">—</div>
               )}
-              <div className="text-[9px] uppercase text-slate-400">{tierLocked ? `Requires ${meta.minTier}` : stateLabel(effectiveState)}</div>
+              <div className="text-[9px] uppercase text-slate-400">{isLocked ? `Requires ${meta.minTier}` : stateLabel(report.state)}</div>
             </div>
             <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded text-slate-500" aria-label="Close"><X className="h-5 w-5" /></button>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {tierLocked && (
+          {isLocked && (
             <div className="rounded-md border-l-4 border-violet-400 bg-violet-50 px-4 py-3">
               <div className="text-xs font-semibold uppercase text-violet-800 tracking-wide mb-1">Tier locked</div>
-              <p className="text-sm text-slate-800 mb-2">This report is part of the <strong>{meta.minTier === "business" ? "Business" : "Pro"}</strong> tier. Upgrade to unlock the full engine output.</p>
+              <p className="text-sm text-slate-800 mb-2">This report unlocks at the <strong>{TIER_LABEL[meta.minTier] || meta.minTier}</strong> SEO tier.</p>
               <Link to="/pricing?platform=arion" className="inline-flex items-center gap-1 text-xs font-semibold text-violet-700 hover:underline">
                 Upgrade to unlock <ArrowRight className="h-3 w-3" />
               </Link>
             </div>
           )}
-          {!tierLocked && report.dataGap && (
+          {!isLocked && report.dataGap && (
             <div className="rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3">
               <div className="text-xs font-semibold uppercase text-amber-800 tracking-wide mb-1">Data gap</div>
               <p className="text-sm text-slate-800">{report.dataGap}</p>
             </div>
           )}
-          {!tierLocked && !report.dataGap && effectiveState === "insufficient_data" && (
+          {!isLocked && !report.dataGap && report.state === "insufficient_data" && (
             <div className="rounded-md border-l-4 border-slate-300 bg-slate-50 px-4 py-3">
               <div className="text-xs font-semibold uppercase text-slate-600 tracking-wide mb-1">Collecting data</div>
-              <p className="text-sm text-slate-700">No data yet — check back in 24 hours.</p>
+              <p className="text-sm text-slate-700">No data yet — check back in 24 hours or trigger a manual refresh.</p>
             </div>
           )}
-          {!tierLocked && scoreInputs.length > 0 && (
+          {!isLocked && scoreInputs.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {scoreInputs.filter((i) => i?.value !== null && i?.value !== undefined).slice(0, 4).map((k) => (
                 <div key={k.key} className="rounded-md border border-slate-200 bg-white px-3 py-2" style={{ borderTopWidth: 3, borderTopColor: color }}>
@@ -290,7 +308,7 @@ function IntelligenceModal({ meta, report, tierLocked, onClose }: { meta: IntelR
               ))}
             </div>
           )}
-          {!tierLocked && observations.length > 0 && (
+          {!isLocked && observations.length > 0 && (
             <div className="rounded-lg bg-slate-900 text-slate-100 p-5">
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded" style={{ background: "#84CC1620", color: "#A3E635" }}>ARGUS</span>
@@ -323,7 +341,7 @@ function IntelligenceModal({ meta, report, tierLocked, onClose }: { meta: IntelR
 
         <div className="flex items-center justify-between border-t border-slate-200 px-6 py-3 bg-slate-50 rounded-b-lg flex-shrink-0">
           <div className="text-[11px] text-slate-500">
-            Generated by <span className="font-semibold" style={{ color: "#A3E635" }}>ARGUS</span>
+            Generated by <span className="font-semibold" style={{ color: "#A3E635" }}>ARGUS</span> · single-source: {meta.source}
           </div>
           <button onClick={onClose} className="px-4 py-1.5 text-xs bg-slate-900 text-white rounded hover:bg-slate-800">Close</button>
         </div>
