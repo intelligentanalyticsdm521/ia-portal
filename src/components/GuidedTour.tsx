@@ -18,6 +18,7 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { X, ChevronRight, ChevronLeft, Play } from "lucide-react";
+import { useSparkApi } from "../hooks/useSparkApi";
 
 export interface TourStep {
   targetSelector?: string;             // CSS selector; omit for centered hero step
@@ -62,6 +63,7 @@ interface GuidedTourProps {
 export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: GuidedTourProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const sparkApi = useSparkApi();
   const [stepIdx, setStepIdx] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const [ready, setReady] = useState(false);
@@ -182,7 +184,19 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
   }, [open, tour.id]);
 
   const finish = () => {
-    if (persistOnFinish) markTourCompleted(tour.id);
+    if (persistOnFinish) {
+      markTourCompleted(tour.id);
+      // Walkthrough hook (Onboarding V3 Phase 3, Batch 14+) — close the
+      // tenant-wide "Take the product tour" walkthrough task. Fire-and-
+      // forget: a LUMEN-API failure must NEVER block the tour close. The
+      // by-kind endpoint is idempotent so finishing the tour multiple times
+      // (replay path) is harmless.
+      if (sparkApi.ready) {
+        sparkApi
+          .post<unknown>("/api/v1/walkthrough/tasks/by-kind/platform_tour/complete")
+          .catch(() => { /* best-effort */ });
+      }
+    }
     onClose();
   };
 
