@@ -20,7 +20,7 @@
 //
 // Bulk actions land in F-LG.2.4 (next pass). Detail drawer in F-LG.2.6.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Sparkles, MoreVertical, Search, X, CheckCircle2, Bell } from "lucide-react";
+import { Sparkles, MoreVertical, Search, X, CheckCircle2, Bell, ShieldCheck, ShieldX, ArrowUpDown } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 
@@ -64,7 +64,37 @@ interface Lead {
   is_from_cache: boolean | null;
   cache_age_days: number | null;
   contact_id: number | null;
+  // F-LG.15 adversarial verify (migration 043, batch 7 / commit d23ecfa).
+  //   'verified'   → both verifiers (SMTP + domain freshness) agreed legit
+  //   'suppressed' → at least one verifier refuted; lead was kept on the
+  //                  record but suppressed from default views downstream
+  //   null         → not yet verified (legacy rows, or verify ran offline)
+  verification_status: "verified" | "suppressed" | null;
+  // JSON array of { verifier, refuted, reason, latency_ms, errored }.
+  // We parse + show the failure reasons in the Verified column tooltip
+  // when verification_status='suppressed'.
+  verification_reasons_json: string | null;
   created_at: string;
+}
+
+// F-LG.15: parse verification_reasons_json once per row (cheap — typically
+// 2 entries) and return the first non-empty refusal reason for the tooltip.
+function firstRefusalReason(json: string | null | undefined): string | null {
+  if (!json) return null;
+  try {
+    const arr = JSON.parse(json);
+    if (!Array.isArray(arr)) return null;
+    for (const entry of arr) {
+      if (entry && entry.refuted && entry.reason) return String(entry.reason);
+    }
+    // Fall back to errored verifiers if no clean refusal reason exists.
+    for (const entry of arr) {
+      if (entry && entry.errored && entry.reason) return String(entry.reason);
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 interface LeadListResponse {
@@ -95,6 +125,18 @@ export function SparkLeadsPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [tierFilter, setTierFilter] = useState<"all" | Tier>("all");
+  // F-LG.15: verified filter chip. Synced to URL ?verified=all|true|false so
+  // a link like /app/services/spark_leads?verified=false drops the user
+  // straight onto failed-verify leads (handy for support drill-downs).
+  const [verifiedFilter, setVerifiedFilter] = useState<"all" | "true" | "false">(() => {
+    if (typeof window === "undefined") return "all";
+    const v = new URLSearchParams(window.location.search).get("verified");
+    return v === "true" || v === "false" ? v : "all";
+  });
+  // F-LG.15: sort. "default" = backend default (composite_score DESC). When
+  // user clicks the Verified column header we flip to "verification" which
+  // pushes verified rows to the top, then null, then suppressed.
+  const [sortMode, setSortMode] = useState<"default" | "verification">("default");
   const [search, setSearch] = useState("");
   const [actionMenuOpen, setActionMenuOpen] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -123,12 +165,14 @@ export function SparkLeadsPage() {
       qs.set("page", String(page));
       qs.set("limit", "50");
       if (tierFilter !== "all") qs.set("temperature", tierFilter);
+      if (verifiedFilter !== "all") qs.set("verified", verifiedFilter);
+      if (sortMode === "verification") qs.set("sort", "verification");
       const r = await get<LeadListResponse>(`/api/v1/leads?${qs.toString()}`);
       setLeads(r.data || []);
       setMeta(r.meta || null);
       // F-LG.6.6: only set the count on the initial (page=1) load — paginating
       // shouldn't re-display the pill, and changing filters shouldn't either.
-      if (page === 1 && tierFilter === "all") {
+      if (page === 1 && tierFilter === "all" && verifiedFilter === "all") {
         setSinceLastVisit(r.meta?.since_last_visit_count ?? 0);
         setVisitPillDismissed(false);
       }
@@ -137,7 +181,18 @@ export function SparkLeadsPage() {
     } finally {
       setLoading(false);
     }
-  }, [get, ready, page, tierFilter]);
+  }, [get, ready, page, tierFilter, verifiedFilter, sortMode]);
+
+  // F-LG.15: keep ?verified=… in sync with state so deep links + back/forward
+  // work. We use replaceState (not push) — toggling a filter shouldn't bloat
+  // the user's history stack.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (verifiedFilter === "all") url.searchParams.delete("verified");
+    else url.searchParams.set("verified", verifiedFilter);
+    window.history.replaceState({}, "", url.toString());
+  }, [verifiedFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -319,6 +374,30 @@ export function SparkLeadsPage() {
                 {t === "all" ? ` (${counts.all})` : t === "hot" ? ` (${counts.hot})` : t === "warm" ? ` (${counts.warm})` : ` (${counts.cold})`}
               </button>
             ))}
+            {/* F-LG.15: Verified filter group. Visually offset by a thin
+                divider so it doesn't look like a 5th temperature chip. */}
+            <div className="mx-2 h-5 w-px bg-slate-200" aria-hidden="true" />
+            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Show:</span>
+            {([
+              { value: "all", label: "All" },
+              { value: "true", label: "Verified only" },
+              { value: "false", label: "Failed verification" },
+            ] as const).map((v) => (
+              <button
+                key={v.value}
+                onClick={() => { setVerifiedFilter(v.value); setPage(1); }}
+                title={
+                  v.value === "true"  ? "Passed SMTP probe + domain freshness check (F-LG.15 adversarial verify)" :
+                  v.value === "false" ? "Refuted by at least one verifier — check the Verified column for the reason" :
+                  "All leads regardless of verification outcome"
+                }
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${verifiedFilter === v.value ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+              >
+                {v.value === "true"  && <ShieldCheck className="h-3 w-3" />}
+                {v.value === "false" && <ShieldX className="h-3 w-3" />}
+                {v.label}
+              </button>
+            ))}
             <div className="relative ml-2">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
               <input
@@ -356,6 +435,23 @@ export function SparkLeadsPage() {
                 <th className="px-4 py-3">Lifecycle</th>
                 <th className="px-4 py-3">Source</th>
                 <th className="px-4 py-3">Found</th>
+                {/* F-LG.15: Verified column. Header is clickable — flips
+                    sortMode so verified rows surface to the top, then NULL,
+                    then suppressed. Clicking again restores the default
+                    composite_score sort. */}
+                <th className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => { setSortMode((s) => (s === "verification" ? "default" : "verification")); setPage(1); }}
+                    className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-slate-700 ${sortMode === "verification" ? "text-slate-900" : ""}`}
+                    title={sortMode === "verification"
+                      ? "Verified first. Click to restore default sort (by score)."
+                      : "Click to sort: verified first, then not-yet-verified, then failed."}
+                  >
+                    Verified
+                    <ArrowUpDown className="h-3 w-3" />
+                  </button>
+                </th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
@@ -409,6 +505,42 @@ export function SparkLeadsPage() {
                     <td className="px-4 py-3 text-xs text-slate-700">{l.lifecycle_stage || "lead"}</td>
                     <td className="px-4 py-3 text-[10px] text-slate-500">{l.source || l.sources_found || "—"}</td>
                     <td className="px-4 py-3 text-[10px] text-slate-500 whitespace-nowrap">{new Date(l.created_at).toLocaleDateString()}</td>
+                    {/* F-LG.15: Verified badge cell. Three states map to a
+                        small ring badge:
+                          verified   → green check + "Passed SMTP + domain freshness"
+                          suppressed → red X    + first refusal reason from JSON
+                          null       → grey dash + "Not yet verified"
+                        The whole badge is title-tooltipped — Brandon's call
+                        to keep these inline (no hover drawer) so they're
+                        scannable in a long list. */}
+                    <td className="px-4 py-3">
+                      {l.verification_status === "verified" && (
+                        <span
+                          title="Verified — passed SMTP probe and domain freshness check."
+                          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200"
+                        >
+                          <ShieldCheck className="h-3 w-3" />
+                          Verified
+                        </span>
+                      )}
+                      {l.verification_status === "suppressed" && (
+                        <span
+                          title={`Failed verification — ${firstRefusalReason(l.verification_reasons_json) || "refuted by adversarial verify gate"}`}
+                          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-rose-100 text-rose-700 ring-1 ring-rose-200"
+                        >
+                          <ShieldX className="h-3 w-3" />
+                          Failed
+                        </span>
+                      )}
+                      {l.verification_status == null && (
+                        <span
+                          title="Not yet verified — predates adversarial verify gate, or verifier didn't run."
+                          className="inline-flex items-center gap-1 text-slate-400 text-xs"
+                        >
+                          —
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <div className="relative inline-block">
                         <button
@@ -443,7 +575,7 @@ export function SparkLeadsPage() {
               })}
               {!loading && filteredLeads.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-sm text-slate-500">
+                  <td colSpan={9} className="px-4 py-12 text-center text-sm text-slate-500">
                     {leads.length === 0
                       ? <>You haven't run a sweep yet. <a href="/app/services/spark_leadgen_new" className="text-[#EF6C33] font-semibold underline">Start a new B2B Lead Run →</a></>
                       : `No leads match "${search}".`}
