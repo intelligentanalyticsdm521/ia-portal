@@ -1,7 +1,10 @@
-import React, { useMemo } from 'react';
-import { StatCard, Card, Loading, EmptyPanel, ConsultingUpsell } from '../../components/Ui';
+import React, { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { StatCard, Card, Loading, EmptyPanel, ConsultingUpsell, meetsMinTier } from '../../components/Ui';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
+import { AiBlockGenerator } from '../../components/AiBlockGenerator';
+import { AiPageAssembler } from '../../components/AiPageAssembler';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -15,6 +18,16 @@ import {
  */
 export function WebsiteContent() {
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
+  const navigate = useNavigate();
+  const [genOpen, setGenOpen] = useState(false);
+  const [asmOpen, setAsmOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // F-AI-WB Phase 1 (2026-06-20) — Pro+ gate on the IL block generator.
+  // Shows the buttons greyed-out with a link to the full AI Builder page
+  // (which carries the standard TierGate overlay + upgrade CTA) for lower tiers.
+  const arionTier = (selectedSite?.arionTier || 'lite') as string;
+  const ilEnabled = meetsMinTier(arionTier, 'pro');
 
   const fetchIfId = <T,>(fn: (s: string) => Promise<T>) =>
     activeSiteId ? fn(activeSiteId) : Promise.resolve(null);
@@ -84,6 +97,52 @@ export function WebsiteContent() {
 
   return (
     <div>
+      {/* F-AI-WB Phase 1 (2026-06-20) — IL block-generation entry points.
+          Sits at top of the page so admins can launch the drawer or hop to
+          the dedicated AI Builder workspace without scrolling past analytics. */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 12, marginBottom: 12, padding: '12px 14px',
+        background: ilEnabled ? 'rgba(56,189,248,0.06)' : '#F8FAFC',
+        border: `1px solid ${ilEnabled ? 'rgba(56,189,248,0.25)' : '#E5EEF2'}`,
+        borderRadius: 6,
+      }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase', letterSpacing: 0.6 }}>
+            ARION Intelligence Layer
+          </div>
+          <div style={{ fontSize: 12, color: '#0B1C24', marginTop: 2 }}>
+            {ilEnabled
+              ? 'Generate Elementor blocks with IL and assemble them into a page.'
+              : 'Upgrade to Pro to generate Elementor blocks with IL.'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <button
+            onClick={() => ilEnabled ? setGenOpen(true) : navigate('/app/services/arion_website_ai_builder')}
+            disabled={!activeSiteId}
+            style={{
+              background: ilEnabled ? '#38BDF8' : '#fff',
+              color: ilEnabled ? '#fff' : '#0B1C24',
+              border: ilEnabled ? 'none' : '1px solid #CBD5E1',
+              borderRadius: 6, padding: '8px 14px',
+              fontSize: 12, fontWeight: 600, cursor: activeSiteId ? 'pointer' : 'not-allowed',
+              opacity: activeSiteId ? 1 : 0.5,
+            }}
+          >Generate with IL</button>
+          <button
+            onClick={() => ilEnabled ? setAsmOpen(true) : navigate('/app/services/arion_website_ai_builder')}
+            disabled={!activeSiteId}
+            style={{
+              background: '#fff', color: '#0B1C24',
+              border: '1px solid #CBD5E1', borderRadius: 6, padding: '8px 14px',
+              fontSize: 12, fontWeight: 600, cursor: activeSiteId ? 'pointer' : 'not-allowed',
+              opacity: activeSiteId ? 1 : 0.5,
+            }}
+          >Assemble & publish</button>
+        </div>
+      </div>
+
       {/* Storytelling band */}
       <div style={{ ...toneColors[storyBand.tone], padding: '14px 18px', marginBottom: 16, borderRadius: 6, borderLeft: `4px solid ${toneColors[storyBand.tone].border}` }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24' }}>{storyBand.text}</div>
@@ -233,6 +292,22 @@ export function WebsiteContent() {
         serviceType="Content Strategy & Refresh"
         triggerPage="website-content"
       />
+
+      {/* F-AI-WB Phase 1 (2026-06-20) — IL drawers mount once, opened from the header CTA. */}
+      {ilEnabled && (
+        <>
+          <AiBlockGenerator
+            open={genOpen}
+            onClose={() => setGenOpen(false)}
+            onAccepted={() => setRefreshKey((k) => k + 1)}
+          />
+          <AiPageAssembler
+            open={asmOpen}
+            onClose={() => setAsmOpen(false)}
+            refreshKey={refreshKey}
+          />
+        </>
+      )}
     </div>
   );
 }

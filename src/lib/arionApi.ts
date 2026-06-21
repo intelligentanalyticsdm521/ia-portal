@@ -1975,3 +1975,116 @@ export async function removeAIPrompt(p: { baseUrl: string; bearerToken: string; 
     path: `/arion/seo/ai-prompts/${encodeURIComponent(String(p.k2siteLlmId))}?siteId=${encodeURIComponent(p.siteId)}&llmId=${encodeURIComponent(String(p.llmId))}`,
   });
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// AI Website Builder — Phase 1 (2026-06-20)
+// ════════════════════════════════════════════════════════════════════════
+// Backend: 8 emitters + assembler + WP injector live in arion-api
+// (commits 67dcb83, 8316e7c, 07720d3).
+//   POST /arion/sites/:siteId/blocks/:kind                generate one block
+//   GET  /arion/sites/:siteId/blocks?accepted=1           list drafts
+//   POST /arion/sites/:siteId/blocks/draft/:blockId/accept  mark accepted
+//   POST /arion/sites/:siteId/blocks/assemble             assemble + inject
+// Each emitter persists a row into arion.site_block_draft and returns the
+// rendered block_json shape consumable by the Elementor injector.
+
+export type AiBlockKind =
+  | 'hero'
+  | 'services'
+  | 'testimonials'
+  | 'cta'
+  | 'about'
+  | 'faq'
+  | 'gallery'
+  | 'contact';
+
+export interface AiBlockDraft {
+  draft_block_id: string;
+  kind: AiBlockKind | string;
+  block_json: Record<string, any> | null;
+  tokens_used: number | null;
+  latency_ms: number | null;
+  accepted: boolean;
+  created_at: string;
+  updated_at: string;
+  /** Optional context the emitter was called with — preserved for re-runs. */
+  context?: Record<string, any> | null;
+}
+
+export interface AiGenerateBlockResponse {
+  block_json: Record<string, any>;
+  tokens_used: number;
+  latency_ms: number;
+  draft_block_id: string;
+}
+
+export interface AiAssembleResponse {
+  pageId: string | number;
+  edit_url: string;
+  blocksInjected: number;
+}
+
+export async function generateBlock(p: {
+  baseUrl: string; bearerToken: string; tenantId: string;
+  siteId: string; kind: AiBlockKind; context?: Record<string, any>;
+}) {
+  return requestJson<AiGenerateBlockResponse>({
+    baseUrl: p.baseUrl,
+    bearerToken: p.bearerToken,
+    tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/blocks/${encodeURIComponent(p.kind)}`,
+    body: { context: p.context || {} },
+    // Anthropic calls can take 15-40s for a single block. Don't 20s-timeout.
+    timeoutMs: 90_000,
+  });
+}
+
+export async function listBlockDrafts(p: {
+  baseUrl: string; bearerToken: string; tenantId: string;
+  siteId: string; opts?: { accepted?: boolean; kind?: AiBlockKind };
+}) {
+  const qp = new URLSearchParams();
+  if (p.opts?.accepted) qp.set('accepted', '1');
+  if (p.opts?.kind) qp.set('kind', p.opts.kind);
+  const qs = qp.toString();
+  return requestJson<{ data: AiBlockDraft[] }>({
+    baseUrl: p.baseUrl,
+    bearerToken: p.bearerToken,
+    tenantId: p.tenantId,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/blocks${qs ? `?${qs}` : ''}`,
+  });
+}
+
+export async function acceptBlockDraft(p: {
+  baseUrl: string; bearerToken: string; tenantId: string;
+  siteId: string; draftBlockId: string;
+}) {
+  return requestJson<{ ok: boolean }>({
+    baseUrl: p.baseUrl,
+    bearerToken: p.bearerToken,
+    tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/blocks/draft/${encodeURIComponent(p.draftBlockId)}/accept`,
+    body: {},
+  });
+}
+
+export async function assembleBlocks(p: {
+  baseUrl: string; bearerToken: string; tenantId: string;
+  siteId: string; draftBlockIds: string[]; pageId?: string | number | null;
+}) {
+  return requestJson<AiAssembleResponse>({
+    baseUrl: p.baseUrl,
+    bearerToken: p.bearerToken,
+    tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/blocks/assemble`,
+    body: {
+      pageId: p.pageId ?? undefined,
+      draftBlockIds: p.draftBlockIds,
+    },
+    // WP injection round-trip can also be slow.
+    timeoutMs: 90_000,
+  });
+}

@@ -745,6 +745,31 @@ export function useArionContext() {
         const { removeAIPrompt } = await import('../lib/arionApi');
         return removeAIPrompt({ ...b, siteId, k2siteLlmId, llmId });
       },
+
+      /* AI Website Builder — Phase 1 (2026-06-20) */
+      async generateBlock(siteId: string, kind: string, context?: Record<string, any>) {
+        const b = await base();
+        const { generateBlock } = await import('../lib/arionApi');
+        return generateBlock({ ...b, siteId, kind: kind as any, context });
+      },
+
+      async listDrafts(siteId: string, opts?: { accepted?: boolean; kind?: string }) {
+        const b = await base();
+        const { listBlockDrafts } = await import('../lib/arionApi');
+        return listBlockDrafts({ ...b, siteId, opts: opts as any });
+      },
+
+      async acceptDraft(siteId: string, draftBlockId: string) {
+        const b = await base();
+        const { acceptBlockDraft } = await import('../lib/arionApi');
+        return acceptBlockDraft({ ...b, siteId, draftBlockId });
+      },
+
+      async assemblePage(siteId: string, params: { pageId?: string | number | null; draftBlockIds: string[] }) {
+        const b = await base();
+        const { assembleBlocks } = await import('../lib/arionApi');
+        return assembleBlocks({ ...b, siteId, pageId: params.pageId, draftBlockIds: params.draftBlockIds });
+      },
     };
   }, [activeTenantId, apiBaseUrl, getToken]);
 

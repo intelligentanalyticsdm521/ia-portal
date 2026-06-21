@@ -182,6 +182,7 @@ const ARION_NAV: SubNavConfig = {
       items: [
         { key: "arion_website_overview", label: "Overview", route: "/app/services/arion_website_overview" },
         { key: "arion_website_content", label: "Content", route: "/app/services/arion_website_content" },
+        { key: "arion_website_ai_builder", label: "AI Builder", route: "/app/services/arion_website_ai_builder", tag: { label: "IL", color: "#38BDF8" } },
         { key: "arion_website_content_seo_overview", label: "Content SEO", route: "/app/services/arion_website_content_seo_overview" },
         { key: "arion_website_staging", label: "Staging", route: "/app/services/arion_website_staging" },
       ],

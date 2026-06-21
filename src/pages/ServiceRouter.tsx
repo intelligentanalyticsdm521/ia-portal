@@ -32,6 +32,7 @@ const ArionOnboardingPage = () => <Navigate to="/app" replace />;
 // Website
 const WebsiteOverview = lazyNamed(() => import('../arion/pages/website/WebsiteOverview'), 'WebsiteOverview');
 const WebsiteContent = lazyNamed(() => import('../arion/pages/website/WebsiteContent'), 'WebsiteContent');
+const WebsiteAiBuilder = lazyNamed(() => import('../arion/pages/website/WebsiteAiBuilder'), 'WebsiteAiBuilder');
 const ContentSeoOverview = lazyNamed(() => import('../arion/pages/website/ContentSeoOverview'), 'ContentSeoOverview');
 // ContentSeoPages / ContentSeoPosts / ContentSeoSchema removed 2026-04-21 —
 // consolidated into the single Content SEO Overview storytelling page with
@@ -309,6 +310,7 @@ export function ServiceRouter() {
       case 'arion_onboarding': arionPage = <ArionOnboardingPage />; break;
       case 'arion_website_overview': arionPage = <WebsiteOverview />; break;
       case 'arion_website_content': arionPage = <WebsiteContent />; break;
+      case 'arion_website_ai_builder': arionPage = <WebsiteAiBuilder />; break;
       case 'arion_website_content_seo_overview': arionPage = <ContentSeoOverview />; break;
       // Legacy sub-routes — redirect to the consolidated Content SEO Overview
       case 'arion_website_content_seo_pages':
