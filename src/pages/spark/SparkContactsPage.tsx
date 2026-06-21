@@ -32,6 +32,12 @@ interface Contact {
   account_name?: string | null;
   account_domain?: string | null;
   tag_names?: string | null;
+  // #255 (2026-06-21) — mirrored from Stripe customer.subscription.* webhooks
+  // via LUMEN-API POST /contacts/subscription-status. NULL means no Stripe
+  // sub on file. Render a pill when value === 'cancelled' (and dim variants
+  // for past_due / trialing) so SPARK users can tell at a glance which CRM
+  // contacts churned.
+  subscription_status?: "active" | "past_due" | "cancelled" | "trialing" | "unpaid" | "incomplete" | null;
   created_at: string;
   updated_at?: string;
 }
@@ -329,7 +335,10 @@ export function SparkContactsPage() {
             </span>
           </div>
           <div className="min-w-0">
-            <div className="font-medium truncate text-slate-900">{contactLabel(c)}</div>
+            <div className="font-medium truncate text-slate-900 flex items-center gap-1.5">
+              <span className="truncate">{contactLabel(c)}</span>
+              <SubscriptionPill status={c.subscription_status} />
+            </div>
             {c.email_unsubscribed && <div className="text-[10px] text-rose-600">Unsubscribed</div>}
             {c.email_invalid && <div className="text-[10px] text-amber-600">Invalid email</div>}
           </div>
@@ -596,10 +605,17 @@ export function SparkContactsPage() {
           instead of a side-panel drawer. Mirrors OLIVER's CustomerModal
           pattern: one place to view + edit + see activity + take action,
           so users don't have to bounce between pages to do common work. */}
+      {/* #255 (2026-06-21) — the modal's save() and softDelete() already
+          fire `onChanged` so the list reloads on success. We also re-fire
+          load() on modal close as belt-and-suspenders: in practice users
+          edit+close in one motion and a stale React closure on `onChanged`
+          (when load was rebuilt between the modal mount and the save) could
+          otherwise leave the row showing pre-edit values. Re-fetching on
+          close is cheap and guarantees the list reflects the latest state. */}
       <SparkContactModal
         contactId={drawer === "detail" && detail ? detail.id : null}
         open={drawer === "detail" && !!detail}
-        onClose={() => { setDrawer(null); setDetail(null); }}
+        onClose={() => { setDrawer(null); setDetail(null); load(); }}
         onChanged={() => { load(); }}
       />
     </SparkPageShell>
@@ -617,6 +633,35 @@ function SortHeader({ label, col, sortKey, sortDir, onSort }: {
       <span>{label}</span>
       {active ? (sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : null}
     </button>
+  );
+}
+
+// #255 (2026-06-21) — inline subscription status pill on the contact row.
+// Renders nothing when null/undefined (no Stripe sub on file). Cancelled is
+// the headline case (Brandon's report: "no cancelled-sub status pill"),
+// past_due/unpaid get amber, trialing/incomplete get slate. Active is
+// rendered as a tiny dot rather than a pill so it doesn't dominate the row.
+function SubscriptionPill({ status }: { status?: Contact["subscription_status"] }) {
+  if (!status) return null;
+  if (status === "active") {
+    return (
+      <span title="Subscription active" aria-label="Subscription active"
+        className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
+    );
+  }
+  const styles: Record<string, { label: string; cls: string }> = {
+    cancelled:  { label: "Cancelled",  cls: "bg-rose-50 text-rose-700 ring-rose-200" },
+    past_due:   { label: "Past due",   cls: "bg-amber-50 text-amber-700 ring-amber-200" },
+    unpaid:     { label: "Unpaid",     cls: "bg-amber-50 text-amber-700 ring-amber-200" },
+    trialing:   { label: "Trialing",   cls: "bg-blue-50 text-blue-700 ring-blue-200" },
+    incomplete: { label: "Incomplete", cls: "bg-slate-100 text-slate-600 ring-slate-200" },
+  };
+  const s = styles[status];
+  if (!s) return null;
+  return (
+    <span className={`text-[9px] uppercase font-bold tracking-wider px-1.5 py-px rounded ring-1 ${s.cls} flex-shrink-0`}>
+      {s.label}
+    </span>
   );
 }
 
