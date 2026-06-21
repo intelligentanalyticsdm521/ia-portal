@@ -149,6 +149,9 @@ interface InProgressOnboarding {
   // F-LIFE.2 (2026-06-19): onboarding lifecycle fields surfaced from
   // oliver.tenant_onboarding_state via /admin/onboard-client/in-progress.
   onboarded_by_founder?: boolean;
+  // F-LIFE.3 (2026-06-21): id of the founder who ran the wizard for this
+  // tenant (Path B). null on Path A / pre-wizard rows.
+  onboarded_by_user_id?: string | null;
   finished_at?: string | null;
   welcome_sent_at?: string | null;
   welcome_expires_at?: string | null;
@@ -171,6 +174,11 @@ export function ConsultingOnboardClientPageV2() {
   const [view, setView] = useState<"list" | "wizard">("list");
   const [inProgress, setInProgress] = useState<InProgressOnboarding[]>([]);
   const [listLoading, setListLoading] = useState(true);
+  // F-LIFE.3 (2026-06-21): Path A vs Path B filter chip group above the list.
+  // "all" = no filter, "A" = self-serve (onboarded_by_founder=false),
+  // "B" = wizard-driven (onboarded_by_founder=true). Wired to the new
+  // ?path=A|B query param on /admin/onboard-client/in-progress.
+  const [pathFilter, setPathFilter] = useState<"all" | "A" | "B">("all");
   // Client tenant modal — opens via Continue button on the list. Null = closed.
   const [clientModal, setClientModal] = useState<{
     tenantId: string;
@@ -182,12 +190,15 @@ export function ConsultingOnboardClientPageV2() {
     if (view !== "list") return;
     let cancelled = false;
     setListLoading(true);
-    get<InProgressOnboarding[]>("/admin/onboard-client/in-progress")
+    // F-LIFE.3: include ?path=A|B when a filter chip is active. Backend maps
+    // A → onboarded_by_founder=0, B → onboarded_by_founder=1, omitted → all.
+    const qs = pathFilter === "all" ? "" : `?path=${pathFilter}`;
+    get<InProgressOnboarding[]>(`/admin/onboard-client/in-progress${qs}`)
       .then((r) => { if (!cancelled) setInProgress(Array.isArray(r) ? r : []); })
       .catch(() => { if (!cancelled) setInProgress([]); })
       .finally(() => { if (!cancelled) setListLoading(false); });
     return () => { cancelled = true; };
-  }, [view, get]);
+  }, [view, get, pathFilter]);
 
   // Wizard state
   const [step, setStep] = useState(1);
@@ -490,6 +501,8 @@ export function ConsultingOnboardClientPageV2() {
         <OnboardingsList
           rows={inProgress}
           loading={listLoading}
+          pathFilter={pathFilter}
+          setPathFilter={setPathFilter}
           onNew={() => setView("wizard")}
           onContinue={(t) => {
             // Open the ClientTenantModal in onboarding mode. All API calls
@@ -778,17 +791,27 @@ function Pill({ bg, text, label, tip }: { bg: string; text: string; label: strin
 
 // ─── Landing page list of in-progress onboardings ────────────────────────
 
-function OnboardingsList({ rows, loading, onNew, onCancel, onContinue, onResendWelcome }: {
+function OnboardingsList({ rows, loading, pathFilter, setPathFilter, onNew, onCancel, onContinue, onResendWelcome }: {
   rows: InProgressOnboarding[];
   loading: boolean;
+  pathFilter: "all" | "A" | "B";
+  setPathFilter: (p: "all" | "A" | "B") => void;
   onNew: () => void;
   onCancel: (tenant: InProgressOnboarding) => void;
   onContinue: (tenant: InProgressOnboarding) => void;
   onResendWelcome: (tenant: InProgressOnboarding) => void;
 }) {
+  // F-LIFE.3 (2026-06-21): Path A vs Path B filter chips. Default "All".
+  // A = self-serve (client did the signup, onboarded_by_founder=false).
+  // B = wizard-driven (founder ran /admin/onboard-client, onboarded_by_founder=true).
+  const FILTER_OPTIONS: Array<{ key: "all" | "A" | "B"; label: string; tip: string }> = [
+    { key: "all", label: "All", tip: "Show every onboarding (Path A + Path B)" },
+    { key: "A", label: "Path A (self-serve)", tip: "Clients who signed up via the public /signup flow" },
+    { key: "B", label: "Path B (you onboarded)", tip: "Tenants you created via the Onboard Client wizard" },
+  ];
   return (
     <div className="max-w-6xl mx-auto p-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: INK }}>Onboard Client</h1>
           <p className="text-xs text-slate-500 mt-1">Recent onboardings + resume any in-progress flow.</p>
@@ -799,6 +822,28 @@ function OnboardingsList({ rows, loading, onNew, onCancel, onContinue, onResendW
         >
           + New onboarding
         </button>
+      </div>
+
+      {/* F-LIFE.3 filter chip group — Path A vs Path B vs All. */}
+      <div className="flex items-center gap-2 mb-5">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mr-1">Filter:</span>
+        {FILTER_OPTIONS.map((opt) => {
+          const active = pathFilter === opt.key;
+          return (
+            <button key={opt.key}
+              onClick={() => setPathFilter(opt.key)}
+              title={opt.tip}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                active
+                  ? "text-white border-transparent"
+                  : "bg-white text-slate-700 border-slate-300 hover:border-slate-400"
+              }`}
+              style={active ? { background: CORE_BLUE } : {}}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
       </div>
 
       {loading ? (
@@ -831,7 +876,27 @@ function OnboardingsList({ rows, loading, onNew, onCancel, onContinue, onResendW
                   <tr key={r.tenant_id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="px-4 py-3">
                       <div className="font-semibold text-slate-900">{r.business_name}</div>
-                      <div className="text-[10px] text-slate-500 font-mono">{r.tenant_id.slice(0, 8)}…</div>
+                      <div className="text-[10px] text-slate-500 font-mono flex items-center gap-1.5">
+                        <span>{r.tenant_id.slice(0, 8)}…</span>
+                        {/* F-LIFE.3 per-row path badge. Path B (wizard) gets an
+                            indigo pill; Path A (self-serve / pre-wizard) gets
+                            a gray pill. Driven by onboarded_by_founder. */}
+                        {r.onboarded_by_founder ? (
+                          <span
+                            title={r.onboarded_by_user_id ? `Onboarded via founder wizard by user ${r.onboarded_by_user_id.slice(0, 8)}…` : "Onboarded via founder wizard"}
+                            className="inline-block px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-indigo-100 text-indigo-700"
+                          >
+                            via wizard
+                          </span>
+                        ) : (
+                          <span
+                            title="Self-serve signup — client created their own tenant"
+                            className="inline-block px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-slate-200 text-slate-600"
+                          >
+                            self-serve
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-700">{r.contact_email}</td>
                     <td className="px-4 py-3 text-xs text-slate-700">
