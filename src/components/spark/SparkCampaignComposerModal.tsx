@@ -6,13 +6,19 @@
 // campaigns list. Matches the modal-driven creation pattern: one entry
 // point, no navigation between pages to start a new campaign.
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Mail, MessageSquare, ArrowRight, ArrowLeft, Eye } from "lucide-react";
+import { Mail, MessageSquare, ArrowRight, ArrowLeft, Eye, Sparkles } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { useAppState } from "../../app/AppState";
+import { isPlatformOwner } from "../../lib/currentPlan";
 import { IadmModal, IadmButton } from "../IadmModal";
 import { MergeTagPicker, renderMergeTagPreview } from "./MergeTagPicker";
+import { SparkSuggestionsPanel } from "./SparkSuggestionsPanel";
 
 type Channel = "email" | "sms";
 type Step = "channel" | "compose";
+// Inner tab inside the "compose" step. "Compose" is the existing form;
+// "suggestions" is the F-CS.2 IL panel.
+type ComposeTab = "compose" | "suggestions";
 
 interface List { id: number; name: string; contact_count?: number }
 
@@ -31,9 +37,15 @@ interface Props {
    * and make it active or see the suggestions").
    */
   editCampaignId?: number | null;
+  /**
+   * Optional contact context. When set, the IL Suggestions tab filters to
+   * suggestions for this specific contact (e.g. opened from a contact card).
+   * Otherwise the tab lists all open tenant-level suggestions.
+   */
+  contactId?: number | null;
 }
 
-export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampaignId = null }: Props) {
+export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampaignId = null, contactId = null }: Props) {
   const { get, post, put, ready } = useSparkApi() as {
     get: <T>(p: string) => Promise<T>;
     post: <T>(p: string, body?: unknown) => Promise<T>;
@@ -41,8 +53,24 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     ready: boolean;
   };
 
+  // F-CS.2 — IL Suggestions tab is Pro/Business only. Platform owner always
+  // qualifies (see lib/currentPlan.ts). We fetch /api/v1/usage when the modal
+  // opens to learn the tenant's current feature tier; while we don't have a
+  // value yet, the tab stays hidden so we don't flash it for Standard users.
+  const { activeTenantId } = useAppState();
+  const [tenantTier, setTenantTier] = useState<string | null>(null);
+  const suggestionsAllowed = isPlatformOwner(activeTenantId)
+    || tenantTier === "pro"
+    || tenantTier === "business";
+
   const [step, setStep] = useState<Step>("channel");
   const [channel, setChannel] = useState<Channel | null>(null);
+  const [composeTab, setComposeTab] = useState<ComposeTab>("compose");
+  const [hasSuggestions, setHasSuggestions] = useState(false);
+  // Show the tab if (a) tier qualifies AND (b) there are open suggestions
+  // OR a contact context was passed in (so the user can ALWAYS see the empty
+  // state when they explicitly opened the composer in a contact's context).
+  const showSuggestionsTab = suggestionsAllowed && (hasSuggestions || !!contactId);
 
   // Form state
   const [name, setName] = useState("");
@@ -79,12 +107,28 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     // Reset baseline. Edit-mode load below will overwrite as needed.
     setStep("channel");
     setChannel(null);
+    setComposeTab("compose");
+    setHasSuggestions(false);
     setName(""); setSubject(""); setFromName(""); setFromEmail(""); setReplyTo("");
     setContentHtml(""); setContentSms(""); setListId("");
     setEditStatus(null);
     setError(null);
     if (!ready) return;
     get<{ data: List[] }>("/api/v1/lists").then((r) => setLists(r?.data || [])).catch(() => setLists([]));
+
+    // F-CS.2 — tier probe + suggestion-count probe.
+    // /api/v1/usage returns { data: { tier: 'standard'|'pro'|'business', ... } }.
+    // We fetch in parallel with the lists so opening the modal stays snappy;
+    // if either fails, the tab silently stays hidden.
+    get<{ data: { tier?: string } }>("/api/v1/usage")
+      .then((r) => setTenantTier(r?.data?.tier || null))
+      .catch(() => setTenantTier(null));
+    const suggestionsPath = contactId
+      ? `/api/v1/il/suggestions?contact_id=${contactId}&limit=1`
+      : "/api/v1/il/suggestions?limit=1";
+    get<{ data: Array<{ suggestion_id: number }> }>(suggestionsPath)
+      .then((r) => setHasSuggestions((r?.data?.length || 0) > 0))
+      .catch(() => setHasSuggestions(false));
 
     // Edit mode: GET /campaigns/:id, prefill, skip the channel picker.
     if (editCampaignId) {
@@ -110,7 +154,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
         })
         .catch((err) => setError(String((err as Error)?.message || err)));
     }
-  }, [open, ready, get, editCampaignId]);
+  }, [open, ready, get, editCampaignId, contactId]);
 
   // Esc + click-outside close handled by IadmModal.
 
@@ -226,7 +270,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
       size={step === "channel" ? "nav" : "info"}
       footer={
         <>
-          {step === "compose" && !isEditMode && (
+          {step === "compose" && composeTab === "compose" && !isEditMode && (
             <button
               onClick={() => setStep("channel")}
               className="mr-auto text-xs text-slate-500 hover:text-slate-700 inline-flex items-center gap-1"
@@ -237,7 +281,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
           <IadmButton variant="ghost" onClick={onClose}>
             {isEditMode && editStatus !== "draft" ? "Close" : "Cancel"}
           </IadmButton>
-          {step === "compose" && (!isEditMode || editStatus === "draft") && (
+          {step === "compose" && composeTab === "compose" && (!isEditMode || editStatus === "draft") && (
             <IadmButton
               variant="accent"
               product="spark"
@@ -248,7 +292,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
               {saving ? "Saving…" : isEditMode ? "Save changes" : "Save draft"}
             </IadmButton>
           )}
-          {step === "compose" && isEditMode && editStatus === "draft" && (
+          {step === "compose" && composeTab === "compose" && isEditMode && editStatus === "draft" && (
             <IadmButton
               variant="accent"
               product="spark"
@@ -290,7 +334,47 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
             </div>
           )}
 
-          {step === "compose" && channel && (
+          {step === "compose" && channel && showSuggestionsTab && (
+            <div className="mb-3 flex items-center gap-1 border-b border-slate-200">
+              <button
+                type="button"
+                onClick={() => setComposeTab("compose")}
+                className={`-mb-px px-3 py-2 text-xs font-semibold border-b-2 ${
+                  composeTab === "compose"
+                    ? "border-[#EF6C33] text-[#EF6C33]"
+                    : "border-transparent text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                Compose
+              </button>
+              <button
+                type="button"
+                onClick={() => setComposeTab("suggestions")}
+                className={`-mb-px inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold border-b-2 ${
+                  composeTab === "suggestions"
+                    ? "border-[#EF6C33] text-[#EF6C33]"
+                    : "border-transparent text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <Sparkles className="h-3 w-3" /> Suggestions
+              </button>
+            </div>
+          )}
+
+          {step === "compose" && composeTab === "suggestions" && (
+            <SparkSuggestionsPanel
+              contactId={contactId}
+              onAccepted={() => {
+                // Accepting creates an automation + enrollment, not a campaign.
+                // Just close the modal — the parent campaigns list doesn't
+                // change. F-CS.3 will add a richer post-accept callback so we
+                // can deep-link the user to the new automation.
+                onClose();
+              }}
+            />
+          )}
+
+          {step === "compose" && composeTab === "compose" && channel && (
             <div className="space-y-3">
               <div>
                 <label className="block text-[10px] uppercase font-semibold text-slate-500 mb-1">Campaign name</label>
