@@ -8,6 +8,10 @@ import { useAccessToken } from "../../auth/useAccessToken";
 import { Sparkline } from "../../components/iainsights/Sparkline";
 import { GetStartedCard } from "../../components/command/GetStartedCard";
 import { UnifiedSetupCard } from "../../components/command/UnifiedSetupCard";
+// Onboarding V3 Phase 3 — personalized "do your first X" task list. NEW
+// surface; co-exists with UnifiedSetupCard (F-87/F-124) and GetStartedCard
+// (v7.0) per Brandon's "don't break existing banners" rule.
+import { WalkthroughPanel } from "../../components/walkthroughs/WalkthroughPanel";
 
 // Each card pulls one piece of data; failures degrade gracefully (card shows "—").
 interface OliverDashboardToday {
@@ -119,6 +123,9 @@ export function CommandDashboard() {
 
       {/* v7.0 — Get Started checklist (moved here from per-product Trends pages). */}
       <GetStartedCard />
+
+      {/* Onboarding V3 Phase 3 — personalized "do your first X" task list. */}
+      <WalkthroughPanel variant="dashboard" />
 
       {/* v6.10 — IA Insights cross-product strip */}
       <IAInsightsStrip
