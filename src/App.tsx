@@ -64,6 +64,11 @@ import { WelcomePage } from './pages/signup/WelcomePage';
 import { AddSiteFlow } from './pages/sites/AddSiteFlow';
 import { SiteProvisioningStatus } from './pages/sites/SiteProvisioningStatus';
 
+// Task #257 — Tenant Workspace page. Founder lands here after Save & Finish.
+// Lives outside the service-key router because it carries a :tenantId path
+// param that doesn't fit ServiceRouter's /services/:serviceKey shape.
+import { ConsultingTenantWorkspacePage } from './pages/consulting/ConsultingTenantWorkspacePage';
+
 /** Redirect that preserves the original query string + hash. Used for the
  *  /signup → /pricing 301-style redirects so Stripe Checkout completion
  *  links like /signup/onboarding?session_id=cs_test_… still land on the
@@ -182,6 +187,14 @@ export function App() {
             {/* Add-site flow + in-app provisioning status (existing tenants) */}
             <Route path="sites/new" element={<AddSiteFlow />} />
             <Route path="sites/:siteId/provisioning" element={<SiteProvisioningStatus />} />
+
+            {/* Task #257 — Tenant Workspace (founder lands here after Save &
+                Finish on the Path B wizard). Per-product setup status + act-as
+                CTAs. Must come BEFORE the catch-all service-key route. */}
+            <Route
+              path="services/consulting/tenant-workspace/:tenantId"
+              element={<ConsultingTenantWorkspacePage />}
+            />
 
             {/* All feature-specific pages routed by service key */}
             <Route path="services/:serviceKey" element={<ServiceRouter />} />

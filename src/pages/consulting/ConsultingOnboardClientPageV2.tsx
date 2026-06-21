@@ -546,13 +546,23 @@ export function ConsultingOnboardClientPageV2() {
 
       {/* Client tenant modal — opens via Continue on the list. All API calls
           inside it scope to the client's tenant via React context (no
-          localStorage, no x-acting-tenant header). */}
+          localStorage, no x-acting-tenant header).
+          Task #257: after Save & Finish, redirect to the Tenant Workspace
+          page so Brandon lands on the founder's "view-as-this-tenant"
+          control center (not the dashboard). */}
       <ClientTenantModal
         open={!!clientModal}
         tenantId={clientModal?.tenantId || null}
         tenantName={clientModal?.tenantName}
         mode={clientModal?.mode || "onboarding"}
         onClose={() => setClientModal(null)}
+        onFinished={() => {
+          const finishedTenantId = clientModal?.tenantId;
+          setClientModal(null);
+          if (finishedTenantId) {
+            navigate(`/app/services/consulting/tenant-workspace/${finishedTenantId}`);
+          }
+        }}
       />
 
     <IadmModal
