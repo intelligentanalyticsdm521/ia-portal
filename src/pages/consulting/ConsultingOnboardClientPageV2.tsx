@@ -33,7 +33,7 @@ import {
   type SignupCatalog,
 } from "../../lib/signupCheckout";
 import { bundleDiscountPercent, type CartItem } from "../../lib/signupCart";
-import { formatPhone } from "../../lib/formatPhone";
+import PhoneInput from "../../components/PhoneInput";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -1514,9 +1514,9 @@ function Step4BusinessProfile({ profile, setProfile, businessName, setBusinessNa
             Phone
             <InfoTip text="Used on OLIVER customer-facing invoices/portals and SPARK SMS sender (Pro tier). Auto-formats as you type." />
           </label>
-          <input type="tel" value={profile.phone}
-            onChange={(e) => setProfile({ ...profile, phone: formatPhone(e.target.value) })}
-            placeholder="+1 (555) 555-5555"
+          <PhoneInput value={profile.phone}
+            onChange={(v) => setProfile({ ...profile, phone: v })}
+            placeholder="(555) 555-5555"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
         </div>
         <Field label="Website" value={profile.website} onChange={(v) => setProfile({ ...profile, website: v })} placeholder="https://…"
@@ -1595,9 +1595,9 @@ function Step5Account({ account, setAccount, fallbackEmail }: {
             Mobile phone
             <InfoTip text="Primary contact number. Used for SMS notifications, the OLIVER customer portal, and the Stripe customer phone field. Auto-formats as you type." />
           </label>
-          <input type="tel" value={account.mobile}
-            onChange={(e) => setAccount({ ...account, mobile: formatPhone(e.target.value) })}
-            placeholder="+1 (555) 555-5555"
+          <PhoneInput value={account.mobile}
+            onChange={(v) => setAccount({ ...account, mobile: v })}
+            placeholder="(555) 555-5555"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
         </div>
         <Field label="Time zone" value={account.time_zone} onChange={(v) => setAccount({ ...account, time_zone: v })} hint="Auto-detected from your browser"

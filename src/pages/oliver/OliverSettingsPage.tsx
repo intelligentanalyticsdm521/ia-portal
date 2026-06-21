@@ -3,6 +3,7 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button } from "../../components/oliver/ui";
 import { LogoPicker } from "../../components/oliver/LogoPicker";
+import PhoneInput from "../../components/PhoneInput";
 
 interface TenantSettings {
   tenantName?: string;
@@ -545,13 +546,19 @@ export function OliverSettingsPage() {
             />
           </Field>
           <Field label="Primary phone">
-            <SharedInput
-              type="tel"
-              placeholder="(555) 123-4567"
-              value={bizDraft?.phone || ""}
-              inherited={!!settings?.inherited?.phone}
-              onChange={(v) => setBizDraft({ ...bizDraft, phone: v })}
-            />
+            <div style={{ position: "relative" }}>
+              <PhoneInput
+                placeholder="(555) 123-4567"
+                value={bizDraft?.phone || ""}
+                onChange={(v) => setBizDraft({ ...bizDraft, phone: v })}
+                style={inputStyle}
+              />
+              {settings?.inherited?.phone && (
+                <div style={{ position: "absolute", right: 8, top: 8 }}>
+                  <SharedPill />
+                </div>
+              )}
+            </div>
           </Field>
           <Field label="Billing email">
             <input

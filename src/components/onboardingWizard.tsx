@@ -17,6 +17,7 @@ import {
   type DomainMode,
   type ByodInstructions,
 } from '../lib/onboardingApi';
+import PhoneInput from './PhoneInput';
 
 export type WizardStep = 'domain' | 'questionnaire' | 'branding' | 'submitting';
 
@@ -328,7 +329,7 @@ export function WhoisForm({ value, onChange }: {
         </label>
         <label className="block col-span-2">
           <span className="block text-xs font-medium text-gray-700 mb-1">Phone *</span>
-          <input type="tel" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" value={w.phone} onChange={(e) => set('phone', e.target.value)} placeholder="+15125551234" />
+          <PhoneInput className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" value={w.phone} onChange={(v) => set('phone', v)} placeholder="(555) 555-5555" />
         </label>
         <label className="block col-span-2">
           <span className="block text-xs font-medium text-gray-700 mb-1">Street address *</span>

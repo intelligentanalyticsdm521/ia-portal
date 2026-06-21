@@ -18,6 +18,7 @@ import {
   Plus, Trash2, ArrowUp, ArrowDown, Search, Save, Lock,
 } from "lucide-react";
 import { IadmModal, IadmButton } from "../IadmModal";
+import PhoneInput from "../PhoneInput";
 
 type FieldKind = "text" | "textarea" | "select" | "checkbox" | "number" | "email" | "phone" | "date" | "address";
 
@@ -417,10 +418,23 @@ function PreviewField({ field }: { field: LibraryField | (CustomField & { is_cus
       </div>
     );
   }
+  if (kind === "phone") {
+    return (
+      <label className="block">{label}
+        <PhoneInput
+          value=""
+          onChange={() => { /* preview only */ }}
+          disabled
+          placeholder={placeholder || "(555) 555-5555"}
+          className="w-full text-xs mt-0.5 px-2 py-1 rounded border border-slate-200 bg-slate-50"
+        />
+      </label>
+    );
+  }
   return (
     <label className="block">{label}
       <input
-        type={kind === "phone" ? "tel" : kind === "email" ? "email" : kind === "number" ? "number" : kind === "date" ? "date" : "text"}
+        type={kind === "email" ? "email" : kind === "number" ? "number" : kind === "date" ? "date" : "text"}
         disabled
         placeholder={placeholder || ""}
         className="w-full text-xs mt-0.5 px-2 py-1 rounded border border-slate-200 bg-slate-50"

@@ -20,23 +20,12 @@ import { fetchSessionInfo, type SignupSessionInfo } from '../../lib/onboardingAp
 import { fetchSignupSession, createSignupComplete } from '../../lib/signupCheckout';
 import { getMsalInitialized } from '../../auth/pca';
 import { authScopes } from '../../auth/msalConfig';
-
-// Inline US phone formatter — strips non-digits, caps at 10, renders
-// (XXX) XXX-XXXX as the user types. Same shape every other Portal phone
-// field will get (Task #245). Drop-in safe: returns whatever the user
-// typed if it already starts with '+' (international, leave alone).
-function formatUsPhone(raw: string): string {
-  if (raw.trim().startsWith('+')) return raw;
-  const d = raw.replace(/\D/g, '').slice(0, 10);
-  if (d.length === 0) return '';
-  if (d.length <= 3) return d;
-  if (d.length <= 6) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
-  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-}
+import PhoneInput from '../../components/PhoneInput';
 
 // Strip formatting for backend submission. Keeps a leading '+' for E.164,
 // otherwise digits only. /signup/complete writes to a NVarChar(50) column
-// so unformatted is the canonical wire shape.
+// so unformatted is the canonical wire shape. The display formatter now
+// lives in components/PhoneInput.tsx (Task #245).
 function unformatPhone(formatted: string): string {
   const t = formatted.trim();
   if (!t) return '';
@@ -381,8 +370,7 @@ function ProductSignupFlow({ sessionId, email, product }: { sessionId: string; e
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Your business name" />
           </Field>
           <Field label="Phone">
-            <input value={phone} onChange={(e) => setPhone(formatUsPhone(e.target.value))}
-              inputMode="tel" autoComplete="tel"
+            <PhoneInput value={phone} onChange={setPhone}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
               placeholder="(555) 555-5555" />
           </Field>
