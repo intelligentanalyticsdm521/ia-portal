@@ -195,12 +195,12 @@ export function OliverInsightsPage() {
     if (losingOfferings.length > 0) {
       const worstName = losingOfferings[0].offering_name;
       const worst = losingOfferings[0];
-      observations.push(`${worstName} is running at ${worst.margin_pct != null ? `${worst.margin_pct.toFixed(0)}% margin` : "negative margin"} — labor cost (${fmtMoney(worst.labor_cost)}) exceeds revenue (${fmtMoney(worst.revenue)}). Review pricing or labor allocation.`);
+      observations.push(`${worstName} is running at ${worst.margin_pct != null ? `${Number(worst.margin_pct).toFixed(0)}% margin` : "negative margin"} — labor cost (${fmtMoney(worst.labor_cost)}) exceeds revenue (${fmtMoney(worst.revenue)}). Review pricing or labor allocation.`);
       actions.push(`Raise the price on ${worstName} by 10-15% on the next quote. Customers who chose it once will likely accept a modest increase before shopping around.`);
     }
     const high = offerings.find((o) => (o.margin_pct ?? 0) >= 50);
     if (high) {
-      observations.push(`${high.offering_name} delivers your strongest margin at ${high.margin_pct?.toFixed(0)}%. Selling 2 more of these per month is worth ${fmtMoney(Number(high.profit) * 2 / Math.max(1, high.job_count))} in net profit.`);
+      observations.push(`${high.offering_name} delivers your strongest margin at ${high.margin_pct != null ? Number(high.margin_pct).toFixed(0) : "—"}%. Selling 2 more of these per month is worth ${fmtMoney(Number(high.profit) * 2 / Math.max(1, high.job_count))} in net profit.`);
       actions.push(`Promote ${high.offering_name} on your customer portal or in your next email campaign — it's your most profitable service line.`);
     }
     const lowMargin = offerings.filter((o) => o.margin_pct != null && o.margin_pct < 20 && o.margin_pct >= 0);
@@ -257,7 +257,7 @@ export function OliverInsightsPage() {
       .filter((b) => b.total_count >= 3 && b.conversion_pct != null)
       .sort((a, b) => (a.conversion_pct! - b.conversion_pct!))[0];
     if (worstBucket && worstBucket.conversion_pct! < 40) {
-      observations.push(`Quotes in the ${worstBucket.bucket} range convert at only ${worstBucket.conversion_pct?.toFixed(0)}% — the weakest segment. Consider a payment plan option to lift these.`);
+      observations.push(`Quotes in the ${worstBucket.bucket} range convert at only ${worstBucket.conversion_pct != null ? Number(worstBucket.conversion_pct).toFixed(0) : "—"}% — the weakest segment. Consider a payment plan option to lift these.`);
     }
     const avg = Number(quoteIntel.time_to_accept.avg_hours || 0);
     if (avg > 72) {
@@ -486,7 +486,7 @@ export function OliverInsightsPage() {
                       {fmtMoney(o.profit, 2)}
                     </td>
                     <td style={{ textAlign: "right", fontFamily: "monospace", color: "#5A7A8A" }}>
-                      {o.margin_pct != null ? `${o.margin_pct.toFixed(0)}%` : "—"}
+                      {o.margin_pct != null ? `${Number(o.margin_pct).toFixed(0)}%` : "—"}
                     </td>
                   </tr>
                 ))}
@@ -757,7 +757,7 @@ export function OliverInsightsPage() {
                     <tr key={c.worker_id}>
                       <td style={{ fontWeight: 500 }}>{c.worker_name}</td>
                       <td style={{ textAlign: "right" }}>{c.job_count_30d}</td>
-                      <td style={{ textAlign: "right", fontFamily: "monospace" }}>{Number(c.hours_worked_30d || 0).toFixed(1)}</td>
+                      <td style={{ textAlign: "right", fontFamily: "monospace" }}>{Number(c.hours_worked_30d ?? 0).toFixed(1)}</td>
                     </tr>
                   ))}
                 </tbody>
