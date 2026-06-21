@@ -383,10 +383,11 @@ interface EditDrawerProps {
   emailTemplates: Array<{ id: number; template_key: string; name: string }>;
   smsTemplates: Array<{ id: number; template_key: string; name: string }>;
   tags: Array<{ id: number; name: string }>;
+  sparkTasks: Array<{ task_id: number; name: string; step_count?: number }>;
   onChange: (next: { type: string; config: Record<string, unknown> }) => void;
 }
 
-function EditDrawer({ step, index, totalSteps, emailTemplates, smsTemplates, tags, onChange }: EditDrawerProps) {
+function EditDrawer({ step, index, totalSteps, emailTemplates, smsTemplates, tags, sparkTasks, onChange }: EditDrawerProps) {
   const t = (step.type || "").toLowerCase();
   const cfg = step.config || {};
 
@@ -526,37 +527,96 @@ function EditDrawer({ step, index, totalSteps, emailTemplates, smsTemplates, tag
         </div>
       )}
 
-      {/* task_call */}
-      {(t === "task_call" || t === "call" || t === "task") && (
-        <div className="space-y-2">
-          <div>
-            <label className={labelClass}>Task ID</label>
-            <input
-              type="number"
-              className={inputClass}
-              value={cfg.task_id != null ? Number(cfg.task_id) : ""}
-              onChange={(e) =>
-                setCfg({
-                  task_id: e.target.value === "" ? null : Math.max(1, parseInt(e.target.value, 10) || 0),
-                })
-              }
-              placeholder="123"
-            />
-            <div className="mt-1 text-[10px] text-slate-500">
-              References a row in lumen.spark_task. Use task name instead if you don't have the id.
+      {/* task_call — Batch 7: dropdown of tenant's named tasks
+                       (fed by GET /api/v1/spark_tasks). "Custom task_id"
+                       falls back to the legacy numeric input + free-form
+                       task_name fields so power users + legacy configs
+                       still work. */}
+      {(t === "task_call" || t === "call" || t === "task") && (() => {
+        // The picker shows the currently-selected task_id, or the sentinel
+        // "__custom__" when the existing config points at an id that isn't
+        // in the tenant's task list (e.g. the row was created before this
+        // dropdown existed, or via the legacy free-form task_name path).
+        const currentTaskId = cfg.task_id != null ? Number(cfg.task_id) : null;
+        const knownIds = new Set(sparkTasks.map((tk) => tk.task_id));
+        const inList = currentTaskId != null && knownIds.has(currentTaskId);
+        // If task_name is set without a matching task_id, OR task_id points
+        // at a task not in the list, surface the custom-id editor.
+        const isCustom =
+          (currentTaskId != null && !inList) ||
+          (currentTaskId == null && !!cfg.task_name);
+        const selectValue = isCustom ? "__custom__" : (inList ? String(currentTaskId) : "");
+        return (
+          <div className="space-y-2">
+            <div>
+              <label className={labelClass}>Task</label>
+              <select
+                className={inputClass}
+                value={selectValue}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "") {
+                    // No task selected — clear all task_call fields.
+                    setCfg({ task_id: null, task_name: undefined });
+                  } else if (v === "__custom__") {
+                    // Enter custom mode — clear the named task_id so the
+                    // user can type their own numeric id below.
+                    setCfg({ task_id: null, task_name: undefined });
+                  } else {
+                    // Picked a named task — store its id and clear the
+                    // free-form name so the runtime resolves by id.
+                    setCfg({ task_id: parseInt(v, 10), task_name: undefined });
+                  }
+                }}
+              >
+                <option value="">(pick a task)</option>
+                {sparkTasks.map((tk) => (
+                  <option key={tk.task_id} value={String(tk.task_id)}>
+                    {tk.name}
+                    {tk.step_count ? ` — ${tk.step_count} step${tk.step_count === 1 ? "" : "s"}` : ""}
+                  </option>
+                ))}
+                <option value="__custom__">Custom task_id…</option>
+              </select>
+              <div className="mt-1 text-[10px] text-slate-500">
+                {sparkTasks.length
+                  ? `Choose a saved task from this tenant or pick "Custom task_id" to reference one by id.`
+                  : `No named tasks yet — create one in the IL admin or use "Custom task_id" to reference an existing row in lumen.spark_task.`}
+              </div>
             </div>
+            {isCustom && (
+              <>
+                <div>
+                  <label className={labelClass}>Custom task ID</label>
+                  <input
+                    type="number"
+                    className={inputClass}
+                    value={cfg.task_id != null ? Number(cfg.task_id) : ""}
+                    onChange={(e) =>
+                      setCfg({
+                        task_id: e.target.value === "" ? null : Math.max(1, parseInt(e.target.value, 10) || 0),
+                      })
+                    }
+                    placeholder="123"
+                  />
+                  <div className="mt-1 text-[10px] text-slate-500">
+                    References a row in lumen.spark_task by id. Use task name instead if you don't have the id.
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>Task name (optional)</label>
+                  <input
+                    className={inputClass}
+                    value={String(cfg.task_name || "")}
+                    onChange={(e) => setCfg({ task_name: e.target.value || null })}
+                    placeholder="welcome-call"
+                  />
+                </div>
+              </>
+            )}
           </div>
-          <div>
-            <label className={labelClass}>Task name (optional)</label>
-            <input
-              className={inputClass}
-              value={String(cfg.task_name || "")}
-              onChange={(e) => setCfg({ task_name: e.target.value || null })}
-              placeholder="welcome-call"
-            />
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* branch_* */}
       {t.startsWith("branch_") && (
@@ -734,6 +794,7 @@ interface CardLookups {
   emailTemplates: Array<{ id: number; template_key: string; name: string }>;
   smsTemplates: Array<{ id: number; template_key: string; name: string }>;
   tags: Array<{ id: number; name: string }>;
+  sparkTasks: Array<{ task_id: number; name: string; step_count?: number }>;
 }
 
 function SuggestionCard({
@@ -1007,6 +1068,7 @@ function SuggestionCard({
               emailTemplates={lookups.emailTemplates}
               smsTemplates={lookups.smsTemplates}
               tags={lookups.tags}
+              sparkTasks={lookups.sparkTasks}
               onChange={updateSelectedStep}
             />
           ) : (
@@ -1054,6 +1116,10 @@ export function SparkSuggestionsPanel({ contactId, onAccepted, onDismissed, onCu
   const [emailTemplates, setEmailTemplates] = useState<Array<{ id: number; template_key: string; name: string }>>([]);
   const [smsTemplates, setSmsTemplates] = useState<Array<{ id: number; template_key: string; name: string }>>([]);
   const [tags, setTags] = useState<Array<{ id: number; name: string }>>([]);
+  // Batch 7 — F-CS.6 named tasks for the task_call dropdown. Fetched once on
+  // mount alongside the other lookups; failure degrades to the legacy
+  // "Custom task_id" numeric fallback.
+  const [sparkTasks, setSparkTasks] = useState<Array<{ task_id: number; name: string; step_count?: number }>>([]);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -1088,6 +1154,9 @@ export function SparkSuggestionsPanel({ contactId, onAccepted, onDismissed, onCu
     get<{ data: Array<{ id: number; name: string }> }>("/api/v1/tags")
       .then((r) => setTags(r?.data || []))
       .catch(() => setTags([]));
+    get<{ data: Array<{ task_id: number; name: string; step_count?: number }> }>("/api/v1/spark_tasks")
+      .then((r) => setSparkTasks(r?.data || []))
+      .catch(() => setSparkTasks([]));
   }, [ready, get]);
 
   async function accept(id: number) {
@@ -1212,7 +1281,7 @@ export function SparkSuggestionsPanel({ contactId, onAccepted, onDismissed, onCu
           setDraftSteps={setDraftSteps}
           saving={saving}
           saveError={editingRuleId === s.rule_id ? saveError : null}
-          lookups={{ emailTemplates, smsTemplates, tags }}
+          lookups={{ emailTemplates, smsTemplates, tags, sparkTasks }}
         />
       ))}
     </div>
