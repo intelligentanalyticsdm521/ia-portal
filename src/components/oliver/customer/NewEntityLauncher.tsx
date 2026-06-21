@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DetailDrawer, Button } from "../ui";
 import { formatPhone } from "../../../lib/formatPhone";
+import { PhoneInput } from "../../PhoneInput";
 
 interface ContactRow {
   contact_id: string;
@@ -295,7 +296,7 @@ function InlineCreateCustomer({
           </div>
           <div>
             <label style={labelS}>Phone</label>
-            <input type="tel" value={phone} onChange={(e) => setPhone(formatPhone(e.target.value))} style={inputS} />
+            <PhoneInput value={phone} onChange={setPhone} style={inputS} />
           </div>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelS}>Company (optional)</label>

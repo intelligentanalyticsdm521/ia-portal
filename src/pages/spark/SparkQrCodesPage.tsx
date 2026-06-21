@@ -6,6 +6,7 @@ import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkTable } from "../../components/spark/SparkTable";
 import { Plus, QrCode, ExternalLink, Eye, User, Sparkles, Wand2 } from "lucide-react";
+import { PhoneInput } from "../../components/PhoneInput";
 
 interface QrCode {
   id: number; label: string; target_url: string; short_code: string;
@@ -340,7 +341,7 @@ export function SparkQrCodesPage() {
         </div>
         <div className="spark-field">
           <label className="spark-field-label">Phone (mobile)</label>
-          <input type="tel" className="spark-field-input" value={vcard.phone} onChange={e => setVcard({ ...vcard, phone: e.target.value })} placeholder="+1 555-867-5309" />
+          <PhoneInput className="spark-field-input" value={vcard.phone} onChange={v => setVcard({ ...vcard, phone: v })} placeholder="+1 555-867-5309" />
         </div>
         <div className="spark-field">
           <label className="spark-field-label">Email</label>

@@ -5,7 +5,7 @@ import { useAccessToken } from '../../auth/useAccessToken';
 import { connectGoogle, getGoogleProperties, selectGoogleProperties, listArionSites, listGbpLocations, selectGbpLocation, disconnectGbp } from '../../lib/arionApi';
 import { useOliverApi } from '../../hooks/useOliverApi';
 import { LogoPicker } from '../../components/oliver/LogoPicker';
-import { formatPhone } from '../../lib/formatPhone';
+import { PhoneInput } from '../../components/PhoneInput';
 // F-106 — Plan & Pricing hub (SubscriptionBillingTab)
 import { PendingChangeBanner } from '../../components/PendingChangeBanner';
 import {
@@ -217,7 +217,7 @@ export function OrganizationTab() {
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700">Phone</label>
-          <input type="tel" value={draft.phone || ''} onChange={(e) => set({ phone: formatPhone(e.target.value) })} className={cls} placeholder="+1 (555) 555-5555" />
+          <PhoneInput value={draft.phone || ''} onChange={(v) => set({ phone: v })} className={cls} placeholder="+1 (555) 555-5555" />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700">Billing email <span className="text-gray-400">(optional)</span></label>

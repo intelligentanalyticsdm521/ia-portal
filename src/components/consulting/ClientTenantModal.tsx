@@ -33,7 +33,7 @@ import { useAccessToken } from "../../auth/useAccessToken";
 import { connectGoogle as arionConnectGoogle, createSeoProject as arionCreateSeoProject } from "../../lib/arionApi";
 import { InfoTip } from "../InfoTip";
 import { LogoPicker } from "../oliver/LogoPicker";
-import { formatPhone } from "../../lib/formatPhone";
+import { PhoneInput } from "../PhoneInput";
 import { Building2, CheckCircle2, ExternalLink } from "lucide-react";
 
 const ARION_API_BASE_URL = (import.meta.env.VITE_ARION_API_BASE_URL as string)
@@ -1709,8 +1709,7 @@ function PhoneField({ label, value, onChange }: { label: string; value: string; 
   return (
     <div>
       <label className="block text-xs font-semibold text-slate-700 mb-1">{label}</label>
-      <input type="tel" value={value}
-        onChange={(e) => onChange(formatPhone(e.target.value))}
+      <PhoneInput value={value} onChange={onChange}
         placeholder="+1 (555) 555-5555"
         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
     </div>

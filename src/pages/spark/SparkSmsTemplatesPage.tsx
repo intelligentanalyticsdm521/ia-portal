@@ -1,4 +1,4 @@
-// @deprecated 2026-06-12 - orphan after refactor. Superseded by F-91 unified Templates page (SparkTemplatesPage) — drop Email/SMS/Translations split. Confirm with founder before deletion (task #174).
+// @deprecated 2026-06-12 - orphan after refactor. Superseded by F-91 unified Templates page (SparkTemplatesPage) ï¿½ drop Email/SMS/Translations split. Confirm with founder before deletion (task #174).
 // SparkSmsTemplatesPage â€” SMS template library + send-test
 //
 // Lightweight cousin of the email-templates page. Single-body editor,
@@ -8,6 +8,7 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { ComingSoonBanner } from "../../components/ComingSoonBanner";
 import { Plus, Save, Send, Trash2, Copy as CopyIcon } from "lucide-react";
+import { PhoneInput } from "../../components/PhoneInput";
 
 type Category = "transactional" | "marketing" | "system";
 interface SmsTemplate {
@@ -24,6 +25,7 @@ export function SparkSmsTemplatesPage() {
   const [draft, setDraft] = useState<Partial<SmsTemplate>>({});
   const [filter, setFilter] = useState<Category | "all">("all");
   const [testPhone, setTestPhone] = useState("");
+  const [testPhoneRaw, setTestPhoneRaw] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -95,10 +97,10 @@ export function SparkSmsTemplatesPage() {
   }
 
   async function sendTest() {
-    if (!selectedId || !testPhone.trim()) return;
+    if (!selectedId || !testPhoneRaw.trim()) return;
     try {
       const r = await post<{ sent: boolean; body: string }>("/api/v1/sms-templates/send", {
-        template_id: selectedId, to: testPhone.trim(),
+        template_id: selectedId, to: testPhoneRaw.trim(),
         vars: {
           "contact.first_name": "Test", "tenant.name": "IADM",
           "job.title": "HVAC tune-up", "job.scheduled_time": "9:00 AM",
@@ -175,8 +177,8 @@ export function SparkSmsTemplatesPage() {
                   {selected.template_key && <code className="ml-2 text-[10px] bg-slate-100 px-1 py-0.5 rounded">{selected.template_key}</code>}
                 </div>
                 <div className="flex items-center gap-2">
-                  <input type="tel" value={testPhone} onChange={(e) => setTestPhone(e.target.value)} placeholder="+15551234567" className="text-xs border border-slate-300 rounded px-2 py-1 w-40" />
-                  <button disabled={!testPhone.trim()} onClick={sendTest}
+                  <PhoneInput value={testPhone} onChange={setTestPhone} onChangeRaw={setTestPhoneRaw} placeholder="+15551234567" className="text-xs border border-slate-300 rounded px-2 py-1 w-40" />
+                  <button disabled={!testPhoneRaw.trim()} onClick={sendTest}
                     className="text-xs px-2.5 py-1 rounded border border-[#EF6C33] text-[#EF6C33] flex items-center gap-1 disabled:opacity-50">
                     <Send className="h-3 w-3" /> Send test
                   </button>

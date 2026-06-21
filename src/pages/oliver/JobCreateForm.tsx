@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { Button } from "../../components/oliver/ui";
+import { PhoneInput } from "../../components/PhoneInput";
 
 interface ContactListItem {
   contact_id: string;
@@ -267,7 +268,7 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={selectStyle} />
             </Field>
             <Field label="Phone">
-              <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} style={selectStyle} />
+              <PhoneInput value={phone} onChange={setPhone} style={selectStyle} />
             </Field>
             <Field label="Company (optional)">
               <input value={company} onChange={(e) => setCompany(e.target.value)} style={{ ...selectStyle, gridColumn: "1 / -1" }} />

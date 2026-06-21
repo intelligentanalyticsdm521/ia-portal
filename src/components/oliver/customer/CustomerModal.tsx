@@ -34,6 +34,7 @@ import {
 } from "./CreatePanels";
 import { PaymentMethodsCard } from "./PaymentMethodsCard";
 import { formatPhone } from "../../../lib/formatPhone";
+import { PhoneInput } from "../../PhoneInput";
 
 type Tab = "overview" | "jobs" | "quotes" | "invoices" | "payments" | "subscriptions";
 
@@ -771,7 +772,7 @@ function CustomerInfoCard({
             </div>
             <div>
               <label style={labelS}>Phone</label>
-              <input type="tel" value={phone} onChange={(e) => setPhone(formatPhone(e.target.value))} style={inputS} />
+              <PhoneInput value={phone} onChange={setPhone} style={inputS} />
             </div>
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={labelS}>Internal notes (crew only — auto-prefills new jobs)</label>
