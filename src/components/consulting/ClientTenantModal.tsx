@@ -29,10 +29,15 @@ import { useEffect, useMemo, useState } from "react";
 import { IadmModal, CORE_BLUE, PRODUCT_ACCENT } from "../IadmModal";
 import { ClientTenantProvider, type ClientTenantValue } from "../../lib/clientTenantContext";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useAccessToken } from "../../auth/useAccessToken";
+import { connectGoogle as arionConnectGoogle, createSeoProject as arionCreateSeoProject } from "../../lib/arionApi";
 import { InfoTip } from "../InfoTip";
 import { LogoPicker } from "../oliver/LogoPicker";
 import { formatPhone } from "../../lib/formatPhone";
 import { Building2, CheckCircle2, ExternalLink } from "lucide-react";
+
+const ARION_API_BASE_URL = (import.meta.env.VITE_ARION_API_BASE_URL as string)
+  || "https://app-arion-api-prod-e6fuc9gzd8f3hqfe.centralus-01.azurewebsites.net";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -987,6 +992,7 @@ function ArionIntegrationsSection({ v, setV, tenantId }: {
   const [siteId, setSiteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState<string | null>(null);
+  const { getToken } = useAccessToken();
 
   useEffect(() => {
     let cancelled = false;
@@ -1023,30 +1029,36 @@ function ArionIntegrationsSection({ v, setV, tenantId }: {
     setWorking("google");
     try {
       const returnUrl = window.location.href;
-      const res = await fetch(`/api/v1/portal/arion/sites/${siteId}/connect-google`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ setupMode: "ARION_AUTO_SETUP", returnUrl }),
+      const token = await getToken();
+      const j = await arionConnectGoogle({
+        baseUrl: ARION_API_BASE_URL,
+        bearerToken: token.accessToken,
+        tenantId,
+        siteId,
+        setupMode: "ARION_AUTO_SETUP",
+        returnUrl,
       });
-      const j = await res.json().catch(() => null);
-      const url = j?.data?.authUrl || j?.authUrl;
+      const url = j?.authUrl;
       if (url) window.location.href = url;
-    } finally { setWorking(null); }
+    } catch { /* swallow — preserves old behavior */ }
+    finally { setWorking(null); }
   }
 
   async function createSeProject() {
     if (!siteId) return;
     setWorking("seranking");
     try {
-      const res = await fetch(`/api/v1/portal/arion/sites/${siteId}/se-ranking/projects`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+      const token = await getToken();
+      await arionCreateSeoProject({
+        baseUrl: ARION_API_BASE_URL,
+        bearerToken: token.accessToken,
+        tenantId,
+        siteId,
+        body: {},
       });
-      if (res.ok) setV({ ...v, se_ranking_project_created: true });
-    } finally { setWorking(null); }
+      setV({ ...v, se_ranking_project_created: true });
+    } catch { /* swallow — preserves old behavior */ }
+    finally { setWorking(null); }
   }
 
   const Row = ({ label, desc, connected, onClick, busyKey, cta }: { label: string; desc: string; connected: boolean; onClick?: () => void; busyKey?: string; cta?: string }) => (

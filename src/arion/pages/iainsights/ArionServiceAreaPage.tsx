@@ -9,6 +9,7 @@ import { useArionContext } from "../../useArionContext";
 import { useAccessToken } from "../../../auth/useAccessToken";
 import { useAppState } from "../../../app/AppState";
 import { MapPin, Save, Check, Trash2, Briefcase } from "lucide-react";
+import { getIaInsightsServiceArea, putIaInsightsServiceArea } from "../../../lib/arionApi";
 
 interface ServiceArea {
   city?: string;
@@ -43,17 +44,14 @@ export function ArionServiceAreaPage() {
     try {
       const token = await getToken();
       const base = import.meta.env.VITE_ARION_API_BASE_URL as string;
-      const r = await globalThis.fetch(`${base}/arion/ia-insights/service-area?siteId=${encodeURIComponent(activeSiteId)}`, {
-        headers: { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId },
+      const body = await getIaInsightsServiceArea({
+        baseUrl: base, bearerToken: token.accessToken, tenantId: activeTenantId, siteId: activeSiteId,
       });
-      if (r.ok) {
-        const body = await r.json();
-        const cur: ServiceArea = body?.data || { city: "", state: "", regions: [], zips: [] };
-        setForm(cur);
-        setRegionsInput((cur.regions || []).join(", "));
-        setZipsInput((cur.zips || []).join(", "));
-        if (body?.service_category) setServiceCategory(body.service_category);
-      }
+      const cur: ServiceArea = body?.data || { city: "", state: "", regions: [], zips: [] };
+      setForm(cur);
+      setRegionsInput((cur.regions || []).join(", "));
+      setZipsInput((cur.zips || []).join(", "));
+      if (body?.service_category) setServiceCategory(body.service_category);
     } catch { /* swallow */ }
     finally { setLoading(false); }
   }, [activeSiteId, activeTenantId, getToken]);
@@ -65,23 +63,22 @@ export function ArionServiceAreaPage() {
     try {
       const token = await getToken();
       const base = import.meta.env.VITE_ARION_API_BASE_URL as string;
-      const body = {
-        siteId: activeSiteId,
-        serviceArea: {
-          city: form.city || undefined,
-          state: form.state || undefined,
-          regions: regionsInput.split(/[,;]/).map((s) => s.trim()).filter(Boolean),
-          zips: zipsInput.split(/[,;\s]/).map((s) => s.trim()).filter(Boolean),
+      await putIaInsightsServiceArea({
+        baseUrl: base,
+        bearerToken: token.accessToken,
+        tenantId: activeTenantId,
+        body: {
+          siteId: activeSiteId,
+          serviceArea: {
+            city: form.city || undefined,
+            state: form.state || undefined,
+            regions: regionsInput.split(/[,;]/).map((s) => s.trim()).filter(Boolean),
+            zips: zipsInput.split(/[,;\s]/).map((s) => s.trim()).filter(Boolean),
+          },
+          serviceCategory,
         },
-        serviceCategory,
-      };
-      const r = await globalThis.fetch(`${base}/arion/ia-insights/service-area`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
       });
-      if (r.ok) setSavedAt(new Date());
-      else alert(`Save failed: ${r.status}`);
+      setSavedAt(new Date());
     } catch (err) { alert(`Save failed: ${(err as Error).message}`); }
     finally { setSaving(false); }
   }
@@ -97,10 +94,11 @@ export function ArionServiceAreaPage() {
       try {
         const token = await getToken();
         const base = import.meta.env.VITE_ARION_API_BASE_URL as string;
-        await globalThis.fetch(`${base}/arion/ia-insights/service-area`, {
-          method: "PUT",
-          headers: { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId, "Content-Type": "application/json" },
-          body: JSON.stringify({ siteId: activeSiteId, serviceArea: null }),
+        await putIaInsightsServiceArea({
+          baseUrl: base,
+          bearerToken: token.accessToken,
+          tenantId: activeTenantId,
+          body: { siteId: activeSiteId, serviceArea: null },
         });
       } catch { /* swallow */ }
     }

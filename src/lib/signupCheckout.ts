@@ -98,6 +98,27 @@ export function createSignupCheckout(input: SignupCheckoutInput) {
   });
 }
 
+// ─── F-110 — Waitlist capture (public, no auth) ─────────────────────────────
+// POSTs an interest signal for unreleased products (STELLA/FORGE/ARGUS).
+// Unauthenticated — the lead may not have a tenant yet, so no emergency
+// act-as concerns. Routed through this typed client so all unauth
+// oliver-api calls share one error/timeout pipeline.
+export interface WaitlistSubmitInput {
+  product: string;          // "stella" | "forge" | "argus"
+  email: string;
+  name?: string;
+  company?: string;
+  note?: string;
+  source_url?: string;
+}
+
+export function submitWaitlist(input: WaitlistSubmitInput) {
+  return j<{ ok: boolean } | Record<string, unknown>>("/api/v1/waitlist", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 /** F-108 — Multi-product cart checkout. Accepts 1–3 items spanning ARION/
  *  OLIVER/SPARK, returns a single Stripe Checkout Session URL covering all
  *  of them. Bundle discount auto-applied server-side (MP5R / MP7R). */

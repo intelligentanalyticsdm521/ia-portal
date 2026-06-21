@@ -9,10 +9,7 @@
 // tenant yet.
 import { useEffect, useState } from "react";
 import { IadmModal, IadmButton } from "../IadmModal";
-
-const OLIVER_API_BASE =
-  (import.meta.env.VITE_OLIVER_API_BASE as string) ||
-  "https://app-oliver-api-prod-eaffhyhqgrgbcfh0.centralus-01.azurewebsites.net";
+import { submitWaitlist } from "../../lib/signupCheckout";
 
 interface Props {
   open: boolean;
@@ -52,20 +49,14 @@ export function WaitlistModal({ open, onClose, productKey, productName, defaultE
     if (!email.includes("@")) { setError("Please enter a valid email address."); return; }
     setSubmitting(true);
     try {
-      const res = await fetch(`${OLIVER_API_BASE}/api/v1/waitlist`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          product: productKey,
-          email: email.trim(),
-          name: name.trim() || undefined,
-          company: company.trim() || undefined,
-          note: note.trim() || undefined,
-          source_url: typeof window !== "undefined" ? window.location.href : undefined,
-        }),
+      await submitWaitlist({
+        product: productKey,
+        email: email.trim(),
+        name: name.trim() || undefined,
+        company: company.trim() || undefined,
+        note: note.trim() || undefined,
+        source_url: typeof window !== "undefined" ? window.location.href : undefined,
       });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j?.message || j?.error || `HTTP ${res.status}`);
       setDone(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't send your request — please try again.");

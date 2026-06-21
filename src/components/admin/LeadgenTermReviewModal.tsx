@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMsal } from "@azure/msal-react";
 import { AlertTriangle, ChevronRight, Tag, Copy, X as XIcon, Layers } from "lucide-react";
 import { sparkGet } from "../../lib/sparkApi";
+import { emergencyActAsHeaders } from "../../lib/emergencyActAs";
 
 type ResolveAction = "add_root" | "add_variant" | "duplicate" | "reject";
 
@@ -104,11 +105,16 @@ export function LeadgenTermReviewModal({ open, entry, token, apiBase, onClose, o
       }
       if (action === "duplicate") body.parent_term_id = parent?.id;
 
+      // Founder admin token auth (not MSAL) — see AdminLeadgenPage. The
+      // emergency act-as header is injected here so a founder operating
+      // inside an emergency read-only session can't accidentally mutate
+      // (backend middleware will 403 once it lands on lumen-api).
       const res = await fetch(`${apiBase}/api/v1/admin/leadgen-v1/term-review-queue/${entry.id}/resolve`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
+          ...emergencyActAsHeaders(),
         },
         body: JSON.stringify(body),
       });

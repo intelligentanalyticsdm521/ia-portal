@@ -2158,3 +2158,41 @@ export async function assembleBlocks(p: {
     timeoutMs: 90_000,
   });
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// IA Insights — Service Area config
+// Tenant service-area + service-category config used by the Visibility &
+// Reach trend engine. GET returns the current config; PUT replaces it
+// (pass `serviceArea: null` to clear).
+// ───────────────────────────────────────────────────────────────────────────
+export interface IaInsightsServiceAreaResponse {
+  data?: { city?: string; state?: string; regions?: string[]; zips?: string[] } | null;
+  service_category?: string | null;
+}
+
+export async function getIaInsightsServiceArea(params: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+}) {
+  return requestJson<IaInsightsServiceAreaResponse>({
+    ...params,
+    path: `/arion/ia-insights/service-area?siteId=${encodeURIComponent(params.siteId)}`,
+  });
+}
+
+export async function putIaInsightsServiceArea(params: {
+  baseUrl: string; bearerToken: string; tenantId: string;
+  body: {
+    siteId: string;
+    serviceArea: { city?: string; state?: string; regions?: string[]; zips?: string[] } | null;
+    serviceCategory?: string;
+  };
+}) {
+  return requestJson<{ ok?: boolean }>({
+    baseUrl: params.baseUrl,
+    bearerToken: params.bearerToken,
+    tenantId: params.tenantId,
+    method: 'PUT',
+    path: '/arion/ia-insights/service-area',
+    body: params.body,
+  });
+}

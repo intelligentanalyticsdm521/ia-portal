@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAppState } from '../../app/AppState';
 import { useAccessToken } from '../../auth/useAccessToken';
+import { useOliverApi } from '../../hooks/useOliverApi';
 import {
   getArgusBalance,
   getArgusUsage,
@@ -47,6 +48,7 @@ function fmtUsd(cents: number) {
 export function ArgusDataPlanPage() {
   const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
+  const oliverApi = useOliverApi();
   const [balance, setBalance] = useState<ArgusBalance['data'] | null>(null);
   const [usage, setUsage] = useState<ArgusUsage['data'] | null>(null);
   const [pricing, setPricing] = useState<ArgusPricingRow[]>([]);
@@ -135,23 +137,16 @@ export function ArgusDataPlanPage() {
     if (!activeTenantId) return;
     setCheckoutBusy(true);
     try {
-      const token = await getToken();
-      const OLIVER_API_BASE = (import.meta.env.VITE_OLIVER_API_BASE as string)
-        || 'https://app-oliver-api-prod-eaffhyhqgrgbcfh0.centralus-01.azurewebsites.net';
-      const res = await fetch(`${OLIVER_API_BASE}/argus/checkout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token.accessToken}`,
-          'x-tenant-id': activeTenantId,
-        },
-        body: JSON.stringify({ credits: packSize, mode }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body?.data?.checkout_url) {
-        throw new Error(body?.error?.message || `HTTP ${res.status}`);
+      // oliverApi.post auto-unwraps the { data: ... } envelope and injects
+      // the emergency act-as header when a 30-min session is active.
+      const data = await oliverApi.post<{ checkout_url: string }>(
+        '/argus/checkout',
+        { credits: packSize, mode }
+      );
+      if (!data?.checkout_url) {
+        throw new Error('No checkout_url returned');
       }
-      window.location.href = body.data.checkout_url;
+      window.location.href = data.checkout_url;
     } catch (e) {
       alert(`Couldn't start checkout: ${(e as Error).message}`);
     } finally {
