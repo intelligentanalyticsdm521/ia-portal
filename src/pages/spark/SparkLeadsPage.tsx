@@ -65,13 +65,14 @@ interface Lead {
   cache_age_days: number | null;
   contact_id: number | null;
   // F-LG.15 adversarial verify (migration 043, batch 7 / commit d23ecfa).
-  //   'verified'                → both verifiers (SMTP + domain freshness) agreed legit
+  //   'promoted'                → both verifiers (SMTP + domain freshness) agreed legit
   //   'suppressed'              → at least one verifier refuted; lead was kept on the
   //                               record but suppressed from default views downstream
   //   'verification_unavailable'→ both verifiers errored (fail-closed); lead admitted
   //                               but flagged so the reviewer knows the gate didn't run
   //   null                      → not yet verified (legacy rows, or verify ran offline)
-  verification_status: "verified" | "suppressed" | "verification_unavailable" | null;
+  // Canonical truth: migration 043_leadgen_adversarial_verify.sql:13.
+  verification_status: "promoted" | "suppressed" | "verification_unavailable" | null;
   // JSON array of { verifier, refuted, reason, latency_ms, errored }.
   // We parse + show the failure reasons in the Verified column tooltip
   // when verification_status='suppressed'.
@@ -517,7 +518,7 @@ export function SparkLeadsPage() {
                         to keep these inline (no hover drawer) so they're
                         scannable in a long list. */}
                     <td className="px-4 py-3">
-                      {l.verification_status === "verified" && (
+                      {l.verification_status === "promoted" && (
                         <span
                           title="Verified — passed SMTP probe and domain freshness check."
                           className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200"
