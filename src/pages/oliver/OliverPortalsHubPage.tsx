@@ -14,13 +14,14 @@ import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { SignupFormBuilder, type SignupConfig as SignupConfigFull } from "../../components/oliver/SignupFormBuilder";
 import { PortalActivationWizard } from "../../components/oliver/PortalActivationWizard";
+import { PortalLayoutTab } from "../../components/oliver/PortalLayoutTab";
 import {
   Users, Wrench, ExternalLink, Globe, Settings, Brush, FileText,
-  AlertTriangle, CheckCircle2, Clock, Palette, Upload,
+  AlertTriangle, CheckCircle2, Clock, Palette, Upload, Layers,
 } from "lucide-react";
 
 type PortalKind = "customer" | "crew";
-type Tab = "design" | "signup" | "domain" | "workflow";
+type Tab = "design" | "signup" | "layout" | "domain" | "workflow";
 
 interface PortalStatus {
   subdomain_slug: string | null;
@@ -223,6 +224,8 @@ function PortalEditorModal({
   const tabs: Array<{ key: Tab; label: string; icon: typeof Brush }> = [
     { key: "design",   label: "Design",      icon: Brush },
     { key: "signup",   label: "Signup form", icon: FileText },
+    // F-114 Phase 3 — constrained WYSIWYG layout builder.
+    { key: "layout",   label: "Layout",      icon: Layers },
     { key: "domain",   label: "Domain",      icon: Globe },
     { key: "workflow", label: "Workflow",    icon: Settings },
   ];
@@ -263,6 +266,7 @@ function PortalEditorModal({
         <div className="flex-1 overflow-y-auto p-5">
           {tab === "design" && <DesignTabStub portalKind={portalKind} accent={accent} onSaved={onSaved} />}
           {tab === "signup" && <SignupTabStub portalKind={portalKind} accent={accent} onSaved={onSaved} />}
+          {tab === "layout" && <PortalLayoutTab portalKind={portalKind} accent={accent} onSaved={onSaved} />}
           {tab === "domain" && <DomainTabStub portalKind={portalKind} status={status} accent={accent} onSaved={onSaved} />}
           {tab === "workflow" && <WorkflowTabStub portalKind={portalKind} accent={accent} onSaved={onSaved} />}
         </div>
