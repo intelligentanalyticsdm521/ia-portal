@@ -93,8 +93,19 @@ export function UnifiedCalendarGrid({ kinds, className }: Props) {
       // bookings/jobs were in range. Brandon's test booking appeared on
       // OLIVER Jobs board (separate endpoint) but never on the calendar —
       // this is why.
-      const r = await get<{ events: UnifiedEvent[] }>(`/calendar/unified?${qs}`);
+      // 2026-06-22 audit fix: also read errors_by_kind so a partial backend
+      // failure (e.g. one of the per-kind SQL branches throws) surfaces as a
+      // visible warning instead of a silently-empty grid. The previous
+      // sub_status bug was invisible from the client side for two days
+      // because the endpoint returned 200 with an empty events array.
+      const r = await get<{ events: UnifiedEvent[]; errors_by_kind?: Array<{ kind: string; message: string }> }>(
+        `/calendar/unified?${qs}`,
+      );
       setEvents(r?.events || []);
+      const errs = r?.errors_by_kind || [];
+      if (errs.length) {
+        setError(`Partial calendar load — ${errs.map((e) => `${e.kind}: ${e.message}`).join("; ")}`);
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -148,7 +159,15 @@ export function UnifiedCalendarGrid({ kinds, className }: Props) {
         </div>
         <div className="flex items-center gap-3 text-[11px]">
           {loading && <span className="text-slate-500">Loading…</span>}
-          <span className="text-slate-500">{events.length} events this view</span>
+          {/* 2026-06-22 audit fix: distinguish "loaded zero" from "still
+              loading" / "errored" so Brandon's complaint pattern
+              ("calendar is broken") is faster to triage. */}
+          {!loading && !error && events.length === 0 && (
+            <span className="text-slate-500">No scheduled jobs, bookings, or campaigns in this view</span>
+          )}
+          {!loading && events.length > 0 && (
+            <span className="text-slate-500">{events.length} events this view</span>
+          )}
         </div>
       </div>
 
