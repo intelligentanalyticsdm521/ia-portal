@@ -695,13 +695,11 @@ export function ServiceRouter() {
       case 'my_brand_analytics': myBrandPage = <SocialAnalyticsPage />; break;
       // Wave-2 (2026-06-22) — Brand Voice Profile + Drift Dashboard.
       case 'my_brand_voice': myBrandPage = <MyBrandVoicePage />; break;
-      // Sub-pages (wave-3) — fall through to GenericServicePage placeholder
-      // until sibling agents create the page modules. Listed explicitly so
-      // a future grep tells future-us exactly which keys are expected.
-      case 'my_brand_templates':
-      case 'my_brand_social_channels':
-      case 'my_brand_compose':
-        myBrandPage = null; break;
+      // Wave-2 (2026-06-22) — Template Studio (mini-Canva, Fabric.js editor).
+      case 'my_brand_templates': myBrandPage = <TemplateStudioPage />; break;
+      // Wave-2 (2026-06-22) — Social Channels OAuth + Composer pair.
+      case 'my_brand_social_channels': myBrandPage = <SocialChannelsPage />; break;
+      case 'my_brand_compose': myBrandPage = <SocialComposerPage />; break;
       default: break;
     }
     if (myBrandPage) {
