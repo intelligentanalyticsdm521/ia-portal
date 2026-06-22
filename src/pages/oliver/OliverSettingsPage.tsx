@@ -291,6 +291,15 @@ export function OliverSettingsPage() {
 
   async function saveBusiness() {
     if (!bizDraft) return;
+
+    // Bug #24 (OL.1.4) — brand_color must be a full "#RRGGBB" (7 chars) before
+    // we submit; the text-input variant of the colour picker would otherwise
+    // happily accept "#FF000" and the server would store it as-is.
+    if (bizDraft.brandColor && !/^#[0-9A-Fa-f]{6}$/.test(bizDraft.brandColor.trim())) {
+      setBizMessage("Brand colour must be a 7-character hex value like #FF0000.");
+      return;
+    }
+
     setBizSaving(true);
     setBizMessage(null);
     try {
