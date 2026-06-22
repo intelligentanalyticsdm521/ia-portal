@@ -615,16 +615,20 @@ export const SETTINGS_KEYS = new Set<string>(
   SETTINGS_NAV.groups.flatMap((g) => g.items.map((i) => i.key)),
 );
 
-// v9.2 — ARGUS as full product per spec §2 (uniform nav). Single IA Insights
-// group with the 4 spec sub-items: Health → Trends → Intelligence (the live
-// multi-platform 6-report page) → ARGUS Internal Intelligence (coming soon —
-// platform connectivity, automation ROI, etc.). Matches the uniform pattern
-// used by ARION/SPARK/OLIVER.
+// v9.3 — ARGUS subnav mirrors per-platform IA Insights pattern (2026-06-22).
+// Brandon's call: ARGUS Insights should look identical in structure to
+// ARION/SPARK/OLIVER → IA Insights. Three items:
 //
-// 2026-06-21: dropped the "Cross-Channel" label from visible nav. The live
-// 6-report page is now just "Intelligence" — matches the per-platform pages.
-// The ARGUS-internal (still-coming) report set moved to "Platform Diagnostics"
-// to remove the duplicate label.
+//   - Health  (no tag — matches per-platform Health)
+//   - Trends  (ARGUS tag — matches per-platform Trends w/ platform tag)
+//   - Intelligence  (ARGUS tag — the live multi-platform 6-report page,
+//                    routed via the legacy `argus_cross_channel` key so
+//                    existing serviceCatalog + deep links keep working)
+//
+// "Platform Diagnostics" (argus_intelligence, the ARGUS-internal coming-soon
+// connectivity/automation-ROI set) dropped from the visible nav — folds into
+// Intelligence per spec rename. The page route still resolves by URL for
+// any deep links, but no nav entry surfaces it.
 const ARGUS_NAV: SubNavConfig = {
   productName: "ARGUS",
   tagline: "Multi-platform Intelligence",
@@ -632,10 +636,9 @@ const ARGUS_NAV: SubNavConfig = {
     {
       label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "argus_ia_insights",
       items: [
-        { key: "argus_health",        label: "Health",                  route: "/app/services/argus_health" },
-        { key: "argus_trends",        label: "Trends",                  route: "/app/services/argus_trends" },
-        { key: "argus_cross_channel", label: "Intelligence",            route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
-        { key: "argus_intelligence",  label: "Platform Diagnostics",    route: "/app/services/argus_intelligence", tag: { label: "ARGUS", color: "#84CC16" } },
+        { key: "argus_health",        label: "Health",        route: "/app/services/argus_health" },
+        { key: "argus_trends",        label: "Trends",        route: "/app/services/argus_trends",        tag: { label: "ARGUS", color: "#84CC16" } },
+        { key: "argus_cross_channel", label: "Intelligence",  route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
       ],
     },
   ],
@@ -726,7 +729,9 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders") || path.includes("/oliver_templates")) return "oliver_billing";
   // F-114 — Portals hub + legacy Portal Designer / Portals & Domains all live in the W&A group.
   if (path.includes("/oliver_portals_hub") || path.includes("/oliver_portal_designer") || path.includes("/oliver_portal_domains") || path.includes("/oliver_automations") || path.includes("/oliver_addons") || path.includes("/oliver_workflow_settings")) return "oliver_workflow";
-  if (path.includes("/oliver_ia_insights") || path.includes("/argus_cross_channel")) return "oliver_ia_insights";
+  if (path.includes("/oliver_ia_insights")) return "oliver_ia_insights";
+  // ARGUS — single IA Insights group; expand it on any ARGUS Insights route.
+  if (path.includes("/argus_health") || path.includes("/argus_trends") || path.includes("/argus_cross_channel") || path.includes("/argus_intelligence") || path.includes("/argus_ia_insights")) return "argus_ia_insights";
   if (path.includes("/oliver_reports") || path.includes("/oliver_activity_log")) return "oliver_reporting";
   return null;
 }
