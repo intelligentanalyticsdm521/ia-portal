@@ -78,6 +78,7 @@ const actionLabels: Record<string, { label: string; toast: string }> = {
   pause: { label: "Pause", toast: "Subscription paused" },
   resume: { label: "Resume", toast: "Subscription resumed" },
   "skip-cycle": { label: "Skip cycle", toast: "Next cycle skipped" },
+  reschedule: { label: "Reschedule", toast: "Next billing date updated" },
   cancel: { label: "Cancel", toast: "Cancels at end of period" },
 };
 
@@ -109,6 +110,11 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
   const [editingItems, setEditingItems] = useState(false);
   const [draftItems, setDraftItems] = useState<Record<string, { quantity: number; deleted: boolean }>>({});
   const [savingItems, setSavingItems] = useState(false);
+  // Bug #35 — Reschedule next billing date. Opens an inline date picker
+  // when the admin clicks "Reschedule"; submit posts to the new
+  // /subscriptions/:id/reschedule endpoint which syncs to Stripe.
+  const [reschedOpen, setReschedOpen] = useState(false);
+  const [reschedDate, setReschedDate] = useState<string>("");
 
   const reload = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -225,6 +231,28 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
               {busy === "skip-cycle" ? "Skipping…" : "Skip next cycle"}
             </Button>
           )}
+          {/* Bug #35 — Reschedule next billing date. Inline picker so the
+              admin can pick any future date instead of stepping by one
+              cycle at a time with "Skip". Calls POST /subscriptions/:id/
+              reschedule which uses Stripe trial_end + proration_behavior:
+              "none" — no pro-rating, the new date becomes the anchor. */}
+          {!isCanceled && (
+            <Button variant="secondary" disabled={busy === "reschedule"}
+              onClick={() => {
+                // Default to current period end + 7 days so the picker
+                // starts somewhere sensible.
+                const seed = new Date(sub.current_period_end || Date.now());
+                seed.setDate(seed.getDate() + 7);
+                // datetime-local needs "YYYY-MM-DDTHH:MM" with no Z.
+                const pad = (n: number) => String(n).padStart(2, "0");
+                setReschedDate(
+                  `${seed.getFullYear()}-${pad(seed.getMonth() + 1)}-${pad(seed.getDate())}T${pad(seed.getHours())}:${pad(seed.getMinutes())}`,
+                );
+                setReschedOpen((v) => !v);
+              }}>
+              {reschedOpen ? "Cancel reschedule" : "Reschedule next billing"}
+            </Button>
+          )}
           {!isCanceled && !isCancelingSoon && (
             <Button variant="danger" disabled={busy === "cancel"}
               onClick={() => doAction("cancel", { confirm: `Cancel at end of period? Access continues until ${fmtDate(sub.current_period_end)}.`, body: { at_period_end: true } })}>
@@ -232,6 +260,29 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
             </Button>
           )}
         </div>
+        {reschedOpen && !isCanceled && (
+          <div style={{ marginTop: 10, padding: 10, background: "#F8FAFC", border: "1px solid #E5E7EB", borderRadius: 6 }}>
+            <div style={{ fontSize: 11, color: "#5A7A8A", marginBottom: 6 }}>
+              Pick a future date. The next charge moves to this date and the
+              billing cadence keeps running from there — no pro-rating.
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <input type="datetime-local" value={reschedDate}
+                onChange={(e) => setReschedDate(e.target.value)}
+                style={{ padding: "6px 8px", border: "1px solid #D1D5DB", borderRadius: 4, fontSize: 12 }} />
+              <Button variant="primary" disabled={busy === "reschedule" || !reschedDate}
+                onClick={async () => {
+                  if (!reschedDate) return;
+                  await doAction("reschedule", {
+                    body: { next_billing_date: new Date(reschedDate).toISOString() },
+                  });
+                  setReschedOpen(false);
+                }}>
+                {busy === "reschedule" ? "Rescheduling…" : "Confirm reschedule"}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Line items */}
