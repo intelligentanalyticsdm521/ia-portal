@@ -5,6 +5,7 @@ import {
   Search as SearchIcon, MapPin, Star, ChevronDown, Settings,
   Users, Megaphone, Briefcase, Heart, Target, Sparkles,
   Wrench, UserCircle, CreditCard, MessageSquare, LineChart, Zap,
+  Palette, Share2,
 } from "lucide-react";
 import type { ProductKey } from "./IconRail";
 
@@ -644,6 +645,56 @@ const ARGUS_NAV: SubNavConfig = {
   ],
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MY BRAND navigation — wave-2 wiring (2026-06-22).
+//
+// SHAPE: one top "Dashboard" link to the My Brand landing page, then three
+// collapsible groups that mirror the tile categories on the landing page:
+//
+//   Studio  — Image Studio / Template Studio / Asset Library
+//   Voice   — Voice Profile + Drift
+//   Social  — Channels / Composer / Calendar / Analytics
+//
+// All 8 sub-section keys come from the catalog (my_brand_*). Pages
+// themselves are created in wave-3 by sibling agents; ServiceRouter falls
+// back to the generic placeholder until then.
+// ─────────────────────────────────────────────────────────────────────────────
+const MY_BRAND_NAV: SubNavConfig = {
+  productName: "My Brand",
+  tagline: "Creative Studio",
+  groups: [
+    {
+      label: "",
+      items: [
+        { key: "my_brand", label: "Dashboard", route: "/app/services/my_brand" },
+      ],
+    },
+    {
+      label: "Studio", icon: Palette, collapsible: true, sectionId: "my_brand_studio",
+      items: [
+        { key: "my_brand_image_studio", label: "Image Studio", route: "/app/services/my_brand_image_studio", tag: { label: "IL", color: "#38BDF8" } },
+        { key: "my_brand_templates", label: "Template Studio", route: "/app/services/my_brand_templates" },
+        { key: "my_brand_assets", label: "Asset Library", route: "/app/services/my_brand_assets" },
+      ],
+    },
+    {
+      label: "Voice", icon: Sparkles, collapsible: true, sectionId: "my_brand_voice_group",
+      items: [
+        { key: "my_brand_voice", label: "Voice Profile + Drift", route: "/app/services/my_brand_voice", tag: { label: "IL", color: "#38BDF8" } },
+      ],
+    },
+    {
+      label: "Social", icon: Share2, collapsible: true, sectionId: "my_brand_social",
+      items: [
+        { key: "my_brand_social_channels", label: "Channels", route: "/app/services/my_brand_social_channels" },
+        { key: "my_brand_compose", label: "Composer", route: "/app/services/my_brand_compose" },
+        { key: "my_brand_calendar", label: "Calendar", route: "/app/services/my_brand_calendar" },
+        { key: "my_brand_analytics", label: "Analytics", route: "/app/services/my_brand_analytics" },
+      ],
+    },
+  ],
+};
+
 export const SUB_NAV_CONFIGS: Record<ProductKey, SubNavConfig | null> = {
   overview: null, // overview uses the flat Overview page, no sub-nav
   arion: ARION_NAV,
@@ -653,6 +704,7 @@ export const SUB_NAV_CONFIGS: Record<ProductKey, SubNavConfig | null> = {
   stella: STELLA_NAV,
   forge: PLACEHOLDER_NAV("FORGE", "Integrations"),
   argus: ARGUS_NAV,
+  my_brand: MY_BRAND_NAV,
   settings: SETTINGS_NAV,
 };
 
@@ -733,6 +785,10 @@ function getDefaultSection(path: string): string | null {
   // ARGUS — single IA Insights group; expand it on any ARGUS Insights route.
   if (path.includes("/argus_health") || path.includes("/argus_trends") || path.includes("/argus_cross_channel") || path.includes("/argus_intelligence") || path.includes("/argus_ia_insights")) return "argus_ia_insights";
   if (path.includes("/oliver_reports") || path.includes("/oliver_activity_log")) return "oliver_reporting";
+  // MY BRAND sections (wave-2)
+  if (path.includes("/my_brand_image_studio") || path.includes("/my_brand_templates") || path.includes("/my_brand_assets")) return "my_brand_studio";
+  if (path.includes("/my_brand_voice")) return "my_brand_voice_group";
+  if (path.includes("/my_brand_social_channels") || path.includes("/my_brand_compose") || path.includes("/my_brand_calendar") || path.includes("/my_brand_analytics")) return "my_brand_social";
   return null;
 }
 

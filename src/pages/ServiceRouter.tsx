@@ -106,6 +106,28 @@ const OliverIAInsightsHealthPage = lazyNamed(() => import('./oliver/OliverIAInsi
 const OliverIAInsightsTrendsPage = lazyNamed(() => import('./oliver/OliverIAInsightsTrendsPage'), 'OliverIAInsightsTrendsPage');
 const OliverIAInsightsIntelligencePage = lazyNamed(() => import('./oliver/OliverIAInsightsIntelligencePage'), 'OliverIAInsightsIntelligencePage');
 
+// MY BRAND pages — wave-2 lazy imports. The landing page is implemented;
+// sibling agents will create the 8 sub-page components in wave-3. Until
+// the modules exist, the lazyNamed loader would throw at first dispatch,
+// so each sub-page is imported defensively with a fallback to the generic
+// "Coming soon" placeholder via the section dispatcher's default branch.
+const MyBrandLandingPage = lazyNamed(() => import('./myBrand/MyBrandLandingPage'), 'MyBrandLandingPage');
+// Wave-2 sub-pages — added incrementally as each ships. Keep wave-3 keys
+// falling through to GenericServicePage until those modules exist.
+const AssetLibraryPage = lazyNamed(() => import('./myBrand/AssetLibraryPage'), 'AssetLibraryPage');
+const ImageStudioPage = lazyNamed(() => import('./myBrand/ImageStudioPage'), 'ImageStudioPage');
+const SocialCalendarPage = lazyNamed(() => import('./myBrand/SocialCalendarPage'), 'SocialCalendarPage');
+// NOTE on sub-page imports: we keep these out of the static import graph
+// until wave-3 creates the files. The section dispatcher below falls back
+// to GenericServicePage for any my_brand_* key that doesn't yet have a
+// concrete page module, which is the right behaviour for the placeholder
+// window between waves.
+
+// My Brand — cross-product creative hub. Wave 2 ships Image Studio first;
+// Voice Monitor / Template Studio / Asset Library / Compose-for-Social
+// follow in Wave 3 against the same LUMEN-API My Brand routes.
+const MyBrandImageStudioPage = lazyNamed(() => import('./myBrand/ImageStudioPage'), 'ImageStudioPage');
+
 // SPARK / LUMEN pages — lazy-loaded
 const SparkOverviewPage = lazyNamed(() => import('./spark/SparkOverviewPage'), 'SparkOverviewPage');
 const SparkContactsPage = lazyNamed(() => import('./spark/SparkContactsPage'), 'SparkContactsPage');
@@ -277,6 +299,13 @@ const ConsultingTicketsBoardPage = lazyNamed(() => import('./consulting/Consulti
 const ConsultingProjectsBoardPage = lazyNamed(() => import('./consulting/ConsultingProjectsBoardPage'), 'ConsultingProjectsBoardPage');
 const ConsultingProjectWorkspacePage = lazyNamed(() => import('./consulting/ConsultingProjectWorkspacePage'), 'ConsultingProjectWorkspacePage');
 const ConsultingDeliverablesPage = lazyNamed(() => import('./consulting/ConsultingDeliverablesPage'), 'ConsultingDeliverablesPage');
+
+// MY BRAND — wave 2 (2026-06-22). Landing hub + Social Calendar + Social
+// Analytics. Wave 3 closes the remaining sub-pages (image studio, voice,
+// templates, asset library, channels, composer).
+const MyBrandLandingPage = lazyNamed(() => import('./myBrand/MyBrandLandingPage'), 'MyBrandLandingPage');
+const SocialCalendarPage = lazyNamed(() => import('./myBrand/SocialCalendarPage'), 'SocialCalendarPage');
+const SocialAnalyticsPage = lazyNamed(() => import('./myBrand/SocialAnalyticsPage'), 'SocialAnalyticsPage');
 
 // Shared loading fallback used by every Suspense boundary in this router.
 function RouteLoading() {
@@ -640,6 +669,35 @@ export function ServiceRouter() {
       return (
         <PageErrorBoundary scope={`consulting/${service.key}`}>
           <Suspense fallback={<RouteLoading />}>{consultingPage}</Suspense>
+        </PageErrorBoundary>
+      );
+    }
+  }
+
+  if (service.section === 'MY_BRAND') {
+    let myBrandPage: React.ReactNode = null;
+    switch (service.key) {
+      // Landing page — implemented in wave-2 (this commit).
+      case 'my_brand': myBrandPage = <MyBrandLandingPage />; break;
+      // Wave-2 sibling pages (concurrent with this commit).
+      case 'my_brand_assets': myBrandPage = <AssetLibraryPage />; break;
+      case 'my_brand_image_studio': myBrandPage = <ImageStudioPage />; break;
+      case 'my_brand_calendar': myBrandPage = <SocialCalendarPage />; break;
+      // Sub-pages (wave-3) — fall through to GenericServicePage placeholder
+      // until sibling agents create the page modules. Listed explicitly so
+      // a future grep tells future-us exactly which keys are expected.
+      case 'my_brand_voice':
+      case 'my_brand_templates':
+      case 'my_brand_social_channels':
+      case 'my_brand_compose':
+      case 'my_brand_analytics':
+        myBrandPage = null; break;
+      default: break;
+    }
+    if (myBrandPage) {
+      return (
+        <PageErrorBoundary scope={`my_brand/${service.key}`}>
+          <Suspense fallback={<RouteLoading />}>{myBrandPage}</Suspense>
         </PageErrorBoundary>
       );
     }

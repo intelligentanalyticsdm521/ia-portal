@@ -3,10 +3,18 @@ export type ServiceStatus = 'enabled' | 'not_subscribed' | 'coming_soon';
 export interface PortalService {
   key: string;
   displayName: string;
-  section: 'Shared' | 'ARION' | 'STELLA' | 'OLIVER' | 'LUMEN' | 'FORGE' | 'ARGUS' | 'CONSULTING';
+  section: 'Shared' | 'ARION' | 'STELLA' | 'OLIVER' | 'LUMEN' | 'FORGE' | 'ARGUS' | 'CONSULTING' | 'MY_BRAND';
   defaultStatus: ServiceStatus;
   route: string;
   description: string;
+  /**
+   * Optional tier gate for in-page rendering. The portal currently uses
+   * defaultStatus + enabledServices for hard access control; this field is
+   * informational metadata for landing pages and upsell prompts so each
+   * surface can show "Standard+" / "Pro+" badges without duplicating the
+   * rule.
+   */
+  tierGate?: 'Lite' | 'Standard' | 'Pro' | 'Business';
 }
 
 export const LAYER_LABELS: Record<PortalService['section'], string> = {
@@ -15,6 +23,7 @@ export const LAYER_LABELS: Record<PortalService['section'], string> = {
   STELLA: 'STELLA — Reporting & BI',
   OLIVER: 'OLIVER — Operations & Portals',
   LUMEN: 'SPARK — Growth Platform',
+  MY_BRAND: 'My Brand — Creative Studio',
   FORGE: 'FORGE — Software & Integrations',
   ARGUS: 'ARGUS — Orchestration & Automation',
   CONSULTING: 'CONSULTING — IA Work & Deliverables'
@@ -104,6 +113,14 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'arion_business_bing_overview', displayName: 'Bing Places', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_business_bing_overview', description: 'Bing Places for Business listing status and profile management.' },
   { key: 'arion_business_apple_overview', displayName: 'Apple Business Connect', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_business_apple_overview', description: 'Apple Business Connect listing and Apple Maps presence management.' },
   { key: 'arion_brand', displayName: 'Your Brand', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_brand', description: 'Brand management tools — assets, style guides, and digital brand presence.' },
+  // My Brand — cross-product creative hub (Wave 2 Image Studio first; Voice
+  // Monitor / Template Studio / Asset Library / Compose follow in Wave 3).
+  // Lives under the LUMEN section because LUMEN-API hosts all of My Brand's
+  // backend; the page surfaces in SPARK's nav under a dedicated My Brand
+  // group so creative work has one obvious home regardless of which product
+  // you're already inside.
+  { key: 'my_brand_image_studio', displayName: 'Image Studio', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/services/my_brand_image_studio', description: 'Generate on-brand imagery with gpt-image-1, edit (tint, text overlay, crop), and send straight to social.' },
+  { key: 'my_brand_compose', displayName: 'Compose for Social', section: 'LUMEN', defaultStatus: 'coming_soon', route: '/app/services/my_brand_compose', description: 'Send brand assets to scheduled social posts. Receives ?asset_ids=… from Image Studio + Asset Library. Wave 3.' },
   { key: 'arion_usage', displayName: 'Plan & Pricing', section: 'ARION', defaultStatus: 'not_subscribed', route: '/app/services/arion_usage', description: 'ARION hosting tier comparison + SEO add-on picker with live total.' },
   { key: 'arion_plugin_provisioning', displayName: 'Plugin Provisioning', section: 'ARION', defaultStatus: 'not_subscribed', route: '/app/services/arion_plugin_provisioning', description: 'Mint plugin provisioning codes — WP-CLI zero-touch, magic link, or manual paste install paths.' },
   {
@@ -346,6 +363,24 @@ export const SERVICE_CATALOG: PortalService[] = [
   // endpoints still pending — page renders empty/pending banner gracefully.
   { key: 'consulting_project_workspace', displayName: 'Project Workspace', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_project_workspace', description: 'Drill into a project to see the full Phase → Feature → Task tree. Read-only v0 of the 4-tier consulting hierarchy.' },
   { key: 'consulting_deliverables', displayName: 'Deliverables', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_deliverables', description: 'Unified artifact library — logos, code, copy, designs. Tagged by Build Your Series. Sourced from Projects + standalone uploads.' },
+
+  // ── MY BRAND — IL-powered creative studio + social channels stack ─────────
+  // Wave-1 backend (LUMEN-API My Brand endpoints) + schema migration 050
+  // landed brand_voice_profile, brand_voice_check, brand_asset,
+  // brand_image_generation_job, template_studio_template,
+  // template_studio_user_design, social_post_metric, social_account_metric,
+  // and core.tenant_social_connection / _post / _post_target. Wave-2 (this
+  // wave) wires the landing page + nav + IconRail. Wave-3 builds each
+  // sub-page. Tile cards on the landing page mirror the same 8 sub-keys.
+  { key: 'my_brand', displayName: 'My Brand', section: 'MY_BRAND', defaultStatus: 'enabled', route: '/app/services/my_brand', description: 'Creative studio hub: image generation, brand voice, template studio, asset library, and the social channels stack (connections, composer, calendar, analytics).' },
+  { key: 'my_brand_image_studio', displayName: 'Image Studio', section: 'MY_BRAND', defaultStatus: 'enabled', route: '/app/services/my_brand_image_studio', description: 'Generate on-brand images from a prompt — uses your brand colors, fonts, and logo. Backed by brand_image_generation_job.', tierGate: 'Lite' },
+  { key: 'my_brand_voice', displayName: 'Brand Voice', section: 'MY_BRAND', defaultStatus: 'enabled', route: '/app/services/my_brand_voice', description: 'Capture your brand voice profile and check any copy for drift before you publish. Backed by brand_voice_profile + brand_voice_check.', tierGate: 'Lite' },
+  { key: 'my_brand_templates', displayName: 'Template Studio', section: 'MY_BRAND', defaultStatus: 'enabled', route: '/app/services/my_brand_templates', description: 'Mini-canva for social posts, ads, and email banners. Backed by template_studio_template + template_studio_user_design.', tierGate: 'Lite' },
+  { key: 'my_brand_assets', displayName: 'Asset Library', section: 'MY_BRAND', defaultStatus: 'enabled', route: '/app/services/my_brand_assets', description: 'Central library for logos, photos, generated images, and finished designs. Backed by brand_asset.', tierGate: 'Lite' },
+  { key: 'my_brand_social_channels', displayName: 'Social Channels', section: 'MY_BRAND', defaultStatus: 'not_subscribed', route: '/app/services/my_brand_social_channels', description: 'Connect Facebook, Instagram, LinkedIn, X, TikTok, YouTube, and Google Business. Backed by core.tenant_social_connection + platform-api /api/v1/social-oauth/*.', tierGate: 'Standard' },
+  { key: 'my_brand_compose', displayName: 'Composer', section: 'MY_BRAND', defaultStatus: 'not_subscribed', route: '/app/services/my_brand_compose', description: 'Compose once, publish to every connected channel with per-channel preview. Backed by core.tenant_social_post + _post_target.', tierGate: 'Standard' },
+  { key: 'my_brand_calendar', displayName: 'Calendar', section: 'MY_BRAND', defaultStatus: 'not_subscribed', route: '/app/services/my_brand_calendar', description: 'Schedule and re-arrange upcoming posts across every connected channel. Drag-and-drop monthly + weekly views.', tierGate: 'Standard' },
+  { key: 'my_brand_analytics', displayName: 'Analytics', section: 'MY_BRAND', defaultStatus: 'not_subscribed', route: '/app/services/my_brand_analytics', description: 'Per-channel and per-post engagement, reach, and follower trends. Backed by social_post_metric + social_account_metric.', tierGate: 'Pro' },
 ];
 
 export function resolveServiceStatus(service: PortalService, enabledKeys: Set<string>): ServiceStatus {

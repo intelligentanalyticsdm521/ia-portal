@@ -34,6 +34,10 @@ const SECTION_TO_SERVICE_KEY: Record<PortalService["section"], string | null> = 
   FORGE: "forge",
   ARGUS: "argus",
   CONSULTING: "consulting",
+  // MY BRAND is always-on (Lite-tier tiles ship to every tenant); no
+  // dedicated service-key gate is required. Standard/Pro sub-pages handle
+  // their own upsell on-page rather than blocking discovery via search.
+  MY_BRAND: null,
 };
 
 function buildSearchableRoutes(_activeServices: Set<string>): SearchableRoute[] {
