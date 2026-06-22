@@ -117,6 +117,16 @@ const MyBrandLandingPage = lazyNamed(() => import('./myBrand/MyBrandLandingPage'
 const AssetLibraryPage = lazyNamed(() => import('./myBrand/AssetLibraryPage'), 'AssetLibraryPage');
 const ImageStudioPage = lazyNamed(() => import('./myBrand/ImageStudioPage'), 'ImageStudioPage');
 const SocialCalendarPage = lazyNamed(() => import('./myBrand/SocialCalendarPage'), 'SocialCalendarPage');
+const SocialAnalyticsPage = lazyNamed(() => import('./myBrand/SocialAnalyticsPage'), 'SocialAnalyticsPage');
+// VoicePage.tsx exports default — the canonical Brand Voice Profile + Drift
+// page. We alias it to MyBrandVoicePage at the call-site for clarity.
+const MyBrandVoicePage = lazyNamed(() => import('./myBrand/VoicePage'), 'VoicePage');
+const TemplateStudioPage = lazyNamed(() => import('./myBrand/TemplateStudioPage'), 'TemplateStudioPage');
+// Wave-2 (2026-06-22) — Social Channels (OAuth connect) + Composer.
+const SocialChannelsPage = lazyNamed(() => import('./myBrand/SocialChannelsPage'), 'SocialChannelsPage');
+const SocialComposerPage = lazyNamed(() => import('./myBrand/SocialComposerPage'), 'SocialComposerPage');
+// (MyBrandVoicePage is already declared above with VoicePage as the source.
+// Don't re-declare — TS errors out with "Cannot redeclare block-scoped variable".)
 // NOTE on sub-page imports: we keep these out of the static import graph
 // until wave-3 creates the files. The section dispatcher below falls back
 // to GenericServicePage for any my_brand_* key that doesn't yet have a
@@ -300,12 +310,11 @@ const ConsultingProjectsBoardPage = lazyNamed(() => import('./consulting/Consult
 const ConsultingProjectWorkspacePage = lazyNamed(() => import('./consulting/ConsultingProjectWorkspacePage'), 'ConsultingProjectWorkspacePage');
 const ConsultingDeliverablesPage = lazyNamed(() => import('./consulting/ConsultingDeliverablesPage'), 'ConsultingDeliverablesPage');
 
-// MY BRAND — wave 2 (2026-06-22). Landing hub + Social Calendar + Social
-// Analytics. Wave 3 closes the remaining sub-pages (image studio, voice,
-// templates, asset library, channels, composer).
-const MyBrandLandingPage = lazyNamed(() => import('./myBrand/MyBrandLandingPage'), 'MyBrandLandingPage');
-const SocialCalendarPage = lazyNamed(() => import('./myBrand/SocialCalendarPage'), 'SocialCalendarPage');
-const SocialAnalyticsPage = lazyNamed(() => import('./myBrand/SocialAnalyticsPage'), 'SocialAnalyticsPage');
+// MY BRAND lazy imports live in the consolidated block near the top of
+// this file (the "MY BRAND pages — wave-2 lazy imports" section just below
+// the SPARK / OLIVER imports). No additional MY BRAND import lines here —
+// sibling-agent attempts to re-import the same modules were collapsed into
+// the canonical block to keep the file free of duplicate declarations.
 
 // Shared loading fallback used by every Suspense boundary in this router.
 function RouteLoading() {
@@ -683,14 +692,15 @@ export function ServiceRouter() {
       case 'my_brand_assets': myBrandPage = <AssetLibraryPage />; break;
       case 'my_brand_image_studio': myBrandPage = <ImageStudioPage />; break;
       case 'my_brand_calendar': myBrandPage = <SocialCalendarPage />; break;
+      case 'my_brand_analytics': myBrandPage = <SocialAnalyticsPage />; break;
+      // Wave-2 (2026-06-22) — Brand Voice Profile + Drift Dashboard.
+      case 'my_brand_voice': myBrandPage = <MyBrandVoicePage />; break;
       // Sub-pages (wave-3) — fall through to GenericServicePage placeholder
       // until sibling agents create the page modules. Listed explicitly so
       // a future grep tells future-us exactly which keys are expected.
-      case 'my_brand_voice':
       case 'my_brand_templates':
       case 'my_brand_social_channels':
       case 'my_brand_compose':
-      case 'my_brand_analytics':
         myBrandPage = null; break;
       default: break;
     }

@@ -113,14 +113,9 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'arion_business_bing_overview', displayName: 'Bing Places', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_business_bing_overview', description: 'Bing Places for Business listing status and profile management.' },
   { key: 'arion_business_apple_overview', displayName: 'Apple Business Connect', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_business_apple_overview', description: 'Apple Business Connect listing and Apple Maps presence management.' },
   { key: 'arion_brand', displayName: 'Your Brand', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_brand', description: 'Brand management tools — assets, style guides, and digital brand presence.' },
-  // My Brand — cross-product creative hub (Wave 2 Image Studio first; Voice
-  // Monitor / Template Studio / Asset Library / Compose follow in Wave 3).
-  // Lives under the LUMEN section because LUMEN-API hosts all of My Brand's
-  // backend; the page surfaces in SPARK's nav under a dedicated My Brand
-  // group so creative work has one obvious home regardless of which product
-  // you're already inside.
-  { key: 'my_brand_image_studio', displayName: 'Image Studio', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/services/my_brand_image_studio', description: 'Generate on-brand imagery with gpt-image-1, edit (tint, text overlay, crop), and send straight to social.' },
-  { key: 'my_brand_compose', displayName: 'Compose for Social', section: 'LUMEN', defaultStatus: 'coming_soon', route: '/app/services/my_brand_compose', description: 'Send brand assets to scheduled social posts. Receives ?asset_ids=… from Image Studio + Asset Library. Wave 3.' },
+  // (My Brand entries live under the MY_BRAND section block further down —
+  // sibling Wave 2 agent owns the full taxonomy. Don't add LUMEN-scoped
+  // duplicates here.)
   { key: 'arion_usage', displayName: 'Plan & Pricing', section: 'ARION', defaultStatus: 'not_subscribed', route: '/app/services/arion_usage', description: 'ARION hosting tier comparison + SEO add-on picker with live total.' },
   { key: 'arion_plugin_provisioning', displayName: 'Plugin Provisioning', section: 'ARION', defaultStatus: 'not_subscribed', route: '/app/services/arion_plugin_provisioning', description: 'Mint plugin provisioning codes — WP-CLI zero-touch, magic link, or manual paste install paths.' },
   {
