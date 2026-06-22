@@ -37,7 +37,24 @@ interface SparkGrowth { growth_velocity_score: number; new_contacts: number; dea
 interface PulseData {
   pulse: number | null;
   previous_pulse: number | null;
-  components: { arion: number | null; spark: number | null; oliver: number | null };
+  active_subscribed?: string[];
+  active_with_data?: string[];
+  // v7 — 6 components (was 3). STELLA/FORGE may stay null but the type
+  // must surface them so the platform-api payload doesn't get truncated
+  // at the TypeScript boundary.
+  components: {
+    arion: number | null;
+    spark: number | null;
+    oliver: number | null;
+    argus: number | null;
+    stella: number | null;
+    forge: number | null;
+  };
+}
+
+interface PulseBanner {
+  severity: "info" | "warn" | "error";
+  message: string;
 }
 
 export function CommandDashboard() {
@@ -54,6 +71,7 @@ export function CommandDashboard() {
   const [sparkNps, setSparkNps] = useState<SparkNpsSummary | null>(null);
   const [sparkGrowth, setSparkGrowth] = useState<SparkGrowth | null>(null);
   const [pulse, setPulse] = useState<PulseData | null>(null);
+  const [pulseBanners, setPulseBanners] = useState<PulseBanner[]>([]);
   const [arionHist, setArionHist] = useState<Array<{ period_end: string; score: number }>>([]);
   const [sparkHist, setSparkHist] = useState<Array<{ period_end: string; score: number }>>([]);
   const [oliverHist, setOliverHist] = useState<Array<{ period_end: string; score: number }>>([]);
@@ -91,10 +109,16 @@ export function CommandDashboard() {
           Authorization: `Bearer ${token.accessToken}`,
           "x-tenant-key": activeTenantId,
         };
-        const pulseRes = await globalThis.fetch(`${platformBase}/argus/business-pulse`, { headers });
+        // Force a refresh on first sign-in load so the cache populates even
+        // when no other surface has called the per-platform calculators yet.
+        const pulseRes = await globalThis.fetch(
+          `${platformBase}/argus/business-pulse?refresh=true`,
+          { headers }
+        );
         if (pulseRes.ok && !cancelled) {
           const body = await pulseRes.json();
           setPulse(body?.data || null);
+          setPulseBanners(Array.isArray(body?.banners) ? body.banners : []);
         }
         // Per-product histories — SPARK + OLIVER live in LUMEN-API; ARION
         // lives in arion-api. All three accept the same shape.
@@ -130,6 +154,7 @@ export function CommandDashboard() {
       {/* v6.10 — IA Insights cross-product strip */}
       <IAInsightsStrip
         pulse={pulse}
+        banners={pulseBanners}
         arionHist={arionHist}
         sparkHist={sparkHist}
         oliverHist={oliverHist}
@@ -215,11 +240,13 @@ function Card({ label, value, accent = "gray", href }: { label: string; value: s
 // ─ v6.10 — Cross-product IA Insights strip ────────────────────────────────
 function IAInsightsStrip({
   pulse,
+  banners,
   arionHist,
   sparkHist,
   oliverHist,
 }: {
-  pulse: { pulse: number | null; previous_pulse: number | null; components: { arion: number | null; spark: number | null; oliver: number | null } } | null;
+  pulse: PulseData | null;
+  banners: PulseBanner[];
   arionHist: Array<{ period_end: string; score: number }>;
   sparkHist: Array<{ period_end: string; score: number }>;
   oliverHist: Array<{ period_end: string; score: number }>;
@@ -248,7 +275,7 @@ function IAInsightsStrip({
             ARGUS Intelligence <ArrowUpRight className="h-3 w-3" />
           </Link>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <Link to="/app/services/argus_health" className="rounded-lg border border-slate-200 bg-gradient-to-br from-emerald-50 to-white p-3 hover:border-emerald-300">
             <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wide mb-1">Business Pulse</div>
             <div className="flex items-baseline gap-2">
@@ -284,7 +311,28 @@ function IAInsightsStrip({
             bandColor={bandColor(pulse?.components.oliver ?? null)}
             href="/app/services/oliver_ia_insights_trends"
           />
+          {/* v7 — ARGUS card. STELLA/FORGE intentionally hidden when null
+              to avoid clutter; render when scoring lands. */}
+          <ProductScoreCard
+            label="ARGUS Trend"
+            score={pulse?.components.argus ?? null}
+            history={[]}
+            bandColor={bandColor(pulse?.components.argus ?? null)}
+            href="/app/services/argus_health"
+          />
         </div>
+        {/* v7 — surface the API banners[] so users see WHY a component is
+            still dashes (e.g. "ARION is active but has not emitted a
+            Platform Pulse yet"). Falls back to empty when caches are warm. */}
+        {banners.length > 0 && (
+          <div className="mt-3 space-y-1">
+            {banners.map((b, i) => (
+              <div key={i} className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded px-2 py-1">
+                {b.message}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
