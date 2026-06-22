@@ -118,6 +118,13 @@ interface OnboardResult {
   stripe_subscription_id?: string;
   site_id?: string;
   provision_code?: string;
+  // FIX E1-E4 (oliver-api 0b4928f): backend surfaces the Stripe Connect
+  // Express onboarding state at the top level of the response so the
+  // wizard can render a one-tap "finish KYC" CTA card on Step 7.
+  // Both values are null when Connect wasn't attempted (e.g. no_charge mode
+  // or a 100%-off coupon path that skipped Connect provisioning).
+  stripe_connect_account_id?: string | null;
+  stripe_connect_onboarding_url?: string | null;
   steps: Array<{ step: string; status: string; detail: string }>;
   handoff?: {
     arion?: {
@@ -1997,6 +2004,42 @@ function Step7Progress({ result, checkoutUrl, businessName, contactEmail, cart, 
           ))}
         </ul>
       </Card>
+      {/* FIX E1-E4 (2026-06-22): Stripe Connect Express CTA card.
+          Backend (oliver-api 0b4928f) returns stripe_connect_onboarding_url
+          at the top level of /admin/onboard-client. Rendered conditionally
+          — null on no_charge / 100%-off coupon paths that skip Connect. */}
+      {result.stripe_connect_onboarding_url && (
+        <Card title="Finish Stripe Connect onboarding">
+          <div className="flex items-start gap-3">
+            <div
+              className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold"
+              style={{ background: "#635BFF" /* Stripe brand purple */ }}
+              aria-hidden="true"
+            >
+              S
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs text-slate-700">
+                We've created your Stripe Connect Express account
+                {result.stripe_connect_account_id && (
+                  <> (<code className="bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">{result.stripe_connect_account_id}</code>)</>
+                )}
+                . Click below to finish KYC + bank details so you can accept
+                payments through the platform.
+              </div>
+              <a
+                href={result.stripe_connect_onboarding_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block mt-3 px-4 py-2 rounded-lg text-white font-semibold text-xs"
+                style={{ background: "#635BFF" }}
+              >
+                Continue to Stripe →
+              </a>
+            </div>
+          </div>
+        </Card>
+      )}
       {result.handoff?.arion && (
         <Card title="ARION plugin install handoff">
           <details open>
