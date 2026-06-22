@@ -158,6 +158,48 @@ export function JobCreatePanel({
       })),
   );
 
+  // Bug #34 — "Save as draft" path. Persists whatever the user has typed so
+  // far (title, schedule, notes) without requiring a contact / line items.
+  // Drafts are excluded from the default jobs board until the caller filters
+  // by ?status=draft. Recurring drafts aren't supported — recurring needs a
+  // catalog price + start date to mean anything, so the button hides in that
+  // mode.
+  async function saveDraft() {
+    setErr(null);
+    setSubmitting(true);
+    try {
+      const jobRes = await api.post<{ job_id?: string; id?: string }>("/jobs", {
+        status: "draft",
+        contact_id: customerId || null,
+        title: title.trim() || null,
+        job_type: jobType.trim() || null,
+        scheduled_start: scheduledStart ? new Date(scheduledStart).toISOString() : null,
+        scheduled_end: scheduledEnd ? new Date(scheduledEnd).toISOString() : null,
+        team_notes: teamNotes.trim() || null,
+        customer_notes: customerNotes.trim() || null,
+        source: "manual",
+      });
+      const newId = (jobRes as any)?.job_id || (jobRes as any)?.id || (jobRes as any)?.data?.job_id;
+      if (!newId) throw new Error("Draft saved but no id returned.");
+
+      if (items.length > 0) {
+        await api.post(`/jobs/${newId}/line-items`, {
+          items: items.map((it, i) => ({
+            description: it.description,
+            quantity: Number(it.quantity || 1),
+            unit_price: Number(it.unit_price || 0),
+            service_offering_id: it.service_offering_id || null,
+            duration_minutes: it.duration_minutes ?? null,
+            sort_order: i,
+          })),
+        });
+      }
+      onCreated(newId);
+    } catch (e) {
+      setErr(`Save draft failed: ${(e as Error).message}`);
+    } finally { setSubmitting(false); }
+  }
+
   async function submit() {
     setErr(null);
 
@@ -405,6 +447,15 @@ export function JobCreatePanel({
 
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", paddingTop: 8, borderTop: "1px solid #F1F5F9" }}>
         <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+        {/* Bug #34 — "Save as draft" only shows in one-time mode. Recurring
+            needs a price + start date to mean anything, so saving a half-
+            filled recurring sub doesn't make sense. */}
+        {!recurring && (
+          <Button variant="secondary" onClick={saveDraft} disabled={submitting}
+            title="Save what you've typed without picking a contact or line items. You can finish it later from the Jobs tab.">
+            {submitting ? "Saving…" : "Save as draft"}
+          </Button>
+        )}
         <Button variant="primary" onClick={submit}
           disabled={submitting || (recurring
             ? (!recurringPriceId || !recurringStartDate || (collectionMethod === "charge_automatically" && hasCardOnFile === false))
