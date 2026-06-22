@@ -259,9 +259,9 @@ Format per test: **Pre / Steps / Expected (UI) / Expected (DB) / Pass-Fail / Not
 
 ---
 
-## 4. Newsletter submission via ARION → IA Insights Cross-Channel
+## 4. Newsletter submission via ARION → IA Insights Cross-Platform
 
-**End-to-end:** ARION website embeds a newsletter signup form (SPARK Newsletter Studio source) → submission → cross-channel insights surface it.
+**End-to-end:** ARION website embeds a newsletter signup form (SPARK Newsletter Studio source) → submission → cross-platform insights surface it.
 
 ### XP.4.1 — Newsletter form on ARION site
 - **Steps:** Submit:
@@ -284,11 +284,11 @@ Format per test: **Pre / Steps / Expected (UI) / Expected (DB) / Pass-Fail / Not
 - **Pass-Fail:** ☐ Pass ☐ Fail
 - **Notes:** [VERIFY] Confirm newsletter subscribe endpoint path. May live under `/api/v1/newsletter` not `/public/newsletter`.
 
-### XP.4.2 — Cross-channel insights surface it
+### XP.4.2 — Cross-platform insights surface it
 - **Steps:** SPARK → Insights → Health (`spark_ia_insights_health`).
-- **Expected (UI):** Cross-Channel Breakdown bar chart shows new ARION-sourced subscriber today (after data refresh — may be next cycle).
+- **Expected (UI):** Cross-Platform Breakdown bar chart shows new ARION-sourced subscriber today (after data refresh — may be next cycle).
 - **Pass-Fail:** ☐ Pass ☐ Fail
-- **Notes:** Cross-channel aggregation may be cached/batched. Allow up to 15 min lag, or trigger the recompute job if available.
+- **Notes:** Cross-platform aggregation may be cached/batched. Allow up to 15 min lag, or trigger the recompute job if available.
 
 ---
 
@@ -454,7 +454,7 @@ DELETE FROM lumen.contact WHERE email LIKE 'test-xp%@ia-dm.com';
 | 1 — Lead Gen → Health Score | 5 | | |
 | 2 — ARION form → review | 6 | | |
 | 3 — Portal → Service Request → segment | 5 | | |
-| 4 — Newsletter → cross-channel | 2 | | |
+| 4 — Newsletter → cross-platform | 2 | | |
 | 5 — ARGUS chatbot → invoice | 3 | | |
 | 6 — Contact identity invariant | 4 | | |
 | 7 — Stripe live mode | 5 | | |

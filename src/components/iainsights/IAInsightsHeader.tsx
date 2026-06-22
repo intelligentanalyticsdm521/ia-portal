@@ -24,9 +24,9 @@ interface Props {
   /** Optional onChangePeriod handler — not wired here but reserved for future. */
   onChangePeriod?: (start: string, end: string) => void;
   /** v9.0 — Spec §1.6 ARGUS exception: 4 gauges + active-products indicator
-   *  instead of the 5th Cross-Channel gauge. Also shows 2 bar charts (Trends
-   *  Breakdown + Intelligence Breakdown) — no Cross-Channel bar chart since
-   *  ARGUS IS the cross-channel home. */
+   *  instead of the 5th Cross-Platform gauge. Also shows 2 bar charts (Trends
+   *  Breakdown + Intelligence Breakdown) — no Cross-Platform bar chart since
+   *  ARGUS IS the cross-platform home. */
   mode?: "product" | "argus";
   /** When mode='argus', the active-products indicator data. */
   activeProducts?: Array<{ key: "arion" | "spark" | "oliver" | "stella"; active: boolean; score: number | null }>;
@@ -56,7 +56,9 @@ export function IAInsightsHeader({ data, mode = "product", activeProducts }: Pro
           renders the activation-prompt empty state per §1.7.
           2026-06-21: visible "Cross-Channel" label renamed to "ARGUS
           Intelligence" — per Brandon's rename. The underlying data field
-          name (crossChannel) stays for code-side back-compat. */}
+          name (crossChannel) stays for code-side back-compat.
+          2026-06-22: Cross-Channel → Cross-Platform product-concept rename.
+          drillTo target migrated to `/argus_cross_platform`. */}
       <div className={`grid grid-cols-2 ${isArgus ? "md:grid-cols-5" : "md:grid-cols-5"} gap-3`}>
         <Gauge label="Business Pulse" gauge={data.overall} icon={Award} accent={PRODUCT_COLORS.argus} />
         <Gauge label={isArgus ? "ARGUS Platform Score" : `${data.product.toUpperCase()} Score`} gauge={data.platform} icon={Sparkles} accent={PRODUCT_COLORS[isArgus ? "argus" : data.product]} />
@@ -67,7 +69,7 @@ export function IAInsightsHeader({ data, mode = "product", activeProducts }: Pro
         ) : (
           <Gauge
             label="ARGUS Intelligence"
-            gauge={data.crossChannel || { score: 0, band: "unknown", state: "insufficient_data", message: "Add a second platform to unlock multi-platform intelligence.", drillTo: "/app/services/argus_cross_channel" }}
+            gauge={data.crossChannel || { score: 0, band: "unknown", state: "insufficient_data", message: "Add a second platform to unlock multi-platform intelligence.", drillTo: "/app/services/argus_cross_platform" }}
             icon={BarChart3}
             accent={PRODUCT_COLORS.argus}
           />
@@ -77,7 +79,7 @@ export function IAInsightsHeader({ data, mode = "product", activeProducts }: Pro
       {/* v9.0 — Bar charts.
           Both modes: 2 bars (Trend / Intelligence).
           2026-06-22: ARGUS Intelligence breakdown bar removed — the
-          crossChannelBreakdown field had no producer anywhere in the
+          crossChannelBreakdown (legacy) / crossPlatformBreakdown field had no producer anywhere in the
           codebase, so the chart always rendered the empty state. */}
       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
         <ScoreBarChart title="Trend breakdown" bars={data.trendBreakdown} accent={PRODUCT_COLORS[isArgus ? "argus" : data.product]} />

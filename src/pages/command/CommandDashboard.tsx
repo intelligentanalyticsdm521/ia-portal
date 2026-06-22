@@ -271,7 +271,7 @@ function IAInsightsStrip({
             <Sparkles className="h-4 w-4 text-[#EF6C33]" />
             <span className="font-semibold text-slate-900 text-sm">IA Insights — Business Health</span>
           </div>
-          <Link to="/app/services/argus_cross_channel" className="text-xs text-[#EF6C33] hover:underline flex items-center gap-0.5">
+          <Link to="/app/services/argus_cross_platform" className="text-xs text-[#EF6C33] hover:underline flex items-center gap-0.5">
             ARGUS Intelligence <ArrowUpRight className="h-3 w-3" />
           </Link>
         </div>

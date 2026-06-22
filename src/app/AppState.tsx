@@ -66,7 +66,8 @@ function buildEnabledServices(active: SelectTenantResponse | null): Set<string> 
     keys.add('arion_analytics_conversions');
     keys.add('arion_analytics_pages');
     keys.add('arion_analytics_reports');
-    keys.add('arion_analytics_ia_cross_channel');
+    keys.add('arion_analytics_ia_cross_platform');
+    keys.add('arion_analytics_ia_cross_channel'); // legacy alias
     keys.add('arion_analytics_ia_reports');
     keys.add('arion_seo_overview');
     keys.add('arion_seo_rankings');

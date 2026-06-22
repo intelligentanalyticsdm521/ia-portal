@@ -1,4 +1,4 @@
-// @deprecated 2026-06-12 — orphan after refactor. Superseded by arion/pages/iainsights/ — split into Health/Trends/Intelligence. Confirm with founder before deletion (task #174).
+// @deprecated 2026-06-12 ï¿½ orphan after refactor. Superseded by arion/pages/iainsights/ ï¿½ split into Health/Trends/Intelligence. Confirm with founder before deletion (task #174).
 import { useEffect, useState } from 'react';
 import type { PortalService, ServiceStatus } from '../../config/serviceCatalog';
 import { useAppState } from '../../app/AppState';
@@ -38,7 +38,7 @@ export function ArionIAInsightsPage({ service, status }: Props) {
   }, [activeTenantId, apiBaseUrl, getToken, selectedSiteId]);
 
   const openArionUrl = selectedSiteId
-    ? `${ARION_CLIENT_URL}/analytics/ia-cross-channel?tenant=${activeTenantId}&siteId=${selectedSiteId}`
+    ? `${ARION_CLIENT_URL}/analytics/ia-cross-platform?tenant=${activeTenantId}&siteId=${selectedSiteId}`
     : ARION_CLIENT_URL;
 
   return (
@@ -52,7 +52,7 @@ export function ArionIAInsightsPage({ service, status }: Props) {
       error={sitesError || error}
       actions={<a href={openArionUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800">Open in ARION</a>}
     >
-      {!selectedSite ? <EmptyPanel title="No sites connected" body="Create or connect an ARION site to view cross-channel insights." /> : (
+      {!selectedSite ? <EmptyPanel title="No sites connected" body="Create or connect an ARION site to view cross-platform insights." /> : (
         <>
           <StatGrid items={[
             { label: 'Sessions', value: formatNumber(data?.overview?.sessions) },
@@ -60,7 +60,7 @@ export function ArionIAInsightsPage({ service, status }: Props) {
             { label: 'Impressions', value: formatNumber(data?.overview?.impressions) },
             { label: 'Avg Position', value: formatDecimal(data?.overview?.avgPosition) }
           ]} />
-          <ArionCard title="Cross-Channel Intelligence" subtitle="Aggregated overview metrics across all connected channels.">
+          <ArionCard title="Cross-Platform Intelligence" subtitle="Aggregated overview metrics across all connected platforms.">
             <div className="space-y-2 text-sm">
               <SimpleRow label="Sessions" value={formatNumber(data?.overview?.sessions)} />
               <SimpleRow label="Clicks" value={formatNumber(data?.overview?.clicks)} />

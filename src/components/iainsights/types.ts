@@ -54,20 +54,27 @@ export interface IAInsightsHeaderData {
   product: ProductKey;
   /** "Business Pulse" — same across every product (sourced from ARGUS). */
   overall: GaugeValue;
-  /** "Platform Score" — weighted: Trend 35% + Intelligence 35% + Cross-Channel 30%. */
+  /** "Platform Score" — weighted: Trend 35% + Intelligence 35% + Cross-Platform 30%. */
   platform: GaugeValue;
   /** "Trend Score" — weighted composite of the Trend report scores below. */
   trend: GaugeValue;
   /** "Intelligence Score" — weighted composite of the Intelligence reports. Locked at Standard tier. */
   intelligence: GaugeValue;
-  /** "Cross-Channel Score" — composite of cross-channel reports anchored to this product (v9.0). */
+  /** "Cross-Platform Score" — composite of cross-platform reports anchored to this product (v9.0).
+   *  @deprecated 2026-06-22 — field name retained for back-compat. Producers should set
+   *  `crossPlatform`; consumers may read either. */
   crossChannel?: GaugeValue;
+  /** "Cross-Platform Score" — canonical name (v9.0, post-rename 2026-06-22). */
+  crossPlatform?: GaugeValue;
   /** Left bar chart — Trend Score breakdown by category. */
   trendBreakdown: ScoreBreakdownBar[];
   /** Centre bar chart — Intelligence Score breakdown by category. Greyed when locked. */
   intelligenceBreakdown: ScoreBreakdownBar[];
-  /** Right bar chart — Cross-Channel Score breakdown by anchored report (v9.0). */
+  /** Right bar chart — Cross-Platform Score breakdown by anchored report (v9.0).
+   *  @deprecated use `crossPlatformBreakdown`. */
   crossChannelBreakdown?: ScoreBreakdownBar[];
+  /** Right bar chart — Cross-Platform Score breakdown (canonical). */
+  crossPlatformBreakdown?: ScoreBreakdownBar[];
   /** Banners surfaced above the header. */
   banners?: InsightDataGapBanner[];
   /** Generation metadata for "Generated at …" footer + period selectors. */
@@ -79,10 +86,15 @@ export interface IAInsightsHeaderData {
   };
 }
 
-/** Cross-channel empty-state classification (v9.0 spec §1.7). */
-export type CrossChannelEmptyState = "activation" | "collecting" | "partial" | "ok";
+/** Cross-platform empty-state classification (v9.0 spec §1.7).
+ *  Type re-exported under the legacy name for back-compat. */
+export type CrossPlatformEmptyState = "activation" | "collecting" | "partial" | "ok";
+/** @deprecated 2026-06-22 — use `CrossPlatformEmptyState`. */
+export type CrossChannelEmptyState = CrossPlatformEmptyState;
 
-/** Platform Score fallback rules from spec §1.4. Returns weights summing to 1.0. */
+/** Platform Score fallback rules from spec §1.4. Returns weights summing to 1.0.
+ *  Note: `crossChannel` option/return-field name preserved 2026-06-22 for code-side
+ *  back-compat; conceptually this is the Cross-Platform component. */
 export function platformScoreWeights(opts: { hasTrend: boolean; hasIntelligence: boolean; hasCrossChannel: boolean }): { trend: number; intelligence: number; crossChannel: number } {
   const { hasTrend, hasIntelligence, hasCrossChannel } = opts;
   if (!hasTrend) return { trend: 0, intelligence: 0, crossChannel: 0 };  // No trend = no score

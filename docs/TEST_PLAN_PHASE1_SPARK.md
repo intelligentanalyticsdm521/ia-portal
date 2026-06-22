@@ -740,13 +740,13 @@ Format per test: **Pre / Steps / Expected (UI) / Expected (DB) / Pass-Fail / Not
 
 ---
 
-## 20. IA Insights — Health (Cross-Channel)
+## 20. IA Insights — Health (Cross-Platform)
 
 **Path:** SPARK → Insights → Health (`/app/services/spark_ia_insights_health`)
 
-### SP.20.1 — Cross-channel page renders
+### SP.20.1 — Cross-platform page renders
 - **Steps:** Open page.
-- **Expected (UI):** Cross-channel breakdown bar chart, Business Pulse / Health overview, surfaces from ARION + OLIVER + SPARK.
+- **Expected (UI):** Cross-platform breakdown bar chart, Business Pulse / Health overview, surfaces from ARION + OLIVER + SPARK.
 - **Pass-Fail:** ☐ Pass ☐ Fail
 
 ---

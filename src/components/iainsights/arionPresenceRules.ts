@@ -1,6 +1,6 @@
 // arionPresenceRules — v7.9 ARION "Business Presence Score" insight library.
 //
-// 20 conditional rules covering the cross-channel composite of online
+// 20 conditional rules covering the cross-platform composite of online
 // presence: search visibility, local presence, content velocity, security,
 // performance, and the gaps between what is being measured and what is
 // still dark.

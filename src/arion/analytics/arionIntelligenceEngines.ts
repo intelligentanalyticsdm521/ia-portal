@@ -3,7 +3,7 @@
 // Brandon's locked architecture (2026-06-21): each ARION Intelligence
 // report is SINGLE-SOURCE. The prior multi-platform reports (Lead Source
 // Quality, Content ROI, Reputation → Revenue) have been relocated to
-// ARGUS Cross-Channel Intelligence. ARION now hosts 6 reports that read
+// ARGUS Cross-Platform Intelligence. ARION now hosts 6 reports that read
 // from one ARION-owned data source each (SE Ranking, GSC, SE Ranking
 // audit, IA Plugin, PageSpeed Insights).
 //
@@ -40,22 +40,42 @@ export interface IntelligenceReport {
   requiredTier?: string;
 }
 
+// 2026-06-22 — Doc 64 canonical rework: ARION Intelligence expanded from 6 to 9 reports.
+// crawl_depth + schema_coverage + seo_authority remain in the type union so
+// existing cached payloads keep typechecking, but they are DEMOTED to
+// score-inputs (per §4.2 of doc 64) and no longer rendered as top-level
+// shelves. The 6 NEW reports below ship as `pending_implementation` stubs
+// in Phase 1; their calculators come online in Phases 2-4 (doc 64 §8).
 export type ArionIntelKey =
-  | "seo_authority"
+  // Still rendered (kept in the new 9-report shelf)
   | "visibility_trajectory"
+  | "pagespeed_decay_forecast"
+  | "site_audit_risk_prediction"
+  | "keyword_position_trajectory"
+  | "backlink_velocity_anomaly"
+  | "content_quality_cluster"
+  | "local_pack_visibility_forecast"
+  | "crawl_budget_optimization"
+  | "competitive_presence_gap"
+  // Legacy keys — DEMOTED to score-inputs; keep in the type so any cached
+  // payload still typechecks until the migration is complete.
+  | "seo_authority"
   | "competitive_presence"
   | "crawl_depth"
   | "schema_coverage"
   | "pagespeed_distribution";
 
-// Match the server's REPORT_LABEL + REPORT_SOURCE constants.
+// Order matches the doc-64 §4.2 table.
 export const ARION_INTEL_KEYS: ArionIntelKey[] = [
-  "seo_authority",
   "visibility_trajectory",
-  "competitive_presence",
-  "crawl_depth",
-  "schema_coverage",
-  "pagespeed_distribution",
+  "pagespeed_decay_forecast",
+  "site_audit_risk_prediction",
+  "keyword_position_trajectory",
+  "backlink_velocity_anomaly",
+  "content_quality_cluster",
+  "local_pack_visibility_forecast",
+  "crawl_budget_optimization",
+  "competitive_presence_gap",
 ];
 
 export interface IntelReportMeta {
@@ -63,52 +83,98 @@ export interface IntelReportMeta {
   label: string;
   question: string;
   source: string;
-  /** Minimum SEO add-on tier to unlock. starter < essentials < growth < authority. */
-  minTier: "starter" | "essentials" | "growth" | "authority";
+  /** Minimum product tier per doc-64 §2 (standard / pro / business). */
+  minTier: "standard" | "pro" | "business";
+  /** Data-floor blurb for the empty-state UX. */
+  dataFloor: string;
+  /** Doc-64 status for the migration-tracking ribbon. */
+  status: "kept" | "new" | "demoted";
 }
 
+// 2026-06-22 — Doc 64 §4.2 canonical 9-report shelf.
+// 3 KEPT + 6 NEW. Each NEW entry renders as a pending_implementation card
+// in Phase 1; calculators come online in Phases 2-4.
 export const ARION_INTEL_META: IntelReportMeta[] = [
-  {
-    key: "seo_authority",
-    label: "SEO Authority Position",
-    question: "How does my SEO authority compare to my tracked competitor pool?",
-    source: "SE Ranking",
-    minTier: "starter",
-  },
   {
     key: "visibility_trajectory",
     label: "Visibility Trajectory",
     question: "Where will my search presence be in 90 days at current trajectory?",
     source: "Google Search Console",
-    minTier: "essentials",
+    minTier: "standard",
+    dataFloor: "60d for linear · 365d for Holt-Winters",
+    status: "kept",
   },
   {
-    key: "competitive_presence",
+    key: "pagespeed_decay_forecast",
+    label: "PageSpeed Decay Forecast",
+    question: "Am I trending toward a Core Web Vitals failure?",
+    source: "PageSpeed Insights + IA Plugin",
+    minTier: "standard",
+    dataFloor: "2 snapshots for distribution · 30+ for forecast",
+    status: "kept",
+  },
+  {
+    key: "site_audit_risk_prediction",
+    label: "Site Audit Risk Prediction",
+    question: "Which technical issues will spike at next audit?",
+    source: "SE Ranking audit history",
+    minTier: "pro",
+    dataFloor: "3 completed audits",
+    status: "new",
+  },
+  {
+    key: "keyword_position_trajectory",
+    label: "Keyword Position Trajectory",
+    question: "Which keywords will move into or out of top-10 over the next 60 days?",
+    source: "SE Ranking position history",
+    minTier: "pro",
+    dataFloor: "90d position history",
+    status: "new",
+  },
+  {
+    key: "backlink_velocity_anomaly",
+    label: "Backlink Velocity Anomaly",
+    question: "Is my link profile growing, decaying, or under attack?",
+    source: "SE Ranking backlink stats",
+    minTier: "pro",
+    dataFloor: "60d backlink snapshots",
+    status: "new",
+  },
+  {
+    key: "content_quality_cluster",
+    label: "Content Quality Cluster",
+    question: "Which content groups pull weight vs which drag?",
+    source: "IA Plugin RankMath + GA4 + GSC",
+    minTier: "pro",
+    dataFloor: "Plugin installed + 30d GA4",
+    status: "new",
+  },
+  {
+    key: "local_pack_visibility_forecast",
+    label: "Local Pack Visibility Forecast",
+    question: "Will I hold, gain, or lose local-pack visibility?",
+    source: "GBP insights + reviews",
+    minTier: "standard",
+    dataFloor: "60d (90d for confident forecast)",
+    status: "new",
+  },
+  {
+    key: "crawl_budget_optimization",
+    label: "Crawl Budget Optimization",
+    question: "Which pages should the next audit prioritise?",
+    source: "SE Ranking audit + GSC index coverage",
+    minTier: "business",
+    dataFloor: "1 audit + 90d GSC",
+    status: "new",
+  },
+  {
+    key: "competitive_presence_gap",
     label: "Competitive Presence Gap",
-    question: "On what % of target keywords does a competitor outrank me?",
-    source: "SE Ranking",
-    minTier: "essentials",
-  },
-  {
-    key: "crawl_depth",
-    label: "Crawl Depth Score",
-    question: "How completely does the SE Ranking crawler reach my site?",
-    source: "SE Ranking audit",
-    minTier: "growth",
-  },
-  {
-    key: "schema_coverage",
-    label: "Schema Markup Coverage",
-    question: "What % of my pages have valid structured data?",
-    source: "SE Ranking + IA Plugin",
-    minTier: "authority",
-  },
-  {
-    key: "pagespeed_distribution",
-    label: "Page Speed Distribution",
-    question: "What share of my pages hit Google's Core Web Vitals thresholds?",
-    source: "PageSpeed Insights",
-    minTier: "starter",
+    question: "How is the gap between me and my tracked competitors changing?",
+    source: "SE Ranking competitor visibility",
+    minTier: "pro",
+    dataFloor: "Essentials+ tracked competitors + 60d",
+    status: "kept",
   },
 ];
 
@@ -193,13 +259,13 @@ const DEPRECATED_STUB: IntelligenceReport = {
   dataGap: "Client engine deprecated 2026-06-21 (single-source refactor).",
 };
 
-/** @deprecated Multi-platform — relocated to ARGUS Cross-Channel Intelligence. */
+/** @deprecated Multi-platform — relocated to ARGUS Cross-Platform Intelligence. */
 export function acquisitionEfficiencyEngine(_input: EngineInput): IntelligenceReport { return DEPRECATED_STUB; }
-/** @deprecated Multi-platform — relocated to ARGUS Cross-Channel Intelligence. */
+/** @deprecated Multi-platform — relocated to ARGUS Cross-Platform Intelligence. */
 export function leadSourceQualityEngine(_input: EngineInput): IntelligenceReport { return DEPRECATED_STUB; }
-/** @deprecated Multi-platform — relocated to ARGUS Cross-Channel Intelligence. */
+/** @deprecated Multi-platform — relocated to ARGUS Cross-Platform Intelligence. */
 export function contentRoiEngine(_input: EngineInput): IntelligenceReport { return DEPRECATED_STUB; }
-/** @deprecated Multi-platform — relocated to ARGUS Cross-Channel Intelligence. */
+/** @deprecated Multi-platform — relocated to ARGUS Cross-Platform Intelligence. */
 export function reputationToRevenueEngine(_input: EngineInput): IntelligenceReport { return DEPRECATED_STUB; }
 /** @deprecated Single-source but moved server-side. */
 export function visibilityTrajectoryEngine(_input: EngineInput): IntelligenceReport { return DEPRECATED_STUB; }

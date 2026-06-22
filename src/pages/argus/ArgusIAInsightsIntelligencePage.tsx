@@ -16,16 +16,19 @@
 //   - Locked / partial / insufficient_data states identical to per-platform
 //
 // Endpoint: GET /argus/intelligence/:tenantId/reports
-//   (back-compat alias of /argus/cross-channel-intelligence/:tenantId/reports)
+//   (back-compat aliases: /argus/cross-platform-intelligence/:tenantId/reports
+//    and /argus/cross-channel-intelligence/:tenantId/reports)
 //
-// The page is still routed under serviceCatalog key `argus_cross_channel`
-// for now — the ServiceRouter case has been pointed at this new file.
+// 2026-06-22: Cross-Channel → Cross-Platform rename. The page is now routed
+// under the canonical serviceCatalog key `argus_cross_platform`; legacy
+// `argus_cross_channel` remains a back-compat alias resolving to the same page.
 
 import { useEffect, useMemo, useState } from "react";
 import { useAccessToken } from "../../auth/useAccessToken";
 import { useAppState } from "../../app/AppState";
 import {
   Lock, TrendingUp, Users, DollarSign, BarChart3, Activity, MessageSquare, ArrowRight, X, RefreshCw,
+  Wallet, UserMinus, LineChart, AlertTriangle, Sparkles, CircuitBoard, Coins,
 } from "lucide-react";
 
 // ── Shared types matching the platform-api payload shape ──────────────
@@ -72,79 +75,157 @@ interface BundleResponse {
 // Source labels are static here (mirror the canonical mapping from the
 // task spec) so they always render — even when the backend payload's
 // sources array is missing because the response was cached pre-rename.
+// 2026-06-22 — Doc 64 §7.2 + §7.4 canonical ARGUS Intelligence shelves.
+// Two sections live on this page:
+//   - Cross-Platform Intelligence (7 reports, §7.2)
+//   - ARGUS AI Intelligence (3 reports, §7.4)
+// The May-spec 6-report shelf (acquisition_performance, marketing_effectiveness,
+// reputation_impact, channel_performance, customer_lifetime_value,
+// business_health_trajectory) is SUPERSEDED — those reports collapsed into
+// the new §7.2 set per the doc-64 migration table. Legacy keys remain
+// resolvable in the backend so any cached payload still renders.
+type ReportSection = "cross_platform" | "argus_ai";
+
 interface ReportMeta {
   label: string;
   question: string;
   icon: typeof Users;
-  category: "relocated" | "new";
-  minTier: "free" | "standard" | "pro" | "data_plan";
+  category: "kept" | "new" | "superseded";
+  /** Doc-64 §2 tier philosophy: pro/business for Cross-Platform; std/pro/business for ARGUS AI. */
+  minTier: "free" | "standard" | "pro" | "business" | "data_plan";
   sourceLabel: string;
+  section: ReportSection;
+  dataFloor: string;
 }
 
 const REPORT_META: Record<string, ReportMeta> = {
-  acquisition_performance: {
-    label: "Acquisition Performance",
-    question: "Across the full website → lead → paying customer funnel, how cleanly is the business acquiring revenue?",
-    icon: Users,
-    category: "relocated",
-    minTier: "free",
-    sourceLabel: "Sources: ARION + SPARK + OLIVER",
-  },
-  marketing_effectiveness: {
-    label: "Marketing Effectiveness",
-    question: "Which marketing efforts (content, email, channel mix) are actually producing revenue?",
-    icon: Activity,
-    category: "relocated",
-    minTier: "free",
-    sourceLabel: "Sources: ARION + SPARK + OLIVER",
-  },
-  reputation_impact: {
-    label: "Reputation Impact",
-    question: "Does online reputation (rating + review velocity) correlate with repeat-customer revenue?",
-    icon: MessageSquare,
-    category: "relocated",
-    minTier: "free",
-    sourceLabel: "Sources: ARION + OLIVER",
-  },
-  channel_performance: {
-    label: "Channel Performance",
-    question: "Which channels (organic, paid, direct, referral, email) drive what % of revenue — and how concentrated are we?",
-    icon: BarChart3,
+  // ── §7.2 Cross-Platform Intelligence — 7 reports ─────────────────
+  customer_acquisition_cost_forecast: {
+    label: "Customer Acquisition Cost Forecast",
+    question: "What will CAC look like over the next 90 days, and which channels are getting expensive?",
+    icon: Wallet,
     category: "new",
     minTier: "pro",
-    sourceLabel: "Sources: ARION + SPARK + OLIVER",
+    sourceLabel: "Sources: ARION + SPARK + OLIVER (+ STELLA when joined)",
+    section: "cross_platform",
+    dataFloor: "90d + 100+ attributed contacts",
   },
-  customer_lifetime_value: {
-    label: "Customer Lifetime Value",
-    question: "What is each customer worth across our products? Are we one-customer-loss away from a bad month?",
+  cross_product_churn_prediction: {
+    label: "Cross-Product Churn Prediction",
+    question: "Who is 60-90 days from full disengagement across every touchpoint?",
+    icon: UserMinus,
+    category: "new",
+    minTier: "business",
+    sourceLabel: "Sources: SPARK + OLIVER + ARION (Plugin signal)",
+    section: "cross_platform",
+    dataFloor: "180d + 200+ contacts w/ ≥1 paid job",
+  },
+  lifetime_value_prediction: {
+    label: "Lifetime Value Prediction",
+    question: "What is each contact's predicted LTV based on first-90-day signals?",
     icon: DollarSign,
     category: "new",
-    minTier: "pro",
+    minTier: "business",
     sourceLabel: "Sources: SPARK + OLIVER",
+    section: "cross_platform",
+    dataFloor: "12mo + 300+ contacts w/ ≥12mo history",
   },
-  business_health_trajectory: {
-    label: "Business Health Trajectory",
-    question: "Across all platforms, which Pulse scores are heading the wrong way? Where is the early-warning signal?",
+  revenue_attribution_modeling: {
+    label: "Revenue Attribution Modeling",
+    question: "Which channels deserve credit for each paid job?",
+    icon: Coins,
+    category: "new",
+    minTier: "business",
+    sourceLabel: "Sources: ARION + SPARK + OLIVER",
+    section: "cross_platform",
+    dataFloor: "90d + 150+ paid conversions, ≥2 touchpoints each",
+  },
+  cross_platform_anomaly_detection: {
+    label: "Cross-Platform Anomaly Detection",
+    question: "Which cross-product KPI just broke pattern?",
+    icon: AlertTriangle,
+    category: "new",
+    minTier: "pro",
+    sourceLabel: "Sources: ARION + SPARK + OLIVER",
+    section: "cross_platform",
+    dataFloor: "60d daily granularity",
+  },
+  growth_trajectory_forecast: {
+    label: "Growth Trajectory Forecast",
+    question: "Where will revenue, contacts, jobs, and visibility be in 90 days?",
     icon: TrendingUp,
     category: "new",
     minTier: "pro",
-    sourceLabel: "Sources: all active platforms",
+    sourceLabel: "Sources: ARION + SPARK + OLIVER",
+    section: "cross_platform",
+    dataFloor: "90d weekly",
+  },
+  prescriptive_growth_recommendations: {
+    label: "Prescriptive Growth Recommendations",
+    question: "What are the top-3 highest-ROI actions to take this quarter?",
+    icon: LineChart,
+    category: "new",
+    minTier: "business",
+    sourceLabel: "Sources: composite (reports 1, 2, 3, 6 must have run)",
+    section: "cross_platform",
+    dataFloor: "Reports above must have completed at least once",
+  },
+  // ── §7.4 ARGUS AI Intelligence — 3 reports ───────────────────────
+  ai_usage_forecast: {
+    label: "AI Usage Forecast",
+    question: "Will I run out of credits this cycle? When should I top up or upgrade?",
+    icon: Sparkles,
+    category: "new",
+    minTier: "standard",
+    sourceLabel: "Sources: argus.ai_token_ledger + data_plan_subscription",
+    section: "argus_ai",
+    dataFloor: "30d daily",
+  },
+  il_model_performance_anomaly: {
+    label: "IL Model Performance Anomaly",
+    question: "Is IL accuracy or hit rate degrading silently?",
+    icon: CircuitBoard,
+    category: "new",
+    minTier: "pro",
+    sourceLabel: "Sources: argus.il_invocation_log (confidence, fallback, acceptance)",
+    section: "argus_ai",
+    dataFloor: "60d + 500+ IL invocations per feature",
+  },
+  ai_cost_optimization_recommendations: {
+    label: "Cost Optimization Recommendations",
+    question: "What would lower AI spend without losing capability?",
+    icon: Coins,
+    category: "new",
+    minTier: "business",
+    sourceLabel: "Sources: argus.ai_token_ledger + il_invocation_log + data_plan",
+    section: "argus_ai",
+    dataFloor: "60d + ≥1 full billing cycle",
   },
 };
 
 const REPORT_ORDER = [
-  "acquisition_performance",
-  "marketing_effectiveness",
-  "reputation_impact",
-  "channel_performance",
-  "customer_lifetime_value",
-  "business_health_trajectory",
+  // Cross-Platform Intelligence (§7.2)
+  "customer_acquisition_cost_forecast",
+  "cross_product_churn_prediction",
+  "lifetime_value_prediction",
+  "revenue_attribution_modeling",
+  "cross_platform_anomaly_detection",
+  "growth_trajectory_forecast",
+  "prescriptive_growth_recommendations",
+  // ARGUS AI Intelligence (§7.4)
+  "ai_usage_forecast",
+  "il_model_performance_anomaly",
+  "ai_cost_optimization_recommendations",
 ];
+
+// Silence unused-import warnings for icons not used after refactor.
+void Activity; void MessageSquare; void BarChart3;
 
 const TIER_LABEL: Record<string, string> = {
   free:       "Free",
   standard:   "Standard",
   pro:        "Pro",
+  business:   "Business",
   data_plan:  "Data Plan",
 };
 
@@ -207,8 +288,9 @@ export function ArgusIAInsightsIntelligencePage() {
     try {
       const token = await getToken();
       const qs = forceRefresh ? "?refresh=true" : "";
-      // New canonical alias path. The legacy /cross-channel-intelligence
-      // path still works and serves identical payload (back-compat).
+      // New canonical alias path. The legacy /cross-platform-intelligence
+      // and /cross-channel-intelligence paths still work and serve the same
+      // payload (back-compat).
       const url = `${apiBase}/argus/intelligence/${encodeURIComponent(activeTenantId)}/reports${qs}`;
       const r = await globalThis.fetch(url, {
         headers: {
@@ -254,7 +336,7 @@ export function ArgusIAInsightsIntelligencePage() {
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">IA Insights — Intelligence</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Six ARGUS reports that combine signals across active platforms. Each gauge reads from the platforms listed in its footer.</p>
+          <p className="text-sm text-slate-500 mt-0.5">Cross-Platform Intelligence (7 reports, §7.2) plus ARGUS AI Intelligence (3 reports, §7.4). All cross-product reports consolidate here per doc 64.</p>
         </div>
         <button
           onClick={() => void load(true)}
@@ -293,8 +375,13 @@ export function ArgusIAInsightsIntelligencePage() {
         </div>
       )}
 
+      {/* §7.2 Cross-Platform Intelligence */}
+      <div className="mt-2 mb-2">
+        <h2 className="text-sm font-bold uppercase tracking-wide text-slate-600">Cross-Platform Intelligence</h2>
+        <p className="text-xs text-slate-500">Doc 64 §7.2 · 7 reports that combine signals across ARION + SPARK + OLIVER (plus STELLA where joined).</p>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {REPORT_ORDER.map((key) => {
+        {REPORT_ORDER.filter((key) => REPORT_META[key]?.section === "cross_platform").map((key) => {
           const meta = REPORT_META[key];
           const report: IntelligenceReport = reportsByKey[key] ?? {
             reportKey: key,
@@ -302,10 +389,41 @@ export function ArgusIAInsightsIntelligencePage() {
             tier: null,
             state: loading ? "insufficient_data" : "insufficient_data",
             components: [],
-            narrative: loading ? "Loading…" : "Not yet calculated",
+            narrative: loading ? "Loading…" : `Pending implementation — ${meta?.dataFloor || "calculator queued"}.`,
             observations: [],
             actions: [],
-            dataGap: loading ? undefined : "Awaiting first calculation.",
+            dataGap: loading ? undefined : `Shell registered — calculator ships in doc-64 Phase 5.`,
+            last_calculated_at: new Date().toISOString(),
+          };
+          return (
+            <ReportCard
+              key={key}
+              meta={meta}
+              report={report}
+              onOpen={() => setOpen(key)}
+            />
+          );
+        })}
+      </div>
+
+      {/* §7.4 ARGUS AI Intelligence */}
+      <div className="mt-6 mb-2">
+        <h2 className="text-sm font-bold uppercase tracking-wide text-slate-600">ARGUS AI Intelligence</h2>
+        <p className="text-xs text-slate-500">Doc 64 §7.4 · Modelled reports on AI Credit / IL Model usage. Requires ARGUS AI v1 metering tables (overnight-report doc 41).</p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {REPORT_ORDER.filter((key) => REPORT_META[key]?.section === "argus_ai").map((key) => {
+          const meta = REPORT_META[key];
+          const report: IntelligenceReport = reportsByKey[key] ?? {
+            reportKey: key,
+            score: null,
+            tier: null,
+            state: loading ? "insufficient_data" : "insufficient_data",
+            components: [],
+            narrative: loading ? "Loading…" : `Pending implementation — ${meta?.dataFloor || "calculator queued"}.`,
+            observations: [],
+            actions: [],
+            dataGap: loading ? undefined : `Shell registered — calculator ships in doc-64 Phase 6 (needs ARGUS AI metering layer).`,
             last_calculated_at: new Date().toISOString(),
           };
           return (
@@ -321,8 +439,21 @@ export function ArgusIAInsightsIntelligencePage() {
 
       {open && (() => {
         const meta = REPORT_META[open];
-        const report = reportsByKey[open];
-        if (!meta || !report) return null;
+        if (!meta) return null;
+        const report: IntelligenceReport = reportsByKey[open] ?? {
+          reportKey: open,
+          score: null,
+          tier: null,
+          state: "insufficient_data",
+          components: [],
+          narrative: `Pending implementation — ${meta.dataFloor}.`,
+          observations: [
+            `Shell registered as a Phase-1 card per doc 64 §8. Calculator ships in ${meta.section === "argus_ai" ? "Phase 6 (requires ARGUS AI metering)" : "Phase 5"}.`,
+          ],
+          actions: [],
+          dataGap: `Shell registered — calculator queued.`,
+          last_calculated_at: new Date().toISOString(),
+        };
         return <IntelligenceModal meta={meta} report={report} onClose={() => setOpen(null)} />;
       })()}
     </div>
@@ -345,11 +476,13 @@ function ReportCard({ meta, report, onOpen }: {
   const isInsuf = report.state === "insufficient_data";
   const sourceLabel = resolveSourceLabel(report, meta);
   const tierBadgeClass =
-    meta.minTier === "pro" || meta.minTier === "data_plan"
+    meta.minTier === "business" || meta.minTier === "data_plan"
       ? "bg-violet-100 text-violet-700"
-      : meta.minTier === "standard"
+      : meta.minTier === "pro"
         ? "bg-blue-100 text-blue-700"
-        : "bg-slate-200 text-slate-700";
+        : meta.minTier === "standard"
+          ? "bg-emerald-100 text-emerald-700"
+          : "bg-slate-200 text-slate-700";
 
   return (
     <button

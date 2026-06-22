@@ -470,7 +470,7 @@ export function SeoOverview() {
       <WidgetContainer
         title="Content"
         subtitle="Content-quality scoring and improvement opportunities"
-        onSeeFull={() => navigate('/app/services/arion_analytics_ia_cross_channel')}
+        onSeeFull={() => navigate('/app/services/arion_analytics_ia_cross_platform')}
         seeFullLabel="See Full Content Intelligence"
       >
         <div style={{ padding: 16, background: '#F8FAFC', borderRadius: 6, textAlign: 'center', color: '#5A7A8A', fontSize: 12, lineHeight: 1.6 }}>

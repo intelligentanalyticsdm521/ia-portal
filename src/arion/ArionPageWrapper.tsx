@@ -15,7 +15,7 @@ const PAGE_MAP: Record<string, string> = {
   performance_cache: 'Core Web Vitals', performance_images: 'Media',
   updates: 'Plugins', domain_dns: 'Domain & DNS', backups: 'Backups',
   traffic: 'Traffic', conversions: 'Conversions',
-  ia_cross_channel: 'IA Cross-Channel', ia_reports: 'IA Insights',
+  ia_cross_platform: 'IA Cross-Platform', ia_cross_channel: 'IA Cross-Platform', ia_reports: 'IA Insights',
   rankings: 'Rankings', site_audit: 'Site Audit', competitors: 'Competitors',
   opportunities: 'Opportunities', performance: 'Performance',
   indexing: 'Search & Indexing', sitemaps: 'Sitemaps',

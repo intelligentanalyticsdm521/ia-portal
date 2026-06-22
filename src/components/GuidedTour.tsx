@@ -645,7 +645,7 @@ export const SPARK_QUICK_TOUR: TourDef = {
     // ── IA Insights ─────────────────────────────────────────────────────────
     {
       title: "IA Insights",
-      body: "Same Health → Trends → Intelligence → Cross-Channel pattern as the other products. Identifies what's working and what isn't.",
+      body: "Same Health → Trends → Intelligence → Cross-Platform pattern as the other products. Identifies what's working and what isn't.",
       targetSelector: "a[href='/app/services/spark_ia_insights_health']",
       placement: "right",
     },
@@ -776,7 +776,7 @@ export const ARION_QUICK_TOUR: TourDef = {
     // ── IA Insights ─────────────────────────────────────────────────────────
     {
       title: "IA Insights — Health",
-      body: "Same Health → Trends → Intelligence → Cross-Channel pattern as the other products.",
+      body: "Same Health → Trends → Intelligence → Cross-Platform pattern as the other products.",
       targetSelector: "a[href='/app/services/arion_ia_insights_health']",
       placement: "right",
     },

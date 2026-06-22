@@ -4,8 +4,8 @@
 // Score, Intelligence Score) + active-products indicator + 2 bar charts
 // (Trend Breakdown 4 bars + Intelligence Breakdown 5 bars).
 //
-// ARGUS Platform Score = Trend 50% + Intelligence 50% (no cross-channel
-// sub-score — cross-channel is the whole product).
+// ARGUS Platform Score = Trend 50% + Intelligence 50% (no cross-platform
+// sub-score — cross-platform is the whole product).
 import { useEffect, useMemo, useState } from "react";
 import { useAccessToken } from "../../auth/useAccessToken";
 import { useAppState } from "../../app/AppState";
@@ -110,7 +110,7 @@ export function ArgusHealthPage() {
       banners: [
         {
           severity: "info" as const,
-          message: "ARGUS is the cross-channel intelligence layer. Health page summarises all active product scores — drill into Trends, Intelligence, or Cross-Channel for detail.",
+          message: "ARGUS is the cross-platform intelligence layer. Health page summarises all active product scores — drill into Trends, Intelligence, or Cross-Platform for detail.",
         },
       ],
       meta: { generatedAt: new Date().toISOString(), tier: "pro" as const },
@@ -129,7 +129,7 @@ export function ArgusHealthPage() {
     <div className="p-4 max-w-7xl mx-auto">
       <div className="mb-3">
         <h1 className="text-2xl font-bold text-slate-900">ARGUS IA Insights — Health</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Cross-channel intelligence layer. Aggregates every active Platform Score into the Business Pulse.</p>
+        <p className="text-sm text-slate-500 mt-0.5">Cross-platform intelligence layer. Aggregates every active Platform Score into the Business Pulse.</p>
       </div>
       <IAInsightsHeader data={data} mode="argus" activeProducts={activeProducts} />
     </div>

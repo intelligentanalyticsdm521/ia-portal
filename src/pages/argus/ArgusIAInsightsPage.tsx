@@ -1,12 +1,14 @@
 // ArgusIAInsightsPage — ARGUS-level IA Insights (v5.x).
 //
-// The only place cross-channel intelligence lives. Every product's
-// IA Insights "Cross-Channel" link routes here. June 1 launch: shell
-// with Business Pulse gauge + 6 cross-channel report cards rendering
+// The only place cross-platform intelligence lives. Every product's
+// IA Insights "Cross-Platform" link routes here. June 1 launch: shell
+// with Business Pulse gauge + 6 cross-platform report cards rendering
 // in collecting-data states.
 //
 // v5.12 — wired to platform-api GET /argus/business-pulse for the
 // composite cross-platform score.
+// 2026-06-22: Cross-Channel → Cross-Platform rename. Backend URL aliases
+// (/argus/cross-channel/* and /argus/cross-platform/*) both work.
 import { useEffect, useMemo, useState } from "react";
 import { useAccessToken } from "../../auth/useAccessToken";
 import { useAppState } from "../../app/AppState";
@@ -14,7 +16,7 @@ import { IAInsightsHeader } from "../../components/iainsights/IAInsightsHeader";
 import { bandFromScore, type IAInsightsHeaderData, type InsightDataGapBanner } from "../../components/iainsights/types";
 import { Sparkles, Lock, TrendingUp, Users, Activity, DollarSign, Repeat, BarChart3 } from "lucide-react";
 
-interface CrossChannelReport {
+interface CrossPlatformReport {
   key: string;
   label: string;
   question: string;
@@ -23,7 +25,7 @@ interface CrossChannelReport {
   level: "trends" | "intelligence";
 }
 
-const CC_REPORTS: CrossChannelReport[] = [
+const CC_REPORTS: CrossPlatformReport[] = [
   { key: "web_to_revenue", label: "Web-to-Revenue Funnel", question: "What does a lead's full journey from site visit to paid job look like?", icon: TrendingUp, productsRequired: ["ARION", "SPARK", "OLIVER"], level: "trends" },
   { key: "acquisition_quality", label: "Acquisition Quality", question: "Which channels produce the highest-LTV customers?", icon: Users, productsRequired: ["ARION", "SPARK"], level: "intelligence" },
   { key: "marketing_ops_loop", label: "Marketing → Ops Loop", question: "How well does marketing output translate to booked work?", icon: Activity, productsRequired: ["SPARK", "OLIVER"], level: "trends" },
@@ -79,7 +81,7 @@ export function ArgusIAInsightsPage() {
           setServerBanners(body?.banners || []);
         }
       } catch { /* swallow — banners cover the gap */ }
-      // Also fetch the Trends-level cross-channel reports.
+      // Also fetch the Trends-level cross-platform reports.
       try {
         const token = await getToken();
         const base = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string).replace(/\/$/, "");
@@ -111,7 +113,7 @@ export function ArgusIAInsightsPage() {
       overall: { score, previousScore: prev, band: bandFromScore(score), state: pulse?.pulse != null ? "ok" : "insufficient_data", message: pulse?.pulse != null ? "Business Pulse — weighted blend across active products." : "Business Pulse populates as ARGUS receives data from active products." },
       platform: { score, previousScore: prev, band: bandFromScore(score), state: pulse?.pulse != null ? "ok" : "insufficient_data" },
       trend: { score, previousScore: prev, band: bandFromScore(score), state: pulse?.pulse != null ? "ok" : "insufficient_data" },
-      intelligence: { score: 0, band: "unknown", state: "insufficient_data", message: "Cross-channel intelligence reports populate ~90 days post-launch." },
+      intelligence: { score: 0, band: "unknown", state: "insufficient_data", message: "Cross-platform intelligence reports populate ~90 days post-launch." },
       trendBreakdown: [
         { key: "arion_trend",  label: "ARION",  score: components.arion ?? 0,  previousScore: priorComponents.arion ?? undefined,  band: bandFromScore(components.arion ?? 0),  locked: components.arion == null,  lockReason: components.arion == null ? "Connect ARION"  : undefined, reportRoute: "/app/services/arion_ia_insights_trends" },
         { key: "spark_trend",  label: "SPARK",  score: components.spark ?? 0,  previousScore: priorComponents.spark ?? undefined,  band: bandFromScore(components.spark ?? 0),  locked: components.spark == null,  lockReason: components.spark == null ? "SPARK Trend data not yet wired"  : undefined, reportRoute: "/app/services/spark_ia_insights_trends" },
@@ -127,7 +129,7 @@ export function ArgusIAInsightsPage() {
     <div className="p-4 max-w-7xl mx-auto">
       <div className="mb-3">
         <h1 className="text-2xl font-bold text-slate-900">ARGUS IA Insights</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Cross-channel intelligence. The Business Pulse score below feeds every product's IA Insights header.</p>
+        <p className="text-sm text-slate-500 mt-0.5">Cross-platform intelligence. The Business Pulse score below feeds every product's IA Insights header.</p>
       </div>
 
       <IAInsightsHeader data={headerData} />
@@ -137,7 +139,7 @@ export function ArgusIAInsightsPage() {
           ? <WebToRevenueCard key={r.key} report={r} data={webToRevenue} pulse={pulse} />
           : r.key === "marketing_ops_loop"
           ? <MarketingOpsLoopCard key={r.key} report={r} data={marketingOps} pulse={pulse} />
-          : <CrossChannelCard key={r.key} report={r} pulse={pulse} />
+          : <CrossPlatformCard key={r.key} report={r} pulse={pulse} />
         )}
       </div>
     </div>
@@ -172,7 +174,7 @@ const REPORT_METRICS: Record<string, { product: "ARION" | "SPARK" | "OLIVER"; me
   ],
 };
 
-function CrossChannelCard({ report, pulse }: { report: CrossChannelReport; pulse: BusinessPulse | null }) {
+function CrossPlatformCard({ report, pulse }: { report: CrossPlatformReport; pulse: BusinessPulse | null }) {
   const Icon = report.icon;
   const metrics = REPORT_METRICS[report.key] || [];
   // Determine connection status per product based on pulse.components.
@@ -254,10 +256,10 @@ function CrossChannelCard({ report, pulse }: { report: CrossChannelReport; pulse
   );
 }
 
-function WebToRevenueCard({ report, data, pulse }: { report: CrossChannelReport; data: WebToRevenue | null; pulse?: BusinessPulse | null }) {
+function WebToRevenueCard({ report, data, pulse }: { report: CrossPlatformReport; data: WebToRevenue | null; pulse?: BusinessPulse | null }) {
   const Icon = report.icon;
   if (!data || data.present_stages === 0) {
-    return <CrossChannelCard report={report} pulse={pulse ?? null} />;
+    return <CrossPlatformCard report={report} pulse={pulse ?? null} />;
   }
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -304,11 +306,11 @@ function WebToRevenueCard({ report, data, pulse }: { report: CrossChannelReport;
   );
 }
 
-function MarketingOpsLoopCard({ report, data, pulse }: { report: CrossChannelReport; data: MarketingOpsLoop | null; pulse?: BusinessPulse | null }) {
+function MarketingOpsLoopCard({ report, data, pulse }: { report: CrossPlatformReport; data: MarketingOpsLoop | null; pulse?: BusinessPulse | null }) {
   const Icon = report.icon;
   const hasData = data && data.stages.some((s) => s.score != null);
   if (!hasData) {
-    return <CrossChannelCard report={report} pulse={pulse ?? null} />;
+    return <CrossPlatformCard report={report} pulse={pulse ?? null} />;
   }
   const marketing = data!.stages.filter((s) => s.side === "marketing");
   const operations = data!.stages.filter((s) => s.side === "operations");

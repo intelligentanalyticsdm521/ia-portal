@@ -169,7 +169,7 @@ export function SparkInsightsPage() {
   }, [gv]);
 
   return (
-    <SparkPageShell title="Insights" subtitle="7 cross-channel insight categories" error={error} loading={loading}>
+    <SparkPageShell title="Insights" subtitle="7 cross-platform insight categories" error={error} loading={loading}>
       {/* v2 banner — current rules are basic heuristics; full IA Intelligence Layer in v2 */}
       <div className="rounded-md bg-gradient-to-r from-lime-50 to-emerald-50 border border-emerald-200 px-4 py-2.5 mb-4 flex items-center gap-2 text-xs">
         <Sparkles className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0" />

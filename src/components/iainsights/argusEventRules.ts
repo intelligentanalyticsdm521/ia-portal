@@ -195,8 +195,8 @@ export const ARGUS_EVENT_FLOW_RULES: InsightRule[] = [
       const total = Number(c.flow?.total_events || 0);
       return total > 10 && sources.length === 1;
     },
-    observation: () => `Only one product is producing events. ARGUS is fundamentally cross-channel — the value compounds when at least 2 products are firing into it. Connect a second product to unlock cross-channel intelligence.`,
-    action: () => `Activate a second product (SPARK or OLIVER). Once events flow from a second source, the cross-channel reports + Business Pulse composite become meaningful.`,
+    observation: () => `Only one product is producing events. ARGUS is fundamentally cross-platform — the value compounds when at least 2 products are firing into it. Connect a second product to unlock cross-platform intelligence.`,
+    action: () => `Activate a second product (SPARK or OLIVER). Once events flow from a second source, the cross-platform reports + Business Pulse composite become meaningful.`,
   },
   {
     id: "argus.flow.event_diversity",
