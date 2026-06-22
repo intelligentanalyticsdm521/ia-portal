@@ -6,27 +6,61 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";  // LUMEN-API hook — OLIVER lives in same backend
 import { useProductTier, tierMeets } from "../../hooks/useProductTier";
-import { TrendingUp, AlertCircle, UserMinus, DollarSign, Users, BarChart3, ArrowRight, X } from "lucide-react";
+import { TrendingUp, AlertCircle, UserMinus, DollarSign, Users, BarChart3, ArrowRight, X, UserCheck, Activity, Map, Repeat, FileWarning } from "lucide-react";
 import { runAllOliverIntelligence, type IntelligenceReport, type OliverIntelKey } from "../../oliver/analytics/oliverIntelligenceEngines";
 import type { OliverEngineInput } from "../../oliver/analytics/oliverTrendEngines";
 import { LockedIntelligenceCard, CollectingIntelligenceCard } from "../../components/iainsights/LockedIntelligenceCard";
 
+// 2026-06-22 — Doc 64 §6.2 canonical 13-report OLIVER Intelligence shelf.
+// 6 KEPT (renamed where needed) + 7 NEW. NEW reports render as
+// pending_implementation cards in Phase 1; calculators land in
+// Phases 2-4 (doc 64 §8).
+type OliverIntelMetaKey =
+  | "demand_forecast"
+  | "revenue_forecast"
+  | "cash_pressure_forecast"
+  | "quote_win_rate"
+  | "customer_retention_risk"
+  | "customer_churn_prediction"
+  | "crew_efficiency"
+  | "service_line_profitability"
+  | "job_volume_anomaly"
+  | "repeat_customer_prediction"
+  | "route_optimization"
+  | "subscription_renewal_risk"
+  | "invoice_aging_forecast";
+
 interface IntelReportMeta {
-  key: OliverIntelKey;
+  /** Doc-64 shelf identifier (rendered key). */
+  key: OliverIntelMetaKey;
+  /** Maps onto the existing OliverIntelligenceEngines registry when
+   *  the report's calculator already exists. NEW entries leave this
+   *  unset and render as pending_implementation. */
+  engineKey?: OliverIntelKey;
   label: string;
   question: string;
   icon: typeof TrendingUp;
   modelType: string;
-  minTier: "pro" | "business";
+  minTier: "standard" | "pro" | "business";
+  dataFloor: string;
+  status: "kept" | "new";
 }
 
+// Doc-64 §6.2 13-report shelf (7 Std · 5 Pro · 1 Business).
 const OLIVER_INTEL: IntelReportMeta[] = [
-  { key: "demand_forecast",         label: "Demand Forecast",            question: "What will my job volume and revenue look like in the next 8 weeks?",  icon: TrendingUp,  modelType: "Linear extrapolation v1 · Holt-Winters at 90+ days history",       minTier: "business" },
-  { key: "cash_pressure",           label: "Cash Pressure Forecast",     question: "When will I next hit a cash flow gap and how large?",                 icon: AlertCircle, modelType: "Rolling 30-day cash flow: outstanding × historical pay timing",     minTier: "business" },
-  { key: "quote_win_rate_intel",    label: "Quote Win Rate Intelligence", question: "Why am I winning and losing quotes — and what is the pattern?",      icon: DollarSign,  modelType: "Win rate · service-type breakdown · pipeline projection",          minTier: "pro" },
-  { key: "customer_retention_risk", label: "Customer Retention Risk",    question: "Which customers are approaching churn and what is the revenue at stake?", icon: UserMinus, modelType: "Recency + frequency + LTV-weighted churn risk",                     minTier: "pro" },
-  { key: "crew_efficiency_model",   label: "Crew Efficiency Model",      question: "Which crew members perform most efficiently and am I staffed correctly?", icon: Users,    modelType: "On-time rate × utilisation × worker variance from job_status_events", minTier: "business" },
-  { key: "service_line_profit",     label: "Service Line Profitability", question: "Which services are worth offering and which are dragging?",            icon: BarChart3,  modelType: "Revenue per service at launch · margin post-STELLA cost integration", minTier: "business" },
+  { key: "demand_forecast",            engineKey: "demand_forecast",         label: "Demand Forecast",             question: "What will my job volume look like in the next 60 days?",                       icon: TrendingUp,  modelType: "Holt-Winters on oliver.job scheduled/completed",                       minTier: "standard", dataFloor: "60d",                          status: "kept" },
+  { key: "revenue_forecast",                                                  label: "Revenue Forecast",            question: "What will revenue look like in the next 90 days?",                             icon: DollarSign,  modelType: "Holt-Winters on oliver.invoice (paid) + payment",                       minTier: "standard", dataFloor: "90d",                          status: "new" },
+  { key: "cash_pressure_forecast",     engineKey: "cash_pressure",            label: "Cash Pressure Forecast",      question: "When will I next hit a cash-flow gap and how large?",                          icon: AlertCircle, modelType: "Regression on payment-timing (due_date vs payment_date) · 90d horizon", minTier: "pro",      dataFloor: "90d",                          status: "kept" },
+  { key: "quote_win_rate",             engineKey: "quote_win_rate_intel",     label: "Quote Win Rate Intelligence", question: "What predicts win vs loss for my quotes?",                                     icon: BarChart3,   modelType: "Logistic regression on oliver.quote features",                          minTier: "standard", dataFloor: "20+ decided quotes",           status: "kept" },
+  { key: "customer_retention_risk",    engineKey: "customer_retention_risk",  label: "Customer Retention Risk",     question: "Which customers are disengaging?",                                             icon: UserMinus,   modelType: "RFM on oliver.job by customer_id",                                       minTier: "standard", dataFloor: "6mo",                          status: "kept" },
+  { key: "customer_churn_prediction",                                         label: "Customer Churn Prediction",   question: "Which customers are 60+ days from going silent?",                              icon: UserMinus,   modelType: "Survival on oliver.job active vs churned cohorts",                       minTier: "pro",      dataFloor: "6mo",                          status: "new" },
+  { key: "crew_efficiency",            engineKey: "crew_efficiency_model",    label: "Crew Efficiency Model",       question: "Which crew configurations complete jobs fastest?",                             icon: Users,       modelType: "Regression on oliver.job_assignment + job_status_events cycle times",   minTier: "pro",      dataFloor: "30+ completed jobs",           status: "kept" },
+  { key: "service_line_profitability", engineKey: "service_line_profit",      label: "Service Line Profitability",  question: "Which services drive the most revenue per job?",                               icon: BarChart3,   modelType: "Aggregation + ranking on invoice_line_item × job.service_type",         minTier: "standard", dataFloor: "60d + 2 service lines",        status: "kept" },
+  { key: "job_volume_anomaly",                                                label: "Job Volume Anomaly Detection",question: "Are there abnormal spikes or drops in daily job volume?",                      icon: Activity,    modelType: "Statistical outlier (z-score / IQR) on daily oliver.job counts",         minTier: "standard", dataFloor: "30d",                          status: "new" },
+  { key: "repeat_customer_prediction",                                        label: "Repeat Customer Prediction",  question: "Which one-time customers will book again?",                                    icon: UserCheck,   modelType: "Logistic classification on customer-history features",                   minTier: "pro",      dataFloor: "6mo + repeat signal",         status: "new" },
+  { key: "route_optimization",                                                label: "Route Optimization",          question: "What is the optimal dispatch sequence today?",                                 icon: Map,         modelType: "Prescriptive routing on scheduled_date + location + assignment",         minTier: "business", dataFloor: "Active jobs w/ location + assignment", status: "new" },
+  { key: "subscription_renewal_risk",                                         label: "Subscription Renewal Risk",   question: "Which recurring customers are about to lapse?",                                icon: Repeat,      modelType: "Survival on recurring oliver.job patterns (recurring_schedule_id)",     minTier: "pro",      dataFloor: "90d recurring history",        status: "new" },
+  { key: "invoice_aging_forecast",                                            label: "Invoice Aging Forecast",      question: "What does expected AR aging look like over the next 60 days?",                 icon: FileWarning, modelType: "Holt-Winters on invoice (amount_due, due_date) + payment aging buckets", minTier: "standard", dataFloor: "60d",                          status: "new" },
 ];
 
 function stateColor(state: IntelligenceReport["state"]): string {
@@ -60,7 +94,7 @@ export function OliverIAInsightsIntelligencePage() {
   const [inputs, setInputs] = useState<OliverEngineInput | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
-  const [open, setOpen] = useState<OliverIntelKey | null>(null);
+  const [open, setOpen] = useState<OliverIntelMetaKey | null>(null);
 
   const fetchInputs = useCallback(async () => {
     if (!ready) return;
@@ -83,7 +117,7 @@ export function OliverIAInsightsIntelligencePage() {
     <div className="p-4 max-w-7xl mx-auto">
       <div className="mb-3">
         <h1 className="text-2xl font-bold text-slate-900">OLIVER IA Insights — Intelligence</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Modelled, scored forecasting + classification reports. Engines run on live data; reports auto-upgrade as your data accumulates.</p>
+        <p className="text-sm text-slate-500 mt-0.5">Thirteen modelled OLIVER-only reports per doc-64 §6.2. Cross-product reports (Web-to-Revenue, LTV, Marketing-to-Ops) live in ARGUS.</p>
       </div>
 
       <div className="mb-4 rounded-md border-l-4 border-blue-400 bg-blue-50 px-4 py-3 text-sm text-blue-900">
@@ -96,11 +130,18 @@ export function OliverIAInsightsIntelligencePage() {
       {reports && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {OLIVER_INTEL.map((m) => {
-            const r: IntelligenceReport = reports[m.key] ?? {
+            // Doc-64 shelf entries map onto engine outputs via engineKey.
+            // NEW reports without an engineKey render the pending stub.
+            const isPending = !m.engineKey;
+            const r: IntelligenceReport = (m.engineKey && reports[m.engineKey]) ?? {
               score: 0, state: "insufficient_data",
-              headline: "Collecting data — check back in 24 hours",
+              headline: isPending
+                ? `Pending implementation — ${m.dataFloor}`
+                : "Collecting data — check back in 24 hours",
               scoreInputs: [], observations: [], actions: [],
-              dataGap: "Awaiting first data refresh.",
+              dataGap: isPending
+                ? `Shell registered — calculator ships in doc-64 Phase 2-4.`
+                : "Awaiting first data refresh.",
             };
             // v10.0 — Scope §8.4 split: tier-locked vs data-collecting are
             // distinct user states. Standard tier with Pro report = locked
@@ -144,7 +185,10 @@ export function OliverIAInsightsIntelligencePage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-semibold text-sm text-slate-900">{m.label}</span>
-                      <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${m.minTier === "business" ? "bg-violet-100 text-violet-700" : "bg-blue-100 text-blue-700"}`}>{m.minTier}</span>
+                      <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${m.minTier === "business" ? "bg-violet-100 text-violet-700" : m.minTier === "pro" ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-slate-700"}`}>{m.minTier}</span>
+                      {m.status === "new" && (
+                        <span className="text-[9px] font-bold uppercase px-1 py-0.5 bg-blue-100 text-blue-700 rounded">NEW</span>
+                      )}
                     </div>
                     <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-2">{m.question}</p>
                   </div>
@@ -176,11 +220,15 @@ export function OliverIAInsightsIntelligencePage() {
       {open && reports && (() => {
         const m = OLIVER_INTEL.find((x) => x.key === open);
         if (!m) return null;
-        const r: IntelligenceReport = reports[open] ?? {
+        const r: IntelligenceReport = (m.engineKey && reports[m.engineKey]) ?? {
           score: 0, state: "insufficient_data",
-          headline: "Collecting data — check back in 24 hours",
+          headline: !m.engineKey
+            ? `Pending implementation — ${m.dataFloor}`
+            : "Collecting data — check back in 24 hours",
           scoreInputs: [], observations: [], actions: [],
-          dataGap: "Awaiting first data refresh.",
+          dataGap: !m.engineKey
+            ? `Shell registered — calculator ships in doc-64 Phase 2-4.`
+            : "Awaiting first data refresh.",
         };
         const tierLocked = tierReady && !tierMeets(tier, m.minTier);
         return <IntelligenceModal meta={m} report={r} tierLocked={tierLocked} onClose={() => setOpen(null)} />;
