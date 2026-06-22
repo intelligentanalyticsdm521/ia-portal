@@ -150,7 +150,6 @@ const OLIVER_NAV: SubNavConfig = {
         { key: "oliver_ia_insights_health", label: "Health", route: "/app/services/oliver_ia_insights_health" },
         { key: "oliver_ia_insights_trends", label: "Trends", route: "/app/services/oliver_ia_insights_trends", tag: { label: "OLIVER", color: "#FEC82C" } },
         { key: "oliver_ia_insights_intelligence", label: "Intelligence", route: "/app/services/oliver_ia_insights_intelligence", tag: { label: "OLIVER", color: "#FEC82C" } },
-        { key: "argus_cross_channel", label: "Intelligence", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
       ],
     },
     {
@@ -224,7 +223,6 @@ const ARION_NAV: SubNavConfig = {
         { key: "arion_ia_insights_health", label: "Health", route: "/app/services/arion_ia_insights_health" },
         { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends", tag: { label: "ARION", color: "#38BDF8" } },
         { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#38BDF8" } },
-        { key: "argus_cross_channel", label: "Intelligence", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
         { key: "arion_service_area", label: "Service Area Config", route: "/app/services/arion_service_area" },
       ],
     },
@@ -420,7 +418,6 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends", tag: { label: "SPARK", color: "#EF6C33" } },
         { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" } },
         { key: "spark_stella", label: "STELLA Send Intelligence", route: "/app/services/spark_stella", tag: { label: "STELLA", color: "#EF6C33" } },
-        { key: "argus_cross_channel", label: "Intelligence", route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
       ],
     },
     {
@@ -638,7 +635,7 @@ const ARGUS_NAV: SubNavConfig = {
       items: [
         { key: "argus_health",        label: "Health",        route: "/app/services/argus_health" },
         { key: "argus_trends",        label: "Trends",        route: "/app/services/argus_trends",        tag: { label: "ARGUS", color: "#84CC16" } },
-        { key: "argus_cross_channel", label: "Intelligence",  route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
+        { key: "argus_cross_channel", label: "Cross-Channel Intelligence",  route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
       ],
     },
   ],

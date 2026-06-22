@@ -75,15 +75,13 @@ export function IAInsightsHeader({ data, mode = "product", activeProducts }: Pro
       </div>
 
       {/* v9.0 — Bar charts.
-          Product mode: 3 bars (Trend / Intelligence / ARGUS Intelligence).
-          ARGUS mode: 2 bars (Trend / Intelligence) — no ARGUS gauge since
-          ARGUS IS the cross-platform home. */}
-      <div className={`mt-4 grid grid-cols-1 ${isArgus ? "md:grid-cols-2" : "md:grid-cols-3"} gap-3`}>
+          Both modes: 2 bars (Trend / Intelligence).
+          2026-06-22: ARGUS Intelligence breakdown bar removed — the
+          crossChannelBreakdown field had no producer anywhere in the
+          codebase, so the chart always rendered the empty state. */}
+      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
         <ScoreBarChart title="Trend breakdown" bars={data.trendBreakdown} accent={PRODUCT_COLORS[isArgus ? "argus" : data.product]} />
         <ScoreBarChart title="Intelligence breakdown" bars={data.intelligenceBreakdown} accent={PRODUCT_COLORS[isArgus ? "argus" : data.product]} />
-        {!isArgus && (
-          <ScoreBarChart title="ARGUS Intelligence breakdown" bars={data.crossChannelBreakdown || []} accent={PRODUCT_COLORS.argus} emptyStateMessage="Connect a second platform to populate ARGUS Intelligence reports." />
-        )}
       </div>
 
       {/* Footer */}
@@ -275,8 +273,8 @@ function IAInsightsHeaderSkeleton() {
           <div key={i} className="rounded-lg border border-slate-200 bg-white p-3 h-24" />
         ))}
       </div>
-      <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-        {[0, 1, 2].map((i) => (
+      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+        {[0, 1].map((i) => (
           <div key={i} className="rounded-lg border border-slate-200 bg-white p-3 h-40" />
         ))}
       </div>
