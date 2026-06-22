@@ -14,29 +14,64 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { useProductTier, tierMeets } from "../../hooks/useProductTier";
-import { Sparkles, TrendingDown, BarChart3, DollarSign, Users, Repeat, PieChart, ArrowRight, X } from "lucide-react";
+import { Sparkles, TrendingDown, BarChart3, DollarSign, Users, Repeat, PieChart, ArrowRight, X, Clock, ShieldAlert, Eraser, AlertTriangle, Activity } from "lucide-react";
 import { runAllSparkIntelligence, type IntelligenceReport, type SparkIntelKey } from "../../spark/analytics/sparkIntelligenceEngines";
 import type { SparkEngineInput } from "../../spark/analytics/sparkTrendEngines";
 import { LockedIntelligenceCard, CollectingIntelligenceCard } from "../../components/iainsights/LockedIntelligenceCard";
 
+// 2026-06-22 — Doc 64 §5.2 canonical 9-report SPARK Intelligence shelf.
+// Migration:
+//   contact_quality        → MOVED to ARGUS (LTV)         · shell renamed → score_trajectory
+//   campaign_revenue       → MOVED to ARGUS (Marketing-to-Ops) · shell renamed → subject_line
+//   lead_pipeline_forecast → MOVED to ARGUS (Web-to-Revenue)   · removed from shelf
+//   churn_risk             → KEPT (SPARK signals only)
+//   automation_effectiveness → renamed → automation_drift (NEW model)
+//   audience_segmentation  → KEPT
+//   NEW: engagement_decay, optimal_send, sender_reputation, list_hygiene
+// Underlying engines stay wired so cached payloads still resolve; NEW
+// entries render as pending_implementation cards in Phase 1.
+type SparkIntelMetaKey =
+  | "engagement_decay"
+  | "subject_line"
+  | "optimal_send"
+  | "audience_segmentation"
+  | "score_trajectory"
+  | "churn_risk"
+  | "sender_reputation"
+  | "list_hygiene"
+  | "automation_drift";
+
 interface IntelReportMeta {
-  key: SparkIntelKey;
+  /** Doc-64 shelf key (rendered identifier). */
+  key: SparkIntelMetaKey;
+  /** Underlying engine key in the SparkIntelligenceEngines registry.
+   *  If absent, the card renders as pending_implementation. */
+  engineKey?: SparkIntelKey;
   label: string;
   question: string;
   icon: typeof Sparkles;
   modelType: string;
-  minTier: "pro" | "business";
+  minTier: "standard" | "pro" | "business";
+  dataFloor: string;
+  status: "kept" | "new";
 }
 
-// v9.0 — Aligned to spec §4.
+// Doc-64 §5.2 9-report shelf. Each `engineKey` (when set) maps onto an
+// existing engine so cached payloads display under the new shelf entry.
 const SPARK_INTEL: IntelReportMeta[] = [
-  { key: "contact_quality",            label: "Contact Quality Score",            question: "Are the contacts I'm acquiring worth acquiring?",                   icon: Users,        modelType: "Multi-dim engagement + coverage + source quality + revenue", minTier: "pro" },
-  { key: "campaign_revenue",           label: "Campaign Revenue Attribution",     question: "Which campaigns are actually producing revenue, not just opens?",   icon: DollarSign,   modelType: "Campaign → engagement → job → invoice chain (30d window)",   minTier: "business" },
-  { key: "lead_pipeline_forecast",     label: "Lead Pipeline Forecast",           question: "What revenue should I expect from my current pipeline in 30-60 days?", icon: TrendingDown, modelType: "Open leads × historical win rate × avg job value",            minTier: "business" },
-  { key: "churn_risk",                 label: "Churn Risk Model",                 question: "Which contacts are 60 days from going permanently silent?",         icon: TrendingDown, modelType: "Engagement decay + job recency + LTV weighting",              minTier: "pro" },
-  { key: "automation_effectiveness",   label: "Automation Effectiveness",         question: "Are my automations producing outcomes or just executing?",          icon: Repeat,       modelType: "Per-automation: executions → engagement → downstream conversion", minTier: "pro" },
-  { key: "audience_segmentation",      label: "Audience Segmentation Intelligence", question: "Who are my distinct customer types and what does each need?",     icon: PieChart,     modelType: "RFM (Recency × Frequency × Monetary) — 6 lifecycle segments",  minTier: "business" },
+  { key: "engagement_decay",      engineKey: "churn_risk",            label: "Engagement Decay Detection",         question: "When is engagement decaying faster than baseline?",                icon: TrendingDown,  modelType: "Anomaly · statistical baseline + z-score",                       minTier: "standard", dataFloor: "30d + 4 campaigns",      status: "kept" },
+  { key: "subject_line",          engineKey: "campaign_revenue",      label: "Subject Line Performance",           question: "Which subject-line patterns reliably win?",                       icon: BarChart3,     modelType: "Classification · token/pattern → open & click bands",            minTier: "pro",      dataFloor: "20+ sent campaigns",     status: "kept" },
+  { key: "optimal_send",                                              label: "Optimal Send Time",                  question: "When should I send to each segment?",                              icon: Clock,         modelType: "Statistical · distribution by hour/day per-segment",             minTier: "standard", dataFloor: "12+ campaigns, 60d",     status: "new" },
+  { key: "audience_segmentation", engineKey: "audience_segmentation", label: "Audience Segmentation Intelligence", question: "What natural clusters am I not segmenting on?",                   icon: PieChart,      modelType: "k-means clustering",                                              minTier: "pro",      dataFloor: "100+ contacts",          status: "kept" },
+  { key: "score_trajectory",      engineKey: "contact_quality",       label: "Contact Quality Score Trajectory",   question: "Is list quality compounding or eroding?",                          icon: Activity,      modelType: "Time-series · per-contact slope + tenant aggregate",             minTier: "pro",      dataFloor: "60d score history",      status: "kept" },
+  { key: "churn_risk",            engineKey: "churn_risk",            label: "Churn Risk Model",                   question: "Which contacts will disengage in the next 60-90 days?",            icon: Users,         modelType: "Survival / logistic on engagement-only signals",                  minTier: "business", dataFloor: "6mo history",            status: "kept" },
+  { key: "sender_reputation",                                         label: "Sender Reputation Anomaly",          question: "Is deliverability quietly degrading?",                             icon: ShieldAlert,   modelType: "Anomaly on bounce/spam/unsub vs rolling baseline",               minTier: "pro",      dataFloor: "30d",                    status: "new" },
+  { key: "list_hygiene",                                              label: "List Hygiene Decay",                 question: "Is my list rotting underneath?",                                   icon: Eraser,        modelType: "Statistical · hard-bounce, role-address, dedup, opt-out drift",  minTier: "standard", dataFloor: "30d + 500+ contacts",   status: "new" },
+  { key: "automation_drift",      engineKey: "automation_effectiveness", label: "Automation Drift Detection",      question: "Any automation misfiring silently?",                              icon: AlertTriangle, modelType: "Anomaly on run-volume / error-rate / downstream-engagement",     minTier: "pro",      dataFloor: "30d, automation ≥14d active", status: "new" },
 ];
+
+// Silence unused-import errors on icons still in scope after refactor.
+void DollarSign; void Repeat;
 
 function stateColor(state: IntelligenceReport["state"]): string {
   switch (state) {
@@ -71,7 +106,7 @@ export function SparkIAInsightsIntelligencePage() {
   const [inputs, setInputs] = useState<SparkEngineInput | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
-  const [open, setOpen] = useState<SparkIntelKey | null>(null);
+  const [open, setOpen] = useState<SparkIntelMetaKey | null>(null);
 
   const fetchInputs = useCallback(async () => {
     if (!ready) return;
@@ -97,7 +132,7 @@ export function SparkIAInsightsIntelligencePage() {
     <div className="p-4 max-w-7xl mx-auto">
       <div className="mb-3">
         <h1 className="text-2xl font-bold text-slate-900">SPARK IA Insights — Intelligence</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Modelled, scored reports. Engines run on live data; reports auto-upgrade from "insufficient data" → "partial" → "live" as your data accumulates.</p>
+        <p className="text-sm text-slate-500 mt-0.5">Nine modelled SPARK-only reports per doc-64 §5.2. Cross-product reports (LTV, attribution, web-to-revenue) live in ARGUS.</p>
       </div>
 
       <div className="mb-4 rounded-md border-l-4 border-blue-400 bg-blue-50 px-4 py-3 text-sm text-blue-900">
@@ -110,15 +145,18 @@ export function SparkIAInsightsIntelligencePage() {
       {reports && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {SPARK_INTEL.map((m) => {
-            // Null-guard — engines always return a record entry, but the
-            // type-system can't prove it across module boundaries. Falling
-            // back to a synthetic "Collecting data" report keeps the card
-            // grid intact rather than crashing the page.
-            const r: IntelligenceReport = reports[m.key] ?? {
+            // Doc-64 shelf entries map onto engine outputs via engineKey.
+            // NEW reports without an engineKey render the pending stub.
+            const isPending = !m.engineKey;
+            const r: IntelligenceReport = (m.engineKey && reports[m.engineKey]) ?? {
               score: 0, state: "insufficient_data",
-              headline: "Collecting data — check back in 24 hours",
+              headline: isPending
+                ? `Pending implementation — ${m.dataFloor}`
+                : "Collecting data — check back in 24 hours",
               scoreInputs: [], observations: [], actions: [],
-              dataGap: "Awaiting first data refresh.",
+              dataGap: isPending
+                ? `Shell registered — calculator ships in doc-64 Phase 2-4.`
+                : "Awaiting first data refresh.",
             };
             // v10.0 — Scope §8.4 split: tier-insufficient → LockedIntelligenceCard
             // (Standard tenant sees Pro/Business reports), data-insufficient
@@ -170,7 +208,10 @@ export function SparkIAInsightsIntelligencePage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-semibold text-sm text-slate-900">{m.label}</span>
-                      <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${m.minTier === "business" ? "bg-violet-100 text-violet-700" : "bg-blue-100 text-blue-700"}`}>{m.minTier}</span>
+                      <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${m.minTier === "business" ? "bg-violet-100 text-violet-700" : m.minTier === "pro" ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-slate-700"}`}>{m.minTier}</span>
+                      {m.status === "new" && (
+                        <span className="text-[9px] font-bold uppercase px-1 py-0.5 bg-blue-100 text-blue-700 rounded">NEW</span>
+                      )}
                     </div>
                     <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-2">{m.question}</p>
                   </div>
@@ -202,11 +243,15 @@ export function SparkIAInsightsIntelligencePage() {
       {open && reports && (() => {
         const m = SPARK_INTEL.find((x) => x.key === open);
         if (!m) return null;
-        const r: IntelligenceReport = reports[open] ?? {
+        const r: IntelligenceReport = (m.engineKey && reports[m.engineKey]) ?? {
           score: 0, state: "insufficient_data",
-          headline: "Collecting data — check back in 24 hours",
+          headline: !m.engineKey
+            ? `Pending implementation — ${m.dataFloor}`
+            : "Collecting data — check back in 24 hours",
           scoreInputs: [], observations: [], actions: [],
-          dataGap: "Awaiting first data refresh.",
+          dataGap: !m.engineKey
+            ? `Shell registered — calculator ships in doc-64 Phase 2-4.`
+            : "Awaiting first data refresh.",
         };
         const tierLocked = tierReady && !tierMeets(tier, m.minTier);
         return <IntelligenceModal meta={m} report={r} tierLocked={tierLocked} onClose={() => setOpen(null)} />;

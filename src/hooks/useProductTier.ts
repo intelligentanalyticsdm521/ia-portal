@@ -14,7 +14,11 @@ import { useAccessToken } from "../auth/useAccessToken";
 import { useAppState } from "../app/AppState";
 
 export type TierKey = "lite" | "standard" | "pro" | "business" | "active" | null;
-export type IntelMinTier = "pro" | "business";
+// 2026-06-22 — Doc 64 §2 allows Standard-tier Intelligence reports
+// (simple_forecast/descriptive/basic_anomaly model classes). Adding
+// "standard" so per-report meta can declare a Standard floor without
+// the consumer falling through to bg-slate-200 fallback styling.
+export type IntelMinTier = "standard" | "pro" | "business";
 
 const RANK: Record<string, number> = {
   lite: 1,
