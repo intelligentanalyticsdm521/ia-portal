@@ -39,7 +39,9 @@ import { IadmModal } from "../../components/IadmModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
-type PostStatus = "scheduled" | "published" | "failed" | "draft" | "cancelled";
+// F-MB.SOC.7 (2026-06-22) — `pending_approval` and `rejected` are surfaced
+// so the calendar reflects the moderation queue alongside the scheduler.
+type PostStatus = "scheduled" | "published" | "failed" | "draft" | "cancelled" | "pending_approval" | "rejected";
 
 interface SocialPost {
   id: number;
@@ -70,11 +72,16 @@ function platformMeta(p: string) {
 }
 
 const STATUS_META: Record<PostStatus, { label: string; className: string }> = {
-  scheduled: { label: "Scheduled", className: "bg-amber-100 text-amber-800" },
-  published: { label: "Published", className: "bg-emerald-100 text-emerald-800" },
-  failed:    { label: "Failed",    className: "bg-rose-100 text-rose-700" },
-  draft:     { label: "Draft",     className: "bg-slate-100 text-slate-700" },
-  cancelled: { label: "Cancelled", className: "bg-slate-100 text-slate-500 line-through" },
+  scheduled:        { label: "Scheduled",      className: "bg-amber-100 text-amber-800" },
+  published:        { label: "Published",      className: "bg-emerald-100 text-emerald-800" },
+  failed:           { label: "Failed",         className: "bg-rose-100 text-rose-700" },
+  draft:            { label: "Draft",          className: "bg-slate-100 text-slate-700" },
+  cancelled:        { label: "Cancelled",      className: "bg-slate-100 text-slate-500 line-through" },
+  // F-MB.SOC.7 — amber dot is conveyed by the same warm palette as scheduled,
+  // plus the "Pending approval" label so calendar viewers can distinguish a
+  // submitted-but-unreleased post from one that's locked into the dispatcher.
+  pending_approval: { label: "Pending approval", className: "bg-amber-100 text-amber-900 ring-1 ring-amber-400" },
+  rejected:         { label: "Rejected",       className: "bg-rose-100 text-rose-700 line-through" },
 };
 
 // ── Date helpers (local-tz, no library) ───────────────────────────────────

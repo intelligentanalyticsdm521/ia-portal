@@ -24,6 +24,7 @@ import {
   BarChart3,
   Palette,
   ArrowRight,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -98,6 +99,14 @@ const TILES: BrandTile[] = [
     route: "/app/services/my_brand_analytics",
     icon: BarChart3,
     badge: { label: "Pro+", color: "#9333EA" },
+  },
+  {
+    key: "my_brand_approvals",
+    name: "Approval Inbox",
+    description: "Founder/admin review queue for team-submitted posts when approval gating is on.",
+    route: "/app/services/my_brand_approvals",
+    icon: ShieldCheck,
+    badge: { label: "Admin", color: "#1A3A4A" },
   },
 ];
 

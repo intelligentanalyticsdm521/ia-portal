@@ -24,11 +24,13 @@
 // DELETE source is platform-api too — `/social-oauth/:platform/:connectionId`.
 
 import { useCallback, useEffect, useState } from "react";
-import { Plug, Unplug, AlertTriangle, RefreshCcw, Lock } from "lucide-react";
+import { Plug, Unplug, AlertTriangle, RefreshCcw, Lock, ShieldCheck, Loader2 } from "lucide-react";
 import { useAccessToken } from "../../auth/useAccessToken";
 import { useAppState } from "../../app/AppState";
 import { emergencyActAsHeaders } from "../../lib/emergencyActAs";
 import { useMyBrandTier, MY_BRAND_FEATURE_TIERS } from "../../hooks/useMyBrandTier";
+import { useLumenApi } from "../../hooks/useLumenApi";
+import { useUserAccess } from "../../hooks/useUserAccess";
 
 type Platform = "facebook" | "instagram" | "x" | "linkedin";
 type ConnectionStatus = "active" | "expired" | "revoked";
@@ -311,11 +313,127 @@ export function SocialChannelsPage() {
         </div>
       )}
 
+      <ApprovalWorkflowToggle />
+
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">
         <strong className="block text-slate-700">Where do tokens live?</strong>
         Access tokens are stored in IADM's Key Vault — never in our SQL database. SQL only records that a connection
         exists. Disconnecting revokes the token at the provider (best-effort), deletes the Key Vault secrets, and marks
         the row revoked.
+      </div>
+    </div>
+  );
+}
+
+// F-MB.SOC.7 (2026-06-22) — founder/admin-only Approval Workflow toggle.
+// Hidden entirely for non-admins. Backend writes to lumen.tenant_brand_setting
+// (separate from the wave-4 settings JSON in lumen.tenant_settings; the
+// dispatcher reads exclusively from the new table — see migration 057 +
+// LUMEN-API src/lib/myBrand/approvalGate.js).
+function ApprovalWorkflowToggle() {
+  const lumen = useLumenApi();
+  const access = useUserAccess();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [state, setState] = useState<{ approval_required: boolean; agency_managed: boolean; locked: boolean }>({
+    approval_required: false,
+    agency_managed: false,
+    locked: false,
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  const isAdmin = !access.loading && access.isAdmin;
+
+  useEffect(() => {
+    if (!lumen.ready || !isAdmin) { setLoading(false); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await lumen.get<typeof state>("/api/v1/my-brand/social/approval-settings");
+        if (!cancelled) {
+          setState({
+            approval_required: !!data?.approval_required,
+            agency_managed: !!data?.agency_managed,
+            locked: !!data?.locked,
+          });
+        }
+      } catch (err) {
+        if (!cancelled) setError((err as Error)?.message || "Failed to load approval setting");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [lumen, isAdmin]);
+
+  async function toggle(next: boolean) {
+    if (state.locked || saving) return;
+    setSaving(true);
+    setError(null);
+    const prev = state.approval_required;
+    setState((s) => ({ ...s, approval_required: next })); // optimistic
+    try {
+      const data = await lumen.put<typeof state>("/api/v1/my-brand/social/approval-settings", { approval_required: next });
+      setState({
+        approval_required: !!data?.approval_required,
+        agency_managed: !!data?.agency_managed,
+        locked: !!data?.locked,
+      });
+    } catch (err) {
+      setState((s) => ({ ...s, approval_required: prev })); // rollback
+      setError((err as Error)?.message || "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!isAdmin) return null;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: "#FEC82C22" }}>
+          <ShieldCheck className="h-5 w-5" style={{ color: "#1A3A4A" }} />
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">Approval Workflow</h3>
+              <p className="mt-0.5 text-xs text-slate-600">
+                When on, posts submitted by non-admin team members park in the Approval Inbox for founder/admin review before they publish.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={state.approval_required}
+              disabled={loading || saving || state.locked}
+              onClick={() => toggle(!state.approval_required)}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${
+                state.approval_required ? "bg-emerald-500" : "bg-slate-300"
+              }`}
+              title={state.locked ? "Locked on for agency-managed tenants" : undefined}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                  state.approval_required ? "translate-x-5" : "translate-x-0.5"
+                }`}
+              />
+              {(loading || saving) && (
+                <Loader2 className="absolute -right-6 h-3.5 w-3.5 animate-spin text-slate-400" />
+              )}
+            </button>
+          </div>
+          {state.locked && (
+            <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+              <Lock className="h-3 w-3" />
+              Locked on — this tenant is agency-managed
+            </div>
+          )}
+          {error && (
+            <div className="mt-2 text-[11px] font-medium text-rose-700">{error}</div>
+          )}
+        </div>
       </div>
     </div>
   );

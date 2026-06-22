@@ -125,6 +125,8 @@ const TemplateStudioPage = lazyNamed(() => import('./myBrand/TemplateStudioPage'
 // Wave-2 (2026-06-22) — Social Channels (OAuth connect) + Composer.
 const SocialChannelsPage = lazyNamed(() => import('./myBrand/SocialChannelsPage'), 'SocialChannelsPage');
 const SocialComposerPage = lazyNamed(() => import('./myBrand/SocialComposerPage'), 'SocialComposerPage');
+// F-MB.SOC.7 (2026-06-22) — Approval Workflow founder/admin inbox.
+const SocialApprovalsPage = lazyNamed(() => import('./myBrand/SocialApprovalsPage'), 'SocialApprovalsPage');
 // (MyBrandVoicePage is already declared above with VoicePage as the source.
 // Don't re-declare — TS errors out with "Cannot redeclare block-scoped variable".)
 // NOTE on sub-page imports: we keep these out of the static import graph
@@ -700,6 +702,8 @@ export function ServiceRouter() {
       // Wave-2 (2026-06-22) — Social Channels OAuth + Composer pair.
       case 'my_brand_social_channels': myBrandPage = <SocialChannelsPage />; break;
       case 'my_brand_compose': myBrandPage = <SocialComposerPage />; break;
+      // F-MB.SOC.7 (2026-06-22) — admin/founder inbox for the approval workflow.
+      case 'my_brand_approvals': myBrandPage = <SocialApprovalsPage />; break;
       default: break;
     }
     if (myBrandPage) {
