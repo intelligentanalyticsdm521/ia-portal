@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { isTierGateError, type TierGateError } from "../../hooks/useOliverApi";
 import { OliverUpgradeGate } from "../OliverUpgradeGate";
 import { SparkTooltip } from "./SparkTooltip";
+import { UsageChip } from "./UsageChip";
 
 interface SparkPageShellProps {
   title: string;
@@ -130,7 +131,15 @@ function SparkPageHeader({ title, subtitle, help, actions }: SparkPageHeaderProp
           </p>
         )}
       </div>
-      {actions && <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>}
+      {/* Usage chip — auto-injected on EVERY Spark*Page via the shell. No
+          per-page opt-in. Replaces the deleted "Tier usage" dashboard
+          card. Links to /app/services/spark_usage for full per-metric
+          detail. Hidden silently when usage fetch fails so the header
+          can't break the page. */}
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <UsageChip />
+        {actions && <div className="flex items-center gap-2">{actions}</div>}
+      </div>
     </div>
   );
 }

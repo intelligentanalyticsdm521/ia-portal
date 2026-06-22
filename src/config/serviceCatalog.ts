@@ -203,7 +203,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_disputes', displayName: 'Disputes', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_disputes', description: 'Stripe chargebacks pulled in with deep-links to respond on Stripe.' },
   { key: 'oliver_proposals', displayName: 'Proposals', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_proposals', description: 'Branded proposals with tracked send + click-to-accept. Accepted proposals auto-create OLIVER quotes.' },
   // SPARK — Full CRM + Lead Gen + Intelligence suite
-  { key: 'spark_overview', displayName: 'Overview', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_overview', description: 'SPARK CRM summary: contacts, campaigns, leads pipeline, usage.' },
+  { key: 'spark_overview', displayName: 'Overview', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_overview', description: 'Setup hints + jump-off to the rest of SPARK. Tier usage now lives in the page header chip on every SPARK page.' },
   { key: 'spark_contacts', displayName: 'Contacts', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_contacts', description: 'Contact management with dedup, search, import, and activity history.' },
   { key: 'spark_lists', displayName: 'Lists', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_lists', description: 'Static contact lists for campaign targeting.' },
   { key: 'spark_tags', displayName: 'Tags', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_tags', description: 'Color-coded contact tags for organization.' },
