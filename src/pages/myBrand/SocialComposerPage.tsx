@@ -323,6 +323,60 @@ export function SocialComposerPage() {
     setAttachedAssets((prev) => (prev.length > maxAttachments ? prev.slice(0, maxAttachments) : prev));
   }, [maxAttachments]);
 
+  // ── Orientation auto-detect for default destinations ───────────────────
+  // Once assets are pre-attached from ?asset_ids=… and connections have
+  // loaded, infer a sensible default destination set from the asset
+  // orientations:
+  //   - all portrait  → Instagram (carousel handled implicitly when >1)
+  //   - all landscape → Facebook + LinkedIn
+  //   - mixed         → leave empty + show a prompt asking the user to pick
+  // Only fires when destinations is empty (user/URL has not already chosen).
+  const [orientationPrompt, setOrientationPrompt] = useState<null | "mixed">(null);
+  const [orientationAutoApplied, setOrientationAutoApplied] = useState(false);
+  useEffect(() => {
+    if (orientationAutoApplied) return;
+    if (!preAttachReady || !connectionsLoaded) return;
+    if (attachedAssets.length === 0) return;
+    if (destinations.size > 0) { setOrientationAutoApplied(true); return; }
+
+    let portrait = 0;
+    let landscape = 0;
+    let unknown = 0;
+    for (const a of attachedAssets) {
+      const w = a.width_px ?? 0;
+      const h = a.height_px ?? 0;
+      if (!w || !h) { unknown++; continue; }
+      if (h > w) portrait++;
+      else if (w > h) landscape++;
+      else landscape++; // square treated as landscape (FB/LI render fine)
+    }
+
+    // If we can't classify any asset, don't guess.
+    if (portrait === 0 && landscape === 0) { setOrientationAutoApplied(true); return; }
+
+    const allPortrait = portrait > 0 && landscape === 0;
+    const allLandscape = landscape > 0 && portrait === 0;
+
+    if (allPortrait) {
+      setDestinations(() => {
+        const next = new Set<Platform>();
+        if (connectedSet.has("instagram")) next.add("instagram");
+        return next;
+      });
+    } else if (allLandscape) {
+      setDestinations(() => {
+        const next = new Set<Platform>();
+        if (connectedSet.has("facebook")) next.add("facebook");
+        if (connectedSet.has("linkedin")) next.add("linkedin");
+        return next;
+      });
+    } else {
+      // mixed orientations — surface a prompt so the user picks intentionally
+      setOrientationPrompt("mixed");
+    }
+    setOrientationAutoApplied(true);
+  }, [preAttachReady, connectionsLoaded, attachedAssets, destinations, connectedSet, orientationAutoApplied]);
+
   function detachAsset(id: string) {
     setAttachedAssets((prev) => prev.filter((a) => a.asset_id !== id));
   }
@@ -528,6 +582,21 @@ export function SocialComposerPage() {
           {/* Destination selector */}
           <section className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Destinations</div>
+            {orientationPrompt === "mixed" && (
+              <div className="mb-3 flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <strong>Mixed orientations.</strong> Your attached assets include both portrait and landscape images. Pick the destinations you want manually — Instagram favors portrait, Facebook + LinkedIn favor landscape.
+                  <button
+                    type="button"
+                    onClick={() => setOrientationPrompt(null)}
+                    className="ml-2 underline hover:no-underline"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
               {PLATFORMS.map((def) => {
                 const connected = connectedSet.has(def.key);

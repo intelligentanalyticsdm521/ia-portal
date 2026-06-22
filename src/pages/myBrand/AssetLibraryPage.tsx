@@ -17,9 +17,10 @@
 // quick-action — if that endpoint is missing on the backend the modal
 // surfaces the error inline (wave 3 will close any gap).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Search, Upload, Trash2, Download, Send, Edit3, X, Image as ImageIcon,
-  LayoutTemplate, Star, Palette, Type, Layers, Loader2, AlertCircle,
+  LayoutTemplate, Star, Palette, Type, Layers, Loader2, AlertCircle, CheckSquare, Square,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
@@ -115,6 +116,7 @@ const LUMEN_API_BASE =
 
 export function AssetLibraryPage() {
   const { get, del, ready } = useSparkApi();
+  const navigate = useNavigate();
 
   const [kind, setKind] = useState<KindFilter>("all");
   const [search, setSearch] = useState("");
@@ -126,7 +128,30 @@ export function AssetLibraryPage() {
   const [error, setError] = useState<unknown>(null);
   const [activeAsset, setActiveAsset] = useState<BrandAsset | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [sendToSocial, setSendToSocial] = useState<BrandAsset | null>(null);
+  // Wave-3: "Send to Social" now navigates to the Composer with ?asset_ids=…
+  // rather than opening an inline modal. The legacy modal is preserved below
+  // for an in-page quick-queue fallback if we ever need it.
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+
+  const sendOneToSocial = useCallback((asset: BrandAsset) => {
+    navigate(`/app/services/my_brand_compose?asset_ids=${encodeURIComponent(asset.asset_id)}`);
+  }, [navigate]);
+
+  const sendBulkToSocial = useCallback(() => {
+    if (bulkSelected.size === 0) return;
+    const ids = Array.from(bulkSelected);
+    navigate(`/app/services/my_brand_compose?asset_ids=${encodeURIComponent(ids.join(","))}`);
+  }, [bulkSelected, navigate]);
+
+  const toggleBulk = useCallback((assetId: string) => {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(assetId)) next.delete(assetId); else next.add(assetId);
+      return next;
+    });
+  }, []);
+
+  const clearBulk = useCallback(() => setBulkSelected(new Set()), []);
 
   // Debounce search input by 250ms.
   useEffect(() => {
@@ -225,12 +250,22 @@ export function AssetLibraryPage() {
       loading={loading}
       error={error}
     >
+      {bulkSelected.size > 0 && (
+        <BulkSelectToolbar
+          count={bulkSelected.size}
+          onSend={sendBulkToSocial}
+          onClear={clearBulk}
+        />
+      )}
+
       <AssetGrid
         items={items}
         onCardClick={setActiveAsset}
-        onSendToSocial={setSendToSocial}
+        onSendToSocial={sendOneToSocial}
         onDownload={handleDownload}
         onDelete={handleDelete}
+        bulkSelected={bulkSelected}
+        onToggleBulk={toggleBulk}
       />
 
       {/* Detail modal */}
@@ -238,7 +273,7 @@ export function AssetLibraryPage() {
         <AssetDetailModal
           asset={activeAsset}
           onClose={() => setActiveAsset(null)}
-          onSendToSocial={() => { setSendToSocial(activeAsset); }}
+          onSendToSocial={() => { sendOneToSocial(activeAsset); }}
           onDownload={() => handleDownload(activeAsset)}
           onDelete={() => handleDelete(activeAsset.asset_id)}
         />
@@ -249,14 +284,6 @@ export function AssetLibraryPage() {
         <UploadAssetModal
           onClose={() => setUploadOpen(false)}
           onUploaded={() => { setUploadOpen(false); fetchAssets(); }}
-        />
-      )}
-
-      {/* Send to social modal */}
-      {sendToSocial && (
-        <SendToSocialModal
-          asset={sendToSocial}
-          onClose={() => setSendToSocial(null)}
         />
       )}
     </SparkPageShell>
@@ -338,8 +365,10 @@ function AssetGrid(props: {
   onSendToSocial: (a: BrandAsset) => void;
   onDownload: (a: BrandAsset) => void;
   onDelete: (id: string) => void;
+  bulkSelected: Set<string>;
+  onToggleBulk: (id: string) => void;
 }) {
-  const { items, onCardClick, onSendToSocial, onDownload, onDelete } = props;
+  const { items, onCardClick, onSendToSocial, onDownload, onDelete, bulkSelected, onToggleBulk } = props;
   if (!items.length) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
@@ -357,6 +386,8 @@ function AssetGrid(props: {
         <AssetCard
           key={a.asset_id}
           asset={a}
+          selected={bulkSelected.has(a.asset_id)}
+          onToggleSelect={() => onToggleBulk(a.asset_id)}
           onClick={() => onCardClick(a)}
           onSendToSocial={() => onSendToSocial(a)}
           onDownload={() => onDownload(a)}
@@ -369,19 +400,41 @@ function AssetGrid(props: {
 
 function AssetCard(props: {
   asset: BrandAsset;
+  selected: boolean;
+  onToggleSelect: () => void;
   onClick: () => void;
   onSendToSocial: () => void;
   onDownload: () => void;
   onDelete: () => void;
 }) {
-  const { asset, onClick, onSendToSocial, onDownload, onDelete } = props;
+  const { asset, selected, onToggleSelect, onClick, onSendToSocial, onDownload, onDelete } = props;
   const badge = KIND_BADGE[asset.kind];
 
   return (
     <div
-      className="group relative flex cursor-pointer flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md"
+      className={
+        "group relative flex cursor-pointer flex-col overflow-hidden rounded-lg border bg-white shadow-sm transition-shadow hover:shadow-md " +
+        (selected ? "border-blue-600 ring-2 ring-blue-600" : "border-slate-200")
+      }
       onClick={onClick}
     >
+      {/* Bulk-select checkbox (top-left, always visible if selected, else on hover) */}
+      <button
+        type="button"
+        title={selected ? "Deselect" : "Select for bulk action"}
+        aria-label={selected ? "Deselect asset" : "Select asset"}
+        onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
+        className={
+          "pointer-events-auto absolute left-1.5 top-1.5 z-10 inline-flex h-6 w-6 items-center justify-center rounded transition-opacity " +
+          (selected
+            ? "bg-blue-600 text-white opacity-100"
+            : "bg-white/90 text-slate-700 opacity-0 group-hover:opacity-100")
+        }
+      >
+        {selected
+          ? <CheckSquare className="h-4 w-4" />
+          : <Square className="h-4 w-4" />}
+      </button>
       <AssetThumb asset={asset} />
 
       {/* Hover overlay actions */}
@@ -434,6 +487,39 @@ function AssetCard(props: {
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function BulkSelectToolbar(props: {
+  count: number;
+  onSend: () => void;
+  onClear: () => void;
+}) {
+  const { count, onSend, onClear } = props;
+  return (
+    <div className="sticky top-0 z-20 mb-3 flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 shadow-sm">
+      <div className="flex items-center gap-2 text-sm text-blue-900">
+        <CheckSquare className="h-4 w-4" />
+        <span className="font-semibold">{count}</span> selected
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onClear}
+          className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          onClick={onSend}
+          className="inline-flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700"
+        >
+          <Send className="h-3.5 w-3.5" />
+          Send selected to Social
+        </button>
       </div>
     </div>
   );
@@ -904,141 +990,5 @@ function decodeTid(token: string): string {
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// SendToSocialModal — short composer that queues a post via LUMEN-API.
-// ────────────────────────────────────────────────────────────────────────────
-
-const SOCIAL_PLATFORMS: Array<{ key: string; label: string }> = [
-  { key: "facebook",  label: "Facebook"  },
-  { key: "instagram", label: "Instagram" },
-  { key: "linkedin",  label: "LinkedIn"  },
-  { key: "x",         label: "X"         },
-  { key: "tiktok",    label: "TikTok"    },
-];
-
-function SendToSocialModal(props: { asset: BrandAsset; onClose: () => void }) {
-  const { asset, onClose } = props;
-  const { post } = useSparkApi();
-  const [caption, setCaption] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-
-  function toggle(platform: string) {
-    setSelected((prev) => prev.includes(platform) ? prev.filter((p) => p !== platform) : [...prev, platform]);
-  }
-
-  async function handleSend() {
-    if (!selected.length) { setError("Pick at least one platform."); return; }
-    setBusy(true);
-    setError(null);
-    try {
-      await post<{ ok: boolean }>(`/api/v1/my-brand/social/queue`, {
-        asset_id: asset.asset_id,
-        caption,
-        platforms: selected,
-      });
-      setDone(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <IadmModal
-      open
-      onClose={onClose}
-      product="spark"
-      eyebrow="MY BRAND"
-      title="Send to Social"
-      subtitle={asset.title || asset.filename || "Queue this asset for a social post"}
-      size="info"
-      footer={
-        done ? (
-          <IadmButton variant="primary" onClick={onClose}>Done</IadmButton>
-        ) : (
-          <>
-            <IadmButton variant="ghost" onClick={onClose}>Cancel</IadmButton>
-            <IadmButton
-              variant="accent"
-              product="spark"
-              onClick={handleSend}
-              disabled={busy || !selected.length}
-              icon={busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-            >
-              {busy ? "Queuing…" : "Queue post"}
-            </IadmButton>
-          </>
-        )
-      }
-    >
-      <div className="grid h-full grid-cols-1 gap-6 p-6 md:grid-cols-[1fr_1.2fr]">
-        <div className="flex items-center justify-center overflow-hidden rounded-lg bg-slate-50 p-2">
-          <DetailPreview asset={asset} />
-        </div>
-
-        <div className="flex flex-col gap-4 text-sm">
-          {done ? (
-            <div className="rounded bg-emerald-50 p-3 text-sm text-emerald-800">
-              Queued. Head to SPARK → Social to schedule, preview, or publish now.
-            </div>
-          ) : (
-            <>
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Platforms
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {SOCIAL_PLATFORMS.map((p) => {
-                    const on = selected.includes(p.key);
-                    return (
-                      <button
-                        key={p.key}
-                        type="button"
-                        onClick={() => toggle(p.key)}
-                        className={
-                          "rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
-                          (on
-                            ? "border-blue-600 bg-blue-600 text-white"
-                            : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100")
-                        }
-                      >
-                        {p.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Caption
-                </label>
-                <textarea
-                  value={caption}
-                  onChange={(e) => setCaption(e.target.value)}
-                  rows={6}
-                  placeholder="Write a caption… (optional)"
-                  className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                <div className="mt-1 text-right text-[11px] text-slate-400">{caption.length} chars</div>
-              </div>
-
-              {error && (
-                <div className="flex items-start gap-2 rounded bg-rose-50 p-2 text-xs text-rose-800">
-                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-                  <span>{error}</span>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-    </IadmModal>
-  );
-}
 
 export default AssetLibraryPage;

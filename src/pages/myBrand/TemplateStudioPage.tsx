@@ -696,7 +696,7 @@ export function TemplateStudioPage() {
         height: canvasDoc.height,
       });
       if (!out?.assetId) throw new Error("export returned no assetId");
-      navigate(`/app/services/my_brand_compose?attach=${encodeURIComponent(out.assetId)}`);
+      navigate(`/app/services/my_brand_compose?asset_ids=${encodeURIComponent(out.assetId)}`);
     } catch (e) {
       setExportError(e instanceof Error ? e.message : String(e));
     } finally {
