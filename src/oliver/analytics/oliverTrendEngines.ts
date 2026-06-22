@@ -31,9 +31,20 @@ export interface ReportAnalysis {
   contextNote?: string;
 }
 
-const fmt = (n: number | null | undefined) => n == null || !isFinite(n) ? "0" : Math.round(n).toLocaleString();
-const dollars = (n: number | null | undefined) => n == null || !isFinite(n) ? "$0" : `$${Math.round(n).toLocaleString()}`;
-const pct = (n: number | null | undefined, digits = 1) => n == null || !isFinite(n) ? "0%" : `${(n * 100).toFixed(digits)}%`;
+const num = (v: unknown): number => {
+  if (v == null) return 0;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+const numOrNull = (v: unknown): number | null => {
+  if (v == null) return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+const fixed = (v: unknown, digits = 1): string => num(v).toFixed(digits);
+const fmt = (n: number | null | undefined) => { const v = num(n); return !isFinite(v) ? "0" : Math.round(v).toLocaleString(); };
+const dollars = (n: number | null | undefined) => { const v = num(n); return !isFinite(v) ? "$0" : `$${Math.round(v).toLocaleString()}`; };
+const pct = (n: number | null | undefined, digits = 1) => { const v = num(n); return !isFinite(v) ? "0%" : `${(v * 100).toFixed(digits)}%`; };
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 function scoreFromBenchmark(actual: number, benchmark: number, optimum = benchmark * 2): number {
   if (!benchmark || benchmark <= 0) return 50;
@@ -44,13 +55,19 @@ function scoreFromBenchmark(actual: number, benchmark: number, optimum = benchma
 
 // ── 1 — Operations Health ────────────────────────────────────────────
 export function operationsHealthEngine(input: OliverEngineInput): ReportAnalysis {
-  const byStatus = Object.fromEntries((input.job_status || []).map((r) => [r.status, r.n]));
-  const completed = byStatus.completed || 0;
-  const scheduled = byStatus.scheduled || 0;
-  const inProgress = byStatus.in_progress || 0;
-  const cancelled = byStatus.cancelled || 0;
-  const total = (input.job_status || []).reduce((s, r) => s + r.n, 0);
-  const lifecycle = input.job_lifecycle || { avg_completion_hours: null, on_time: 0, late: 0 };
+  const statusArr = input.job_status || [];
+  const byStatus: Record<string, number> = Object.fromEntries(statusArr.map((r) => [r.status, num(r.n)]));
+  const completed = num(byStatus.completed);
+  const scheduled = num(byStatus.scheduled);
+  const inProgress = num(byStatus.in_progress);
+  const cancelled = num(byStatus.cancelled);
+  const total = statusArr.reduce((s, r) => s + num(r.n), 0);
+  const rawLifecycle = input.job_lifecycle || { avg_completion_hours: null, on_time: 0, late: 0 };
+  const lifecycle = {
+    avg_completion_hours: numOrNull(rawLifecycle.avg_completion_hours),
+    on_time: num(rawLifecycle.on_time),
+    late: num(rawLifecycle.late),
+  };
   const onTimeRate = (lifecycle.on_time + lifecycle.late) > 0 ? lifecycle.on_time / (lifecycle.on_time + lifecycle.late) : null;
   const cancelRate = total > 0 ? cancelled / total : null;
 
@@ -68,7 +85,8 @@ export function operationsHealthEngine(input: OliverEngineInput): ReportAnalysis
       observations.push(`On-time completion rate: ${pct(onTimeRate)} (${fmt(lifecycle.on_time)} on time, ${fmt(lifecycle.late)} late). ${onTimeRate < 0.7 ? "Below industry expectation — schedule reliability is a leading retention indicator." : "Healthy on-time rate."}`);
     }
     if (lifecycle.avg_completion_hours != null) {
-      observations.push(`Average dispatch-to-completion: ${lifecycle.avg_completion_hours.toFixed(1)} hours. ${lifecycle.avg_completion_hours > 72 ? "Long cycle time — investigate dispatch bottlenecks or under-resourcing." : "Healthy cycle time."}`);
+      const hrs = num(lifecycle.avg_completion_hours);
+      observations.push(`Average dispatch-to-completion: ${fixed(hrs, 1)} hours. ${hrs > 72 ? "Long cycle time — investigate dispatch bottlenecks or under-resourcing." : "Healthy cycle time."}`);
     }
     if (cancelRate != null && cancelRate > 0.1) {
       observations.push(`Cancellation rate of ${pct(cancelRate)} is above 10% — cancellations are revenue you've already booked the cost for. Track the cancellation reason to identify the leak.`);
@@ -89,7 +107,7 @@ export function operationsHealthEngine(input: OliverEngineInput): ReportAnalysis
       { key: "completion_rate_pct", value: total > 0 ? Math.round((completed / total) * 100) : null, weight: 0.30 },
       { key: "on_time_rate_pct", value: onTimeRate != null ? Math.round(onTimeRate * 100) : null, weight: 0.35 },
       { key: "cancel_rate_pct", value: cancelRate != null ? Math.round(cancelRate * 100) : null, weight: 0.20 },
-      { key: "avg_completion_hours", value: lifecycle.avg_completion_hours != null ? Number(lifecycle.avg_completion_hours.toFixed(1)) : null, weight: 0.15 },
+      { key: "avg_completion_hours", value: numOrNull(lifecycle.avg_completion_hours) != null ? Number(fixed(lifecycle.avg_completion_hours, 1)) : null, weight: 0.15 },
     ],
     observations,
     actions,
@@ -98,7 +116,13 @@ export function operationsHealthEngine(input: OliverEngineInput): ReportAnalysis
 
 // ── 2 — Revenue Performance ──────────────────────────────────────────
 export function revenuePerformanceEngine(input: OliverEngineInput): ReportAnalysis {
-  const r = input.revenue_recent || { revenue: 0, invoices: 0, paid: 0, overdue: 0 };
+  const raw = input.revenue_recent || { revenue: 0, invoices: 0, paid: 0, overdue: 0 };
+  const r = {
+    revenue: num(raw.revenue),
+    invoices: num(raw.invoices),
+    paid: num(raw.paid),
+    overdue: num(raw.overdue),
+  };
   const paidRate = r.invoices > 0 ? r.paid / r.invoices : null;
   const overdueRate = r.invoices > 0 ? r.overdue / r.invoices : null;
 
@@ -143,10 +167,16 @@ export function revenuePerformanceEngine(input: OliverEngineInput): ReportAnalys
 
 // ── 3 — Cash Flow ────────────────────────────────────────────────────
 export function cashFlowEngine(input: OliverEngineInput): ReportAnalysis {
-  const c = input.cash_flow || { payments_in: 0, payment_count: 0, avg_days_late: null };
-  const r = input.revenue_recent || { revenue: 0, invoices: 0, paid: 0, overdue: 0 };
+  const rawC = input.cash_flow || { payments_in: 0, payment_count: 0, avg_days_late: null };
+  const c = {
+    payments_in: num(rawC.payments_in),
+    payment_count: num(rawC.payment_count),
+    avg_days_late: numOrNull(rawC.avg_days_late),
+  };
+  const rawR = input.revenue_recent || { revenue: 0, invoices: 0, paid: 0, overdue: 0 };
+  const r = { revenue: num(rawR.revenue), invoices: num(rawR.invoices), paid: num(rawR.paid), overdue: num(rawR.overdue) };
   const collectionRatio = r.revenue > 0 ? c.payments_in / r.revenue : null;
-  const avgDaysLate = c.avg_days_late || 0;
+  const avgDaysLate = c.avg_days_late ?? 0;
 
   const collectionScore = collectionRatio != null ? clamp(collectionRatio * 110, 0, 100) : 50;
   const speedScore = clamp(100 - Math.max(0, avgDaysLate) * 2, 0, 100);
@@ -157,9 +187,9 @@ export function cashFlowEngine(input: OliverEngineInput): ReportAnalysis {
   if (c.payment_count > 0) {
     observations.push(`Payments in: ${dollars(c.payments_in)} across ${fmt(c.payment_count)} transactions. ${collectionRatio != null ? `Collection ratio: ${pct(collectionRatio)} of invoiced amount.` : ""}`);
     if (avgDaysLate > 7) {
-      observations.push(`Average payment is ${avgDaysLate.toFixed(1)} days past due date. Every day late is interest you forgo and risk you absorb.`);
+      observations.push(`Average payment is ${fixed(avgDaysLate, 1)} days past due date. Every day late is interest you forgo and risk you absorb.`);
     } else if (avgDaysLate < -7) {
-      observations.push(`Customers paying ${Math.abs(avgDaysLate).toFixed(1)} days early on average — excellent. Consider thanking your top early-payers with a small loyalty perk.`);
+      observations.push(`Customers paying ${fixed(Math.abs(avgDaysLate), 1)} days early on average — excellent. Consider thanking your top early-payers with a small loyalty perk.`);
     }
     if (collectionRatio != null && collectionRatio < 0.5) {
       observations.push(`Collection ratio below 50% means most invoiced amount hasn't been collected yet. Verify your invoice timing — the more invoices you issue at job-complete, the higher this ratio runs.`);
@@ -178,7 +208,7 @@ export function cashFlowEngine(input: OliverEngineInput): ReportAnalysis {
     score: clamp(score, 0, 100),
     scoreInputs: [
       { key: "collection_ratio_pct", value: collectionRatio != null ? Math.round(collectionRatio * 100) : null, weight: 0.50 },
-      { key: "avg_days_late", value: avgDaysLate != null ? Number(avgDaysLate.toFixed(1)) : null, weight: 0.30 },
+      { key: "avg_days_late", value: Number(fixed(avgDaysLate, 1)), weight: 0.30 },
       { key: "payment_count", value: c.payment_count, weight: 0.20 },
     ],
     observations,
@@ -188,7 +218,15 @@ export function cashFlowEngine(input: OliverEngineInput): ReportAnalysis {
 
 // ── 4 — Quote & Win Rate ─────────────────────────────────────────────
 export function quoteWinRateEngine(input: OliverEngineInput): ReportAnalysis {
-  const q = input.quote_funnel || { total: 0, accepted: 0, rejected: 0, draft: 0, accepted_value: 0, pipeline_value: 0 };
+  const rawQ = input.quote_funnel || { total: 0, accepted: 0, rejected: 0, draft: 0, accepted_value: 0, pipeline_value: 0 };
+  const q = {
+    total: num(rawQ.total),
+    accepted: num(rawQ.accepted),
+    rejected: num(rawQ.rejected),
+    draft: num(rawQ.draft),
+    accepted_value: num(rawQ.accepted_value),
+    pipeline_value: num(rawQ.pipeline_value),
+  };
   const decided = q.accepted + q.rejected;
   const winRate = decided > 0 ? q.accepted / decided : null;
   const conversionPotential = q.total > 0 ? q.accepted_value / Math.max(1, q.total) : null;
@@ -230,9 +268,14 @@ export function quoteWinRateEngine(input: OliverEngineInput): ReportAnalysis {
 
 // ── 5 — Customer Retention ───────────────────────────────────────────
 export function customerRetentionEngine(input: OliverEngineInput): ReportAnalysis {
-  const r = input.retention || { active_customers: 0, at_risk: 0, avg_jobs_per_customer: 0 };
+  const rawR = input.retention || { active_customers: 0, at_risk: 0, avg_jobs_per_customer: 0 };
+  const r = {
+    active_customers: num(rawR.active_customers),
+    at_risk: num(rawR.at_risk),
+    avg_jobs_per_customer: num(rawR.avg_jobs_per_customer),
+  };
   const atRiskRate = r.active_customers > 0 ? r.at_risk / r.active_customers : null;
-  const repeatRate = r.avg_jobs_per_customer || 0;
+  const repeatRate = r.avg_jobs_per_customer;
 
   const repeatBenchmark = bm(input, "repeat_jobs_per_customer", 2);
   const atRiskScore = atRiskRate != null ? clamp(100 - atRiskRate * 200, 0, 100) : 50;
@@ -245,7 +288,7 @@ export function customerRetentionEngine(input: OliverEngineInput): ReportAnalysi
     if (atRiskRate != null && atRiskRate > 0.25) {
       observations.push(`${pct(atRiskRate)} of active customers are at-risk for churn. Reactivation campaigns at the 45-day mark typically recover 30-40% of at-risk customers.`);
     }
-    observations.push(`Average jobs per customer: ${repeatRate.toFixed(2)}. ${repeatRate >= 2 ? "Repeat business is the engine — strong retention." : repeatRate >= 1.5 ? "Moderate repeat rate." : "Most customers are one-and-done — significant LTV opportunity in retention."}`);
+    observations.push(`Average jobs per customer: ${fixed(repeatRate, 2)}. ${repeatRate >= 2 ? "Repeat business is the engine — strong retention." : repeatRate >= 1.5 ? "Moderate repeat rate." : "Most customers are one-and-done — significant LTV opportunity in retention."}`);
   } else {
     observations.push("No tracked customers yet. Once jobs accumulate, retention signals will populate.");
   }
@@ -260,7 +303,7 @@ export function customerRetentionEngine(input: OliverEngineInput): ReportAnalysi
     score: clamp(score, 0, 100),
     scoreInputs: [
       { key: "at_risk_rate_pct", value: atRiskRate != null ? Math.round(atRiskRate * 100) : null, weight: 0.55 },
-      { key: "avg_jobs_per_customer", value: Number(repeatRate.toFixed(2)), weight: 0.45 },
+      { key: "avg_jobs_per_customer", value: Number(fixed(repeatRate, 2)), weight: 0.45 },
     ],
     observations,
     actions,
@@ -269,13 +312,23 @@ export function customerRetentionEngine(input: OliverEngineInput): ReportAnalysi
 
 // ── 6 — Crew & Capacity ──────────────────────────────────────────────
 export function crewCapacityEngine(input: OliverEngineInput): ReportAnalysis {
-  const c = input.crew || { workers_with_assignments: 0, avg_jobs_per_worker: 0 };
+  // ROOT-CAUSE FIX 2026-06-22: when oliver.job_assignment is empty, the SQL
+  // `SELECT COUNT(DISTINCT worker_id), AVG(...)` still returns ONE row with
+  // workers_with_assignments=0 AND avg_jobs_per_worker=NULL. The
+  // `input.crew || {…defaults}` fallback DOESN'T fire because the parent
+  // object exists — so avg_jobs_per_worker stays null and `.toFixed(1)`
+  // crashed the Trends page. Now every numeric is coerced.
+  const rawC = input.crew || { workers_with_assignments: 0, avg_jobs_per_worker: 0 };
+  const c = {
+    workers_with_assignments: num(rawC.workers_with_assignments),
+    avg_jobs_per_worker: num(rawC.avg_jobs_per_worker),
+  };
   const utilizationScore = scoreFromBenchmark(c.avg_jobs_per_worker, 10, 40);
   const teamScore = scoreFromBenchmark(c.workers_with_assignments, 2, 10);
   const score = Math.round(utilizationScore * 0.60 + teamScore * 0.40);
   const observations: string[] = [];
   if (c.workers_with_assignments > 0) {
-    observations.push(`Active crew: ${fmt(c.workers_with_assignments)} workers received assignments this period. Avg ${c.avg_jobs_per_worker.toFixed(1)} jobs per worker.`);
+    observations.push(`Active crew: ${fmt(c.workers_with_assignments)} workers received assignments this period. Avg ${fixed(c.avg_jobs_per_worker, 1)} jobs per worker.`);
     if (c.avg_jobs_per_worker < 5) {
       observations.push(`Avg jobs per worker is low — either you're over-staffed for current demand or your dispatch isn't distributing jobs efficiently.`);
     } else if (c.avg_jobs_per_worker > 30) {
@@ -291,7 +344,7 @@ export function crewCapacityEngine(input: OliverEngineInput): ReportAnalysis {
   return {
     score: clamp(score, 0, 100),
     scoreInputs: [
-      { key: "avg_jobs_per_worker", value: Number(c.avg_jobs_per_worker.toFixed(1)), weight: 0.60 },
+      { key: "avg_jobs_per_worker", value: Number(fixed(c.avg_jobs_per_worker, 1)), weight: 0.60 },
       { key: "active_workers", value: c.workers_with_assignments, weight: 0.40 },
     ],
     observations, actions,
@@ -300,10 +353,10 @@ export function crewCapacityEngine(input: OliverEngineInput): ReportAnalysis {
 
 // ── 7 — Service Line Performance ─────────────────────────────────────
 export function serviceLinePerformanceEngine(input: OliverEngineInput): ReportAnalysis {
-  const sl = (input.service_line || []).filter((s) => s.service_type);
-  const totalValue = sl.reduce((s, r) => s + Number(r.total_value || 0), 0);
+  const sl = (input.service_line || []).filter((s) => s && s.service_type);
+  const totalValue = sl.reduce((s, r) => s + num(r.total_value), 0);
   const top = sl[0];
-  const topShare = totalValue > 0 && top ? Number(top.total_value) / totalValue : 0;
+  const topShare = totalValue > 0 && top ? num(top.total_value) / totalValue : 0;
   const diversityScore = sl.length === 0 ? 20 : clamp((1 - Math.min(1, topShare)) * 70 + sl.length * 6, 0, 100);
   const volumeScore = scoreFromBenchmark(totalValue, 10000, 100000);
   const score = Math.round(diversityScore * 0.50 + volumeScore * 0.50);
@@ -311,7 +364,7 @@ export function serviceLinePerformanceEngine(input: OliverEngineInput): ReportAn
   if (sl.length === 0) {
     observations.push("No service-type tagging on jobs. Tag every job with its service type so this report can surface profitability by service.");
   } else {
-    observations.push(`Tracking ${sl.length} service types totalling ${dollars(totalValue)}. Top service: ${top.service_type} (${dollars(top.total_value)}, avg ${dollars(top.avg_value)} per job, ${pct(topShare)} share).`);
+    observations.push(`Tracking ${sl.length} service types totalling ${dollars(totalValue)}. Top service: ${top.service_type} (${dollars(num(top.total_value))}, avg ${dollars(num(top.avg_value))} per job, ${pct(topShare)} share).`);
     if (topShare > 0.6) {
       observations.push(`Revenue concentration: ${pct(topShare)} of revenue from one service. A demand shift in that service would halve your business.`);
     }
@@ -332,11 +385,13 @@ export function serviceLinePerformanceEngine(input: OliverEngineInput): ReportAn
 
 // ── 8 — Seasonal Planning ────────────────────────────────────────────
 export function seasonalPlanningEngine(input: OliverEngineInput): ReportAnalysis {
-  const monthly = (input.seasonal || []).filter((m) => m.month_num != null);
+  const monthly = (input.seasonal || [])
+    .filter((m) => m && m.month_num != null)
+    .map((m) => ({ month_num: num(m.month_num), n: num(m.n) }));
   const totalJobs = monthly.reduce((s, r) => s + r.n, 0);
   const avg = monthly.length > 0 ? totalJobs / monthly.length : 0;
-  const peakMonth = monthly.sort((a, b) => b.n - a.n)[0];
-  const lowMonth = monthly.sort((a, b) => a.n - b.n)[0];
+  const peakMonth = [...monthly].sort((a, b) => b.n - a.n)[0];
+  const lowMonth = [...monthly].sort((a, b) => a.n - b.n)[0];
   const variance = monthly.length > 0 ? monthly.reduce((s, m) => s + Math.pow(m.n - avg, 2), 0) / monthly.length : 0;
   const peakToLowRatio = lowMonth && lowMonth.n > 0 && peakMonth ? peakMonth.n / lowMonth.n : null;
 
@@ -349,9 +404,9 @@ export function seasonalPlanningEngine(input: OliverEngineInput): ReportAnalysis
   if (monthly.length === 0) {
     observations.push("No historical job data yet. Seasonal patterns surface after 12 months of jobs.");
   } else {
-    observations.push(`Last 12 months: ${fmt(totalJobs)} jobs across ${monthly.length} active months. Avg ${avg.toFixed(1)} jobs/month.`);
+    observations.push(`Last 12 months: ${fmt(totalJobs)} jobs across ${monthly.length} active months. Avg ${fixed(avg, 1)} jobs/month.`);
     if (peakMonth && lowMonth && peakMonth.month_num !== lowMonth.month_num) {
-      observations.push(`Peak: ${months[peakMonth.month_num]} (${fmt(peakMonth.n)} jobs). Low: ${months[lowMonth.month_num]} (${fmt(lowMonth.n)} jobs). Peak-to-low ratio: ${peakToLowRatio?.toFixed(1) || "n/a"}.`);
+      observations.push(`Peak: ${months[peakMonth.month_num]} (${fmt(peakMonth.n)} jobs). Low: ${months[lowMonth.month_num]} (${fmt(lowMonth.n)} jobs). Peak-to-low ratio: ${peakToLowRatio != null ? fixed(peakToLowRatio, 1) : "n/a"}.`);
     }
     if (peakToLowRatio != null && peakToLowRatio > 3) {
       observations.push(`Highly seasonal business — peak is more than 3× your slow months. Plan staffing, inventory, and marketing spend around this curve, not flat across the year.`);
@@ -366,7 +421,7 @@ export function seasonalPlanningEngine(input: OliverEngineInput): ReportAnalysis
     score: clamp(score, 0, 100),
     scoreInputs: [
       { key: "months_with_data", value: monthly.length, weight: 0.50 },
-      { key: "peak_to_low_ratio", value: peakToLowRatio != null ? Number(peakToLowRatio.toFixed(1)) : null, weight: 0.50 },
+      { key: "peak_to_low_ratio", value: peakToLowRatio != null ? Number(fixed(peakToLowRatio, 1)) : null, weight: 0.50 },
     ],
     observations, actions,
   };
@@ -378,19 +433,19 @@ export function oliverPresenceEngine(scores: Record<string, number>): ReportAnal
     ops_health: 0.18, revenue_perf: 0.18, cash_flow: 0.15, quote_win_rate: 0.12,
     retention: 0.10, crew_capacity: 0.10, service_line: 0.10, seasonal: 0.07,
   } as const;
-  const weighted = Object.entries(WEIGHTS).reduce((s, [k, w]) => s + (scores[k] || 0) * w, 0);
+  const weighted = Object.entries(WEIGHTS).reduce((s, [k, w]) => s + num(scores[k]) * w, 0);
   const LABELS: Record<string, string> = {
     ops_health: "Operations Health", revenue_perf: "Revenue Performance",
     cash_flow: "Cash Flow", quote_win_rate: "Quote & Win Rate",
     retention: "Customer Retention", crew_capacity: "Crew & Capacity",
     service_line: "Service Line Performance", seasonal: "Seasonal Planning",
   };
-  const gaps = Object.entries(WEIGHTS).map(([k, w]) => ({ key: k, score: scores[k] || 0, weight: w }))
+  const gaps = Object.entries(WEIGHTS).map(([k, w]) => ({ key: k, score: num(scores[k]), weight: w }))
     .sort((a, b) => (a.score * a.weight) - (b.score * b.weight))
     .slice(0, 3);
   return {
     score: Math.round(weighted),
-    scoreInputs: Object.entries(WEIGHTS).map(([k, w]) => ({ key: k, value: scores[k] || 0, weight: w })),
+    scoreInputs: Object.entries(WEIGHTS).map(([k, w]) => ({ key: k, value: num(scores[k]), weight: w })),
     observations: [
       `Overall OLIVER Trend Score: ${Math.round(weighted)}/100. ${weighted >= 70 ? "Above average for service operations — operations are humming." : weighted >= 50 ? "Average overall — uneven across categories." : "Below average — significant operational opportunities."}`,
       `Top 3 impact-weighted gaps: ${gaps.map((g) => `${LABELS[g.key]} (${g.score}/100)`).join(" → ")}.`,

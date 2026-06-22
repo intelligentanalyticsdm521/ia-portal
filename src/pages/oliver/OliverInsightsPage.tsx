@@ -158,7 +158,9 @@ export function OliverInsightsPage() {
   // ── ARGUS observation generators (data-driven) ──────────────────────────
   const customerHealthArgus = useMemo(() => {
     if (!health) return { observations: [] as string[], actions: [] as string[] };
-    const top = health.top_spenders;
+    const top = health.top_spenders ?? [];
+    const atRisk = health.at_risk ?? [];
+    const slowPayers = health.slow_payers ?? [];
     const observations: string[] = [];
     const actions: string[] = [];
     if (top.length >= 5) {
@@ -171,14 +173,14 @@ export function OliverInsightsPage() {
         }
       }
     }
-    if (health.at_risk.length > 0) {
-      const totalLifetime = health.at_risk.reduce((s, c) => s + Number(c.total_paid || 0), 0);
-      observations.push(`${health.at_risk.length} previously-active customer${health.at_risk.length === 1 ? "" : "s"} ${health.at_risk.length === 1 ? "has" : "have"} gone quiet for 60+ days (${fmtMoney(totalLifetime)} lifetime value at risk).`);
+    if (atRisk.length > 0) {
+      const totalLifetime = atRisk.reduce((s, c) => s + Number(c.total_paid || 0), 0);
+      observations.push(`${atRisk.length} previously-active customer${atRisk.length === 1 ? "" : "s"} ${atRisk.length === 1 ? "has" : "have"} gone quiet for 60+ days (${fmtMoney(totalLifetime)} lifetime value at risk).`);
       actions.push(`Trigger a personal check-in with each at-risk customer. A 15-minute call is 3-5× more effective than another marketing email.`);
     }
-    if (health.slow_payers.length > 0) {
-      const overdueTotal = health.slow_payers.reduce((s, c) => s + Number(c.overdue || 0), 0);
-      observations.push(`${fmtMoney(overdueTotal)} sitting in past-due invoices across ${health.slow_payers.length} customer${health.slow_payers.length === 1 ? "" : "s"}. The oldest overdue invoice has been waiting ${health.slow_payers[0]?.days_past_due || 0} days.`);
+    if (slowPayers.length > 0) {
+      const overdueTotal = slowPayers.reduce((s, c) => s + Number(c.overdue || 0), 0);
+      observations.push(`${fmtMoney(overdueTotal)} sitting in past-due invoices across ${slowPayers.length} customer${slowPayers.length === 1 ? "" : "s"}. The oldest overdue invoice has been waiting ${slowPayers[0]?.days_past_due || 0} days.`);
       actions.push(`Send reminder emails to your slow payers today. After 30 days of inaction, collection probability drops by 28%.`);
     }
     if (top.length > 0 && observations.length < 2) {
@@ -214,21 +216,23 @@ export function OliverInsightsPage() {
     if (!cashflow) return { observations: [] as string[], actions: [] as string[] };
     const observations: string[] = [];
     const actions: string[] = [];
-    if (cashflow.summary.total_expected_90d > 0) {
-      observations.push(`${fmtMoney(cashflow.summary.total_expected_90d)} is expected to come in over the next 90 days — ${fmtMoney(cashflow.summary.total_outstanding)} from outstanding invoices + ${fmtMoney(cashflow.summary.total_subscriptions)} from subscription renewals.`);
+    const sum = cashflow.summary ?? ({} as Partial<CashFlowSummary>);
+    const buckets = cashflow.buckets ?? [];
+    if (Number(sum.total_expected_90d ?? 0) > 0) {
+      observations.push(`${fmtMoney(sum.total_expected_90d)} is expected to come in over the next 90 days — ${fmtMoney(sum.total_outstanding)} from outstanding invoices + ${fmtMoney(sum.total_subscriptions)} from subscription renewals.`);
     }
     // Find weeks ≥ $X
-    const heavyWeeks = cashflow.buckets.filter((b) => b.total_expected > 2500);
+    const heavyWeeks = buckets.filter((b) => Number(b?.total_expected ?? 0) > 2500);
     if (heavyWeeks.length >= 3) {
       observations.push(`${heavyWeeks.length} weeks in your forecast have ${fmtMoney(2500)}+ of expected inflow. Plan major spending around those peaks.`);
     }
-    const gap = cashflow.buckets.findIndex((b, i) => i > 0 && b.total_expected === 0);
+    const gap = buckets.findIndex((b, i) => i > 0 && Number(b?.total_expected ?? 0) === 0);
     if (gap > 0 && gap < 13) {
       observations.push(`Week ${gap} has no scheduled inflow — a potential cash dip ${gap} week${gap === 1 ? "" : "s"} out. Schedule outreach to fill it.`);
       actions.push(`Send a marketing nudge this week to fill the ${gap}-week-out cash gap. Sequence: re-engage a previous customer or run a limited-time offer.`);
     }
-    if (cashflow.summary.total_outstanding > cashflow.summary.total_subscriptions) {
-      actions.push(`${fmtMoney(cashflow.summary.total_outstanding)} sits in outstanding invoices. Reminders on the oldest ones will accelerate the cash conversion cycle.`);
+    if (Number(sum.total_outstanding ?? 0) > Number(sum.total_subscriptions ?? 0)) {
+      actions.push(`${fmtMoney(sum.total_outstanding)} sits in outstanding invoices. Reminders on the oldest ones will accelerate the cash conversion cycle.`);
     }
     return { observations, actions };
   }, [cashflow]);
@@ -237,7 +241,7 @@ export function OliverInsightsPage() {
     if (!quoteIntel) return { observations: [] as string[], actions: [] as string[] };
     const observations: string[] = [];
     const actions: string[] = [];
-    const s = quoteIntel.summary;
+    const s = quoteIntel.summary ?? {};
     const decided = (s.accepted || 0) + (s.declined || 0);
     if (decided > 0) {
       const rate = Math.round((s.accepted || 0) * 100 / decided);
@@ -253,13 +257,13 @@ export function OliverInsightsPage() {
       actions.push(`Set up an automated re-engagement sequence for expired quotes — most service businesses leave this revenue on the table.`);
     }
     // Find low-converting price bucket
-    const worstBucket = quoteIntel.by_price_bucket
-      .filter((b) => b.total_count >= 3 && b.conversion_pct != null)
-      .sort((a, b) => (a.conversion_pct! - b.conversion_pct!))[0];
-    if (worstBucket && worstBucket.conversion_pct! < 40) {
+    const worstBucket = (quoteIntel.by_price_bucket ?? [])
+      .filter((b) => Number(b?.total_count ?? 0) >= 3 && b?.conversion_pct != null)
+      .sort((a, b) => (Number(a.conversion_pct) - Number(b.conversion_pct)))[0];
+    if (worstBucket && Number(worstBucket.conversion_pct) < 40) {
       observations.push(`Quotes in the ${worstBucket.bucket} range convert at only ${worstBucket.conversion_pct != null ? Number(worstBucket.conversion_pct).toFixed(0) : "—"}% — the weakest segment. Consider a payment plan option to lift these.`);
     }
-    const avg = Number(quoteIntel.time_to_accept.avg_hours || 0);
+    const avg = Number(quoteIntel.time_to_accept?.avg_hours || 0);
     if (avg > 72) {
       observations.push(`Your average quote sits ${Math.round(avg / 24)} days before acceptance. Following up within 24 hours of sending doubles conversion speed.`);
     }
@@ -270,7 +274,7 @@ export function OliverInsightsPage() {
     if (!proposalPerf) return { observations: [] as string[], actions: [] as string[] };
     const observations: string[] = [];
     const actions: string[] = [];
-    const s = proposalPerf.summary;
+    const s = proposalPerf.summary ?? {};
     if ((s.ever_viewed || 0) >= 3) {
       const viewedAndDecided = (s.accepted || 0) + (s.declined || 0);
       if (viewedAndDecided > 0) {
@@ -278,7 +282,7 @@ export function OliverInsightsPage() {
         observations.push(`${viewToAccept}% of viewed proposals end in acceptance. Of all sent proposals, ${Math.round((s.ever_viewed || 0) * 100 / Math.max(1, s.total || 1))}% are actually opened.`);
       }
     }
-    const ttv = proposalPerf.time_to_view;
+    const ttv = proposalPerf.time_to_view ?? {};
     const total = (ttv.within_1d || 0) + (ttv.one_to_three_d || 0) + (ttv.three_to_seven_d || 0) + (ttv.over_week || 0);
     if (total >= 3 && (ttv.within_1d || 0) >= 1) {
       const fastPct = Math.round((ttv.within_1d || 0) * 100 / total);
@@ -306,7 +310,7 @@ export function OliverInsightsPage() {
     if (!seasonal) return { observations: [] as string[], actions: [] as string[] };
     const observations: string[] = [];
     const actions: string[] = [];
-    const rows = seasonal.monthly_revenue;
+    const rows = seasonal.monthly_revenue ?? [];
     if (rows.length >= 12) {
       // Find peak month in last 12
       const last12 = rows.slice(-12);
@@ -334,7 +338,7 @@ export function OliverInsightsPage() {
     }
 
     // Crew utilization spread
-    const crew = seasonal.crew_utilization.filter((c) => c.hours_worked_30d > 0);
+    const crew = (seasonal.crew_utilization ?? []).filter((c) => Number(c?.hours_worked_30d ?? 0) > 0);
     if (crew.length >= 2) {
       const max = crew[0];
       const min = crew[crew.length - 1];
@@ -345,7 +349,7 @@ export function OliverInsightsPage() {
     }
 
     // Completion rate
-    const c = seasonal.completion;
+    const c = seasonal.completion ?? {};
     if ((c.total_scheduled || 0) > 10) {
       const cancelPct = Math.round((c.cancelled || 0) * 100 / Math.max(1, c.total_scheduled || 0));
       if (cancelPct > 5) {
@@ -659,7 +663,7 @@ export function OliverInsightsPage() {
 
           {/* Time-to-view distribution */}
           {(() => {
-            const ttv = proposalPerf.time_to_view;
+            const ttv = proposalPerf.time_to_view ?? {};
             const total = (ttv.within_1d || 0) + (ttv.one_to_three_d || 0) + (ttv.three_to_seven_d || 0) + (ttv.over_week || 0);
             if (total === 0) return null;
             const buckets = [
@@ -791,10 +795,12 @@ export function OliverInsightsPage() {
 
 function InsightsBanner({ health, cashflow }: { health: CustomerHealth; cashflow: CashFlow | null }) {
   // Narrative sentence summarizing the state of the business
-  const atRiskCount = health.at_risk.length;
-  const slowPayCount = health.slow_payers.length;
-  const slowPayAmount = health.slow_payers.reduce((s, r) => s + Number(r.overdue || 0), 0);
-  const next30 = cashflow?.buckets.slice(0, 5).reduce((s, b) => s + b.total_expected, 0) || 0;
+  const atRisk = health.at_risk ?? [];
+  const slowPayers = health.slow_payers ?? [];
+  const atRiskCount = atRisk.length;
+  const slowPayCount = slowPayers.length;
+  const slowPayAmount = slowPayers.reduce((s, r) => s + Number(r.overdue || 0), 0);
+  const next30 = (cashflow?.buckets ?? []).slice(0, 5).reduce((s, b) => s + Number(b?.total_expected || 0), 0);
 
   let tone: "ok" | "warn" | "alert" = "ok";
   let sentence = "Everything's healthy. Top spenders are paying on time and your service mix is profitable.";
