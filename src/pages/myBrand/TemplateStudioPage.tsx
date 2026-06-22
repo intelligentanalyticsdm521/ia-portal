@@ -1451,5 +1451,5 @@ function layerToFabricObject(layer: Layer): fabric.FabricObject | null {
   return null;
 }
 
-import { withMyBrandComingSoon } from "./ComingSoonOverlay";
-export default withMyBrandComingSoon(TemplateStudioPage);
+// ComingSoonOverlay HOC removed 2026-06-22 — see VoicePage.tsx note.
+export default TemplateStudioPage;

@@ -1036,5 +1036,5 @@ function PreviewCard({ def, text, connected, selected, attachments, overflow }: 
   );
 }
 
-import { withMyBrandComingSoon } from "./ComingSoonOverlay";
-export default withMyBrandComingSoon(SocialComposerPage);
+// ComingSoonOverlay HOC removed 2026-06-22 — see VoicePage.tsx note.
+export default SocialComposerPage;

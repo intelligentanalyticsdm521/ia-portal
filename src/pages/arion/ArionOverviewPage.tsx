@@ -118,6 +118,20 @@ export function ArionOverviewPage({ service, status }: Props) {
 
           {/* F-118 — lightweight setup hints. Each hint is dismissable and
               survives across pageloads via localStorage. */}
+          {/* FIX B2 (2026-06-22) — Real integration flags drive `show`. The
+              previous build hardcoded `show: true` on GBP/plugin/GSC which
+              caused the hints to nag tenants who had ALREADY connected
+              those integrations. Each hint now reads from
+              data?.integrations (booleans from /arion/overview) so it
+              hides itself the moment the integration goes live.
+              TODO(arion-overview): /arion/overview does NOT yet expose a
+              `plugin_connected` boolean. The signal we want is
+              `plugin_status === 'connected'` (see WebsiteOverview.tsx).
+              Until the overview endpoint adds that field, the
+              `arion_install_plugin` hint stays hidden (show: false) so we
+              don't nag tenants who actually have the plugin installed.
+              Add `plugin_connected` to OverviewResponse + the Express
+              route and flip this to `!data?.hosting?.pluginConnected`. */}
           <SetupHints hints={[
             {
               id: "arion_gsc_not_connected",
@@ -125,7 +139,11 @@ export function ArionOverviewPage({ service, status }: Props) {
               title: "Connect Google Search Console",
               body: "Powers rankings, impressions, and AI Search results. Takes about 2 minutes if you have a Google account on the site.",
               cta: { label: "Connect GSC", to: "/app/services/arion_onboarding" },
-              show: !data?.overview.clicks && !data?.overview.impressions,
+              // FIX B2 — was `!data?.overview.clicks && !data?.overview.impressions`
+              // which produced false positives on brand-new sites that ARE
+              // connected but haven't accumulated traffic yet. Read the
+              // actual integration boolean instead.
+              show: data ? !data.integrations.googleSearchConsole : false,
               accent: "#38BDF8",
             },
             {
@@ -134,7 +152,9 @@ export function ArionOverviewPage({ service, status }: Props) {
               title: "Claim & connect Google Business Profile",
               body: "Unlocks reviews, local-pack rankings, and review-response automation. Skip if you're purely e-commerce.",
               cta: { label: "Open Business Profile", to: "/app/services/arion_business_overview" },
-              show: true,
+              // FIX B2 — was `show: true` (nagged everyone forever). Read
+              // the live googleBusinessProfile flag from /arion/overview.
+              show: data ? !data.integrations.googleBusinessProfile : false,
               accent: "#16A34A",
             },
             {
@@ -152,7 +172,12 @@ export function ArionOverviewPage({ service, status }: Props) {
               title: "Install the IA plugin",
               body: "The plugin pushes site data to ARION (security scans, plugin status, content health). Plugin Provisioning has the one-click installer.",
               cta: { label: "Open plugin provisioning", to: "/app/services/arion_plugin_provisioning" },
-              show: true,
+              // FIX B2 — was `show: true`. Real signal lives at
+              // /arion/sites/:id/plugin/status (`plugin_status === 'connected'`)
+              // and is NOT on /arion/overview today. Safe default = false so
+              // we don't nag tenants who already installed the plugin.
+              // See the TODO above SetupHints for the backend field needed.
+              show: false,
               accent: "#1A3A4A",
             },
           ]} />

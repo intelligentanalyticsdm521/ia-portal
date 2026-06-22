@@ -1208,5 +1208,5 @@ function NumberInput({
 // effects). useEffect is consumed transitively below; this NOOP keeps the
 // import set tight without forcing a barrel file.
 // (No-op intentional.)
-import { withMyBrandComingSoon } from "./ComingSoonOverlay";
-export default withMyBrandComingSoon(ImageStudioPage);
+// ComingSoonOverlay HOC removed 2026-06-22 — see VoicePage.tsx note.
+export default ImageStudioPage;

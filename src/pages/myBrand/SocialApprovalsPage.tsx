@@ -294,5 +294,5 @@ export function SocialApprovalsPage() {
   );
 }
 
-import { withMyBrandComingSoon } from "./ComingSoonOverlay";
-export default withMyBrandComingSoon(SocialApprovalsPage);
+// ComingSoonOverlay HOC removed 2026-06-22 — see VoicePage.tsx note.
+export default SocialApprovalsPage;

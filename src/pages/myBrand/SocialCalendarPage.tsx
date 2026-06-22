@@ -855,5 +855,5 @@ function PostDetailModal({
   );
 }
 
-import { withMyBrandComingSoon } from "./ComingSoonOverlay";
-export default withMyBrandComingSoon(SocialCalendarPage);
+// ComingSoonOverlay HOC removed 2026-06-22 — see VoicePage.tsx note.
+export default SocialCalendarPage;

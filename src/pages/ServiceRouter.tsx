@@ -106,39 +106,13 @@ const OliverIAInsightsHealthPage = lazyNamed(() => import('./oliver/OliverIAInsi
 const OliverIAInsightsTrendsPage = lazyNamed(() => import('./oliver/OliverIAInsightsTrendsPage'), 'OliverIAInsightsTrendsPage');
 const OliverIAInsightsIntelligencePage = lazyNamed(() => import('./oliver/OliverIAInsightsIntelligencePage'), 'OliverIAInsightsIntelligencePage');
 
-// MY BRAND pages — wave-2 lazy imports. The landing page is implemented;
-// sibling agents will create the 8 sub-page components in wave-3. Until
-// the modules exist, the lazyNamed loader would throw at first dispatch,
-// so each sub-page is imported defensively with a fallback to the generic
-// "Coming soon" placeholder via the section dispatcher's default branch.
-const MyBrandLandingPage = lazyNamed(() => import('./myBrand/MyBrandLandingPage'), 'MyBrandLandingPage');
-// Wave-2 sub-pages — added incrementally as each ships. Keep wave-3 keys
-// falling through to GenericServicePage until those modules exist.
-const AssetLibraryPage = lazyNamed(() => import('./myBrand/AssetLibraryPage'), 'AssetLibraryPage');
-const ImageStudioPage = lazyNamed(() => import('./myBrand/ImageStudioPage'), 'ImageStudioPage');
-const SocialCalendarPage = lazyNamed(() => import('./myBrand/SocialCalendarPage'), 'SocialCalendarPage');
-const SocialAnalyticsPage = lazyNamed(() => import('./myBrand/SocialAnalyticsPage'), 'SocialAnalyticsPage');
-// VoicePage.tsx exports default — the canonical Brand Voice Profile + Drift
-// page. We alias it to MyBrandVoicePage at the call-site for clarity.
-const MyBrandVoicePage = lazyNamed(() => import('./myBrand/VoicePage'), 'VoicePage');
-const TemplateStudioPage = lazyNamed(() => import('./myBrand/TemplateStudioPage'), 'TemplateStudioPage');
-// Wave-2 (2026-06-22) — Social Channels (OAuth connect) + Composer.
-const SocialChannelsPage = lazyNamed(() => import('./myBrand/SocialChannelsPage'), 'SocialChannelsPage');
-const SocialComposerPage = lazyNamed(() => import('./myBrand/SocialComposerPage'), 'SocialComposerPage');
-// F-MB.SOC.7 (2026-06-22) — Approval Workflow founder/admin inbox.
-const SocialApprovalsPage = lazyNamed(() => import('./myBrand/SocialApprovalsPage'), 'SocialApprovalsPage');
-// (MyBrandVoicePage is already declared above with VoicePage as the source.
-// Don't re-declare — TS errors out with "Cannot redeclare block-scoped variable".)
-// NOTE on sub-page imports: we keep these out of the static import graph
-// until wave-3 creates the files. The section dispatcher below falls back
-// to GenericServicePage for any my_brand_* key that doesn't yet have a
-// concrete page module, which is the right behaviour for the placeholder
-// window between waves.
-
-// My Brand — cross-product creative hub. Wave 2 ships Image Studio first;
-// Voice Monitor / Template Studio / Asset Library / Compose-for-Social
-// follow in Wave 3 against the same LUMEN-API My Brand routes.
-const MyBrandImageStudioPage = lazyNamed(() => import('./myBrand/ImageStudioPage'), 'ImageStudioPage');
+// MY BRAND pages — 2026-06-22: My Brand top-level slot was REMOVED from
+// IconRail/SubNav (Q4 2026 deferred product). The page files under
+// src/pages/myBrand/* remain on disk for the eventual Q4 build, but they
+// are no longer imported or routed here — the section dispatcher block
+// below has been deleted so the bundle no longer pulls those modules.
+// To revive: re-add the lazy imports + the MY_BRAND case in dispatch +
+// re-register the route in serviceCatalog.
 
 // SPARK / LUMEN pages — lazy-loaded
 const SparkOverviewPage = lazyNamed(() => import('./spark/SparkOverviewPage'), 'SparkOverviewPage');
@@ -685,35 +659,10 @@ export function ServiceRouter() {
     }
   }
 
-  if (service.section === 'MY_BRAND') {
-    let myBrandPage: React.ReactNode = null;
-    switch (service.key) {
-      // Landing page — implemented in wave-2 (this commit).
-      case 'my_brand': myBrandPage = <MyBrandLandingPage />; break;
-      // Wave-2 sibling pages (concurrent with this commit).
-      case 'my_brand_assets': myBrandPage = <AssetLibraryPage />; break;
-      case 'my_brand_image_studio': myBrandPage = <ImageStudioPage />; break;
-      case 'my_brand_calendar': myBrandPage = <SocialCalendarPage />; break;
-      case 'my_brand_analytics': myBrandPage = <SocialAnalyticsPage />; break;
-      // Wave-2 (2026-06-22) — Brand Voice Profile + Drift Dashboard.
-      case 'my_brand_voice': myBrandPage = <MyBrandVoicePage />; break;
-      // Wave-2 (2026-06-22) — Template Studio (mini-Canva, Fabric.js editor).
-      case 'my_brand_templates': myBrandPage = <TemplateStudioPage />; break;
-      // Wave-2 (2026-06-22) — Social Channels OAuth + Composer pair.
-      case 'my_brand_social_channels': myBrandPage = <SocialChannelsPage />; break;
-      case 'my_brand_compose': myBrandPage = <SocialComposerPage />; break;
-      // F-MB.SOC.7 (2026-06-22) — admin/founder inbox for the approval workflow.
-      case 'my_brand_approvals': myBrandPage = <SocialApprovalsPage />; break;
-      default: break;
-    }
-    if (myBrandPage) {
-      return (
-        <PageErrorBoundary scope={`my_brand/${service.key}`}>
-          <Suspense fallback={<RouteLoading />}>{myBrandPage}</Suspense>
-        </PageErrorBoundary>
-      );
-    }
-  }
+  // MY_BRAND dispatch block REMOVED 2026-06-22 — Q4 2026 deferred product.
+  // Page files under src/pages/myBrand/* are intentionally kept on disk
+  // for the eventual build, but unreachable from nav and not registered
+  // in serviceCatalog any more so this branch is unreachable.
 
   return <GenericServicePage service={service} status={status} />;
 }

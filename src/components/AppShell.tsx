@@ -57,11 +57,11 @@ function deriveProduct(pathname: string): ProductKey {
   const keyMatch = pathname.match(/\/app\/services\/([a-z0-9_]+)/);
   if (keyMatch && SETTINGS_KEYS.has(keyMatch[1])) return "settings";
 
-  // Special case — the My Brand landing page lives at /app/services/my_brand
-  // (no trailing _suffix), which the prefix regex below would otherwise miss.
-  // Sub-pages use the my_brand_<feature> pattern and match the regex below
-  // via the "my" prefix → my_brand mapping.
-  if (/\/app\/services\/my_brand(?:$|\/|\?)/.test(pathname)) return "my_brand";
+  // My Brand top-level slot REMOVED 2026-06-22 — any lingering my_brand_*
+  // links (from the page files we kept on disk for the Q4 build) fall back
+  // to "overview" through the map below, which is the desired behaviour:
+  // they're no longer reachable from nav and pointing at them shouldn't
+  // try to activate a ProductKey that no longer exists.
 
   const match = pathname.match(/\/app\/services\/([a-z]+)_/);
   if (!match) return "overview";
@@ -75,10 +75,6 @@ function deriveProduct(pathname: string): ProductKey {
     forge: "forge",
     argus: "argus",
     consulting: "consulting",
-    // my_brand_<feature> keys (image_studio, voice, templates, assets,
-    // social_channels, compose, calendar, analytics) — keyMatch.split('_')[0]
-    // returns "my" so we map "my" → my_brand here.
-    my: "my_brand",
   };
   return map[prefix] ?? "overview";
 }

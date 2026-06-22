@@ -35,6 +35,7 @@ import { InfoTip } from "../InfoTip";
 import { LogoPicker } from "../oliver/LogoPicker";
 import { PhoneInput } from "../PhoneInput";
 import { Building2, CheckCircle2, ExternalLink } from "lucide-react";
+import { mergeStrict } from "../../lib/mergeStrict";
 
 const ARION_API_BASE_URL = (import.meta.env.VITE_ARION_API_BASE_URL as string)
   || "https://app-arion-api-prod-e6fuc9gzd8f3hqfe.centralus-01.azurewebsites.net";
@@ -1835,27 +1836,9 @@ async function flushSectionToCanonical(
   // happens at finish-onboarding (or is queued for overnight per SCOPE_WORKING.md).
 }
 
-// Merge partial state into base WITHOUT letting empty values overwrite
-// non-empty ones. This is critical for the prefill flow: defaults → prefill
-// → saved-state. A saved state with `business_name: ""` (because the user
-// never typed there) must NOT clobber the prefill's `"Brandon's Biz"` from
-// core.tenants. Empty string / null / undefined in the partial = "not provided",
-// keep the base value. Arrays of strings are kept whole only if they contain
-// at least one non-empty entry.
-function mergeStrict<T>(base: T, partial: Partial<T> | undefined): T {
-  if (!partial) return base;
-  const out = { ...(base as Record<string, unknown>) };
-  for (const [k, v] of Object.entries(partial as Record<string, unknown>)) {
-    if (v === undefined || v === null) continue;
-    if (typeof v === "string" && v.trim() === "") continue;
-    if (Array.isArray(v)) {
-      const hasContent = v.some((x) => x !== "" && x !== null && x !== undefined);
-      if (!hasContent) continue;
-    }
-    out[k] = v;
-  }
-  return out as T;
-}
+// NOTE: mergeStrict() was extracted to src/lib/mergeStrict.ts so the founder
+// wizard (ConsultingOnboardClientPageV2) can share the exact same semantics.
+// Don't reintroduce a second copy here.
 
 function mergeState(base: OnboardingState, partial: Partial<OnboardingState>): OnboardingState {
   const oliverPartial = (partial.oliver || {}) as Partial<OnboardingState["oliver"]>;

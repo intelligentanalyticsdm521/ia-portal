@@ -34,6 +34,11 @@ import {
 } from "../../lib/signupCheckout";
 import { bundleDiscountPercent, type CartItem } from "../../lib/signupCart";
 import PhoneInput from "../../components/PhoneInput";
+// FIX A4 (2026-06-22): shared strict-merge helper. Used to overlay prefill from
+// /admin/onboard-client/onboarding-progress on top of the wizard's default
+// state WITHOUT clobbering anything the founder already typed. Same semantics
+// as the unified ClientTenantModal — keep them aligned.
+import { mergeStrict } from "../../lib/mergeStrict";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -98,6 +103,11 @@ interface StripeCustomerMatch {
   id: string;
   email: string | null;
   name: string | null;
+  // FIX A4 (2026-06-22): backend now returns the matched IA tenant_id alongside
+  // each Stripe customer match so the wizard can prefill from core.tenants +
+  // oliver.tenant_onboarding_state when the founder picks an existing client.
+  // null when the Stripe customer exists but has no IA tenant yet.
+  tenant_id?: string | null;
   subscriptions?: Array<{ id: string; items: Array<{ price_id: string; nickname: string | null }> }>;
 }
 
@@ -213,6 +223,12 @@ export function ConsultingOnboardClientPageV2() {
   const [searchResults, setSearchResults] = useState<StripeCustomerMatch[] | null>(null);
   const [searchedYet, setSearchedYet] = useState(false);
   const [selectedExistingId, setSelectedExistingId] = useState<string | null>(null);
+  // FIX A4 (2026-06-22): when the founder picks an existing-customer Stripe
+  // match, also record the IA tenant_id (returned alongside each match) so we
+  // can call /admin/onboard-client/onboarding-progress?tenant_id=… on
+  // Continue and prefill the wizard with whatever core.tenants +
+  // oliver.tenant_onboarding_state already know about the client.
+  const [selectedExistingTenantId, setSelectedExistingTenantId] = useState<string | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
 
   // Step 2 — Catalog-driven cart
@@ -332,6 +348,64 @@ export function ConsultingOnboardClientPageV2() {
     return () => { cancelled = true; clearTimeout(t); };
   }, [couponQuery, get]);
 
+  // ─── FIX A4 (2026-06-22) — Existing-customer prefill ─────────────────
+  //
+  // When the founder picks "Existing client" + a Stripe match that maps to
+  // an IA tenant_id, we fetch /admin/onboard-client/onboarding-progress on
+  // the Continue button (step 1 → step 2). That endpoint returns whatever
+  // core.tenants + oliver.tenant_onboarding_state already know — business
+  // name, contact email, brand colors, address, phone, website, industry,
+  // owner first/last name, etc. We overlay it on top of the wizard's
+  // defaults using mergeStrict so the founder doesn't re-type things the
+  // client already provided.
+  //
+  // Defensive: if the endpoint 404s / returns null / throws, we just
+  // proceed to step 2. The founder can still fill the wizard manually.
+  // Never block the wizard on prefill — it's a convenience, not a
+  // requirement.
+  type PrefillResponse = {
+    profile?: Partial<BusinessProfile> | null;
+    arion_integrations?: Record<string, unknown> | null;
+    owner_account?: Partial<OwnerAccount> | null;
+    business_name?: string | null;
+    contact_email?: string | null;
+  };
+
+  const applyPrefillToV2State = (prefill: PrefillResponse) => {
+    if (!prefill) return;
+    if (typeof prefill.business_name === "string" && prefill.business_name.trim()) {
+      // Only overwrite if the founder hasn't already typed something.
+      setBusinessName((cur) => cur.trim() ? cur : prefill.business_name!.trim());
+    }
+    if (typeof prefill.contact_email === "string" && prefill.contact_email.trim()) {
+      setContactEmail((cur) => cur.trim() ? cur : prefill.contact_email!.trim());
+    }
+    if (prefill.profile) {
+      setProfile((p) => mergeStrict(p, prefill.profile as Partial<BusinessProfile>));
+    }
+    if (prefill.owner_account) {
+      setAccount((a) => mergeStrict(a, prefill.owner_account as Partial<OwnerAccount>));
+    }
+    // arion_integrations is read separately in step 2+ via
+    // /sites/:id/integrations-status; no need to merge it into wizard state.
+  };
+
+  const onContinueFromStep1 = async () => {
+    if (customerMode === "existing" && selectedExistingTenantId) {
+      try {
+        const r = await get<PrefillResponse>(
+          `/admin/onboard-client/onboarding-progress?tenant_id=${encodeURIComponent(selectedExistingTenantId)}`
+        );
+        if (r) applyPrefillToV2State(r);
+      } catch (e) {
+        // Defensive — don't block the founder if prefill fails.
+        // eslint-disable-next-line no-console
+        console.warn("[wizard] prefill failed for tenant", selectedExistingTenantId, e);
+      }
+    }
+    setStep(2);
+  };
+
   // ─── Submit ───────────────────────────────────────────────────────────
 
   const submit = async () => {
@@ -438,7 +512,11 @@ export function ConsultingOnboardClientPageV2() {
       title: "New or existing client?",
       subtitle: `Step 1 of 7`,
       canNext: canProceedStep1,
-      onNext: () => setStep(2),
+      // FIX A4 (2026-06-22) — was `() => setStep(2)`. Now fetches prefill
+      // from /admin/onboard-client/onboarding-progress when an existing
+      // customer with a tenant_id is selected, so the founder doesn't have
+      // to retype info the client already gave us.
+      onNext: onContinueFromStep1,
     },
     2: {
       title: "Configure cart",
@@ -655,7 +733,15 @@ export function ConsultingOnboardClientPageV2() {
           mode={customerMode} setMode={setCustomerMode}
           searchEmail={searchEmail} setSearchEmail={setSearchEmail}
           results={searchResults} loading={searchLoading} searchedYet={searchedYet}
-          selectedId={selectedExistingId} setSelectedId={setSelectedExistingId}
+          selectedId={selectedExistingId}
+          // FIX A4 (2026-06-22): when a Stripe-match button is clicked, we
+          // need to record BOTH the Stripe customer id (for the existing
+          // submit path) AND the matched IA tenant_id (for prefill on
+          // Continue). Wrap setSelectedId so the child stays dumb.
+          onSelectResult={(c) => {
+            setSelectedExistingId(c.id);
+            setSelectedExistingTenantId(c.tenant_id || null);
+          }}
           onSearch={runStripeSearch}
         />
       )}
@@ -998,11 +1084,14 @@ function Field({ label, value, onChange, type = "text", placeholder, required, h
 
 // ─── Step 1 — Customer mode ──────────────────────────────────────────────
 
-function Step1Customer({ mode, setMode, searchEmail, setSearchEmail, results, loading, searchedYet, selectedId, setSelectedId, onSearch }: {
+function Step1Customer({ mode, setMode, searchEmail, setSearchEmail, results, loading, searchedYet, selectedId, onSelectResult, onSearch }: {
   mode: CustomerMode | null; setMode: (m: CustomerMode) => void;
   searchEmail: string; setSearchEmail: (v: string) => void;
   results: StripeCustomerMatch[] | null; loading: boolean; searchedYet: boolean;
-  selectedId: string | null; setSelectedId: (id: string | null) => void;
+  selectedId: string | null;
+  // FIX A4 — pass the full match (not just id) so the parent can also
+  // capture tenant_id and prefill on Continue.
+  onSelectResult: (c: StripeCustomerMatch) => void;
   onSearch: () => void;
 }) {
   return (
@@ -1031,12 +1120,15 @@ function Step1Customer({ mode, setMode, searchEmail, setSearchEmail, results, lo
           {results && results.length > 0 && (
             <div className="space-y-1">
               {results.map((c) => (
-                <button key={c.id} onClick={() => setSelectedId(c.id)}
+                <button key={c.id} onClick={() => onSelectResult(c)}
                   className={`w-full text-left p-3 rounded-lg border-2 ${selectedId === c.id ? "bg-white" : "border-slate-200 bg-white hover:border-slate-300"}`}
                   style={selectedId === c.id ? { borderColor: ACCENT } : {}}
                 >
                   <div className="text-sm font-semibold">{c.name || "(no name)"} · {c.email}</div>
-                  <div className="text-[10px] text-slate-500">{c.id} · {(c.subscriptions || []).length} active subs</div>
+                  <div className="text-[10px] text-slate-500">
+                    {c.id} · {(c.subscriptions || []).length} active subs
+                    {c.tenant_id ? ` · tenant ${c.tenant_id.slice(0, 8)}…` : " · no IA tenant yet"}
+                  </div>
                 </button>
               ))}
             </div>

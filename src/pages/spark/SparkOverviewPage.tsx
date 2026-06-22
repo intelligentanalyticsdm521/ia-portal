@@ -65,6 +65,12 @@ export function SparkOverviewPage() {
   const [trendScore, setTrendScore] = useState<number | null>(null);
   const [trendHistory, setTrendHistory] = useState<Array<{ period_end: string; score: number }>>([]);
   const [realtime, setRealtime] = useState<RealtimeData | null>(null);
+  // FIX B3 (2026-06-22) — Real signal for the "verify sender domain" hint.
+  // Was hardcoded `show: true` which nagged tenants who had already added
+  // and verified a domain. We now count rows from /api/v1/sender-domains
+  // and hide the hint when there's at least one configured. `null` while
+  // loading so the hint doesn't flicker visible-then-hidden.
+  const [senderDomainCount, setSenderDomainCount] = useState<number | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState(() => rangeForPreset("last_30_days"));
@@ -83,7 +89,7 @@ export function SparkOverviewPage() {
       const safe = async <T,>(p: Promise<T>): Promise<T | null> => {
         try { return await p; } catch { return null; }
       };
-      const [u, c, g, cp, n, l, ps, th, rt] = await Promise.all([
+      const [u, c, g, cp, n, l, ps, th, rt, sd] = await Promise.all([
         safe(get<UsageResponse>("/api/v1/usage")),
         safe(get<{ data: Contact[] }>("/api/v1/contacts?limit=5")),
         safe(get<{ data: GrowthVelocity }>(`/api/v1/insights/growth-velocity?days=${days}`)),
@@ -94,6 +100,9 @@ export function SparkOverviewPage() {
         safe(get<PriorScores>(`/api/v1/ia-insights/prior-scores?product=spark&beforeDate=${new Date(Date.now() + 86400_000).toISOString().slice(0,10)}`)),
         safe(get<{ data: Array<{ period_end: string; score: number }> }>(`/api/v1/ia-insights/score-history?product=spark&reportKey=presence&limit=${Math.min(36, Math.max(3, Math.ceil(days / 30)))}`)),
         safe(get<RealtimeData>("/api/v1/usage/realtime?minutes=60")),
+        // FIX B3 (2026-06-22) — drive the "verify sender domain" SetupHint
+        // off the live sender-domains count instead of a hardcoded `true`.
+        safe(get<{ data: Array<{ id: number }> }>("/api/v1/sender-domains")),
       ]);
       // pipelines → if any pipeline exists, pull the first one's funnel
       let f: PipelineFunnel[] = [];
@@ -115,6 +124,9 @@ export function SparkOverviewPage() {
         setTrendScore(ps?.data?.presence?.score ?? null);
         setTrendHistory((th?.data || []).filter((row) => row && row.period_end));
         setRealtime(rt || null);
+        // FIX B3 — count of configured sender domains. `null` if the
+        // request failed so the hint stays hidden (don't nag on errors).
+        setSenderDomainCount(sd?.data ? sd.data.length : null);
         setLoading(false);
       }
     }
@@ -216,7 +228,11 @@ export function SparkOverviewPage() {
             title: "Verify your sender domain",
             body: "Deliverability climbs significantly when you send from your own domain instead of the shared sender.",
             cta: { label: "Sender domains", to: "/app/services/spark_sender_domains" },
-            show: true,
+            // FIX B3 (2026-06-22) — was hardcoded `show: true`. Real count
+            // from /api/v1/sender-domains drives this now. `null` =
+            // still loading or the request failed; hide in both cases so
+            // we don't nag tenants who already verified a domain.
+            show: senderDomainCount === 0,
             accent: "#7C3AED",
           },
           {
@@ -225,7 +241,12 @@ export function SparkOverviewPage() {
             title: "Set up a welcome automation",
             body: "Send a welcome email the moment someone signs up — set it once, it runs forever.",
             cta: { label: "Open automations", to: "/app/services/spark_automations" },
-            show: true,
+            // FIX B3 (2026-06-22) — was hardcoded `show: true`. growth
+            // velocity already returns active_automations as part of
+            // /api/v1/insights/growth-velocity (see GrowthVelocity type)
+            // — reuse it instead of a second fetch. Hide while loading
+            // (growth still null) so the hint doesn't flicker visible.
+            show: growth ? growth.active_automations === 0 : false,
             accent: "#16A34A",
           },
         ]} />

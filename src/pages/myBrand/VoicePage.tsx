@@ -1208,5 +1208,7 @@ function InspectModal({ check, onClose }: { check: VoiceCheck; onClose: () => vo
   );
 }
 
-import { withMyBrandComingSoon } from "./ComingSoonOverlay";
-export default withMyBrandComingSoon(VoicePage);
+// ComingSoonOverlay HOC removed 2026-06-22 — the My Brand top-level slot
+// was pulled from nav (Q4 2026 deferred). This page is no longer routed
+// but the file is kept on disk for the eventual Q4 build.
+export default VoicePage;

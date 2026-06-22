@@ -359,23 +359,13 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'consulting_project_workspace', displayName: 'Project Workspace', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_project_workspace', description: 'Drill into a project to see the full Phase → Feature → Task tree. Read-only v0 of the 4-tier consulting hierarchy.' },
   { key: 'consulting_deliverables', displayName: 'Deliverables', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_deliverables', description: 'Unified artifact library — logos, code, copy, designs. Tagged by Build Your Series. Sourced from Projects + standalone uploads.' },
 
-  // ── MY BRAND — IL-powered creative studio + social channels stack ─────────
-  // Wave-1 backend (LUMEN-API My Brand endpoints) + schema migration 050
-  // landed brand_voice_profile, brand_voice_check, brand_asset,
-  // brand_image_generation_job, template_studio_template,
-  // template_studio_user_design, social_post_metric, social_account_metric,
-  // and core.tenant_social_connection / _post / _post_target. Wave-2 (this
-  // wave) wires the landing page + nav + IconRail. Wave-3 builds each
-  // sub-page. Tile cards on the landing page mirror the same 8 sub-keys.
-  { key: 'my_brand', displayName: 'My Brand', section: 'MY_BRAND', defaultStatus: 'enabled', route: '/app/services/my_brand', description: 'Creative studio hub: image generation, brand voice, template studio, asset library, and the social channels stack (connections, composer, calendar, analytics).' },
-  { key: 'my_brand_image_studio', displayName: 'Image Studio', section: 'MY_BRAND', defaultStatus: 'enabled', route: '/app/services/my_brand_image_studio', description: 'Generate on-brand images from a prompt — uses your brand colors, fonts, and logo. Backed by brand_image_generation_job.', tierGate: 'Lite' },
-  { key: 'my_brand_voice', displayName: 'Brand Voice', section: 'MY_BRAND', defaultStatus: 'enabled', route: '/app/services/my_brand_voice', description: 'Capture your brand voice profile and check any copy for drift before you publish. Backed by brand_voice_profile + brand_voice_check.', tierGate: 'Lite' },
-  { key: 'my_brand_templates', displayName: 'Template Studio', section: 'MY_BRAND', defaultStatus: 'enabled', route: '/app/services/my_brand_templates', description: 'Mini-canva for social posts, ads, and email banners. Backed by template_studio_template + template_studio_user_design.', tierGate: 'Lite' },
-  { key: 'my_brand_assets', displayName: 'Asset Library', section: 'MY_BRAND', defaultStatus: 'enabled', route: '/app/services/my_brand_assets', description: 'Central library for logos, photos, generated images, and finished designs. Backed by brand_asset.', tierGate: 'Lite' },
-  { key: 'my_brand_social_channels', displayName: 'Social Channels', section: 'MY_BRAND', defaultStatus: 'not_subscribed', route: '/app/services/my_brand_social_channels', description: 'Connect Facebook, Instagram, LinkedIn, X, TikTok, YouTube, and Google Business. Backed by core.tenant_social_connection + platform-api /api/v1/social-oauth/*.', tierGate: 'Standard' },
-  { key: 'my_brand_compose', displayName: 'Composer', section: 'MY_BRAND', defaultStatus: 'not_subscribed', route: '/app/services/my_brand_compose', description: 'Compose once, publish to every connected channel with per-channel preview. Backed by core.tenant_social_post + _post_target.', tierGate: 'Standard' },
-  { key: 'my_brand_calendar', displayName: 'Calendar', section: 'MY_BRAND', defaultStatus: 'not_subscribed', route: '/app/services/my_brand_calendar', description: 'Schedule and re-arrange upcoming posts across every connected channel. Drag-and-drop monthly + weekly views.', tierGate: 'Standard' },
-  { key: 'my_brand_analytics', displayName: 'Analytics', section: 'MY_BRAND', defaultStatus: 'not_subscribed', route: '/app/services/my_brand_analytics', description: 'Per-channel and per-post engagement, reach, and follower trends. Backed by social_post_metric + social_account_metric.', tierGate: 'Pro' },
+  // MY_BRAND entries REMOVED 2026-06-22 — top-level My Brand slot was a
+  // premature Wave-2 add for the Q4 2026 deferred product. Removing the
+  // catalog rows unregisters the routes (ServiceRouter dispatches by
+  // service.key), kills the IconRail enablement signal, and prevents
+  // landing-page tiles from picking these up. The 'MY_BRAND' value is
+  // intentionally left in the PortalService['section'] union + LAYER_LABELS
+  // so a future Q4 build can re-introduce these rows without a type churn.
 ];
 
 export function resolveServiceStatus(service: PortalService, enabledKeys: Set<string>): ServiceStatus {

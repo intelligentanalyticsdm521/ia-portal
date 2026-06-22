@@ -654,5 +654,5 @@ function formatRelativeTime(iso: string | null | undefined): string {
   return `${Math.round(ms / 86400_000)}d ago`;
 }
 
-import { withMyBrandComingSoon } from "./ComingSoonOverlay";
-export default withMyBrandComingSoon(SocialAnalyticsPage);
+// ComingSoonOverlay HOC removed 2026-06-22 — see VoicePage.tsx note.
+export default SocialAnalyticsPage;

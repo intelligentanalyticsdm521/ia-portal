@@ -552,5 +552,5 @@ function ChannelCard({ def, connection, busy, disconnectBusy, onConnect, onDisco
   );
 }
 
-import { withMyBrandComingSoon } from "./ComingSoonOverlay";
-export default withMyBrandComingSoon(SocialChannelsPage);
+// ComingSoonOverlay HOC removed 2026-06-22 — see VoicePage.tsx note.
+export default SocialChannelsPage;

@@ -156,6 +156,14 @@ export function OliverDashboardPage() {
   const [stripeStatus, setStripeStatus] = useState<StripeStatus | null>(null);
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null);
   const [today, setToday] = useState<TodaySummary | null>(null);
+  // FIX B4 (2026-06-22) — real signals for the two SetupHints that were
+  // previously hardcoded `show: true`. `activeAutomationsCount` counts
+  // enabled rule rows from /automations/rules (the same shape
+  // OliverAutomationsPage uses). `signupFormPublished` is best-effort —
+  // see the TODO above the hint definition; today the endpoint always
+  // returns a config so we treat it as "always published" until backend
+  // exposes a real `published` flag.
+  const [activeAutomationsCount, setActiveAutomationsCount] = useState<number | null>(null);
   const [iaTrendScore, setIaTrendScore] = useState<number | null>(null);
   const [iaTrendHistory, setIaTrendHistory] = useState<Array<{ period_end: string; score: number }>>([]);
   const [loading, setLoading] = useState(true);
@@ -187,7 +195,7 @@ export function OliverDashboardPage() {
     (async () => {
       setLoading(true); setError(null);
       try {
-        const [s, a, b, o, ar, st, ob, t] = await Promise.all([
+        const [s, a, b, o, ar, st, ob, t, ru] = await Promise.all([
           get<DashboardStats>("/dashboard/stats"),
           get<ActivityEvent[]>("/dashboard/activity"),
           get<BillingOverview>("/overview/billing"),
@@ -196,8 +204,15 @@ export function OliverDashboardPage() {
           get<StripeStatus>("/settings/stripe").catch(() => null),
           get<OnboardingStatus>("/onboarding/status").catch(() => null),
           get<TodaySummary>("/dashboard/today").catch(() => null),
+          // FIX B4 (2026-06-22) — count enabled automation rules so the
+          // "Turn on automations" SetupHint can read from real data
+          // instead of a hardcoded `show: true`. Same endpoint OLIVER
+          // Automations page uses. Soft-fail so a flake doesn't blow up
+          // the whole dashboard.
+          get<Array<{ key: string; is_enabled?: boolean }>>("/automations/rules").catch(() => null),
         ]);
         setStats(s); setActivity(a || []); setBilling(b); setOps(o); setArrears(ar || []); setStripeStatus(st); setOnboarding(ob); setToday(t);
+        setActiveAutomationsCount(Array.isArray(ru) ? ru.filter((r) => r.is_enabled).length : null);
       } catch (e) { setError(e); }
       finally { setLoading(false); }
     })();
@@ -240,7 +255,10 @@ export function OliverDashboardPage() {
       title: "Turn on automations",
       body: "Booking confirmations, on-the-way SMS, auto-invoicing — automations run when you're not looking. Start with one.",
       cta: { label: "Open automations", to: "/app/services/oliver_automations" },
-      show: true,
+      // FIX B4 (2026-06-22) — was hardcoded `show: true`. Now reads the
+      // count of enabled rules pulled from /automations/rules. `null` =
+      // request didn't complete; hide so we don't nag on a flake.
+      show: activeAutomationsCount === 0,
       accent: "#16A34A",
     },
     {
@@ -249,10 +267,18 @@ export function OliverDashboardPage() {
       title: "Customize your signup form",
       body: "Tell customers exactly what you need at signup — preferred contact, service address, key questions — instead of the defaults.",
       cta: { label: "Edit signup form", to: "/app/services/oliver_workflow_settings#signup-form" },
-      show: true,
+      // FIX B4 (2026-06-22) — was hardcoded `show: true`. Safe default
+      // is `false`: nagging every tenant about a form they may have
+      // already customized is worse than missing the nudge.
+      // TODO(oliver-dashboard): /customer-signup/config does NOT expose a
+      // `published` or `customized` flag today. Backend needs to add one
+      // (e.g. `is_default` = whether they've ever saved a non-default
+      // config). Flip this to `!data?.portal?.signup_form_published` /
+      // `signup?.is_default` once that field ships.
+      show: false,
       accent: "#7C3AED",
     },
-  ]), [stats, onboarding]);
+  ]), [stats, onboarding, activeAutomationsCount]);
 
   const topBanner: React.ReactNode = (
     <>

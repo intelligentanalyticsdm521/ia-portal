@@ -1,10 +1,14 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { Shield, Settings, Palette } from "lucide-react";
+import { Shield, Settings } from "lucide-react";
 import { useAppState } from "../app/AppState";
 import { useIsSuperAdmin } from "../hooks/useIsSuperAdmin";
 import { resolveServiceStatus, SERVICE_CATALOG } from "../config/serviceCatalog";
 
-export type ProductKey = "overview" | "arion" | "oliver" | "spark" | "stella" | "forge" | "argus" | "consulting" | "my_brand" | "settings";
+// "my_brand" intentionally REMOVED 2026-06-22 — the top-level My Brand slot
+// was a premature Wave-2 add for the Q4 2026 deferred product. ARION's
+// internal /arion_brand page still exists in the ARION SubNav (label
+// "My Brand") and is unaffected.
+export type ProductKey = "overview" | "arion" | "oliver" | "spark" | "stella" | "forge" | "argus" | "consulting" | "settings";
 
 export interface ProductDef {
   key: ProductKey;
@@ -16,9 +20,6 @@ export interface ProductDef {
 
 const PRODUCT_ICONS: Record<ProductKey, React.ReactNode> = {
   settings: <Settings className="h-5 w-5" />,
-  // Lucide Palette — picks up the creative-studio framing for My Brand
-  // (image gen, voice, templates, assets, social).
-  my_brand: <Palette className="h-5 w-5" />,
   overview: (
     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25a2.25 2.25 0 01-2.25-2.25v-2.25z" />
@@ -68,11 +69,9 @@ const PRODUCTS: Omit<ProductDef, "enabled">[] = [
   { key: "overview", label: "Home", tagline: "Portal Overview", icon: PRODUCT_ICONS.overview },
   { key: "arion", label: "ARION", tagline: "Web & Digital Presence", icon: PRODUCT_ICONS.arion },
   { key: "oliver", label: "OLIVER", tagline: "Job & Project Lifecycle", icon: PRODUCT_ICONS.oliver },
-  // Wave-2 — My Brand sits between OLIVER and SPARK/STELLA/ARGUS, framing it
-  // as the creative twin to OLIVER's operational stack. Always enabled
-  // because the Lite-tier tiles (Image Studio, Voice, Templates, Assets)
-  // ship to every tenant; Standard-gated tiles handle their own upsell.
-  { key: "my_brand", label: "My Brand", tagline: "Creative Studio", icon: PRODUCT_ICONS.my_brand },
+  // 2026-06-22 — My Brand top-level slot REMOVED (Q4 2026 deferred product).
+  // The legitimate ARION-internal "My Brand" page is reachable via the
+  // ARION SubNav -> My Brand entry (route /app/services/arion_brand).
   { key: "spark", label: "SPARK", tagline: "Growth Platform", icon: PRODUCT_ICONS.spark },
   { key: "stella", label: "STELLA", tagline: "Reporting & BI", icon: PRODUCT_ICONS.stella },
   { key: "forge", label: "FORGE", tagline: "Integrations", icon: PRODUCT_ICONS.forge },
@@ -93,26 +92,18 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
   // AccountMenu. Hide the gear entirely for non-super-admin users so they
   // aren't tempted into a /admin page they can't use.
   const isAdminActive = location.pathname.startsWith("/admin");
-  const { enabledServices, bootstrap } = useAppState();
+  const { enabledServices } = useAppState();
   const isSuperAdmin = useIsSuperAdmin();
-  // 2026-06-22 — My Brand is gated behind ComingSoonOverlay for non-founder
-  // tenants. Show a small amber dot on the icon so users see the state from
-  // the rail without needing to click in.
-  const isFounder = !!bootstrap?.user?.isSuperUser;
 
   const products: ProductDef[] = PRODUCTS.map((p) => {
     // Check if any service in this product's section is enabled
     const sectionMap: Record<ProductKey, string> = {
       overview: "Shared", arion: "ARION", oliver: "OLIVER", spark: "LUMEN",
       stella: "STELLA", forge: "FORGE", argus: "ARGUS", consulting: "CONSULTING",
-      my_brand: "MY_BRAND",
       settings: "Settings",
     };
     const section = sectionMap[p.key];
-    // My Brand is always-on like overview/consulting — the Lite-tier tiles
-    // (Image/Voice/Templates/Assets) are available to every tenant; the
-    // Standard/Pro tiles handle their own upsell on the tile + sub-page.
-    if (p.key === "overview" || p.key === "consulting" || p.key === "my_brand") return { ...p, enabled: true };
+    if (p.key === "overview" || p.key === "consulting") return { ...p, enabled: true };
     const hasEnabled = SERVICE_CATALOG.some(
       (s) => s.section === section && resolveServiceStatus(s, enabledServices) === "enabled"
     );
@@ -146,18 +137,6 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
               )}
               <span className="relative flex h-6 w-6 items-center justify-center">
                 {p.icon}
-                {/* "Soon" dot — My Brand is gated for non-founder tenants until
-                    social OAuth approvals land. Customers see the dot; founder
-                    sees the icon clean (bypasses the overlay too). */}
-                {p.key === "my_brand" && !isFounder && (
-                  <span
-                    title="Coming soon"
-                    className="absolute -right-1 -top-1 inline-flex items-center justify-center rounded-full bg-[#F59E0B] px-1 text-[7px] font-bold uppercase leading-none text-[#1A3A4A] shadow-sm"
-                    style={{ minWidth: 14, height: 12 }}
-                  >
-                    Soon
-                  </span>
-                )}
               </span>
               <span className="text-[9px] font-medium leading-tight">{p.label}</span>
             </button>

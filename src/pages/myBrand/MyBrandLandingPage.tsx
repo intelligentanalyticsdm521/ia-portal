@@ -171,5 +171,5 @@ function TileCard({ tile }: { tile: BrandTile }) {
   );
 }
 
-import { withMyBrandComingSoon } from "./ComingSoonOverlay";
-export default withMyBrandComingSoon(MyBrandLandingPage);
+// ComingSoonOverlay HOC removed 2026-06-22 — see VoicePage.tsx note.
+export default MyBrandLandingPage;

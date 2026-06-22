@@ -991,5 +991,5 @@ function decodeTid(token: string): string {
 }
 
 
-import { withMyBrandComingSoon } from "./ComingSoonOverlay";
-export default withMyBrandComingSoon(AssetLibraryPage);
+// ComingSoonOverlay HOC removed 2026-06-22 — see VoicePage.tsx note.
+export default AssetLibraryPage;
