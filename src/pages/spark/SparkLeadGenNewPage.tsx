@@ -23,7 +23,7 @@ import {
 
 type SearchMode = "strict" | "focused" | "balanced" | "broad";
 
-interface CategoryHit { id: number; name: string; industry_id?: number | null }
+interface CategoryHit { id: number; name: string; industry_id?: number | null; is_curated?: boolean | number | null }
 interface TermHit { id: number; term: string; weight?: number }
 interface CityHit { id: number; name: string; state: string }
 interface ZipHit { zip: string; city?: string; state?: string }
@@ -174,6 +174,8 @@ export function SparkLeadGenNewPage() {
   const [catResults, setCatResults] = useState<CategoryHit[]>([]);
   const [catLoading, setCatLoading] = useState(false);
   const debouncedCat = useDebounced(catQuery, 200);
+  // F-LG.158: "Top 25" curated-only filter for the category autocomplete.
+  const [catTop25Only, setCatTop25Only] = useState(false);
 
   const [termQuery, setTermQuery] = useState("");
   const [termResults, setTermResults] = useState<TermHit[]>([]);
@@ -214,13 +216,19 @@ export function SparkLeadGenNewPage() {
 
   // Category autocomplete.
   useEffect(() => {
-    if (!ready || debouncedCat.trim().length < 2) { setCatResults([]); return; }
+    // When "Top 25 only" is on, allow empty query (we want to browse the list).
+    const minLen = catTop25Only ? 0 : 2;
+    if (!ready || debouncedCat.trim().length < minLen) {
+      if (!catTop25Only) setCatResults([]);
+      return;
+    }
     let cancelled = false;
     setCatLoading(true);
     (async () => {
       try {
-        // TODO(leadgen-api): GET /leadgen/categories/autocomplete?q=
-        const r = await get<{ data: CategoryHit[] }>(`/leadgen/categories/autocomplete?q=${encodeURIComponent(debouncedCat)}`);
+        // F-LG.158: curated=1 → only the locked Top-25 categories.
+        const curatedParam = catTop25Only ? "&curated=1" : "";
+        const r = await get<{ data: CategoryHit[] }>(`/leadgen/categories/autocomplete?q=${encodeURIComponent(debouncedCat)}${curatedParam}`);
         if (!cancelled) setCatResults(r?.data || []);
       } catch {
         if (!cancelled) setCatResults([]);
@@ -229,7 +237,7 @@ export function SparkLeadGenNewPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [debouncedCat, get, ready]);
+  }, [debouncedCat, get, ready, catTop25Only]);
 
   // Term autocomplete (scoped to category if present).
   useEffect(() => {
@@ -468,18 +476,37 @@ export function SparkLeadGenNewPage() {
             {form.category ? (
               <Chip label={form.category.name} onRemove={() => setForm({ ...form, category: null })} icon={<Building2 className="h-3 w-3" />} />
             ) : (
-              <AutocompleteCombo
-                placeholder="Start typing a business category (e.g. plumbing contractors)"
-                value={catQuery}
-                onChange={setCatQuery}
-                results={catResults}
-                loading={catLoading}
-                onPick={(c) => { setForm({ ...form, category: c }); setCatQuery(""); }}
-                renderItem={(c) => (
-                  <span><span className="font-medium">{c.name}</span></span>
-                )}
-                icon={<Building2 className="h-3.5 w-3.5" />}
-              />
+              <>
+                {/* F-LG.158: Top-25 curated filter toggle */}
+                <label className="flex items-center gap-2 text-[12px] text-slate-300 mb-2 select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 accent-amber-400"
+                    checked={catTop25Only}
+                    onChange={(e) => setCatTop25Only(e.target.checked)}
+                  />
+                  <span>Show <span className="font-medium text-amber-300">Top 25 categories</span> only</span>
+                </label>
+                <AutocompleteCombo
+                  placeholder={catTop25Only
+                    ? "Browse the curated Top 25 — type to filter"
+                    : "Start typing a business category (e.g. plumbing contractors)"}
+                  value={catQuery}
+                  onChange={setCatQuery}
+                  results={catResults}
+                  loading={catLoading}
+                  onPick={(c) => { setForm({ ...form, category: c }); setCatQuery(""); }}
+                  renderItem={(c) => (
+                    <span className="flex-1 flex items-center justify-between">
+                      <span className="font-medium">{c.name}</span>
+                      {c.is_curated ? (
+                        <span className="text-[10px] text-amber-300 ml-2">Top 25</span>
+                      ) : null}
+                    </span>
+                  )}
+                  icon={<Building2 className="h-3.5 w-3.5" />}
+                />
+              </>
             )}
           </Section>
 
