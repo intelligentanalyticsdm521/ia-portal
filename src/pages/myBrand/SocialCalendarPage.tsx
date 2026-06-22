@@ -855,4 +855,5 @@ function PostDetailModal({
   );
 }
 
-export default SocialCalendarPage;
+import { withMyBrandComingSoon } from "./ComingSoonOverlay";
+export default withMyBrandComingSoon(SocialCalendarPage);

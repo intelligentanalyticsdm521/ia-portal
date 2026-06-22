@@ -171,4 +171,5 @@ function TileCard({ tile }: { tile: BrandTile }) {
   );
 }
 
-export default MyBrandLandingPage;
+import { withMyBrandComingSoon } from "./ComingSoonOverlay";
+export default withMyBrandComingSoon(MyBrandLandingPage);

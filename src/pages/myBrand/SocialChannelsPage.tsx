@@ -552,4 +552,5 @@ function ChannelCard({ def, connection, busy, disconnectBusy, onConnect, onDisco
   );
 }
 
-export default SocialChannelsPage;
+import { withMyBrandComingSoon } from "./ComingSoonOverlay";
+export default withMyBrandComingSoon(SocialChannelsPage);

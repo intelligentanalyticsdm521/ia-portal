@@ -294,4 +294,5 @@ export function SocialApprovalsPage() {
   );
 }
 
-export default SocialApprovalsPage;
+import { withMyBrandComingSoon } from "./ComingSoonOverlay";
+export default withMyBrandComingSoon(SocialApprovalsPage);

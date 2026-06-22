@@ -93,8 +93,12 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
   // AccountMenu. Hide the gear entirely for non-super-admin users so they
   // aren't tempted into a /admin page they can't use.
   const isAdminActive = location.pathname.startsWith("/admin");
-  const { enabledServices } = useAppState();
+  const { enabledServices, bootstrap } = useAppState();
   const isSuperAdmin = useIsSuperAdmin();
+  // 2026-06-22 — My Brand is gated behind ComingSoonOverlay for non-founder
+  // tenants. Show a small amber dot on the icon so users see the state from
+  // the rail without needing to click in.
+  const isFounder = !!bootstrap?.user?.isSuperUser;
 
   const products: ProductDef[] = PRODUCTS.map((p) => {
     // Check if any service in this product's section is enabled
@@ -140,7 +144,21 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
               {isActive && (
                 <span className="absolute left-0 top-1/2 h-6 w-[2.5px] -translate-y-1/2 rounded-r-sm bg-[#EF6C33]" />
               )}
-              <span className="flex h-6 w-6 items-center justify-center">{p.icon}</span>
+              <span className="relative flex h-6 w-6 items-center justify-center">
+                {p.icon}
+                {/* "Soon" dot — My Brand is gated for non-founder tenants until
+                    social OAuth approvals land. Customers see the dot; founder
+                    sees the icon clean (bypasses the overlay too). */}
+                {p.key === "my_brand" && !isFounder && (
+                  <span
+                    title="Coming soon"
+                    className="absolute -right-1 -top-1 inline-flex items-center justify-center rounded-full bg-[#F59E0B] px-1 text-[7px] font-bold uppercase leading-none text-[#1A3A4A] shadow-sm"
+                    style={{ minWidth: 14, height: 12 }}
+                  >
+                    Soon
+                  </span>
+                )}
+              </span>
               <span className="text-[9px] font-medium leading-tight">{p.label}</span>
             </button>
           );

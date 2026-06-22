@@ -1208,4 +1208,5 @@ function InspectModal({ check, onClose }: { check: VoiceCheck; onClose: () => vo
   );
 }
 
-export default VoicePage;
+import { withMyBrandComingSoon } from "./ComingSoonOverlay";
+export default withMyBrandComingSoon(VoicePage);

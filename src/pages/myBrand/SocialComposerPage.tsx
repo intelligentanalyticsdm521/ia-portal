@@ -1036,4 +1036,5 @@ function PreviewCard({ def, text, connected, selected, attachments, overflow }: 
   );
 }
 
-export default SocialComposerPage;
+import { withMyBrandComingSoon } from "./ComingSoonOverlay";
+export default withMyBrandComingSoon(SocialComposerPage);

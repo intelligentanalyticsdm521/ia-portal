@@ -1451,4 +1451,5 @@ function layerToFabricObject(layer: Layer): fabric.FabricObject | null {
   return null;
 }
 
-export default TemplateStudioPage;
+import { withMyBrandComingSoon } from "./ComingSoonOverlay";
+export default withMyBrandComingSoon(TemplateStudioPage);

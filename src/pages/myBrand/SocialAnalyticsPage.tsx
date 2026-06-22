@@ -654,4 +654,5 @@ function formatRelativeTime(iso: string | null | undefined): string {
   return `${Math.round(ms / 86400_000)}d ago`;
 }
 
-export default SocialAnalyticsPage;
+import { withMyBrandComingSoon } from "./ComingSoonOverlay";
+export default withMyBrandComingSoon(SocialAnalyticsPage);

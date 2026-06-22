@@ -1208,4 +1208,5 @@ function NumberInput({
 // effects). useEffect is consumed transitively below; this NOOP keeps the
 // import set tight without forcing a barrel file.
 // (No-op intentional.)
-export default ImageStudioPage;
+import { withMyBrandComingSoon } from "./ComingSoonOverlay";
+export default withMyBrandComingSoon(ImageStudioPage);

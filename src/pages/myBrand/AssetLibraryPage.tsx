@@ -991,4 +991,5 @@ function decodeTid(token: string): string {
 }
 
 
-export default AssetLibraryPage;
+import { withMyBrandComingSoon } from "./ComingSoonOverlay";
+export default withMyBrandComingSoon(AssetLibraryPage);

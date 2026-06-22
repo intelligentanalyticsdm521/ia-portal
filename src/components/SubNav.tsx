@@ -659,37 +659,43 @@ const ARGUS_NAV: SubNavConfig = {
 // themselves are created in wave-3 by sibling agents; ServiceRouter falls
 // back to the generic placeholder until then.
 // ─────────────────────────────────────────────────────────────────────────────
+// 2026-06-22 — My Brand gated behind ComingSoonOverlay for non-founder
+// tenants. Tagline reflects the customer-facing state (Brandon still sees
+// the live pages via the overlay's founder bypass). Every nav item carries
+// an amber COMING SOON tag so customers see the gate before they click.
+const MY_BRAND_COMING_SOON_TAG = { label: "COMING SOON", color: "#F59E0B" };
+
 const MY_BRAND_NAV: SubNavConfig = {
   productName: "My Brand",
-  tagline: "Creative Studio",
+  tagline: "Creative Studio · Coming Soon",
   groups: [
     {
       label: "",
       items: [
-        { key: "my_brand", label: "Dashboard", route: "/app/services/my_brand" },
+        { key: "my_brand", label: "Dashboard", route: "/app/services/my_brand", tag: MY_BRAND_COMING_SOON_TAG },
       ],
     },
     {
       label: "Studio", icon: Palette, collapsible: true, sectionId: "my_brand_studio",
       items: [
-        { key: "my_brand_image_studio", label: "Image Studio", route: "/app/services/my_brand_image_studio", tag: { label: "IL", color: "#38BDF8" } },
-        { key: "my_brand_templates", label: "Template Studio", route: "/app/services/my_brand_templates" },
-        { key: "my_brand_assets", label: "Asset Library", route: "/app/services/my_brand_assets" },
+        { key: "my_brand_image_studio", label: "Image Studio", route: "/app/services/my_brand_image_studio", tag: MY_BRAND_COMING_SOON_TAG },
+        { key: "my_brand_templates", label: "Template Studio", route: "/app/services/my_brand_templates", tag: MY_BRAND_COMING_SOON_TAG },
+        { key: "my_brand_assets", label: "Asset Library", route: "/app/services/my_brand_assets", tag: MY_BRAND_COMING_SOON_TAG },
       ],
     },
     {
       label: "Voice", icon: Sparkles, collapsible: true, sectionId: "my_brand_voice_group",
       items: [
-        { key: "my_brand_voice", label: "Voice Profile + Drift", route: "/app/services/my_brand_voice", tag: { label: "IL", color: "#38BDF8" } },
+        { key: "my_brand_voice", label: "Voice Profile + Drift", route: "/app/services/my_brand_voice", tag: MY_BRAND_COMING_SOON_TAG },
       ],
     },
     {
       label: "Social", icon: Share2, collapsible: true, sectionId: "my_brand_social",
       items: [
-        { key: "my_brand_social_channels", label: "Channels", route: "/app/services/my_brand_social_channels" },
-        { key: "my_brand_compose", label: "Composer", route: "/app/services/my_brand_compose" },
-        { key: "my_brand_calendar", label: "Calendar", route: "/app/services/my_brand_calendar" },
-        { key: "my_brand_analytics", label: "Analytics", route: "/app/services/my_brand_analytics" },
+        { key: "my_brand_social_channels", label: "Channels", route: "/app/services/my_brand_social_channels", tag: MY_BRAND_COMING_SOON_TAG },
+        { key: "my_brand_compose", label: "Composer", route: "/app/services/my_brand_compose", tag: MY_BRAND_COMING_SOON_TAG },
+        { key: "my_brand_calendar", label: "Calendar", route: "/app/services/my_brand_calendar", tag: MY_BRAND_COMING_SOON_TAG },
+        { key: "my_brand_analytics", label: "Analytics", route: "/app/services/my_brand_analytics", tag: MY_BRAND_COMING_SOON_TAG },
       ],
     },
   ],
