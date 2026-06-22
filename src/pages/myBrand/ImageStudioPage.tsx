@@ -33,6 +33,8 @@ import { useLumenApi } from "../../hooks/useLumenApi";
 import { isImageStudioNotConfiguredError } from "../../lib/lumenApi";
 import { ArgusBalanceBadge } from "../../components/ArgusBalanceBadge";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
+import { MyBrandUpgradeGate } from "../../components/MyBrandUpgradeGate";
+import { useMyBrandTier } from "../../hooks/useMyBrandTier";
 
 // ─── Types matching LUMEN-API lib/myBrand/imageStudio.js ────────────────────
 
@@ -154,6 +156,23 @@ function friendlyError(err: unknown): { tone: "warn" | "error"; message: string 
 export function ImageStudioPage() {
   const api = useLumenApi();
   const navigate = useNavigate();
+  // Wave 3 tier gate — Image Studio requires Standard+. While the SPARK
+  // subscription is still loading we render the normal page (the backend
+  // will still 403 if the user is sub-tier, and we show the gate the moment
+  // we know). Once `ready` we either continue with the page or short-circuit
+  // to the upgrade overlay so users on Lite see a clear path forward.
+  const gate = useMyBrandTier();
+  if (gate.ready && !gate.meets("image_studio")) {
+    return (
+      <div className="p-6">
+        <MyBrandUpgradeGate
+          featureName="Image Studio"
+          requiredTier={gate.requiredTier("image_studio")}
+          currentTier={gate.tier}
+        />
+      </div>
+    );
+  }
 
   // Prompt panel state
   const [prompt, setPrompt] = useState("");

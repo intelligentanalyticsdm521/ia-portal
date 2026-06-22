@@ -52,6 +52,8 @@ import {
   AlignLeft, AlignCenter, AlignRight, Bold,
 } from "lucide-react";
 import { useLumenApi } from "../../hooks/useLumenApi";
+import { MyBrandUpgradeGate } from "../../components/MyBrandUpgradeGate";
+import { useMyBrandTier } from "../../hooks/useMyBrandTier";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Canvas JSON types — match the backend renderer in
@@ -182,6 +184,21 @@ function emptyCanvas(width = 1080, height = 1080): CanvasDoc {
 // ────────────────────────────────────────────────────────────────────────────
 
 export function TemplateStudioPage() {
+  // Wave 3 tier gate — Template Studio requires Standard+. Short-circuit
+  // to the upgrade overlay for Lite tenants; backend mirrors this with a
+  // requireTier("template_studio") call on every templateStudio endpoint.
+  const gate = useMyBrandTier();
+  if (gate.ready && !gate.meets("template_studio")) {
+    return (
+      <div className="p-6">
+        <MyBrandUpgradeGate
+          featureName="Template Studio"
+          requiredTier={gate.requiredTier("template_studio")}
+          currentTier={gate.tier}
+        />
+      </div>
+    );
+  }
   const { get, post, put, ready } = useLumenApi();
   const navigate = useNavigate();
 

@@ -47,6 +47,8 @@ import { useAppState } from "../../app/AppState";
 import { useLumenApi } from "../../hooks/useLumenApi";
 import { emergencyActAsHeaders } from "../../lib/emergencyActAs";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
+import { MyBrandUpgradeGate } from "../../components/MyBrandUpgradeGate";
+import { useMyBrandTier } from "../../hooks/useMyBrandTier";
 
 type Platform = "facebook" | "instagram" | "x" | "linkedin";
 
@@ -136,6 +138,21 @@ function bandColor(b: ReturnType<typeof bandForScore>): string {
 }
 
 export function SocialComposerPage() {
+  // Wave 3 tier gate — Composer requires Standard (30-day horizon). 90-day
+  // and unlimited scheduling are enforced server-side per-post; the page
+  // itself is just blocked at Lite.
+  const gate = useMyBrandTier();
+  if (gate.ready && !gate.meets("social_compose_30d")) {
+    return (
+      <div className="p-6">
+        <MyBrandUpgradeGate
+          featureName="Social Composer"
+          requiredTier={gate.requiredTier("social_compose_30d")}
+          currentTier={gate.tier}
+        />
+      </div>
+    );
+  }
   const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
   const lumen = useLumenApi();

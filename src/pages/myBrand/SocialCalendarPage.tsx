@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { useProductTier, tierMeets } from "../../hooks/useProductTier";
+import { useMyBrandTier } from "../../hooks/useMyBrandTier";
+import { MyBrandUpgradeGate } from "../../components/MyBrandUpgradeGate";
 import { IadmModal } from "../../components/IadmModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -113,6 +115,21 @@ type GridScope = "month" | "week";
 export function SocialCalendarPage() {
   const { get, patch, del, ready } = useSparkApi();
   const { tier, ready: tierReady } = useProductTier("spark");
+  // My Brand Wave 3 gate — Calendar requires Standard (list view). Lite
+  // tenants see the upgrade card; Standard+ continues into the existing
+  // list/grid logic where grid is further gated to Pro+.
+  const gate = useMyBrandTier();
+  if (gate.ready && !gate.meets("social_calendar_list")) {
+    return (
+      <div className="p-6">
+        <MyBrandUpgradeGate
+          featureName="Social Calendar"
+          requiredTier={gate.requiredTier("social_calendar_list")}
+          currentTier={gate.tier}
+        />
+      </div>
+    );
+  }
   // Calendar grid only unlocked at Pro+. Drag-to-reschedule also Pro+.
   const hasCalendar = tierMeets(tier, "pro");
   const hasDrag = hasCalendar;

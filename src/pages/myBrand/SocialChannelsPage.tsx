@@ -24,10 +24,11 @@
 // DELETE source is platform-api too — `/social-oauth/:platform/:connectionId`.
 
 import { useCallback, useEffect, useState } from "react";
-import { Plug, Unplug, AlertTriangle, RefreshCcw } from "lucide-react";
+import { Plug, Unplug, AlertTriangle, RefreshCcw, Lock } from "lucide-react";
 import { useAccessToken } from "../../auth/useAccessToken";
 import { useAppState } from "../../app/AppState";
 import { emergencyActAsHeaders } from "../../lib/emergencyActAs";
+import { useMyBrandTier, MY_BRAND_FEATURE_TIERS } from "../../hooks/useMyBrandTier";
 
 type Platform = "facebook" | "instagram" | "x" | "linkedin";
 type ConnectionStatus = "active" | "expired" | "revoked";
@@ -54,11 +55,15 @@ interface PlatformDef {
   initials: string;  // 1-2 char fallback glyph (lucide v1.8 ships no brand icons)
 }
 
-const PLATFORMS: PlatformDef[] = [
-  { key: "facebook",  name: "Facebook",  brand: "#1877F2", initials: "f"  },
-  { key: "instagram", name: "Instagram", brand: "#E4405F", initials: "IG" },
-  { key: "x",         name: "X",         brand: "#0F1419", initials: "X"  },
-  { key: "linkedin",  name: "LinkedIn",  brand: "#0A66C2", initials: "in" },
+// Each platform's connect button is tier-gated. The featureKey here matches
+// LUMEN-API src/lib/myBrand/tierCheck.js FEATURE_MIN_TIER:
+//   social_connect_facebook  / instagram → standard
+//   social_connect_x         / linkedin  → pro
+const PLATFORMS: Array<PlatformDef & { featureKey: keyof typeof MY_BRAND_FEATURE_TIERS }> = [
+  { key: "facebook",  name: "Facebook",  brand: "#1877F2", initials: "f",  featureKey: "social_connect_facebook" },
+  { key: "instagram", name: "Instagram", brand: "#E4405F", initials: "IG", featureKey: "social_connect_instagram" },
+  { key: "x",         name: "X",         brand: "#0F1419", initials: "X",  featureKey: "social_connect_x" },
+  { key: "linkedin",  name: "LinkedIn",  brand: "#0A66C2", initials: "in", featureKey: "social_connect_linkedin" },
 ];
 
 function PlatformGlyph({ def, size = 20 }: { def: PlatformDef; size?: number }) {
@@ -104,6 +109,10 @@ function formatDate(iso: string | null): string {
 export function SocialChannelsPage() {
   const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
+  // Per-platform tier gate. We don't lock the whole page (the connection list
+  // is informational); instead each card shows its own Lite/Pro lock. Backend
+  // mirrors this with requireTier(featureKeyForProvider()) on POST /social-accounts.
+  const gate = useMyBrandTier();
   const [connections, setConnections] = useState<SocialConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -283,6 +292,8 @@ export function SocialChannelsPage() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {PLATFORMS.map((def) => {
             const conn = byPlatform.get(def.key) ?? null;
+            const locked = gate.ready && !gate.meets(def.featureKey);
+            const requiredTier = gate.requiredTier(def.featureKey);
             return (
               <ChannelCard
                 key={def.key}
@@ -292,6 +303,8 @@ export function SocialChannelsPage() {
                 disconnectBusy={!!conn && disconnectBusy === conn.connection_id}
                 onConnect={() => openOAuthPopup(def.key)}
                 onDisconnect={() => conn && disconnectConnection(conn)}
+                locked={locked}
+                requiredTier={requiredTier}
               />
             );
           })}
@@ -315,9 +328,11 @@ interface ChannelCardProps {
   disconnectBusy: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
+  locked?: boolean;
+  requiredTier?: string;
 }
 
-function ChannelCard({ def, connection, busy, disconnectBusy, onConnect, onDisconnect }: ChannelCardProps) {
+function ChannelCard({ def, connection, busy, disconnectBusy, onConnect, onDisconnect, locked = false, requiredTier = "standard" }: ChannelCardProps) {
   const state: "none" | "active" | "expired" =
     !connection ? "none" :
     connection.status === "active" ? "active" :
@@ -361,7 +376,16 @@ function ChannelCard({ def, connection, busy, disconnectBusy, onConnect, onDisco
       )}
 
       <div className="mt-auto flex items-center gap-2">
-        {state === "none" && (
+        {locked && state === "none" && (
+          <a
+            href={`/pricing?platform=my_brand&required=${encodeURIComponent(requiredTier)}`}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[#1A3A4A] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0B1C24]"
+          >
+            <Lock className="h-3.5 w-3.5" />
+            Upgrade to {requiredTier.charAt(0).toUpperCase() + requiredTier.slice(1)}
+          </a>
+        )}
+        {!locked && state === "none" && (
           <button
             type="button"
             onClick={onConnect}

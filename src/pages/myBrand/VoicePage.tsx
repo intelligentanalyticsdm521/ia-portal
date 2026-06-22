@@ -37,6 +37,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLumenApi } from "../../hooks/useLumenApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
+import { MyBrandUpgradeGate } from "../../components/MyBrandUpgradeGate";
+import { useMyBrandTier } from "../../hooks/useMyBrandTier";
 import {
   ResponsiveContainer,
   BarChart,
@@ -200,6 +202,11 @@ function shortSurface(surface: string): string {
 
 export function VoicePage() {
   const { get, put, ready } = useLumenApi();
+  // Voice Monitor (drift dashboard + checks log) is Pro+. The Profile tab
+  // and the pre-publish /score endpoint stay open to all tiers — see scope.
+  // We only lock the Drift Dashboard sub-surface, not the whole page.
+  const gate = useMyBrandTier();
+  const driftLocked = gate.ready && !gate.meets("voice_monitor");
 
   const [tab, setTab] = useState<"profile" | "drift">("profile");
 
@@ -462,6 +469,14 @@ export function VoicePage() {
             saveProfile={saveProfile}
             recentChecks={checks.slice(0, 5)}
             validCount={validExamples.length}
+          />
+        ) : driftLocked ? (
+          <MyBrandUpgradeGate
+            compact
+            featureName="Voice Drift Dashboard"
+            requiredTier={gate.requiredTier("voice_monitor")}
+            currentTier={gate.tier}
+            description="Post-publish voice scoring and the rolling drift dashboard are Pro-tier features. Pre-publish checks remain available on every plan."
           />
         ) : (
           <DriftTab

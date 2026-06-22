@@ -26,6 +26,8 @@ import {
   XAxis, YAxis, Tooltip, CartesianGrid, ZAxis,
 } from "recharts";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { MyBrandUpgradeGate } from "../../components/MyBrandUpgradeGate";
+import { useMyBrandTier } from "../../hooks/useMyBrandTier";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 interface AnalyticsSummary {
@@ -80,6 +82,21 @@ function platformMeta(p: string) {
 // ── Page ──────────────────────────────────────────────────────────────────
 export function SocialAnalyticsPage() {
   const { get, post, ready } = useSparkApi();
+  // Tier gate — analytics requires Standard (30d window). 90d trends and CSV
+  // export are further gated below where they render. Lite tenants see the
+  // full-page upgrade card.
+  const gate = useMyBrandTier();
+  if (gate.ready && !gate.meets("social_analytics_30d")) {
+    return (
+      <div className="p-6">
+        <MyBrandUpgradeGate
+          featureName="Social Analytics"
+          requiredTier={gate.requiredTier("social_analytics_30d")}
+          currentTier={gate.tier}
+        />
+      </div>
+    );
+  }
   const [platform, setPlatform] = useState<Platform>("all");
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [topPosts, setTopPosts] = useState<TopPost[]>([]);
