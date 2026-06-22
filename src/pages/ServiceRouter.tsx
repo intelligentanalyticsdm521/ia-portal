@@ -58,7 +58,7 @@ const AnalyticsContent = lazyNamed(() => import('../arion/pages/analytics/Analyt
 const AnalyticsConversions = lazyNamed(() => import('../arion/pages/analytics/AnalyticsConversions'), 'AnalyticsConversions');
 const AnalyticsPages = lazyNamed(() => import('../arion/pages/analytics/AnalyticsPages'), 'AnalyticsPages');
 const AnalyticsReports = lazyNamed(() => import('../arion/pages/analytics/AnalyticsReports'), 'AnalyticsReports');
-const IAInsightsCrossChannel = lazyNamed(() => import('../arion/pages/analytics/IAInsightsCrossChannel'), 'IAInsightsCrossChannel');
+const IAInsightsCrossPlatform = lazyNamed(() => import('../arion/pages/analytics/IAInsightsCrossPlatform'), 'IAInsightsCrossPlatform');
 const IAInsightsReports = lazyNamed(() => import('../arion/pages/analytics/IAInsightsReports'), 'IAInsightsReports');
 // SEO
 const SeoOverview = lazyNamed(() => import('../arion/pages/seo/SeoOverview'), 'SeoOverview');
@@ -86,7 +86,7 @@ const BusinessBingOverview = lazyNamed(() => import('../arion/pages/business/Bus
 const BusinessAppleOverview = lazyNamed(() => import('../arion/pages/business/BusinessAppleOverview'), 'BusinessAppleOverview');
 // Brand
 const BrandPage = lazyNamed(() => import('../arion/pages/BrandPage'), 'BrandPage');
-// v5.x IA Insights architecture — Health, Trends, Intelligence, Cross-Channel (ARGUS)
+// v5.x IA Insights architecture — Health, Trends, Intelligence, Cross-Platform (ARGUS)
 const ArionIAInsightsHealthPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsHealthPage'), 'ArionIAInsightsHealthPage');
 const ArionIAInsightsTrendsPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsTrendsPage'), 'ArionIAInsightsTrendsPage');
 const ArionIAInsightsIntelligencePage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsIntelligencePage'), 'ArionIAInsightsIntelligencePage');
@@ -96,8 +96,10 @@ const ArgusHealthPage = lazyNamed(() => import('./argus/ArgusHealthPage'), 'Argu
 const ArgusTrendsPage = lazyNamed(() => import('./argus/ArgusTrendsPage'), 'ArgusTrendsPage');
 const ArgusIntelligencePage = lazyNamed(() => import('./argus/ArgusIntelligencePage'), 'ArgusIntelligencePage');
 // 2026-06-21: ArgusCrossChannelPage renamed to ArgusIAInsightsIntelligencePage
-// to align with the per-platform Insights pattern. Service key stays
-// `argus_cross_channel` so existing serviceCatalog entries / nav don't break.
+// to align with the per-platform Insights pattern.
+// 2026-06-22: canonical service key renamed to `argus_cross_platform`;
+// legacy `argus_cross_channel` is retained as a back-compat alias and resolves
+// to the same page.
 const ArgusIAInsightsIntelligencePage = lazyNamed(() => import('./argus/ArgusIAInsightsIntelligencePage'), 'ArgusIAInsightsIntelligencePage');
 const SparkIAInsightsHealthPage = lazyNamed(() => import('./spark/SparkIAInsightsHealthPage'), 'SparkIAInsightsHealthPage');
 const SparkIAInsightsTrendsPage = lazyNamed(() => import('./spark/SparkIAInsightsTrendsPage'), 'SparkIAInsightsTrendsPage');
@@ -355,7 +357,9 @@ export function ServiceRouter() {
       case 'arion_analytics_conversions': arionPage = <AnalyticsConversions />; break;
       case 'arion_analytics_pages': arionPage = <AnalyticsPages />; break;
       case 'arion_analytics_reports': arionPage = <AnalyticsReports />; break;
-      case 'arion_analytics_ia_cross_channel': arionPage = <IAInsightsCrossChannel />; break;
+      case 'arion_analytics_ia_cross_platform':
+      case 'arion_analytics_ia_cross_channel': // legacy alias
+        arionPage = <IAInsightsCrossPlatform />; break;
       case 'arion_analytics_ia_reports': arionPage = <IAInsightsReports />; break;
       case 'arion_seo_overview': arionPage = <SeoOverview />; break;
       case 'arion_seo_rankings': arionPage = <SeoRankings />; break;
@@ -487,7 +491,7 @@ export function ServiceRouter() {
   if (service.key === 'argus_ia_insights') {
     return <Suspense fallback={<RouteLoading />}><ArgusIAInsightsPage /></Suspense>;
   }
-  // v9.0 — ARGUS as full product (Health/Trends/Intelligence/Cross-Channel).
+  // v9.0 — ARGUS as full product (Health/Trends/Intelligence/Cross-Platform).
   if (service.key === 'argus_health') {
     return <Suspense fallback={<RouteLoading />}><ArgusHealthPage /></Suspense>;
   }
@@ -497,7 +501,7 @@ export function ServiceRouter() {
   if (service.key === 'argus_intelligence') {
     return <Suspense fallback={<RouteLoading />}><ArgusIntelligencePage /></Suspense>;
   }
-  if (service.key === 'argus_cross_channel') {
+  if (service.key === 'argus_cross_platform' || service.key === 'argus_cross_channel') {
     return <Suspense fallback={<RouteLoading />}><ArgusIAInsightsIntelligencePage /></Suspense>;
   }
 

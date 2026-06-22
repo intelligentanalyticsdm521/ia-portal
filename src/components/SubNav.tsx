@@ -14,12 +14,14 @@ export interface SubNavItem {
   route: string;
   gated?: boolean;
   intelligence?: boolean; // (legacy) — no longer changes the label color; harmless if set.
-  crossChannel?: boolean; // (legacy) — no longer changes the label color; harmless if set.
+  crossPlatform?: boolean; // (legacy) — no longer changes the label color; harmless if set.
+  /** @deprecated 2026-06-22 — use `crossPlatform`. Kept for back-compat with older callers. */
+  crossChannel?: boolean;
   /**
    * v7.4 — Optional platform/brand tag rendered to the right of the label.
    * The label text always uses the standard sidebar color; only the tag
    * pill carries the brand color. Use this for ARION/SPARK/OLIVER trend +
-   * intelligence items, ARGUS Cross-Channel links, STELLA, etc.
+   * intelligence items, ARGUS Cross-Platform links, STELLA, etc.
    */
   tag?: { label: string; color: string };
 }
@@ -619,8 +621,8 @@ export const SETTINGS_KEYS = new Set<string>(
 //   - Health  (no tag — matches per-platform Health)
 //   - Trends  (ARGUS tag — matches per-platform Trends w/ platform tag)
 //   - Intelligence  (ARGUS tag — the live multi-platform 6-report page,
-//                    routed via the legacy `argus_cross_channel` key so
-//                    existing serviceCatalog + deep links keep working)
+//                    routed via the canonical `argus_cross_platform` key;
+//                    legacy `argus_cross_channel` remains a back-compat alias.)
 //
 // "Platform Diagnostics" (argus_intelligence, the ARGUS-internal coming-soon
 // connectivity/automation-ROI set) dropped from the visible nav — folds into
@@ -635,7 +637,7 @@ const ARGUS_NAV: SubNavConfig = {
       items: [
         { key: "argus_health",        label: "Health",        route: "/app/services/argus_health" },
         { key: "argus_trends",        label: "Trends",        route: "/app/services/argus_trends",        tag: { label: "ARGUS", color: "#84CC16" } },
-        { key: "argus_cross_channel", label: "Cross-Channel Intelligence",  route: "/app/services/argus_cross_channel", tag: { label: "ARGUS", color: "#84CC16" } },
+        { key: "argus_cross_platform", label: "Cross-Platform Intelligence",  route: "/app/services/argus_cross_platform", tag: { label: "ARGUS", color: "#84CC16" } },
       ],
     },
   ],
@@ -736,7 +738,7 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/oliver_portals_hub") || path.includes("/oliver_portal_designer") || path.includes("/oliver_portal_domains") || path.includes("/oliver_automations") || path.includes("/oliver_addons") || path.includes("/oliver_workflow_settings")) return "oliver_workflow";
   if (path.includes("/oliver_ia_insights")) return "oliver_ia_insights";
   // ARGUS — single IA Insights group; expand it on any ARGUS Insights route.
-  if (path.includes("/argus_health") || path.includes("/argus_trends") || path.includes("/argus_cross_channel") || path.includes("/argus_intelligence") || path.includes("/argus_ia_insights")) return "argus_ia_insights";
+  if (path.includes("/argus_health") || path.includes("/argus_trends") || path.includes("/argus_cross_platform") || path.includes("/argus_cross_channel") || path.includes("/argus_intelligence") || path.includes("/argus_ia_insights")) return "argus_ia_insights";
   if (path.includes("/oliver_reports") || path.includes("/oliver_activity_log")) return "oliver_reporting";
   // MY BRAND sections REMOVED 2026-06-22 — top-level slot pulled from
   // IconRail/SubNav (Q4 2026 deferred product). ARION's internal arion_brand

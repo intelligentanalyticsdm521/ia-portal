@@ -6,9 +6,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";  // LUMEN-API hook — OLIVER lives in same backend
 import { useProductTier, tierMeets } from "../../hooks/useProductTier";
-import { TrendingUp, AlertCircle, UserMinus, DollarSign, Users, BarChart3, Lock, ArrowRight, X } from "lucide-react";
+import { TrendingUp, AlertCircle, UserMinus, DollarSign, Users, BarChart3, ArrowRight, X } from "lucide-react";
 import { runAllOliverIntelligence, type IntelligenceReport, type OliverIntelKey } from "../../oliver/analytics/oliverIntelligenceEngines";
 import type { OliverEngineInput } from "../../oliver/analytics/oliverTrendEngines";
+import { LockedIntelligenceCard, CollectingIntelligenceCard } from "../../components/iainsights/LockedIntelligenceCard";
 
 interface IntelReportMeta {
   key: OliverIntelKey;
@@ -101,11 +102,39 @@ export function OliverIAInsightsIntelligencePage() {
               scoreInputs: [], observations: [], actions: [],
               dataGap: "Awaiting first data refresh.",
             };
+            // v10.0 — Scope §8.4 split: tier-locked vs data-collecting are
+            // distinct user states. Standard tier with Pro report = locked
+            // (upsell). Pro tier with thin data = collecting (wait it out).
             const tierLocked = tierReady && !tierMeets(tier, m.minTier);
-            const effectiveState: IntelligenceReport["state"] = tierLocked ? "locked" : r.state;
+            if (tierLocked) {
+              return (
+                <LockedIntelligenceCard
+                  key={m.key}
+                  name={m.label}
+                  description={m.question}
+                  icon={m.icon}
+                  minTier={m.minTier}
+                  lockReason={`Upgrade to ${m.minTier === "business" ? "Business" : "Pro"} to unlock ${m.modelType.toLowerCase()}.`}
+                  ctaTarget="/pricing?platform=oliver"
+                  onOpen={() => setOpen(m.key)}
+                />
+              );
+            }
+            if (r.state === "insufficient_data") {
+              return (
+                <CollectingIntelligenceCard
+                  key={m.key}
+                  name={m.label}
+                  description={m.question}
+                  icon={m.icon}
+                  dataFloor={r.dataGap}
+                  onOpen={() => setOpen(m.key)}
+                />
+              );
+            }
             const Icon = m.icon;
-            const color = stateColor(effectiveState);
-            const bg = stateBg(effectiveState);
+            const color = stateColor(r.state);
+            const bg = stateBg(r.state);
             return (
               <button key={m.key} onClick={() => setOpen(m.key)} className={`text-left rounded-lg border-2 p-4 transition-shadow hover:shadow-md ${bg}`}>
                 <div className="flex items-start gap-2 mb-2">
@@ -123,34 +152,21 @@ export function OliverIAInsightsIntelligencePage() {
 
                 <div className="flex items-center justify-between mt-3 mb-2">
                   <div className="flex items-center gap-2">
-                    {!tierLocked && (effectiveState === "ok" || effectiveState === "partial") ? (
-                      <span className="text-3xl font-bold tabular-nums" style={{ color }}>{(r.score ?? 0).toFixed(0)}</span>
-                    ) : (
-                      <span className="text-2xl font-bold text-slate-300">—</span>
-                    )}
+                    <span className="text-3xl font-bold tabular-nums" style={{ color }}>{(r.score ?? 0).toFixed(0)}</span>
                     <span className="flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ background: `${color}1A`, color }}>
-                      {effectiveState === "ok" && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
-                      {effectiveState === "partial" && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
-                      {(effectiveState === "insufficient_data" || effectiveState === "locked") && <Lock className="h-3 w-3" />}
-                      {tierLocked ? `Requires ${m.minTier}` : stateLabel(effectiveState)}
+                      {r.state === "ok" && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
+                      {r.state === "partial" && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
+                      {stateLabel(r.state)}
                     </span>
                   </div>
                   <ArrowRight className="h-4 w-4 text-slate-400" />
                 </div>
 
                 <p className="text-xs text-slate-700 leading-snug line-clamp-2">
-                  {tierLocked
-                    ? `Upgrade to ${m.minTier === "business" ? "Business" : "Pro"} to unlock this report.`
-                    : (r.headline || "Collecting data — check back in 24 hours")}
+                  {r.headline || "Collecting data — check back in 24 hours"}
                 </p>
 
-                {tierLocked ? (
-                  <Link to="/pricing?platform=oliver" onClick={(e) => e.stopPropagation()} className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-violet-700 hover:underline">
-                    Upgrade to unlock <ArrowRight className="h-3 w-3" />
-                  </Link>
-                ) : (
-                  r.dataGap && <div className="mt-2 text-[10px] text-amber-800 italic">→ {r.dataGap}</div>
-                )}
+                {r.dataGap && <div className="mt-2 text-[10px] text-amber-800 italic">→ {r.dataGap}</div>}
               </button>
             );
           })}

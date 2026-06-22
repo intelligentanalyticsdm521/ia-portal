@@ -13,7 +13,7 @@ import { Link } from "react-router-dom";
 import { useArionContext } from "../../useArionContext";
 import { useAccessToken } from "../../../auth/useAccessToken";
 import { useAppState } from "../../../app/AppState";
-import { Lock, ArrowRight, X, RefreshCw, ShieldAlert, TrendingUp, Target, Compass, Code2, Gauge } from "lucide-react";
+import { Lock, ArrowRight, X, RefreshCw, ShieldAlert, TrendingUp, Target, Compass, Code2, Gauge, Activity, BarChart3, LinkIcon, Layers, MapPin, Route } from "lucide-react";
 import {
   ARION_INTEL_META,
   ARION_INTEL_KEYS,
@@ -24,20 +24,36 @@ import {
   type IntelligenceAggregateResponse,
 } from "../../analytics/arionIntelligenceEngines";
 
+// 2026-06-22 — Doc-64 §2 retiered to Standard/Pro/Business. Legacy SEO
+// tier names kept so existing cached payloads still display correctly.
 const TIER_LABEL: Record<string, string> = {
+  standard:   "Standard",
+  pro:        "Pro",
+  business:   "Business",
   starter:    "Starter",
   essentials: "Essentials",
   growth:     "Growth",
   authority:  "Authority",
 };
 
+// Icons for the 9-report doc-64 shelf. Legacy keys retained so cached
+// payloads using the old keys still render.
 const ICON_BY_KEY: Record<ArionIntelKey, typeof TrendingUp> = {
-  seo_authority:          ShieldAlert,
-  visibility_trajectory:  TrendingUp,
-  competitive_presence:   Target,
-  crawl_depth:            Compass,
-  schema_coverage:        Code2,
-  pagespeed_distribution: Gauge,
+  visibility_trajectory:        TrendingUp,
+  pagespeed_decay_forecast:     Gauge,
+  site_audit_risk_prediction:   ShieldAlert,
+  keyword_position_trajectory:  BarChart3,
+  backlink_velocity_anomaly:    LinkIcon,
+  content_quality_cluster:      Layers,
+  local_pack_visibility_forecast: MapPin,
+  crawl_budget_optimization:    Route,
+  competitive_presence_gap:     Target,
+  // Legacy (demoted to score-input) — keep for cache compatibility.
+  seo_authority:                ShieldAlert,
+  competitive_presence:         Target,
+  crawl_depth:                  Compass,
+  schema_coverage:              Code2,
+  pagespeed_distribution:       Gauge,
 };
 
 function stateColor(state: IntelligenceReport["state"]): string {
@@ -123,7 +139,7 @@ export function ArionIAInsightsIntelligencePage() {
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">IA Insights — Intelligence</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Six single-source ARION reports. Each runs on one ARION-owned data feed — no cross-platform blends. Cross-channel intelligence lives in ARGUS.</p>
+          <p className="text-sm text-slate-500 mt-0.5">Nine single-source ARION reports. Each runs on one ARION-owned data feed — no cross-platform blends. Cross-platform intelligence lives in ARGUS.</p>
         </div>
         <button
           onClick={() => void load(true)}
@@ -157,11 +173,27 @@ export function ArionIAInsightsIntelligencePage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {ARION_INTEL_META.map((m) => {
+          // For NEW reports without backend data yet, surface a
+          // "pending implementation" headline rather than the legacy
+          // "Not yet calculated" copy — clearer signal that the
+          // calculator ships in a later phase (doc-64 §8).
+          const isPendingNewReport = m.status === "new" && !reports?.[m.key];
           const r: IntelligenceReport = reports?.[m.key] ?? {
-            score: null, state: loading ? "insufficient_data" : "insufficient_data",
-            headline: loading ? "Loading..." : "Not yet calculated",
-            scoreInputs: [], observations: [], actions: [],
-            dataGap: loading ? undefined : "Awaiting first calculation.",
+            score: null,
+            state: "insufficient_data",
+            headline: loading
+              ? "Loading..."
+              : isPendingNewReport
+                ? `Pending implementation — ${m.dataFloor}`
+                : "Not yet calculated",
+            scoreInputs: [],
+            observations: [],
+            actions: [],
+            dataGap: loading
+              ? undefined
+              : isPendingNewReport
+                ? `Shell registered — calculator ships in doc-64 Phase 2-4.`
+                : "Awaiting first calculation.",
           };
           const Icon = ICON_BY_KEY[m.key];
           const color = stateColor(r.state);
@@ -181,11 +213,13 @@ export function ArionIAInsightsIntelligencePage() {
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="font-semibold text-sm text-slate-900">{m.label}</span>
                     <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${
-                      m.minTier === "authority" ? "bg-violet-100 text-violet-700"
-                      : m.minTier === "growth" ? "bg-blue-100 text-blue-700"
-                      : m.minTier === "essentials" ? "bg-emerald-100 text-emerald-700"
+                      m.minTier === "business" ? "bg-violet-100 text-violet-700"
+                      : m.minTier === "pro" ? "bg-blue-100 text-blue-700"
                       : "bg-slate-200 text-slate-700"
                     }`}>{m.minTier}</span>
+                    {m.status === "new" && (
+                      <span className="text-[9px] font-bold uppercase px-1 py-0.5 bg-blue-100 text-blue-700 rounded">NEW</span>
+                    )}
                   </div>
                   <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-2">{m.question}</p>
                   <p className="text-[10px] text-slate-400 mt-0.5 italic">Source: {m.source}</p>

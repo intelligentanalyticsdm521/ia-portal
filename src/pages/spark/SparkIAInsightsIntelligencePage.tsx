@@ -14,9 +14,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { useProductTier, tierMeets } from "../../hooks/useProductTier";
-import { Sparkles, Lock, TrendingDown, BarChart3, DollarSign, Users, Repeat, PieChart, ArrowRight, X } from "lucide-react";
+import { Sparkles, TrendingDown, BarChart3, DollarSign, Users, Repeat, PieChart, ArrowRight, X } from "lucide-react";
 import { runAllSparkIntelligence, type IntelligenceReport, type SparkIntelKey } from "../../spark/analytics/sparkIntelligenceEngines";
 import type { SparkEngineInput } from "../../spark/analytics/sparkTrendEngines";
+import { LockedIntelligenceCard, CollectingIntelligenceCard } from "../../components/iainsights/LockedIntelligenceCard";
 
 interface IntelReportMeta {
   key: SparkIntelKey;
@@ -119,13 +120,43 @@ export function SparkIAInsightsIntelligencePage() {
               scoreInputs: [], observations: [], actions: [],
               dataGap: "Awaiting first data refresh.",
             };
-            // Lite-tier locking — overrides whatever the engine returned so
-            // Lite users see the upgrade gate instead of a teaser score.
+            // v10.0 — Scope §8.4 split: tier-insufficient → LockedIntelligenceCard
+            // (Standard tenant sees Pro/Business reports), data-insufficient
+            // (but tier sufficient) → CollectingIntelligenceCard (Pro tenant
+            // waiting for the data floor). These are distinct user states and
+            // must render distinct UX, per overnight-report doc 64.
             const tierLocked = tierReady && !tierMeets(tier, m.minTier);
-            const effectiveState: IntelligenceReport["state"] = tierLocked ? "locked" : r.state;
+            if (tierLocked) {
+              return (
+                <LockedIntelligenceCard
+                  key={m.key}
+                  name={m.label}
+                  description={m.question}
+                  icon={m.icon}
+                  minTier={m.minTier}
+                  lockReason={`Upgrade to ${m.minTier === "business" ? "Business" : "Pro"} to unlock ${m.modelType.toLowerCase()}.`}
+                  ctaTarget="/pricing?platform=spark"
+                  onOpen={() => setOpen(m.key)}
+                />
+              );
+            }
+            if (r.state === "insufficient_data") {
+              return (
+                <CollectingIntelligenceCard
+                  key={m.key}
+                  name={m.label}
+                  description={m.question}
+                  icon={m.icon}
+                  dataFloor={r.dataGap}
+                  onOpen={() => setOpen(m.key)}
+                />
+              );
+            }
+            // Live + Partial states keep their existing rich card chrome —
+            // colour, gauge, headline. Engines own the per-report behaviour.
             const Icon = m.icon;
-            const color = stateColor(effectiveState);
-            const bg = stateBg(effectiveState);
+            const color = stateColor(r.state);
+            const bg = stateBg(r.state);
             return (
               <button
                 key={m.key}
@@ -147,34 +178,21 @@ export function SparkIAInsightsIntelligencePage() {
 
                 <div className="flex items-center justify-between mt-3 mb-2">
                   <div className="flex items-center gap-2">
-                    {!tierLocked && (effectiveState === "ok" || effectiveState === "partial") ? (
-                      <span className="text-3xl font-bold tabular-nums" style={{ color }}>{(r.score ?? 0).toFixed(0)}</span>
-                    ) : (
-                      <span className="text-2xl font-bold text-slate-300">—</span>
-                    )}
+                    <span className="text-3xl font-bold tabular-nums" style={{ color }}>{(r.score ?? 0).toFixed(0)}</span>
                     <span className="flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ background: `${color}1A`, color }}>
-                      {effectiveState === "ok" && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
-                      {effectiveState === "partial" && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
-                      {(effectiveState === "insufficient_data" || effectiveState === "locked") && <Lock className="h-3 w-3" />}
-                      {tierLocked ? `Requires ${m.minTier}` : stateLabel(effectiveState)}
+                      {r.state === "ok" && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
+                      {r.state === "partial" && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
+                      {stateLabel(r.state)}
                     </span>
                   </div>
                   <ArrowRight className="h-4 w-4 text-slate-400" />
                 </div>
 
                 <p className="text-xs text-slate-700 leading-snug line-clamp-2">
-                  {tierLocked
-                    ? `Upgrade to ${m.minTier === "business" ? "Business" : "Pro"} to unlock this report.`
-                    : (r.headline || "Collecting data — check back in 24 hours")}
+                  {r.headline || "Collecting data — check back in 24 hours"}
                 </p>
 
-                {tierLocked ? (
-                  <Link to="/pricing?platform=spark" onClick={(e) => e.stopPropagation()} className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-violet-700 hover:underline">
-                    Upgrade to unlock <ArrowRight className="h-3 w-3" />
-                  </Link>
-                ) : (
-                  r.dataGap && <div className="mt-2 text-[10px] text-amber-800 italic">→ {r.dataGap}</div>
-                )}
+                {r.dataGap && <div className="mt-2 text-[10px] text-amber-800 italic">→ {r.dataGap}</div>}
               </button>
             );
           })}
