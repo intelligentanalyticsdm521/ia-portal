@@ -1713,14 +1713,22 @@ function OliverPaymentsSection({ v, setV, accent, api }: {
     account_id?: string | null;
     charges_enabled?: boolean;
     details_submitted?: boolean;
+    mode?: "express_new" | "standard_existing" | null;
     loading: boolean;
   }>({ has_account: false, loading: true });
+
+  // Brandon-locked 2026-06-23: dual-path picker. Customers who ALREADY have
+  // a Stripe account can integrate it via Standard Connect OAuth instead of
+  // being forced into a fresh Express account. The picker shows BEFORE any
+  // Stripe-side flow starts so the customer doesn't accidentally mint a
+  // duplicate Express account.
+  const [pickedPath, setPickedPath] = useState<"express_new" | "standard_existing" | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const r = await api.get<{ has_account?: boolean; account_id?: string | null; charges_enabled?: boolean; details_submitted?: boolean }>("/billing/connect/status");
+        const r = await api.get<{ has_account?: boolean; account_id?: string | null; charges_enabled?: boolean; details_submitted?: boolean; mode?: "express_new" | "standard_existing" | null }>("/billing/connect/status");
         if (cancelled) return;
         const has = !!(r?.has_account || r?.account_id);
         setStatus({
@@ -1728,6 +1736,7 @@ function OliverPaymentsSection({ v, setV, accent, api }: {
           account_id: r?.account_id || null,
           charges_enabled: !!r?.charges_enabled,
           details_submitted: !!r?.details_submitted,
+          mode: r?.mode || null,
           loading: false,
         });
       } catch {
@@ -1738,7 +1747,8 @@ function OliverPaymentsSection({ v, setV, accent, api }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function launch() {
+  // Launch the Express hosted-onboarding flow (path B — fresh account).
+  async function launchExpress() {
     setBusy(true);
     try {
       const r = await api.post<{ url?: string }>("/billing/connect/start", {});
@@ -1751,19 +1761,47 @@ function OliverPaymentsSection({ v, setV, accent, api }: {
     finally { setBusy(false); }
   }
 
+  // Launch the Standard Connect OAuth flow (path A — existing account).
+  // The backend mints the oauth URL with our state param + client_id; user
+  // authenticates on Stripe and authorizes our platform to manage their
+  // existing account.
+  async function launchStandardOAuth() {
+    setBusy(true);
+    try {
+      const r = await api.post<{ url?: string }>("/billing/connect/oauth-start", {});
+      const url = (r as { url?: string })?.url;
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer");
+        setV({ ...v, stripe_connect_started: true });
+      }
+    } catch (e) { alert((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  // Resume — flips off the picked path so the user sees the right CTA copy.
+  function launch() {
+    if (pickedPath === "standard_existing") return launchStandardOAuth();
+    return launchExpress();
+  }
+
   if (status.loading) {
     return <div className="text-xs text-slate-500">Checking Stripe Connect status…</div>;
   }
 
   // State A — fully connected: account exists + KYC complete + charges enabled.
   if (status.has_account && status.charges_enabled) {
+    const modeLabel = status.mode === "standard_existing"
+      ? "Linked existing Stripe account (Standard)"
+      : status.mode === "express_new"
+        ? "Stripe Connect Express account"
+        : "Stripe Connect already set up";
     return (
       <div className="space-y-3">
         <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50 p-4">
           <div className="flex items-start gap-3">
             <CheckCircle2 className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
             <div className="flex-1">
-              <div className="text-sm font-semibold text-emerald-900">Stripe Connect already set up</div>
+              <div className="text-sm font-semibold text-emerald-900">{modeLabel}</div>
               <div className="text-xs text-emerald-800 mt-1">
                 Connected account: <code className="font-mono text-[11px]">{status.account_id}</code>.
                 Charges are enabled — you can accept customer payments through OLIVER today.
@@ -1802,20 +1840,82 @@ function OliverPaymentsSection({ v, setV, accent, api }: {
     );
   }
 
-  // State C — no account yet (the original CTA, unchanged).
+  // State C — no account yet. Brandon-locked 2026-06-23 dual-path picker:
+  //   Option A — "I already have a Stripe account I want to integrate"
+  //              → Standard Connect OAuth, links the EXISTING acct_…
+  //   Option B — "Set up new Stripe Connect Express account"
+  //              → Express hosted onboarding, mints a fresh acct_…
+  // Both paths end with stripe_account_id on oliver.tenant_settings; the
+  // difference is just whether action() POSTs to /billing/connect/start
+  // (Express) or /billing/connect/oauth-start (Standard OAuth).
   return (
     <div className="space-y-3">
-      <p className="text-xs text-slate-500">Stripe Connect Express. Required to accept customer payments — but you can skip and configure later from OLIVER · Payments.</p>
-      <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
-        <div className="font-semibold text-sm">{v.stripe_connect_started ? "Connect started in new tab" : "Connect Stripe Express"}</div>
-        <div className="text-xs text-slate-600">Opens Stripe's hosted onboarding in a new tab. Finish it there, then come back and Save & Continue.</div>
-        <button onClick={launch} disabled={busy}
-          className="px-4 py-2 rounded-lg text-white font-semibold text-sm inline-flex items-center gap-2 disabled:opacity-50"
-          style={{ background: accent }}>
-          <ExternalLink className="h-3.5 w-3.5" /> {busy ? "Opening…" : v.stripe_connect_started ? "Re-open Stripe Connect" : "Connect Stripe"}
-        </button>
-        {v.stripe_connect_started && <div className="text-xs text-emerald-700 inline-flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Launched. Finish in Stripe, then continue here.</div>}
-      </div>
+      <p className="text-xs text-slate-500">
+        Stripe Connect is required to accept customer payments. Pick the option that matches your situation — you can skip and configure later from OLIVER · Payments.
+      </p>
+
+      {!pickedPath && (
+        <div className="space-y-2">
+          {/* Option A — link existing Stripe account */}
+          <button
+            type="button"
+            onClick={() => setPickedPath("standard_existing")}
+            className="w-full text-left rounded-lg border-2 border-slate-200 hover:border-slate-400 bg-white p-4 transition"
+          >
+            <div className="font-semibold text-sm text-slate-900">I already have a Stripe account I want to integrate</div>
+            <div className="text-xs text-slate-600 mt-1">
+              You already use Stripe for another business or product. We&apos;ll link your existing account via Stripe&apos;s standard OAuth flow — no new account, no duplicate payouts.
+            </div>
+          </button>
+
+          {/* Option B — new Express account */}
+          <button
+            type="button"
+            onClick={() => setPickedPath("express_new")}
+            className="w-full text-left rounded-lg border-2 border-slate-200 hover:border-slate-400 bg-white p-4 transition"
+          >
+            <div className="font-semibold text-sm text-slate-900">Set up new Stripe Connect Express account</div>
+            <div className="text-xs text-slate-600 mt-1">
+              You don&apos;t have a Stripe account yet. We&apos;ll spin up a fresh Stripe Connect Express account in your name using Stripe&apos;s hosted onboarding (business + bank info).
+            </div>
+          </button>
+        </div>
+      )}
+
+      {pickedPath && (
+        <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="font-semibold text-sm">
+              {pickedPath === "standard_existing"
+                ? (v.stripe_connect_started ? "OAuth started in new tab" : "Link my existing Stripe account")
+                : (v.stripe_connect_started ? "Connect started in new tab" : "Connect Stripe Express")}
+            </div>
+            <button
+              type="button"
+              onClick={() => { setPickedPath(null); setV({ ...v, stripe_connect_started: false }); }}
+              className="text-[11px] text-slate-500 underline hover:text-slate-700"
+            >
+              Change option
+            </button>
+          </div>
+          <div className="text-xs text-slate-600">
+            {pickedPath === "standard_existing"
+              ? "Opens Stripe's OAuth authorize page in a new tab. Sign in to your existing Stripe account and click \"Connect\" — we'll link it here."
+              : "Opens Stripe's hosted onboarding in a new tab. Finish business + bank info there, then come back and Save & Continue."}
+          </div>
+          <button onClick={launch} disabled={busy}
+            className="px-4 py-2 rounded-lg text-white font-semibold text-sm inline-flex items-center gap-2 disabled:opacity-50"
+            style={{ background: accent }}>
+            <ExternalLink className="h-3.5 w-3.5" />
+            {busy
+              ? "Opening…"
+              : v.stripe_connect_started
+                ? (pickedPath === "standard_existing" ? "Re-open Stripe OAuth" : "Re-open Stripe Connect")
+                : (pickedPath === "standard_existing" ? "Connect my Stripe account" : "Connect Stripe Express")}
+          </button>
+          {v.stripe_connect_started && <div className="text-xs text-emerald-700 inline-flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Launched. Finish in Stripe, then continue here.</div>}
+        </div>
+      )}
     </div>
   );
 }

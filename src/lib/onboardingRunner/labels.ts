@@ -47,6 +47,7 @@ export const STEP_LABELS: Readonly<Record<string, string>> = Object.freeze({
 
   // ── OLIVER ─────────────────────────────────────────────────────────
   oliver_stripe_connect:       "Setting up payments",
+  oliver_templates:            "Branding your invoices and quotes",
   oliver_portal_white_label:   "Configuring your portals",
   oliver_calendar_connect:     "Syncing your calendar",
   oliver_team_seats_seed:      "Preparing your team seats",
