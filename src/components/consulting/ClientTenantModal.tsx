@@ -315,10 +315,33 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
         if (cancelled) return;
         // Merge order: defaults → prefill (from existing tables) → saved state (wins).
         // Per Brandon's rule: don't make users re-enter data the system has.
+        //
+        // FIX (2026-06-23) — brand colors kept reverting to the EMPTY_STATE
+        // defaults (#1A3A4A / #FEC82C / #1A7DB5) even when prefill had Brandon's
+        // real values (#0C4A60 / #EF6C33 / #2D9CDB). Root cause: an older
+        // saved_state row from before the prefill-load gate landed had the
+        // EMPTY_STATE defaults written into it. Saved state wins over prefill
+        // in the merge order, so the stale defaults clobbered the real colors
+        // on every reload.
+        //
+        // Treat saved_state.profile color fields that EXACTLY match the
+        // EMPTY_STATE defaults as "user never picked" — strip them before the
+        // merge so prefill wins for those fields. Real picks (anything else)
+        // still come through.
+        const DEFAULT_PRIMARY = EMPTY_STATE.profile.primary_color;
+        const DEFAULT_SECONDARY = EMPTY_STATE.profile.secondary_color;
+        const DEFAULT_ACCENT = EMPTY_STATE.profile.accent_color;
+        let cleanedSavedState = data?.state;
+        if (cleanedSavedState?.profile) {
+          const savedProfile = cleanedSavedState.profile as Partial<BusinessProfile>;
+          if (savedProfile.primary_color === DEFAULT_PRIMARY) delete (cleanedSavedState.profile as Record<string, unknown>).primary_color;
+          if (savedProfile.secondary_color === DEFAULT_SECONDARY) delete (cleanedSavedState.profile as Record<string, unknown>).secondary_color;
+          if (savedProfile.accent_color === DEFAULT_ACCENT) delete (cleanedSavedState.profile as Record<string, unknown>).accent_color;
+        }
         setState((s) => {
           let merged = s;
           if (data?.prefill) merged = mergeState(merged, data.prefill);
-          if (data?.state)   merged = mergeState(merged, data.state);
+          if (cleanedSavedState) merged = mergeState(merged, cleanedSavedState);
           return merged;
         });
         // Cart override from prefill — backend reads signup_product +
@@ -1400,6 +1423,42 @@ function OliverPaymentsSection({ v, setV, accent, api }: {
   api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T> };
 }) {
   const [busy, setBusy] = useState(false);
+  // FIX (2026-06-23) — section was showing "Connect Stripe Express" CTA even
+  // for tenants that ALREADY have a Stripe Connect account on file (Brandon
+  // hit this on his founder tenant 8C9527B9 — stripe_account_id =
+  // acct_1TXNOJRvTIeB5DOS exists in oliver.tenant_settings, but the section
+  // only tracked a local stripe_connect_started flag and never queried the
+  // backend). Fetch real status on mount; render 3 distinct states.
+  const [status, setStatus] = useState<{
+    has_account: boolean;
+    account_id?: string | null;
+    charges_enabled?: boolean;
+    details_submitted?: boolean;
+    loading: boolean;
+  }>({ has_account: false, loading: true });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await api.get<{ has_account?: boolean; account_id?: string | null; charges_enabled?: boolean; details_submitted?: boolean }>("/billing/connect/status");
+        if (cancelled) return;
+        const has = !!(r?.has_account || r?.account_id);
+        setStatus({
+          has_account: has,
+          account_id: r?.account_id || null,
+          charges_enabled: !!r?.charges_enabled,
+          details_submitted: !!r?.details_submitted,
+          loading: false,
+        });
+      } catch {
+        if (!cancelled) setStatus({ has_account: false, loading: false });
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function launch() {
     setBusy(true);
     try {
@@ -1412,6 +1471,59 @@ function OliverPaymentsSection({ v, setV, accent, api }: {
     } catch (e) { alert((e as Error).message); }
     finally { setBusy(false); }
   }
+
+  if (status.loading) {
+    return <div className="text-xs text-slate-500">Checking Stripe Connect status…</div>;
+  }
+
+  // State A — fully connected: account exists + KYC complete + charges enabled.
+  if (status.has_account && status.charges_enabled) {
+    return (
+      <div className="space-y-3">
+        <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50 p-4">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-emerald-900">Stripe Connect already set up</div>
+              <div className="text-xs text-emerald-800 mt-1">
+                Connected account: <code className="font-mono text-[11px]">{status.account_id}</code>.
+                Charges are enabled — you can accept customer payments through OLIVER today.
+              </div>
+              <div className="text-[11px] text-emerald-700 mt-2">Manage at OLIVER · Settings · Payments.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // State B — account exists but KYC not finished. Tell the truth instead of
+  // showing the same "Connect Stripe Express" CTA as a fresh tenant.
+  if (status.has_account && !status.charges_enabled) {
+    return (
+      <div className="space-y-3">
+        <div className="rounded-lg border-2 border-amber-200 bg-amber-50 p-4 space-y-2">
+          <div className="flex items-start gap-3">
+            <ExternalLink className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-amber-900">Stripe Connect account created — finish KYC</div>
+              <div className="text-xs text-amber-800 mt-1">
+                Your Connect account <code className="font-mono text-[11px]">{status.account_id}</code> is created, but Stripe still needs business + bank verification before you can accept payments.
+                {status.details_submitted ? " Details submitted — Stripe is reviewing." : " Click below to finish the hosted onboarding."}
+              </div>
+            </div>
+          </div>
+          <button onClick={launch} disabled={busy}
+            className="px-4 py-2 rounded-lg text-white font-semibold text-sm inline-flex items-center gap-2 disabled:opacity-50"
+            style={{ background: accent }}>
+            <ExternalLink className="h-3.5 w-3.5" /> {busy ? "Opening…" : "Resume Stripe Connect onboarding"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // State C — no account yet (the original CTA, unchanged).
   return (
     <div className="space-y-3">
       <p className="text-xs text-slate-500">Stripe Connect Express. Required to accept customer payments — but you can skip and configure later from OLIVER · Payments.</p>
