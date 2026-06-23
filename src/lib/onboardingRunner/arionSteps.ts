@@ -92,6 +92,24 @@ interface ArionRunnerExtras {
   domain?: string | null;
   domain_path?: ArionDomainPath;
   questionnaire?: Record<string, unknown>;
+  /** Customer's primary email — used to invite them as Admin/Owner on
+   *  IA-master-provisioned Google + Bing assets. */
+  contact_email?: string | null;
+  /** Customer's business name — used as the displayName when the IA
+   *  master service account creates a GA4 property or a GBP listing
+   *  on their behalf. Falls back to the bare domain when missing. */
+  business_name?: string | null;
+  /** "yes" | "no" | "not_sure" — the customer's answer to "Do you
+   *  already have Google Analytics, Search Console, and Business Profile?"
+   *  Set by the wizard's Google card before the runner is launched. */
+  google_setup_answer?: "yes" | "no" | "not_sure" | null;
+  /** Same shape for Bing. */
+  bing_setup_answer?: "yes" | "no" | "not_sure" | null;
+  /** Cached probe verdict — written by the probe step into the extras
+   *  bag so the per-branch step can short-circuit without re-asking
+   *  the backend. */
+  google_setup_mode?: "byo" | "ia_managed" | "auto_byo" | "auto_ia" | null;
+  bing_setup_mode?: "byo" | "ia_managed" | "auto_byo" | "auto_ia" | null;
 }
 
 function extras(ctx: RunnerCtx): ArionRunnerExtras {
@@ -604,84 +622,237 @@ function stepSeoConfigureTier(): Step {
 }
 
 /* ──────────────────────────────────────────────────────────────────────
- * OAuth steps
+ * Google + Bing dual-path steps (Brandon-locked 2026-06-23)
  *
- * action() asks arion-api for the OAuth start URL. The wizard pops a
- * popup / new tab to that URL; the redirect target writes
- * arion.site_integration when the customer accepts. waitFor() polls
- * arion.site_integration until the row exists, then verify() confirms
- * status === 'active'.
+ * Each provider has THREE steps, gated on the customer's answer:
+ *
+ *   probe  → calls /onboarding/{google|bing}-oauth/setup-probe with
+ *            ctx.{google|bing}_setup_answer. The backend persists
+ *            arion.site.{google|bing}_setup_mode and returns the route.
+ *            Probe writes ex.{google|bing}_setup_mode onto ctx so the
+ *            branched step downstream knows which branch to fire.
+ *
+ *   byo    → standard OAuth → popup → existing /google/callback writes
+ *            the per-tenant tokens onto arion.site. action() returns
+ *            ok once the authUrl has been delivered + opened; waitFor()
+ *            polls until the site row reports the connection.
+ *
+ *   ia     → POST /onboarding/{google|bing}-oauth/auto-provision. The
+ *            backend uses the IA master service account to create GA4 +
+ *            GSC + GBP (or Bing site) under our org, then invites the
+ *            customer as Admin/Owner. action() drives the entire
+ *            provision + invite in one round-trip; waitFor() then polls
+ *            the status endpoint until the connection booleans flip.
+ *
+ * The branched step is a SINGLE Step object that internally chooses byo
+ * vs ia based on extras(ctx).{google|bing}_setup_mode. This keeps the
+ * UI timeline at a constant length (probe + connect = 2 entries per
+ * provider) regardless of which branch fires.
  *
  * Bing OAuth is skip-allowed because Bing Webmaster doesn't gate any
  * downstream feature — purely additive search-engine coverage.
  * ────────────────────────────────────────────────────────────────────── */
 
+interface GoogleProbeReply {
+  data?: {
+    route?: "byo" | "ia";
+    mode?: "byo" | "ia_managed" | "auto_byo" | "auto_ia";
+    configured?: boolean;
+    warning?: string | null;
+    probe?: Record<string, unknown>;
+  };
+}
+
+interface BingProbeReply {
+  data?: {
+    route?: "byo" | "ia";
+    mode?: "byo" | "ia_managed" | "auto_byo" | "auto_ia";
+    configured?: boolean;
+    warning?: string | null;
+    probe?: Record<string, unknown>;
+  };
+}
+
+/* Step: arion_google_setup_probe — single-shot. Persists the customer's
+ * answer, hits the backend probe when "not_sure", writes the resolved
+ * mode onto ctx so the next step knows which branch to fire. */
+function stepGoogleSetupProbe(): Step {
+  return {
+    id: "arion_google_setup_probe",
+    label_user_facing: "Checking your Google setup",
+    label_friendly: "arion: google setup probe (yes/no/not_sure routing)",
+    on_failure: "retry",
+    max_retries: 3,
+    retry_delay_ms: 2000,
+    action: async (ctx): Promise<ActionResult> => {
+      const ex = extras(ctx);
+      if (!ex.site_id) return { ok: false, error: "site_id missing" };
+      const answer = ex.google_setup_answer || "not_sure";
+      const r = await arionFetch<GoogleProbeReply>(ctx, `/onboarding/google-oauth/setup-probe`, {
+        method: "POST",
+        body: JSON.stringify({
+          tenant_id: ctx.tenant_id,
+          site_id: ex.site_id,
+          answer,
+        }),
+      });
+      if (!r.ok) return { ok: false, error: r.error, retryable_after_ms: r.retryable_after_ms };
+      const mode = (r.data as GoogleProbeReply | undefined)?.data?.mode || "byo";
+      // Stuff the resolved mode onto ctx for the connect step. The engine
+      // treats ctx as immutable, so we mutate the extras passthrough.
+      (ctx.business_profile as ArionRunnerExtras).google_setup_mode = mode;
+      return { ok: true, data: r.data };
+    },
+  };
+}
+
+/* Step: arion_google_oauth — the connect step. Branches on
+ * ex.google_setup_mode written by the probe step. */
 function stepGoogleOauth(): Step {
   return {
     id: "arion_google_oauth",
     label_user_facing: "Talking with Google",
-    label_friendly: "arion: google oauth (ga4 + gsc + gbp)",
+    label_friendly: "arion: google connect (byo OR ia auto-provision)",
     on_failure: "notify_founder",
     max_retries: 3,
     retry_delay_ms: SLOW_POLL_MS,
     action: async (ctx): Promise<ActionResult> => {
       const ex = extras(ctx);
       if (!ex.site_id) return { ok: false, error: "site_id missing" };
-      const r = await arionFetch<{ authUrl?: string }>(
+      const mode = ex.google_setup_mode || "byo";
+
+      // IA-managed branch — provision GA4 + GSC + GBP under our master
+      // account, invite the customer's email as Admin / Owner.
+      if (mode === "ia_managed" || mode === "auto_ia") {
+        const r = await arionFetch(ctx, `/onboarding/google-oauth/auto-provision`, {
+          method: "POST",
+          body: JSON.stringify({
+            tenant_id: ctx.tenant_id,
+            site_id: ex.site_id,
+            business_name: ex.business_name || null,
+            contact_email: ex.contact_email || null,
+          }),
+        });
+        if (!r.ok) {
+          // If the IA master path is unconfigured (503), fall back to BYO
+          // automatically so the customer isn't blocked.
+          if (r.status === 503) {
+            (ctx.business_profile as ArionRunnerExtras).google_setup_mode = "byo";
+            // Fall through to BYO branch by recursing once.
+            return stepGoogleOauth().action(ctx);
+          }
+          return { ok: false, error: r.error, retryable_after_ms: r.retryable_after_ms };
+        }
+        return { ok: true, data: r.data };
+      }
+
+      // BYO branch — standard OAuth. Same UX as the legacy single-step
+      // flow: ask backend for an authUrl, pop it in a new tab.
+      const r = await arionFetch<{ data?: { authUrl?: string } } | { authUrl?: string }>(
         ctx,
-        `/arion/integrations/google/connect`,
+        `/onboarding/google-oauth/byo-start`,
         {
           method: "POST",
           body: JSON.stringify({
-            siteId: ex.site_id,
-            setupMode: "ARION_AUTO_SETUP",
+            tenant_id: ctx.tenant_id,
+            site_id: ex.site_id,
             returnUrl: typeof window !== "undefined" ? window.location.href : "",
           }),
         },
       );
       if (!r.ok) return { ok: false, error: r.error, retryable_after_ms: r.retryable_after_ms };
-      // Pop the OAuth URL when running in a browser. The wizard listens
-      // for the redirect target's postMessage to advance the engine; the
-      // status mirror in arion.site_integration is the source of truth.
-      if (typeof window !== "undefined" && r.data?.authUrl) {
-        try { window.open(r.data.authUrl, "_blank", "noopener,noreferrer"); }
+      const authUrl = (r.data as { data?: { authUrl?: string } } | undefined)?.data?.authUrl
+        || (r.data as { authUrl?: string } | undefined)?.authUrl
+        || null;
+      if (typeof window !== "undefined" && authUrl) {
+        try { window.open(authUrl, "_blank", "noopener,noreferrer"); }
         catch { /* popup blocked — user will retry */ }
       }
-      return { ok: true, data: r.data };
+      return { ok: true, data: { authUrl, mode } };
     },
     waitFor: async (ctx) => {
-      // Poll the integrations-status endpoint until google is connected.
       const ex = extras(ctx);
       if (!ex.site_id) return { ok: false, error: "site_id missing" };
-      const r = await arionFetch<{ data?: { gsc_connected?: boolean; ga4_connected?: boolean } }>(
+      const r = await arionFetch<{ data?: { done?: boolean; gsc_connected?: boolean; ga4_connected?: boolean; gbp_connected?: boolean } }>(
         ctx,
-        `/arion/sites/${encodeURIComponent(ex.site_id)}/integrations-status`,
+        `/onboarding/google-oauth/status/${encodeURIComponent(ex.site_id)}`,
       );
       if (!r.ok) return { ok: false, error: r.error, retryable_after_ms: r.retryable_after_ms };
       const status = (r.data as { data?: Record<string, unknown> } | undefined)?.data
         || (r.data as Record<string, unknown> | undefined)
         || {};
-      // Google OAuth is "done" when either GA4 or GSC came through (one
-      // OAuth grant fans out to both inside the callback handler).
-      if (status.gsc_connected || status.ga4_connected || status.gbp_connected) {
-        return { ok: true, data: status };
-      }
+      if (status.done) return { ok: true, data: status };
       return { ok: false };
     },
   };
 }
 
+/* Step: arion_bing_setup_probe — same shape as google probe. */
+function stepBingSetupProbe(): Step {
+  return {
+    id: "arion_bing_setup_probe",
+    label_user_facing: "Checking your Bing setup",
+    label_friendly: "arion: bing setup probe (yes/no/not_sure routing)",
+    on_failure: "skip_allowed",      // Bing is optional end-to-end
+    max_retries: 2,
+    retry_delay_ms: 2000,
+    action: async (ctx): Promise<ActionResult> => {
+      const ex = extras(ctx);
+      if (!ex.site_id) return { ok: false, error: "site_id missing" };
+      const answer = ex.bing_setup_answer || "not_sure";
+      const r = await arionFetch<BingProbeReply>(ctx, `/onboarding/bing-oauth/setup-probe`, {
+        method: "POST",
+        body: JSON.stringify({
+          tenant_id: ctx.tenant_id,
+          site_id: ex.site_id,
+          answer,
+        }),
+      });
+      if (!r.ok) return { ok: false, error: r.error, retryable_after_ms: r.retryable_after_ms };
+      const mode = (r.data as BingProbeReply | undefined)?.data?.mode || "byo";
+      (ctx.business_profile as ArionRunnerExtras).bing_setup_mode = mode;
+      return { ok: true, data: r.data };
+    },
+  };
+}
+
+/* Step: arion_bing_oauth — branches on ex.bing_setup_mode. */
 function stepBingOauth(): Step {
   return {
     id: "arion_bing_oauth",
     label_user_facing: "Connecting to Bing",
-    label_friendly: "arion: bing webmaster oauth",
-    on_failure: "skip_allowed",   // Bing is optional — no downstream gate
+    label_friendly: "arion: bing connect (byo OR ia auto-provision)",
+    on_failure: "skip_allowed",
     max_retries: 2,
     retry_delay_ms: SLOW_POLL_MS,
     action: async (ctx): Promise<ActionResult> => {
       const ex = extras(ctx);
       if (!ex.site_id) return { ok: false, error: "site_id missing" };
+      const mode = ex.bing_setup_mode || "byo";
+
+      // IA-managed branch — auto-connect under master + invite customer.
+      if (mode === "ia_managed" || mode === "auto_ia") {
+        const r = await arionFetch(ctx, `/onboarding/bing-oauth/auto-provision`, {
+          method: "POST",
+          body: JSON.stringify({
+            tenant_id: ctx.tenant_id,
+            site_id: ex.site_id,
+            contact_email: ex.contact_email || null,
+          }),
+        });
+        if (!r.ok) {
+          if (r.status === 503) {
+            (ctx.business_profile as ArionRunnerExtras).bing_setup_mode = "byo";
+            return stepBingOauth().action(ctx);
+          }
+          return { ok: false, error: r.error, retryable_after_ms: r.retryable_after_ms };
+        }
+        return { ok: true, data: r.data };
+      }
+
+      // BYO branch — defer to the legacy runner endpoint that the
+      // wizard's existing UI uses to walk the customer through pasting
+      // their Bing Webmaster API key.
       const r = await arionFetch(ctx, `/onboarding/runner/bing-oauth-start`, {
         method: "POST",
         body: JSON.stringify({
@@ -696,15 +867,15 @@ function stepBingOauth(): Step {
     waitFor: async (ctx) => {
       const ex = extras(ctx);
       if (!ex.site_id) return { ok: false, error: "site_id missing" };
-      const r = await arionFetch<{ data?: { bing_connected?: boolean } }>(
+      const r = await arionFetch<{ data?: { done?: boolean; bing_connected?: boolean } }>(
         ctx,
-        `/arion/sites/${encodeURIComponent(ex.site_id)}/integrations-status`,
+        `/onboarding/bing-oauth/status/${encodeURIComponent(ex.site_id)}`,
       );
       if (!r.ok) return { ok: false, error: r.error, retryable_after_ms: r.retryable_after_ms };
       const status = (r.data as { data?: Record<string, unknown> } | undefined)?.data
         || (r.data as Record<string, unknown> | undefined)
         || {};
-      if (status.bing_connected) return { ok: true, data: status };
+      if (status.done) return { ok: true, data: status };
       return { ok: false };
     },
   };
@@ -748,7 +919,9 @@ export function buildArionSteps(
       stepCreateWpUser(),
       stepAiWebsiteBuilder(),
       ...seoChain,
+      stepGoogleSetupProbe(),
       stepGoogleOauth(),
+      stepBingSetupProbe(),
       stepBingOauth(),
     ];
   }
@@ -759,7 +932,9 @@ export function buildArionSteps(
     stepPluginInstallOnly(),
     stepCreateWpUser(),
     ...seoChain,
+    stepGoogleSetupProbe(),
     stepGoogleOauth(),
+    stepBingSetupProbe(),
     stepBingOauth(),
   ];
 }

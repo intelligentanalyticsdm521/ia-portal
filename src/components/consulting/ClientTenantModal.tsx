@@ -502,7 +502,7 @@ function SectionBody({ section, state, setState, api, accent, tenantId }: {
     case "profile":                return <ProfileSection profile={state.profile} setProfile={(p) => setState((s) => ({ ...s, profile: p }))} api={api} />;
     case "owner":                  return <OwnerSection owner={state.owner} setOwner={(o) => setState((s) => ({ ...s, owner: o }))} />;
     case "lifecycle":              return <LifecycleSection v={state.lifecycle} setV={(v) => setState((s) => ({ ...s, lifecycle: v }))} />;
-    case "arion":                  return <ArionSection v={state.arion} setV={(v) => setState((s) => ({ ...s, arion: v }))} tenantId={tenantId} />;
+    case "arion":                  return <ArionSection v={state.arion} setV={(v) => setState((s) => ({ ...s, arion: v }))} tenantId={tenantId} profile={state.profile} />;
     // arion_integrations also uses the same ArionSection runner status if
     // a run is in-flight; the integrations section is the natural next-
     // step after the runner finishes, so we keep that separate.
@@ -903,7 +903,7 @@ async function notifyFounderStuck(bearer: string, tenant_id: string, rec: StepRe
   }
 }
 
-function ArionSection({ v, setV, tenantId }: { v: OnboardingState["arion"]; setV: (v: OnboardingState["arion"]) => void; tenantId: string }) {
+function ArionSection({ v, setV, tenantId, profile }: { v: OnboardingState["arion"]; setV: (v: OnboardingState["arion"]) => void; tenantId: string; profile: OnboardingState["profile"] }) {
   // 2026-06-21 — skip-if-provisioned. Brandon hit this himself:
   // ARION onboarding shouldn't re-prompt for site setup if arion.site already
   // has a row for this tenant. Probe on mount; if found, render a compact
@@ -997,8 +997,18 @@ function ArionSection({ v, setV, tenantId }: { v: OnboardingState["arion"]; setV
       bearer_token: bearer,
       domain: v.domain.trim(),
       domain_path: v.domain_choice,
+      // Google + Bing dual-path (Brandon-locked 2026-06-23). The wizard
+      // doesn't ask the YES/NO/NOT_SURE question yet — default both to
+      // "not_sure" so the probe step routes intelligently based on
+      // whether the IA master service account can find the domain. When
+      // the wizard UI lands the explicit question these strings flip to
+      // the user's answer.
+      google_setup_answer: "not_sure",
+      bing_setup_answer: "not_sure",
+      contact_email: (profile.primary_contact_email || "").trim() || null,
+      business_name: (profile.business_name || "").trim() || null,
       questionnaire: {
-        businessName: v.industry ? undefined : undefined, // sourced from outer profile when posted server-side
+        businessName: profile.business_name || null,
         industry: v.industry,
         description: v.description,
         services: v.services.filter(Boolean),
