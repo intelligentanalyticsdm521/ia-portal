@@ -370,37 +370,133 @@ export function ConsultingOnboardClientPageV2() {
   // proceed to step 2. The founder can still fill the wizard manually.
   // Never block the wizard on prefill — it's a convenience, not a
   // requirement.
-  type PrefillResponse = {
-    profile?: Partial<BusinessProfile> | null;
-    arion_integrations?: Record<string, unknown> | null;
-    owner_account?: Partial<OwnerAccount> | null;
+  // FIX (2026-06-23) — response-shape adapter rewritten.
+  // The backend (oliver-api routes/admin/onboardClient.js GET
+  // /admin/onboard-client/onboarding-progress) returns:
+  //   { data: {
+  //       state, prefill: { profile:{…}, owner:{…}, signup_product,
+  //                         billing_cycle, stripe_customer_linked, cart,
+  //                         oliver, arion, arion_integrations, spark },
+  //       step, section_id, finished_at, last_saved_at
+  //   } }
+  // useOliverApi.get() auto-unwraps the {data:…} envelope (oliverApi.ts line
+  // ~89), so the React hook sees the INNER object. The old adapter was
+  // reading r.business_name / r.contact_email / r.profile / r.owner_account —
+  // none of which exist at that level. Everything was silently a no-op.
+  // Now we read the correct path: r.prefill.profile.{business_name,
+  // primary_contact_email,…} + r.prefill.owner.{first_name,last_name,…}.
+  type PrefillProfileBackend = {
     business_name?: string | null;
-    contact_email?: string | null;
+    primary_contact_email?: string | null;
+    phone?: string | null;
+    website?: string | null;
+    address_street?: string | null;
+    address_line2?: string | null;
+    address_city?: string | null;
+    address_state?: string | null;
+    address_zip?: string | null;
+    logo_url?: string | null;
+    primary_color?: string | null;
+    secondary_color?: string | null;
+    accent_color?: string | null;
+  };
+  type PrefillOwnerBackend = {
+    first_name?: string | null;
+    last_name?: string | null;
+    display_name?: string | null;
+    billing_email?: string | null;
+  };
+  type PrefillEnvelope = {
+    state?: Record<string, unknown> | null;
+    prefill?: {
+      profile?: PrefillProfileBackend | null;
+      owner?: PrefillOwnerBackend | null;
+      arion_integrations?: Record<string, unknown> | null;
+      signup_product?: string | null;
+      billing_cycle?: string | null;
+      stripe_customer_linked?: boolean;
+    } | null;
+    step?: number;
+    section_id?: string | null;
+    finished_at?: string | null;
+    last_saved_at?: string | null;
   };
 
-  const applyPrefillToV2State = (prefill: PrefillResponse) => {
-    if (!prefill) return;
-    if (typeof prefill.business_name === "string" && prefill.business_name.trim()) {
-      // Only overwrite if the founder hasn't already typed something.
-      setBusinessName((cur) => cur.trim() ? cur : prefill.business_name!.trim());
+  const applyPrefillToV2State = (env: PrefillEnvelope | null | undefined) => {
+    if (!env || !env.prefill) return;
+    const p = env.prefill;
+
+    // Business profile — map backend keys (primary_contact_email) to the
+    // wizard's BusinessProfile shape. mergeStrict drops null / empty so
+    // anything the founder has already typed is preserved.
+    if (p.profile) {
+      const bn = (p.profile.business_name || "").trim();
+      const ce = (p.profile.primary_contact_email || "").trim();
+      if (bn) setBusinessName((cur) => cur.trim() ? cur : bn);
+      if (ce) setContactEmail((cur) => cur.trim() ? cur : ce);
+
+      const incomingProfile: Partial<BusinessProfile> = {
+        address_street: p.profile.address_street || "",
+        address_line2: p.profile.address_line2 || "",
+        address_city: p.profile.address_city || "",
+        address_state: p.profile.address_state || "",
+        address_zip: p.profile.address_zip || "",
+        phone: p.profile.phone || "",
+        website: p.profile.website || "",
+        primary_color: p.profile.primary_color || "",
+        secondary_color: p.profile.secondary_color || "",
+        accent_color: p.profile.accent_color || "",
+        logo_url: p.profile.logo_url || "",
+      };
+      setProfile((cur) => mergeStrict(cur, incomingProfile));
     }
-    if (typeof prefill.contact_email === "string" && prefill.contact_email.trim()) {
-      setContactEmail((cur) => cur.trim() ? cur : prefill.contact_email!.trim());
-    }
-    if (prefill.profile) {
-      setProfile((p) => mergeStrict(p, prefill.profile as Partial<BusinessProfile>));
-    }
-    if (prefill.owner_account) {
-      setAccount((a) => mergeStrict(a, prefill.owner_account as Partial<OwnerAccount>));
+
+    // Owner / account — backend returns {first_name,last_name,display_name,
+    // billing_email} under prefill.owner. Map onto OwnerAccount.
+    if (p.owner) {
+      const incomingOwner: Partial<OwnerAccount> = {
+        first_name: p.owner.first_name || "",
+        last_name: p.owner.last_name || "",
+        display_name: p.owner.display_name || "",
+        billing_email: p.owner.billing_email || "",
+      };
+      setAccount((cur) => mergeStrict(cur, incomingOwner));
     }
     // arion_integrations is read separately in step 2+ via
     // /sites/:id/integrations-status; no need to merge it into wizard state.
   };
 
+  // FIX (2026-06-23) — founder self-onboard prefill.
+  // Fire prefill on wizard open (Option C from the diagnosis): when the
+  // founder enters the wizard, hit /admin/onboard-client/onboarding-progress
+  // with NO tenant_id query param. The backend defaults to the authenticated
+  // caller's tenant (the founder tenant), which already has business name,
+  // address, brand colors, phone, etc. populated in core.tenants. This
+  // covers Brandon's "onboard myself / my own tenant" path AND any future IA
+  // staff who run the wizard for the founder tenant. Empty values do NOT
+  // overwrite anything the founder has typed (mergeStrict drops them) — per
+  // the standing rule from feedback_2026_06_17_lessons.md.
+  useEffect(() => {
+    if (view !== "wizard") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await get<PrefillEnvelope>("/admin/onboard-client/onboarding-progress");
+        if (!cancelled && r) applyPrefillToV2State(r);
+      } catch (e) {
+        // Defensive — never block the wizard on prefill.
+        // eslint-disable-next-line no-console
+        console.warn("[wizard] self-prefill failed (non-fatal)", e);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+
   const onContinueFromStep1 = async () => {
     if (customerMode === "existing" && selectedExistingTenantId) {
       try {
-        const r = await get<PrefillResponse>(
+        const r = await get<PrefillEnvelope>(
           `/admin/onboard-client/onboarding-progress?tenant_id=${encodeURIComponent(selectedExistingTenantId)}`
         );
         if (r) applyPrefillToV2State(r);
