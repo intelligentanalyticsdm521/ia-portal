@@ -76,7 +76,7 @@ interface OnboardingState {
   owner: OwnerAccount;
   arion: {
     // Domain
-    domain_choice: "byo" | "purchase" | "subdomain" | "";
+    domain_choice: "byo" | "purchase" | "subdomain" | "hostinger_existing" | "migrate" | "";
     domain: string;
     has_existing_website: boolean;
     // Questionnaire (drives WP template + AI copy + SE Ranking seeds)
@@ -806,15 +806,28 @@ function ArionSection({ v, setV, tenantId }: { v: OnboardingState["arion"]; setV
   // has a row for this tenant. Probe on mount; if found, render a compact
   // "Already provisioned" panel with an Edit affordance instead of the full
   // questionnaire.
+  //
+  // FIX (2026-06-23) — the previous `fetch('/api/v1/arion/sites?...')` call
+  // was a RELATIVE URL. The Static Web App's staticwebapp.config.json has no
+  // rewrite for /api/v1/arion/*, so the request silently fell through to the
+  // SPA index.html and returned HTML — not JSON. `res.json()` threw, the
+  // catch swallowed it, and the "already provisioned" check never fired.
+  // arion.site is at a DIFFERENT Azure App Service (ARION_API_BASE_URL).
+  // Switch to the full URL + bearer-token pattern this file already uses
+  // for arionConnectGoogle / arionCreateSeoProject.
   const [existingSite, setExistingSite] = useState<{ site_id: string; domain: string | null } | null>(null);
   const [siteCheckLoading, setSiteCheckLoading] = useState(true);
   const [forceEdit, setForceEdit] = useState(false);
+  const { getToken: getArionToken } = useAccessToken();
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/v1/arion/sites?tenant_id=${encodeURIComponent(tenantId)}&primary=1`, { credentials: "include" });
+        const token = await getArionToken();
+        const res = await fetch(`${ARION_API_BASE_URL}/api/v1/arion/sites?tenant_id=${encodeURIComponent(tenantId)}&primary=1`, {
+          headers: { Authorization: `Bearer ${token.accessToken}` },
+        });
         const j = await res.json().catch(() => null);
         const site = j?.data?.[0];
         if (!cancelled && site?.site_id) {
@@ -824,7 +837,7 @@ function ArionSection({ v, setV, tenantId }: { v: OnboardingState["arion"]; setV
       finally { if (!cancelled) setSiteCheckLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [tenantId]);
+  }, [tenantId, getArionToken]);
 
   const toggleService = (i: number, val: string) => {
     const next = [...v.services]; next[i] = val; setV({ ...v, services: next });
@@ -872,14 +885,26 @@ function ArionSection({ v, setV, tenantId }: { v: OnboardingState["arion"]; setV
       )}
       <p className="text-xs text-slate-500">Domain + the questionnaire that drives the WP starter template, AI-generated copy, brand voice, and SE Ranking seeds. Skip anything you don't know.</p>
 
-      {/* Domain */}
+      {/* Domain — 5 options per Brandon 2026-06-23 ask:
+            byo               = you already own a domain elsewhere, point DNS at us
+            hostinger_existing= you already own a domain on Hostinger (we connect via API, no DNS hop)
+            migrate           = you have an existing WordPress site to migrate IN to ARION
+            purchase          = buy a brand-new domain through our Hostinger pipeline
+            subdomain         = use a free *.ia-dm.com subdomain to get started fast */}
       <div>
         <label className="block text-xs font-semibold text-slate-700 mb-2">Domain</label>
         <div className="grid grid-cols-3 gap-2">
-          {([["byo","Use existing domain"],["purchase","Buy a new domain"],["subdomain","Use a free *.ia-dm.com subdomain"]] as const).map(([id, label]) => (
+          {([
+            ["byo",                "Use an existing domain (DNS hop)",                "Already own a domain anywhere — we'll give you DNS records."],
+            ["hostinger_existing", "Connect a domain on my Hostinger",                "We'll auto-connect a domain already on your Hostinger account."],
+            ["migrate",            "Migrate an existing WordPress site",              "Move a live WP site INTO ARION — we'll copy content + redirect."],
+            ["purchase",           "Buy a new domain",                                "We'll register a new domain via Hostinger as part of provisioning."],
+            ["subdomain",          "Use a free *.ia-dm.com subdomain",                "Get started fast — no registrar, no DNS, no waiting."],
+          ] as const).map(([id, label, desc]) => (
             <button key={id} type="button" onClick={() => setV({ ...v, domain_choice: id })}
               className={`p-3 rounded-lg border-2 text-left text-xs ${v.domain_choice === id ? "border-sky-500 bg-sky-50" : "border-slate-200 bg-white"}`}>
-              {label}
+              <div className="font-semibold">{label}</div>
+              <div className="text-[10px] text-slate-500 mt-1 leading-tight">{desc}</div>
             </button>
           ))}
         </div>
@@ -894,6 +919,18 @@ function ArionSection({ v, setV, tenantId }: { v: OnboardingState["arion"]; setV
                   onChange={(e) => setV({ ...v, has_existing_website: e.target.checked })} />
                 I already have a working WordPress site at this domain (install the IA Plugin only — don't import a template or copy)
               </label>
+            )}
+            {v.domain_choice === "hostinger_existing" && (
+              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <b>Note:</b> the back-end auto-connect via Hostinger API is queued for build (#246).
+                For now this routes through the same provisioning as <code>byo</code> but flagged so we surface the right post-setup instructions.
+              </div>
+            )}
+            {v.domain_choice === "migrate" && (
+              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <b>Note:</b> automated WP migration tooling is queued for build. Selecting this flags the tenant for a guided manual migration —
+                IA Consulting will reach out within 1 business day to schedule the cutover.
+              </div>
             )}
           </div>
         )}
@@ -1003,12 +1040,19 @@ function ArionIntegrationsSection({ v, setV, tenantId }: {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/v1/arion/sites?tenant_id=${encodeURIComponent(tenantId)}&primary=1`, { credentials: "include" });
+        // FIX (2026-06-23) — same bug as ArionSection: /api/v1/arion/* is
+        // NOT proxied by the Portal SWA, so the relative URL fell through to
+        // index.html and returned SPA HTML. siteId stayed null and the
+        // section rendered the "No ARION site detected yet" amber error
+        // even though arion.site has a row. Switch to the full URL + bearer.
+        const token = await getToken();
+        const auth = { headers: { Authorization: `Bearer ${token.accessToken}` } };
+        const res = await fetch(`${ARION_API_BASE_URL}/api/v1/arion/sites?tenant_id=${encodeURIComponent(tenantId)}&primary=1`, auth);
         const j = await res.json().catch(() => null);
         const id = j?.data?.[0]?.site_id || j?.data?.[0]?.id || null;
         if (!cancelled) setSiteId(id);
         if (id) {
-          const statusRes = await fetch(`/api/v1/arion/sites/${id}/integrations-status`, { credentials: "include" });
+          const statusRes = await fetch(`${ARION_API_BASE_URL}/api/v1/arion/sites/${id}/integrations-status`, auth);
           const status = await statusRes.json().catch(() => null);
           if (!cancelled && status?.data) {
             setV({
