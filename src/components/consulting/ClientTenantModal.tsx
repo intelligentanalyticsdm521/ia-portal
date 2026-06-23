@@ -25,7 +25,7 @@
 // API scope: every fetch from inside this modal sends x-tenant-key /
 // x-tenant-id = the client's tenant_id (via ClientTenantContext). Audit
 // columns server-side stamp the founder's identity.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { IadmModal, CORE_BLUE, PRODUCT_ACCENT } from "../IadmModal";
 import { ClientTenantProvider, type ClientTenantValue } from "../../lib/clientTenantContext";
 import { useOliverApi } from "../../hooks/useOliverApi";
@@ -36,6 +36,10 @@ import { LogoPicker } from "../oliver/LogoPicker";
 import { PhoneInput } from "../PhoneInput";
 import { Building2, CheckCircle2, ExternalLink } from "lucide-react";
 import { mergeStrict } from "../../lib/mergeStrict";
+import { createRunner } from "../../lib/onboardingRunner/runner";
+import { buildArionSteps, type ArionDomainPath } from "../../lib/onboardingRunner/arionSteps";
+import type { StepRecord, Runner } from "../../lib/onboardingRunner/types";
+import OnboardingRunnerProgress from "../onboarding/OnboardingRunnerProgress";
 
 const ARION_API_BASE_URL = (import.meta.env.VITE_ARION_API_BASE_URL as string)
   || "https://app-arion-api-prod-e6fuc9gzd8f3hqfe.centralus-01.azurewebsites.net";
@@ -499,6 +503,9 @@ function SectionBody({ section, state, setState, api, accent, tenantId }: {
     case "owner":                  return <OwnerSection owner={state.owner} setOwner={(o) => setState((s) => ({ ...s, owner: o }))} />;
     case "lifecycle":              return <LifecycleSection v={state.lifecycle} setV={(v) => setState((s) => ({ ...s, lifecycle: v }))} />;
     case "arion":                  return <ArionSection v={state.arion} setV={(v) => setState((s) => ({ ...s, arion: v }))} tenantId={tenantId} />;
+    // arion_integrations also uses the same ArionSection runner status if
+    // a run is in-flight; the integrations section is the natural next-
+    // step after the runner finishes, so we keep that separate.
     case "arion_integrations":     return <ArionIntegrationsSection v={state.arion_integrations} setV={(v) => setState((s) => ({ ...s, arion_integrations: v }))} tenantId={tenantId} />;
     case "spark":                  return <SparkSection v={state.spark} setV={(v) => setState((s) => ({ ...s, spark: v }))} />;
     case "spark_welcome_email":    return <SparkWelcomeEmailSection v={state.spark_welcome_email} setV={(v) => setState((s) => ({ ...s, spark_welcome_email: v }))} profile={state.profile} owner={state.owner} />;
@@ -833,6 +840,69 @@ const ARION_VOICE_OPTIONS = BRAND_VOICE_CATALOG.map(v => v.key);
 const ARION_STYLE_OPTIONS = ["Modern", "Classic", "Minimal", "Bold"] as const;
 const ARION_PAGE_OPTIONS = ["Home", "About", "Services", "Contact", "Blog", "Shop", "Portfolio", "FAQ"];
 
+/* ──────────────────────────────────────────────────────────────────────
+ * Server-side mirror — persist every OnboardingRunner StepRecord into
+ * core.onboarding_step_status via the founder oliver-api endpoint. Best
+ * effort: a failed POST never blocks the engine. Run id is the same UUID
+ * the engine generates so the SQL row is stable across browser refresh.
+ * ────────────────────────────────────────────────────────────────────── */
+const OLIVER_API_BASE_URL = (import.meta.env.VITE_OLIVER_API_BASE_URL as string)
+  || "https://app-oliver-api-prod.azurewebsites.net";
+
+async function persistStepStatus(
+  bearer: string,
+  tenant_id: string,
+  run_id: string | undefined,
+  rec: StepRecord,
+): Promise<void> {
+  if (!bearer || !run_id) return;
+  try {
+    await fetch(`${OLIVER_API_BASE_URL}/admin/onboarding-runner/upsert-step`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${bearer}`,
+        "x-tenant-key": tenant_id,
+      },
+      body: JSON.stringify({
+        tenant_id,
+        run_id,
+        step_id: rec.step_id,
+        status: rec.status,
+        attempt_count: rec.attempt_count,
+        started_at: rec.started_at,
+        completed_at: rec.completed_at,
+        error: rec.error,
+        evidence: rec.evidence,
+      }),
+    });
+  } catch {
+    /* never block the engine on a status mirror failure */
+  }
+}
+
+async function notifyFounderStuck(bearer: string, tenant_id: string, rec: StepRecord): Promise<void> {
+  if (!bearer) return;
+  try {
+    await fetch(`${OLIVER_API_BASE_URL}/admin/onboarding-runner/notify-stuck`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${bearer}`,
+        "x-tenant-key": tenant_id,
+      },
+      body: JSON.stringify({
+        tenant_id,
+        step_id: rec.step_id,
+        attempt_count: rec.attempt_count,
+        error: rec.error || null,
+      }),
+    });
+  } catch {
+    /* notification is fire-and-forget */
+  }
+}
+
 function ArionSection({ v, setV, tenantId }: { v: OnboardingState["arion"]; setV: (v: OnboardingState["arion"]) => void; tenantId: string }) {
   // 2026-06-21 — skip-if-provisioned. Brandon hit this himself:
   // ARION onboarding shouldn't re-prompt for site setup if arion.site already
@@ -848,10 +918,23 @@ function ArionSection({ v, setV, tenantId }: { v: OnboardingState["arion"]; setV
   // arion.site is at a DIFFERENT Azure App Service (ARION_API_BASE_URL).
   // Switch to the full URL + bearer-token pattern this file already uses
   // for arionConnectGoogle / arionCreateSeoProject.
-  const [existingSite, setExistingSite] = useState<{ site_id: string; domain: string | null } | null>(null);
+  const [existingSite, setExistingSite] = useState<{ site_id: string; domain: string | null; seoAddonTier: string | null } | null>(null);
   const [siteCheckLoading, setSiteCheckLoading] = useState(true);
   const [forceEdit, setForceEdit] = useState(false);
   const { getToken: getArionToken } = useAccessToken();
+
+  // OnboardingRunner state — driven by Start ARION Setup button below.
+  // The runner is created lazily on first launch so domain_choice +
+  // questionnaire state is captured at click time, not mount time.
+  const [runnerRecords, setRunnerRecords] = useState<StepRecord[]>([]);
+  const [runnerCurrentStep, setRunnerCurrentStep] = useState<string | null>(null);
+  const [runnerStarted, setRunnerStarted] = useState(false);
+  const [runnerComplete, setRunnerComplete] = useState(false);
+  const [runnerError, setRunnerError] = useState<string | null>(null);
+  const runnerRef = useRef<Runner | null>(null);
+  const stepCapsRef = useRef<Record<string, number>>({});
+  const skipAllowedRef = useRef<string[]>([]);
+  const fallbackLabelsRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -864,13 +947,131 @@ function ArionSection({ v, setV, tenantId }: { v: OnboardingState["arion"]; setV
         const j = await res.json().catch(() => null);
         const site = j?.data?.[0];
         if (!cancelled && site?.site_id) {
-          setExistingSite({ site_id: site.site_id, domain: site.domain || site.primary_domain || null });
+          setExistingSite({
+            site_id: site.site_id,
+            domain: site.domain || site.primary_domain || null,
+            seoAddonTier: site.seoAddonTier || site.seo_addon_tier || null,
+          });
         }
       } catch { /* fall through to questionnaire */ }
       finally { if (!cancelled) setSiteCheckLoading(false); }
     })();
     return () => { cancelled = true; };
   }, [tenantId, getArionToken]);
+
+  // Resolve has_seo_addon — Path A: existing arion.site row already has
+  // a seoAddonTier. Path B: tenant just bought; the catalog tier sits on
+  // the saved onboarding state where the wizard captured it. Default to
+  // true when an existing site has the column populated.
+  const hasSeoAddon = !!(existingSite?.seoAddonTier);
+
+  /* ────────────────────────────────────────────────────────────────
+   * launchRunner — spawns OnboardingRunner with the resolved step list
+   * for the picked domain_path. Wired below the questionnaire form so
+   * the user clicks "Start ARION setup" once their answers are stable.
+   * ────────────────────────────────────────────────────────────────── */
+  async function launchRunner() {
+    if (runnerStarted || !v.domain_choice) return;
+    setRunnerStarted(true);
+    setRunnerError(null);
+    setRunnerComplete(false);
+
+    let bearer = "";
+    try {
+      const t = await getArionToken();
+      bearer = t.accessToken;
+    } catch (e) {
+      setRunnerError(`Could not get auth token: ${(e as Error).message}`);
+      setRunnerStarted(false);
+      return;
+    }
+
+    const steps = buildArionSteps(v.domain_choice as ArionDomainPath, hasSeoAddon);
+    // Cache per-step caps + skip-allowed list for the progress UI.
+    stepCapsRef.current = Object.fromEntries(steps.map((s) => [s.id, s.max_retries]));
+    skipAllowedRef.current = steps.filter((s) => s.on_failure === "skip_allowed").map((s) => s.id);
+    fallbackLabelsRef.current = Object.fromEntries(steps.map((s) => [s.id, s.label_user_facing]));
+
+    const businessProfile: Record<string, unknown> = {
+      site_id: existingSite?.site_id || null,
+      bearer_token: bearer,
+      domain: v.domain.trim(),
+      domain_path: v.domain_choice,
+      questionnaire: {
+        businessName: v.industry ? undefined : undefined, // sourced from outer profile when posted server-side
+        industry: v.industry,
+        description: v.description,
+        services: v.services.filter(Boolean),
+        target_audience: v.target_audience,
+        location: v.location,
+        brand_voice: v.brand_voice,
+        brand_voice_custom: v.brand_voice_custom,
+        style_preference: v.style_preference,
+        pages: v.pages,
+        tagline: v.tagline,
+        has_existing_website: v.has_existing_website,
+      },
+    };
+
+    const runner = createRunner(
+      {
+        tenant_id: tenantId,
+        product: "arion",
+        cart_items: [{ product: "arion" }],
+        business_profile: businessProfile,
+        callbacks: {
+          on_step_change: (rec) => {
+            setRunnerRecords((prev) => {
+              const idx = prev.findIndex((r) => r.step_id === rec.step_id);
+              if (idx === -1) return [...prev, rec];
+              const next = prev.slice();
+              next[idx] = rec;
+              return next;
+            });
+            // Drive the "current step" indicator off the latest non-
+            // terminal step.
+            if (rec.status === "running" || rec.status === "waiting" || rec.status === "verifying") {
+              setRunnerCurrentStep(rec.step_id);
+            }
+            // Persistence side-channel: mirror every status transition
+            // into core.onboarding_step_status via the founder-only
+            // oliver-api endpoint. Best-effort — never blocks engine.
+            void persistStepStatus(bearer, tenantId, runner ? runner.snapshot()[0]?.evidence?.run_id as string | undefined : undefined, rec);
+            // Founder notification side-channel: when a step lands in
+            // failed_server_busy, ping the ACS-backed notify endpoint so
+            // Brandon gets the email Brandon decision #3 promised.
+            if (rec.status === "failed_server_busy") {
+              void notifyFounderStuck(bearer, tenantId, rec);
+            }
+          },
+          on_run_complete: (records) => {
+            const allDone = records.every((r) => r.status === "done" || r.status === "skipped");
+            setRunnerComplete(allDone);
+            setRunnerCurrentStep(null);
+          },
+        },
+      },
+      steps,
+    );
+    runnerRef.current = runner;
+    // Seed initial pending records so the UI renders the timeline
+    // immediately (engine emits on transition, so before the first
+    // action() there are no records yet).
+    setRunnerRecords(steps.map((s) => ({ step_id: s.id, status: "pending" as const, attempt_count: 0 })));
+
+    try {
+      await runner.start();
+    } catch (e) {
+      setRunnerError((e as Error).message || "Runner threw");
+    }
+  }
+
+  function handleRetry(step_id: string) {
+    void runnerRef.current?.retry(step_id);
+  }
+  function handleSkip(step_id: string) {
+    runnerRef.current?.skip(step_id);
+  }
 
   const toggleService = (i: number, val: string) => {
     const next = [...v.services]; next[i] = val; setV({ ...v, services: next });
@@ -1043,6 +1244,74 @@ function ArionSection({ v, setV, tenantId }: { v: OnboardingState["arion"]; setV
 
       <Field label="Tagline (optional)" value={v.tagline} onChange={(t) => setV({ ...v, tagline: t })}
         placeholder="Where Marshalltown rolls together since 1998" hint="Goes in the hero, used by the AI copy generator" />
+
+      {/* ── OnboardingRunner launch panel ─────────────────────────────
+            The runner replaces the old "save & hope" handoff with a live
+            sequential build that shows the customer exactly what's
+            happening. Save & Continue (in the modal footer) only advances
+            to the next section AFTER the runner reports complete, OR
+            after the user explicitly clicks "Continue without finishing"
+            in the busy panel.
+
+            Runner step list depends on:
+              • v.domain_choice  (5 paths — purchase / subdomain / byo /
+                                  hostinger_existing / migrate)
+              • hasSeoAddon      (derived from existing site row OR cart)
+            See lib/onboardingRunner/arionSteps.ts for the full matrix. */}
+      <div className="mt-4 rounded-lg border-2 border-sky-200 bg-sky-50 p-4">
+        <div className="flex items-start gap-3">
+          <Building2 className="h-5 w-5 text-sky-700 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-sky-900">Start ARION setup</div>
+            <div className="text-xs text-sky-800 mt-1">
+              {v.domain_choice === "migrate" && (
+                <>We'll log your business details and flag your tenant for a guided migration — consulting reaches out within 1 business day.</>
+              )}
+              {(v.domain_choice === "byo" || v.domain_choice === "hostinger_existing") && (
+                <>We'll install the IA Plugin on your existing WordPress site, set up your account, and connect Google + Bing.</>
+              )}
+              {(v.domain_choice === "purchase" || v.domain_choice === "subdomain") && (
+                <>We'll spin up your WordPress site, install tools, build your homepage with AI{hasSeoAddon ? ", configure SEO" : ""}, and connect Google + Bing.</>
+              )}
+              {!v.domain_choice && <>Pick a domain option above first, then we'll walk through setup live.</>}
+            </div>
+
+            {runnerError && (
+              <div className="mt-2 text-xs text-rose-700">Runner error: {runnerError}</div>
+            )}
+
+            {!runnerStarted && !runnerComplete && (
+              <button
+                type="button"
+                onClick={launchRunner}
+                disabled={!v.domain_choice}
+                className="mt-3 px-4 py-2 rounded-lg bg-sky-600 text-white text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-sky-700"
+              >
+                Start ARION setup →
+              </button>
+            )}
+
+            {runnerStarted && runnerRecords.length > 0 && (
+              <div className="mt-4">
+                <OnboardingRunnerProgress
+                  steps={runnerRecords}
+                  current_step_id={runnerCurrentStep}
+                  max_retries_by_step={stepCapsRef.current}
+                  skip_allowed_step_ids={skipAllowedRef.current}
+                  fallback_labels_by_step={fallbackLabelsRef.current}
+                  onRetry={handleRetry}
+                  onSkip={handleSkip}
+                />
+                {runnerComplete && (
+                  <div className="mt-3 rounded-md bg-emerald-100 border border-emerald-300 px-3 py-2 text-xs text-emerald-900">
+                    All ARION setup steps done. Click Save & Continue below to move to the next section.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -28,15 +28,22 @@ import type { StepRecord } from "./types";
 
 export const STEP_LABELS: Readonly<Record<string, string>> = Object.freeze({
   // ── ARION ──────────────────────────────────────────────────────────
+  arion_questionnaire:         "Saving your business details",
   arion_hostinger_provision:   "Spinning up your WordPress site",
   arion_plugin_swap:           "Installing your tools",
+  arion_create_wp_user:        "Creating your login",
+  arion_ai_website_builder:    "Designing your website",
   arion_seo_project_create:    "Setting up your SEO project",
+  arion_seo_keywords_seed:     "Seeding your keywords",
+  arion_seo_competitors_seed:  "Linking your competitors",
+  arion_seo_configure_tier:    "Tuning your SEO settings",
   arion_google_oauth:          "Talking with Google",
   arion_bing_oauth:            "Connecting to Bing",
   arion_gbp_connect:           "Linking your business profile",
   arion_ga4_connect:           "Connecting your analytics",
   arion_gsc_connect:           "Connecting your search data",
   arion_market_monitor_seed:   "Picking your competitors",
+  arion_mark_for_consulting:   "Queuing your migration with consulting",
 
   // ── OLIVER ─────────────────────────────────────────────────────────
   oliver_stripe_connect:       "Setting up payments",
