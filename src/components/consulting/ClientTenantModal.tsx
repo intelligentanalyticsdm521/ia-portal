@@ -252,6 +252,219 @@ function accentFor(section: Section): string {
   return (PRODUCT_ACCENT as Record<string, string>)[section.product] || CORE_BLUE;
 }
 
+// ─── ARION runner controller ─────────────────────────────────────────────
+//
+// 2026-06-23 — runner state lifted out of ArionSection so:
+//   1. Save & Continue on Step 4 (ArionSection) can launch the runner BEFORE
+//      advancing to Step 5 (ArionIntegrationsSection). No separate blue
+//      "Start ARION setup" button — the wizard footer is the trigger.
+//   2. Step 5 can render OnboardingRunnerProgress inline while the runner is
+//      still ticking, replacing the legacy "No ARION site detected yet"
+//      yellow callout that used to appear because the runner never started.
+//   3. persist("continue") on Step 5 can block advance until the runner
+//      reaches a terminal state (every step done/skipped, OR at least one
+//      step in failed_server_busy — meaning the founder has been pinged and
+//      the user can choose to bail).
+//
+// The migrate path is the only one that does NOT auto-launch the runner —
+// per Brandon's lock 2026-06-23, migration is consulting-only (flag the
+// tenant, show handoff copy, no provisioning). ArionIntegrationsSection
+// recognises domain_choice === "migrate" and shows the handoff panel
+// instead of the runner UI.
+export interface ArionRunnerController {
+  // Inputs the ArionSection probes & writes up so the controller can launch.
+  setSiteContext: (ctx: { site_id: string | null; has_seo_addon: boolean }) => void;
+  // The single entry point — called from persist("continue") on Step 4.
+  // Returns immediately; runner.start() runs in the background and pushes
+  // status via the on_step_change callback.
+  launchRunner: (args: {
+    arion: OnboardingState["arion"];
+    profile: OnboardingState["profile"];
+  }) => Promise<void>;
+  // Read-only state — consumed by both ArionSection (for the inline progress
+  // panel when the user navigates back to Step 4 mid-run) and by
+  // ArionIntegrationsSection (the natural home of the live progress UI).
+  runnerStarted: boolean;
+  runnerComplete: boolean;
+  runnerError: string | null;
+  runnerRecords: StepRecord[];
+  runnerCurrentStep: string | null;
+  stepCaps: Record<string, number>;
+  skipAllowedStepIds: string[];
+  fallbackLabels: Record<string, string>;
+  handleRetry: (step_id: string) => void;
+  handleSkip: (step_id: string) => void;
+  /** Has the runner reached a state where Save & Continue from Step 5 is
+   *  allowed? True when every step is done/skipped OR at least one step is
+   *  in failed_server_busy (founder pinged, user can bail). False while any
+   *  step is still pending/running/waiting/verifying/failed_retrying. */
+  isAtTerminalState: boolean;
+}
+
+function useArionRunner(tenantId: string): ArionRunnerController {
+  const { getToken: getArionToken } = useAccessToken();
+
+  const [siteCtx, setSiteCtx] = useState<{ site_id: string | null; has_seo_addon: boolean }>({
+    site_id: null,
+    has_seo_addon: false,
+  });
+  const [runnerStarted, setRunnerStarted] = useState(false);
+  const [runnerComplete, setRunnerComplete] = useState(false);
+  const [runnerError, setRunnerError] = useState<string | null>(null);
+  const [runnerRecords, setRunnerRecords] = useState<StepRecord[]>([]);
+  const [runnerCurrentStep, setRunnerCurrentStep] = useState<string | null>(null);
+  const runnerRef = useRef<Runner | null>(null);
+  const stepCapsRef = useRef<Record<string, number>>({});
+  const skipAllowedRef = useRef<string[]>([]);
+  const fallbackLabelsRef = useRef<Record<string, string>>({});
+  // Mirror site context into a ref so launchRunner picks the latest value
+  // even when it's invoked from a parent persist() handler whose closure
+  // captured an older render.
+  const siteCtxRef = useRef(siteCtx);
+  siteCtxRef.current = siteCtx;
+
+  const setSiteContext = (ctx: { site_id: string | null; has_seo_addon: boolean }) => {
+    setSiteCtx(ctx);
+  };
+
+  async function launchRunner(args: { arion: OnboardingState["arion"]; profile: OnboardingState["profile"] }): Promise<void> {
+    const { arion: v, profile } = args;
+    if (runnerStarted || !v.domain_choice) return;
+    // Migrate path never auto-launches; the parent's persist() also guards
+    // this, but defending here makes the controller safe to call anywhere.
+    if (v.domain_choice === "migrate") return;
+
+    setRunnerStarted(true);
+    setRunnerError(null);
+    setRunnerComplete(false);
+
+    let bearer = "";
+    try {
+      const t = await getArionToken();
+      bearer = t.accessToken;
+    } catch (e) {
+      setRunnerError(`Could not get auth token: ${(e as Error).message}`);
+      setRunnerStarted(false);
+      return;
+    }
+
+    const steps = buildArionSteps(v.domain_choice as ArionDomainPath, siteCtxRef.current.has_seo_addon);
+    stepCapsRef.current = Object.fromEntries(steps.map((s) => [s.id, s.max_retries]));
+    skipAllowedRef.current = steps.filter((s) => s.on_failure === "skip_allowed").map((s) => s.id);
+    fallbackLabelsRef.current = Object.fromEntries(steps.map((s) => [s.id, s.label_user_facing]));
+
+    const businessProfile: Record<string, unknown> = {
+      site_id: siteCtxRef.current.site_id,
+      bearer_token: bearer,
+      domain: v.domain.trim(),
+      domain_path: v.domain_choice,
+      google_setup_answer: "not_sure",
+      bing_setup_answer: "not_sure",
+      contact_email: (profile.primary_contact_email || "").trim() || null,
+      business_name: (profile.business_name || "").trim() || null,
+      questionnaire: {
+        businessName: profile.business_name || null,
+        industry: v.industry,
+        description: v.description,
+        services: v.services.filter(Boolean),
+        target_audience: v.target_audience,
+        location: v.location,
+        brand_voice: v.brand_voice,
+        brand_voice_custom: v.brand_voice_custom,
+        style_preference: v.style_preference,
+        pages: v.pages,
+        tagline: v.tagline,
+        has_existing_website: v.has_existing_website,
+      },
+    };
+
+    const runner = createRunner(
+      {
+        tenant_id: tenantId,
+        product: "arion",
+        cart_items: [{ product: "arion" }],
+        business_profile: businessProfile,
+        callbacks: {
+          on_step_change: (rec) => {
+            setRunnerRecords((prev) => {
+              const idx = prev.findIndex((r) => r.step_id === rec.step_id);
+              if (idx === -1) return [...prev, rec];
+              const next = prev.slice();
+              next[idx] = rec;
+              return next;
+            });
+            if (rec.status === "running" || rec.status === "waiting" || rec.status === "verifying") {
+              setRunnerCurrentStep(rec.step_id);
+            }
+            void persistStepStatus(bearer, tenantId, runner ? runner.snapshot()[0]?.evidence?.run_id as string | undefined : undefined, rec);
+            if (rec.status === "failed_server_busy") {
+              void notifyFounderStuck(bearer, tenantId, rec);
+            }
+          },
+          on_run_complete: (records) => {
+            const allDone = records.every((r) => r.status === "done" || r.status === "skipped");
+            setRunnerComplete(allDone);
+            setRunnerCurrentStep(null);
+          },
+        },
+      },
+      steps,
+    );
+    runnerRef.current = runner;
+    setRunnerRecords(steps.map((s) => ({ step_id: s.id, status: "pending" as const, attempt_count: 0 })));
+
+    // Fire-and-forget — the engine pushes status via on_step_change. We
+    // do NOT await here because Save & Continue must advance to Step 5
+    // immediately so the user sees the progress UI rendering live.
+    void (async () => {
+      try {
+        await runner.start();
+      } catch (e) {
+        setRunnerError((e as Error).message || "Runner threw");
+      }
+    })();
+  }
+
+  function handleRetry(step_id: string) {
+    void runnerRef.current?.retry(step_id);
+  }
+  function handleSkip(step_id: string) {
+    runnerRef.current?.skip(step_id);
+  }
+
+  // Terminal-state predicate — drives whether Save & Continue is enabled on
+  // Step 5. Allowed when every step is in a terminal status (done/skipped)
+  // OR at least one step is in failed_server_busy (the user has been told
+  // we are notified; they can bail out manually). Blocked while any step
+  // is still pending/running/waiting/verifying/failed_retrying — the user
+  // must use Save & Close to bail mid-run.
+  const isAtTerminalState = (() => {
+    if (!runnerStarted) return true; // nothing in flight — don't block
+    if (runnerComplete) return true;
+    if (runnerRecords.length === 0) return false; // started but no records yet
+    const allTerminal = runnerRecords.every((r) => r.status === "done" || r.status === "skipped");
+    if (allTerminal) return true;
+    const anyServerBusy = runnerRecords.some((r) => r.status === "failed_server_busy");
+    return anyServerBusy;
+  })();
+
+  return {
+    setSiteContext,
+    launchRunner,
+    runnerStarted,
+    runnerComplete,
+    runnerError,
+    runnerRecords,
+    runnerCurrentStep,
+    stepCaps: stepCapsRef.current,
+    skipAllowedStepIds: skipAllowedRef.current,
+    fallbackLabels: fallbackLabelsRef.current,
+    handleRetry,
+    handleSkip,
+    isAtTerminalState,
+  };
+}
+
 // ─── Modal shell ─────────────────────────────────────────────────────────
 
 export interface ClientTenantModalProps {
@@ -300,10 +513,27 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // ARION runner — lifted from ArionSection so persist("continue") can
+  // launch it on Save & Continue from Step 4, and ArionIntegrationsSection
+  // can render its live progress on Step 5. See useArionRunner JSDoc.
+  const arionRunner = useArionRunner(tenantId);
+
   const current = sections[stepIdx];
   const accent = accentFor(current);
   const isFirst = stepIdx === 0;
   const isLast = stepIdx === sections.length - 1;
+
+  // Block Save & Continue when the user is in the integrations section AND
+  // the ARION runner is mid-flight. Migrate path is exempt — it never
+  // launches the runner. The user can still hit Save & Close to bail (the
+  // runner keeps ticking in the background until the modal unmounts; we'll
+  // wire resume-from-saved-state in a follow-up — for now Save & Close
+  // pauses the wizard and the next opener picks up at the same step).
+  const runnerBlocksAdvance =
+    current.id === "arion_integrations" &&
+    state.arion.domain_choice !== "migrate" &&
+    arionRunner.runnerStarted &&
+    !arionRunner.isAtTerminalState;
 
   // Hydrate from any saved progress
   useEffect(() => {
@@ -379,6 +609,13 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
   }, [tenantId, getFounder]);
 
   async function persist(mode: "continue" | "close" | "finish") {
+    // Block Save & Continue past the integrations section while the runner
+    // is still ticking. Save & Close + Save & Finish always work (Close
+    // pauses the wizard, Finish kicks off the finish-onboarding fan-out).
+    if (mode === "continue" && runnerBlocksAdvance) {
+      setErr("ARION setup is still running — please wait, or use Save & Close to come back later.");
+      return;
+    }
     setSaving(true); setErr(null);
     try {
       // Per-section canonical-table writes (G1 confirmed: save then continue).
@@ -397,6 +634,23 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
       } else if (mode === "close") {
         onClose();
       } else {
+        // Auto-launch the ARION runner when leaving Step 4 (ArionSection)
+        // for Step 5 (ArionIntegrationsSection). No separate blue button —
+        // Save & Continue IS the trigger per Brandon 2026-06-23.
+        //
+        // Migrate path is the only one that doesn't launch — migration is
+        // consulting-only and the integrations section detects it and
+        // shows the handoff copy instead of the runner.
+        if (
+          current.id === "arion" &&
+          state.arion.domain_choice &&
+          state.arion.domain_choice !== "migrate" &&
+          !arionRunner.runnerStarted
+        ) {
+          // Fire-and-forget — the runner reports progress through the
+          // controller's state so the next-section render picks it up.
+          void arionRunner.launchRunner({ arion: state.arion, profile: state.profile });
+        }
         setStepIdx((i) => Math.min(i + 1, sections.length - 1));
       }
     } catch (e) {
@@ -443,11 +697,18 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
                 {loading ? "Loading…" : saving ? "Finishing…" : "Save & Finish (send welcome) →"}
               </button>
             ) : (
-              <button onClick={() => persist("continue")} disabled={saving || loading}
+              <button onClick={() => persist("continue")} disabled={saving || loading || runnerBlocksAdvance}
                 className="px-4 py-2 rounded-lg text-white font-semibold text-sm disabled:opacity-50"
                 style={{ background: accent }}
-                title={loading ? "Loading existing data — please wait" : undefined}>
-                {loading ? "Loading…" : saving ? "Saving…" : "Save & Continue →"}
+                title={
+                  loading ? "Loading existing data — please wait"
+                  : runnerBlocksAdvance ? "ARION setup is still running — please wait, or use Save & Close to come back later"
+                  : undefined
+                }>
+                {loading ? "Loading…"
+                 : saving ? "Saving…"
+                 : runnerBlocksAdvance ? "ARION setup running…"
+                 : "Save & Continue →"}
               </button>
             )}
           </div>
@@ -460,7 +721,7 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
         {loading ? (
           <div className="text-sm text-slate-500">Loading saved progress…</div>
         ) : (
-          <SectionBody section={current} state={state} setState={setState} api={{ get, post }} accent={accent} tenantId={tenantId} />
+          <SectionBody section={current} state={state} setState={setState} api={{ get, post }} accent={accent} tenantId={tenantId} arionRunner={arionRunner} />
         )}
         <HelpFooter />
       </div>
@@ -490,23 +751,24 @@ function StepStrip({ current, sections, accent }: { current: number; sections: S
 
 // ─── Section dispatcher ──────────────────────────────────────────────────
 
-function SectionBody({ section, state, setState, api, accent, tenantId }: {
+function SectionBody({ section, state, setState, api, accent, tenantId, arionRunner }: {
   section: Section;
   state: OnboardingState;
   setState: (s: OnboardingState | ((prev: OnboardingState) => OnboardingState)) => void;
   api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T> };
   accent: string;
   tenantId: string;
+  arionRunner: ArionRunnerController;
 }) {
   switch (section.id) {
     case "profile":                return <ProfileSection profile={state.profile} setProfile={(p) => setState((s) => ({ ...s, profile: p }))} api={api} />;
     case "owner":                  return <OwnerSection owner={state.owner} setOwner={(o) => setState((s) => ({ ...s, owner: o }))} />;
     case "lifecycle":              return <LifecycleSection v={state.lifecycle} setV={(v) => setState((s) => ({ ...s, lifecycle: v }))} />;
-    case "arion":                  return <ArionSection v={state.arion} setV={(v) => setState((s) => ({ ...s, arion: v }))} tenantId={tenantId} profile={state.profile} />;
-    // arion_integrations also uses the same ArionSection runner status if
-    // a run is in-flight; the integrations section is the natural next-
-    // step after the runner finishes, so we keep that separate.
-    case "arion_integrations":     return <ArionIntegrationsSection v={state.arion_integrations} setV={(v) => setState((s) => ({ ...s, arion_integrations: v }))} tenantId={tenantId} />;
+    case "arion":                  return <ArionSection v={state.arion} setV={(v) => setState((s) => ({ ...s, arion: v }))} tenantId={tenantId} profile={state.profile} arionRunner={arionRunner} />;
+    // arion_integrations renders the live runner progress (or the migrate
+    // handoff panel) at the top, then the connect-account rows once the
+    // runner finishes and arion.site exists in the DB.
+    case "arion_integrations":     return <ArionIntegrationsSection v={state.arion_integrations} setV={(v) => setState((s) => ({ ...s, arion_integrations: v }))} tenantId={tenantId} arion={state.arion} arionRunner={arionRunner} />;
     case "spark":                  return <SparkSection v={state.spark} setV={(v) => setState((s) => ({ ...s, spark: v }))} />;
     case "spark_welcome_email":    return <SparkWelcomeEmailSection v={state.spark_welcome_email} setV={(v) => setState((s) => ({ ...s, spark_welcome_email: v }))} profile={state.profile} owner={state.owner} />;
     case "oliver_payments":        return <OliverPaymentsSection v={state.oliver} setV={(v) => setState((s) => ({ ...s, oliver: v }))} accent={accent} api={api} />;
@@ -903,7 +1165,7 @@ async function notifyFounderStuck(bearer: string, tenant_id: string, rec: StepRe
   }
 }
 
-function ArionSection({ v, setV, tenantId, profile }: { v: OnboardingState["arion"]; setV: (v: OnboardingState["arion"]) => void; tenantId: string; profile: OnboardingState["profile"] }) {
+function ArionSection({ v, setV, tenantId, profile, arionRunner }: { v: OnboardingState["arion"]; setV: (v: OnboardingState["arion"]) => void; tenantId: string; profile: OnboardingState["profile"]; arionRunner: ArionRunnerController }) {
   // 2026-06-21 — skip-if-provisioned. Brandon hit this himself:
   // ARION onboarding shouldn't re-prompt for site setup if arion.site already
   // has a row for this tenant. Probe on mount; if found, render a compact
@@ -923,18 +1185,13 @@ function ArionSection({ v, setV, tenantId, profile }: { v: OnboardingState["ario
   const [forceEdit, setForceEdit] = useState(false);
   const { getToken: getArionToken } = useAccessToken();
 
-  // OnboardingRunner state — driven by Start ARION Setup button below.
-  // The runner is created lazily on first launch so domain_choice +
-  // questionnaire state is captured at click time, not mount time.
-  const [runnerRecords, setRunnerRecords] = useState<StepRecord[]>([]);
-  const [runnerCurrentStep, setRunnerCurrentStep] = useState<string | null>(null);
-  const [runnerStarted, setRunnerStarted] = useState(false);
-  const [runnerComplete, setRunnerComplete] = useState(false);
-  const [runnerError, setRunnerError] = useState<string | null>(null);
-  const runnerRef = useRef<Runner | null>(null);
-  const stepCapsRef = useRef<Record<string, number>>({});
-  const skipAllowedRef = useRef<string[]>([]);
-  const fallbackLabelsRef = useRef<Record<string, string>>({});
+  // 2026-06-23 — runner state lives in the parent's useArionRunner hook now,
+  // so persist("continue") on Save & Continue can launch it. We just read
+  // status off the controller to show the inline progress panel when the
+  // user navigates back to this step mid-run.
+  const { runnerStarted, runnerComplete, runnerError, runnerRecords, runnerCurrentStep,
+    stepCaps, skipAllowedStepIds, fallbackLabels, handleRetry, handleSkip,
+    setSiteContext } = arionRunner;
 
   useEffect(() => {
     let cancelled = false;
@@ -965,123 +1222,12 @@ function ArionSection({ v, setV, tenantId, profile }: { v: OnboardingState["ario
   // true when an existing site has the column populated.
   const hasSeoAddon = !!(existingSite?.seoAddonTier);
 
-  /* ────────────────────────────────────────────────────────────────
-   * launchRunner — spawns OnboardingRunner with the resolved step list
-   * for the picked domain_path. Wired below the questionnaire form so
-   * the user clicks "Start ARION setup" once their answers are stable.
-   * ────────────────────────────────────────────────────────────────── */
-  async function launchRunner() {
-    if (runnerStarted || !v.domain_choice) return;
-    setRunnerStarted(true);
-    setRunnerError(null);
-    setRunnerComplete(false);
-
-    let bearer = "";
-    try {
-      const t = await getArionToken();
-      bearer = t.accessToken;
-    } catch (e) {
-      setRunnerError(`Could not get auth token: ${(e as Error).message}`);
-      setRunnerStarted(false);
-      return;
-    }
-
-    const steps = buildArionSteps(v.domain_choice as ArionDomainPath, hasSeoAddon);
-    // Cache per-step caps + skip-allowed list for the progress UI.
-    stepCapsRef.current = Object.fromEntries(steps.map((s) => [s.id, s.max_retries]));
-    skipAllowedRef.current = steps.filter((s) => s.on_failure === "skip_allowed").map((s) => s.id);
-    fallbackLabelsRef.current = Object.fromEntries(steps.map((s) => [s.id, s.label_user_facing]));
-
-    const businessProfile: Record<string, unknown> = {
-      site_id: existingSite?.site_id || null,
-      bearer_token: bearer,
-      domain: v.domain.trim(),
-      domain_path: v.domain_choice,
-      // Google + Bing dual-path (Brandon-locked 2026-06-23). The wizard
-      // doesn't ask the YES/NO/NOT_SURE question yet — default both to
-      // "not_sure" so the probe step routes intelligently based on
-      // whether the IA master service account can find the domain. When
-      // the wizard UI lands the explicit question these strings flip to
-      // the user's answer.
-      google_setup_answer: "not_sure",
-      bing_setup_answer: "not_sure",
-      contact_email: (profile.primary_contact_email || "").trim() || null,
-      business_name: (profile.business_name || "").trim() || null,
-      questionnaire: {
-        businessName: profile.business_name || null,
-        industry: v.industry,
-        description: v.description,
-        services: v.services.filter(Boolean),
-        target_audience: v.target_audience,
-        location: v.location,
-        brand_voice: v.brand_voice,
-        brand_voice_custom: v.brand_voice_custom,
-        style_preference: v.style_preference,
-        pages: v.pages,
-        tagline: v.tagline,
-        has_existing_website: v.has_existing_website,
-      },
-    };
-
-    const runner = createRunner(
-      {
-        tenant_id: tenantId,
-        product: "arion",
-        cart_items: [{ product: "arion" }],
-        business_profile: businessProfile,
-        callbacks: {
-          on_step_change: (rec) => {
-            setRunnerRecords((prev) => {
-              const idx = prev.findIndex((r) => r.step_id === rec.step_id);
-              if (idx === -1) return [...prev, rec];
-              const next = prev.slice();
-              next[idx] = rec;
-              return next;
-            });
-            // Drive the "current step" indicator off the latest non-
-            // terminal step.
-            if (rec.status === "running" || rec.status === "waiting" || rec.status === "verifying") {
-              setRunnerCurrentStep(rec.step_id);
-            }
-            // Persistence side-channel: mirror every status transition
-            // into core.onboarding_step_status via the founder-only
-            // oliver-api endpoint. Best-effort — never blocks engine.
-            void persistStepStatus(bearer, tenantId, runner ? runner.snapshot()[0]?.evidence?.run_id as string | undefined : undefined, rec);
-            // Founder notification side-channel: when a step lands in
-            // failed_server_busy, ping the ACS-backed notify endpoint so
-            // Brandon gets the email Brandon decision #3 promised.
-            if (rec.status === "failed_server_busy") {
-              void notifyFounderStuck(bearer, tenantId, rec);
-            }
-          },
-          on_run_complete: (records) => {
-            const allDone = records.every((r) => r.status === "done" || r.status === "skipped");
-            setRunnerComplete(allDone);
-            setRunnerCurrentStep(null);
-          },
-        },
-      },
-      steps,
-    );
-    runnerRef.current = runner;
-    // Seed initial pending records so the UI renders the timeline
-    // immediately (engine emits on transition, so before the first
-    // action() there are no records yet).
-    setRunnerRecords(steps.map((s) => ({ step_id: s.id, status: "pending" as const, attempt_count: 0 })));
-
-    try {
-      await runner.start();
-    } catch (e) {
-      setRunnerError((e as Error).message || "Runner threw");
-    }
-  }
-
-  function handleRetry(step_id: string) {
-    void runnerRef.current?.retry(step_id);
-  }
-  function handleSkip(step_id: string) {
-    runnerRef.current?.skip(step_id);
-  }
+  // Push site context up to the runner controller so launchRunner — which
+  // is invoked from the parent's persist() handler — has the latest
+  // site_id + has_seo_addon when it builds the step list.
+  useEffect(() => {
+    setSiteContext({ site_id: existingSite?.site_id || null, has_seo_addon: hasSeoAddon });
+  }, [existingSite?.site_id, hasSeoAddon, setSiteContext]);
 
   const toggleService = (i: number, val: string) => {
     const next = [...v.services]; next[i] = val; setV({ ...v, services: next });
@@ -1255,13 +1401,16 @@ function ArionSection({ v, setV, tenantId, profile }: { v: OnboardingState["ario
       <Field label="Tagline (optional)" value={v.tagline} onChange={(t) => setV({ ...v, tagline: t })}
         placeholder="Where Marshalltown rolls together since 1998" hint="Goes in the hero, used by the AI copy generator" />
 
-      {/* ── OnboardingRunner launch panel ─────────────────────────────
-            The runner replaces the old "save & hope" handoff with a live
-            sequential build that shows the customer exactly what's
-            happening. Save & Continue (in the modal footer) only advances
-            to the next section AFTER the runner reports complete, OR
-            after the user explicitly clicks "Continue without finishing"
-            in the busy panel.
+      {/* ── ARION setup preview panel ─────────────────────────────────
+            2026-06-23 — the runner now auto-launches when the user clicks
+            Save & Continue in the wizard footer (no separate blue button).
+            This panel just previews what's about to happen so the user
+            knows what Save & Continue will trigger.
+
+            If the user navigated BACK to Step 4 mid-run, we render the
+            live OnboardingRunnerProgress here too — the runner state
+            lives in the parent's useArionRunner hook, so it survives
+            section navigation.
 
             Runner step list depends on:
               • v.domain_choice  (5 paths — purchase / subdomain / byo /
@@ -1272,49 +1421,43 @@ function ArionSection({ v, setV, tenantId, profile }: { v: OnboardingState["ario
         <div className="flex items-start gap-3">
           <Building2 className="h-5 w-5 text-sky-700 mt-0.5 shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-sky-900">Start ARION setup</div>
+            <div className="text-sm font-semibold text-sky-900">
+              {runnerStarted ? "ARION setup in progress" : "What happens next"}
+            </div>
             <div className="text-xs text-sky-800 mt-1">
               {v.domain_choice === "migrate" && (
-                <>We'll log your business details and flag your tenant for a guided migration — consulting reaches out within 1 business day.</>
+                <>Save &amp; Continue will flag your tenant for a guided migration — IA Consulting reaches out within 1 business day. No automated provisioning runs for migrations.</>
               )}
               {(v.domain_choice === "byo" || v.domain_choice === "hostinger_existing") && (
-                <>We'll install the IA Plugin on your existing WordPress site, set up your account, and connect Google + Bing.</>
+                <>Save &amp; Continue will install the IA Plugin on your existing WordPress site, set up your account, and connect Google + Bing. You'll see the live progress on the next step.</>
               )}
               {(v.domain_choice === "purchase" || v.domain_choice === "subdomain") && (
-                <>We'll spin up your WordPress site, install tools, build your homepage with AI{hasSeoAddon ? ", configure SEO" : ""}, and connect Google + Bing.</>
+                <>Save &amp; Continue will spin up your WordPress site, install tools, build your homepage with AI{hasSeoAddon ? ", configure SEO" : ""}, and connect Google + Bing. You'll see the live progress on the next step.</>
               )}
-              {!v.domain_choice && <>Pick a domain option above first, then we'll walk through setup live.</>}
+              {!v.domain_choice && <>Pick a domain option above first. Save &amp; Continue will then walk through setup live on the next step.</>}
             </div>
 
             {runnerError && (
               <div className="mt-2 text-xs text-rose-700">Runner error: {runnerError}</div>
             )}
 
-            {!runnerStarted && !runnerComplete && (
-              <button
-                type="button"
-                onClick={launchRunner}
-                disabled={!v.domain_choice}
-                className="mt-3 px-4 py-2 rounded-lg bg-sky-600 text-white text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-sky-700"
-              >
-                Start ARION setup →
-              </button>
-            )}
-
+            {/* Live progress, shown if the user navigated back to Step 4
+                while the runner is still ticking. The primary home for
+                this UI is Step 5 (ArionIntegrationsSection). */}
             {runnerStarted && runnerRecords.length > 0 && (
               <div className="mt-4">
                 <OnboardingRunnerProgress
                   steps={runnerRecords}
                   current_step_id={runnerCurrentStep}
-                  max_retries_by_step={stepCapsRef.current}
-                  skip_allowed_step_ids={skipAllowedRef.current}
-                  fallback_labels_by_step={fallbackLabelsRef.current}
+                  max_retries_by_step={stepCaps}
+                  skip_allowed_step_ids={skipAllowedStepIds}
+                  fallback_labels_by_step={fallbackLabels}
                   onRetry={handleRetry}
                   onSkip={handleSkip}
                 />
                 {runnerComplete && (
                   <div className="mt-3 rounded-md bg-emerald-100 border border-emerald-300 px-3 py-2 text-xs text-emerald-900">
-                    All ARION setup steps done. Click Save & Continue below to move to the next section.
+                    All ARION setup steps done. Click Save &amp; Continue below to move to the next section.
                   </div>
                 )}
               </div>
@@ -1338,10 +1481,12 @@ function ArionSection({ v, setV, tenantId, profile }: { v: OnboardingState["ario
 //      GET /api/v1/portal/arion/sites/:site_id/linked-business-profiles for status,
 //      POST /api/v1/portal/arion/sites/:site_id/connect-google to start OAuth.
 // We use raw fetch for now so we don't have to add to the modal's api shape.
-function ArionIntegrationsSection({ v, setV, tenantId }: {
+function ArionIntegrationsSection({ v, setV, tenantId, arion, arionRunner }: {
   v: OnboardingState["arion_integrations"];
   setV: (v: OnboardingState["arion_integrations"]) => void;
   tenantId: string;
+  arion: OnboardingState["arion"];
+  arionRunner: ArionRunnerController;
 }) {
   const [siteId, setSiteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1445,6 +1590,62 @@ function ArionIntegrationsSection({ v, setV, tenantId }: {
   );
 
   if (loading) return <div className="text-sm text-slate-500">Loading integration status…</div>;
+
+  // ── Migrate path — consulting-only handoff. Per Brandon lock 2026-06-23,
+  // migration does NOT auto-provision; we flag the tenant and IA Consulting
+  // takes the cutover. Skip the runner UI and the connect rows entirely.
+  if (arion.domain_choice === "migrate") {
+    return (
+      <div className="space-y-3">
+        <div className="rounded-lg border-2 border-indigo-200 bg-indigo-50 p-4">
+          <div className="text-sm font-semibold text-indigo-900">Migration queued for our consulting team</div>
+          <div className="text-xs text-indigo-800 mt-1">
+            Your tenant has been flagged for a guided WordPress migration. IA Consulting reaches out within 1 business day to schedule the cutover — no automated provisioning runs for migrations.
+          </div>
+          <div className="text-xs text-indigo-800 mt-2">
+            You can keep moving through onboarding — integrations will connect after your site is migrated and live in our system.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Runner in flight — show the live OnboardingRunnerProgress here,
+  // replacing the legacy "No ARION site detected yet" yellow callout. The
+  // runner was auto-launched on Save & Continue from Step 4.
+  if (arionRunner.runnerStarted && !siteId) {
+    return (
+      <div className="space-y-3">
+        <div className="rounded-lg border-2 border-sky-200 bg-sky-50 p-4">
+          <div className="text-sm font-semibold text-sky-900">
+            {arionRunner.runnerComplete ? "ARION setup complete" : "ARION setup in progress"}
+          </div>
+          <div className="text-xs text-sky-800 mt-1">
+            {arionRunner.runnerComplete
+              ? "All steps done. Click Save & Continue below to move to the next section."
+              : "We're provisioning your site live. You can keep this open, or click Save & Close — the build keeps running and you can resume later."}
+          </div>
+          {arionRunner.runnerError && (
+            <div className="mt-2 text-xs text-rose-700">Runner error: {arionRunner.runnerError}</div>
+          )}
+          {arionRunner.runnerRecords.length > 0 && (
+            <div className="mt-4">
+              <OnboardingRunnerProgress
+                steps={arionRunner.runnerRecords}
+                current_step_id={arionRunner.runnerCurrentStep}
+                max_retries_by_step={arionRunner.stepCaps}
+                skip_allowed_step_ids={arionRunner.skipAllowedStepIds}
+                fallback_labels_by_step={arionRunner.fallbackLabels}
+                onRetry={arionRunner.handleRetry}
+                onSkip={arionRunner.handleSkip}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (!siteId) {
     return (
       <div className="space-y-3">
@@ -1458,7 +1659,7 @@ function ArionIntegrationsSection({ v, setV, tenantId }: {
             Two ways forward:
           </div>
           <ul className="text-xs text-amber-800 mt-1 ml-4 list-disc space-y-0.5">
-            <li>Finish the ARION setup section first (you may have skipped it)</li>
+            <li>Go back to ARION setup and pick a domain — Save &amp; Continue auto-launches provisioning.</li>
             <li>If you just finished setup, refresh this page — provisioning takes ~30s to land in our DB</li>
           </ul>
         </div>
@@ -1468,6 +1669,23 @@ function ArionIntegrationsSection({ v, setV, tenantId }: {
 
   return (
     <div className="space-y-3">
+      {/* If the runner is still ticking but the site row already landed,
+          surface the live progress at the top so the user sees us still
+          working — then they can connect integrations below as steps land. */}
+      {arionRunner.runnerStarted && !arionRunner.runnerComplete && arionRunner.runnerRecords.length > 0 && (
+        <div className="rounded-lg border-2 border-sky-200 bg-sky-50 p-3">
+          <div className="text-xs font-semibold text-sky-900 mb-2">ARION setup still finishing</div>
+          <OnboardingRunnerProgress
+            steps={arionRunner.runnerRecords}
+            current_step_id={arionRunner.runnerCurrentStep}
+            max_retries_by_step={arionRunner.stepCaps}
+            skip_allowed_step_ids={arionRunner.skipAllowedStepIds}
+            fallback_labels_by_step={arionRunner.fallbackLabels}
+            onRetry={arionRunner.handleRetry}
+            onSkip={arionRunner.handleSkip}
+          />
+        </div>
+      )}
       <p className="text-xs text-slate-500">
         Connect the data sources ARION pulls insights from. <b>Each row uses YOUR own Google/Bing/Apple account</b> — you authenticate, we just read.
         You can skip any of these and add them later from <code>ARION → Integrations</code>.
