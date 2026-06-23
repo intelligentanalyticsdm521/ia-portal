@@ -334,9 +334,19 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
         let cleanedSavedState = data?.state;
         if (cleanedSavedState?.profile) {
           const savedProfile = cleanedSavedState.profile as Partial<BusinessProfile>;
-          if (savedProfile.primary_color === DEFAULT_PRIMARY) delete (cleanedSavedState.profile as Record<string, unknown>).primary_color;
-          if (savedProfile.secondary_color === DEFAULT_SECONDARY) delete (cleanedSavedState.profile as Record<string, unknown>).secondary_color;
-          if (savedProfile.accent_color === DEFAULT_ACCENT) delete (cleanedSavedState.profile as Record<string, unknown>).accent_color;
+          // Build a new profile object excluding any color field that matches
+          // the EMPTY_STATE default — those came from a stale pre-prefill save
+          // and would otherwise clobber the real prefill colors.
+          const { primary_color, secondary_color, accent_color, ...restProfile } = savedProfile;
+          const nextProfile: Partial<BusinessProfile> = { ...restProfile };
+          if (primary_color !== undefined && primary_color !== DEFAULT_PRIMARY) nextProfile.primary_color = primary_color;
+          if (secondary_color !== undefined && secondary_color !== DEFAULT_SECONDARY) nextProfile.secondary_color = secondary_color;
+          if (accent_color !== undefined && accent_color !== DEFAULT_ACCENT) nextProfile.accent_color = accent_color;
+          // Cast: nextProfile is intentionally a Partial<BusinessProfile> after
+          // we strip default-matching colors. mergeState → mergeStrict handles
+          // missing keys correctly at runtime (treats them as "not provided"
+          // and falls back to base/prefill).
+          cleanedSavedState = { ...cleanedSavedState, profile: nextProfile as BusinessProfile };
         }
         setState((s) => {
           let merged = s;
