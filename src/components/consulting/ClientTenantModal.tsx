@@ -305,10 +305,14 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    getFounder<{ data?: { state?: Partial<OnboardingState>; prefill?: Partial<OnboardingState>; step?: number } }>(`/admin/onboard-client/onboarding-progress?tenant_id=${encodeURIComponent(tenantId)}`)
-      .then((r) => {
+    // FIX (2026-06-23) — getFounder calls oliverFetch which AUTO-UNWRAPS
+    // the {data: ...} envelope at oliverApi.ts:89. The old code typed the
+    // response as { data?: {...} } and then tried to read `.data` off it,
+    // which discarded the entire prefill payload silently for every tenant.
+    // Now type the response as the inner shape and read fields directly.
+    getFounder<{ state?: Partial<OnboardingState>; prefill?: Partial<OnboardingState> & { cart?: ProductKey[] }; step?: number }>(`/admin/onboard-client/onboarding-progress?tenant_id=${encodeURIComponent(tenantId)}`)
+      .then((data) => {
         if (cancelled) return;
-        const data = (r as { data?: { state?: Partial<OnboardingState>; prefill?: Partial<OnboardingState>; step?: number } })?.data;
         // Merge order: defaults → prefill (from existing tables) → saved state (wins).
         // Per Brandon's rule: don't make users re-enter data the system has.
         setState((s) => {
@@ -321,7 +325,7 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
         // canonical-table presence and tells us which products are in scope.
         // Only override if caller didn't pass an explicit cart prop.
         if (!cart || !cart.length) {
-          const prefillCart = (data as { prefill?: { cart?: ProductKey[] } } | undefined)?.prefill?.cart;
+          const prefillCart = data?.prefill?.cart;
           if (Array.isArray(prefillCart) && prefillCart.length) {
             setEffectiveCart(prefillCart.filter((p): p is ProductKey =>
               p === "arion" || p === "spark" || p === "oliver" || p === "consulting"));

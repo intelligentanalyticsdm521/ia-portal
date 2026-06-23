@@ -68,10 +68,16 @@ export function UnifiedSetupCard() {
   const reload = useCallback(async () => {
     if (!ready || !activeTenantId) return;
     try {
-      const r = await getFounder<{ data: OnboardingProgress | null }>(
+      // FIX (2026-06-23) — getFounder calls oliverFetch which AUTO-UNWRAPS
+      // the {data: ...} envelope at oliverApi.ts:89. The old code typed the
+      // response as { data: ... } and then reached for `.data`, which was
+      // already gone — so progress was ALWAYS null and the cart prop sent
+      // down to ClientTenantModal was always empty. Now we receive the
+      // already-unwrapped OnboardingProgress object directly.
+      const r = await getFounder<OnboardingProgress | null>(
         `/admin/onboard-client/onboarding-progress?tenant_id=${encodeURIComponent(activeTenantId)}`
       );
-      setProgress((r as { data: OnboardingProgress | null })?.data || null);
+      setProgress(r || null);
       setReachable(true);
     } catch {
       setProgress(null);
