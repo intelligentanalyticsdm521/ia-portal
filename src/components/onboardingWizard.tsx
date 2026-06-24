@@ -38,6 +38,11 @@ export interface QuestionnaireAnswers {
   // import a template or splice copy (would destroy their content). When true,
   // the description/services/copy fields in the questionnaire are optional.
   hasExistingWebsite: boolean;
+  // Conditional plugin gate (mirror of installShop): when true, the install
+  // runner adds PDF Embedder to the plugin stack so the customer can publish
+  // PDFs (catalogs, forms, reports) inline on the site. Free version is the
+  // default; Premium adds mobile/secure/full-screen viewing if needed later.
+  publishPdfs: boolean;
 }
 
 export interface DomainSelection {
@@ -91,6 +96,7 @@ export const DEFAULT_ANSWERS: QuestionnaireAnswers = {
   primaryColor: '#1a73e8',
   tagline: '',
   hasExistingWebsite: false,
+  publishPdfs: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -493,6 +499,18 @@ export function QuestionnaireStep({ value, onChange, onBack, onContinue }: {
               );
             })}
           </div>
+        </Field>
+        <Field label="Do you publish PDF documents (catalogs, forms, reports) on the site?">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={value.publishPdfs}
+              onChange={(e) => set('publishPdfs', e.target.checked)}
+            />
+            <span className="text-sm text-gray-700">
+              Yes — install PDF Embedder so I can drop PDFs onto pages with an inline viewer
+            </span>
+          </label>
         </Field>
       </div>
       <div className="mt-10 flex justify-between">
