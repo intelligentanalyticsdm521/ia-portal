@@ -15,6 +15,11 @@ import { SetupHints, type SetupHint } from "../../components/SetupHints";
 import { Sparkles, ArrowUpRight, Calendar as CalendarIcon, Users as UsersIcon, Globe, Zap, MessageSquare } from "lucide-react";
 import { CalendarModal } from "../../components/oliver/customer/CalendarModal";
 import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
+// F-Stripe-Client-Side (2026-06-23) — dual-path Stripe Connect picker.
+// Shown above all other dashboard content when the tenant hasn't yet
+// connected Stripe (charges_enabled !== true). Replaces the founder
+// wizard step: clients pick their own path inside their own portal.
+import { SetupPaymentsCard } from "../../oliver/components/SetupPaymentsCard";
 
 // ─── Inline error boundary ───────────────────────────────────────────────────
 // Containment-only. A runtime exception in any new dashboard section should
@@ -168,6 +173,58 @@ export function OliverDashboardPage() {
   const [iaTrendHistory, setIaTrendHistory] = useState<Array<{ period_end: string; score: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
+  // F-Stripe-Client-Side (2026-06-23) — toast slot for ?stripe_connected=1
+  // (success) and ?stripe_error=<code> (Standard OAuth callback failure).
+  // Set once on mount from window.location.search, then we scrub the
+  // params via replaceState so a refresh doesn't replay the toast.
+  const [stripeToast, setStripeToast] = useState<
+    | { tone: "success"; message: string }
+    | { tone: "error"; message: string }
+    | null
+  >(null);
+
+  // F-Stripe-Client-Side (2026-06-23) — Read Stripe-return params on mount.
+  // The Express return URL and the Standard OAuth callback both land here:
+  //   • ?stripe_connected=1     → success toast
+  //   • ?stripe_error=<code>    → red toast with friendly code mapping
+  // We strip the params with replaceState so a refresh doesn't replay the
+  // toast and the URL stays clean.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get("stripe_connected");
+    const errCode = params.get("stripe_error");
+    if (!connected && !errCode) return;
+
+    if (connected === "1") {
+      setStripeToast({
+        tone: "success",
+        message: "Stripe connected — you can now invoice customers.",
+      });
+    } else if (errCode) {
+      const friendly: Record<string, string> = {
+        invalid_state: "Stripe link expired or was tampered with. Please try again.",
+        state_signature_mismatch: "Stripe link couldn't be verified. Please try again.",
+        state_expired: "Stripe link timed out. Please try again (links expire after 15 minutes).",
+        oauth_state_expired: "Stripe link timed out. Please try again (links expire after 15 minutes).",
+        oauth_denied: "You declined the Stripe connection. Try again when you're ready.",
+        token_exchange_failed: "Stripe couldn't finish the connection. Please try again.",
+        no_account_id: "Stripe didn't return an account. Please try again.",
+        missing_params: "Stripe sent us back without the expected info. Please try again.",
+      };
+      setStripeToast({
+        tone: "error",
+        message: friendly[errCode] || `Couldn't finish Stripe setup (${errCode}). Please try again.`,
+      });
+    }
+
+    // Scrub the params so a refresh doesn't replay the toast.
+    params.delete("stripe_connected");
+    params.delete("stripe_error");
+    const newSearch = params.toString();
+    const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : "") + window.location.hash;
+    window.history.replaceState({}, "", newUrl);
+  }, []);
 
   // v6.8 — Pull OLIVER IA Insights summary from LUMEN-API (presence score + 12-period history)
   useEffect(() => {
@@ -322,6 +379,49 @@ export function OliverDashboardPage() {
           </>
         }
       />
+
+      {/* F-Stripe-Client-Side (2026-06-23) — return-from-Stripe toast.
+          Cleared on next mount once the URL params are scrubbed. */}
+      {stripeToast && (
+        <div
+          style={{
+            marginBottom: 12, padding: "10px 14px", borderRadius: 8,
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+            background: stripeToast.tone === "success" ? "#D1FAE5" : "#FEE2E2",
+            border: `1px solid ${stripeToast.tone === "success" ? "#6EE7B7" : "#FCA5A5"}`,
+            color: stripeToast.tone === "success" ? "#065F46" : "#991B1B",
+            fontSize: 12, fontWeight: 600,
+          }}
+        >
+          <span>{stripeToast.message}</span>
+          <button
+            type="button"
+            onClick={() => setStripeToast(null)}
+            aria-label="Dismiss"
+            style={{
+              background: "transparent", border: "none", padding: 4, cursor: "pointer",
+              color: "inherit", fontSize: 14, lineHeight: 1, opacity: 0.7,
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* F-Stripe-Client-Side (2026-06-23) — dual-path Stripe Connect picker.
+          Per spec: show the card when stripe_charges_enabled is NULL or
+          false. That covers both "no account yet" and "account exists but
+          KYC not finished" — the user always lands on the dual-path picker
+          first, and the buttons will resume an in-flight account (Express
+          createOrGetExpressAccount is idempotent). We hide it only once
+          charges are fully enabled. The existing stripeRegressed banner
+          below still fires for the narrower "onboarding complete but
+          regressed" case. */}
+      {stripeStatus && stripeStatus.chargesEnabled !== true && (
+        <DashSectionBoundary label="Set up payments">
+          <SetupPaymentsCard />
+        </DashSectionBoundary>
+      )}
 
       {/* 1. IA Insights — compact header strip with Open Trends + Open ARGUS */}
       <DashSectionBoundary label="IA Insights">
