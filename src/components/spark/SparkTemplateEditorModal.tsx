@@ -337,7 +337,7 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
                     }}
                     className="spark-input bg-white"
                   >
-                    <option value="">— Tenant default —</option>
+                    <option value="">— Business default —</option>
                     {senders.map((s) => (
                       <option key={s.id} value={s.email_address}>
                         {s.email_address}{s.is_default ? " (default)" : ""}

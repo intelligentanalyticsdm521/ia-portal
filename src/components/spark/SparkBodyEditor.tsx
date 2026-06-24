@@ -265,7 +265,7 @@ function MergeTagPopover({ tags, onPick, onClose }: MergeTagPopoverProps) {
     }
     return m;
   }, [filtered]);
-  const order: MergeTag["category"][] = ["Contact", "Tenant", "Campaign", "Custom"];
+  const order: MergeTag["category"][] = ["Contact", "Business", "Campaign", "Custom"];
 
   return (
     <div
@@ -328,6 +328,16 @@ export function SparkBodyEditor({
 }: SparkBodyEditorProps) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [tagOpen, setTagOpen] = useState(false);
+  // "{{" keystroke trigger state. autoTrigger holds the floating-menu
+  // anchor + filter when the user has just typed "{{" in the body. The
+  // existing toolbar-driven tagOpen popover stays as a fallback.
+  const [autoTrigger, setAutoTrigger] = useState<{
+    from: number; // ProseMirror pos of the "{{"
+    to: number;   // ProseMirror pos right after the filter chars (= cursor)
+    filter: string;
+    coords: { left: number; top: number; bottom: number };
+  } | null>(null);
+  const [autoActiveIdx, setAutoActiveIdx] = useState(0);
   const tags = mergeTagCatalog && mergeTagCatalog.length ? mergeTagCatalog : DEFAULT_MERGE_TAGS;
 
   const editor = useEditor({
@@ -361,8 +371,43 @@ export function SparkBodyEditor({
       const html = ed.getHTML();
       const text = ed.getText();
       onChange(html, text);
+      // Re-check for the "{{" trigger after every content change.
+      detectMergeTagTrigger(ed);
+    },
+    onSelectionUpdate: ({ editor: ed }) => {
+      detectMergeTagTrigger(ed);
     },
   });
+
+  // Scan the paragraph node containing the cursor for "{{" that is not yet
+  // closed by "}}". When found, open the floating menu anchored at the
+  // "{{" pixel coords with the chars between "{{" and the cursor as the
+  // filter. When not found, close the menu.
+  function detectMergeTagTrigger(ed: Editor) {
+    const { from } = ed.state.selection;
+    const $pos = ed.state.doc.resolve(from);
+    const parent = $pos.parent;
+    const parentStart = $pos.start(); // doc pos of the first char in parent
+    const offsetInParent = from - parentStart;
+    const textBefore = parent.textBetween(0, offsetInParent, undefined, "￼");
+    // Find the LAST "{{" before cursor that isn't followed by "}}" or newline.
+    const lastOpen = textBefore.lastIndexOf("{{");
+    if (lastOpen === -1) { setAutoTrigger(null); return; }
+    const after = textBefore.slice(lastOpen + 2);
+    if (after.includes("}}") || /\n/.test(after) || after.length > 40) {
+      setAutoTrigger(null);
+      return;
+    }
+    const triggerPos = parentStart + lastOpen;
+    let coords: { left: number; top: number; bottom: number };
+    try {
+      coords = ed.view.coordsAtPos(triggerPos);
+    } catch {
+      setAutoTrigger(null);
+      return;
+    }
+    setAutoTrigger({ from: triggerPos, to: from, filter: after, coords });
+  }
 
   // Keep TipTap in sync if the parent rewrites `value` externally
   // (template load, AI-generate, undo from outside, etc.). Avoid the
@@ -384,6 +429,64 @@ export function SparkBodyEditor({
     },
     [editor],
   );
+
+  // Pick handler for the "{{" autocomplete menu — replaces the typed
+  // "{{" + filter chars with the chosen user-friendly token.
+  const pickAutoTag = useCallback((tag: MergeTag) => {
+    if (!editor || !autoTrigger) return;
+    const token = mergeTagToUserFriendlyToken(tag);
+    editor
+      .chain()
+      .focus()
+      .deleteRange({ from: autoTrigger.from, to: autoTrigger.to })
+      .insertContent(token)
+      .run();
+    setAutoTrigger(null);
+  }, [editor, autoTrigger]);
+
+  // Filtered tags for the "{{" auto menu (re-built on filter change).
+  const autoFiltered = useMemo(() => {
+    if (!autoTrigger) return tags;
+    const q = autoTrigger.filter.trim().toLowerCase();
+    if (!q) return tags;
+    return tags.filter(
+      (t) => t.label.toLowerCase().includes(q) || t.category.toLowerCase().includes(q),
+    );
+  }, [autoTrigger, tags]);
+
+  // Reset highlighted index whenever the filter changes.
+  useEffect(() => { setAutoActiveIdx(0); }, [autoTrigger?.filter]);
+
+  // Hook keyboard nav into the editor while the auto menu is open.
+  useEffect(() => {
+    if (!editor || !autoTrigger) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setAutoTrigger(null);
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setAutoActiveIdx((i) => Math.min(autoFiltered.length - 1, i + 1));
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setAutoActiveIdx((i) => Math.max(0, i - 1));
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        if (autoFiltered.length > 0) {
+          event.preventDefault();
+          pickAutoTag(autoFiltered[Math.min(autoActiveIdx, autoFiltered.length - 1)]);
+        }
+      }
+    };
+    const dom = editor.view.dom;
+    dom.addEventListener("keydown", handler, true);
+    return () => dom.removeEventListener("keydown", handler, true);
+  }, [editor, autoTrigger, autoFiltered, autoActiveIdx, pickAutoTag]);
 
   if (!editor) {
     // Render a stable shell so layout doesn't jump while TipTap warms up.
@@ -484,6 +587,36 @@ export function SparkBodyEditor({
   float: left;
   height: 0;
 }`}</style>
+      )}
+      {/* "{{" auto-trigger floating menu — fixed-positioned at the
+          ProseMirror coords of the typed "{{". Caret-anchored so it
+          follows the cursor as the user keeps typing the filter. */}
+      {autoTrigger && autoFiltered.length > 0 && (
+        <div
+          className="fixed z-[60] max-h-72 w-72 overflow-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg"
+          style={{ left: autoTrigger.coords.left, top: autoTrigger.coords.bottom + 4 }}
+        >
+          <div className="px-2 py-1 text-[10px] uppercase font-bold tracking-wide text-slate-500">
+            Merge tag
+            {autoTrigger.filter && (
+              <span className="text-slate-400 normal-case font-normal"> — filter: {autoTrigger.filter}</span>
+            )}
+          </div>
+          {autoFiltered.map((t, idx) => (
+            <button
+              key={t.key}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); pickAutoTag(t); }}
+              onMouseEnter={() => setAutoActiveIdx(idx)}
+              className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs ${
+                idx === autoActiveIdx ? "bg-orange-50 text-orange-900" : "hover:bg-orange-50 hover:text-orange-900"
+              }`}
+            >
+              <span className="font-semibold">{t.label}</span>
+              <span className="text-[10px] text-slate-400">{t.category}</span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );

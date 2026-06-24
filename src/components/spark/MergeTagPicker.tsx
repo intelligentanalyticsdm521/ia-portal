@@ -11,7 +11,7 @@
 //
 // The underlying templates still use `{{...}}` syntax — backend rendering
 // is unchanged. This component only changes how the WRITER interacts.
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Tag, ChevronDown } from "lucide-react";
 
 export interface MergeTag {
@@ -24,7 +24,7 @@ export interface MergeTag {
    *  inserted token: "First name" → "{{first name}}". */
   label: string;
   /** Category for grouping in the dropdown. */
-  category: "Contact" | "Tenant" | "Campaign" | "Custom";
+  category: "Contact" | "Business" | "Campaign" | "Custom";
   /** Optional sample value shown next to the label for clarity. */
   example?: string;
 }
@@ -53,12 +53,12 @@ export const DEFAULT_MERGE_TAGS: MergeTag[] = [
   { key: "contact.phone",      label: "Phone",             category: "Contact", example: "(555) 555-1212" },
   { key: "contact.company",    label: "Company",           category: "Contact", example: "Acme Inc" },
   { key: "contact.city",       label: "City",              category: "Contact", example: "Marshalltown" },
-  // Tenant
-  { key: "tenant.business_name", label: "Business name",   category: "Tenant",  example: "Your Business" },
-  { key: "tenant.website",       label: "Website",         category: "Tenant",  example: "https://example.com" },
-  { key: "tenant.phone",         label: "Phone",           category: "Tenant",  example: "(555) 555-1234" },
-  { key: "tenant.owner_name",    label: "Owner name",      category: "Tenant",  example: "Brandon Sheriff" },
-  { key: "tenant.address",       label: "Address",         category: "Tenant",  example: "123 Main St" },
+  // Business
+  { key: "tenant.business_name", label: "Business name",   category: "Business", example: "Your Business" },
+  { key: "tenant.website",       label: "Website",         category: "Business", example: "https://example.com" },
+  { key: "tenant.phone",         label: "Phone",           category: "Business", example: "(555) 555-1234" },
+  { key: "tenant.owner_name",    label: "Owner name",      category: "Business", example: "Brandon Sheriff" },
+  { key: "tenant.address",       label: "Address",         category: "Business", example: "123 Main St" },
   // Campaign
   { key: "campaign.unsubscribe_url", label: "Unsubscribe link", category: "Campaign", example: "auto link" },
   { key: "campaign.preferences_url", label: "Preferences link", category: "Campaign", example: "auto link" },
@@ -130,7 +130,7 @@ export function MergeTagPicker({
     if (!byCategory.has(t.category)) byCategory.set(t.category, []);
     byCategory.get(t.category)!.push(t);
   }
-  const order: MergeTag["category"][] = ["Contact", "Tenant", "Campaign", "Custom"];
+  const order: MergeTag["category"][] = ["Contact", "Business", "Campaign", "Custom"];
 
   return (
     <div ref={wrapperRef} className="relative inline-block">
@@ -184,6 +184,167 @@ export function MergeTagPicker({
       )}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// useMergeTagAutoComplete — "{{" keystroke trigger for plain inputs/textareas.
+//
+// Watches the target's value at the cursor position. When the user types
+// "{{", a small floating menu appears anchored under the input. As they
+// continue typing, the chars after "{{" filter the catalog. On pick, the
+// "{{" + filter chars are replaced with the chosen user-friendly token
+// (e.g. "{{first name}}"). Esc / outside click closes the menu and leaves
+// the "{{" the user typed as literal text.
+//
+// Returns a React node — render it adjacent to the input. The hook owns
+// open/close state and positioning relative to the input.
+// ---------------------------------------------------------------------------
+export interface UseMergeTagAutoCompleteArgs {
+  targetRef: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>;
+  value: string;
+  onChange: (next: string) => void;
+  tags?: MergeTag[];
+}
+
+export function useMergeTagAutoComplete({
+  targetRef, value, onChange, tags = DEFAULT_MERGE_TAGS,
+}: UseMergeTagAutoCompleteArgs) {
+  // Position of the "{{" trigger in the value (start index of the "{{"),
+  // or null when the menu is closed.
+  const [triggerStart, setTriggerStart] = useState<number | null>(null);
+  const [filter, setFilter] = useState("");
+  const [activeIdx, setActiveIdx] = useState(0);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const open = triggerStart != null;
+
+  // Close on outside click.
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      const inMenu = menuRef.current && menuRef.current.contains(e.target as Node);
+      const inTarget = targetRef.current && targetRef.current.contains(e.target as Node);
+      if (!inMenu && !inTarget) {
+        setTriggerStart(null);
+        setFilter("");
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open, targetRef]);
+
+  // Detect "{{" at-or-before cursor and track the filter chars after it.
+  const recompute = useCallback(() => {
+    const el = targetRef.current;
+    if (!el) return;
+    const caret = el.selectionStart ?? value.length;
+    // Walk backwards from caret looking for "{{" without an intervening
+    // "}}" or whitespace > 30 chars (so we don't latch onto an old "{{").
+    let i = caret - 1;
+    let scanned = 0;
+    while (i >= 1 && scanned < 40) {
+      const two = value.slice(i - 1, i + 1);
+      if (two === "}}") { setTriggerStart(null); return; }
+      if (two === "{{") {
+        const start = i - 1;
+        const after = value.slice(start + 2, caret);
+        // Disallow newline in the filter — closes the menu on Enter.
+        if (/\n/.test(after)) { setTriggerStart(null); return; }
+        setTriggerStart(start);
+        setFilter(after);
+        setActiveIdx(0);
+        return;
+      }
+      i--;
+      scanned++;
+    }
+    setTriggerStart(null);
+  }, [targetRef, value]);
+
+  // Re-check on every value change and on key events that move the caret.
+  useEffect(() => {
+    recompute();
+  }, [value, recompute]);
+
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return tags;
+    return tags.filter(
+      (t) => t.label.toLowerCase().includes(q) || t.category.toLowerCase().includes(q),
+    );
+  }, [tags, filter]);
+
+  const pickTag = useCallback((tag: MergeTag) => {
+    if (triggerStart == null) return;
+    const el = targetRef.current;
+    const caret = el?.selectionStart ?? value.length;
+    const token = mergeTagToUserFriendlyToken(tag);
+    const next = value.slice(0, triggerStart) + token + value.slice(caret);
+    onChange(next);
+    setTriggerStart(null);
+    setFilter("");
+    setTimeout(() => {
+      if (!el) return;
+      el.focus();
+      const pos = triggerStart + token.length;
+      try { el.setSelectionRange(pos, pos); } catch { /* ignore */ }
+    }, 0);
+  }, [triggerStart, targetRef, value, onChange]);
+
+  // Key handler for the host input. Caller wires this into onKeyDown.
+  const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (triggerStart == null) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setTriggerStart(null);
+      setFilter("");
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.min(filtered.length - 1, i + 1));
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.max(0, i - 1));
+      return;
+    }
+    if (e.key === "Enter" || e.key === "Tab") {
+      if (filtered.length > 0) {
+        e.preventDefault();
+        pickTag(filtered[Math.min(activeIdx, filtered.length - 1)]);
+      }
+    }
+  }, [triggerStart, filtered, activeIdx, pickTag]);
+
+  const menu = open && filtered.length > 0 ? (
+    <div
+      ref={menuRef}
+      className="absolute left-0 z-50 mt-1 max-h-72 w-72 overflow-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg"
+      style={{ top: "100%" }}
+    >
+      <div className="px-2 py-1 text-[10px] uppercase font-bold tracking-wide text-slate-500">
+        Merge tag {filter && <span className="text-slate-400 normal-case font-normal">— filter: {filter}</span>}
+      </div>
+      {filtered.map((t, idx) => (
+        <button
+          key={t.key}
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); pickTag(t); }}
+          onMouseEnter={() => setActiveIdx(idx)}
+          className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs ${
+            idx === activeIdx ? "bg-orange-50 text-orange-900" : "hover:bg-orange-50 hover:text-orange-900"
+          }`}
+        >
+          <span className="font-semibold">{t.label}</span>
+          <span className="text-[10px] text-slate-400">{t.category}</span>
+        </button>
+      ))}
+    </div>
+  ) : null;
+
+  return { onKeyDown, menu, open };
 }
 
 // Lightweight preview renderer — resolves the {{tag}} tokens against a

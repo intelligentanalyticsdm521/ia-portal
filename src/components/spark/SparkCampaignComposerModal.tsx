@@ -11,7 +11,7 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { useAppState } from "../../app/AppState";
 import { isPlatformOwner } from "../../lib/currentPlan";
 import { IadmModal, IadmButton } from "../IadmModal";
-import { MergeTagPicker } from "./MergeTagPicker";
+import { MergeTagPicker, useMergeTagAutoComplete } from "./MergeTagPicker";
 import { SparkSuggestionsPanel } from "./SparkSuggestionsPanel";
 import { SparkBodyEditor } from "./SparkBodyEditor";
 import { CTAEditorBlock, ctaToBlock, autoContrastColor, type CTAValue } from "./CTAEditorBlock";
@@ -169,6 +169,21 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
   // owned by SparkBodyEditor (TipTap), which has its own merge-tag inserter.
   const subjectRef = useRef<HTMLInputElement>(null);
   const smsRef = useRef<HTMLTextAreaElement>(null);
+  const replyToRef = useRef<HTMLInputElement>(null);
+
+  // "{{" keystroke triggers — opens a small floating picker under each
+  // input. The toolbar Insert button still works as a fallback. See
+  // useMergeTagAutoComplete in MergeTagPicker.tsx. (The "From" field is a
+  // sender picker, not a free-text input, so no autocomplete needed there.)
+  const subjectAutoTag = useMergeTagAutoComplete({
+    targetRef: subjectRef, value: subject, onChange: setSubject,
+  });
+  const smsAutoTag = useMergeTagAutoComplete({
+    targetRef: smsRef, value: contentSms, onChange: setContentSms,
+  });
+  const replyToAutoTag = useMergeTagAutoComplete({
+    targetRef: replyToRef, value: replyTo, onChange: setReplyTo,
+  });
 
   // Reset state when modal opens.
   useEffect(() => {
@@ -516,13 +531,20 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                       <label className="block text-[10px] uppercase font-semibold text-slate-500">Subject</label>
                       <MergeTagPicker targetRef={subjectRef} value={subject} onChange={setSubject} compact />
                     </div>
-                    <input
-                      ref={subjectRef}
-                      value={subject}
-                      onChange={(e) => setSubject(e.target.value)}
-                      placeholder="Subject line"
-                      className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
-                    />
+                    <div className="relative">
+                      <input
+                        ref={subjectRef}
+                        value={subject}
+                        onChange={(e) => setSubject(e.target.value)}
+                        onKeyDown={subjectAutoTag.onKeyDown}
+                        placeholder="Subject line"
+                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
+                      />
+                      {subjectAutoTag.menu}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Type <span className="font-mono">{"{{"}</span> to insert a merge tag, or click Insert.
+                    </p>
                   </div>
                   <div className="grid grid-cols-3 gap-3">
                     <div>
@@ -589,12 +611,17 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                       <label className="block text-[10px] uppercase font-semibold text-slate-500 mb-1">
                         Reply-to <span className="text-slate-400 normal-case font-normal">(optional)</span>
                       </label>
-                      <input
-                        value={replyTo}
-                        onChange={(e) => setReplyTo(e.target.value)}
-                        placeholder="Defaults to the From address"
-                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
-                      />
+                      <div className="relative">
+                        <input
+                          ref={replyToRef}
+                          value={replyTo}
+                          onChange={(e) => setReplyTo(e.target.value)}
+                          onKeyDown={replyToAutoTag.onKeyDown}
+                          placeholder="Defaults to the From address"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
+                        />
+                        {replyToAutoTag.menu}
+                      </div>
                     </div>
                   </div>
                   <div>
@@ -619,7 +646,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                       }}
                     />
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      Click <span className="font-semibold">Merge tag</span> to drop in personalization that fills automatically per recipient, or <span className="font-semibold">CTA</span> to add a call-to-action button.
+                      Type <span className="font-mono">{"{{"}</span> or click <span className="font-semibold">Merge tag</span> to drop in personalization that fills automatically per recipient, or <span className="font-semibold">CTA</span> to add a call-to-action button.
                     </p>
                   </div>
                 </>
@@ -631,19 +658,26 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                     <label className="block text-[10px] uppercase font-semibold text-slate-500">SMS body</label>
                     <MergeTagPicker targetRef={smsRef} value={contentSms} onChange={setContentSms} compact />
                   </div>
-                  <textarea
-                    ref={smsRef}
-                    value={contentSms}
-                    onChange={(e) => setContentSms(e.target.value)}
-                    rows={4}
-                    maxLength={480}
-                    placeholder="Keep it short. Up to ~3 segments (480 chars)."
-                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
-                  />
+                  <div className="relative">
+                    <textarea
+                      ref={smsRef}
+                      value={contentSms}
+                      onChange={(e) => setContentSms(e.target.value)}
+                      onKeyDown={smsAutoTag.onKeyDown}
+                      rows={4}
+                      maxLength={480}
+                      placeholder="Keep it short. Up to ~3 segments (480 chars)."
+                      className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
+                    />
+                    {smsAutoTag.menu}
+                  </div>
                   <div className="flex justify-between text-[11px] text-slate-500 mt-0.5">
                     <span>{contentSms.length}/480</span>
                     <span>~{Math.ceil(contentSms.length / 160) || 0} segment(s)</span>
                   </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Type <span className="font-mono">{"{{"}</span> to insert a merge tag, or click Insert.
+                  </p>
                 </div>
               )}
             </div>

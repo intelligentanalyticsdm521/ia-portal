@@ -102,7 +102,7 @@ export const DEFAULT_CTA_MERGE_TAGS: MergeTag[] = [
   { key: "unsubscribe link",  label: "Unsubscribe link",  category: "Campaign", example: "auto link" },
   { key: "preferences link",  label: "Preferences link",  category: "Campaign", example: "auto link" },
   { key: "view in browser",   label: "View in browser",   category: "Campaign", example: "auto link" },
-  { key: "tenant website",    label: "Business website",  category: "Tenant",   example: "https://example.com" },
+  { key: "tenant website",    label: "Business website",  category: "Business", example: "https://example.com" },
 ];
 
 const RADIUS_PRESETS: { label: string; value: number }[] = [
