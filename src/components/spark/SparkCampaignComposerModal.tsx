@@ -6,13 +6,61 @@
 // campaigns list. Matches the modal-driven creation pattern: one entry
 // point, no navigation between pages to start a new campaign.
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Mail, MessageSquare, ArrowRight, ArrowLeft, Eye, Sparkles } from "lucide-react";
+import { Mail, MessageSquare, ArrowRight, ArrowLeft, Sparkles } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { useAppState } from "../../app/AppState";
 import { isPlatformOwner } from "../../lib/currentPlan";
 import { IadmModal, IadmButton } from "../IadmModal";
-import { MergeTagPicker, renderMergeTagPreview } from "./MergeTagPicker";
+import { MergeTagPicker } from "./MergeTagPicker";
 import { SparkSuggestionsPanel } from "./SparkSuggestionsPanel";
+import { SparkBodyEditor } from "./SparkBodyEditor";
+import { CTAEditorBlock, ctaToBlock, autoContrastColor, type CTAValue } from "./CTAEditorBlock";
+
+// Render a CTAValue into the inline HTML that gets appended to the email
+// body. Mirrors the LUMEN-API emailBuilder button block output so the
+// editor preview + the inbox preview stay visually consistent.
+function ctaValueToHtml(v: CTAValue): string {
+  const block = ctaToBlock(v) as Record<string, unknown>;
+  if (block.type === "paragraph") {
+    const align = (v.align || "center") as string;
+    return `<p style="text-align:${align};">${block.html as string}</p>`;
+  }
+  const align = (v.align || "center") as string;
+  const justify = align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center";
+  const radius = v.borderRadius ?? 6;
+  const width = v.width || "fit";
+  const bg = v.buttonColor || "#1A3A4A";
+  const color = v.textColor || autoContrastColor(bg);
+  const label = (v.label || "Click here")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const url = (v.url || "#").replace(/"/g, "&quot;");
+  return (
+    `<p style="display:flex;justify-content:${justify};">`
+    + `<a href="${url}" style="display:inline-block;`
+    + `background:${bg};color:${color};padding:12px 24px;`
+    + `border-radius:${radius}px;font-weight:600;font-size:16px;`
+    + `text-decoration:none;text-align:center;`
+    + (width === "full" ? "width:100%;" : "")
+    + `">${label}</a></p>`
+  );
+}
+
+interface Sender {
+  id: number;
+  display_name: string | null;
+  effective_display_name?: string | null;
+  email_address: string;
+  reply_to_override: string | null;
+  is_default: boolean;
+}
+
+interface Signature {
+  id: number;
+  name: string;
+  body_html: string | null;
+  body_text: string | null;
+  is_default: boolean;
+}
 
 type Channel = "email" | "sms";
 type Step = "channel" | "compose";
@@ -79,11 +127,32 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
   const [fromEmail, setFromEmail] = useState("");
   const [replyTo, setReplyTo] = useState("");
   const [contentHtml, setContentHtml] = useState("");
+  const [contentText, setContentText] = useState("");
   const [contentSms, setContentSms] = useState("");
   const [listId, setListId] = useState<number | "">("");
+  // Campaign Composer v1.1 picker fields (locked 2026-06-24). When the user
+  // selects a sender, fromName + fromEmail mirror that row (read-only for
+  // backward compat with the legacy free-text columns).
+  const [senderId, setSenderId] = useState<number | "">("");
+  const [signatureId, setSignatureId] = useState<number | "">("");
 
   // Lookups
   const [lists, setLists] = useState<List[]>([]);
+  const [senders, setSenders] = useState<Sender[]>([]);
+  const [signatures, setSignatures] = useState<Signature[]>([]);
+
+  // CTA editor — opened from the SparkBodyEditor toolbar. On save, the
+  // rendered CTA HTML is appended to contentHtml; SparkBodyEditor's
+  // setContent useEffect picks up the change and re-renders the editor.
+  const [ctaOpen, setCtaOpen] = useState(false);
+  const [ctaValue, setCtaValue] = useState<CTAValue>({
+    type: "button",
+    label: "",
+    url: "",
+    align: "center",
+    width: "fit",
+    borderRadius: 6,
+  });
 
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
@@ -95,11 +164,11 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
   const [editStatus, setEditStatus] = useState<string | null>(null);
   const isEditMode = !!editCampaignId;
 
-  // Refs for MergeTagPicker — used to insert tokens at the cursor position.
+  // Refs for MergeTagPicker — used to insert tokens at the cursor position
+  // of the input/textarea fields (subject + SMS body). The email body is
+  // owned by SparkBodyEditor (TipTap), which has its own merge-tag inserter.
   const subjectRef = useRef<HTMLInputElement>(null);
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
   const smsRef = useRef<HTMLTextAreaElement>(null);
-  const [showPreview, setShowPreview] = useState(false);
 
   // Reset state when modal opens.
   useEffect(() => {
@@ -110,11 +179,39 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     setComposeTab("compose");
     setHasSuggestions(false);
     setName(""); setSubject(""); setFromName(""); setFromEmail(""); setReplyTo("");
-    setContentHtml(""); setContentSms(""); setListId("");
+    setContentHtml(""); setContentText(""); setContentSms(""); setListId("");
+    setSenderId(""); setSignatureId("");
     setEditStatus(null);
     setError(null);
     if (!ready) return;
     get<{ data: List[] }>("/api/v1/lists").then((r) => setLists(r?.data || [])).catch(() => setLists([]));
+    // v1.1 picker lookups. Both endpoints return { data: [...] }. If a
+    // tenant hasn't set up senders yet the dropdown shows a "no senders"
+    // hint pointing to Settings — but we still allow drafts so the user
+    // isn't blocked while waiting on domain verification.
+    get<{ data: Sender[] }>("/api/v1/senders").then((r) => {
+      const list = r?.data || [];
+      setSenders(list);
+      // If we're creating a NEW draft (not edit-mode load), prefill with
+      // the tenant default sender.
+      if (!editCampaignId) {
+        const def = list.find((s) => s.is_default) || list[0];
+        if (def) {
+          setSenderId(def.id);
+          setFromName(def.effective_display_name || def.display_name || "");
+          setFromEmail(def.email_address || "");
+          if (def.reply_to_override) setReplyTo(def.reply_to_override);
+        }
+      }
+    }).catch(() => setSenders([]));
+    get<{ data: Signature[] }>("/api/v1/signatures").then((r) => {
+      const list = r?.data || [];
+      setSignatures(list);
+      if (!editCampaignId) {
+        const def = list.find((s) => s.is_default);
+        if (def) setSignatureId(def.id);
+      }
+    }).catch(() => setSignatures([]));
 
     // F-CS.2 — tier probe + suggestion-count probe.
     // /api/v1/usage returns { data: { tier: 'standard'|'pro'|'business', ... } }.
@@ -148,8 +245,11 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
           setFromEmail(c.from_email || "");
           setReplyTo(c.reply_to || "");
           setContentHtml(c.content_html || "");
+          setContentText(c.content_text || "");
           setContentSms(c.content_sms || "");
           setListId(c.recipient_list_id ?? "");
+          setSenderId(c.sender_address_id ?? "");
+          setSignatureId(c.signature_id ?? "");
           setEditStatus(c.status || null);
         })
         .catch((err) => setError(String((err as Error)?.message || err)));
@@ -173,10 +273,17 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     };
     if (channel === "email") {
       payload.subject = subject.trim() || null;
+      // Send BOTH the picker IDs (v1.1) and the legacy free-text columns
+      // (v1.0). When senderId is set, fromName/fromEmail mirror the picker
+      // row — this gives backwards-compat for any downstream consumer that
+      // still reads the flat columns (welcome-email worker, older drafts).
       payload.from_name = fromName.trim() || null;
       payload.from_email = fromEmail.trim() || null;
       payload.reply_to = replyTo.trim() || null;
+      payload.sender_address_id = senderId === "" ? null : senderId;
+      payload.signature_id = signatureId === "" ? null : signatureId;
       payload.content_html = contentHtml || null;
+      payload.content_text = contentText || null;
     } else {
       payload.content_sms = contentSms || null;
     }
@@ -417,55 +524,102 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                       className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-[10px] uppercase font-semibold text-slate-500 mb-1">From name</label>
-                      <input
-                        value={fromName}
-                        onChange={(e) => setFromName(e.target.value)}
-                        placeholder="Your business name"
-                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
-                      />
+                      <label className="block text-[10px] uppercase font-semibold text-slate-500 mb-1">From</label>
+                      <select
+                        value={senderId}
+                        onChange={(e) => {
+                          const next = e.target.value === "" ? "" : Number(e.target.value);
+                          setSenderId(next);
+                          const picked = senders.find((s) => s.id === next);
+                          if (picked) {
+                            setFromName(picked.effective_display_name || picked.display_name || "");
+                            setFromEmail(picked.email_address || "");
+                            // Replace reply-to with the sender's override
+                            // ONLY when the user hasn't customised it yet —
+                            // never clobber a manual entry on every change.
+                            if (!replyTo && picked.reply_to_override) {
+                              setReplyTo(picked.reply_to_override);
+                            }
+                          } else {
+                            setFromName("");
+                            setFromEmail("");
+                          }
+                        }}
+                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm bg-white focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
+                      >
+                        <option value="">— Pick a sender —</option>
+                        {senders.map((s) => {
+                          const dn = s.effective_display_name || s.display_name || s.email_address;
+                          return (
+                            <option key={s.id} value={s.id}>
+                              {dn} &lt;{s.email_address}&gt;{s.is_default ? " (default)" : ""}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      {senders.length === 0 && (
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          No senders yet. <a href="/app/services/spark_settings" className="text-[#EF6C33] hover:underline">Add one in Settings →</a>
+                        </p>
+                      )}
+                      {fromEmail && (
+                        <p className="text-[11px] text-slate-500 mt-0.5 truncate" title={fromEmail}>
+                          {fromName ? `${fromName} <${fromEmail}>` : fromEmail}
+                        </p>
+                      )}
                     </div>
                     <div>
-                      <label className="block text-[10px] uppercase font-semibold text-slate-500 mb-1">Reply-to</label>
+                      <label className="block text-[10px] uppercase font-semibold text-slate-500 mb-1">Signature</label>
+                      <select
+                        value={signatureId}
+                        onChange={(e) => setSignatureId(e.target.value === "" ? "" : Number(e.target.value))}
+                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm bg-white focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
+                      >
+                        <option value="">— None —</option>
+                        {signatures.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}{s.is_default ? " (default)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase font-semibold text-slate-500 mb-1">
+                        Reply-to <span className="text-slate-400 normal-case font-normal">(optional)</span>
+                      </label>
                       <input
                         value={replyTo}
                         onChange={(e) => setReplyTo(e.target.value)}
-                        placeholder="hello@your-domain.com"
+                        placeholder="Defaults to the From address"
                         className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
                       />
                     </div>
                   </div>
                   <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-[10px] uppercase font-semibold text-slate-500">Body</label>
-                      <div className="flex items-center gap-1.5">
-                        <button type="button"
-                          onClick={() => setShowPreview((v) => !v)}
-                          className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white hover:bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
-                          <Eye className="h-2.5 w-2.5" /> {showPreview ? "Edit" : "Preview"}
-                        </button>
-                        <MergeTagPicker targetRef={bodyRef} value={contentHtml} onChange={setContentHtml} compact />
-                      </div>
-                    </div>
-                    {showPreview ? (
-                      <div
-                        className="w-full min-h-[10rem] rounded border border-slate-300 px-3 py-2 text-sm bg-slate-50 prose prose-sm max-w-none"
-                        dangerouslySetInnerHTML={{ __html: renderMergeTagPreview(contentHtml) }}
-                      />
-                    ) : (
-                      <textarea
-                        ref={bodyRef}
-                        value={contentHtml}
-                        onChange={(e) => setContentHtml(e.target.value)}
-                        rows={6}
-                        placeholder={'<p>Hi {{contact.first_name}},</p>'}
-                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
-                      />
-                    )}
+                    <label className="block text-[10px] uppercase font-semibold text-slate-500 mb-1">Body</label>
+                    <SparkBodyEditor
+                      value={contentHtml}
+                      onChange={(html, text) => {
+                        setContentHtml(html);
+                        setContentText(text);
+                      }}
+                      placeholder={"Hi {{first name}}, ..."}
+                      onInsertCTA={() => {
+                        setCtaValue({
+                          type: "button",
+                          label: "",
+                          url: "",
+                          align: "center",
+                          width: "fit",
+                          borderRadius: 6,
+                        });
+                        setCtaOpen(true);
+                      }}
+                    />
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      Click <span className="font-semibold">Insert</span> to add personalization that fills automatically per recipient.
+                      Click <span className="font-semibold">Merge tag</span> to drop in personalization that fills automatically per recipient, or <span className="font-semibold">CTA</span> to add a call-to-action button.
                     </p>
                   </div>
                 </>
@@ -495,6 +649,41 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
             </div>
           )}
       </div>
+      {/* CTA Editor sub-modal — opened from the SparkBodyEditor CTA toolbar
+          button. Save appends the rendered HTML to contentHtml; the editor's
+          setContent useEffect picks up the new value and re-renders. */}
+      {ctaOpen && (
+        <IadmModal
+          open={ctaOpen}
+          onClose={() => setCtaOpen(false)}
+          product="spark"
+          eyebrow="SPARK · INSERT CTA"
+          title="Add a call-to-action"
+          size="info"
+          footer={
+            <>
+              <IadmButton variant="ghost" onClick={() => setCtaOpen(false)}>Cancel</IadmButton>
+              <IadmButton
+                variant="accent"
+                product="spark"
+                onClick={() => {
+                  const html = ctaValueToHtml(ctaValue);
+                  const next = contentHtml ? `${contentHtml}\n${html}` : html;
+                  setContentHtml(next);
+                  setCtaOpen(false);
+                }}
+                disabled={!ctaValue.url.trim() || !ctaValue.label.trim()}
+              >
+                Insert
+              </IadmButton>
+            </>
+          }
+        >
+          <div className="p-5">
+            <CTAEditorBlock value={ctaValue} onChange={setCtaValue} />
+          </div>
+        </IadmModal>
+      )}
     </IadmModal>
   );
 }

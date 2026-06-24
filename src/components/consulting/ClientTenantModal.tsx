@@ -37,13 +37,15 @@ import { connectGoogle as arionConnectGoogle, createSeoProject as arionCreateSeo
 import { InfoTip } from "../InfoTip";
 import { LogoPicker } from "../oliver/LogoPicker";
 import { PhoneInput } from "../PhoneInput";
-import { BarChart3, Building2, CheckCircle2, ExternalLink, Globe, MapPin, Search, Sparkles, TrendingUp, UserCheck } from "lucide-react";
+import { BarChart3, Building2, CheckCircle2, ExternalLink, Globe, MapPin, Plus, Search, Sparkles, Trash2, TrendingUp, UserCheck } from "lucide-react";
 import { mergeStrict } from "../../lib/mergeStrict";
 import { createRunner } from "../../lib/onboardingRunner/runner";
 import { buildArionSteps, type ArionDomainPath } from "../../lib/onboardingRunner/arionSteps";
 import type { StepRecord, Runner } from "../../lib/onboardingRunner/types";
 import OnboardingRunnerProgress from "../onboarding/OnboardingRunnerProgress";
 import { fetchArionSeoAddons, type ArionSeoAddonEntry } from "../../lib/onboardingApi";
+import { SparkBodyEditor } from "../spark/SparkBodyEditor";
+import { useSparkApi } from "../../hooks/useSparkApi";
 
 const ARION_API_BASE_URL = (import.meta.env.VITE_ARION_API_BASE_URL as string)
   || "https://app-arion-api-prod-e6fuc9gzd8f3hqfe.centralus-01.azurewebsites.net";
@@ -124,6 +126,51 @@ interface OnboardingState {
     send_time_preference: "morning" | "midday" | "afternoon" | "evening" | "";
     first_campaign_goal: string;
     audience_size_estimate: string;
+    // 2026-06-24 — SPARK setup expanded from a single sender_domain field
+    // to a 7-sub-step flow per Brandon's SPARK Campaign Composer v1.1 lock
+    // + welcome-email canonical scope. Each block below carries one step.
+    //
+    // Step 1 — IA-default ("@send.ia-dm.com") vs white-label own domain.
+    sender_mode: "ia_default" | "white_label" | "";
+    // Step 1b — the white-label "from" email the founder typed (drives
+    // sender_domain + reply_to). Empty when sender_mode = ia_default.
+    white_label_email: string;
+    // Step 2 — DNS publish path. arion_auto: Hostinger-managed domain, the
+    // ARION SSH pipeline writes the SPF/DKIM/DMARC records. manual_byo: the
+    // customer publishes the records themselves and verifies via SPARK ▸
+    // Sender domains after onboarding.
+    dns_path: "arion_auto" | "manual_byo" | "";
+    arion_dns_publish_status: "idle" | "publishing" | "verified" | "failed";
+    // Step 3 — Sender addresses (1+ rows). Persisted via POST /senders one
+    // row at a time at finish-onboarding time. The first row is prefilled
+    // from the owner's email (or welcome@<white_label_domain>).
+    senders: Array<{
+      local_part: string;
+      display_name: string;
+      is_default: boolean;
+      reply_to_override: string;
+    }>;
+    // Step 4 — Signatures (1+ rows). Body is rich-text (SparkBodyEditor
+    // produces sanitised HTML); we mirror plain text into body_text. The
+    // first row is prefilled from owner.first_name + business_name + phone.
+    signatures: Array<{
+      name: string;
+      body_html: string;
+      body_text: string;
+      is_default: boolean;
+    }>;
+    // Step 5 — Default CTA brand colour for the Campaign Composer's "Insert
+    // CTA" button. Prefilled from profile.accent_color but overridable.
+    default_cta_color: string;
+    // Step 6 — Initial contact source pick. csv_now / integrate_later / skip
+    // is the headline; the legacy contact_import_method / audience_size /
+    // send_time_preference / brand_voice / first_campaign_goal fields above
+    // remain accessible as "More SPARK settings".
+    initial_contact_source: "csv_now" | "integrate_later" | "skip" | "";
+    // Step 7 — White-label only: show or hide the "Powered by Intelligent
+    // Analytics" footer. The picker is disabled for Lite-tier (which always
+    // shows the footer per reference_oliver_tier_matrix.md branding model).
+    show_ia_footer: boolean;
   };
   oliver: {
     stripe_connect_started: boolean;
@@ -208,6 +255,18 @@ const EMPTY_STATE: OnboardingState = {
     sender_domain: "", brand_voice: [], brand_voice_custom: "",
     contact_import_method: "", send_time_preference: "",
     first_campaign_goal: "", audience_size_estimate: "",
+    // 2026-06-24 — SPARK 7-sub-step expansion seeds. Most are blank/empty;
+    // the senders + signatures arrays start with one placeholder row each
+    // so the UI always has something to render before prefill lands.
+    sender_mode: "",
+    white_label_email: "",
+    dns_path: "",
+    arion_dns_publish_status: "idle",
+    senders: [{ local_part: "", display_name: "", is_default: true, reply_to_override: "" }],
+    signatures: [{ name: "Default", body_html: "", body_text: "", is_default: true }],
+    default_cta_color: "",
+    initial_contact_source: "",
+    show_ia_footer: true,
   },
   oliver: {
     stripe_connect_started: false,
@@ -552,17 +611,23 @@ export interface ClientTenantModalProps {
   mode: "onboarding" | "consulting";
   /** Products in the cart — drives which sections show. */
   cart?: ProductKey[];
+  /**
+   * Optional per-product tier from the cart (e.g. SPARK "lite" gates the
+   * white-label "hide IA footer" toggle in step 7). When omitted the SPARK
+   * section assumes Standard or higher so the toggle is enabled.
+   */
+  cartTier?: { spark?: string; oliver?: string; arion?: string };
   onClose: () => void;
   onFinished?: () => void;
 }
 
-export function ClientTenantModal({ open, tenantId, tenantName, mode, cart, onClose, onFinished }: ClientTenantModalProps) {
+export function ClientTenantModal({ open, tenantId, tenantName, mode, cart, cartTier, onClose, onFinished }: ClientTenantModalProps) {
   if (!open || !tenantId) return null;
   const ctx: ClientTenantValue = { tenantId, tenantName, mode };
   return (
     <ClientTenantProvider value={ctx}>
       {mode === "onboarding"
-        ? <UnifiedOnboarding tenantId={tenantId} tenantName={tenantName} cart={cart} onClose={onClose} onFinished={onFinished} />
+        ? <UnifiedOnboarding tenantId={tenantId} tenantName={tenantName} cart={cart} cartTier={cartTier} onClose={onClose} onFinished={onFinished} />
         : <ConsultingModeShell tenantId={tenantId} tenantName={tenantName} onClose={onClose} />}
     </ClientTenantProvider>
   );
@@ -570,14 +635,20 @@ export function ClientTenantModal({ open, tenantId, tenantName, mode, cart, onCl
 
 // ─── Unified onboarding ──────────────────────────────────────────────────
 
-function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: {
+function UnifiedOnboarding({ tenantId, tenantName, cart, cartTier, onClose, onFinished }: {
   tenantId: string; tenantName?: string; cart: ProductKey[] | undefined;
+  cartTier?: { spark?: string; oliver?: string; arion?: string };
   onClose: () => void; onFinished?: () => void;
 }) {
   // get/post/patch are CLIENT-scoped (header = client tenant_id) — used for
   // Stripe Connect, PATCH /settings (business profile), etc.
   // getFounder/postFounder are FOUNDER-scoped — used for /admin/onboard-client/*.
   const { get, post, patch, getFounder, postFounder } = useOliverApi();
+  // SPARK (LUMEN) API — used by flushSectionToCanonical at the SPARK step to
+  // POST senders/signatures + register the sender domain + write the
+  // spark-onboarding settings bundle. The hook is tenant-scoped via the
+  // ClientTenantProvider context so headers carry the client tenant_id.
+  const sparkApi = useSparkApi();
   // Cart can come from props (explicit) OR be derived from the prefill payload
   // (core.tenants.signup_product → ["arion"|"spark"|"oliver"|"consulting"]
   // OR all four for multi). Default ["arion","spark","oliver"] is a final
@@ -699,7 +770,7 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
       // Per-section canonical-table writes (G1 confirmed: save then continue).
       // Best-effort — if a write fails, log + continue so Save & Continue
       // never blocks. The JSON-blob save below is the durable record.
-      try { await flushSectionToCanonical(current.id, state, { patch }); }
+      try { await flushSectionToCanonical(current.id, state, { patch, sparkApi }); }
       catch (e) { console.warn("[onboarding] canonical write failed for", current.id, e); }
 
       await postFounder("/admin/onboard-client/save-onboarding", {
@@ -799,7 +870,7 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
         {loading ? (
           <div className="text-sm text-slate-500">Loading saved progress…</div>
         ) : (
-          <SectionBody section={current} state={state} setState={setState} api={{ get, post }} accent={accent} tenantId={tenantId} arionRunner={arionRunner} />
+          <SectionBody section={current} state={state} setState={setState} api={{ get, post }} accent={accent} tenantId={tenantId} arionRunner={arionRunner} cartTier={cartTier} />
         )}
         <HelpFooter />
       </div>
@@ -829,7 +900,7 @@ function StepStrip({ current, sections, accent }: { current: number; sections: S
 
 // ─── Section dispatcher ──────────────────────────────────────────────────
 
-function SectionBody({ section, state, setState, api, accent, tenantId, arionRunner }: {
+function SectionBody({ section, state, setState, api, accent, tenantId, arionRunner, cartTier }: {
   section: Section;
   state: OnboardingState;
   setState: (s: OnboardingState | ((prev: OnboardingState) => OnboardingState)) => void;
@@ -837,6 +908,7 @@ function SectionBody({ section, state, setState, api, accent, tenantId, arionRun
   accent: string;
   tenantId: string;
   arionRunner: ArionRunnerController;
+  cartTier?: { spark?: string; oliver?: string; arion?: string };
 }) {
   switch (section.id) {
     case "profile":                return <ProfileSection profile={state.profile} setProfile={(p) => setState((s) => ({ ...s, profile: p }))} api={api} />;
@@ -847,8 +919,8 @@ function SectionBody({ section, state, setState, api, accent, tenantId, arionRun
     // handoff panel) at the top, then the connect-account rows once the
     // runner finishes and arion.site exists in the DB.
     case "arion_integrations":     return <ArionIntegrationsSection v={state.arion_integrations} setV={(v) => setState((s) => ({ ...s, arion_integrations: v }))} tenantId={tenantId} arion={state.arion} arionRunner={arionRunner} />;
-    case "spark":                  return <SparkSection v={state.spark} setV={(v) => setState((s) => ({ ...s, spark: v }))} />;
-    case "spark_welcome_email":    return <SparkWelcomeEmailSection v={state.spark_welcome_email} setV={(v) => setState((s) => ({ ...s, spark_welcome_email: v }))} profile={state.profile} owner={state.owner} />;
+    case "spark":                  return <SparkSection v={state.spark} setV={(v) => setState((s) => ({ ...s, spark: v }))} profile={state.profile} owner={state.owner} sparkTier={cartTier?.spark} />;
+    case "spark_welcome_email":    return <SparkWelcomeEmailSection v={state.spark_welcome_email} setV={(v) => setState((s) => ({ ...s, spark_welcome_email: v }))} profile={state.profile} owner={state.owner} spark={state.spark} />;
     case "oliver_payments":        return <OliverPaymentsSection v={state.oliver} setV={(v) => setState((s) => ({ ...s, oliver: v }))} accent={accent} api={api} />;
     case "oliver_templates":       return <OliverTemplatesSection profile={state.profile} />;
     case "oliver_customer_portal": return <OliverPortalSection title="Customer portal" v={state.oliver.customer_portal} setV={(p) => setState((s) => ({ ...s, oliver: { ...s.oliver, customer_portal: p } }))} fallback={state.profile} />;
@@ -2339,19 +2411,46 @@ function ArionIntegrationsSection({ v, setV, tenantId, arion, arionRunner }: {
 // imported. We pre-fill with a system default that pulls the tenant's
 // business name + owner name. Tenant can edit, pick "system default" to
 // use ours as-is, or skip and write it later.
-function SparkWelcomeEmailSection({ v, setV, profile, owner }: {
+function SparkWelcomeEmailSection({ v, setV, profile, owner, spark }: {
   v: OnboardingState["spark_welcome_email"];
   setV: (v: OnboardingState["spark_welcome_email"]) => void;
   profile: BusinessProfile;
   owner: OwnerAccount;
+  spark: OnboardingState["spark"];
 }) {
-  // Live-fill sender defaults when blank — only on initial mount of section.
+  // 2026-06-24 — auto-fill now sources from the SPARK 7-sub-step picks:
+  //   sender_name  ← senders[is_default=true].display_name (fallback to owner)
+  //   sender_email ← senders[is_default=true].local_part + "@" + domain
+  //                  (white-label uses the typed domain; ia_default uses send.ia-dm.com)
+  //   signature appended to body  ← signatures[is_default=true].body_text
+  //   CTA brand colour            ← spark.default_cta_color (used by future
+  //     "Insert CTA" insertion in this editor; today we just store the colour
+  //     alongside the template via flushSectionToCanonical)
+  // Only fires on initial mount so the founder can still edit by hand.
   useEffect(() => {
-    const senderName = v.sender_name || `${owner.first_name || ""} ${owner.last_name || ""}`.trim() || profile.business_name;
-    const senderEmail = v.sender_email || profile.primary_contact_email;
+    const defaultSender = spark.senders.find((s) => s.is_default) || spark.senders[0];
+    const defaultSig = spark.signatures.find((s) => s.is_default) || spark.signatures[0];
+    const domain = spark.sender_mode === "ia_default"
+      ? "send.ia-dm.com"
+      : (spark.white_label_email.split("@")[1] || spark.sender_domain || "");
+
+    const senderName = v.sender_name
+      || defaultSender?.display_name
+      || `${owner.first_name || ""} ${owner.last_name || ""}`.trim()
+      || profile.business_name;
+    const senderEmail = v.sender_email
+      || (defaultSender?.local_part && domain ? `${defaultSender.local_part}@${domain}` : "")
+      || profile.primary_contact_email;
+
     if (senderName !== v.sender_name || senderEmail !== v.sender_email) {
       setV({ ...v, sender_name: senderName || "", sender_email: senderEmail || "" });
     }
+    // Note: signature body is not prepended into v.body here — the template
+    // body editor below renders + edits independently. The persist function
+    // is the place where signature body_text gets appended to the final
+    // outgoing email, so the founder sees their welcome copy without the
+    // signature noise while editing.
+    void defaultSig; // referenced for future signature preview chip
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2442,83 +2541,454 @@ ${businessName}`;
 
 // ─── Section: SPARK ──────────────────────────────────────────────────────
 
-function SparkSection({ v, setV }: { v: OnboardingState["spark"]; setV: (v: OnboardingState["spark"]) => void }) {
+// 2026-06-24 — SPARK setup expanded from a single sender_domain field into a
+// 7-sub-step block driven by Brandon's SPARK Campaign Composer v1.1 lock
+// (reference_spark_campaign_composer_v11) + welcome-email canonical scope
+// (reference_welcome_email_campaigns). Steps render top-to-bottom; later
+// steps gate visibly on earlier picks (e.g. step 2 only renders when the
+// founder picks "white-label" in step 1; step 7 only renders for white-label
+// + non-Lite tiers). Legacy fields (contact_import_method, brand_voice,
+// send_time_preference, audience_size_estimate, first_campaign_goal) move
+// into the "More SPARK settings" expander at the bottom so this section
+// is still a single canonical place for SPARK onboarding writes.
+function SparkSection({ v, setV, profile, owner, sparkTier }: {
+  v: OnboardingState["spark"];
+  setV: (v: OnboardingState["spark"]) => void;
+  profile: BusinessProfile;
+  owner: OwnerAccount;
+  sparkTier?: string;
+}) {
+  // Lite-tier (== "lite") cannot hide the IA footer per
+  // reference_oliver_tier_matrix.md branding-model lock. Default to enabled
+  // when no tier info is available — Brandon's overnight onboarding flow
+  // currently doesn't always pass tier through.
+  const isLiteTier = (sparkTier || "").toLowerCase() === "lite";
+
+  // ─── Step 3 prefill (senders) ──────────────────────────────────────────
+  // First-time render — when the senders array still holds the placeholder
+  // empty row, swap it for a sensible default derived from the white-label
+  // email (if present) or the owner email. Runs once.
+  useEffect(() => {
+    if (v.senders.length === 1 && !v.senders[0].local_part && !v.senders[0].display_name) {
+      const sourceEmail = v.white_label_email || owner.billing_email || profile.primary_contact_email || "";
+      const localPart = sourceEmail.includes("@") ? sourceEmail.split("@")[0] : "welcome";
+      const display = [owner.first_name, owner.last_name].filter(Boolean).join(" ") || profile.business_name || "";
+      setV({
+        ...v,
+        senders: [{
+          local_part: localPart || "welcome",
+          display_name: display,
+          is_default: true,
+          reply_to_override: "",
+        }],
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ─── Step 4 prefill (signatures) ───────────────────────────────────────
+  useEffect(() => {
+    if (v.signatures.length === 1 && !v.signatures[0].body_html && !v.signatures[0].body_text) {
+      const name = [owner.first_name, owner.last_name].filter(Boolean).join(" ") || profile.business_name || "Team";
+      const bizLine = profile.business_name ? `<br/>${profile.business_name}` : "";
+      const phoneLine = profile.phone ? `<br/>${profile.phone}` : "";
+      const html = `<p>${owner.first_name || name}<br/>${profile.business_name || ""}${phoneLine}</p>`.replace("<br/>", bizLine ? "<br/>" : "");
+      const text = `${owner.first_name || name}\n${profile.business_name || ""}${profile.phone ? `\n${profile.phone}` : ""}`;
+      setV({
+        ...v,
+        signatures: [{
+          name: "Default",
+          body_html: html,
+          body_text: text,
+          is_default: true,
+        }],
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ─── Step 5 prefill (CTA colour) ───────────────────────────────────────
+  useEffect(() => {
+    if (!v.default_cta_color && profile.accent_color) {
+      setV({ ...v, default_cta_color: profile.accent_color });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile.accent_color]);
+
+  // ─── White-label email → keep sender_domain in sync ────────────────────
+  // sender_domain (legacy field, still rendered in Finish summary) tracks
+  // whatever domain the founder picked in step 1.
+  useEffect(() => {
+    if (v.sender_mode === "white_label" && v.white_label_email.includes("@")) {
+      const dom = v.white_label_email.split("@")[1] || "";
+      if (dom && dom !== v.sender_domain) setV({ ...v, sender_domain: dom });
+    } else if (v.sender_mode === "ia_default" && v.sender_domain !== "send.ia-dm.com") {
+      setV({ ...v, sender_domain: "send.ia-dm.com" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v.sender_mode, v.white_label_email]);
+
+  const [showLegacy, setShowLegacy] = useState(false);
+
+  // Helpers for the senders/signatures mini-tables — keep the default-radio
+  // invariant (exactly one true) intact whichever row the user toggles.
+  function setDefaultSender(idx: number) {
+    setV({ ...v, senders: v.senders.map((s, i) => ({ ...s, is_default: i === idx })) });
+  }
+  function setDefaultSignature(idx: number) {
+    setV({ ...v, signatures: v.signatures.map((s, i) => ({ ...s, is_default: i === idx })) });
+  }
+  function addSender() {
+    setV({ ...v, senders: [...v.senders, { local_part: "", display_name: "", is_default: false, reply_to_override: "" }] });
+  }
+  function removeSender(idx: number) {
+    if (v.senders.length <= 1) return; // never drop below 1 row
+    const next = v.senders.filter((_, i) => i !== idx);
+    // If we removed the default, promote the first remaining row.
+    if (!next.some((s) => s.is_default)) next[0].is_default = true;
+    setV({ ...v, senders: next });
+  }
+  function addSignature() {
+    setV({ ...v, signatures: [...v.signatures, { name: "", body_html: "", body_text: "", is_default: false }] });
+  }
+  function removeSignature(idx: number) {
+    if (v.signatures.length <= 1) return;
+    const next = v.signatures.filter((_, i) => i !== idx);
+    if (!next.some((s) => s.is_default)) next[0].is_default = true;
+    setV({ ...v, signatures: next });
+  }
+
+  const sectionHeader = (n: number, title: string, desc: string) => (
+    <div className="flex items-baseline gap-2 mb-1.5">
+      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-orange-500 text-white text-[10px] font-bold">{n}</span>
+      <span className="text-sm font-bold text-slate-900">{title}</span>
+      <span className="text-[11px] text-slate-500 ml-1">{desc}</span>
+    </div>
+  );
+
+  // ARION manages the domain when (a) ARION is in cart AND (b) the sender
+  // domain (white-label) matches the ARION domain the founder picked. The
+  // "arion_auto" DNS path is only sensible in that case — otherwise it's
+  // the manual_byo flow (customer publishes records themselves).
+  // The arion section in OnboardingState exposes this, but this component
+  // doesn't have access to that here. The DNS path radio defaults to
+  // manual_byo and gives the founder the choice; the backend at
+  // finish-onboarding decides whether the Hostinger SSH publisher can
+  // actually act on "arion_auto" given the tenant's real ARION site row.
+
   return (
-    <div className="space-y-4">
-      <p className="text-xs text-slate-500">Sender setup, contact-import plan, brand voice for AI Writer, and first-campaign goal. Skip what doesn't apply.</p>
+    <div className="space-y-5">
+      <p className="text-xs text-slate-500">SPARK email setup, broken into 7 quick decisions. Skip what doesn't apply — every step is optional.</p>
 
-      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-slate-700 space-y-1">
-        <div className="font-semibold text-slate-800">What "sender domain" means</div>
-        <p>
-          Every email SPARK sends on your behalf — marketing campaigns, transactional notices (welcome,
-          invoice, appointment reminder, past-due) — leaves from this domain.
-          {" "}
-          <b>Using your own domain (e.g. <code>send.yourbusiness.com</code>)</b> gets better deliverability
-          and shows your brand in the From line.
-          {" "}
-          <b>Leaving blank</b> falls back to our shared <code>@send.ia-dm.com</code> domain — works fine for
-          low volume, lower deliverability for larger sends.
-        </p>
-      </div>
-      <Field label="Sender domain" value={v.sender_domain} onChange={(d) => setV({ ...v, sender_domain: d })}
-        placeholder="send.yourbusiness.com" hint="You'll add a DNS record after onboarding to verify it." />
-
-      {/* Contact import method */}
+      {/* ─── Step 1 ─── Sender mode ───────────────────────────────────── */}
       <div>
-        <label className="block text-xs font-semibold text-slate-700 mb-1">How will you import your contacts?</label>
+        {sectionHeader(1, "Sender mode", "Where do SPARK emails come from?")}
         <div className="grid grid-cols-2 gap-2">
           {([
-            ["csv","Upload a CSV (recommended)"],
-            ["paste","Paste a list of emails"],
-            ["sync","Sync from OLIVER customers"],
-            ["later","I'll add them later"],
-          ] as const).map(([id, label]) => (
-            <button key={id} type="button"
-              onClick={() => setV({ ...v, contact_import_method: id })}
-              className={`p-3 rounded-lg border-2 text-left text-xs ${v.contact_import_method === id ? "border-orange-500 bg-orange-50" : "border-slate-200 bg-white"}`}>
-              {label}
+            { id: "ia_default", label: "Use IA's shared domain", desc: "From: anything@send.ia-dm.com. Zero DNS setup. Fine for low-volume sends." },
+            { id: "white_label", label: "Use my own domain (white-label)", desc: "From: hello@yourbusiness.com. Better deliverability. We help with DNS in step 2." },
+          ] as const).map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setV({ ...v, sender_mode: opt.id })}
+              className={`text-left rounded-lg border-2 p-3 transition ${v.sender_mode === opt.id ? "border-orange-500 bg-orange-50" : "border-slate-200 hover:border-slate-400"}`}
+            >
+              <div className="text-sm font-semibold">{opt.label}</div>
+              <div className="text-[11px] text-slate-600 mt-0.5">{opt.desc}</div>
             </button>
           ))}
         </div>
-        <div className="text-[10px] text-slate-500 mt-1">Actual import happens at SPARK · Contacts after you finish.</div>
+        {v.sender_mode === "white_label" && (
+          <div className="mt-2">
+            <Field
+              label="Your sender email"
+              value={v.white_label_email}
+              onChange={(s) => setV({ ...v, white_label_email: s })}
+              placeholder="welcome@yourbusiness.com"
+              hint="We'll register the domain for SPARK and use this address as the From + reply-to default."
+            />
+          </div>
+        )}
       </div>
 
-      <Field label="Estimated audience size" value={v.audience_size_estimate} onChange={(s) => setV({ ...v, audience_size_estimate: s })}
-        placeholder="e.g. 1,200 customers" hint="Drives volume tier recommendations" />
+      {/* ─── Step 2 ─── DNS path (white-label only) ────────────────────── */}
+      {v.sender_mode === "white_label" && (
+        <div>
+          {sectionHeader(2, "DNS publish path", "How will the SPF / DKIM / DMARC records get published?")}
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              { id: "arion_auto",  label: "ARION publishes it for me", desc: "If your domain lives on the Hostinger account we manage, we'll push the records automatically when you finish onboarding." },
+              { id: "manual_byo",  label: "I'll publish the records myself", desc: "We give you the exact records; you (or your IT person) paste them at your DNS host and verify in SPARK ▸ Sender domains." },
+            ] as const).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setV({ ...v, dns_path: opt.id })}
+                className={`text-left rounded-lg border-2 p-3 transition ${v.dns_path === opt.id ? "border-orange-500 bg-orange-50" : "border-slate-200 hover:border-slate-400"}`}
+              >
+                <div className="text-sm font-semibold">{opt.label}</div>
+                <div className="text-[11px] text-slate-600 mt-0.5">{opt.desc}</div>
+              </button>
+            ))}
+          </div>
+          {v.dns_path === "manual_byo" && (
+            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-900">
+              <div className="font-semibold">After you finish onboarding</div>
+              <p className="mt-0.5">Open <code className="font-mono">SPARK ▸ Sender domains</code>. You'll see SPF, DKIM (3 CNAMEs) and DMARC records to copy into your DNS host. Once published, click <b>Verify</b>; SPARK can usually confirm within 5 minutes.</p>
+            </div>
+          )}
+          {v.dns_path === "arion_auto" && (
+            <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-[11px] text-emerald-900">
+              <div className="font-semibold">We'll handle it automatically</div>
+              <p className="mt-0.5">When you finish onboarding, the ARION provisioning pipeline writes the SPF, DKIM and DMARC records to your domain and verifies them. You'll see the status on the SPARK ▸ Sender domains page within a few minutes.</p>
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* Send time preference */}
+      {/* ─── Step 3 ─── Sender addresses ───────────────────────────────── */}
       <div>
-        <label className="block text-xs font-semibold text-slate-700 mb-1">Preferred send time</label>
-        <div className="flex flex-wrap gap-1.5">
+        {sectionHeader(3, "Sender addresses", "At least one. The From + reply-to picker in the SPARK Composer reads from this list.")}
+        <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
+          {v.senders.map((s, idx) => (
+            <div key={idx} className="p-2.5 space-y-1.5">
+              <div className="grid grid-cols-[1fr_auto_1fr_1fr_auto] gap-1.5 items-end">
+                <Field
+                  label={idx === 0 ? "Local part" : ""}
+                  value={s.local_part}
+                  onChange={(val) => setV({ ...v, senders: v.senders.map((row, i) => i === idx ? { ...row, local_part: val.toLowerCase().replace(/[^a-z0-9._+-]/g, "") } : row) })}
+                  placeholder="welcome"
+                />
+                <div className="pb-2 text-[11px] text-slate-500 font-mono">@{v.sender_mode === "ia_default" ? "send.ia-dm.com" : (v.white_label_email.split("@")[1] || "yourbusiness.com")}</div>
+                <Field
+                  label={idx === 0 ? "Display name" : ""}
+                  value={s.display_name}
+                  onChange={(val) => setV({ ...v, senders: v.senders.map((row, i) => i === idx ? { ...row, display_name: val } : row) })}
+                  placeholder="Acme Marketing"
+                />
+                <Field
+                  label={idx === 0 ? "Reply-to (optional)" : ""}
+                  value={s.reply_to_override}
+                  onChange={(val) => setV({ ...v, senders: v.senders.map((row, i) => i === idx ? { ...row, reply_to_override: val } : row) })}
+                  placeholder="hello@yourbusiness.com"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeSender(idx)}
+                  disabled={v.senders.length <= 1}
+                  title={v.senders.length <= 1 ? "At least one sender required" : "Remove"}
+                  className="mb-1 p-1.5 rounded hover:bg-rose-50 text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
+                <input type="radio" name="default_sender" checked={s.is_default} onChange={() => setDefaultSender(idx)} />
+                Default sender for new campaigns
+              </label>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={addSender}
+          className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:text-sky-900"
+        >
+          <Plus className="h-3.5 w-3.5" /> Add another sender
+        </button>
+      </div>
+
+      {/* ─── Step 4 ─── Signatures ─────────────────────────────────────── */}
+      <div>
+        {sectionHeader(4, "Email signatures", "At least one. The Signature picker in the SPARK Composer reads from this list.")}
+        <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
+          {v.signatures.map((s, idx) => (
+            <div key={idx} className="p-2.5 space-y-1.5">
+              <div className="flex items-end gap-1.5">
+                <div className="flex-1">
+                  <Field
+                    label={idx === 0 ? "Signature name" : ""}
+                    value={s.name}
+                    onChange={(val) => setV({ ...v, signatures: v.signatures.map((row, i) => i === idx ? { ...row, name: val } : row) })}
+                    placeholder="Default"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeSignature(idx)}
+                  disabled={v.signatures.length <= 1}
+                  title={v.signatures.length <= 1 ? "At least one signature required" : "Remove"}
+                  className="mb-1 p-1.5 rounded hover:bg-rose-50 text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Signature body</label>
+                <SparkBodyEditor
+                  value={s.body_html}
+                  onChange={(html, text) => setV({ ...v, signatures: v.signatures.map((row, i) => i === idx ? { ...row, body_html: html, body_text: text } : row) })}
+                  placeholder="Your name, title, and contact info…"
+                  minHeight={120}
+                />
+              </div>
+              <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
+                <input type="radio" name="default_signature" checked={s.is_default} onChange={() => setDefaultSignature(idx)} />
+                Default signature for new campaigns
+              </label>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={addSignature}
+          className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:text-sky-900"
+        >
+          <Plus className="h-3.5 w-3.5" /> Add another signature
+        </button>
+      </div>
+
+      {/* ─── Step 5 ─── Default CTA colour ─────────────────────────────── */}
+      <div>
+        {sectionHeader(5, "Default CTA button colour", "Used when you click \"Insert CTA\" in the SPARK Composer.")}
+        <div className="flex items-center gap-3">
+          <input
+            type="color"
+            value={v.default_cta_color || "#1A7DB5"}
+            onChange={(e) => setV({ ...v, default_cta_color: e.target.value })}
+            className="h-10 w-16 rounded border border-slate-300 cursor-pointer"
+          />
+          <input
+            type="text"
+            value={v.default_cta_color}
+            onChange={(e) => setV({ ...v, default_cta_color: e.target.value })}
+            placeholder="#1A7DB5"
+            className="w-28 rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono"
+          />
+          <div className="text-[11px] text-slate-500">Prefilled from your business profile's accent colour. You can override per-campaign later.</div>
+        </div>
+        <div
+          className="mt-2 inline-block px-4 py-2 rounded-lg text-white text-sm font-semibold"
+          style={{ background: v.default_cta_color || "#1A7DB5" }}
+        >
+          Preview CTA button
+        </div>
+      </div>
+
+      {/* ─── Step 6 ─── Initial contact source ─────────────────────────── */}
+      <div>
+        {sectionHeader(6, "Initial contacts", "How will your first audience get into SPARK?")}
+        <div className="grid grid-cols-3 gap-2">
           {([
-            ["morning","Morning (8-10am)"],
-            ["midday","Midday (11-1pm)"],
-            ["afternoon","Afternoon (2-4pm)"],
-            ["evening","Evening (5-7pm)"],
-          ] as const).map(([id, label]) => (
-            <button key={id} type="button"
-              onClick={() => setV({ ...v, send_time_preference: id })}
-              className={`px-3 py-1.5 rounded text-xs font-semibold border ${v.send_time_preference === id ? "border-orange-500 bg-orange-50 text-orange-900" : "border-slate-300 bg-white text-slate-700"}`}>
-              {label}
+            { id: "csv_now",          label: "I have a CSV ready",       desc: "We'll show you the importer after finish." },
+            { id: "integrate_later",  label: "Integrate from OLIVER / a form later", desc: "Sync customers and form submissions over time." },
+            { id: "skip",             label: "Skip — I'll do it later",  desc: "Pick this up in SPARK ▸ Contacts whenever you're ready." },
+          ] as const).map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setV({ ...v, initial_contact_source: opt.id })}
+              className={`text-left rounded-lg border-2 p-2.5 transition ${v.initial_contact_source === opt.id ? "border-orange-500 bg-orange-50" : "border-slate-200 hover:border-slate-400"}`}
+            >
+              <div className="text-sm font-semibold">{opt.label}</div>
+              <div className="text-[11px] text-slate-600 mt-0.5">{opt.desc}</div>
             </button>
           ))}
         </div>
-        <div className="text-[10px] text-slate-500 mt-1">Used as default for "schedule send" in campaign composer (in your time zone).</div>
       </div>
 
-      <BrandVoicePicker
-        selected={v.brand_voice}
-        custom={v.brand_voice_custom}
-        onSelectedChange={(arr) => setV({ ...v, brand_voice: arr })}
-        onCustomChange={(s) => setV({ ...v, brand_voice_custom: s })}
-        hint="Used by SPARK's AI campaign writer + STELLA optimizations"
-      />
+      {/* ─── Step 7 ─── White-label IA footer toggle ───────────────────── */}
+      {v.sender_mode === "white_label" && (
+        <div>
+          {sectionHeader(7, "\"Powered by IA\" footer", "Show or hide the small attribution footer on outgoing SPARK emails.")}
+          <label className={`flex items-start gap-2 rounded-lg border-2 p-3 ${isLiteTier ? "border-slate-200 bg-slate-50 opacity-70" : "border-slate-200 bg-white hover:border-slate-400"}`}>
+            <input
+              type="checkbox"
+              checked={v.show_ia_footer}
+              disabled={isLiteTier}
+              onChange={(e) => setV({ ...v, show_ia_footer: e.target.checked })}
+              className="mt-0.5"
+            />
+            <div className="flex-1">
+              <div className="text-sm font-semibold">Show "Powered by Intelligent Analytics" footer</div>
+              <div className="text-[11px] text-slate-600 mt-0.5">
+                {isLiteTier
+                  ? "Lite tier always shows the IA footer per your subscription. Upgrade to Standard or higher to remove it."
+                  : "Standard and higher can hide this; we recommend leaving it on for the first 90 days for deliverability signals."}
+              </div>
+            </div>
+          </label>
+        </div>
+      )}
 
-      <div>
-        <label className="block text-xs font-semibold text-slate-700 mb-1">Goal of your first campaign (optional)</label>
-        <textarea value={v.first_campaign_goal} onChange={(e) => setV({ ...v, first_campaign_goal: e.target.value })}
-          rows={2} placeholder="Welcome existing customers + announce summer league signups opening April 1."
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+      {/* ─── More SPARK settings (legacy fields preserved) ─────────────── */}
+      <div className="rounded-lg border border-slate-200 bg-slate-50">
+        <button
+          type="button"
+          onClick={() => setShowLegacy(!showLegacy)}
+          className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 flex items-center justify-between"
+        >
+          <span>More SPARK settings (optional)</span>
+          <span className="text-slate-500">{showLegacy ? "▲" : "▼"}</span>
+        </button>
+        {showLegacy && (
+          <div className="p-3 pt-0 space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">How will you import your contacts?</label>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  ["csv","Upload a CSV (recommended)"],
+                  ["paste","Paste a list of emails"],
+                  ["sync","Sync from OLIVER customers"],
+                  ["later","I'll add them later"],
+                ] as const).map(([id, label]) => (
+                  <button key={id} type="button"
+                    onClick={() => setV({ ...v, contact_import_method: id })}
+                    className={`p-2.5 rounded-lg border-2 text-left text-xs ${v.contact_import_method === id ? "border-orange-500 bg-orange-50" : "border-slate-200 bg-white"}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <Field label="Estimated audience size" value={v.audience_size_estimate} onChange={(s) => setV({ ...v, audience_size_estimate: s })}
+              placeholder="e.g. 1,200 customers" hint="Drives volume tier recommendations" />
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Preferred send time</label>
+              <div className="flex flex-wrap gap-1.5">
+                {([
+                  ["morning","Morning (8-10am)"],
+                  ["midday","Midday (11-1pm)"],
+                  ["afternoon","Afternoon (2-4pm)"],
+                  ["evening","Evening (5-7pm)"],
+                ] as const).map(([id, label]) => (
+                  <button key={id} type="button"
+                    onClick={() => setV({ ...v, send_time_preference: id })}
+                    className={`px-3 py-1.5 rounded text-xs font-semibold border ${v.send_time_preference === id ? "border-orange-500 bg-orange-50 text-orange-900" : "border-slate-300 bg-white text-slate-700"}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <BrandVoicePicker
+              selected={v.brand_voice}
+              custom={v.brand_voice_custom}
+              onSelectedChange={(arr) => setV({ ...v, brand_voice: arr })}
+              onCustomChange={(s) => setV({ ...v, brand_voice_custom: s })}
+              hint="Used by SPARK's AI campaign writer + STELLA optimizations"
+            />
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Goal of your first campaign (optional)</label>
+              <textarea value={v.first_campaign_goal} onChange={(e) => setV({ ...v, first_campaign_goal: e.target.value })}
+                rows={2} placeholder="Welcome existing customers + announce summer league signups opening April 1."
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2952,7 +3422,20 @@ function HelpFooter() {
 async function flushSectionToCanonical(
   sectionId: SectionId,
   state: OnboardingState,
-  api: { patch: <T>(p: string, b: unknown) => Promise<T> }
+  api: {
+    patch: <T>(p: string, b: unknown) => Promise<T>;
+    /**
+     * SPARK (LUMEN) API client — required to fan the SPARK section out to
+     * /senders, /signatures, /sender-domains/from-email, and
+     * /tenant-settings/spark-onboarding. Optional because non-SPARK
+     * sections never touch it.
+     */
+    sparkApi?: {
+      get: <T>(p: string) => Promise<T>;
+      post: <T>(p: string, b?: unknown) => Promise<T>;
+      put: <T>(p: string, b: unknown) => Promise<T>;
+    };
+  }
 ): Promise<void> {
   if (sectionId === "profile") {
     const p = state.profile;
@@ -3038,7 +3521,116 @@ async function flushSectionToCanonical(
     });
     return;
   }
-  // owner / arion / spark / oliver_payments / oliver_templates / oliver_catalog /
+  if (sectionId === "spark") {
+    // 2026-06-24 — SPARK 7-sub-step fan-out. Order matters:
+    //   1) Register the sender_domain (white-label only) so subsequent
+    //      sender_address INSERTs have a valid sender_domain_id to link to.
+    //   2) POST each sender via /senders.
+    //   3) POST each signature via /signatures.
+    //   4) PUT the spark-onboarding settings bundle into lumen.tenant_settings.
+    // Every call is best-effort — the JSON blob save in persist() is the
+    // durable backstop so a transient 5xx never blocks Save & Continue.
+    const v = state.spark;
+    if (!api.sparkApi) {
+      console.warn("[onboarding] spark section flush skipped: sparkApi not provided");
+      return;
+    }
+    const spark = api.sparkApi;
+
+    // 1) Sender domain registration (white-label only).
+    let senderDomainId: number | null = null;
+    if (v.sender_mode === "white_label" && v.white_label_email && v.white_label_email.includes("@")) {
+      try {
+        // sparkPost returns the full envelope ({data: ...}), it does NOT
+        // auto-unwrap (see lib/sparkApi.ts:70 — comment block calls this out).
+        // Distinct from oliverApi's behaviour, which DOES unwrap.
+        const reg = await spark.post<{ data: { id: number; domain: string } }>(
+          "/api/v1/sender-domains/from-email",
+          {
+            email: v.white_label_email,
+            display_name: state.profile.business_name || undefined,
+            reply_to: v.white_label_email,
+          }
+        );
+        senderDomainId = reg?.data?.id ?? null;
+        // For the arion_auto DNS path, trigger the backend Hostinger publish.
+        // Endpoint name follows the same /sender-domains/:id/* convention as
+        // /verify and /default — backend wires this up to the ARION SSH
+        // publisher when the tenant's ARION site sits on the IA-managed
+        // Hostinger account. A 404 here just means the endpoint isn't live
+        // yet; we degrade to the manual flow silently.
+        if (senderDomainId && v.dns_path === "arion_auto") {
+          try {
+            await spark.post(`/api/v1/sender-domains/${senderDomainId}/publish-via-arion`, {});
+          } catch (e) {
+            console.warn("[onboarding] arion DNS publish trigger deferred:", e);
+          }
+        }
+      } catch (e) {
+        console.warn("[onboarding] sender domain register deferred:", e);
+      }
+    }
+
+    // 2) Sender addresses — POST one row at a time. Skip blank rows.
+    if (senderDomainId) {
+      for (const s of v.senders) {
+        if (!s.local_part) continue;
+        try {
+          await spark.post("/api/v1/senders", {
+            local_part: s.local_part,
+            display_name: s.display_name || null,
+            sender_domain_id: senderDomainId,
+            is_default: !!s.is_default,
+            reply_to_override: s.reply_to_override || null,
+          });
+        } catch (e) {
+          console.warn("[onboarding] sender create deferred:", s.local_part, e);
+        }
+      }
+    }
+
+    // 3) Signatures — POST each non-blank row.
+    for (const sig of v.signatures) {
+      if (!sig.body_html && !sig.body_text && !sig.name) continue;
+      try {
+        await spark.post("/api/v1/signatures", {
+          name: sig.name || "Default",
+          body_html: sig.body_html || null,
+          body_text: sig.body_text || null,
+          is_default: !!sig.is_default,
+        });
+      } catch (e) {
+        console.warn("[onboarding] signature create deferred:", sig.name, e);
+      }
+    }
+
+    // 4) Spark-onboarding settings bundle — one PUT writes every key into
+    // lumen.tenant_settings. Backend route mirrors PUT /tenant-settings/:key
+    // (string upsert) but accepts a JSON body of N keys to upsert in a
+    // single round trip. See LUMEN-API/src/routes/tenantSettings.js — the
+    // PUT /tenant-settings/spark-onboarding handler we add alongside this
+    // change.
+    try {
+      await spark.put("/api/v1/tenant-settings/spark-onboarding", {
+        spark_sender_mode: v.sender_mode || "",
+        spark_white_label_email: v.white_label_email || "",
+        spark_dns_path: v.dns_path || "",
+        spark_default_cta_color: v.default_cta_color || "",
+        spark_initial_contact_source: v.initial_contact_source || "",
+        spark_show_ia_footer: v.show_ia_footer ? "true" : "false",
+        spark_brand_voice: JSON.stringify(v.brand_voice || []),
+        spark_brand_voice_custom: v.brand_voice_custom || "",
+        spark_audience_size_estimate: v.audience_size_estimate || "",
+        spark_send_time_preference: v.send_time_preference || "",
+        spark_contact_import_method: v.contact_import_method || "",
+        spark_first_campaign_goal: v.first_campaign_goal || "",
+      });
+    } catch (e) {
+      console.warn("[onboarding] spark settings bundle deferred:", e);
+    }
+    return;
+  }
+  // owner / arion / oliver_payments / oliver_templates / oliver_catalog /
   // consulting / finish — JSON blob only tonight; canonical-table fan-out
   // happens at finish-onboarding (or is queued for overnight per SCOPE_WORKING.md).
 }

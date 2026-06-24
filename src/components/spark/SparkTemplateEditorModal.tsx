@@ -13,10 +13,34 @@
 // CRUD endpoints:
 //   - POST/PUT/DELETE /api/v1/email-templates(/:id)
 //   - POST/PATCH/DELETE /api/v1/sms-templates(/:id)
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Save, Trash2, AlertTriangle } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal, IadmButton } from "../IadmModal";
+import { SparkBodyEditor } from "./SparkBodyEditor";
+
+interface Sender {
+  id: number;
+  display_name: string | null;
+  effective_display_name?: string | null;
+  email_address: string;
+  is_default: boolean;
+}
+
+/**
+ * Slugify a template name into a stable template_key (lowercase snake_case,
+ * ASCII only). Used for the auto-generated key on create — the backend
+ * accepts `template_key: null` and falls back to the row id, but a stable
+ * key makes the template addressable from code (transactional sends) and
+ * survives a rename.
+ */
+function slugifyTemplateKey(name: string): string {
+  return (name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 100);
+}
 
 export type TemplateChannel = "email" | "sms";
 
@@ -58,8 +82,8 @@ interface Props {
 
 const DEFAULT_EMAIL: EmailTemplate = {
   name: "", category: "marketing", subject: "",
-  preheader: "", body_html: "<p>Hi {{contact.first_name}},</p>",
-  body_text: "Hi {{contact.first_name}},", from_name: "", from_email: "", reply_to: "",
+  preheader: "", body_html: "<p>Hi {{first name}},</p>",
+  body_text: "Hi {{first name}},", from_name: "", from_email: "", reply_to: "",
   is_active: true,
 };
 
@@ -81,10 +105,27 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // From-email picker (audit gap): /senders feeds the dropdown so the
+  // template carries a verified sender by default. Free-text from_name +
+  // reply_to remain so per-template overrides still work.
+  const [senders, setSenders] = useState<Sender[]>([]);
+
+  // Auto-derived template_key when creating from scratch. The user can't
+  // edit the key once saved (the backend uses it as a stable handle).
+  const isEdit = templateId != null;
+  const derivedKey = useMemo(
+    () => (channel === "email" ? slugifyTemplateKey(email.name) : slugifyTemplateKey(sms.name)),
+    [channel, email.name, sms.name],
+  );
 
   useEffect(() => {
     if (!open || !ready) return;
     setError(null);
+    // Always refresh the sender list when the modal opens — the picker is
+    // tenant-scoped and senders can be added/removed in Settings.
+    get<{ data: Sender[] }>("/api/v1/senders")
+      .then((r) => setSenders(r?.data || []))
+      .catch(() => setSenders([]));
     if (templateId == null) {
       // Create-new
       setEmail(DEFAULT_EMAIL);
@@ -130,7 +171,13 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
           if (!email.subject.trim()) { setError("Subject is required for new email templates."); setSaving(false); return; }
           if (!email.body_html.trim()) { setError("Body HTML is required for new email templates."); setSaving(false); return; }
           // POST does NOT accept is_active — strip it on create (defaults to active=1 server-side).
+          // Auto-generate the template_key from the name when the user
+          // hasn't set one explicitly (the backend treats it as nullable
+          // but a stable slug is much friendlier for code references).
           const { is_active: _ignore, ...createPayload } = email;
+          if (!createPayload.template_key && derivedKey) {
+            createPayload.template_key = derivedKey;
+          }
           await post(`/api/v1/email-templates`, createPayload);
         } else {
           // PATCH accepts every editable field including is_active.
@@ -145,6 +192,9 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
         if (!sms.body.trim()) { setError("Body is required."); setSaving(false); return; }
         if (templateId == null) {
           const { is_active: _ignore, ...createPayload } = sms;
+          if (!createPayload.template_key && derivedKey) {
+            createPayload.template_key = derivedKey;
+          }
           await post(`/api/v1/sms-templates`, createPayload);
         } else {
           await patch(`/api/v1/sms-templates/${templateId}`, sms);
@@ -177,7 +227,6 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
 
   if (!open) return null;
 
-  const isEdit = templateId != null;
   const channelLabel = channel === "email" ? "Email" : "SMS";
 
   return (
@@ -217,6 +266,17 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
               <Row label="Name">
                 <input value={email.name} onChange={(e) => setEmail({ ...email, name: e.target.value })} className="spark-input" />
               </Row>
+              {/* Template key — read-only. Auto-generated from the name on
+                  create; shown on edit so users know what to reference in
+                  transactional sends. */}
+              <Row label={isEdit ? "Template key" : "Template key (auto)"}>
+                <input
+                  value={isEdit ? (email.template_key ?? "") : derivedKey}
+                  readOnly
+                  className="spark-input bg-slate-50 text-slate-500 font-mono text-xs"
+                  placeholder="auto-generated from name"
+                />
+              </Row>
               <div className="grid grid-cols-2 gap-3">
                 <Row label="Category">
                   <select
@@ -240,36 +300,62 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
                   <div />
                 )}
               </div>
+              <Row label="Description">
+                <input
+                  value={email.description ?? ""}
+                  onChange={(e) => setEmail({ ...email, description: e.target.value })}
+                  className="spark-input"
+                  placeholder="Short note about what this template is for"
+                />
+              </Row>
               <Row label="Subject">
-                <input value={email.subject} onChange={(e) => setEmail({ ...email, subject: e.target.value })} className="spark-input" placeholder="Welcome to {{tenant.name}}" />
+                <input value={email.subject} onChange={(e) => setEmail({ ...email, subject: e.target.value })} className="spark-input" placeholder="Welcome to {{business name}}" />
               </Row>
               <Row label="Preheader (preview text)">
                 <input value={email.preheader ?? ""} onChange={(e) => setEmail({ ...email, preheader: e.target.value })} className="spark-input" />
               </Row>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <Row label="From name">
                   <input value={email.from_name ?? ""} onChange={(e) => setEmail({ ...email, from_name: e.target.value })} className="spark-input" />
+                </Row>
+                <Row label="From email">
+                  <select
+                    value={email.from_email ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      const picked = senders.find((s) => s.email_address === v);
+                      setEmail({
+                        ...email,
+                        from_email: v || null,
+                        // If the user picks a sender that has a display name
+                        // and the template's from_name is empty, mirror it
+                        // so the saved template has both fields populated.
+                        from_name:
+                          email.from_name
+                          || (picked ? (picked.effective_display_name || picked.display_name || "") : ""),
+                      });
+                    }}
+                    className="spark-input bg-white"
+                  >
+                    <option value="">— Tenant default —</option>
+                    {senders.map((s) => (
+                      <option key={s.id} value={s.email_address}>
+                        {s.email_address}{s.is_default ? " (default)" : ""}
+                      </option>
+                    ))}
+                  </select>
                 </Row>
                 <Row label="Reply-to">
                   <input value={email.reply_to ?? ""} onChange={(e) => setEmail({ ...email, reply_to: e.target.value })} className="spark-input" />
                 </Row>
               </div>
-              <Row label="Body (HTML)">
-                <textarea
+              <Row label="Body">
+                <SparkBodyEditor
                   value={email.body_html}
-                  onChange={(e) => setEmail({ ...email, body_html: e.target.value })}
-                  rows={8}
-                  className="spark-input font-mono text-xs"
+                  onChange={(html, text) => setEmail({ ...email, body_html: html, body_text: text })}
+                  placeholder={"Hi {{first name}}, ..."}
                 />
                 <p className="text-[11px] text-slate-500 mt-0.5">For visual block editing, save the template then click <a href={`/app/services/spark_email_templates`} className="text-[#EF6C33] hover:underline">"Open advanced editor"</a> on the Templates library page.</p>
-              </Row>
-              <Row label="Plain-text fallback">
-                <textarea
-                  value={email.body_text ?? ""}
-                  onChange={(e) => setEmail({ ...email, body_text: e.target.value })}
-                  rows={3}
-                  className="spark-input"
-                />
               </Row>
             </div>
           )}
@@ -278,6 +364,22 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
             <div className="space-y-3">
               <Row label="Name">
                 <input value={sms.name} onChange={(e) => setSms({ ...sms, name: e.target.value })} className="spark-input" />
+              </Row>
+              <Row label={isEdit ? "Template key" : "Template key (auto)"}>
+                <input
+                  value={isEdit ? (sms.template_key ?? "") : derivedKey}
+                  readOnly
+                  className="spark-input bg-slate-50 text-slate-500 font-mono text-xs"
+                  placeholder="auto-generated from name"
+                />
+              </Row>
+              <Row label="Description">
+                <input
+                  value={sms.description ?? ""}
+                  onChange={(e) => setSms({ ...sms, description: e.target.value })}
+                  className="spark-input"
+                  placeholder="Short note about what this template is for"
+                />
               </Row>
               <div className="grid grid-cols-2 gap-3">
                 <Row label="Category">
@@ -309,7 +411,7 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
                   rows={5}
                   maxLength={480}
                   className="spark-input"
-                  placeholder="Hi {{contact.first_name}}, your appointment is on {{date}}."
+                  placeholder="Hi {{first name}}, your appointment is on {{date}}."
                 />
                 <div className="flex justify-between text-[11px] text-slate-500 mt-0.5">
                   <span>{sms.body.length}/480</span>

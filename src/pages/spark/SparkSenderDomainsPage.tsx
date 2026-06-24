@@ -1,13 +1,32 @@
-// SparkSenderDomainsPage — Sender Domain Wizard
+// SparkSenderDomainsPage — 2-card sender-mode picker + email-first wizard.
 //
-// Three-step wizard:
-//   1. Enter a domain (e.g. mail.acme.com)
-//   2. Publish DNS records (SPF/DKIM/DMARC) — copy-paste cards
-//   3. Click Verify; on success, mark as default
+// Locked redesign 2026-06-24 (feedback_spark_sender_ux_fix): the user
+// never sees the word "domain" as the primary label. Two paths:
+//
+//   1) IA default — send from welcome@send.intelligentanalyticsdm.com.
+//      No DNS work. We persist sender_mode='ia_default' on the tenant
+//      settings row and we're done.
+//
+//   2) White-label — collect ONE field ("Sender email address" like
+//      welcome@yourbusiness.com) + optional display name. Backend
+//      extracts the domain from the email (POST /sender-domains/from-email).
+//      Then branch on whether the tenant's website is ARION-hosted:
+//        * Hosting auto-managed → "We'll add the DNS records for you
+//          automatically — give us 2-5 minutes" and poll verify.
+//        * Not auto-managed     → render the 4 DNS record cards with
+//          Copy All + "Email these to my web admin" + "I've added them
+//          — Verify now" buttons.
+//
+// The list + detail UI for already-registered senders is preserved
+// below the wizard so admins can manage multiple domains.
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
-import { Globe, Check, X, Plus, Copy, RefreshCw, Star, Trash2 } from "lucide-react";
+import { IadmModal, IadmButton } from "../../components/IadmModal";
+import {
+  Globe, Check, X, Plus, Copy, RefreshCw, Star, Trash2, Mail, Sparkles, Wand2, Send,
+} from "lucide-react";
 
 type Status = "pending" | "verified" | "failed";
 
@@ -30,6 +49,15 @@ interface VerifyResp {
   data: { id: number; domain: string; status: Status; checks: Record<string, { found: boolean; ok?: boolean; value: unknown; includes_acs?: boolean }> };
 }
 
+interface SparkSettingsResp {
+  data?: {
+    sender_mode?: "ia_default" | "white_label" | null;
+    hostinger_managed?: boolean;
+  };
+}
+
+type WizardStep = "pick" | "collect" | "dns" | "done";
+
 function statusPill(s: Status) {
   if (s === "verified") return <span className="px-2 py-0.5 rounded text-[10px] border bg-emerald-50 text-emerald-700 border-emerald-200 inline-flex items-center gap-1"><Check className="h-3 w-3" /> Verified</span>;
   if (s === "failed")   return <span className="px-2 py-0.5 rounded text-[10px] border bg-rose-50 text-rose-700 border-rose-200 inline-flex items-center gap-1"><X className="h-3 w-3" /> Failed</span>;
@@ -42,24 +70,46 @@ export function SparkSenderDomainsPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [records, setRecords] = useState<RecordsResp | null>(null);
   const [verifyResult, setVerifyResult] = useState<VerifyResp["data"] | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [newDomain, setNewDomain] = useState({ domain: "", display_name: "", reply_to: "" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
 
-  const fetchList = useCallback(async () => {
+  // Wizard state — replaces the old "+ Add domain" modal.
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState<WizardStep>("pick");
+  const [senderEmail, setSenderEmail] = useState("");
+  const [senderDisplayName, setSenderDisplayName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createdDomain, setCreatedDomain] = useState<Domain | null>(null);
+  const [createdRecords, setCreatedRecords] = useState<RecordsResp | null>(null);
+  const [autoDnsState, setAutoDnsState] = useState<"idle" | "running" | "verified" | "failed">("idle");
+
+  // Tenant-level prefs. sender_mode persists which option the tenant picked,
+  // hostinger_managed signals that we control DNS for this tenant's
+  // primary website (ARION hosting on Hostinger via API).
+  const [senderMode, setSenderMode] = useState<"ia_default" | "white_label" | null>(null);
+  const [hostingerManaged, setHostingerManaged] = useState<boolean>(false);
+  const [savingMode, setSavingMode] = useState(false);
+
+  const fetchAll = useCallback(async () => {
     if (!ready) return;
     setLoading(true); setError(null);
     try {
-      const r = await get<{ data: Domain[] }>("/api/v1/sender-domains");
-      setList(r?.data || []);
+      const [d, s] = await Promise.all([
+        get<{ data: Domain[] }>("/api/v1/sender-domains"),
+        // Best-effort — the spark-settings endpoint may not exist yet;
+        // a 404 here just means we fall back to defaults.
+        get<SparkSettingsResp>("/api/v1/spark-settings").catch(() => ({} as SparkSettingsResp)),
+      ]);
+      setList(d?.data || []);
+      setSenderMode(s?.data?.sender_mode ?? null);
+      setHostingerManaged(!!s?.data?.hostinger_managed);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
   }, [get, ready]);
 
-  useEffect(() => { fetchList(); }, [fetchList]);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const selected = useMemo(() => list.find(d => d.id === selectedId) || null, [list, selectedId]);
 
@@ -73,43 +123,122 @@ export function SparkSenderDomainsPage() {
     })();
   }, [selectedId, get]);
 
-  async function createDomain() {
-    if (!newDomain.domain) return;
+  // ─ Wizard helpers ────────────────────────────────────────────────────────
+
+  function openWizard() {
+    setWizardStep("pick");
+    setSenderEmail("");
+    setSenderDisplayName("");
+    setCreatedDomain(null);
+    setCreatedRecords(null);
+    setAutoDnsState("idle");
+    setWizardOpen(true);
+  }
+
+  async function pickIaDefault() {
+    setSavingMode(true);
     try {
-      const r = await post<{ data: Domain }>("/api/v1/sender-domains", newDomain);
-      setCreating(false);
-      setNewDomain({ domain: "", display_name: "", reply_to: "" });
-      await fetchList();
-      setSelectedId(r?.data?.id || null);
+      // Best-effort persist. If the endpoint isn't there yet, we still
+      // close the wizard — the tenant's intent is captured client-side
+      // until LUMEN-API ships the persistence route.
+      await post("/api/v1/spark-settings", { sender_mode: "ia_default" }).catch(() => null);
+      setSenderMode("ia_default");
+      setWizardStep("done");
+    } finally { setSavingMode(false); }
+  }
+
+  async function pickWhiteLabel() {
+    setSavingMode(true);
+    try {
+      await post("/api/v1/spark-settings", { sender_mode: "white_label" }).catch(() => null);
+      setSenderMode("white_label");
+      setWizardStep("collect");
+    } finally { setSavingMode(false); }
+  }
+
+  function emailLooksValid(s: string) {
+    return /^[^\s@]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(s.trim());
+  }
+
+  async function submitWhiteLabel() {
+    if (!emailLooksValid(senderEmail)) return;
+    setCreating(true);
+    try {
+      // Backend extracts the domain server-side. Endpoint: POST
+      // /api/v1/sender-domains/from-email — keeps the user-facing flow
+      // about the sender address, never about "domains".
+      const r = await post<{ data: Domain }>("/api/v1/sender-domains/from-email", {
+        email: senderEmail.trim(),
+        display_name: senderDisplayName.trim() || null,
+      });
+      const created = r?.data;
+      if (!created) throw new Error("Server returned no sender domain");
+      setCreatedDomain(created);
+      // Pull DNS records so the wizard can render them (manual path) or
+      // hand them off to the auto-publish endpoint (managed path).
+      const rec = await get<RecordsResp>(`/api/v1/sender-domains/${created.id}/records`);
+      setCreatedRecords(rec);
+      await fetchAll();
+      setWizardStep("dns");
+
+      // If this tenant is ARION-hosted, kick off auto-publish + poll.
+      if (hostingerManaged) {
+        runAutoDnsPublish(created.id);
+      }
     } catch (err) {
-      alert(`Failed: ${(err as Error).message}`);
+      alert(`Couldn't register that sender: ${(err as Error).message}`);
+    } finally { setCreating(false); }
+  }
+
+  async function runAutoDnsPublish(senderDomainId: number) {
+    setAutoDnsState("running");
+    try {
+      // Best-effort — endpoint may not be wired yet on every tenant.
+      await post(`/api/v1/sender-domains/${senderDomainId}/auto-publish`, {}).catch(() => null);
+      // Poll verify every ~10s for up to 5 minutes.
+      const deadline = Date.now() + 5 * 60 * 1000;
+      while (Date.now() < deadline) {
+        await new Promise((res) => setTimeout(res, 10000));
+        try {
+          const v = await post<VerifyResp>(`/api/v1/sender-domains/${senderDomainId}/verify`, {});
+          if (v?.data?.status === "verified") {
+            setAutoDnsState("verified");
+            await fetchAll();
+            return;
+          }
+        } catch { /* keep polling */ }
+      }
+      setAutoDnsState("failed");
+    } catch {
+      setAutoDnsState("failed");
     }
   }
 
-  async function verifyDomain() {
-    if (!selectedId) return;
+  async function verifyNow(id: number) {
     setVerifying(true);
     try {
-      const r = await post<VerifyResp>(`/api/v1/sender-domains/${selectedId}/verify`, {});
+      const r = await post<VerifyResp>(`/api/v1/sender-domains/${id}/verify`, {});
       setVerifyResult(r?.data || null);
-      await fetchList();
+      await fetchAll();
     } catch (err) { alert(`Verify failed: ${(err as Error).message}`); }
     finally { setVerifying(false); }
   }
 
+  // ─ List actions ──────────────────────────────────────────────────────────
+
   async function setDefault(id: number) {
     try {
       await post(`/api/v1/sender-domains/${id}/default`, {});
-      await fetchList();
+      await fetchAll();
     } catch (err) { alert(`Failed: ${(err as Error).message}`); }
   }
 
   async function deactivate(id: number) {
-    if (!confirm("Deactivate this sender domain? Future emails will fall back to the platform default.")) return;
+    if (!confirm("Deactivate this sender? Future emails will fall back to the platform default.")) return;
     try {
       await del(`/api/v1/sender-domains/${id}`);
       if (selectedId === id) setSelectedId(null);
-      await fetchList();
+      await fetchAll();
     } catch (err) { alert(`Failed: ${(err as Error).message}`); }
   }
 
@@ -118,23 +247,90 @@ export function SparkSenderDomainsPage() {
     catch (e) { alert(`Copy failed: ${(e as Error).message}`); }
   }
 
+  async function copyAllDns(records: RecordsResp | null) {
+    if (!records) return;
+    const lines: string[] = [];
+    (["spf", "dkim_1", "dkim_2", "dmarc"] as const).forEach((k) => {
+      const r = records.records[k];
+      lines.push(`${k.toUpperCase()}  (${r.type})`);
+      lines.push(`  Host : ${r.host}`);
+      lines.push(`  Value: ${r.value}`);
+      if (r.note) lines.push(`  Note : ${r.note}`);
+      lines.push("");
+    });
+    await copyText(lines.join("\n"), "all-dns");
+  }
+
+  function mailToWebAdmin(records: RecordsResp | null, senderDomain: Domain | null) {
+    if (!records || !senderDomain) return;
+    const subject = encodeURIComponent(`DNS records to publish for ${senderDomain.domain}`);
+    const body = encodeURIComponent(
+      [
+        "Hi,",
+        "",
+        `Please publish these 4 DNS records on the ${senderDomain.domain} zone so we can send branded email.`,
+        "Once they're live, reply to this email and I'll click Verify.",
+        "",
+        ...(["spf", "dkim_1", "dkim_2", "dmarc"] as const).flatMap((k) => {
+          const r = records.records[k];
+          return [
+            `--- ${k.toUpperCase()} (${r.type}) ---`,
+            `Host : ${r.host}`,
+            `Value: ${r.value}`,
+            r.note ? `Note : ${r.note}` : "",
+            "",
+          ];
+        }),
+        "Thanks!",
+      ].join("\n")
+    );
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  }
+
+  // ─ Render ────────────────────────────────────────────────────────────────
+
+  const verifiedCount = list.filter((d) => d.status === "verified").length;
+  const subtitle =
+    senderMode === "ia_default"
+      ? "Using the Intelligent Analytics default sender"
+      : `${list.length} sender${list.length === 1 ? "" : "s"} · ${verifiedCount} verified`;
+
   return (
     <SparkPageShell
-      title="Sender domains"
-      subtitle={`${list.length} domain${list.length === 1 ? "" : "s"}`}
-      help="Register a custom sending domain (e.g. mail.yourcompany.com) so your emails go out from your own brand. Publish the SPF/DKIM/DMARC records shown, then click Verify. Once verified, set the domain as default and all outbound email will use it."
+      title="Sender setup"
+      subtitle={subtitle}
+      help="Pick where your campaigns send from: the Intelligent Analytics default, or your own business email (white-label). White-label needs 4 DNS records published on your domain — we'll either add them automatically (if we host your site) or give you copy-paste records to hand off to your web admin."
       actions={
-        <button onClick={() => setCreating(true)} className="text-sm px-3 py-1.5 rounded bg-[#EF6C33] text-white flex items-center gap-1">
-          <Plus className="h-4 w-4" /> Add domain
+        <button onClick={openWizard} className="text-sm px-3 py-1.5 rounded bg-[#EF6C33] text-white flex items-center gap-1">
+          <Plus className="h-4 w-4" /> Add sender
         </button>
       }
       loading={loading}
       error={error}
     >
+      {/* Current mode banner */}
+      {senderMode && (
+        <div className="mb-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm flex items-center justify-between">
+          <div className="flex items-center gap-2 text-slate-700">
+            {senderMode === "ia_default" ? (
+              <><Sparkles className="h-4 w-4 text-[#EF6C33]" /> Sending from the Intelligent Analytics default address.</>
+            ) : (
+              <><Send className="h-4 w-4 text-[#EF6C33]" /> Sending from your own business email (white-label).</>
+            )}
+          </div>
+          <button
+            onClick={openWizard}
+            className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-white"
+          >
+            Change
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {/* List */}
         <div className="lg:col-span-1 border border-slate-200 rounded">
-          {list.length === 0 && <div className="p-6 text-center text-sm text-slate-500">No sender domains yet. Click "Add domain" to start.</div>}
+          {list.length === 0 && <div className="p-6 text-center text-sm text-slate-500">No sender addresses yet. Click "Add sender" to start.</div>}
           {list.map(d => (
             <button key={d.id} onClick={() => setSelectedId(d.id)}
               className={`w-full text-left p-3 border-b border-slate-100 hover:bg-slate-50 ${selectedId === d.id ? "bg-[#FFF6F0]" : ""}`}>
@@ -157,7 +353,7 @@ export function SparkSenderDomainsPage() {
         <div className="lg:col-span-2">
           {!selectedId && (
             <div className="border border-slate-200 rounded p-12 text-center text-sm text-slate-500">
-              Select a domain on the left, or click "Add domain" to register one.
+              Select a sender on the left, or click "Add sender" to register one.
             </div>
           )}
           {selectedId && selected && (
@@ -172,7 +368,7 @@ export function SparkSenderDomainsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button disabled={verifying} onClick={verifyDomain}
+                  <button disabled={verifying} onClick={() => verifyNow(selectedId)}
                     className="text-xs px-2.5 py-1 rounded bg-[#EF6C33] text-white flex items-center gap-1 disabled:opacity-50">
                     <RefreshCw className="h-3 w-3" /> {verifying ? "Checking…" : "Verify"}
                   </button>
@@ -217,7 +413,7 @@ export function SparkSenderDomainsPage() {
               {verifyResult && (
                 <div className={`rounded p-3 ${verifyResult.status === "verified" ? "bg-emerald-50 border border-emerald-200 text-emerald-800" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
                   <div className="text-sm font-semibold">
-                    {verifyResult.status === "verified" ? "All records verified! You can now set this domain as your default sender." : "Some records aren't published yet. DNS changes can take up to 24h to propagate."}
+                    {verifyResult.status === "verified" ? "All records verified! You can now set this sender as your default." : "Some records aren't published yet. DNS changes can take up to 24h to propagate."}
                   </div>
                 </div>
               )}
@@ -226,21 +422,208 @@ export function SparkSenderDomainsPage() {
         </div>
       </div>
 
-      {/* Create modal */}
-      {creating && (
-        <div className="fixed inset-0 bg-slate-900/30 z-50 flex items-center justify-center p-4" onClick={() => setCreating(false)}>
-          <div className="bg-white rounded-xl w-full max-w-md p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
-            <div className="text-base font-semibold">Add sender domain</div>
-            <Input label="Domain" placeholder="mail.yourcompany.com" value={newDomain.domain} onChange={v => setNewDomain({ ...newDomain, domain: v })} />
-            <Input label="Display name (optional)" placeholder="Your Company" value={newDomain.display_name} onChange={v => setNewDomain({ ...newDomain, display_name: v })} />
-            <Input label="Reply-to (optional)" placeholder="support@yourcompany.com" value={newDomain.reply_to} onChange={v => setNewDomain({ ...newDomain, reply_to: v })} />
-            <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setCreating(false)} className="text-sm px-3 py-1.5 rounded border border-slate-200">Cancel</button>
-              <button disabled={!newDomain.domain} onClick={createDomain} className="text-sm px-3 py-1.5 rounded bg-[#EF6C33] text-white disabled:opacity-50">Add</button>
+      {/* Wizard modal */}
+      <IadmModal
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        product="spark"
+        size="info"
+        title={
+          wizardStep === "pick"    ? "How do you want your emails to look?" :
+          wizardStep === "collect" ? "What email address should we send from?" :
+          wizardStep === "dns"     ? "Publish DNS records on your domain" :
+                                     "All set"
+        }
+        subtitle={
+          wizardStep === "pick"    ? "Pick the default Intelligent Analytics sender, or send from your own business email." :
+          wizardStep === "collect" ? "We'll figure out the domain from the email — no need to copy anything." :
+          wizardStep === "dns"     ? (hostingerManaged ? "We host your site — we're publishing these for you automatically." : "Hand these off to your web admin, then click Verify.") :
+                                     ""
+        }
+        footer={
+          wizardStep === "collect" ? (
+            <>
+              <IadmButton variant="ghost" onClick={() => setWizardStep("pick")}>Back</IadmButton>
+              <IadmButton
+                variant="accent"
+                product="spark"
+                onClick={submitWhiteLabel}
+                disabled={!emailLooksValid(senderEmail) || creating}
+              >
+                {creating ? "Setting up…" : "Continue"}
+              </IadmButton>
+            </>
+          ) : wizardStep === "dns" ? (
+            <>
+              <IadmButton variant="ghost" onClick={() => setWizardOpen(false)}>Close</IadmButton>
+              {!hostingerManaged && createdDomain && (
+                <IadmButton
+                  variant="accent"
+                  product="spark"
+                  onClick={() => verifyNow(createdDomain.id)}
+                  disabled={verifying}
+                >
+                  {verifying ? "Checking…" : "I've added them — verify now"}
+                </IadmButton>
+              )}
+            </>
+          ) : wizardStep === "done" ? (
+            <IadmButton variant="accent" product="spark" onClick={() => setWizardOpen(false)}>Done</IadmButton>
+          ) : null
+        }
+      >
+        {wizardStep === "pick" && (
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button
+              type="button"
+              onClick={pickIaDefault}
+              disabled={savingMode}
+              className="text-left rounded-xl border-2 border-slate-200 hover:border-[#EF6C33] hover:bg-[#FFF6F0] p-5 transition disabled:opacity-50"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="h-5 w-5 text-[#EF6C33]" />
+                <div className="text-base font-semibold text-slate-900">Use Intelligent Analytics' default sender</div>
+              </div>
+              <p className="text-sm text-slate-600">
+                Send from <code className="text-[12px] bg-slate-100 px-1 rounded">welcome@send.intelligentanalyticsdm.com</code>.
+                Zero setup. Perfect for getting started — you can switch to a white-label sender later without losing anything.
+              </p>
+              <div className="mt-3 text-[11px] uppercase tracking-wider font-semibold text-emerald-700">
+                ✓ No DNS · ✓ Send right now
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={pickWhiteLabel}
+              disabled={savingMode}
+              className="text-left rounded-xl border-2 border-slate-200 hover:border-[#EF6C33] hover:bg-[#FFF6F0] p-5 transition disabled:opacity-50"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Wand2 className="h-5 w-5 text-[#EF6C33]" />
+                <div className="text-base font-semibold text-slate-900">Send from my own business email</div>
+              </div>
+              <p className="text-sm text-slate-600">
+                Send from <code className="text-[12px] bg-slate-100 px-1 rounded">welcome@yourbusiness.com</code>.
+                Recipients see your brand in the From line. Requires 4 DNS records on your domain — we'll
+                {hostingerManaged ? " add them for you automatically." : " give you the records to hand off to your web admin."}
+              </p>
+              <div className="mt-3 text-[11px] uppercase tracking-wider font-semibold text-[#EF6C33]">
+                White-label · {hostingerManaged ? "Auto-managed" : "2-5 min DNS hand-off"}
+              </div>
+            </button>
+          </div>
+        )}
+
+        {wizardStep === "collect" && (
+          <div className="p-6 space-y-4 max-w-xl">
+            <Labeled label="Sender email address" hint="e.g. welcome@yourbusiness.com or hello@acme.com.">
+              <input
+                value={senderEmail}
+                placeholder="welcome@yourbusiness.com"
+                onChange={(e) => setSenderEmail(e.target.value)}
+                autoFocus
+                className="w-full text-sm border border-slate-300 rounded p-2 focus:border-[#EF6C33] focus:ring-1 focus:ring-[#EF6C33]"
+              />
+            </Labeled>
+            <Labeled label="Display name (optional)" hint="The name your recipients see in their inbox — usually your business name.">
+              <input
+                value={senderDisplayName}
+                placeholder="Acme Co."
+                onChange={(e) => setSenderDisplayName(e.target.value)}
+                className="w-full text-sm border border-slate-300 rounded p-2 focus:border-[#EF6C33] focus:ring-1 focus:ring-[#EF6C33]"
+              />
+            </Labeled>
+            <div className="rounded border border-slate-200 bg-slate-50 p-3">
+              <div className="text-[10px] uppercase font-semibold text-slate-500 mb-1">Preview</div>
+              <div className="text-sm font-mono text-slate-800">
+                <span className="text-slate-500">From: </span>
+                {(senderDisplayName.trim() || "(display name)")} &lt;{senderEmail.trim() || "you@yourbusiness.com"}&gt;
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {wizardStep === "dns" && createdDomain && (
+          <div className="p-6 space-y-4">
+            {/* ARION-hosted: auto-publish path */}
+            {hostingerManaged ? (
+              <div className={`rounded p-4 border-2 ${
+                autoDnsState === "verified" ? "border-emerald-200 bg-emerald-50" :
+                autoDnsState === "failed"   ? "border-rose-200 bg-rose-50"   :
+                                              "border-amber-200 bg-amber-50"
+              }`}>
+                <div className="flex items-center gap-2 mb-1">
+                  {autoDnsState === "verified" ? <Check className="h-5 w-5 text-emerald-600" /> :
+                   autoDnsState === "failed"   ? <X className="h-5 w-5 text-rose-600" /> :
+                                                  <RefreshCw className="h-5 w-5 text-amber-600 animate-spin" />}
+                  <div className="text-sm font-semibold text-slate-900">
+                    {autoDnsState === "verified" ? "DNS records verified! You're ready to send." :
+                     autoDnsState === "failed"   ? "Automatic DNS publish didn't complete. Use the manual records below as a fallback." :
+                                                    "We're adding the DNS records for you automatically — give us 2-5 minutes."}
+                  </div>
+                </div>
+                <div className="text-xs text-slate-600">
+                  Domain: <code className="bg-white px-1 rounded">{createdDomain.domain}</code>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded border border-slate-200 bg-slate-50 p-3 flex items-center justify-between">
+                <div className="text-sm text-slate-700">
+                  Domain: <code className="bg-white border border-slate-200 px-1 rounded">{createdDomain.domain}</code>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => copyAllDns(createdRecords)}
+                    className="text-xs px-2.5 py-1 rounded border border-slate-300 hover:bg-white flex items-center gap-1"
+                  >
+                    <Copy className="h-3 w-3" /> {copiedKey === "all-dns" ? "Copied!" : "Copy all"}
+                  </button>
+                  <button
+                    onClick={() => mailToWebAdmin(createdRecords, createdDomain)}
+                    className="text-xs px-2.5 py-1 rounded border border-slate-300 hover:bg-white flex items-center gap-1"
+                  >
+                    <Mail className="h-3 w-3" /> Email these to my web admin
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* The 4 records — shown in BOTH paths so the auto path has a
+                fallback view if anything goes sideways. */}
+            {createdRecords && (
+              <div className="space-y-2">
+                {(["spf", "dkim_1", "dkim_2", "dmarc"] as const).map(key => {
+                  const rec = createdRecords.records[key];
+                  return (
+                    <div key={key} className="border border-slate-200 rounded p-3 bg-white">
+                      <div className="text-xs font-semibold uppercase text-slate-700">
+                        {key.replace("_", " ")}{" "}
+                        <span className="ml-2 text-[10px] text-slate-500 font-mono">({rec.type})</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 mt-1">
+                        <Field label="Host" value={rec.host} copyKey={`wiz-${key}-host`} onCopy={copyText} copiedKey={copiedKey} />
+                        <Field label="Value" value={rec.value} copyKey={`wiz-${key}-value`} onCopy={copyText} copiedKey={copiedKey} wide />
+                      </div>
+                      {rec.note && <div className="text-[10px] text-slate-500 italic mt-1">{rec.note}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {wizardStep === "done" && (
+          <div className="p-8 text-center space-y-2">
+            <Sparkles className="h-10 w-10 text-[#EF6C33] mx-auto" />
+            <div className="text-base font-semibold text-slate-900">You're using the Intelligent Analytics default sender.</div>
+            <div className="text-sm text-slate-600 max-w-md mx-auto">
+              You can start sending right away. Switch to your own business email anytime — your campaigns, lists, and history carry over.
+            </div>
+          </div>
+        )}
+      </IadmModal>
     </SparkPageShell>
   );
 }
@@ -259,12 +642,12 @@ function Field({ label, value, copyKey, onCopy, copiedKey, wide }: { label: stri
   );
 }
 
-function Input({ label, placeholder, value, onChange }: { label: string; placeholder?: string; value: string; onChange: (v: string) => void }) {
+function Labeled({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
       <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">{label}</label>
-      <input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)}
-        className="w-full text-sm border border-slate-300 rounded p-1.5 mt-0.5 focus:border-[#EF6C33] focus:ring-1 focus:ring-[#EF6C33]" />
+      <div className="mt-0.5">{children}</div>
+      {hint && <div className="text-[11px] text-slate-500 mt-0.5">{hint}</div>}
     </div>
   );
 }

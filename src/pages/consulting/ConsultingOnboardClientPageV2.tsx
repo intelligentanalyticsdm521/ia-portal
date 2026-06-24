@@ -276,6 +276,22 @@ export function ConsultingOnboardClientPageV2() {
     notif_email: true, notif_sms: false,
   });
 
+  // FEAT (2026-06-23) — step-skipping wizard. These three flags drive:
+  //   • Skip Step 4 when business profile is already saved
+  //   • Skip Step 5 when owner account is already saved
+  //   • Hide cart cards for products the tenant already has
+  // All three populate from /admin/onboard-client/onboarding-progress
+  // (founder self via /self alias OR existing client via ?tenant_id=...).
+  // null = "not loaded yet" → don't skip until we know. false = "missing
+  // required fields" → show the step. true = "fully populated" → skip.
+  const [businessProfileComplete, setBusinessProfileComplete] = useState<boolean | null>(null);
+  const [ownerAccountComplete, setOwnerAccountComplete] = useState<boolean | null>(null);
+  const [existingProducts, setExistingProducts] = useState<string[]>([]);
+  // Founder self-onboard detection: the wizard auto-prefilled from the
+  // caller's own tenant (no Stripe customer search). Drives the eyebrow
+  // swap and the "Onboarding: <business_name>" header.
+  const [isSelfOnboard, setIsSelfOnboard] = useState(false);
+
   // ─── Catalog fetch (single source of truth — DO NOT hardcode prices) ──
 
   useEffect(() => {
@@ -415,7 +431,18 @@ export function ConsultingOnboardClientPageV2() {
       signup_product?: string | null;
       billing_cycle?: string | null;
       stripe_customer_linked?: boolean;
+      // FEAT (2026-06-23) — step-skipping wizard completeness flags.
+      // Backend (oliver-api routes/admin/onboardClient.js) computes these
+      // alongside the prefill blocks and returns them BOTH inside prefill
+      // (legacy convenience) and at the top level of the envelope.
+      business_profile_complete?: boolean;
+      owner_account_complete?: boolean;
+      existing_products?: string[];
     } | null;
+    // Top-level surface for step-skipping flags — primary source of truth.
+    business_profile_complete?: boolean;
+    owner_account_complete?: boolean;
+    existing_products?: string[];
     step?: number;
     section_id?: string | null;
     finished_at?: string | null;

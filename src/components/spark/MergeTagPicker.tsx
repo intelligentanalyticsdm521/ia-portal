@@ -15,14 +15,30 @@ import { useEffect, useRef, useState } from "react";
 import { Tag, ChevronDown } from "lucide-react";
 
 export interface MergeTag {
-  /** The raw token written into the template, e.g. "contact.first_name". */
+  /** The schema token (e.g. "contact.first_name"). Kept for backwards-
+   *  compat with older templates and as a stable identity key. The
+   *  picker no longer inserts this form — it inserts the user-friendly
+   *  token derived from `label`. */
   key: string;
-  /** User-facing label, e.g. "First name". */
+  /** User-facing label, e.g. "First name". Also the basis for the
+   *  inserted token: "First name" → "{{first name}}". */
   label: string;
   /** Category for grouping in the dropdown. */
   category: "Contact" | "Tenant" | "Campaign" | "Custom";
   /** Optional sample value shown next to the label for clarity. */
   example?: string;
+}
+
+/**
+ * Convert a merge tag to the user-friendly token that gets written into
+ * the template — e.g. { label: "First name" } → "{{first name}}".
+ *
+ * Brandon's 2026-06-24 locked convention: customer-facing templates use
+ * natural-language names like `{{first name}}` never schema names like
+ * `{{contact.first_name}}`. The backend resolver accepts either form.
+ */
+export function mergeTagToUserFriendlyToken(tag: MergeTag): string {
+  return `{{${tag.label.toLowerCase()}}}`;
 }
 
 // Default tag catalog. In the next iteration we'll fetch this from
@@ -85,7 +101,9 @@ export function MergeTagPicker({
 
   const insertTag = (tag: MergeTag) => {
     const el = targetRef.current;
-    const token = `{{${tag.key}}}`;
+    // User-friendly insertion: "First name" → "{{first name}}".
+    // Backend mergeTagCatalog resolver accepts either form.
+    const token = mergeTagToUserFriendlyToken(tag);
     if (!el) {
       // Fallback: append.
       onChange(value + token);
@@ -190,8 +208,23 @@ export function renderMergeTagPreview(input: string, sample: Record<string, stri
     "campaign.view_in_browser_url": "https://example.com/view",
     "campaign.send_date": new Date().toLocaleDateString(),
   };
-  const ctx = { ...defaults, ...sample };
-  return input.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, key) => ctx[key] ?? `[${key}]`);
+  // Also resolve user-friendly tokens like "{{first name}}" — built from
+  // the catalog labels so the preview matches what the picker inserts.
+  const friendly: Record<string, string> = {};
+  for (const t of DEFAULT_MERGE_TAGS) {
+    const friendlyKey = t.label.toLowerCase();
+    const v = defaults[t.key];
+    if (v !== undefined) friendly[friendlyKey] = v;
+  }
+  const ctx = { ...defaults, ...friendly, ...sample };
+  // Allow spaces inside the token (user-friendly form): {{first name}}.
+  return input.replace(/\{\{\s*([\w. ]+?)\s*\}\}/g, (_m, key: string) => {
+    const k = key.trim();
+    if (k in ctx) return ctx[k];
+    const lower = k.toLowerCase();
+    if (lower in ctx) return ctx[lower];
+    return `[${k}]`;
+  });
 }
 
 export default MergeTagPicker;

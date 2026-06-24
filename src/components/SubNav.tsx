@@ -575,7 +575,12 @@ const SETTINGS_NAV: SubNavConfig = {
         // Webhooks + Audience Sync → Workflow & Automations, Review Widget
         // → Customer Success, Audit Log → Reports). Business Profile +
         // Plan & Pricing are global, live in hamburger.
-        { key: "spark_sender_domains", label: "Sender Domains", route: "/app/services/spark_sender_domains" },
+        // SPARK Composer v1.1 (2026-06-24) — sender setup is now a 2-card
+        // pick (IA default vs white-label) and Senders + Signatures are
+        // separate CRUD pages alongside Sender Domains.
+        { key: "spark_sender_domains", label: "Sender Setup", route: "/app/services/spark_sender_domains" },
+        { key: "spark_senders", label: "Senders", route: "/app/services/spark_senders" },
+        { key: "spark_signatures", label: "Signatures", route: "/app/services/spark_signatures" },
         { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys" },
         { key: "spark_secrets", label: "Tenant Secrets", route: "/app/services/spark_secrets" },
         { key: "spark_custom_fields", label: "Custom Fields", route: "/app/services/spark_custom_fields" },
@@ -681,6 +686,8 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/arion_brand") || path.includes("/arion_service_area")) return "settings_arion";
   if (
     path.includes("/spark_sender_domains") ||
+    path.includes("/spark_senders") ||
+    path.includes("/spark_signatures") ||
     path.includes("/spark_api_keys") ||
     path.includes("/spark_secrets") ||
     path.includes("/spark_custom_fields") ||
