@@ -265,7 +265,7 @@ function MergeTagPopover({ tags, onPick, onClose }: MergeTagPopoverProps) {
     }
     return m;
   }, [filtered]);
-  const order: MergeTag["category"][] = ["Contact", "Business", "Campaign", "Custom"];
+  const order: MergeTag["category"][] = ["Contact", "Business", "Setup Links", "Campaign", "Custom"];
 
   return (
     <div

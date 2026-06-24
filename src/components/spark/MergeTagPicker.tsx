@@ -24,7 +24,7 @@ export interface MergeTag {
    *  inserted token: "First name" → "{{first name}}". */
   label: string;
   /** Category for grouping in the dropdown. */
-  category: "Contact" | "Business" | "Campaign" | "Custom";
+  category: "Contact" | "Business" | "Setup Links" | "Campaign" | "Custom";
   /** Optional sample value shown next to the label for clarity. */
   example?: string;
 }
@@ -59,6 +59,11 @@ export const DEFAULT_MERGE_TAGS: MergeTag[] = [
   { key: "tenant.phone",         label: "Phone",           category: "Business", example: "(555) 555-1234" },
   { key: "tenant.owner_name",    label: "Owner name",      category: "Business", example: "Brandon Sheriff" },
   { key: "tenant.address",       label: "Address",         category: "Business", example: "123 Main St" },
+  // Setup Links — used by welcome / activation / onboarding emails
+  { key: "vars.welcome_link",    label: "Welcome link",     category: "Setup Links", example: "Account-setup URL" },
+  { key: "vars.onboarding_link", label: "Onboarding link",  category: "Setup Links", example: "In-app wizard URL" },
+  { key: "vars.activation_link", label: "Activation link",  category: "Setup Links", example: "Same as welcome link" },
+  { key: "vars.product_list",    label: "Product list",     category: "Setup Links", example: "ARION, SPARK, and OLIVER" },
   // Campaign
   { key: "campaign.unsubscribe_url", label: "Unsubscribe link", category: "Campaign", example: "auto link" },
   { key: "campaign.preferences_url", label: "Preferences link", category: "Campaign", example: "auto link" },
@@ -130,7 +135,7 @@ export function MergeTagPicker({
     if (!byCategory.has(t.category)) byCategory.set(t.category, []);
     byCategory.get(t.category)!.push(t);
   }
-  const order: MergeTag["category"][] = ["Contact", "Business", "Campaign", "Custom"];
+  const order: MergeTag["category"][] = ["Contact", "Business", "Setup Links", "Campaign", "Custom"];
 
   return (
     <div ref={wrapperRef} className="relative inline-block">
