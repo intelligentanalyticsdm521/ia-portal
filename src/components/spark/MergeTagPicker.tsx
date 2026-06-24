@@ -27,6 +27,10 @@ export interface MergeTag {
   category: "Contact" | "Business" | "Setup Links" | "Campaign" | "Custom";
   /** Optional sample value shown next to the label for clarity. */
   example?: string;
+  /** Plain-English explanation shown as a tooltip on hover. Helps writers
+   *  distinguish similar-sounding tags (e.g. welcome link vs onboarding
+   *  link vs activation link). */
+  description?: string;
 }
 
 /**
@@ -46,29 +50,29 @@ export function mergeTagToUserFriendlyToken(tag: MergeTag): string {
 // these defaults are correct for every SPARK tenant.
 export const DEFAULT_MERGE_TAGS: MergeTag[] = [
   // Contact
-  { key: "contact.first_name", label: "First name",        category: "Contact", example: "Jane" },
-  { key: "contact.last_name",  label: "Last name",         category: "Contact", example: "Smith" },
-  { key: "contact.full_name",  label: "Full name",         category: "Contact", example: "Jane Smith" },
-  { key: "contact.email",      label: "Email",             category: "Contact", example: "jane@example.com" },
-  { key: "contact.phone",      label: "Phone",             category: "Contact", example: "(555) 555-1212" },
-  { key: "contact.company",    label: "Company",           category: "Contact", example: "Acme Inc" },
-  { key: "contact.city",       label: "City",              category: "Contact", example: "Marshalltown" },
+  { key: "contact.first_name", label: "First name",        category: "Contact", example: "Jane",                description: "The recipient's first name." },
+  { key: "contact.last_name",  label: "Last name",         category: "Contact", example: "Smith",               description: "The recipient's last name." },
+  { key: "contact.full_name",  label: "Full name",         category: "Contact", example: "Jane Smith",          description: "First name + last name combined." },
+  { key: "contact.email",      label: "Email",             category: "Contact", example: "jane@example.com",    description: "The recipient's email address." },
+  { key: "contact.phone",      label: "Phone",             category: "Contact", example: "(555) 555-1212",      description: "The recipient's phone number." },
+  { key: "contact.company",    label: "Company",           category: "Contact", example: "Acme Inc",            description: "The recipient's company name." },
+  { key: "contact.city",       label: "City",              category: "Contact", example: "Marshalltown",        description: "The recipient's city." },
   // Business
-  { key: "tenant.business_name", label: "Business name",   category: "Business", example: "Your Business" },
-  { key: "tenant.website",       label: "Website",         category: "Business", example: "https://example.com" },
-  { key: "tenant.phone",         label: "Phone",           category: "Business", example: "(555) 555-1234" },
-  { key: "tenant.owner_name",    label: "Owner name",      category: "Business", example: "Brandon Sheriff" },
-  { key: "tenant.address",       label: "Address",         category: "Business", example: "123 Main St" },
-  // Setup Links — used by welcome / activation / onboarding emails
-  { key: "vars.welcome_link",    label: "Welcome link",     category: "Setup Links", example: "Account-setup URL" },
-  { key: "vars.onboarding_link", label: "Onboarding link",  category: "Setup Links", example: "In-app wizard URL" },
-  { key: "vars.activation_link", label: "Activation link",  category: "Setup Links", example: "Same as welcome link" },
-  { key: "vars.product_list",    label: "Product list",     category: "Setup Links", example: "ARION, SPARK, and OLIVER" },
+  { key: "tenant.business_name", label: "Business name",   category: "Business", example: "Your Business",       description: "YOUR business name (the sender, not the recipient)." },
+  { key: "tenant.website",       label: "Website",         category: "Business", example: "https://example.com", description: "Your business website URL." },
+  { key: "tenant.phone",         label: "Phone",           category: "Business", example: "(555) 555-1234",      description: "Your business phone number." },
+  { key: "tenant.owner_name",    label: "Owner name",      category: "Business", example: "Brandon Sheriff",     description: "Your name as the business owner. Use in signatures or 'from Brandon' lines." },
+  { key: "tenant.address",       label: "Address",         category: "Business", example: "123 Main St",         description: "Your business mailing address." },
+  // Setup Links — server resolves these per-send with the correct URL for the recipient + event.
+  { key: "vars.welcome_link",    label: "Welcome link",     category: "Setup Links", example: "First-time account setup",  description: "URL where a NEW user verifies their email + creates their password. Use ONCE per recipient — clicking it activates their account. Auto-expires after 72h. THIS is the link to use in welcome emails." },
+  { key: "vars.onboarding_link", label: "Onboarding link",  category: "Setup Links", example: "Open the setup wizard",     description: "Deep-link into the in-app setup wizard. Use when the recipient ALREADY has an account and just needs to finish configuring it (e.g. after they self-checkout and have already done CIAM signup)." },
+  { key: "vars.activation_link", label: "Activation link",  category: "Setup Links", example: "Activate a trial / feature", description: "Generic activation URL. Use for 'activate your trial', 'verify subscription', or 're-enable account' style emails. NOT the same as the welcome link — that's for first-time setup only." },
+  { key: "vars.product_list",    label: "Product list",     category: "Setup Links", example: "ARION, SPARK, and OLIVER",  description: "Comma-separated list of products the recipient bought (e.g. 'ARION, SPARK, and OLIVER'). Renders as natural English in a sentence." },
   // Campaign
-  { key: "campaign.unsubscribe_url", label: "Unsubscribe link", category: "Campaign", example: "auto link" },
-  { key: "campaign.preferences_url", label: "Preferences link", category: "Campaign", example: "auto link" },
-  { key: "campaign.view_in_browser_url", label: "View in browser", category: "Campaign", example: "auto link" },
-  { key: "campaign.send_date",       label: "Send date",       category: "Campaign", example: "Jun 17, 2026" },
+  { key: "campaign.unsubscribe_url", label: "Unsubscribe link", category: "Campaign", example: "auto link",       description: "Per-recipient unsubscribe URL. REQUIRED BY LAW on marketing emails (CAN-SPAM). Auto-injected if missing." },
+  { key: "campaign.preferences_url", label: "Preferences link", category: "Campaign", example: "auto link",       description: "URL to the recipient's notification preferences page — they can turn off categories without unsubscribing entirely." },
+  { key: "campaign.view_in_browser_url", label: "View in browser", category: "Campaign", example: "auto link",   description: "URL to view this email in a browser (for recipients whose mail client mangles HTML)." },
+  { key: "campaign.send_date",       label: "Send date",       category: "Campaign", example: "Jun 17, 2026",   description: "The date this campaign was sent (or scheduled to send)." },
 ];
 
 export interface MergeTagPickerProps {
@@ -168,11 +172,12 @@ export function MergeTagPicker({
                       key={t.key}
                       type="button"
                       onClick={() => insertTag(t)}
+                      title={t.description || t.example || t.label}
                       className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-orange-50 hover:text-orange-900 flex items-center justify-between gap-2"
                     >
                       <span className="font-semibold">{t.label}</span>
                       {t.example && (
-                        <span className="text-[10px] text-slate-400 italic truncate">{t.example}</span>
+                        <span className="text-[10px] text-slate-400 italic truncate ml-2">{t.example}</span>
                       )}
                     </button>
                   ))}

@@ -297,6 +297,7 @@ function MergeTagPopover({ tags, onPick, onClose }: MergeTagPopoverProps) {
                   type="button"
                   onDoubleClick={() => onPick(mergeTagToUserFriendlyToken(t))}
                   onClick={() => onPick(mergeTagToUserFriendlyToken(t))}
+                  title={t.description || t.example || t.label}
                   className="flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-orange-50 hover:text-orange-900"
                 >
                   <span className="font-semibold">{t.label}</span>
