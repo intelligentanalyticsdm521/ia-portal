@@ -299,9 +299,21 @@ export function ConsultingOnboardClientPageV2() {
     setCatLoading(true);
     setConsultingError(null);
     Promise.all([
-      fetchPlanCatalog("arion").catch(() => []),
-      fetchSignupCatalog("oliver", cycle).catch(() => null),
-      fetchSignupCatalog("spark", cycle).catch(() => null),
+      fetchPlanCatalog("arion").catch((e) => {
+        // eslint-disable-next-line no-console
+        console.error("[wizard] fetchPlanCatalog(arion) FAILED:", e);
+        return [];
+      }),
+      fetchSignupCatalog("oliver", cycle).catch((e) => {
+        // eslint-disable-next-line no-console
+        console.error("[wizard] fetchSignupCatalog(oliver) FAILED:", e);
+        return null;
+      }),
+      fetchSignupCatalog("spark", cycle).catch((e) => {
+        // eslint-disable-next-line no-console
+        console.error("[wizard] fetchSignupCatalog(spark) FAILED:", e);
+        return null;
+      }),
       // NOTE: useOliverApi().get auto-unwraps the {data:...} envelope inside
       // oliverApi.ts (see "data" in json check at line ~74). So the returned
       // value is the ConsultingProduct[] directly — do NOT access .data on it.
