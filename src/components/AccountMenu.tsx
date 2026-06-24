@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   DatabaseZap,
   ChevronRight,
+  Palette,
 } from 'lucide-react';
 
 /**
@@ -98,6 +99,7 @@ export function AccountMenu({
           {/* Business — applies to whole organization */}
           <MenuSection label="Business settings">
             <MenuItem to="/app/settings/business-profile" icon={<Building2 className="h-4 w-4" />} label="Business Profile" onClick={close} />
+            <MenuItem to="/app/settings/brand-identity" icon={<Palette className="h-4 w-4" />} label="Brand Identity" onClick={close} />
             <MenuItem to="/app/settings/plan-pricing" icon={<CreditCard className="h-4 w-4" />} label="Plan & Pricing" onClick={close} />
             <MenuItem to="/app/settings/team-members" icon={<Users className="h-4 w-4" />} label="Team Members" onClick={close} />
             <MenuItem to="/app/settings/integrations" icon={<Plug className="h-4 w-4" />} label="Connected Accounts" onClick={close} />
