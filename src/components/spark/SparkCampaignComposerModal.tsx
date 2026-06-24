@@ -52,6 +52,15 @@ interface Sender {
   email_address: string;
   reply_to_override: string | null;
   is_default: boolean;
+  // 2026-06-24 — true for the IA shared defaults (noreply/welcome/support/
+  // hello/notifications @ ia-dm.com) that the backend UNIONs into every
+  // tenant's GET /senders response. Used here to label the option as
+  // "(IA shared)" so the user understands they're sending from the
+  // platform domain, not their own branded one.
+  is_system?: boolean;
+  // local_part is returned by GET /senders — needed so we can find the
+  // canonical IA `noreply` fallback when no tenant-owned default exists.
+  local_part?: string;
 }
 
 interface Signature {
@@ -207,10 +216,19 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     get<{ data: Sender[] }>("/api/v1/senders").then((r) => {
       const list = r?.data || [];
       setSenders(list);
-      // If we're creating a NEW draft (not edit-mode load), prefill with
-      // the tenant default sender.
-      if (!editCampaignId) {
-        const def = list.find((s) => s.is_default) || list[0];
+      // 2026-06-24 — prefill with a default. For NEW drafts, prefer the
+      // tenant's own default; fall back to the IA shared `noreply`. For
+      // EDIT mode, only prefill when the loaded draft has no senderId
+      // (the migration-065 backfill scenario — legacy drafts saved before
+      // the picker existed). We use a microtask check below in a second
+      // useEffect, but for the no-prior-sender new-draft path this inline
+      // pick is enough.
+      if (!editCampaignId && list.length > 0) {
+        const def =
+          list.find((s) => !s.is_system && s.is_default) ||  // tenant-owned default
+          list.find((s) => s.is_system && s.local_part === "noreply") || // IA noreply
+          list.find((s) => s.is_default) ||                  // any default
+          list[0];                                            // first row
         if (def) {
           setSenderId(def.id);
           setFromName(def.effective_display_name || def.display_name || "");
@@ -271,14 +289,48 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     }
   }, [open, ready, get, editCampaignId, contactId]);
 
+  // Edit-mode back-fill: if the loaded draft was saved before the picker
+  // had any senders to choose from (the migration-065 root-cause case), it
+  // has senderId="" and from_email=NULL. As soon as the senders list
+  // arrives, auto-pick a default so the user can save+send the existing
+  // draft without re-opening it. Runs only in edit mode; the new-draft
+  // path handles this inline in the senders fetch above.
+  useEffect(() => {
+    if (!open || !isEditMode) return;
+    if (senders.length === 0) return;
+    if (senderId !== "" && senderId != null) return;
+    const def =
+      senders.find((s) => !s.is_system && s.is_default) ||
+      senders.find((s) => s.is_system && s.local_part === "noreply") ||
+      senders.find((s) => s.is_default) ||
+      senders[0];
+    if (def) {
+      setSenderId(def.id);
+      if (!fromName) setFromName(def.effective_display_name || def.display_name || "");
+      if (!fromEmail) setFromEmail(def.email_address || "");
+      if (!replyTo && def.reply_to_override) setReplyTo(def.reply_to_override);
+    }
+  }, [open, isEditMode, senders, senderId, fromName, fromEmail, replyTo]);
+
   // Esc + click-outside close handled by IadmModal.
 
   const canSave = useCallback(() => {
     if (!name.trim() || !channel) return false;
     if (channel === "email" && !subject.trim() && !contentHtml.trim()) return false;
     if (channel === "sms" && !contentSms.trim()) return false;
+    // 2026-06-24 — block save on email campaigns that have NO sender wired.
+    // Previously the modal happily saved drafts with sender_address_id=null
+    // (the "save fails" / "draft can't send" bug Brandon hit). The IA
+    // shared defaults seeded by migration 065 mean senders[] is never
+    // empty in practice; this guard catches the edge case where the
+    // /senders fetch failed and the user is about to make an unsendable
+    // draft. SMS doesn't have a From-address concept here — skip the
+    // check on that channel.
+    if (channel === "email" && senders.length > 0 && (senderId === "" || senderId == null)) {
+      return false;
+    }
     return true;
-  }, [name, channel, subject, contentHtml, contentSms]);
+  }, [name, channel, subject, contentHtml, contentSms, senders.length, senderId]);
 
   function buildPayload(): Record<string, unknown> {
     const payload: Record<string, unknown> = {
@@ -574,9 +626,12 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                         <option value="">— Pick a sender —</option>
                         {senders.map((s) => {
                           const dn = s.effective_display_name || s.display_name || s.email_address;
+                          // Tag the IA shared defaults so users know
+                          // they're sending from the platform's domain.
+                          const tag = s.is_system ? " (IA shared)" : s.is_default ? " (default)" : "";
                           return (
                             <option key={s.id} value={s.id}>
-                              {dn} &lt;{s.email_address}&gt;{s.is_default ? " (default)" : ""}
+                              {dn} &lt;{s.email_address}&gt;{tag}
                             </option>
                           );
                         })}

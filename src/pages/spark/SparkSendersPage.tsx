@@ -30,6 +30,12 @@ interface Sender {
   reply_to: string | null;
   is_default: boolean;
   is_active: boolean;
+  // 2026-06-24 — is_system marks the IA shared default senders seeded by
+  // migration 065 (noreply / welcome / support / hello / notifications on
+  // ia-dm.com). Surfaced to every tenant so the From dropdown is never
+  // empty, but tenants can't edit / delete / set-default these rows; the
+  // API blocks the mutations and the UI hides the buttons.
+  is_system?: boolean;
   created_at: string;
 }
 
@@ -195,7 +201,19 @@ export function SparkSendersPage() {
             )}
             {list.map(s => (
               <tr key={s.id} className="border-t border-slate-100 hover:bg-slate-50">
-                <td className="p-2 font-medium text-slate-900">{s.display_name}</td>
+                <td className="p-2 font-medium text-slate-900">
+                  <div className="flex items-center gap-2">
+                    <span>{s.display_name}</span>
+                    {s.is_system && (
+                      <span
+                        title="Shared IA default — available to every tenant. Add your own sender to use a branded From-address."
+                        className="inline-flex items-center rounded-full bg-slate-100 text-slate-600 px-2 py-0.5 text-[10px] uppercase font-semibold tracking-wider"
+                      >
+                        IA default
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="p-2 text-slate-700">
                   <span className="inline-flex items-center gap-1">
                     <Mail className="h-3 w-3 text-slate-400" />
@@ -208,7 +226,10 @@ export function SparkSendersPage() {
                 </td>
                 <td className="p-2">
                   <div className="flex items-center justify-end gap-1">
-                    {!s.is_default && (
+                    {/* IA shared defaults are platform-managed. Hide all
+                        mutation affordances — the backend rejects them too
+                        (403 system_sender_readonly). */}
+                    {!s.is_system && !s.is_default && (
                       <button
                         onClick={() => setDefault(s.id)}
                         className="text-xs px-2 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-100 flex items-center gap-1"
@@ -216,18 +237,22 @@ export function SparkSendersPage() {
                         <Star className="h-3 w-3" /> Set default
                       </button>
                     )}
-                    <button
-                      onClick={() => openEdit(s)}
-                      className="text-xs px-2 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-100 flex items-center gap-1"
-                    >
-                      <Pencil className="h-3 w-3" /> Edit
-                    </button>
-                    <button
-                      onClick={() => remove(s.id)}
-                      className="text-xs px-2 py-1 rounded text-rose-600 hover:bg-rose-50 flex items-center gap-1"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
+                    {!s.is_system && (
+                      <>
+                        <button
+                          onClick={() => openEdit(s)}
+                          className="text-xs px-2 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-100 flex items-center gap-1"
+                        >
+                          <Pencil className="h-3 w-3" /> Edit
+                        </button>
+                        <button
+                          onClick={() => remove(s.id)}
+                          className="text-xs px-2 py-1 rounded text-rose-600 hover:bg-rose-50 flex items-center gap-1"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>
