@@ -18,6 +18,36 @@ import { Save, Trash2, AlertTriangle } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal, IadmButton } from "../IadmModal";
 import { SparkBodyEditor } from "./SparkBodyEditor";
+import { CTAEditorBlock, ctaToBlock, autoContrastColor, type CTAValue } from "./CTAEditorBlock";
+
+// Render a CTAValue into the inline HTML that gets appended to the
+// template body. Mirrors LUMEN-API emailBuilder button block output so
+// what the writer previews matches what recipients see in their inbox.
+function ctaValueToHtml(v: CTAValue): string {
+  const block = ctaToBlock(v) as Record<string, unknown>;
+  if (block.type === "paragraph") {
+    const align = (v.align || "center") as string;
+    return `<p style="text-align:${align};">${block.html as string}</p>`;
+  }
+  const align = (v.align || "center") as string;
+  const justify = align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center";
+  const radius = v.borderRadius ?? 6;
+  const width = v.width || "fit";
+  const bg = v.buttonColor || "#1A3A4A";
+  const color = v.textColor || autoContrastColor(bg);
+  const label = (v.label || "Click here")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const url = (v.url || "#").replace(/"/g, "&quot;");
+  return (
+    `<p style="display:flex;justify-content:${justify};">`
+    + `<a href="${url}" style="display:inline-block;`
+    + `background:${bg};color:${color};padding:12px 24px;`
+    + `border-radius:${radius}px;font-weight:600;font-size:16px;`
+    + `text-decoration:none;text-align:center;`
+    + (width === "full" ? "width:100%;" : "")
+    + `">${label}</a></p>`
+  );
+}
 
 interface Sender {
   id: number;
@@ -109,6 +139,10 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
   // template carries a verified sender by default. Free-text from_name +
   // reply_to remain so per-template overrides still work.
   const [senders, setSenders] = useState<Sender[]>([]);
+  const [ctaOpen, setCtaOpen] = useState(false);
+  const [ctaValue, setCtaValue] = useState<CTAValue>({
+    type: "button", label: "", url: "", align: "center", width: "fit", borderRadius: 6,
+  });
 
   // Auto-derived template_key when creating from scratch. The user can't
   // edit the key once saved (the backend uses it as a stable handle).
@@ -354,8 +388,16 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
                   value={email.body_html}
                   onChange={(html, text) => setEmail({ ...email, body_html: html, body_text: text })}
                   placeholder={"Hi {{first name}}, ..."}
+                  onInsertCTA={() => {
+                    setCtaValue({
+                      type: "button", label: "", url: "", align: "center", width: "fit", borderRadius: 6,
+                    });
+                    setCtaOpen(true);
+                  }}
                 />
-                <p className="text-[11px] text-slate-500 mt-0.5">For visual block editing, save the template then click <a href={`/app/services/spark_email_templates`} className="text-[#EF6C33] hover:underline">"Open advanced editor"</a> on the Templates library page.</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Type <span className="font-mono">{"{{"}</span> to insert a merge tag, or click <span className="font-semibold">CTA</span> in the toolbar to add a styled button. For block-based editing, <a href={`/app/services/spark_email_templates`} className="text-[#EF6C33] hover:underline">open the advanced editor</a> from the Templates library page.
+                </p>
               </Row>
             </div>
           )}
@@ -437,6 +479,38 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
           box-shadow: 0 0 0 1px #EF6C33;
         }
       `}</style>
+      {ctaOpen && (
+        <IadmModal
+          open={ctaOpen}
+          onClose={() => setCtaOpen(false)}
+          product="spark"
+          eyebrow="SPARK · INSERT CTA"
+          title="Add a call-to-action"
+          size="info"
+          footer={
+            <>
+              <IadmButton variant="ghost" onClick={() => setCtaOpen(false)}>Cancel</IadmButton>
+              <IadmButton
+                variant="accent"
+                product="spark"
+                onClick={() => {
+                  const html = ctaValueToHtml(ctaValue);
+                  const nextBody = email.body_html ? `${email.body_html}\n${html}` : html;
+                  setEmail({ ...email, body_html: nextBody });
+                  setCtaOpen(false);
+                }}
+                disabled={!ctaValue.url.trim() || !ctaValue.label.trim()}
+              >
+                Insert
+              </IadmButton>
+            </>
+          }
+        >
+          <div className="p-5">
+            <CTAEditorBlock value={ctaValue} onChange={setCtaValue} />
+          </div>
+        </IadmModal>
+      )}
     </IadmModal>
   );
 }
