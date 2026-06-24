@@ -28,7 +28,7 @@
 // API scope: every fetch from inside this modal sends x-tenant-key /
 // x-tenant-id = the client's tenant_id (via ClientTenantContext). Audit
 // columns server-side stamp the founder's identity.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IadmModal, CORE_BLUE, PRODUCT_ACCENT } from "../IadmModal";
 import { ClientTenantProvider, type ClientTenantValue } from "../../lib/clientTenantContext";
 import { useOliverApi } from "../../hooks/useOliverApi";
@@ -37,12 +37,13 @@ import { connectGoogle as arionConnectGoogle, createSeoProject as arionCreateSeo
 import { InfoTip } from "../InfoTip";
 import { LogoPicker } from "../oliver/LogoPicker";
 import { PhoneInput } from "../PhoneInput";
-import { Building2, CheckCircle2, ExternalLink } from "lucide-react";
+import { BarChart3, Building2, CheckCircle2, ExternalLink, Globe, MapPin, Search, Sparkles, TrendingUp, UserCheck } from "lucide-react";
 import { mergeStrict } from "../../lib/mergeStrict";
 import { createRunner } from "../../lib/onboardingRunner/runner";
 import { buildArionSteps, type ArionDomainPath } from "../../lib/onboardingRunner/arionSteps";
 import type { StepRecord, Runner } from "../../lib/onboardingRunner/types";
 import OnboardingRunnerProgress from "../onboarding/OnboardingRunnerProgress";
+import { fetchArionSeoAddons, type ArionSeoAddonEntry } from "../../lib/onboardingApi";
 
 const ARION_API_BASE_URL = (import.meta.env.VITE_ARION_API_BASE_URL as string)
   || "https://app-arion-api-prod-e6fuc9gzd8f3hqfe.centralus-01.azurewebsites.net";
@@ -82,6 +83,21 @@ interface OnboardingState {
   profile: BusinessProfile;
   owner: OwnerAccount;
   arion: {
+    // 2026-06-24 — siteMode is the FIRST decision in the ARION flow per
+    // Brandon's lock: customer picks "I have an existing site" vs "I need a
+    // new site built" before anything else. This drives whether we render
+    // the full questionnaire (new) or a compact WP-URL + admin handoff form
+    // (existing). Stays "" until the user clicks one of the two cards.
+    //
+    // Mapping to runner's domain_choice:
+    //   siteMode='new'      → domain_choice ∈ {purchase, subdomain, byo (no existing flag)}
+    //   siteMode='existing' → domain_choice ∈ {byo + has_existing_website=true, hostinger_existing}
+    //                         skip-questionnaire flag implicit via has_existing_website.
+    siteMode: "new" | "existing" | "";
+    // Existing-site fields (only used when siteMode='existing'). Captured so
+    // the runner / handoff has the WordPress URL + admin credentials path.
+    existing_wp_url: string;
+    existing_wp_admin_handoff: "create_admin_invite" | "share_credentials" | "";
     // Domain
     domain_choice: "byo" | "purchase" | "subdomain" | "hostinger_existing" | "migrate" | "";
     domain: string;
@@ -132,6 +148,30 @@ interface OnboardingState {
     apple_claimed: boolean;
     se_ranking_project_created: boolean;
     skipped: boolean;
+    // 2026-06-24 — Dual-path picker per [[reference_ia_integration_pattern]].
+    // Each integration has TWO visible paths the customer chooses between
+    // BEFORE the runner launches the Google + Bing connect steps:
+    //   • "byo"        — customer brings their own account; the runner kicks
+    //                    off the existing OAuth (Google) or paste-key (Bing)
+    //                    flow into THEIR account.
+    //   • "ia_managed" — we provision under the IA master account and
+    //                    transfer ownership to the customer post-onboarding.
+    // Defaults to "ia_managed" — the lowest-friction path for the typical
+    // client who doesn't already have these accounts. The selections feed
+    // launchRunner() as google_setup_answer / bing_setup_answer (yes for
+    // byo, no for ia_managed). Per-integration so a customer with their own
+    // GA4 but no GBP can still pick BYO for one and ia_managed for the
+    // other (the runner reads a single google answer today; that limitation
+    // is documented inline at the launch site so the future split lands
+    // cleanly).
+    google_provisioning: {
+      ga4: "byo" | "ia_managed";
+      gsc: "byo" | "ia_managed";
+      gbp: "byo" | "ia_managed";
+    };
+    bing_provisioning: {
+      bwt: "byo" | "ia_managed";
+    };
   };
   spark_welcome_email: {
     template_choice: "system_default" | "custom" | "skip";
@@ -156,6 +196,7 @@ const EMPTY_STATE: OnboardingState = {
     billing_email: "", notif_email: true, notif_sms: false,
   },
   arion: {
+    siteMode: "", existing_wp_url: "", existing_wp_admin_handoff: "",
     domain_choice: "", domain: "", has_existing_website: false,
     industry: "", description: "", services: ["", "", ""],
     target_audience: "", location: "",
@@ -191,6 +232,13 @@ const EMPTY_STATE: OnboardingState = {
     apple_claimed: false,
     se_ranking_project_created: false,
     skipped: false,
+    // Default both Google + Bing to "ia_managed" — Brandon's locked default
+    // per [[reference_ia_integration_pattern]]. The lowest-friction path for
+    // the typical client who doesn't already have GA4/GSC/GBP/BWT accounts.
+    // Customer can flip any of these to "byo" in the wizard's dual-path
+    // picker before clicking Save & Continue.
+    google_provisioning: { ga4: "ia_managed", gsc: "ia_managed", gbp: "ia_managed" },
+    bing_provisioning:   { bwt: "ia_managed" },
   },
   spark_welcome_email: {
     template_choice: "system_default",
@@ -283,6 +331,7 @@ export interface ArionRunnerController {
   launchRunner: (args: {
     arion: OnboardingState["arion"];
     profile: OnboardingState["profile"];
+    arion_integrations: OnboardingState["arion_integrations"];
   }) => Promise<void>;
   // Read-only state — consumed by both ArionSection (for the inline progress
   // panel when the user navigates back to Step 4 mid-run) and by
@@ -330,8 +379,8 @@ function useArionRunner(tenantId: string): ArionRunnerController {
     setSiteCtx(ctx);
   };
 
-  async function launchRunner(args: { arion: OnboardingState["arion"]; profile: OnboardingState["profile"] }): Promise<void> {
-    const { arion: v, profile } = args;
+  async function launchRunner(args: { arion: OnboardingState["arion"]; profile: OnboardingState["profile"]; arion_integrations: OnboardingState["arion_integrations"] }): Promise<void> {
+    const { arion: v, profile, arion_integrations: integ } = args;
     if (runnerStarted || !v.domain_choice) return;
     // Migrate path never auto-launches; the parent's persist() also guards
     // this, but defending here makes the controller safe to call anywhere.
@@ -356,13 +405,36 @@ function useArionRunner(tenantId: string): ArionRunnerController {
     skipAllowedRef.current = steps.filter((s) => s.on_failure === "skip_allowed").map((s) => s.id);
     fallbackLabelsRef.current = Object.fromEntries(steps.map((s) => [s.id, s.label_user_facing]));
 
+    // 2026-06-24 — Map the dual-path picker selections to the runner's
+    // google_setup_answer / bing_setup_answer fields per
+    // [[reference_ia_integration_pattern]]. The runner today accepts a SINGLE
+    // answer per provider (yes = BYO into customer account, no = IA-managed +
+    // ownership transfer); the wizard surfaces three Google sub-toggles
+    // (GA4 / GSC / GBP) for transparency, but if ANY sub-toggle is "byo" we
+    // treat the whole Google answer as "yes" so the runner kicks off the BYO
+    // OAuth (which is a single grant covering all three Google products
+    // anyway). When the runner gains per-sub-product paths, swap this for
+    // a direct passthrough — the per-sub-product values are persisted to
+    // saved_state today so the migration is data-only.
+    const gp = integ?.google_provisioning || { ga4: "ia_managed", gsc: "ia_managed", gbp: "ia_managed" };
+    const bp = integ?.bing_provisioning   || { bwt: "ia_managed" };
+    const googleAnswer: "yes" | "no" = (gp.ga4 === "byo" || gp.gsc === "byo" || gp.gbp === "byo") ? "yes" : "no";
+    const bingAnswer:   "yes" | "no" = bp.bwt === "byo" ? "yes" : "no";
+
     const businessProfile: Record<string, unknown> = {
       site_id: siteCtxRef.current.site_id,
       bearer_token: bearer,
       domain: v.domain.trim(),
       domain_path: v.domain_choice,
-      google_setup_answer: "not_sure",
-      bing_setup_answer: "not_sure",
+      google_setup_answer: googleAnswer,
+      bing_setup_answer: bingAnswer,
+      // Per-sub-product selections — surfaced for the future per-product
+      // runner branch and for the post-onboarding ownership-transfer
+      // bookkeeping. Today the runner ignores these (reads only the single
+      // google_setup_answer), but persisting them on businessProfile means
+      // we don't have to re-walk the wizard when the split lands.
+      google_provisioning: gp,
+      bing_provisioning: bp,
       contact_email: (profile.primary_contact_email || "").trim() || null,
       business_name: (profile.business_name || "").trim() || null,
       questionnaire: {
@@ -378,6 +450,9 @@ function useArionRunner(tenantId: string): ArionRunnerController {
         pages: v.pages,
         tagline: v.tagline,
         has_existing_website: v.has_existing_website,
+        site_mode: v.siteMode,
+        existing_wp_url: v.existing_wp_url,
+        existing_wp_admin_handoff: v.existing_wp_admin_handoff,
       },
     };
 
@@ -652,7 +727,7 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
         ) {
           // Fire-and-forget — the runner reports progress through the
           // controller's state so the next-section render picks it up.
-          void arionRunner.launchRunner({ arion: state.arion, profile: state.profile });
+          void arionRunner.launchRunner({ arion: state.arion, profile: state.profile, arion_integrations: state.arion_integrations });
         }
         setStepIdx((i) => Math.min(i + 1, sections.length - 1));
       }
@@ -671,7 +746,7 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, onClose, onFinished }: 
       eyebrow={`Client Onboarding · ${tenantName || tenantId}`}
       title={current.title}
       subtitle={`Step ${stepIdx + 1} of ${sections.length}${current.required ? " · required" : " · optional — skip anytime"}`}
-      size="info"
+      size="report"
       footer={
         // 2026-06-20 — also disable on `loading`. Clicking Save before
         // prefill finished was flushing EMPTY_STATE to PATCH /settings
@@ -767,7 +842,7 @@ function SectionBody({ section, state, setState, api, accent, tenantId, arionRun
     case "profile":                return <ProfileSection profile={state.profile} setProfile={(p) => setState((s) => ({ ...s, profile: p }))} api={api} />;
     case "owner":                  return <OwnerSection owner={state.owner} setOwner={(o) => setState((s) => ({ ...s, owner: o }))} />;
     case "lifecycle":              return <LifecycleSection v={state.lifecycle} setV={(v) => setState((s) => ({ ...s, lifecycle: v }))} />;
-    case "arion":                  return <ArionSection v={state.arion} setV={(v) => setState((s) => ({ ...s, arion: v }))} tenantId={tenantId} profile={state.profile} arionRunner={arionRunner} />;
+    case "arion":                  return <ArionSection v={state.arion} setV={(v) => setState((s) => ({ ...s, arion: v }))} tenantId={tenantId} profile={state.profile} arionRunner={arionRunner} integ={state.arion_integrations} setInteg={(integ) => setState((s) => ({ ...s, arion_integrations: integ }))} />;
     // arion_integrations renders the live runner progress (or the migrate
     // handoff panel) at the top, then the connect-account rows once the
     // runner finishes and arion.site exists in the DB.
@@ -1168,7 +1243,7 @@ async function notifyFounderStuck(bearer: string, tenant_id: string, rec: StepRe
   }
 }
 
-function ArionSection({ v, setV, tenantId, profile, arionRunner }: { v: OnboardingState["arion"]; setV: (v: OnboardingState["arion"]) => void; tenantId: string; profile: OnboardingState["profile"]; arionRunner: ArionRunnerController }) {
+function ArionSection({ v, setV, tenantId, profile, arionRunner, integ, setInteg }: { v: OnboardingState["arion"]; setV: (v: OnboardingState["arion"]) => void; tenantId: string; profile: OnboardingState["profile"]; arionRunner: ArionRunnerController; integ: OnboardingState["arion_integrations"]; setInteg: (v: OnboardingState["arion_integrations"]) => void; }) {
   // 2026-06-21 — skip-if-provisioned. Brandon hit this himself:
   // ARION onboarding shouldn't re-prompt for site setup if arion.site already
   // has a row for this tenant. Probe on mount; if found, render a compact
@@ -1276,8 +1351,128 @@ function ArionSection({ v, setV, tenantId, profile, arionRunner }: { v: Onboardi
           <button type="button" onClick={() => setForceEdit(false)} className="ml-2 underline font-semibold">Back to provisioned view</button>
         </div>
       )}
-      <p className="text-xs text-slate-500">Domain + the questionnaire that drives the WP starter template, AI-generated copy, brand voice, and SE Ranking seeds. Skip anything you don't know.</p>
+      <p className="text-xs text-slate-500">First, tell us whether you're starting from scratch or already have a WordPress site. That choice drives the rest of the flow.</p>
 
+      {/* ── siteMode branch — Brandon's locked structure 2026-06-24 ──
+            The FIRST decision in the ARION flow is "new site" vs "existing
+            site". Two large clickable cards make it impossible to miss.
+              • new      → full questionnaire so AI Website Builder has context
+              • existing → skip questionnaire, ask for WP URL + admin handoff
+            Toggling between modes preserves entered data — we never blank
+            out v.industry / v.brand_voice / v.existing_wp_url etc. so the
+            user can flip back without losing work. */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-2">What are we starting from?</label>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setV({ ...v, siteMode: "new" })}
+            className={`p-5 rounded-xl border-2 text-left transition ${v.siteMode === "new" ? "border-sky-500 bg-sky-50 ring-2 ring-sky-200" : "border-slate-200 bg-white hover:border-slate-300"}`}
+          >
+            <div className="flex items-start gap-3">
+              <Building2 className={`h-6 w-6 mt-0.5 shrink-0 ${v.siteMode === "new" ? "text-sky-700" : "text-slate-400"}`} />
+              <div>
+                <div className="text-sm font-bold text-slate-900">I need a new site built</div>
+                <div className="text-xs text-slate-600 mt-1 leading-snug">
+                  Spin up a brand-new WordPress site. We'll ask a few questions about your business so the AI Website Builder
+                  can generate your homepage copy, page structure, and brand voice. Then pick a domain (buy one, use a free
+                  subdomain, or bring your own).
+                </div>
+              </div>
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setV({ ...v, siteMode: "existing" })}
+            className={`p-5 rounded-xl border-2 text-left transition ${v.siteMode === "existing" ? "border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200" : "border-slate-200 bg-white hover:border-slate-300"}`}
+          >
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className={`h-6 w-6 mt-0.5 shrink-0 ${v.siteMode === "existing" ? "text-emerald-700" : "text-slate-400"}`} />
+              <div>
+                <div className="text-sm font-bold text-slate-900">I have an existing site</div>
+                <div className="text-xs text-slate-600 mt-1 leading-snug">
+                  You already have a working WordPress site. We'll skip the questionnaire and just install the IA Plugin so
+                  you get analytics, AI insights, and integrations. Give us the URL + admin access and we'll handle the rest.
+                </div>
+              </div>
+            </div>
+          </button>
+        </div>
+        {!v.siteMode && (
+          <div className="mt-2 text-[11px] text-slate-500 italic">Pick one to continue.</div>
+        )}
+      </div>
+
+      {/* ── EXISTING SITE BRANCH ──
+            Skip questionnaire. Ask for WordPress URL + admin handoff method.
+            Under the hood this maps to the plugin-install-only runner branch:
+              • domain_choice = 'byo' (or 'hostinger_existing' if user picks)
+              • has_existing_website = true   ← runner reads this and skips
+                                                template-import + AI copy gen
+            See buildArionSteps() in lib/onboardingRunner/arionSteps.ts for the
+            matrix. */}
+      {v.siteMode === "existing" && (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-2">Where is your site hosted?</label>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                ["byo",                "Anywhere (we'll install the plugin via your admin login)", "Your site lives on any host — we connect through wp-admin."],
+                ["hostinger_existing", "On Hostinger (we auto-install via Hostinger API)",         "Your site is on your Hostinger account — we connect directly, no DNS hop."],
+              ] as const).map(([id, label, desc]) => (
+                <button key={id} type="button"
+                  onClick={() => setV({ ...v, domain_choice: id, has_existing_website: true })}
+                  className={`p-3 rounded-lg border-2 text-left text-xs ${v.domain_choice === id ? "border-emerald-500 bg-emerald-50" : "border-slate-200 bg-white"}`}>
+                  <div className="font-semibold">{label}</div>
+                  <div className="text-[10px] text-slate-500 mt-1 leading-tight">{desc}</div>
+                </button>
+              ))}
+            </div>
+            {v.domain_choice === "hostinger_existing" && (
+              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <b>Note:</b> the back-end auto-connect via Hostinger API is queued for build (#246).
+                For now this routes through the same plugin-install path as <code>byo</code>.
+              </div>
+            )}
+          </div>
+
+          <Field
+            label="WordPress site URL"
+            value={v.existing_wp_url}
+            onChange={(u) => setV({ ...v, existing_wp_url: u, domain: u })}
+            placeholder="https://your-site.com"
+            hint="The URL you use to log in at /wp-admin"
+          />
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-2">How will you give us admin access?</label>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                ["create_admin_invite", "Send IA Plugin install link",        "We'll email you a one-click install URL — you stay logged in, no credentials shared."],
+                ["share_credentials",   "Share a temporary admin user",       "Create a temp wp-admin user named 'ia-installer' and we'll handle the install."],
+              ] as const).map(([id, label, desc]) => (
+                <button key={id} type="button"
+                  onClick={() => setV({ ...v, existing_wp_admin_handoff: id })}
+                  className={`p-3 rounded-lg border-2 text-left text-xs ${v.existing_wp_admin_handoff === id ? "border-emerald-500 bg-emerald-50" : "border-slate-200 bg-white"}`}>
+                  <div className="font-semibold">{label}</div>
+                  <div className="text-[10px] text-slate-500 mt-1 leading-tight">{desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+            <b>Skipping the questionnaire.</b> Since you already have content, we won't ask about industry, brand voice, or pages —
+            those only feed the AI Website Builder. You can edit your brand profile any time from Settings.
+          </div>
+        </div>
+      )}
+
+      {/* ── NEW SITE BRANCH ──
+            Full domain picker + questionnaire. Same UI as before, just gated
+            behind siteMode === 'new'. */}
+      {v.siteMode === "new" && (
+      <>
       {/* Domain — 5 options per Brandon 2026-06-23 ask:
             byo               = you already own a domain elsewhere, point DNS at us
             hostinger_existing= you already own a domain on Hostinger (we connect via API, no DNS hop)
@@ -1294,7 +1489,7 @@ function ArionSection({ v, setV, tenantId, profile, arionRunner }: { v: Onboardi
             ["purchase",           "Buy a new domain",                                "We'll register a new domain via Hostinger as part of provisioning."],
             ["subdomain",          "Use a free *.ia-dm.com subdomain",                "Get started fast — no registrar, no DNS, no waiting."],
           ] as const).map(([id, label, desc]) => (
-            <button key={id} type="button" onClick={() => setV({ ...v, domain_choice: id })}
+            <button key={id} type="button" onClick={() => setV({ ...v, domain_choice: id, has_existing_website: false })}
               className={`p-3 rounded-lg border-2 text-left text-xs ${v.domain_choice === id ? "border-sky-500 bg-sky-50" : "border-slate-200 bg-white"}`}>
               <div className="font-semibold">{label}</div>
               <div className="text-[10px] text-slate-500 mt-1 leading-tight">{desc}</div>
@@ -1306,13 +1501,6 @@ function ArionSection({ v, setV, tenantId, profile, arionRunner }: { v: Onboardi
             <Field label={v.domain_choice === "subdomain" ? "Subdomain prefix" : "Domain"}
               value={v.domain} onChange={(d) => setV({ ...v, domain: d })}
               placeholder={v.domain_choice === "subdomain" ? "rollinginit (becomes rollinginit.ia-dm.com)" : "example.com"} />
-            {v.domain_choice === "byo" && (
-              <label className="flex items-center gap-2 text-xs mt-2">
-                <input type="checkbox" checked={v.has_existing_website}
-                  onChange={(e) => setV({ ...v, has_existing_website: e.target.checked })} />
-                I already have a working WordPress site at this domain (install the IA Plugin only — don't import a template or copy)
-              </label>
-            )}
             {v.domain_choice === "hostinger_existing" && (
               <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                 <b>Note:</b> the back-end auto-connect via Hostinger API is queued for build (#246).
@@ -1403,6 +1591,8 @@ function ArionSection({ v, setV, tenantId, profile, arionRunner }: { v: Onboardi
 
       <Field label="Tagline (optional)" value={v.tagline} onChange={(t) => setV({ ...v, tagline: t })}
         placeholder="Where Marshalltown rolls together since 1998" hint="Goes in the hero, used by the AI copy generator" />
+      </>
+      )}
 
       {/* ── ARION setup preview panel ─────────────────────────────────
             2026-06-23 — the runner now auto-launches when the user clicks
@@ -1419,7 +1609,13 @@ function ArionSection({ v, setV, tenantId, profile, arionRunner }: { v: Onboardi
               • v.domain_choice  (5 paths — purchase / subdomain / byo /
                                   hostinger_existing / migrate)
               • hasSeoAddon      (derived from existing site row OR cart)
-            See lib/onboardingRunner/arionSteps.ts for the full matrix. */}
+            See lib/onboardingRunner/arionSteps.ts for the full matrix.
+
+            Gated behind v.siteMode so it doesn't appear until the user has
+            made the first decision — otherwise the empty "Pick a domain
+            option above first" copy renders before the user has even seen
+            the two siteMode cards. */}
+      {v.siteMode && (
       <div className="mt-4 rounded-lg border-2 border-sky-200 bg-sky-50 p-4">
         <div className="flex items-start gap-3">
           <Building2 className="h-5 w-5 text-sky-700 mt-0.5 shrink-0" />
@@ -1467,6 +1663,410 @@ function ArionSection({ v, setV, tenantId, profile, arionRunner }: { v: Onboardi
             )}
           </div>
         </div>
+      </div>
+      )}
+
+      {/* ── SEO Tools (always on) ─────────────────────────────────────
+            Per Brandon's lock 2026-06-24 — every ARION site ships with
+            the always-on SEO tools that surface inline across the
+            dashboard. This is informational + a conditional upsell;
+            customers do NOT get to opt out. Whether they bought an
+            ARION SEO add-on is the only branch:
+              • hasSeoAddon = true  → green confirmation pill with tier
+              • hasSeoAddon = false → upsell banner + inline tier picker
+            Gated behind v.siteMode so it doesn't render before the user
+            has made the first new-vs-existing decision (same pattern
+            the setup preview panel above uses). */}
+      {v.siteMode && (
+        <ArionSeoToolsSubsection hasSeoAddon={hasSeoAddon} seoAddonTier={existingSite?.seoAddonTier || null} />
+      )}
+
+      {/* ── Google + Bing dual-path picker ────────────────────────────
+            Per Brandon's Day-1 lock + [[reference_ia_integration_pattern]]:
+            EVERY integration must offer BOTH paths visibly — bring your own
+            OR let us set it up. Treating BYO as "advanced/hidden" is what
+            cost months of delays. The runner consumes the selections via
+            launchRunner() → businessProfile.google_setup_answer +
+            bing_setup_answer (see lib/onboardingRunner/arionSteps.ts steps
+            arion_google_oauth + arion_bing_oauth). Mounted here in Step 4
+            so the customer makes the choice BEFORE Save & Continue auto-
+            launches the runner. Gated on v.siteMode so it doesn't appear
+            before the first new-vs-existing decision. */}
+      {v.siteMode && (
+        <ArionIntegrationsPathPickerSubsection integ={integ} setInteg={setInteg} />
+      )}
+    </div>
+  );
+}
+
+// ─── ArionSection · SEO Tools subsection ─────────────────────────────────
+//
+// Always-on SEO tools live inline in the dashboard — Brand Consistency,
+// Featured Snippets, SEO Content Score, Internal Linking, Cannibalization
+// Detection, Alt-Text Helper. We tell the customer this so they don't think
+// nothing's happening and we surface an upsell when they didn't buy an SEO
+// add-on at checkout.
+//
+// Catalog source: fetchArionSeoAddons() — never hardcode prices, per
+// feedback_no_fabricated_catalog. The catalog endpoint sits on arion-api
+// and returns Essentials/Growth/Authority with their pricing envelopes.
+function ArionSeoToolsSubsection({ hasSeoAddon, seoAddonTier }: {
+  hasSeoAddon: boolean;
+  seoAddonTier: string | null;
+}) {
+  const [showPicker, setShowPicker] = useState(false);
+  const [addons, setAddons] = useState<Record<string, ArionSeoAddonEntry> | null>(null);
+  const [addonsLoading, setAddonsLoading] = useState(false);
+  const [addonsError, setAddonsError] = useState<string | null>(null);
+
+  // Tier feature blurbs for the green confirmation pill — kept short so the
+  // pill stays one line on most screens. Tier names come from the canonical
+  // ARION SEO tier matrix (Essentials / Growth / Authority).
+  const tierBlurb: Record<string, string> = {
+    essentials: "keyword tracking, on-page audits, competitor watch",
+    growth:     "+ Google AI Mode, deeper keyword sets, more audits",
+    authority:  "+ ChatGPT + Gemini AI search, full keyword set, unlimited audits",
+  };
+
+  const tierName: Record<string, string> = {
+    essentials: "Essentials",
+    growth:     "Growth",
+    authority:  "Authority",
+  };
+
+  function loadAddons() {
+    if (addons || addonsLoading) return;
+    setAddonsLoading(true);
+    setAddonsError(null);
+    fetchArionSeoAddons()
+      .then((map) => setAddons(map))
+      .catch((e: Error) => setAddonsError(e.message || "Failed to load SEO add-on catalog"))
+      .finally(() => setAddonsLoading(false));
+  }
+
+  function openPicker() {
+    setShowPicker(true);
+    loadAddons();
+  }
+
+  const tierKey = (seoAddonTier || "").toLowerCase();
+  const activeTierName = tierName[tierKey] || (seoAddonTier ? seoAddonTier : "Active");
+  const activeBlurb = tierBlurb[tierKey] || "your SEO tools are active";
+
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-amber-500 shrink-0" />
+        <div className="text-sm font-semibold text-slate-900">SEO Tools (always on)</div>
+      </div>
+      <p className="text-xs text-slate-600 mt-1.5 leading-snug">
+        Every ARION site ships with always-on SEO tools that surface inside your dashboard wherever they're useful —
+        no separate tab, no setup required. You get <b>Brand Consistency</b>, <b>Featured Snippets</b>,
+        <b> SEO Content Score</b>, <b>Internal Linking</b>, <b>Cannibalization Detection</b>, and the <b>Alt-Text Helper</b>
+        baked into the pages where they apply.
+      </p>
+
+      {/* Confirmation pill — customer already has an SEO add-on */}
+      {hasSeoAddon && (
+        <div className="mt-3 inline-flex items-start gap-2 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1.5">
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 mt-0.5 shrink-0" />
+          <div className="text-[11px] leading-snug text-emerald-900">
+            <span className="font-semibold">ARION SEO {activeTierName} active</span>
+            <span className="text-emerald-800"> — your tools include {activeBlurb}.</span>
+          </div>
+        </div>
+      )}
+
+      {/* Upsell banner — customer did NOT buy an SEO add-on */}
+      {!hasSeoAddon && (
+        <div className="mt-3 rounded-lg border-2 border-sky-200 bg-gradient-to-br from-sky-50 to-white p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100">
+              <TrendingUp className="h-5 w-5 text-sky-700" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-bold text-slate-900">Get the most out of your website and SEO</div>
+              <div className="text-xs text-slate-600 mt-1 leading-snug">
+                Add an ARION SEO add-on to unlock keyword tracking, competitor analysis, technical SEO audits,
+                and AI-powered SEO insights from SE Ranking — all integrated into ARION.
+              </div>
+              {!showPicker && (
+                <button
+                  type="button"
+                  onClick={openPicker}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold px-3 py-2"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  Add ARION SEO
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Inline tier picker — opens on CTA click. Pulls live pricing from
+              fetchArionSeoAddons() so prices stay in sync with Stripe.
+              Customer can pick a tier to flag intent; the actual add-on
+              attaches at checkout (or via consulting follow-up) since this
+              wizard runs after the initial purchase. */}
+          {showPicker && (
+            <div className="mt-4 pt-3 border-t border-sky-200">
+              {addonsLoading && (
+                <div className="text-xs text-slate-500">Loading SEO add-on catalog…</div>
+              )}
+              {addonsError && (
+                <div className="text-xs text-rose-700">Couldn't load pricing: {addonsError}</div>
+              )}
+              {addons && Object.keys(addons).length === 0 && (
+                <div className="text-xs text-amber-700">
+                  SEO add-on catalog is empty — check arion-api <code>/onboarding/checkout/catalog?product=arion</code>.
+                </div>
+              )}
+              {addons && Object.keys(addons).length > 0 && (
+                <>
+                  <div className="text-[11px] font-semibold text-slate-700 mb-2">Pick the tier that fits your goals:</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {(["essentials", "growth", "authority"] as const).map((key) => {
+                      const t = addons[key];
+                      if (!t) return null;
+                      const monthly = t.pricing.monthly_usd;
+                      return (
+                        <a
+                          key={key}
+                          href="/pricing?product=arion#seo"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block p-3 rounded-lg border-2 border-slate-200 bg-white hover:border-sky-500 hover:shadow-sm transition text-left"
+                        >
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{t.name || tierName[key]}</div>
+                          <div className="text-sm font-bold text-slate-900 mt-0.5">
+                            {monthly != null ? `$${monthly}` : "—"}
+                            <span className="text-[10px] font-normal text-slate-500">/mo</span>
+                          </div>
+                          <div className="text-[10px] text-slate-600 mt-1 leading-tight">{tierBlurb[key]}</div>
+                          <div className="text-[10px] text-sky-700 font-semibold mt-2">Add at checkout →</div>
+                        </a>
+                      );
+                    })}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-2 italic">
+                    Tier cards open the public pricing page in a new tab so you can attach the add-on to your account.
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ArionSection · Dual-path integrations picker ────────────────────────
+//
+// Per Brandon's Day-1 lock + [[reference_ia_integration_pattern]]: every
+// integration MUST surface BOTH paths visibly to the client.
+//   • Bring your own — customer already has the account; OAuth (Google) or
+//     paste-key (Bing Webmaster) into their existing account.
+//   • Let us set it up — we provision under the IA master account and
+//     transfer ownership to the customer after onboarding.
+//
+// The runner reads the chosen path from businessProfile.google_setup_answer +
+// bing_setup_answer (set in launchRunner above) and branches into the
+// matching arion_google_oauth / arion_bing_oauth step in arionSteps.ts.
+//
+// IA-master availability:
+//   • GOOGLE-MASTER-SERVICE-ACCOUNT-JSON — NOT in KV today (verified
+//     2026-06-23). The "Let us set it up" Google path falls back to the
+//     master-managed-but-not-transferred branch; ownership transfer is
+//     scheduled for 2026-07 once the secret lands. Footnote surfaces this.
+//   • BING-WMT-API-KEY — present in kv-IADM-prod (verified 2026-06-23). The
+//     "Let us set it up" Bing path works fully today, including ownership
+//     invite via lib/iaMasterBing.inviteBingSiteUser().
+function ArionIntegrationsPathPickerSubsection({ integ, setInteg }: {
+  integ: OnboardingState["arion_integrations"];
+  setInteg: (v: OnboardingState["arion_integrations"]) => void;
+}) {
+  type GooglePid = "ga4" | "gsc" | "gbp";
+  type Path = "byo" | "ia_managed";
+
+  function setGoogle(pid: GooglePid, path: Path) {
+    setInteg({
+      ...integ,
+      google_provisioning: { ...integ.google_provisioning, [pid]: path },
+    });
+  }
+  function setBing(path: Path) {
+    setInteg({
+      ...integ,
+      bing_provisioning: { ...integ.bing_provisioning, bwt: path },
+    });
+  }
+
+  // BYO note copy reused across all four cards — same Google warning shows
+  // on the OAuth consent screen because the app isn't yet verified by
+  // Google. Standard onboarding-day surface for an early platform.
+  const googleByoNote = (
+    <div className="mt-2 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-[10px] text-amber-900 leading-snug">
+      <b>Heads up:</b> You may see a Google warning that this app isn't verified — that's
+      normal for new platforms. Click <b>Advanced</b> → <b>Continue</b> to grant access.
+    </div>
+  );
+  // Until GOOGLE-MASTER-SERVICE-ACCOUNT-JSON lands in KV, the Google "Let us
+  // set it up" path runs in the master-managed-but-not-transferred mode.
+  // The runner still does the right thing (site is provisioned under IA);
+  // we just can't auto-transfer ownership yet.
+  const googleManagedFootnote = (
+    <div className="mt-2 text-[10px] text-slate-500 italic leading-snug">
+      (Currently managed under our master account; ownership transfer scheduled for 2026-07.)
+    </div>
+  );
+  // BWT is fully wired — no footnote needed.
+  const bingManagedReady = (
+    <div className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
+      <CheckCircle2 className="h-3 w-3" />
+      Fully automated — your site is added to Bing under our master account, then ownership transfers to your Microsoft account email.
+    </div>
+  );
+
+  // ── Card renderer — shared shape so all 4 cards look identical ───────
+  // Two large buttons side-by-side; selected button gets a sky/emerald
+  // accent ring + bg; the matching info panel renders below the buttons.
+  function PathCard({
+    icon,
+    title,
+    desc,
+    byoCopy,
+    managedCopy,
+    selected,
+    onByo,
+    onManaged,
+    byoExtra,
+    managedExtra,
+  }: {
+    icon: ReactNode;
+    title: string;
+    desc: string;
+    byoCopy: string;
+    managedCopy: string;
+    selected: Path;
+    onByo: () => void;
+    onManaged: () => void;
+    byoExtra?: ReactNode;
+    managedExtra?: ReactNode;
+  }) {
+    return (
+      <div className="rounded-lg border-2 border-slate-200 bg-white p-3">
+        <div className="flex items-start gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-slate-100">
+            {icon}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-bold text-slate-900">{title}</div>
+            <div className="text-xs text-slate-600 mt-0.5 leading-snug">{desc}</div>
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onByo}
+            className={`text-left rounded-md border-2 p-2 transition ${selected === "byo" ? "border-sky-500 bg-sky-50 ring-1 ring-sky-200" : "border-slate-200 bg-white hover:border-slate-300"}`}
+          >
+            <div className="text-[11px] font-bold text-slate-900">Bring your own</div>
+            <div className="text-[10px] text-slate-600 mt-0.5 leading-tight">{byoCopy}</div>
+          </button>
+          <button
+            type="button"
+            onClick={onManaged}
+            className={`text-left rounded-md border-2 p-2 transition ${selected === "ia_managed" ? "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-200" : "border-slate-200 bg-white hover:border-slate-300"}`}
+          >
+            <div className="text-[11px] font-bold text-slate-900">Let us set it up</div>
+            <div className="text-[10px] text-slate-600 mt-0.5 leading-tight">{managedCopy}</div>
+          </button>
+        </div>
+        {selected === "byo" && byoExtra}
+        {selected === "ia_managed" && managedExtra}
+      </div>
+    );
+  }
+
+  const gp = integ.google_provisioning;
+  const bp = integ.bing_provisioning;
+
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div className="flex items-center gap-2">
+        <Globe className="h-4 w-4 text-sky-600 shrink-0" />
+        <div className="text-sm font-semibold text-slate-900">Google &amp; Bing — pick your path for each</div>
+      </div>
+      <p className="text-xs text-slate-600 mt-1.5 leading-snug">
+        ARION pulls insights from Google Analytics, Search Console, Business Profile, and Bing Webmaster Tools.
+        For each one: <b>bring your own</b> account if you already have it, or <b>let us set it up</b> for you and
+        transfer ownership to you after onboarding. You can change your mind later from <code>ARION → Integrations</code>.
+      </p>
+
+      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* GA4 */}
+        <PathCard
+          icon={<BarChart3 className="h-4 w-4 text-sky-700" />}
+          title="Google Analytics (GA4)"
+          desc="GA4 tracks who visits your website and what they do — sessions, conversions, traffic sources, all the visitor behavior data."
+          byoCopy="I already have GA4 — link my account."
+          managedCopy="Create GA4 for me under our master account."
+          selected={gp.ga4}
+          onByo={() => setGoogle("ga4", "byo")}
+          onManaged={() => setGoogle("ga4", "ia_managed")}
+          byoExtra={googleByoNote}
+          managedExtra={googleManagedFootnote}
+        />
+        {/* GSC */}
+        <PathCard
+          icon={<Search className="h-4 w-4 text-sky-700" />}
+          title="Google Search Console (GSC)"
+          desc="GSC shows what people search for to find your site — keywords, click-through rates, impressions, indexing health."
+          byoCopy="I already have GSC — link my account."
+          managedCopy="Create GSC for me under our master account."
+          selected={gp.gsc}
+          onByo={() => setGoogle("gsc", "byo")}
+          onManaged={() => setGoogle("gsc", "ia_managed")}
+          byoExtra={googleByoNote}
+          managedExtra={googleManagedFootnote}
+        />
+        {/* GBP */}
+        <PathCard
+          icon={<MapPin className="h-4 w-4 text-sky-700" />}
+          title="Google Business Profile (GBP)"
+          desc="GBP is your Google Maps + local search listing — hours, photos, reviews, the panel that shows up when someone Googles your business name."
+          byoCopy="I already have GBP — link my account."
+          managedCopy="Create GBP for me under our master account."
+          selected={gp.gbp}
+          onByo={() => setGoogle("gbp", "byo")}
+          onManaged={() => setGoogle("gbp", "ia_managed")}
+          byoExtra={googleByoNote}
+          managedExtra={googleManagedFootnote}
+        />
+        {/* BWT — Bing Webmaster Tools */}
+        <PathCard
+          icon={<UserCheck className="h-4 w-4 text-sky-700" />}
+          title="Bing Webmaster Tools (BWT)"
+          desc="BWT shows how your site performs on Bing — search queries, indexed pages, crawl health. Bing also powers ChatGPT search results."
+          byoCopy="I already have BWT — link my account."
+          managedCopy="Add my site to BWT under our master account."
+          selected={bp.bwt}
+          onByo={() => setBing("byo")}
+          onManaged={() => setBing("ia_managed")}
+          byoExtra={
+            <div className="mt-2 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-[10px] text-amber-900 leading-snug">
+              <b>Heads up:</b> You may see a Microsoft warning that this app isn't verified — that's
+              normal for new platforms. Click <b>Advanced</b> → <b>Continue</b> to grant access.
+            </div>
+          }
+          managedExtra={bingManagedReady}
+        />
+      </div>
+
+      <div className="mt-3 text-[10px] text-slate-500 leading-snug">
+        Tip: If you're not sure whether you have one of these, pick <b>Let us set it up</b> — we'll provision and
+        transfer ownership to your primary email after onboarding. You can always switch later.
       </div>
     </div>
   );
@@ -2141,36 +2741,58 @@ function ConsultingModeShell({ tenantId, tenantName, onClose }: { tenantId: stri
 // 2026-06-21 — Brand voice multi-select picker.
 // Max 3 voices from BRAND_VOICE_CATALOG + optional custom free-text.
 // Cards show voice name, description, and a 2-sentence example.
+//
+// FIX (2026-06-24, F-289 follow-up) — Brandon hit this live mid-onboarding:
+// "I just have professional locked in, I would like to be able to do some
+// other options since it's pick up to 3." Root cause: an older saved_state
+// row persisted brand_voice as a STRING ("Professional"), not the array
+// EMPTY_STATE seeds (["Professional"]). When `selected` is a string:
+//   • `selected.includes("Friendly")` → false (no substring match)
+//   • `selected.includes("Professional")` → true (substring of itself)
+//   • `selected.length` is the string length (12), which is >= MAX (3)
+//   • Therefore EVERY other chip is disabled and locked out.
+// Defensive coerce inside the picker so a malformed prefill can never lock
+// the UI again, regardless of which upstream gave us bad shape. The
+// hydration boundary also normalizes (see mergeState below) so the next
+// save round-trips a clean array and the legacy row self-heals.
 function BrandVoicePicker({ selected, custom, onSelectedChange, onCustomChange, hint }: {
-  selected: string[];
+  selected: string[] | string | null | undefined;
   custom: string;
   onSelectedChange: (s: string[]) => void;
   onCustomChange: (s: string) => void;
   hint?: string;
 }) {
   const MAX = 3;
+  // Coerce defensively. Accept array (canonical), single string (legacy
+  // saved_state from before F-289 made this multi-select), or null/undefined.
+  const sel: string[] = Array.isArray(selected)
+    ? selected.filter((k): k is string => typeof k === "string" && k.trim() !== "")
+    : typeof selected === "string" && selected.trim() !== ""
+      ? [selected.trim()]
+      : [];
   function toggle(key: string) {
-    if (selected.includes(key)) {
-      onSelectedChange(selected.filter((k) => k !== key));
-    } else if (selected.length < MAX) {
-      onSelectedChange([...selected, key]);
+    if (sel.includes(key)) {
+      onSelectedChange(sel.filter((k) => k !== key));
+    } else if (sel.length < MAX) {
+      onSelectedChange([...sel, key]);
     }
   }
   return (
     <div>
       <label className="block text-xs font-semibold text-slate-700 mb-1">
-        Brand voice <span className="text-slate-400 font-normal">— pick up to 3</span>
+        Brand voice <span className="text-slate-400 font-normal">— pick up to 3 ({sel.length}/{MAX} selected)</span>
       </label>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         {BRAND_VOICE_CATALOG.map((v) => {
-          const active = selected.includes(v.key);
-          const disabled = !active && selected.length >= MAX;
+          const active = sel.includes(v.key);
+          const disabled = !active && sel.length >= MAX;
           return (
             <button
               key={v.key}
               type="button"
               onClick={() => toggle(v.key)}
               disabled={disabled}
+              title={disabled ? `You've picked the max of ${MAX} voices — deselect one to pick another.` : undefined}
               className={`text-left rounded-lg border-2 p-2.5 transition ${
                 active ? "border-sky-500 bg-sky-50" :
                 disabled ? "border-slate-200 bg-slate-50 opacity-40 cursor-not-allowed" :
@@ -2425,13 +3047,27 @@ async function flushSectionToCanonical(
 // wizard (ConsultingOnboardClientPageV2) can share the exact same semantics.
 // Don't reintroduce a second copy here.
 
+// 2026-06-24 — coerce legacy brand_voice STRING to array on hydration.
+// F-289 made brand_voice multi-select (string[]); pre-F-289 saved_state rows
+// still hold a single string ("Professional"). mergeStrict happily forwards
+// that string as-is, and the picker then locks (see BrandVoicePicker note).
+// Normalize here so downstream is uniform. Cast: TS sees `string[]` on the
+// type but we may receive `string | null` at runtime from older saves.
+function coerceVoiceArray(v: unknown): string[] {
+  if (Array.isArray(v)) return v.filter((k): k is string => typeof k === "string" && k.trim() !== "");
+  if (typeof v === "string" && v.trim() !== "") return [v.trim()];
+  return [];
+}
+
 function mergeState(base: OnboardingState, partial: Partial<OnboardingState>): OnboardingState {
   const oliverPartial = (partial.oliver || {}) as Partial<OnboardingState["oliver"]>;
+  const mergedArion = mergeStrict(base.arion, partial.arion);
+  const mergedSpark = mergeStrict(base.spark, partial.spark);
   return {
     profile:    mergeStrict(base.profile,    partial.profile),
     owner:      mergeStrict(base.owner,      partial.owner),
-    arion:      mergeStrict(base.arion,      partial.arion),
-    spark:      mergeStrict(base.spark,      partial.spark),
+    arion:      { ...mergedArion, brand_voice: coerceVoiceArray(mergedArion.brand_voice) },
+    spark:      { ...mergedSpark, brand_voice: coerceVoiceArray(mergedSpark.brand_voice) },
     oliver: {
       ...mergeStrict(base.oliver, oliverPartial),
       customer_portal: mergeStrict(base.oliver.customer_portal, oliverPartial.customer_portal),
