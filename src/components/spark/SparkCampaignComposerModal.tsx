@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Mail, MessageSquare, ArrowRight, ArrowLeft, Sparkles } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { useOliverApi } from "../../hooks/useOliverApi";
 import { useAppState } from "../../app/AppState";
 import { isPlatformOwner } from "../../lib/currentPlan";
 import { IadmModal, IadmButton } from "../IadmModal";
@@ -109,6 +110,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     put: <T>(p: string, body: unknown) => Promise<T>;
     ready: boolean;
   };
+  const oliverApi = useOliverApi() as { get: <T>(p: string) => Promise<T> };
 
   // F-CS.2 — IL Suggestions tab is Pro/Business only. Platform owner always
   // qualifies (see lib/currentPlan.ts). We fetch /api/v1/usage when the modal
@@ -162,6 +164,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     width: "fit",
     borderRadius: 6,
   });
+  const [brandColors, setBrandColors] = useState<{ primary?: string; secondary?: string; accent?: string }>({});
 
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
@@ -213,6 +216,14 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     // tenant hasn't set up senders yet the dropdown shows a "no senders"
     // hint pointing to Settings — but we still allow drafts so the user
     // isn't blocked while waiting on domain verification.
+    oliverApi
+      .get<{ brandColor?: string | null; brandColorSecondary?: string | null; brandColorAccent?: string | null }>("/settings")
+      .then((r) => setBrandColors({
+        primary: r?.brandColor || undefined,
+        secondary: r?.brandColorSecondary || undefined,
+        accent: r?.brandColorAccent || undefined,
+      }))
+      .catch(() => setBrandColors({}));
     get<{ data: Sender[] }>("/api/v1/senders").then((r) => {
       const list = r?.data || [];
       setSenders(list);
@@ -769,7 +780,13 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
           }
         >
           <div className="p-5">
-            <CTAEditorBlock value={ctaValue} onChange={setCtaValue} />
+            <CTAEditorBlock
+              value={ctaValue}
+              onChange={setCtaValue}
+              brandPrimaryColor={brandColors.primary}
+              brandSecondaryColor={brandColors.secondary}
+              brandAccentColor={brandColors.accent}
+            />
           </div>
         </IadmModal>
       )}

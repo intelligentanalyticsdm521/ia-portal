@@ -21,9 +21,13 @@
 // block. "type: 'other'" serializes as a button block too (same renderer)
 // but the editor labels it as a generic CTA for future flexibility.
 //
-// brandAccentColor should be fetched once by the parent from
-// /settings (Oliver) → brandColorAccent and passed in. Falls back to
-// "#1A3A4A" (IA primary navy) — NEVER the deprecated "#EF6C33" hardcode.
+// brandPrimaryColor / brandSecondaryColor / brandAccentColor should be
+// fetched once by the parent from the business profile (brandColor,
+// brandColorSecondary, brandColorAccent) and passed in. The button
+// defaults to the ACCENT color, and the picker offers three labeled
+// chips (Primary / Secondary / Accent) plus a Custom override. Falls
+// back to "#1A3A4A" (IA primary navy) when no brand colors are set —
+// NEVER the deprecated "#EF6C33" hardcode.
 //
 // Merge tags use user-friendly names per the locked 2026-06-24
 // "Merge tags user-friendly naming" convention — the picker inserts
@@ -63,7 +67,11 @@ export interface CTAValue {
 export interface CTAEditorBlockProps {
   value: CTAValue;
   onChange: (next: CTAValue) => void;
-  /** Pulled from /settings.brandColorAccent at the page level. Fallback "#1A3A4A". */
+  /** Primary brand color from the business profile (brandColor). */
+  brandPrimaryColor?: string;
+  /** Secondary brand color from the business profile (brandColorSecondary). */
+  brandSecondaryColor?: string;
+  /** Accent brand color from the business profile (brandColorAccent). Default for new CTAs. */
   brandAccentColor?: string;
   /** Override the default merge-tag catalog (campaign vs. welcome-email surfaces). */
   mergeTagCatalog?: MergeTag[];
@@ -119,6 +127,8 @@ const RADIUS_PRESETS: { label: string; value: number }[] = [
 export function CTAEditorBlock({
   value,
   onChange,
+  brandPrimaryColor,
+  brandSecondaryColor,
   brandAccentColor,
   mergeTagCatalog,
   compact,
@@ -231,52 +241,100 @@ export function CTAEditorBlock({
       {/* ── Button styling (button / other only) ── */}
       {showButtonStyling && (
         <>
-          {/* Colors */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">
-                Button color
-              </label>
-              <div className="flex items-center gap-2 mt-0.5">
-                <input
-                  type="color"
-                  value={effectiveBg}
-                  onChange={(e) => setButtonColor(e.target.value)}
-                  className="h-7 w-10 border border-slate-300 rounded"
-                />
-                <input
-                  type="text"
-                  value={effectiveBg}
-                  onChange={(e) => setButtonColor(e.target.value)}
-                  className="flex-1 text-xs font-mono border border-slate-300 rounded p-1"
-                />
-              </div>
-              {!value.buttonColor && brandAccentColor && (
-                <div className="text-[10px] text-slate-400 mt-0.5">
-                  Using your brand accent. Pick a color to override.
+          {/* Colors — brand-aware chip picker. Defaults to Accent when no
+             override is set. Custom reveals the hex/color inputs. */}
+          {(() => {
+            const brandChips = [
+              { key: "primary",   label: "Primary",   hex: brandPrimaryColor   },
+              { key: "secondary", label: "Secondary", hex: brandSecondaryColor },
+              { key: "accent",    label: "Accent",    hex: brandAccentColor    },
+            ].filter((c) => !!c.hex);
+            const matchedBrand = brandChips.find((c) => c.hex && c.hex.toLowerCase() === effectiveBg.toLowerCase());
+            // Custom = user has explicitly set buttonColor AND it doesn't match any brand chip.
+            const isCustom = !!value.buttonColor && !matchedBrand;
+            return (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                    Button color
+                  </label>
+                  <div className="flex flex-wrap items-center gap-1 mt-1">
+                    {brandChips.map((c) => {
+                      const active = !isCustom && (matchedBrand?.key === c.key || (!matchedBrand && !value.buttonColor && c.key === "accent"));
+                      return (
+                        <button
+                          key={c.key}
+                          type="button"
+                          onClick={() => setButtonColor(c.hex!)}
+                          title={`${c.label}: ${c.hex}`}
+                          className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border ${
+                            active ? "border-[#1A3A4A] bg-[#1A3A4A] text-white" : "border-slate-300 text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="inline-block h-3 w-3 rounded-sm border border-slate-300" style={{ background: c.hex }} />
+                          {c.label}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => setButtonColor(value.buttonColor || effectiveBg || DEFAULT_BG_FALLBACK)}
+                      className={`text-[11px] px-2 py-1 rounded border ${
+                        isCustom ? "border-[#1A3A4A] bg-[#1A3A4A] text-white" : "border-slate-300 text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      Custom
+                    </button>
+                  </div>
+                  {isCustom && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <input
+                        type="color"
+                        value={effectiveBg}
+                        onChange={(e) => setButtonColor(e.target.value)}
+                        className="h-7 w-10 border border-slate-300 rounded"
+                      />
+                      <input
+                        type="text"
+                        value={effectiveBg}
+                        onChange={(e) => setButtonColor(e.target.value)}
+                        className="flex-1 text-xs font-mono border border-slate-300 rounded p-1"
+                      />
+                    </div>
+                  )}
+                  {!value.buttonColor && brandAccentColor && brandChips.length > 0 && (
+                    <div className="text-[10px] text-slate-400 mt-0.5">
+                      Using your brand accent ({brandAccentColor}).
+                    </div>
+                  )}
+                  {brandChips.length === 0 && (
+                    <div className="text-[10px] text-slate-400 mt-0.5">
+                      No brand colors set yet — set them under Business Profile → Brand Identity.
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">
-                Text color <span className="text-slate-400 normal-case font-normal">(auto)</span>
-              </label>
-              <div className="flex items-center gap-2 mt-0.5">
-                <input
-                  type="color"
-                  value={effectiveText}
-                  onChange={(e) => setTextColor(e.target.value)}
-                  className="h-7 w-10 border border-slate-300 rounded"
-                />
-                <input
-                  type="text"
-                  value={effectiveText}
-                  onChange={(e) => setTextColor(e.target.value)}
-                  className="flex-1 text-xs font-mono border border-slate-300 rounded p-1"
-                />
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                    Text color <span className="text-slate-400 normal-case font-normal">(auto)</span>
+                  </label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <input
+                      type="color"
+                      value={effectiveText}
+                      onChange={(e) => setTextColor(e.target.value)}
+                      className="h-7 w-10 border border-slate-300 rounded"
+                    />
+                    <input
+                      type="text"
+                      value={effectiveText}
+                      onChange={(e) => setTextColor(e.target.value)}
+                      className="flex-1 text-xs font-mono border border-slate-300 rounded p-1"
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Border radius chips */}
           <div>

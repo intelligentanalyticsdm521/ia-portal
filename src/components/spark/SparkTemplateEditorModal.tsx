@@ -16,6 +16,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Save, Trash2, AlertTriangle } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { useOliverApi } from "../../hooks/useOliverApi";
 import { IadmModal, IadmButton } from "../IadmModal";
 import { SparkBodyEditor } from "./SparkBodyEditor";
 import { CTAEditorBlock, ctaToBlock, autoContrastColor, type CTAValue } from "./CTAEditorBlock";
@@ -129,6 +130,9 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
     del: <T>(p: string) => Promise<T>;
     ready: boolean;
   };
+  const oliverApi = useOliverApi() as {
+    get: <T>(p: string) => Promise<T>;
+  };
 
   const [email, setEmail] = useState<EmailTemplate>(DEFAULT_EMAIL);
   const [sms, setSms] = useState<SmsTemplate>(DEFAULT_SMS);
@@ -139,6 +143,7 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
   // template carries a verified sender by default. Free-text from_name +
   // reply_to remain so per-template overrides still work.
   const [senders, setSenders] = useState<Sender[]>([]);
+  const [brandColors, setBrandColors] = useState<{ primary?: string; secondary?: string; accent?: string }>({});
   const [ctaOpen, setCtaOpen] = useState(false);
   const [ctaValue, setCtaValue] = useState<CTAValue>({
     type: "button", label: "", url: "", align: "center", width: "fit", borderRadius: 6,
@@ -160,6 +165,15 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
     get<{ data: Sender[] }>("/api/v1/senders")
       .then((r) => setSenders(r?.data || []))
       .catch(() => setSenders([]));
+    // Brand colors → primary / secondary / accent chips on the CTA editor.
+    oliverApi
+      .get<{ brandColor?: string | null; brandColorSecondary?: string | null; brandColorAccent?: string | null }>("/settings")
+      .then((r) => setBrandColors({
+        primary: r?.brandColor || undefined,
+        secondary: r?.brandColorSecondary || undefined,
+        accent: r?.brandColorAccent || undefined,
+      }))
+      .catch(() => setBrandColors({}));
     if (templateId == null) {
       // Create-new
       setEmail(DEFAULT_EMAIL);
@@ -182,7 +196,7 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
         setLoading(false);
       }
     })();
-  }, [open, ready, channel, templateId, get]);
+  }, [open, ready, channel, templateId, get, oliverApi]);
 
   // Esc to close
   useEffect(() => {
@@ -507,7 +521,13 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
           }
         >
           <div className="p-5">
-            <CTAEditorBlock value={ctaValue} onChange={setCtaValue} />
+            <CTAEditorBlock
+              value={ctaValue}
+              onChange={setCtaValue}
+              brandPrimaryColor={brandColors.primary}
+              brandSecondaryColor={brandColors.secondary}
+              brandAccentColor={brandColors.accent}
+            />
           </div>
         </IadmModal>
       )}
