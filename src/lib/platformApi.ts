@@ -26,6 +26,12 @@ export interface SessionVerifyResponse {
      *  super-users see the tenant picker; everyone else auto-routes to
      *  their home tenant (per Brandon's locked rule). */
     isSuperUser?: boolean;
+    /** 2026-06-24 — Founder role on core.user_platform_roles (also true
+     *  when the user has SUPER_ADMIN — super-admin is a superset).
+     *  Drives day-to-day founder UX (Consulting > Onboard Client, Access
+     *  Log, Tenant Workspace). Decouples those surfaces from
+     *  SUPER_ADMIN, which is now reserved as an emergency-only role. */
+    isFounder?: boolean;
   };
   /** 2026-06-20 — the tenant we should land on by default if the user
    *  isn't a super-user. For IA team always the founder tenant; for client

@@ -40,9 +40,9 @@ const CONSULTING_FOUNDER_ONLY = new Set<string>([
 
 function applyConsultingNavFilter(
   config: SubNavConfig,
-  isSuperUser: boolean,
+  isFounder: boolean,
 ): SubNavConfig {
-  if (isSuperUser) return config;
+  if (isFounder) return config;
   const filteredGroups = config.groups
     .map((g) => ({ ...g, items: g.items.filter((i) => !CONSULTING_FOUNDER_ONLY.has(i.key)) }))
     .filter((g) => g.items.length > 0);
@@ -116,7 +116,12 @@ export function AppShell() {
   // doesn't briefly flash a restricted view for real admins.
   const { roleInfo } = useOliverRole();
   const appState = useAppState();
-  const isSuperUser = !!appState.bootstrap?.user?.isSuperUser;
+  // isFounder drives day-to-day founder UX (Consulting > Onboard Client,
+  // Access Log, Tenant Workspace). 2026-06-24 — decoupled from
+  // isSuperUser, which is now reserved as an emergency-only role. The
+  // backend sets isFounder=true for super-admins as well, so the existing
+  // emergency-access path keeps working.
+  const isFounder = !!appState.bootstrap?.user?.isFounder;
 
   const rawSubNavConfig =
     activeProduct !== "overview" ? SUB_NAV_CONFIGS[activeProduct] : null;
@@ -127,10 +132,10 @@ export function AppShell() {
     }
     if (activeProduct === "consulting") {
       // F1.9 — Onboard Client (and other founder-tools) hidden for non-founders
-      return applyConsultingNavFilter(rawSubNavConfig, isSuperUser);
+      return applyConsultingNavFilter(rawSubNavConfig, isFounder);
     }
     return rawSubNavConfig;
-  }, [rawSubNavConfig, activeProduct, roleInfo.allowedServiceKeys, isSuperUser]);
+  }, [rawSubNavConfig, activeProduct, roleInfo.allowedServiceKeys, isFounder]);
 
   return (
     // h-screen (not min-h-screen) locks the shell to exactly 100vh so the nav row's
