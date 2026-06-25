@@ -3,6 +3,8 @@ import { AppStateProvider } from './app/AppState';
 
 import { LandingPage } from './pages/LandingPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
+// F3 — Scope Change Revisions public surface (no auth, token IS the auth).
+import { PublicRevisionPage } from './pages/public/PublicRevisionPage';
 
 import { AppGate } from './app/AppGate';
 import { AppLayout } from './components/AppLayout';
@@ -98,6 +100,11 @@ export function App() {
           <Route path="/pricing/onboarding" element={<OnboardingFlow />} />
           <Route path="/pricing/status" element={<ProvisioningStatus />} />
           <Route path="/welcome" element={<WelcomePage />} />
+
+          {/* F3 — Public revision page.  The token is a URL-safe hex
+              string (NVARCHAR(80)) issued by oliver-api when the founder
+              creates a draft revision.  No auth needed. */}
+          <Route path="/p/revisions/:token" element={<PublicRevisionPage />} />
 
           {/* 301-style redirects from the old /signup URLs.
               RedirectPreservingSearch keeps ?session_id=… so Stripe Checkout

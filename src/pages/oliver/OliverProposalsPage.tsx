@@ -33,6 +33,33 @@ interface Proposal {
   customer_company: string | null;
   version_number: number;
   created_at: string;
+  // F3 — surfaced from migration 108. Optional so older API responses
+  // (pre-F3) still type-check.
+  free_revisions_used?: number;
+  is_paused?: boolean;
+}
+
+// F3 — proposal revision row shape (matches
+// GET /proposals/:id/revisions in oliver-api).
+interface ProposalRevision {
+  revision_id: string;
+  proposal_id: string;
+  revision_number: number;
+  delta_cents: number | null;
+  scope_change_notes: string | null;
+  requires_payment: boolean;
+  paused_for_payment: boolean;
+  public_token: string | null;
+  public_token_expires_at: string | null;
+  status: "draft" | "sent" | "accepted" | "rejected" | "lapsed";
+  sent_at: string | null;
+  accepted_at: string | null;
+  signature_name: string | null;
+  rejected_at: string | null;
+  reject_reason: string | null;
+  payment_milestone_id: string | null;
+  created_at: string;
+  updated_at: string | null;
 }
 
 interface Summary {
@@ -614,6 +641,11 @@ function ProposalDetailDrawer({
     { name: "Final",   pct: 50 },
   ]);
   const [approveTarget, setApproveTarget] = useState<MilestoneShape | null>(null);
+  // F3 — Revisions tab state.
+  const [activeTab, setActiveTab] = useState<"overview" | "revisions">("overview");
+  const [revisions, setRevisions] = useState<ProposalRevision[]>([]);
+  const [revsErr, setRevsErr] = useState<string | null>(null);
+  const [showAddRevision, setShowAddRevision] = useState(false);
 
   // Total in CENTS — server stores DECIMAL(18,2), round-trip Math.round.
   const parentTotalCents = proposalSummary
@@ -640,6 +672,29 @@ function ProposalDetailDrawer({
   }, [api, proposalId]);
 
   useEffect(() => { reloadMilestones(); }, [reloadMilestones]);
+
+  // F3 — Revisions reload. The founder API returns { data: [...] } so we
+  // unwrap manually (mirrors the milestones API surface).
+  const reloadRevisions = useCallback(async () => {
+    try {
+      const list = await api.get<ProposalRevision[]>(`/proposals/${proposalId}/revisions`);
+      setRevisions(Array.isArray(list) ? list : []);
+      setRevsErr(null);
+    } catch (e) {
+      setRevisions([]);
+      setRevsErr((e as Error).message);
+    }
+  }, [api, proposalId]);
+
+  useEffect(() => { reloadRevisions(); }, [reloadRevisions]);
+
+  const usedFreeRevisions = Number(proposalSummary?.free_revisions_used ?? 0);
+  const isPaused = !!proposalSummary?.is_paused;
+  // The "active" revision that triggered the pause (most-recent accepted
+  // with paused_for_payment=1).  Used for the banner copy.
+  const pausingRevision = useMemo(() => {
+    return revisions.find((r) => r.status === "accepted" && r.paused_for_payment) ?? null;
+  }, [revisions]);
 
   async function applySplitKind(kind: PaymentSplitKind) {
     if (kind === splitKind) return;
@@ -713,7 +768,40 @@ function ProposalDetailDrawer({
         </div>
       </div>
 
-      <div style={{ marginTop: 4, borderTop: "1px solid #E2E8F0", paddingTop: 16 }}>
+      {/* F3 — Paused-for-payment banner. Shown whenever the parent
+          proposal is paused; overrides all advance buttons. */}
+      {isPaused && (
+        <div style={{
+          marginBottom: 14, padding: 12,
+          background: "#FEF3C7", border: "1px solid #FCD34D", borderRadius: 8,
+          fontSize: 12, color: "#92400E", fontWeight: 600,
+        }}>
+          Paused — awaiting payment{pausingRevision ? ` for revision v${pausingRevision.revision_number}` : ""}.
+        </div>
+      )}
+
+      {/* F3 — Tabs: Overview (payment splits) vs Revisions. */}
+      <div style={{ display: "flex", gap: 4, borderBottom: "1px solid #E2E8F0", marginBottom: 16 }}>
+        {(["overview", "revisions"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setActiveTab(t)}
+            style={{
+              padding: "8px 14px",
+              fontSize: 12, fontWeight: 600,
+              background: "transparent", border: 0, cursor: "pointer",
+              color: activeTab === t ? "#1A3A4A" : "#5A7A8A",
+              borderBottom: activeTab === t ? "2px solid #2D9CDB" : "2px solid transparent",
+              marginBottom: -1,
+            }}
+          >
+            {t === "overview" ? "Overview" : `Revisions${revisions.length ? ` (${revisions.length})` : ""}`}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "overview" && (
+      <div style={{ marginTop: 4, paddingTop: 4 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal" style={{ margin: 0 }}>
             Payment splits
@@ -829,6 +917,131 @@ function ProposalDetailDrawer({
           </div>
         )}
       </div>
+      )}
+
+      {activeTab === "revisions" && (
+        <div style={{ paddingTop: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal" style={{ margin: 0 }}>
+              Revisions
+            </h3>
+            <Button
+              variant="primary"
+              onClick={() => setShowAddRevision(true)}
+              disabled={isPaused}
+              title={isPaused ? "Cannot add a revision while paused for payment" : ""}
+            >
+              + Add revision
+            </Button>
+          </div>
+
+          <div style={{ fontSize: 11, color: "#5A7A8A", marginBottom: 10 }}>
+            Free revisions used: <strong>{usedFreeRevisions}</strong> / 1.
+            {usedFreeRevisions >= 1 && (
+              <span style={{ marginLeft: 6 }}>
+                Next revision must be chargeable.
+              </span>
+            )}
+          </div>
+
+          {revsErr && (
+            <div style={{ marginBottom: 8, padding: 8, fontSize: 11, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 4 }}>
+              {revsErr}
+            </div>
+          )}
+
+          {revisions.length === 0 ? (
+            <div style={{ fontSize: 12, color: "#94A3B8", fontStyle: "italic" }}>
+              No revisions yet. Add one if the scope changes after the client accepts.
+            </div>
+          ) : (
+            <div style={{ border: "1px solid #E2E8F0", borderRadius: 6 }}>
+              {revisions.map((rev, i) => {
+                const isLast = i === revisions.length - 1;
+                const deltaLabel = rev.delta_cents != null
+                  ? fmtMoney(Number(rev.delta_cents) / 100)
+                  : "—";
+                return (
+                  <div key={rev.revision_id} style={{
+                    display: "grid", gridTemplateColumns: "48px 1fr 110px 110px 130px",
+                    gap: 8, padding: "10px 12px", alignItems: "center",
+                    borderBottom: !isLast ? "1px solid #F1F5F9" : "none",
+                  }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#1A3A4A" }}>
+                      v{rev.revision_number}
+                    </span>
+                    <div>
+                      <div style={{ fontSize: 12, color: "#0B1C24" }}>
+                        {rev.scope_change_notes
+                          ? (rev.scope_change_notes.length > 80 ? rev.scope_change_notes.slice(0, 80) + "…" : rev.scope_change_notes)
+                          : <span style={{ fontStyle: "italic", color: "#94A3B8" }}>No notes</span>}
+                      </div>
+                      <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 2 }}>
+                        Created {fmtDate(rev.created_at)}
+                        {rev.requires_payment && <span style={{ marginLeft: 6, color: "#92400E", fontWeight: 600 }}>· Paid</span>}
+                        {rev.paused_for_payment && <span style={{ marginLeft: 6, color: "#92400E", fontWeight: 600 }}>· Paused</span>}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 12, fontFamily: "monospace", textAlign: "right", color: "#0B1C24", fontWeight: 600 }}>
+                      {deltaLabel}
+                    </span>
+                    <span style={statusBadgeStyle(rev.status === "draft" || rev.status === "sent" ? "ready"
+                      : rev.status === "accepted" ? "succeeded"
+                      : rev.status === "rejected" ? "failed"
+                      : "canceled")}>
+                      {rev.status}
+                    </span>
+                    <div style={{ textAlign: "right" }}>
+                      {rev.status === "draft" && (
+                        <Button
+                          variant="primary"
+                          onClick={async () => {
+                            try {
+                              await api.post(`/proposals/${proposalId}/revisions/${rev.revision_id}/send`);
+                              await reloadRevisions();
+                              onChanged();
+                            } catch (e) {
+                              setRevsErr((e as Error).message);
+                            }
+                          }}
+                        >Send</Button>
+                      )}
+                      {rev.status === "sent" && rev.public_token && (
+                        <a
+                          href={`/p/revisions/${rev.public_token}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ fontSize: 11, color: "#1A7DB5", fontWeight: 600 }}
+                        >
+                          View link
+                        </a>
+                      )}
+                      {(rev.status === "accepted" || rev.status === "rejected" || rev.status === "lapsed") && (
+                        <span style={{ fontSize: 10, color: "#94A3B8" }}>—</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {showAddRevision && (
+            <AddRevisionModal
+              open
+              proposalId={proposalId}
+              freeRevisionsUsed={usedFreeRevisions}
+              onClose={() => setShowAddRevision(false)}
+              onCreated={async () => {
+                setShowAddRevision(false);
+                await reloadRevisions();
+                onChanged();
+              }}
+              api={api}
+            />
+          )}
+        </div>
+      )}
 
       {approveTarget && (
         <ApproveMilestoneModal
@@ -846,5 +1059,137 @@ function ProposalDetailDrawer({
         />
       )}
     </DetailDrawer>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// F3 — AddRevisionModal
+//
+// Founder UI for creating a draft revision.  When freeRevisionsUsed >= 1
+// the requires_payment toggle is force-checked and disabled (Brandon-lock:
+// 1 free revision per proposal, then chargeable).
+// ──────────────────────────────────────────────────────────────────────────
+function AddRevisionModal({
+  open, proposalId, freeRevisionsUsed, onClose, onCreated, api,
+}: {
+  open: boolean;
+  proposalId: string;
+  freeRevisionsUsed: number;
+  onClose: () => void;
+  onCreated: () => void | Promise<void>;
+  api: {
+    get: <T>(p: string) => Promise<T>;
+    post: <T>(p: string, body?: unknown) => Promise<T>;
+  };
+}) {
+  // Whole-dollar input for the delta — converted to cents on submit.
+  const [deltaDollars, setDeltaDollars] = useState("");
+  const [scopeNotes, setScopeNotes] = useState("");
+  // Defaults: if a free revision is still available, requires_payment off.
+  // Once used, force-on.
+  const forcedPaid = freeRevisionsUsed >= 1;
+  const [requiresPayment, setRequiresPayment] = useState<boolean>(forcedPaid);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (!open) return null;
+
+  async function submit() {
+    setErr(null);
+    const dollars = Number(deltaDollars);
+    let deltaCents: number | null = null;
+    if (deltaDollars.trim() !== "") {
+      if (!Number.isFinite(dollars) || dollars < 0) {
+        setErr("Delta must be a non-negative number");
+        return;
+      }
+      deltaCents = Math.round(dollars * 100);
+    }
+    if (requiresPayment && (!deltaCents || deltaCents <= 0)) {
+      setErr("Paid revisions need a delta > $0");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.post(`/proposals/${proposalId}/revisions`, {
+        delta_cents: deltaCents,
+        scope_change_notes: scopeNotes.trim() || null,
+        requires_payment: requiresPayment,
+      });
+      await onCreated();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(11,28,36,0.4)",
+      zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center",
+    }}>
+      <div style={{
+        width: 500, background: "#fff", borderRadius: 10,
+        boxShadow: "0 12px 40px rgba(0,0,0,0.15)",
+      }}>
+        <div style={{ padding: 18, borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1A3A4A" }}>Add revision</h2>
+          <button onClick={onClose} style={{ background: "transparent", border: 0, fontSize: 22, color: "#5A7A8A", cursor: "pointer" }}>×</button>
+        </div>
+
+        <div style={{ padding: 18, display: "grid", gap: 14 }}>
+          <label style={{ display: "block" }}>
+            <span style={pLabel}>Scope change notes</span>
+            <textarea
+              rows={4}
+              style={{ ...pInput, resize: "vertical" }}
+              placeholder="Describe what changed, what's new, what's removed…"
+              value={scopeNotes}
+              onChange={(e) => setScopeNotes(e.target.value)}
+              autoFocus
+            />
+          </label>
+
+          <label style={{ display: "block" }}>
+            <span style={pLabel}>Delta ($) — additional or new amount</span>
+            <input
+              type="number" min="0" step="0.01" style={pInput}
+              placeholder="0.00"
+              value={deltaDollars}
+              onChange={(e) => setDeltaDollars(e.target.value)}
+            />
+          </label>
+
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#0B1C24" }}>
+            <input
+              type="checkbox"
+              checked={requiresPayment}
+              disabled={forcedPaid}
+              onChange={(e) => setRequiresPayment(e.target.checked)}
+            />
+            <span>
+              Requires payment
+              {forcedPaid && (
+                <span style={{ marginLeft: 6, fontSize: 10, color: "#92400E" }}>
+                  (free revision already used)
+                </span>
+              )}
+            </span>
+          </label>
+
+          {err && (
+            <div style={{ padding: 10, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 6 }}>{err}</div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+            <Button variant="primary" onClick={submit} disabled={busy}>
+              {busy ? "Creating…" : "Create draft revision"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
