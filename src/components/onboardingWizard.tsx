@@ -18,8 +18,14 @@ import {
   type ByodInstructions,
 } from '../lib/onboardingApi';
 import PhoneInput from './PhoneInput';
+import { BrandIntakeStep } from './BrandIntakeStep';
+import {
+  DEFAULT_BRAND_INTAKE,
+  coerceBrandIntake,
+  type BrandIntake,
+} from '../types/brandIntake';
 
-export type WizardStep = 'domain' | 'questionnaire' | 'branding' | 'submitting';
+export type WizardStep = 'domain' | 'questionnaire' | 'brand_intake' | 'branding' | 'submitting';
 
 export interface QuestionnaireAnswers {
   businessName: string;
@@ -43,6 +49,12 @@ export interface QuestionnaireAnswers {
   // PDFs (catalogs, forms, reports) inline on the site. Free version is the
   // default; Premium adds mobile/secure/full-screen viewing if needed later.
   publishPdfs: boolean;
+  // 2026-06-25 — Brand Intake captured by the dedicated BrandIntakeStep
+  // between Questionnaire and Branding. Shared shape with the founder
+  // wizard so AI copy gen / SPARK writers / STELLA see identical fields
+  // regardless of which path onboarded the tenant. Drives the rich
+  // payload we write to lumen.brand_voice_profile at /onboarding/submit.
+  brandIntake: BrandIntake;
 }
 
 export interface DomainSelection {
@@ -97,7 +109,12 @@ export const DEFAULT_ANSWERS: QuestionnaireAnswers = {
   tagline: '',
   hasExistingWebsite: false,
   publishPdfs: false,
+  brandIntake: { ...DEFAULT_BRAND_INTAKE },
 };
+
+// 2026-06-25 — re-export for OnboardingFlow's localStorage rehydration path
+// so a save written before this feature lands still merges cleanly.
+export { coerceBrandIntake };
 
 // ---------------------------------------------------------------------------
 // StepIndicator
@@ -106,6 +123,7 @@ export function StepIndicator({ current }: { current: WizardStep }) {
   const steps: { key: WizardStep; label: string }[] = [
     { key: 'domain', label: 'Domain' },
     { key: 'questionnaire', label: 'About' },
+    { key: 'brand_intake', label: 'Brand' },
     { key: 'branding', label: 'Branding' },
   ];
   const currentIdx = steps.findIndex((s) => s.key === current);
@@ -518,6 +536,37 @@ export function QuestionnaireStep({ value, onChange, onBack, onContinue }: {
         <button disabled={!valid} onClick={onContinue} className="rounded-lg bg-[#EF6C33] px-6 py-3 text-sm font-semibold text-white disabled:opacity-50">Continue →</button>
       </div>
       <style>{`.ia-input { width: 100%; border: 1px solid #d1d5db; border-radius: 0.5rem; padding: 0.625rem 0.875rem; font-size: 0.875rem; }`}</style>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// BrandIntakeWizardStep — wraps the shared BrandIntakeStep with prev/next nav
+// ---------------------------------------------------------------------------
+export function BrandIntakeWizardStep({ value, onChange, onBack, onContinue }: {
+  value: QuestionnaireAnswers;
+  onChange: (a: QuestionnaireAnswers) => void;
+  onBack: () => void;
+  onContinue: () => void;
+}) {
+  return (
+    <div>
+      <h2 className="text-2xl font-bold text-gray-900">Brand direction</h2>
+      <p className="mt-2 text-sm text-gray-600">
+        Optional — but these answers shape every AI-generated piece of copy and design on
+        your site, your campaigns, and your customer messages. Skip what you're unsure of.
+      </p>
+      <div className="mt-6">
+        <BrandIntakeStep
+          value={value.brandIntake}
+          onChange={(next) => onChange({ ...value, brandIntake: next })}
+          intro=""
+        />
+      </div>
+      <div className="mt-10 flex justify-between">
+        <button onClick={onBack} className="text-sm text-gray-600">← Back</button>
+        <button onClick={onContinue} className="rounded-lg bg-[#EF6C33] px-6 py-3 text-sm font-semibold text-white">Continue →</button>
+      </div>
     </div>
   );
 }

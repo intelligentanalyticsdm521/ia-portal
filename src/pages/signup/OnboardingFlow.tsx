@@ -36,14 +36,18 @@ import {
   StepIndicator,
   DomainStep,
   QuestionnaireStep,
+  BrandIntakeWizardStep,
   BrandingStep,
   CenteredMessage,
   DEFAULT_ANSWERS,
+  coerceBrandIntake,
   type WizardStep,
   type QuestionnaireAnswers,
   type DomainSelection,
   type WhoisContact,
 } from '../../components/onboardingWizard';
+import { DEFAULT_BRAND_INTAKE, type BrandIntake } from '../../types/brandIntake';
+import { BrandIntakeStep } from '../../components/BrandIntakeStep';
 
 const API_BASE = (import.meta.env.VITE_ARION_API_BASE_URL as string)
   || 'https://app-arion-api-prod-e6fuc9gzd8f3hqfe.centralus-01.azurewebsites.net';
@@ -117,7 +121,17 @@ function ArionOnboardingFlow() {
       try {
         const data = JSON.parse(saved);
         if (data.domain && !domain) setDomain(data.domain);
-        if (data.answers) setAnswers((a) => ({ ...a, ...data.answers }));
+        if (data.answers) {
+          // Coerce brandIntake defensively — saves written before this
+          // feature landed lack the field entirely; coerceBrandIntake
+          // returns DEFAULT_BRAND_INTAKE when undefined.
+          const incoming = data.answers as Partial<QuestionnaireAnswers> & { brandIntake?: unknown };
+          setAnswers((a) => ({
+            ...a,
+            ...incoming,
+            brandIntake: coerceBrandIntake(incoming.brandIntake ?? a.brandIntake ?? DEFAULT_BRAND_INTAKE),
+          }));
+        }
         if (data.step) setStep(data.step);
         if (data.whois && !whois) setWhois(data.whois);
       } catch { /* ignore */ }
@@ -172,6 +186,14 @@ function ArionOnboardingFlow() {
             value={answers}
             onChange={setAnswers}
             onBack={() => setStep('domain')}
+            onContinue={() => setStep('brand_intake')}
+          />
+        )}
+        {step === 'brand_intake' && (
+          <BrandIntakeWizardStep
+            value={answers}
+            onChange={setAnswers}
+            onBack={() => setStep('questionnaire')}
             onContinue={() => setStep('branding')}
           />
         )}
@@ -179,7 +201,7 @@ function ArionOnboardingFlow() {
           <BrandingStep
             value={answers}
             onChange={setAnswers}
-            onBack={() => setStep('questionnaire')}
+            onBack={() => setStep('brand_intake')}
             onSubmit={async () => {
               setStep('submitting');
               try {
@@ -262,6 +284,8 @@ function ProductSignupFlow({ sessionId, email, product }: { sessionId: string; e
   const [website, setWebsite] = useState('');
   const [city, setCity] = useState('');
   const [stateProv, setStateProv] = useState('');
+  const [brandIntake, setBrandIntake] = useState<BrandIntake>({ ...DEFAULT_BRAND_INTAKE });
+  const [showBrandIntake, setShowBrandIntake] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -277,6 +301,10 @@ function ProductSignupFlow({ sessionId, email, product }: { sessionId: string; e
     // ~10s wall clock before we surface the error to the user.
     const maxTries = 6;
     let attempt = 0;
+    // Only forward brandIntake when the user actually opened + edited the
+    // section. Detect via "any non-default value" so we never overwrite a
+    // pre-seeded profile with empty defaults.
+    const intakeTouched = brandIntakeHasContent(brandIntake);
     while (attempt < maxTries) {
       try {
         await createSignupComplete(sessionId, {
@@ -287,6 +315,7 @@ function ProductSignupFlow({ sessionId, email, product }: { sessionId: string; e
           stateProvince: stateProv.trim() || undefined,
           // Backend persists this on core.tenants.website_status (migration 088).
           ...(websiteStatus ? { websiteStatus } : {}),
+          ...(intakeTouched ? { brandIntake: brandIntake as unknown as Record<string, unknown> } : {}),
         } as Parameters<typeof createSignupComplete>[1]);
         setDone(true);
         // After tenant is provisioned, drive MSAL straight into CIAM with
@@ -394,6 +423,27 @@ function ProductSignupFlow({ sessionId, email, product }: { sessionId: string; e
             <Field label="City"><input value={city} onChange={(e) => setCity(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></Field>
             <Field label="State / Region"><input value={stateProv} onChange={(e) => setStateProv(e.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></Field>
           </div>
+
+          {/* Brand direction — collapsed by default for OLIVER/SPARK buyers
+              so the primary form stays short. Expanding it surfaces the
+              shared BrandIntakeStep used by the ARION flow + founder wizard.
+              Skippable: a fully-untouched intake is NOT sent on submit. */}
+          <div className="border-t border-gray-200 pt-4">
+            <button type="button" onClick={() => setShowBrandIntake((v) => !v)}
+              className="w-full text-left flex items-center justify-between text-sm font-semibold text-gray-700 hover:text-gray-900">
+              <span>Brand direction <span className="text-xs font-normal text-gray-500">(optional — shapes AI-written copy)</span></span>
+              <span className="text-xs">{showBrandIntake ? '▴ Hide' : '▾ Add'}</span>
+            </button>
+            {showBrandIntake && (
+              <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <BrandIntakeStep
+                  value={brandIntake}
+                  onChange={setBrandIntake}
+                />
+              </div>
+            )}
+          </div>
+
           {err && <div className="text-sm text-red-600">{err}</div>}
           <button disabled={busy} onClick={submit}
             className="w-full rounded-lg bg-[#EF6C33] px-6 py-3 text-white font-semibold disabled:opacity-50 hover:bg-[#d75a25]">
@@ -412,4 +462,28 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {children}
     </label>
   );
+}
+
+/**
+ * Detect whether the user actually edited the brand intake. We only forward
+ * the JSON blob to /signup/complete when at least one field has non-default
+ * content — otherwise we'd be overwriting any prior intake (or seed from a
+ * sister product) with empty defaults.
+ */
+function brandIntakeHasContent(b: BrandIntake): boolean {
+  if (b.voice_traits.length > 0) return true;
+  if (b.tones_to_avoid.length > 0) return true;
+  if (b.positioning_territories.length > 0) return true;
+  if (b.visual_direction) return true;
+  if (b.photography_preference) return true;
+  if (b.admired_brands.trim()) return true;
+  if (b.avoid_brand.trim()) return true;
+  if (b.differentiators.some((s) => s && s.trim())) return true;
+  // Sliders count as touched only when the user moved off the neutral 5.
+  const s = b.sliders;
+  if (s.casual_formal !== 5) return true;
+  if (s.affordable_premium !== 5) return true;
+  if (s.traditional_modern !== 5) return true;
+  if (s.local_corporate !== 5) return true;
+  return false;
 }

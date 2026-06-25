@@ -43,6 +43,12 @@ import { createRunner } from "../../lib/onboardingRunner/runner";
 import { buildArionSteps, type ArionDomainPath } from "../../lib/onboardingRunner/arionSteps";
 import type { StepRecord, Runner } from "../../lib/onboardingRunner/types";
 import OnboardingRunnerProgress from "../onboarding/OnboardingRunnerProgress";
+import { BrandIntakeStep } from "../BrandIntakeStep";
+import {
+  DEFAULT_BRAND_INTAKE,
+  coerceBrandIntake,
+  type BrandIntake,
+} from "../../types/brandIntake";
 import { fetchArionSeoAddons, type ArionSeoAddonEntry } from "../../lib/onboardingApi";
 import { SparkBodyEditor } from "../spark/SparkBodyEditor";
 import { useSparkApi } from "../../hooks/useSparkApi";
@@ -228,6 +234,15 @@ interface OnboardingState {
     sender_name: string;
     sender_email: string;
   };
+  /**
+   * 2026-06-25 — Shared brand intake (sliders / voice traits / tones to
+   * avoid / differentiators / visual direction / photography / admired
+   * brands / positioning territories). Persists to lumen.brand_voice_profile
+   * so AI features across ARION / SPARK / OLIVER read from one canonical
+   * source. Top-level (not nested under arion) because it's cross-product —
+   * a SPARK-only tenant should still capture this.
+   */
+  brand_intake: BrandIntake;
 }
 
 const EMPTY_STATE: OnboardingState = {
@@ -307,6 +322,7 @@ const EMPTY_STATE: OnboardingState = {
     sender_name: "",
     sender_email: "",
   },
+  brand_intake: { ...DEFAULT_BRAND_INTAKE },
 };
 
 // ─── Section model ───────────────────────────────────────────────────────
@@ -914,7 +930,7 @@ function SectionBody({ section, state, setState, api, accent, tenantId, arionRun
     case "profile":                return <ProfileSection profile={state.profile} setProfile={(p) => setState((s) => ({ ...s, profile: p }))} api={api} />;
     case "owner":                  return <OwnerSection owner={state.owner} setOwner={(o) => setState((s) => ({ ...s, owner: o }))} />;
     case "lifecycle":              return <LifecycleSection v={state.lifecycle} setV={(v) => setState((s) => ({ ...s, lifecycle: v }))} />;
-    case "arion":                  return <ArionSection v={state.arion} setV={(v) => setState((s) => ({ ...s, arion: v }))} tenantId={tenantId} profile={state.profile} arionRunner={arionRunner} integ={state.arion_integrations} setInteg={(integ) => setState((s) => ({ ...s, arion_integrations: integ }))} />;
+    case "arion":                  return <ArionSection v={state.arion} setV={(v) => setState((s) => ({ ...s, arion: v }))} tenantId={tenantId} profile={state.profile} arionRunner={arionRunner} integ={state.arion_integrations} setInteg={(integ) => setState((s) => ({ ...s, arion_integrations: integ }))} brandIntake={state.brand_intake} setBrandIntake={(b) => setState((s) => ({ ...s, brand_intake: b }))} />;
     // arion_integrations renders the live runner progress (or the migrate
     // handoff panel) at the top, then the connect-account rows once the
     // runner finishes and arion.site exists in the DB.
@@ -1315,7 +1331,7 @@ async function notifyFounderStuck(bearer: string, tenant_id: string, rec: StepRe
   }
 }
 
-function ArionSection({ v, setV, tenantId, profile, arionRunner, integ, setInteg }: { v: OnboardingState["arion"]; setV: (v: OnboardingState["arion"]) => void; tenantId: string; profile: OnboardingState["profile"]; arionRunner: ArionRunnerController; integ: OnboardingState["arion_integrations"]; setInteg: (v: OnboardingState["arion_integrations"]) => void; }) {
+function ArionSection({ v, setV, tenantId, profile, arionRunner, integ, setInteg, brandIntake, setBrandIntake }: { v: OnboardingState["arion"]; setV: (v: OnboardingState["arion"]) => void; tenantId: string; profile: OnboardingState["profile"]; arionRunner: ArionRunnerController; integ: OnboardingState["arion_integrations"]; setInteg: (v: OnboardingState["arion_integrations"]) => void; brandIntake: BrandIntake; setBrandIntake: (b: BrandIntake) => void; }) {
   // 2026-06-21 — skip-if-provisioned. Brandon hit this himself:
   // ARION onboarding shouldn't re-prompt for site setup if arion.site already
   // has a row for this tenant. Probe on mount; if found, render a compact
@@ -1663,7 +1679,46 @@ function ArionSection({ v, setV, tenantId, profile, arionRunner, integ, setInteg
 
       <Field label="Tagline (optional)" value={v.tagline} onChange={(t) => setV({ ...v, tagline: t })}
         placeholder="Where Marshalltown rolls together since 1998" hint="Goes in the hero, used by the AI copy generator" />
+
+      {/* ── Simplified Brand Intake ──
+            2026-06-25 — Pulled directly from the Rolling-In-It intake form.
+            12-15 fields covering sliders / tones-to-avoid / differentiators
+            / visual direction / photography / admired brands / positioning.
+            Persists to lumen.brand_voice_profile alongside the BrandVoicePicker
+            tags so the AI Website Builder + STELLA + SPARK campaign writer
+            all read from one canonical source. */}
+      <div className="rounded-lg border-2 border-sky-100 bg-white p-4">
+        <div className="text-sm font-bold text-slate-900 mb-1">Brand direction</div>
+        <div className="text-xs text-slate-500 mb-3">
+          These shape every piece of AI-generated copy. Optional but strongly recommended for Build-Your-Brand engagements.
+        </div>
+        <BrandIntakeStep
+          value={brandIntake}
+          onChange={setBrandIntake}
+          intro=""
+          accentColor="#0284c7"
+        />
+      </div>
       </>
+      )}
+
+      {/* Brand intake is ALSO shown in the existing-site branch — they still
+          need a voice/positioning profile for SPARK + OLIVER even though we
+          aren't generating WP copy. Renders ONLY after they've picked a
+          handoff method so the form doesn't open with twenty fields. */}
+      {v.siteMode === "existing" && v.existing_wp_admin_handoff && (
+        <div className="rounded-lg border-2 border-sky-100 bg-white p-4">
+          <div className="text-sm font-bold text-slate-900 mb-1">Brand direction</div>
+          <div className="text-xs text-slate-500 mb-3">
+            We won't generate new website copy (you already have content), but SPARK email + future AI features still need a voice profile.
+          </div>
+          <BrandIntakeStep
+            value={brandIntake}
+            onChange={setBrandIntake}
+            intro=""
+            accentColor="#0284c7"
+          />
+        </div>
       )}
 
       {/* ── ARION setup preview panel ─────────────────────────────────
@@ -3542,6 +3597,84 @@ async function flushSectionToCanonical(
     // land. JSON blob save covers the user's current checkbox state.
     return;
   }
+  if (sectionId === "arion") {
+    // 2026-06-25 — Flush the cross-product brand_intake into lumen.brand_voice_profile
+    // so AI features (ARION copy gen, SPARK campaign writer, STELLA, OLIVER
+    // customer-message tone) read the same source whether the customer self-
+    // onboarded or the founder onboarded them. Best-effort: a 5xx never blocks
+    // Save & Continue (the JSON blob save in persist() is the durable backstop).
+    //
+    // We map to the existing PUT /api/v1/my-brand/voice/profile endpoint which
+    // accepts { tone_attributes, voice_examples }:
+    //   tone_attributes → JSON object holding the full structured intake
+    //                     (sliders / lists / differentiators) so future
+    //                     surfaces can read individual fields without
+    //                     reparsing free text.
+    //   voice_examples  → seeded from differentiators + any free-text fields
+    //                     that read like sample copy ("admired brands" lines).
+    if (!api.sparkApi) {
+      return; // non-SPARK-aware caller (rare — kept silent so test harnesses pass)
+    }
+    const intake = state.brand_intake;
+    const intakeHasContent =
+      intake.voice_traits.length > 0 ||
+      intake.tones_to_avoid.length > 0 ||
+      intake.positioning_territories.length > 0 ||
+      intake.differentiators.some((s) => s && s.trim()) ||
+      intake.admired_brands.trim() !== "" ||
+      intake.avoid_brand.trim() !== "" ||
+      intake.visual_direction !== "" ||
+      intake.photography_preference !== "" ||
+      intake.sliders.casual_formal !== 5 ||
+      intake.sliders.affordable_premium !== 5 ||
+      intake.sliders.traditional_modern !== 5 ||
+      intake.sliders.local_corporate !== 5;
+    if (!intakeHasContent) return; // no-op when nothing captured yet
+
+    // Merge the founder wizard's 12-voice brand_voice tags (state.arion.brand_voice)
+    // with the simplified intake's voice_traits so the canonical record reflects BOTH
+    // pickers. The arrays are independent — the wizard's 12 voices target the AI
+    // copy register; the intake's lexicon targets the simpler quick-pick used by
+    // the self-serve flow.
+    const toneAttributes: Record<string, unknown> = {
+      voice_traits: intake.voice_traits,
+      tones_to_avoid: intake.tones_to_avoid,
+      sliders: intake.sliders,
+      differentiators: intake.differentiators.filter((s) => s && s.trim()),
+      visual_direction: intake.visual_direction,
+      photography_preference: intake.photography_preference,
+      admired_brands: intake.admired_brands,
+      avoid_brand: intake.avoid_brand,
+      positioning_territories: intake.positioning_territories,
+      // Founder-wizard catalog tags (12-voice). May overlap with voice_traits;
+      // we keep both so downstream consumers can choose granularity.
+      brand_voice_catalog: state.arion.brand_voice || [],
+      brand_voice_custom: state.arion.brand_voice_custom || "",
+      style_preference: state.arion.style_preference,
+      source: "founder_wizard",
+      captured_at: new Date().toISOString(),
+    };
+    // Build voice_examples as a string[] — the runtime upsertProfile filters
+    // to 20 × 2000 chars, so we don't have to. Seed from differentiators +
+    // tagline + free-text "admired brands" so the embedding pass has real
+    // text to anchor on.
+    const voiceExamples: string[] = [
+      ...intake.differentiators.filter((s) => s && s.trim()),
+      ...(state.arion.tagline ? [state.arion.tagline] : []),
+      ...(intake.admired_brands ? [`We want to sound brand-adjacent to: ${intake.admired_brands}`] : []),
+      ...(intake.avoid_brand ? [`We do NOT want to sound like: ${intake.avoid_brand}`] : []),
+    ];
+
+    try {
+      await api.sparkApi.put("/api/v1/my-brand/voice/profile", {
+        tone_attributes: toneAttributes,
+        voice_examples: voiceExamples,
+      });
+    } catch (e) {
+      console.warn("[onboarding] brand_voice_profile upsert deferred:", e);
+    }
+    return;
+  }
   if (sectionId === "lifecycle") {
     // PUT /lifecycle/config writes core.tenant_lifecycle_config for this
     // tenant — preset, qualify_trigger, oliver_create_trigger, past_customer_days,
@@ -3690,6 +3823,10 @@ function mergeState(base: OnboardingState, partial: Partial<OnboardingState>): O
   const oliverPartial = (partial.oliver || {}) as Partial<OnboardingState["oliver"]>;
   const mergedArion = mergeStrict(base.arion, partial.arion);
   const mergedSpark = mergeStrict(base.spark, partial.spark);
+  // 2026-06-25 — brand_intake uses its own coercer (defaults sliders, filters
+  // unknown trait keys) instead of mergeStrict so a legacy saved_state row
+  // missing the field self-heals on hydration.
+  const mergedBrandIntake = coerceBrandIntake(partial.brand_intake || base.brand_intake);
   return {
     profile:    mergeStrict(base.profile,    partial.profile),
     owner:      mergeStrict(base.owner,      partial.owner),
@@ -3707,6 +3844,7 @@ function mergeState(base: OnboardingState, partial: Partial<OnboardingState>): O
     lifecycle:  mergeStrict(base.lifecycle,  partial.lifecycle),
     arion_integrations: mergeStrict(base.arion_integrations, partial.arion_integrations),
     spark_welcome_email: mergeStrict(base.spark_welcome_email, partial.spark_welcome_email),
+    brand_intake: mergedBrandIntake,
   };
 }
 

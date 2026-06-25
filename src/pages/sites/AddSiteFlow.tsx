@@ -24,6 +24,7 @@ import {
   StepIndicator,
   DomainStep,
   QuestionnaireStep,
+  BrandIntakeWizardStep,
   BrandingStep,
   CenteredMessage,
   DEFAULT_ANSWERS,
@@ -114,6 +115,14 @@ export function AddSiteFlow() {
             value={answers}
             onChange={setAnswers}
             onBack={() => setStep('domain')}
+            onContinue={() => setStep('brand_intake')}
+          />
+        )}
+        {step === 'brand_intake' && (
+          <BrandIntakeWizardStep
+            value={answers}
+            onChange={setAnswers}
+            onBack={() => setStep('questionnaire')}
             onContinue={() => setStep('branding')}
           />
         )}
@@ -121,7 +130,7 @@ export function AddSiteFlow() {
           <BrandingStep
             value={answers}
             onChange={setAnswers}
-            onBack={() => setStep('questionnaire')}
+            onBack={() => setStep('brand_intake')}
             onSubmit={handleSubmit}
             submitLabel="Build my new site →"
           />

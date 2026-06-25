@@ -170,6 +170,21 @@ export interface SignupProfileInput {
   postalCode?: string; countryRegion?: string; websiteUrl?: string;
   /** Post-checkout site picker — drives ARION provisioning gating later. */
   websiteStatus?: 'existing_ia' | 'migrate' | 'new';
+  /**
+   * 2026-06-25 — Simplified brand intake (sliders, voice traits, tones to
+   * avoid, differentiators, visual direction, photography, admired brands,
+   * positioning territories). Optional — the OLIVER/SPARK ProductSignupFlow
+   * collapses this into a fold-out section users can skip. When present,
+   * oliver-api forwards the JSON blob to lumen.brand_voice_profile so the
+   * SPARK campaign writer + STELLA + ARION copy gen see the same shape
+   * whether the customer self-onboarded or the founder onboarded them.
+   *
+   * Shape mirrors the `BrandIntake` interface in types/brandIntake.ts —
+   * kept loose (Record<string, unknown>) at the network boundary so an
+   * additive schema bump on the FE doesn't require a coordinated BE
+   * change.
+   */
+  brandIntake?: Record<string, unknown>;
 }
 export function createSignupComplete(sessionId: string, profile: SignupProfileInput) {
   return j<{ tenant_id: string; product: string; email?: string; already?: boolean }>(
