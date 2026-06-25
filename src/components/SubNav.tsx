@@ -488,12 +488,15 @@ const CONSULTING_NAV: SubNavConfig = {
         // proposal + report + scope-of-work + custom templates. Hidden for
         // non-founder users via CONSULTING_FOUNDER_ONLY in AppShell.tsx.
         { key: "consulting_documents",         label: "Document Library",  route: "/app/services/consulting_documents" },
-      ],
-    },
-    {
-      label: "Platform Operations",
-      items: [
-        { key: "consulting_onboard_client", label: "Onboard Client", route: "/app/services/consulting_onboard_client" },
+        // 2026-06-25 — "Clients" hosts the founder view-as-tenant launcher
+        // (ConsultingClientsPage at /app/services/consulting_workspace).
+        // Eye/View-as button per row gated on isFounder; was previously
+        // invisible because no SubNav entry pointed at the page.
+        { key: "consulting_workspace",         label: "Clients",           route: "/app/services/consulting_workspace" },
+        // Onboard Client wizard REMOVED from nav 2026-06-25 — onboarding is
+        // now a project category (onboarding_consulting / onboarding_onetime)
+        // launched from the Projects page. The /consulting_onboard_client
+        // route + page stay alive for deep links and as a fallback path.
       ],
     },
   ],
