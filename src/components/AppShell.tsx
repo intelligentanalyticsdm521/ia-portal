@@ -99,11 +99,19 @@ export function AppShell() {
     deriveProduct(location.pathname)
   );
   // Mobile MVP shell (2026-06-24): collapse IconRail + SubNav into a slide-over
-  // drawer at < md (768px). Desktop layout unchanged. Drawer closes on any
-  // route change so navigating in mobile drops you back to content.
+  // drawer at < md (768px). Desktop layout unchanged. Per Brandon 2026-06-25:
+  // tapping a product icon while the drawer is open should NOT close the
+  // drawer + navigate — instead it should swap the visible SubNav so the user
+  // can drill into a child in one open/close cycle (Menu > OLIVER > Billing >
+  // Subscriptions, not Menu > OLIVER > Menu > Billing > Menu > Subscriptions).
+  // Only LEAF navigation (SubNav children + product-Dashboards with no SubNav
+  // group + Home) closes the drawer.
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  // Keep activeProduct in sync with URL changes (e.g., back/forward nav)
+  // Keep activeProduct in sync with URL changes (e.g., back/forward nav).
+  // ALSO closes the drawer on a real route change — but the IconRail mobile
+  // handler below skips navigation when a target product has a SubNav, so
+  // tapping IconRail doesn't trigger this. Only leaf navigation does.
   useEffect(() => {
     setActiveProduct(deriveProduct(location.pathname));
     setMobileNavOpen(false);
@@ -112,10 +120,17 @@ export function AppShell() {
   const handleProductSelect = useCallback(
     (key: ProductKey) => {
       setActiveProduct(key);
+      // Mobile-drawer behavior: if the user just opened the drawer and tapped
+      // a product that HAS its own SubNav (arion / oliver / spark / consulting
+      // / settings), skip the auto-navigate so the drawer stays open and the
+      // user can pick a child. For products WITHOUT a SubNav (overview /
+      // stella / forge / argus today) we navigate immediately — that route
+      // change closes the drawer via the useEffect above.
+      if (mobileNavOpen && SUB_NAV_CONFIGS[key]) return;
       // Navigate to the product's default page
       navigate(defaultRouteFor(key));
     },
-    [navigate]
+    [navigate, mobileNavOpen]
   );
 
   // OLIVER role drives accountant nav filtering. The hook fetches /overview/me
