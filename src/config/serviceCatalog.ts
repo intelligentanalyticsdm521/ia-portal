@@ -221,6 +221,10 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_engine_docs', displayName: 'IA Insights Engine Docs', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/services/spark_engine_docs', description: 'Per-report documentation for ARION/SPARK/OLIVER trend engines: business question, score inputs, weights, data sources, and industry benchmarks.' },
   { key: 'spark_smoke_test', displayName: 'Tenant Smoke Test', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/services/spark_smoke_test', description: '24-test read-only smoke test of every major SPARK + IA Insights endpoint. Results persist per-tenant in localStorage. Useful for manual-testing sessions and post-deploy verification.' },
   { key: 'spark_automations', displayName: 'Automations', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_automations', description: 'Welcome and re-engagement email sequences.' },
+  // Unified Lead Inbox (2026-06-25) — single page with three tabs:
+  // Lead Inbox, Suppressed Domains, Territories. `spark_lead_inbox` is the
+  // canonical key; `spark_leads` is retained as a back-compat alias.
+  { key: 'spark_lead_inbox', displayName: 'Lead Inbox', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_lead_inbox', description: 'B2B Lead Inbox with Hot/Warm/Cold scoring, plus tabs for Suppressed Domains and Territories.' },
   { key: 'spark_leads', displayName: 'Lead Inbox', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_leads', description: 'B2B lead inbox with Hot/Warm/Cold scoring.' },
   { key: 'spark_search_profiles', displayName: 'Search Profiles', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_search_profiles', description: 'Saved lead search configurations.' },
   // SPARK Lead Gen V1 (F-150/F-163) — Option 3 live-preview lead search flow

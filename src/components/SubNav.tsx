@@ -357,8 +357,12 @@ const SPARK_NAV: SubNavConfig = {
       // Two sub-flavors live here:
       //   - Multi-step processes: Automations, Journeys, A/B Tests, Approvals,
       //     Workflow Triggers (the event sources that fire automations).
-      //   - Always-on rules: Scoring, Routing, Auto-Tag, Lead Suppression,
-      //     Lead Territories, Anomaly Alerts (data-driven notifications).
+      //   - Always-on rules: Scoring, Routing, Auto-Tag, Anomaly Alerts
+      //     (data-driven notifications).
+      //
+      // Lead Suppression + Lead Territories moved out of this group on
+      // 2026-06-25 — they were absorbed into the unified Lead Inbox page
+      // (Sales group) as tabs alongside the inbox itself.
       //
       // Keeping them in one group rather than two avoids the user having to
       // decide which sub-bucket their thing lives in — they all share the
@@ -386,16 +390,23 @@ const SPARK_NAV: SubNavConfig = {
         // Phase 3A (2026-06-16) — Webhooks pulled from nav until our own
         // implementation ships in SPARK v1.5 (page shows Coming Soon banner).
         { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync" },
-        { key: "spark_lead_suppression", label: "Lead Suppression", route: "/app/services/spark_lead_suppression" },
-        { key: "spark_lead_territories", label: "Lead Territories", route: "/app/services/spark_lead_territories" },
+        // Lead Suppression + Lead Territories used to live here as separate
+        // entries; both were absorbed into the unified Lead Inbox page
+        // (Sales group) as tabs on 2026-06-25.
       ],
     },
     {
       // Sales = active human work on leads/deals. Sales rules (scoring,
-      // routing, suppression, territories) moved up to Workflow & Automations.
+      // routing) moved up to Workflow & Automations. Lead suppression +
+      // territories now live as tabs inside the Lead Inbox page below.
       label: "Sales", icon: Briefcase, collapsible: true, sectionId: "spark_sales",
       items: [
-        { key: "spark_leads", label: "Lead Inbox", route: "/app/services/spark_leads" },
+        // Unified Lead Inbox page (2026-06-25) — single entry that points at
+        // /app/services/spark_lead_inbox; the page itself hosts three tabs
+        // (Lead Inbox, Suppressed Domains, Territories). Legacy routes
+        // /spark_leads, /spark_lead_suppression, /spark_lead_territories
+        // still resolve and pre-select the correct tab.
+        { key: "spark_lead_inbox", label: "Lead Inbox", route: "/app/services/spark_lead_inbox" },
         { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines" },
         { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals" },
         { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution" },

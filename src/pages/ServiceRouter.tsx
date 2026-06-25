@@ -125,7 +125,14 @@ const SparkSegmentsPage = lazyNamed(() => import('./spark/SparkSegmentsPage'), '
 const SparkCampaignsPage = lazyNamed(() => import('./spark/SparkCampaignsPage'), 'SparkCampaignsPage');
 const SparkFormsPage = lazyNamed(() => import('./spark/SparkFormsPage'), 'SparkFormsPage');
 const SparkAutomationsPage = lazyNamed(() => import('./spark/SparkAutomationsPage'), 'SparkAutomationsPage');
-const SparkLeadsPage = lazyNamed(() => import('./spark/SparkLeadsPage'), 'SparkLeadsPage');
+// Unified Lead Inbox (2026-06-25) — single tabbed page hosting Lead Inbox +
+// Suppressed Domains + Territories. The three legacy route keys
+// (spark_leads, spark_lead_suppression, spark_lead_territories) all resolve
+// to this component with the appropriate initial tab so deep links + ARGUS
+// CTAs keep working without redirect hops. SparkLeadsPage / SparkLead-
+// SuppressionPage / SparkTerritoriesPage files are retained on disk for
+// reference but no longer mounted.
+const SparkLeadInboxPage = lazyNamed(() => import('./spark/SparkLeadInboxPage'), 'SparkLeadInboxPage');
 const SparkSearchProfilesPage = lazyNamed(() => import('./spark/SparkSearchProfilesPage'), 'SparkSearchProfilesPage');
 const SparkIntelligencePage = lazyNamed(() => import('./spark/SparkIntelligencePage'), 'SparkIntelligencePage');
 const SparkContactScoringPage = lazyNamed(() => import('./spark/SparkContactScoringPage'), 'SparkContactScoringPage');
@@ -160,8 +167,11 @@ const SparkEmailTemplatesPage = lazyNamed(() => import('./spark/SparkEmailTempla
 const SparkAutomationBuilderPage = lazyNamed(() => import('./spark/SparkAutomationBuilderPage'), 'SparkAutomationBuilderPage');
 const SparkDeliverabilityPage = lazyNamed(() => import('./spark/SparkDeliverabilityPage'), 'SparkDeliverabilityPage');
 const SparkAbTestsPage = lazyNamed(() => import('./spark/SparkAbTestsPage'), 'SparkAbTestsPage');
-const SparkLeadSuppressionPage = lazyNamed(() => import('./spark/SparkLeadSuppressionPage'), 'SparkLeadSuppressionPage');
-const SparkTerritoriesPage = lazyNamed(() => import('./spark/SparkTerritoriesPage'), 'SparkTerritoriesPage');
+// SparkLeadSuppressionPage + SparkTerritoriesPage replaced by SparkLeadInboxPage
+// tabs (2026-06-25). The standalone page files still exist on disk for
+// reference / rollback; if you need to revert, re-add the lazyNamed imports
+// here and point the spark_lead_suppression / spark_lead_territories cases
+// at them again.
 const SparkAutoTagRulesPage = lazyNamed(() => import('./spark/SparkAutoTagRulesPage'), 'SparkAutoTagRulesPage');
 const SparkCompetitorWatchPage = lazyNamed(() => import('./spark/SparkCompetitorWatchPage'), 'SparkCompetitorWatchPage');
 const SparkScoringRulesPage = lazyNamed(() => import('./spark/SparkScoringRulesPage'), 'SparkScoringRulesPage');
@@ -527,7 +537,11 @@ export function ServiceRouter() {
         sparkPage = <SparkWorkflowsAutomationsPage />; break;
       // F-CS.6 — named-task admin (lumen.spark_task)
       case 'spark_tasks': sparkPage = <SparkTasksPage />; break;
-      case 'spark_leads': sparkPage = <SparkLeadsPage />; break;
+      // Unified Lead Inbox (2026-06-25). `spark_lead_inbox` is the new canonical
+      // key the SubNav points at; `spark_leads` is back-compat for old links
+      // and ARGUS intents — both render the same tabbed page (default tab = inbox).
+      case 'spark_lead_inbox':
+      case 'spark_leads': sparkPage = <SparkLeadInboxPage />; break;
       case 'spark_search_profiles': sparkPage = <SparkSearchProfilesPage />; break;
       case 'spark_intelligence': sparkPage = <SparkIntelligencePage />; break;
       case 'spark_contact_scoring': sparkPage = <SparkContactScoringPage />; break;
@@ -561,8 +575,13 @@ export function ServiceRouter() {
       case 'spark_automation_builder': sparkPage = <SparkAutomationBuilderPage />; break;
       case 'spark_deliverability': sparkPage = <SparkDeliverabilityPage />; break;
       case 'spark_ab_tests': sparkPage = <SparkAbTestsPage />; break;
-      case 'spark_lead_suppression': sparkPage = <SparkLeadSuppressionPage />; break;
-      case 'spark_lead_territories': sparkPage = <SparkTerritoriesPage />; break;
+      // Back-compat for the pre-unification routes. Render the unified Lead
+      // Inbox page with the matching tab pre-selected so old deep links land
+      // on the right surface. The standalone SparkLeadSuppressionPage /
+      // SparkTerritoriesPage files are retained for now as a safety net but
+      // are no longer mounted by the router.
+      case 'spark_lead_suppression': sparkPage = <SparkLeadInboxPage initialTab="suppressed" />; break;
+      case 'spark_lead_territories': sparkPage = <SparkLeadInboxPage initialTab="territories" />; break;
       case 'spark_autotag_rules': sparkPage = <SparkAutoTagRulesPage />; break;
       case 'spark_competitor_watch': sparkPage = <SparkCompetitorWatchPage />; break;
       case 'spark_scoring_rules': sparkPage = <SparkScoringRulesPage />; break;
@@ -619,7 +638,7 @@ export function ServiceRouter() {
       case 'lumen_overview': sparkPage = <SparkOverviewPage />; break;
       case 'lumen_contacts': sparkPage = <SparkContactsPage />; break;
       case 'lumen_campaigns': sparkPage = <SparkCampaignsPage />; break;
-      case 'lumen_leads': sparkPage = <SparkLeadsPage />; break;
+      case 'lumen_leads': sparkPage = <SparkLeadInboxPage />; break;
       default: break;
     }
     if (sparkPage) {
