@@ -63,7 +63,7 @@ function fmtDate(d?: string | null) {
 }
 
 export function OliverQuotesPage() {
-  const { get, post, patch, ready } = useOliverApi();
+  const { get, post, patch, del, ready } = useOliverApi();
   const [rows, setRows] = useState<QuoteRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -403,14 +403,14 @@ export function OliverQuotesPage() {
           quoteId={detailId}
           onClose={() => setDetailId(null)}
           onChanged={reload}
-          api={{ get, post, patch }}
+          api={{ get, post, patch, del }}
         />
       )}
     </OliverPageWrapper>
   );
 }
 
-function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: string; onClose: () => void; onChanged: () => void; api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T>; patch: <T>(p: string, b: unknown) => Promise<T> }; }) {
+function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: string; onClose: () => void; onChanged: () => void; api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T>; patch: <T>(p: string, b: unknown) => Promise<T>; del: <T>(p: string) => Promise<T> }; }) {
   const [q, setQ] = useState<QuoteDetail | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -448,6 +448,22 @@ function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: stri
       window.dispatchEvent(new CustomEvent("oliver:open-quote", { detail: { quoteId: dup.quote_id } }));
     } catch (e) { setErr(`Duplicate failed: ${(e as Error).message}`); }
     finally { setBusy(null); }
+  }
+  async function deleteQuote() {
+    if (!q) return;
+    // Soft delete — row stays in DB with deleted_at set. Restore endpoint
+    // exists if needed. Confirm in plain JS — IadmConfirmModal can replace
+    // this in a follow-up styling pass.
+    if (!window.confirm(`Delete this quote (${fmtMoney(q.total)})?\n\nIt will be hidden from your quote list. This can be restored later if needed.`)) return;
+    setBusy("delete"); setErr(null);
+    try {
+      await api.del(`/quotes/${q.quote_id}`);
+      onChanged();
+      onClose();
+    } catch (e) {
+      setErr(`Delete failed: ${(e as Error).message}`);
+      setBusy(null);
+    }
   }
   function startEdit() {
     if (!q) return;
@@ -492,6 +508,8 @@ function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: stri
       width="xl"
       footer={
         <>
+          <Button variant="ghost" loading={busy === "delete"} onClick={deleteQuote} className="text-red-600 hover:bg-red-50">Delete</Button>
+          <div className="flex-1" />
           <Button variant="ghost" loading={busy === "duplicate"} onClick={duplicate}>Duplicate</Button>
           {q.status === "draft" && <Button variant="primary" loading={busy === "send"} onClick={send}>Send to customer</Button>}
           {q.status === "accepted" && <Button variant="secondary" loading={busy === "convert"} onClick={convert}>Convert to invoice</Button>}
