@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { IadmModal } from "../../components/IadmModal";
+import { iconComponentFor } from "./ConsultingCategoryBuilderModal";
 
 type TicketStatus = "new" | "client_review" | "revision" | "client_revision_review" | "approved" | "completed";
 
@@ -53,12 +54,44 @@ function allowedTransitions(status: TicketStatus, side: "provider" | "client"): 
   return TRANSITIONS[side]?.[status] || [];
 }
 
-const ENGAGEMENT_TYPES = [
+// F6 — legacy chip set kept here as a fallback rendering shim for any
+// engagement_type values that DIDN'T get remapped by the
+// /consulting/_admin/remap-engagement-type one-shot. Post-remap, tickets
+// should hold one of the 12 new category slugs and the page loads the
+// chip set from /consulting/categories at mount (see useEffect below).
+// Color palette for legacy values matches the pre-rework board so any
+// leftover row still renders with familiar coloring.
+const LEGACY_ENGAGEMENT_TYPES = [
   { key: "build_your_brand",      label: "Build Your Brand",      color: "#EF6C33" },
   { key: "build_your_foundation", label: "Build Your Foundation", color: "#3B82F6" },
   { key: "build_your_clarity",    label: "Build Your Clarity",    color: "#8B5CF6" },
   { key: "build_your_engine",     label: "Build Your Engine",     color: "#10B981" },
 ];
+
+// Stable accent palette indexed by category sort order — keeps the chips
+// distinguishable even with 12 categories. Repeats after 12, but with 12
+// categories defined we only ever pull the first 12 colors.
+const CATEGORY_CHIP_COLORS = [
+  "#EF6C33", // brand orange (Onboarding Consulting)
+  "#3B82F6", // blue          (Onboarding One-Time)
+  "#0EA5E9", // sky           (New Engagement)
+  "#8B5CF6", // violet        (Logo / Graphic)
+  "#EC4899", // pink          (Brand Refresh)
+  "#10B981", // emerald       (Insights Review)
+  "#F59E0B", // amber         (Web Design)
+  "#14B8A6", // teal          (SEM Campaign)
+  "#F97316", // orange-600    (Marketing Campaign)
+  "#6366F1", // indigo        (Platform Migration)
+  "#84CC16", // lime          (Annual Strategy Refresh)
+  "#0C4A60", // core blue     (Custom Dev FORGE)
+];
+
+interface EngagementTypeOption {
+  key: string;
+  label: string;
+  color: string;
+  icon?: string | null;
+}
 
 interface Ticket {
   ticket_id: string;
@@ -90,6 +123,14 @@ export function ConsultingTicketsBoardPage() {
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  // F6 — engagement-type chip set is sourced from /consulting/categories
+  // so the new 12-category set replaces the legacy Build-Your-* quartet
+  // post-remap. Founder-only endpoint, so the fetch may 403 for client
+  // viewers — in which case we fall back to LEGACY_ENGAGEMENT_TYPES so
+  // they still get coloured chips on their existing tickets.
+  const [engagementTypes, setEngagementTypes] = useState<EngagementTypeOption[]>(() =>
+    LEGACY_ENGAGEMENT_TYPES.map((e) => ({ ...e, icon: null }))
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openTicketId, setOpenTicketId] = useState<string | null>(null);
@@ -150,6 +191,41 @@ export function ConsultingTicketsBoardPage() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadClients(); }, [loadClients]);
+
+  // F6 — fan out a single fetch for the new 12-category chip set on mount.
+  // Falls back silently to the legacy quartet for non-founder viewers
+  // (founder-gated 403) so client-side users still see colored chips on
+  // any pre-rework tickets they hold.
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    interface CategoryRow {
+      slug: string;
+      name: string;
+      icon?: string | null;
+    }
+    get<{ data: CategoryRow[] }>("/consulting/categories")
+      .then((r) => {
+        if (cancelled) return;
+        const rows = Array.isArray(r?.data) ? r.data : [];
+        if (rows.length === 0) return;
+        // Stable color assignment: index into CATEGORY_CHIP_COLORS by the
+        // category's position in the alphabetised list. Stable per-name
+        // so the same category always gets the same colour across reloads.
+        const sorted = rows.slice().sort((a, b) => a.name.localeCompare(b.name));
+        const mapped: EngagementTypeOption[] = sorted.map((row, idx) => ({
+          key: row.slug,
+          label: row.name,
+          color: CATEGORY_CHIP_COLORS[idx % CATEGORY_CHIP_COLORS.length],
+          icon: row.icon || null,
+        }));
+        setEngagementTypes(mapped);
+      })
+      .catch(() => {
+        // Non-founder caller. Keep legacy fallback.
+      });
+    return () => { cancelled = true; };
+  }, [get, ready]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -232,8 +308,8 @@ export function ConsultingTicketsBoardPage() {
 
           <select value={engTypeFilter} onChange={(e) => setEngTypeFilter(e.target.value)}
             className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
-            <option value="">All engagements</option>
-            {ENGAGEMENT_TYPES.map(et => <option key={et.key} value={et.key}>{et.label}</option>)}
+            <option value="">All categories</option>
+            {engagementTypes.map(et => <option key={et.key} value={et.key}>{et.label}</option>)}
           </select>
 
           <span className="ml-auto text-xs text-slate-500">
@@ -286,6 +362,7 @@ export function ConsultingTicketsBoardPage() {
                         ticket={t}
                         isDragging={draggingId === t.ticket_id}
                         viewerSide={viewerSide}
+                        engagementTypes={engagementTypes}
                         onPick={() => setOpenTicketId(t.ticket_id)}
                         onDragStart={(e) => {
                           e.dataTransfer.setData("text/plain", t.ticket_id);
@@ -315,6 +392,7 @@ export function ConsultingTicketsBoardPage() {
         <CreateTicketModal
           clients={clients}
           viewerSide={viewerSide}
+          engagementTypes={engagementTypes}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); load(); loadClients(); }}
         />
@@ -323,11 +401,26 @@ export function ConsultingTicketsBoardPage() {
   );
 }
 
-function TicketCard({ ticket, isDragging, viewerSide, onPick, onDragStart, onDragEnd }: {
+function TicketCard({ ticket, isDragging, viewerSide, engagementTypes, onPick, onDragStart, onDragEnd }: {
   ticket: Ticket; isDragging: boolean; viewerSide: "provider" | "client";
+  engagementTypes: EngagementTypeOption[];
   onPick: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void;
 }) {
-  const engType = ENGAGEMENT_TYPES.find(e => e.key === ticket.engagement_type);
+  // F6 — try dynamic chip set first; fall back to legacy quartet for any
+  // ticket whose engagement_type didn't get remapped (paranoia — the prod
+  // remap script wiped them on deploy but the fallback keeps colored chips
+  // working in dev environments that haven't run it yet).
+  const engType =
+    engagementTypes.find(e => e.key === ticket.engagement_type) ||
+    LEGACY_ENGAGEMENT_TYPES.find(e => e.key === ticket.engagement_type);
+  // Strip the "Build Your " prefix only on legacy labels — keep new-set
+  // labels intact (they're already concise).
+  const chipLabel = engType
+    ? engType.label.startsWith("Build Your ")
+      ? engType.label.replace("Build Your ", "")
+      : engType.label
+    : null;
+  const ChipIcon = engType && "icon" in engType ? iconComponentFor(engType.icon as string | null) : null;
   return (
     <div
       draggable
@@ -341,9 +434,10 @@ function TicketCard({ ticket, isDragging, viewerSide, onPick, onDragStart, onDra
       <div className="flex items-start justify-between gap-2 mb-1">
         <span className="text-[10px] font-mono text-slate-500">{ticket.ticket_number}</span>
         {engType && (
-          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded text-white"
+          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded text-white inline-flex items-center gap-1"
                 style={{ background: engType.color }}>
-            {engType.label.replace("Build Your ", "")}
+            {ChipIcon && <ChipIcon className="h-2.5 w-2.5" />}
+            {chipLabel}
           </span>
         )}
       </div>
@@ -602,8 +696,9 @@ function TicketDetailModal({ ticketId, onClose, onChanged }: { ticketId: string;
   );
 }
 
-function CreateTicketModal({ clients, viewerSide, onClose, onCreated }: {
+function CreateTicketModal({ clients, viewerSide, engagementTypes, onClose, onCreated }: {
   clients: Client[]; viewerSide: "provider" | "client";
+  engagementTypes: EngagementTypeOption[];
   onClose: () => void; onCreated: () => void;
 }) {
   const { post } = useOliverApi();
@@ -660,11 +755,11 @@ function CreateTicketModal({ clients, viewerSide, onClose, onCreated }: {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Engagement type (tag)</label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Category (tag)</label>
             <select value={engagementType} onChange={(e) => setEngagementType(e.target.value)}
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm">
               <option value="">— none —</option>
-              {ENGAGEMENT_TYPES.map(et => <option key={et.key} value={et.key}>{et.label}</option>)}
+              {engagementTypes.map(et => <option key={et.key} value={et.key}>{et.label}</option>)}
             </select>
           </div>
           <div>

@@ -26,10 +26,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Folder, Plus, Search, AlertCircle, Clock } from "lucide-react";
+import { Folder, Plus, Search, AlertCircle, Clock, Pencil } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { IadmModal } from "../../components/IadmModal";
+import {
+  ConsultingCategoryBuilderModal,
+  iconComponentFor,
+  type CategoryShape,
+} from "./ConsultingCategoryBuilderModal";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -77,6 +82,13 @@ interface Category {
   description?: string | null;
   icon?: string | null;
   milestone_template_json?: Array<{ name: string; sort_order?: number; description?: string }>;
+  // F6 — extra fields surfaced so the Category Builder modal can populate
+  // edit mode without a second round-trip. Optional because the GET list
+  // endpoint hasn't always returned them on older deployments.
+  default_duration_days?: number | null;
+  default_budget_cap_cents?: number | null;
+  is_system_seed?: boolean;
+  is_archived?: boolean;
 }
 
 // Sentinel slug used by the client dropdown for "Internal" projects
@@ -162,6 +174,14 @@ export function ConsultingProjectsPage() {
   const [categoryId, setCategoryId] = useState<string>("");
   const [showCreate, setShowCreate] = useState(false);
 
+  // F6 — Category Builder modal state. `editing` is null for "+ New
+  // Category", or carries the existing CategoryShape for the inline edit
+  // button on each category chip. `categoriesListOpen` controls the
+  // founder-only Manage Categories panel.
+  const [editingCategory, setEditingCategory] = useState<CategoryShape | null>(null);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showManageCategories, setShowManageCategories] = useState(false);
+
   // Load projects whenever filter inputs change. Brandon's "fetch-once-per-
   // page" rule applies to the page mount, but filter changes are user-
   // initiated refreshes so the refetch is allowed.
@@ -193,11 +213,18 @@ export function ConsultingProjectsPage() {
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
 
-  // Categories load once on mount — used by both the category dropdown and
-  // the New Project modal's category picker.
+  // Categories load on mount + on demand (after a category create/edit
+  // via the Category Builder modal so the picker stays in sync).
+  const reloadCategories = useCallback(() => {
+    if (!ready) return Promise.resolve();
+    return get<{ data: Category[] }>("/consulting/categories")
+      .then((r) => { setCategories(Array.isArray(r?.data) ? r.data : []); })
+      .catch(() => { setCategories([]); });
+  }, [get, ready]);
+
   useEffect(() => {
-    if (!ready) return;
     let cancelled = false;
+    if (!ready) return;
     get<{ data: Category[] }>("/consulting/categories")
       .then((r) => { if (!cancelled) setCategories(Array.isArray(r?.data) ? r.data : []); })
       .catch(() => { if (!cancelled) setCategories([]); });
@@ -287,11 +314,18 @@ export function ConsultingProjectsPage() {
             </button>
             <button
               type="button"
-              disabled
-              title="Coming in F6"
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-slate-300 text-slate-400 text-xs font-semibold cursor-not-allowed bg-white"
+              onClick={() => { setEditingCategory(null); setShowCategoryModal(true); }}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 bg-white"
             >
               <Plus className="h-3.5 w-3.5" /> New Category
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowManageCategories(true)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 bg-white"
+              title="Edit or archive existing categories"
+            >
+              <Pencil className="h-3.5 w-3.5" /> Manage Categories
             </button>
           </div>
         </div>
@@ -467,7 +501,166 @@ export function ConsultingProjectsPage() {
           onCreated={handleCreated}
         />
       )}
+
+      {/* F6 — Category Builder modal. Opens for both "+ New Category"
+          (editingCategory=null) and the inline Edit chip on each category
+          tile in the Manage Categories panel. Refreshes the picker list
+          after save so the New Project modal sees the new template
+          immediately. */}
+      {showCategoryModal && (
+        <ConsultingCategoryBuilderModal
+          category={editingCategory}
+          onClose={() => { setShowCategoryModal(false); setEditingCategory(null); }}
+          onSaved={async () => {
+            setShowCategoryModal(false);
+            setEditingCategory(null);
+            await reloadCategories();
+          }}
+          onArchived={async () => {
+            setShowCategoryModal(false);
+            setEditingCategory(null);
+            await reloadCategories();
+          }}
+        />
+      )}
+
+      {/* F6 — Manage Categories sheet. Lists every (non-archived) category
+          with its icon + slug + "edit" + (system seed indicator). Clicking
+          a row opens the Category Builder in edit mode. Kept as a separate
+          modal from the Builder so we don't blow up the Builder canvas with
+          a list. */}
+      {showManageCategories && (
+        <ManageCategoriesModal
+          categories={categories}
+          onClose={() => setShowManageCategories(false)}
+          onEdit={(c) => {
+            setShowManageCategories(false);
+            setEditingCategory({
+              category_id: c.category_id,
+              slug: c.slug,
+              name: c.name,
+              description: c.description,
+              icon: c.icon,
+              milestone_template_json: c.milestone_template_json,
+              default_duration_days: c.default_duration_days,
+              default_budget_cap_cents: c.default_budget_cap_cents,
+              is_system_seed: c.is_system_seed,
+              is_archived: c.is_archived,
+            });
+            setShowCategoryModal(true);
+          }}
+          onCreateNew={() => {
+            setShowManageCategories(false);
+            setEditingCategory(null);
+            setShowCategoryModal(true);
+          }}
+        />
+      )}
     </OliverPageWrapper>
+  );
+}
+
+// ── ManageCategoriesModal ───────────────────────────────────────────────
+// Lightweight read-only listing of every category currently in the
+// Project Hub picker, with an inline Edit button per row. Clicking Edit
+// hands control off to the Category Builder modal (full edit form). The
+// archival action lives inside the Builder so it's gated by the same
+// confirmation flow as edits.
+function ManageCategoriesModal({
+  categories, onClose, onEdit, onCreateNew,
+}: {
+  categories: Category[];
+  onClose: () => void;
+  onEdit: (c: Category) => void;
+  onCreateNew: () => void;
+}) {
+  // Sort: custom (non-seed) categories first so newly-added ones rise to
+  // the top, then alphabetical within each bucket.
+  const sorted = useMemo(() => {
+    const list = categories.slice();
+    list.sort((a, b) => {
+      const aSeed = a.is_system_seed ? 1 : 0;
+      const bSeed = b.is_system_seed ? 1 : 0;
+      if (aSeed !== bSeed) return aSeed - bSeed;
+      return a.name.localeCompare(b.name);
+    });
+    return list;
+  }, [categories]);
+
+  return (
+    <IadmModal
+      open
+      onClose={onClose}
+      product="oliver"
+      eyebrow="CATEGORIES"
+      title="Manage project categories"
+      size="info"
+    >
+      <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-slate-600">
+            System seeds can be edited but not archived. Custom categories can be archived
+            (soft-delete) when no active project uses them.
+          </p>
+          <button
+            type="button"
+            onClick={onCreateNew}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#0C4A60] text-white text-xs font-semibold"
+          >
+            <Plus className="h-3 w-3" /> New
+          </button>
+        </div>
+
+        {sorted.length === 0 ? (
+          <div className="text-xs text-slate-500 italic py-8 text-center">
+            No categories yet. Click <strong>New</strong> to add one.
+          </div>
+        ) : (
+          <ul className="space-y-1.5">
+            {sorted.map((c) => {
+              const Icon = iconComponentFor(c.icon);
+              return (
+                <li
+                  key={c.category_id}
+                  className="flex items-center gap-2 p-2 rounded border border-slate-200 hover:border-slate-300 bg-white"
+                >
+                  <div className="flex items-center justify-center h-7 w-7 rounded bg-slate-50 text-slate-700">
+                    {Icon ? <Icon className="h-4 w-4" /> : <Folder className="h-4 w-4" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-slate-900 truncate">{c.name}</div>
+                    <div className="text-[10px] text-slate-500 truncate">
+                      <span className="font-mono">{c.slug}</span>
+                      {c.is_system_seed && <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">SYSTEM</span>}
+                      {Array.isArray(c.milestone_template_json) && c.milestone_template_json.length > 0 && (
+                        <span className="ml-2 text-slate-500">{c.milestone_template_json.length} milestone{c.milestone_template_json.length === 1 ? "" : "s"}</span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onEdit(c)}
+                    className="text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-50 inline-flex items-center gap-1"
+                  >
+                    <Pencil className="h-3 w-3" /> Edit
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <div className="flex justify-end pt-2 border-t border-slate-200">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded border border-slate-300 text-xs font-semibold text-slate-700 bg-white"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </IadmModal>
   );
 }
 
