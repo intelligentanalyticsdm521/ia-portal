@@ -47,8 +47,8 @@ export function SparkLeadGenSavedPage() {
     setLoading(true);
     setError(null);
     try {
-      // TODO(leadgen-api): GET /leadgen/profiles → { data: SearchProfile[] }
-      const r = await get<{ data: SearchProfile[] }>("/leadgen/profiles");
+      // GET /api/v1/leadgen/profiles → { data: SearchProfile[] }
+      const r = await get<{ data: SearchProfile[] }>("/api/v1/leadgen/profiles");
       setProfiles(r?.data || []);
     } catch (err) {
       setError(err);
@@ -62,10 +62,12 @@ export function SparkLeadGenSavedPage() {
   async function runAgain(p: SearchProfile) {
     setRunning(p.id);
     try {
-      // TODO(leadgen-api): POST /leadgen/profiles/:id/run → { job_id }
-      const r = await post<{ job_id: string }>(`/leadgen/profiles/${p.id}/run`, {});
-      if (r?.job_id) {
-        navigate(`/app/spark/leadgen/jobs/${r.job_id}`);
+      // POST /api/v1/leadgen/profiles/:id/run → { data: { job_id } }
+      type RunResp = { data?: { job_id?: string | number } };
+      const r = await post<RunResp>(`/api/v1/leadgen/profiles/${p.id}/run`, {});
+      const jobId = r?.data?.job_id;
+      if (jobId != null) {
+        navigate(`/app/spark/leadgen/jobs/${jobId}`);
       } else {
         setError(new Error("Backend returned no job_id."));
       }
@@ -79,8 +81,8 @@ export function SparkLeadGenSavedPage() {
   async function remove(p: SearchProfile) {
     if (!confirm(`Delete saved search "${p.name}"? This cannot be undone.`)) return;
     try {
-      // TODO(leadgen-api): DELETE /leadgen/profiles/:id
-      await del(`/leadgen/profiles/${p.id}`);
+      // DELETE /api/v1/leadgen/profiles/:id
+      await del(`/api/v1/leadgen/profiles/${p.id}`);
       await load();
     } catch (err) {
       setError(err);

@@ -173,7 +173,13 @@ export function SparkLeadGenJobPage() {
   const fetchStatus = useCallback(async () => {
     if (!ready || !jobId) return;
     try {
-      const raw = await get<RawJobRow>(`/api/v1/leadgen/jobs/${jobId}`);
+      // Backend returns { data: RawJobRow } per the global envelope rule
+      // (see sparkApi.ts comment: "Never unwrap"). Read .data to get the row.
+      const wrapped = await get<{ data: RawJobRow } | RawJobRow>(`/api/v1/leadgen/jobs/${jobId}`);
+      const raw: RawJobRow =
+        wrapped && typeof wrapped === "object" && "data" in wrapped && wrapped.data
+          ? (wrapped.data as RawJobRow)
+          : (wrapped as RawJobRow);
       const r = adaptRow(raw);
       setStatus(r);
       setError(null);
@@ -251,8 +257,8 @@ export function SparkLeadGenJobPage() {
     if (selectedIds.size === 0 || bulkActing) return;
     setBulkActing(true);
     try {
-      // TODO(leadgen-api): POST /leadgen/jobs/:id/review → { action, lead_ids }
-      await post(`/leadgen/jobs/${jobId}/review`, {
+      // POST /api/v1/leadgen/jobs/:id/review → { action, lead_ids }
+      await post(`/api/v1/leadgen/jobs/${jobId}/review`, {
         action,
         lead_ids: Array.from(selectedIds),
       });

@@ -27,12 +27,18 @@ interface CategoryHit { id: number; name: string; industry_id?: number | null; i
 interface TermHit { id: number; term: string; weight?: number }
 interface CityHit { id: number; name: string; state: string }
 interface ZipHit { zip: string; city?: string; state?: string }
-interface StateRow { code: string; name: string }
+// Backend (/api/v1/leadgen/states) returns { id, abbr, name }. The form binds
+// to `abbr` (the 2-letter postal code) because /leadgen/cities/autocomplete
+// expects ?state=ABBR.
+interface StateRow { id: number; abbr: string; name: string }
 
 interface ExpandedKeyword { term: string; weight: number; source: string }
+// Backend (/api/v1/leadgen/locations/expand) returns
+// { data: { cities: [{id, name, lat, lon, miles}], zips, origin } }.
+// Cities don't carry a state in the response (the request scoped them), but
+// the page needs one for display — fill it from form.state on read.
 interface ExpandedCity { city_id: number; name: string; state: string; miles: number }
 interface ExpandLocResponse { cities: ExpandedCity[]; zip_count: number }
-interface ExpandKwResponse { keywords: ExpandedKeyword[] }
 
 interface FormState {
   category: CategoryHit | null;
@@ -205,8 +211,8 @@ export function SparkLeadGenNewPage() {
     if (!ready) return;
     (async () => {
       try {
-        // TODO(leadgen-api): GET /leadgen/states → { data: [{ code, name }] }
-        const r = await get<{ data: StateRow[] }>("/leadgen/states");
+        // GET /api/v1/leadgen/states → { data: [{ id, abbr, name }] }
+        const r = await get<{ data: StateRow[] }>("/api/v1/leadgen/states");
         setStates(r?.data || []);
       } catch {
         // Endpoint not live yet — leave empty so the dropdown renders disabled.
@@ -228,7 +234,7 @@ export function SparkLeadGenNewPage() {
       try {
         // F-LG.158: curated=1 → only the locked Top-25 categories.
         const curatedParam = catTop25Only ? "&curated=1" : "";
-        const r = await get<{ data: CategoryHit[] }>(`/leadgen/categories/autocomplete?q=${encodeURIComponent(debouncedCat)}${curatedParam}`);
+        const r = await get<{ data: CategoryHit[] }>(`/api/v1/leadgen/categories/autocomplete?q=${encodeURIComponent(debouncedCat)}${curatedParam}`);
         if (!cancelled) setCatResults(r?.data || []);
       } catch {
         if (!cancelled) setCatResults([]);
@@ -247,8 +253,8 @@ export function SparkLeadGenNewPage() {
     (async () => {
       try {
         const indParam = form.category?.industry_id ? `industry_id=${form.category.industry_id}&` : "";
-        // TODO(leadgen-api): GET /leadgen/terms/autocomplete?industry_id=&q=
-        const r = await get<{ data: TermHit[] }>(`/leadgen/terms/autocomplete?${indParam}q=${encodeURIComponent(debouncedTerm)}`);
+        // GET /api/v1/leadgen/terms/autocomplete?industry_id=&q=
+        const r = await get<{ data: TermHit[] }>(`/api/v1/leadgen/terms/autocomplete?${indParam}q=${encodeURIComponent(debouncedTerm)}`);
         if (!cancelled) setTermResults(r?.data || []);
       } catch {
         if (!cancelled) setTermResults([]);
@@ -266,8 +272,8 @@ export function SparkLeadGenNewPage() {
     setCityLoading(true);
     (async () => {
       try {
-        // TODO(leadgen-api): GET /leadgen/cities/autocomplete?state=&q=
-        const r = await get<{ data: CityHit[] }>(`/leadgen/cities/autocomplete?state=${form.state}&q=${encodeURIComponent(debouncedCity)}`);
+        // GET /api/v1/leadgen/cities/autocomplete?state=&q=
+        const r = await get<{ data: CityHit[] }>(`/api/v1/leadgen/cities/autocomplete?state=${form.state}&q=${encodeURIComponent(debouncedCity)}`);
         if (!cancelled) setCityResults(r?.data || []);
       } catch {
         if (!cancelled) setCityResults([]);
@@ -278,16 +284,24 @@ export function SparkLeadGenNewPage() {
     return () => { cancelled = true; };
   }, [debouncedCity, form.state, get, ready]);
 
-  // ZIP autocomplete (only in specify mode).
+  // ZIP autocomplete (only in specify mode). Backend requires &state= and
+  // returns { zip5, lat, lon, city_name } — adapt to ZipHit shape on read.
   useEffect(() => {
-    if (!ready || form.zipMode !== "specify" || debouncedZip.trim().length < 3) { setZipResults([]); return; }
+    if (!ready || form.zipMode !== "specify" || !form.state || debouncedZip.trim().length < 3) { setZipResults([]); return; }
     let cancelled = false;
     setZipLoading(true);
     (async () => {
       try {
-        // TODO(leadgen-api): GET /leadgen/zips/autocomplete?q=
-        const r = await get<{ data: ZipHit[] }>(`/leadgen/zips/autocomplete?q=${encodeURIComponent(debouncedZip)}`);
-        if (!cancelled) setZipResults(r?.data || []);
+        // GET /api/v1/leadgen/zips/autocomplete?state=ABBR&q=
+        const r = await get<{ data: Array<{ zip5: string; city_name?: string }> }>(`/api/v1/leadgen/zips/autocomplete?state=${form.state}&q=${encodeURIComponent(debouncedZip)}`);
+        if (!cancelled) {
+          const rows: ZipHit[] = (r?.data || []).map((z) => ({
+            zip: z.zip5,
+            city: z.city_name,
+            state: form.state,
+          }));
+          setZipResults(rows);
+        }
       } catch {
         if (!cancelled) setZipResults([]);
       } finally {
@@ -295,7 +309,7 @@ export function SparkLeadGenNewPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [debouncedZip, form.zipMode, get, ready]);
+  }, [debouncedZip, form.zipMode, form.state, get, ready]);
 
   // ── live keyword expansion preview ──────────────────────────────────────
   const kwInputs = useMemo(() => ({
@@ -317,15 +331,15 @@ export function SparkLeadGenNewPage() {
     setPreviewKwLoading(true);
     (async () => {
       try {
-        // TODO(leadgen-api): POST /leadgen/expand → { keywords: [{ term, weight, source }] }
-        const r = await post<ExpandKwResponse>("/leadgen/expand", {
-          category_id: debouncedKw.categoryId,
-          industry_id: debouncedKw.industryId,
-          term_ids: debouncedKw.termIds,
-          terms: debouncedKw.termTexts,
+        // POST /api/v1/leadgen/expand body { keywords: [string], mode, category_id }
+        // → { data: { terms: [{id, term, weight, source}], unknown, mode, threshold, stats } }
+        type ExpandResp = { data: { terms: ExpandedKeyword[] } };
+        const r = await post<ExpandResp>("/api/v1/leadgen/expand", {
+          keywords: debouncedKw.termTexts,
           mode: debouncedKw.mode,
+          category_id: debouncedKw.categoryId,
         });
-        if (!cancelled) setPreviewKw(r?.keywords || []);
+        if (!cancelled) setPreviewKw(r?.data?.terms || []);
       } catch {
         if (!cancelled) setPreviewKw([]);
       } finally {
@@ -356,15 +370,22 @@ export function SparkLeadGenNewPage() {
     setPreviewLocLoading(true);
     (async () => {
       try {
-        // TODO(leadgen-api): POST /leadgen/locations/expand → { cities: [...], zip_count }
-        const r = await post<ExpandLocResponse>("/leadgen/locations/expand", {
+        // POST /api/v1/leadgen/locations/expand → { data: { cities, zips, zip_count, origin } }
+        type LocResp = { data: { cities: ExpandedCity[]; zip_count: number } };
+        const r = await post<LocResp>("/api/v1/leadgen/locations/expand", {
           state: debouncedLoc.state,
           city_ids: debouncedLoc.cityIds,
           radius_miles: debouncedLoc.radiusMiles,
           zip_mode: debouncedLoc.zipMode,
           zips: debouncedLoc.zips,
         });
-        if (!cancelled) setPreviewLoc(r || { cities: [], zip_count: 0 });
+        if (!cancelled) {
+          const cities = (r?.data?.cities || []).map((c) => ({
+            ...c,
+            state: c.state || debouncedLoc.state,
+          }));
+          setPreviewLoc({ cities, zip_count: r?.data?.zip_count || 0 });
+        }
       } catch {
         if (!cancelled) setPreviewLoc({ cities: [], zip_count: 0 });
       } finally {
@@ -429,10 +450,12 @@ export function SparkLeadGenNewPage() {
     setSubmitting(true);
     setError(null);
     try {
-      // TODO(leadgen-api): POST /leadgen/jobs → { job_id, status, payment_required? }
-      const r = await post<{ job_id: string; payment_required?: boolean }>("/leadgen/jobs", buildPayload());
-      if (r?.job_id) {
-        navigate(`/app/spark/leadgen/jobs/${r.job_id}`);
+      // POST /api/v1/leadgen/jobs returns { data: { job_id, status, ... } }
+      type JobsResp = { data?: { job_id?: string | number; payment_required?: boolean } };
+      const r = await post<JobsResp>("/api/v1/leadgen/jobs", buildPayload());
+      const jobId = r?.data?.job_id;
+      if (jobId != null) {
+        navigate(`/app/spark/leadgen/jobs/${jobId}`);
       } else {
         setError(new Error("Backend returned no job_id. Endpoint may not be live yet."));
       }
@@ -448,8 +471,8 @@ export function SparkLeadGenNewPage() {
     if (!name) return;
     setSavingProfile(true);
     try {
-      // TODO(leadgen-api): POST /leadgen/profiles → { id }
-      await post("/leadgen/profiles", { name, ...buildPayload() });
+      // POST /api/v1/leadgen/profiles → { data: { id } }
+      await post("/api/v1/leadgen/profiles", { name, ...buildPayload() });
       setShowSaveModal(false);
       setProfileName("");
     } catch (err) {
@@ -592,7 +615,7 @@ export function SparkLeadGenNewPage() {
                   >
                     <option value="">{states.length === 0 ? "Loading states…" : "Select a state"}</option>
                     {states.map((s) => (
-                      <option key={s.code} value={s.code}>{s.name}</option>
+                      <option key={s.abbr} value={s.abbr}>{s.name}</option>
                     ))}
                   </select>
                   <ChevronDown className="absolute right-2 top-2.5 h-4 w-4 text-slate-400 pointer-events-none" />
