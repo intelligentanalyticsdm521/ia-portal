@@ -9,6 +9,7 @@ import { useAppState } from "../app/AppState";
 import { ArgusChatbot } from "./argus/ArgusChatbot";
 import { EmergencyActAsBanner } from "./EmergencyActAsBanner";
 import { EmergencyActAsToast } from "./EmergencyActAsToast";
+import { ViewAsTenantBanner } from "./ViewAsTenantBanner";
 // Onboarding V3 Phase 3 — slim "next thing to do" strip for first-time
 // users. Self-hides once dismissed (session-scoped) or once there are no
 // pending tasks. Co-exists with all existing setup banners.
@@ -148,6 +149,13 @@ export function AppShell() {
     // flex-1 height is a definite number — otherwise IconRail/SubNav fall back to
     // content height and the Settings gear sits mid-viewport with empty space below.
     <div className="iadm-shell flex h-screen flex-col overflow-hidden">
+      {/* Founder-only view-as-tenant banner — slate, no timer, renders above
+          the header while the founder is viewing a client's portal
+          read-only. Stays on top across navigation. */}
+      <div className="shrink-0">
+        <ViewAsTenantBanner />
+      </div>
+
       {/* Founder-only emergency act-as banner — renders above the header
           while a 30-min read-only session is open. shrink-0 so it never
           gets squeezed by the main content area. */}

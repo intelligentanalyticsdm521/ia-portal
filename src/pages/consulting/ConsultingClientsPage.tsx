@@ -12,10 +12,12 @@
 // "fully onboarded" (has stripe sub OR onboarding_completed_at) so this
 // list is "live clients" — not in-progress onboardings.
 import { useEffect, useMemo, useState } from "react";
-import { Building2, ExternalLink, Search } from "lucide-react";
+import { Building2, ExternalLink, Eye, Search } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { ClientTenantModal } from "../../components/consulting/ClientTenantModal";
 import { CORE_BLUE } from "../../components/IadmModal";
+import { useAppState } from "../../app/AppState";
+import { startViewAsTenant } from "../../lib/viewAsTenant";
 
 interface ClientRow {
   tenant_id: string;
@@ -32,10 +34,24 @@ interface ClientRow {
 
 export default function ConsultingClientsPage() {
   const { get } = useOliverApi();
+  const appState = useAppState();
+  // F-X — View-as entry gated on isFounder (decoupled from isSuperUser per
+  // locked rule reference_role_access_model.md). The whole Consulting nav
+  // section is already founder-only via AppShell's applyConsultingNavFilter,
+  // but we double-gate the action button as defence in depth.
+  const isFounder = !!appState.bootstrap?.user?.isFounder;
   const [rows, setRows] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
   const [modal, setModal] = useState<{ tenantId: string; tenantName: string } | null>(null);
+
+  function handleViewAs(tenantId: string, tenantName: string) {
+    startViewAsTenant(tenantId, tenantName);
+    // Reload onto the founder's normal home so every page re-fetches against
+    // the client tenant. Same shape the EmergencyActAsBanner uses, minus the
+    // /super/select-tenant call (because view-as does NOT swap the session).
+    window.location.assign("/app/overview");
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -104,13 +120,25 @@ export default function ConsultingClientsPage() {
                   <td className="px-4 py-3 text-slate-600">{c.signup_product || "—"}</td>
                   <td className="px-4 py-3 text-slate-600">{[c.city, c.state_province].filter(Boolean).join(", ") || "—"}</td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => setModal({ tenantId: c.tenant_id, tenantName: c.business_name || "Tenant" })}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold"
-                      style={{ background: CORE_BLUE }}
-                    >
-                      Open <ExternalLink className="h-3 w-3" />
-                    </button>
+                    <div className="inline-flex items-center gap-2">
+                      {isFounder ? (
+                        <button
+                          onClick={() => handleViewAs(c.tenant_id, c.business_name || "Tenant")}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50"
+                          title="See exactly what this client sees in their portal (read-only)"
+                        >
+                          <Eye className="h-3 w-3" />
+                          View as
+                        </button>
+                      ) : null}
+                      <button
+                        onClick={() => setModal({ tenantId: c.tenant_id, tenantName: c.business_name || "Tenant" })}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold"
+                        style={{ background: CORE_BLUE }}
+                      >
+                        Open <ExternalLink className="h-3 w-3" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

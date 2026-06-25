@@ -19,6 +19,7 @@
 import type { IPublicClientApplication, AccountInfo } from "@azure/msal-browser";
 import { authScopes } from "../auth/msalConfig";
 import { emergencyActAsHeaders } from "./emergencyActAs";
+import { getViewAsTenantId, viewAsTenantHeaders } from "./viewAsTenant";
 
 const LUMEN_API_BASE =
   (import.meta.env.VITE_LUMEN_API_BASE as string) ||
@@ -49,8 +50,13 @@ async function lumenFetch<T>(
   const token = await getToken(msal, account);
   // Same tenantOverride wins rule as the OLIVER/SPARK clients — Founder operating
   // on a client's tenant via the ClientTenantModal sends the client's tid in
-  // x-tenant-id; everyone else sends their own JWT's tid.
-  const tenantId = (tenantOverride && tenantOverride.trim()) || getTenantId(token);
+  // x-tenant-id; everyone else sends their own JWT's tid. View-as inserts
+  // between explicit override and JWT default.
+  const viewAsTid = getViewAsTenantId();
+  const tenantId =
+    (tenantOverride && tenantOverride.trim()) ||
+    (viewAsTid && viewAsTid.trim()) ||
+    getTenantId(token);
 
   const res = await fetch(`${LUMEN_API_BASE}${path}`, {
     ...init,
@@ -62,6 +68,8 @@ async function lumenFetch<T>(
       // read-only middleware yet, but sending the header now means we don't
       // need a new Portal release the day backend enforcement lands.
       ...emergencyActAsHeaders(),
+      // Founder view-as headers — no-op outside an active view-as session.
+      ...viewAsTenantHeaders(),
       ...(init?.headers as Record<string, string>),
     },
   });

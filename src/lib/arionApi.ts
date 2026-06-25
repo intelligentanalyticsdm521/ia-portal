@@ -1,4 +1,5 @@
 import { emergencyActAsHeaders } from './emergencyActAs';
+import { getViewAsTenantId, viewAsTenantHeaders } from './viewAsTenant';
 
 export type SetupMode = 'ARION_AUTO_SETUP' | 'EXISTING_INTEGRATION';
 
@@ -257,17 +258,26 @@ async function requestJson<T>(params: {
   // v2.0.12: auto-extend timeout for known-slow plugin POST endpoints
   const slowPaths = ['/onboarding/apply-defaults', '/litespeed/config', '/hosting/pagespeed'];
   const defaultTimeout = slowPaths.some((p) => params.path.includes(p)) ? 60_000 : 20_000;
+  // View-as override: if the founder is viewing a client, route the call to
+  // that tenant regardless of the tenantId the caller computed. Backend will
+  // 403 non-GETs because of the view-as header below.
+  const viewAsTid = getViewAsTenantId();
+  const effectiveTenantId = viewAsTid && viewAsTid.trim() ? viewAsTid.trim() : params.tenantId;
   const res = await fetchWithTimeout(url, {
     method: params.method || 'GET',
     headers: {
       Authorization: `Bearer ${params.bearerToken}`,
       'Content-Type': 'application/json',
-      'x-tenant-key': params.tenantId,
+      'x-tenant-key': effectiveTenantId,
       // Founder emergency act-as — no-op header outside an active 30-min
       // emergency session. While active, the backend middleware on arion-api
       // (TODO — see followups) will be able to 403 non-GET mutations against
       // arion routes. For oliver-api the middleware is already in place.
       ...emergencyActAsHeaders(),
+      // View-as headers — present only while the founder is viewing a client's
+      // portal read-only. Backend enforceViewAsReadOnly 403s any non-GET in
+      // arion routes while these are set. No-op for everyone else.
+      ...viewAsTenantHeaders(),
     },
     body: params.body === undefined ? undefined : JSON.stringify(params.body)
   }, params.timeoutMs || defaultTimeout);

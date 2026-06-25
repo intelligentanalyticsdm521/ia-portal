@@ -5,7 +5,7 @@
 
 import { useCallback, useMemo } from "react";
 import { useMsal } from "@azure/msal-react";
-import { oliverGet, oliverPost, oliverPatch, oliverPut, oliverDelete } from "../lib/oliverApi";
+import { oliverGet, oliverPost, oliverPatch, oliverPut, oliverDelete, BYPASS_VIEW_AS } from "../lib/oliverApi";
 import { useClientTenantIdOverride } from "../lib/clientTenantContext";
 
 export interface TierGateError {
@@ -56,15 +56,18 @@ export function useOliverApi() {
   );
 
   // Founder-scoped variants. These IGNORE the ClientTenantModal override
-  // and always send the caller's own tenant_id (from their JWT). Used
-  // inside the modal for `/admin/onboard-client/*` endpoints, which are
-  // gated by requireFounder (caller tenant must = FOUNDER_TENANT_ID).
+  // AND any active view-as session, and always send the caller's own
+  // tenant_id (from their JWT). Used inside the modal for
+  // `/admin/onboard-client/*` endpoints, which are gated by requireFounder
+  // (caller tenant must = FOUNDER_TENANT_ID). Without BYPASS_VIEW_AS the
+  // view-as state would re-route founder admin calls to the client tenant
+  // and break the founder gate.
   const getFounder = useCallback(
-    <T>(path: string) => oliverGet<T>(instance, account, path, null),
+    <T>(path: string) => oliverGet<T>(instance, account, path, BYPASS_VIEW_AS),
     [instance, account]
   );
   const postFounder = useCallback(
-    <T>(path: string, body?: unknown) => oliverPost<T>(instance, account, path, body, null),
+    <T>(path: string, body?: unknown) => oliverPost<T>(instance, account, path, body, BYPASS_VIEW_AS),
     [instance, account]
   );
 
