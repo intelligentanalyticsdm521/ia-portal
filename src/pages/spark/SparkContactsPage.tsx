@@ -12,7 +12,12 @@ import { SparkTooltip } from "../../components/spark/SparkTooltip";
 import {
   Users, Plus, Upload, Download, Mail, Phone, Building2, Sparkles, Trash2,
   Tag as TagIcon, ListPlus, Send, MoreHorizontal, AlertTriangle, ChevronUp, ChevronDown, Activity,
+  LayoutList, Columns3,
 } from "lucide-react";
+// F5 (Brandon 2026-06-25) — Kanban view of lumen.contact rows grouped by
+// lifecycle_stage. Columns rendered from the tenant's lifecycle_preset
+// (simplified=3, moderate=5, advanced=10) via GET /api/v1/lifecycle/preset.
+import { SparkLifecycleKanban } from "../../components/spark/SparkLifecycleKanban";
 
 interface Contact {
   id: number;
@@ -82,6 +87,20 @@ export function SparkContactsPage() {
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("created");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  // F5 — view toggle [List | Kanban]. Default 'list' (Brandon LOCK 2026-06-25).
+  // Kanban hits GET /api/v1/lifecycle/kanban; List hits the existing
+  // /contacts endpoint. Persisted in localStorage so the user's pick sticks
+  // across navigation.
+  const [view, setView] = useState<"list" | "kanban">(() => {
+    try {
+      const v = localStorage.getItem("spark.contacts.view");
+      return v === "kanban" ? "kanban" : "list";
+    } catch { return "list"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("spark.contacts.view", view); } catch { /* ignore */ }
+  }, [view]);
 
   // Selection state (bulk actions)
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -387,6 +406,29 @@ export function SparkContactsPage() {
       }
       actions={
         <>
+          {/* F5 — view toggle [List | Kanban] (Brandon LOCK 2026-06-25). */}
+          <div className="inline-flex rounded-md ring-1 ring-slate-200 bg-white p-0.5" role="group" aria-label="View toggle">
+            <button
+              type="button"
+              onClick={() => setView("list")}
+              className={`px-2 py-1 text-xs flex items-center gap-1 rounded ${
+                view === "list" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
+              }`}
+              title="List view"
+            >
+              <LayoutList className="h-3.5 w-3.5" /> List
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("kanban")}
+              className={`px-2 py-1 text-xs flex items-center gap-1 rounded ${
+                view === "kanban" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
+              }`}
+              title="Lifecycle kanban — drag cards between stages"
+            >
+              <Columns3 className="h-3.5 w-3.5" /> Kanban
+            </button>
+          </div>
           <button onClick={handleExport} className="spark-btn spark-btn-secondary" disabled={!contacts.length}>
             <Download className="h-3.5 w-3.5" /> Export
           </button>
@@ -497,8 +539,23 @@ export function SparkContactsPage() {
         </div>
       )}
 
-      {/* Empty state with onboarding */}
-      {contacts.length === 0 && !loading && !search ? (
+      {/* F5 — Kanban view (Brandon LOCK 2026-06-25). The kanban surface
+          ignores the list filter pills + search box (its own preset-driven
+          server query handles grouping) and clicking a card opens the same
+          SparkContactModal the list view uses. */}
+      {view === "kanban" ? (
+        <SparkLifecycleKanban
+          onOpenContact={(id) => {
+            const c = contacts.find((x) => x.id === id);
+            if (c) { setDetail(c); setDrawer("detail"); }
+            else {
+              // Fall back to a minimal stub so the modal can still load by id.
+              setDetail({ id, first_name: "", last_name: "", email: "", phone: "", company: "", source: "", contact_intelligence_tier: null, contact_intelligence_score: null, created_at: "" });
+              setDrawer("detail");
+            }
+          }}
+        />
+      ) : contacts.length === 0 && !loading && !search ? (
         <EmptyContactsState onAdd={() => setDrawer("add")} onImport={() => setDrawer("import")} />
       ) : (
         <SparkTable<Contact>

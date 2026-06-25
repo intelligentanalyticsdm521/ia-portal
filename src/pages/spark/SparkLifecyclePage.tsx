@@ -14,6 +14,7 @@
 
 import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 
 type Preset = "simple" | "moderate" | "detailed";
@@ -59,14 +60,69 @@ const STAGE_LABELS: Record<string, string> = {
   disqualified: "Disqualified",
 };
 
+// F5 — new founder-facing vocab (Brandon LOCK 2026-06-25). Migration 110
+// widens core.tenant_lifecycle_config CK to accept BOTH legacy
+// (simple|moderate|detailed) AND new (simplified|moderate|advanced) vocab
+// during cutover. The F5 PUT /lifecycle/preset endpoint writes the new
+// vocab; the legacy /lifecycle/config endpoint above still reads/writes
+// the same row in legacy vocab.
+type F5Preset = "simplified" | "moderate" | "advanced";
+
+const F5_PRESET_META: Record<F5Preset, { title: string; stages: string; summary: string }> = {
+  simplified: {
+    title: "Simplified — 3 columns",
+    stages: "Lead → Active Customer → Past Customer",
+    summary: "Best for: solo operators, the bare-minimum flow.",
+  },
+  moderate: {
+    title: "Moderate — 5 columns (recommended)",
+    stages: "Lead → Qualified → Proposal Sent → Active Customer → Past Customer",
+    summary: "Best for: most service businesses; matches the default IA founder flow.",
+  },
+  advanced: {
+    title: "Advanced — 10 columns",
+    stages: "Lead → Engaged → Qualified → Prospect → Proposal Sent → Proposal Lapsed → Negotiation → Active → Past → Repeat",
+    summary: "Best for: agencies + consultants; full funnel with proposal-lapsed auto-transition.",
+  },
+};
+
 export default function SparkLifecyclePage() {
   const { get, patch } = useOliverApi();
+  const sparkApi = useSparkApi();
   const [cfg, setCfg] = useState<LifecycleConfig | null>(null);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [draft, setDraft] = useState<LifecycleConfig | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
   const [pendingPreset, setPendingPreset] = useState<Preset | null>(null);
+
+  // F5 — new preset state. Hits LUMEN-API GET/PUT /lifecycle/preset.
+  const [f5Preset, setF5Preset] = useState<F5Preset | null>(null);
+  const [f5Saving, setF5Saving] = useState(false);
+  const [f5Saved, setF5Saved] = useState(false);
+
+  useEffect(() => {
+    if (!sparkApi.ready) return;
+    let cancelled = false;
+    sparkApi.get<{ data: { preset: F5Preset; stages: string[] } }>("/api/v1/lifecycle/preset")
+      .then((r) => { if (!cancelled) setF5Preset(r.data?.preset || "moderate"); })
+      .catch(() => { if (!cancelled) setF5Preset("moderate"); });
+    return () => { cancelled = true; };
+  }, [sparkApi]);
+
+  async function saveF5Preset(next: F5Preset) {
+    setF5Saving(true);
+    try {
+      await sparkApi.put("/api/v1/lifecycle/preset", { preset: next });
+      setF5Preset(next);
+      setF5Saved(true);
+      setTimeout(() => setF5Saved(false), 2000);
+    } catch (e) {
+      alert(`Save failed: ${(e as Error)?.message || "unknown"}`);
+    } finally {
+      setF5Saving(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -131,7 +187,49 @@ export default function SparkLifecyclePage() {
   return (
     <SparkPageShell title="Lifecycle" subtitle="How contacts move from first contact through paid.">
       <div className="p-6 space-y-6 max-w-4xl">
-        {/* Preset picker */}
+        {/* F5 — Lead Pipeline preset (Brandon LOCK 2026-06-25). Controls the
+            SPARK Contacts kanban + Customer modal dropdown. Default is
+            'moderate'. Saves immediately on click (no Save button). */}
+        {f5Preset && (
+          <section className="space-y-2 rounded-lg border border-orange-200 bg-orange-50/40 p-4">
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-sm font-semibold text-slate-700">Lead Pipeline preset</h2>
+              {f5Saved && <span className="text-xs text-emerald-700">Saved.</span>}
+              {f5Saving && <span className="text-xs text-slate-500">Saving…</span>}
+            </div>
+            <p className="text-xs text-slate-600">
+              Determines the columns the SPARK Contacts kanban renders and the stages
+              available on each contact&apos;s lifecycle dropdown.
+            </p>
+            {(Object.keys(F5_PRESET_META) as F5Preset[]).map((id) => {
+              const active = f5Preset === id;
+              const meta = F5_PRESET_META[id];
+              return (
+                <button
+                  key={id}
+                  onClick={() => !f5Saving && !active && saveF5Preset(id)}
+                  disabled={f5Saving}
+                  className={`w-full text-left rounded-lg border-2 p-3 transition ${
+                    active ? "border-orange-500 bg-white" : "border-slate-200 bg-white hover:border-orange-300"
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <span className={`mt-1 inline-block h-3 w-3 rounded-full border-2 ${
+                      active ? "bg-orange-500 border-orange-500" : "border-slate-400"
+                    }`} />
+                    <div className="flex-1">
+                      <div className="font-semibold text-sm">{meta.title}</div>
+                      <div className="text-xs text-slate-600 mt-0.5">{meta.stages}</div>
+                      <div className="text-xs text-slate-500 mt-1">{meta.summary}</div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </section>
+        )}
+
+        {/* Preset picker (legacy oliver-api config — kept until cutover walks clean) */}
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-slate-700">1. Pick your flow</h2>
           {(Object.keys(PRESET_META) as Preset[]).map((id) => {

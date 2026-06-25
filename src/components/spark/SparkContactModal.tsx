@@ -54,6 +54,11 @@ interface ContactFull extends ContactLite {
   address_city?: string;
   address_state?: string;
   address_zip?: string;
+  // F5 — lumen.contact.lifecycle_stage + optimistic-concurrency version
+  // (migration 110). Surfaced in the modal as a dropdown; legal options
+  // come from GET /lifecycle/preset (tenant-level preset visible set).
+  lifecycle_stage?: string | null;
+  lifecycle_stage_version?: number;
   tags?: Array<{ id: number; name: string; color?: string | null }>;
   // API shape (verified against routes/contacts.js GET /:id):
   //   { id, content, author, created_at, ... }
@@ -135,6 +140,13 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
   const [newTagName, setNewTagName] = useState("");
   const [tagBusy, setTagBusy] = useState<null | "add" | "remove" | "create" | "inactive">(null);
 
+  // F5 — Lifecycle dropdown. Preset + visible stage list come from
+  // GET /api/v1/lifecycle/preset; stage change goes through POST
+  // /api/v1/contacts/:id/lifecycle-stage (server enforces preset gating +
+  // optimistic concurrency).
+  const [lifecyclePreset, setLifecyclePreset] = useState<{ preset: string; stages: string[] } | null>(null);
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
+
   const reload = useCallback(async () => {
     if (!ready || !contactId) return;
     setLoading(true);
@@ -186,6 +198,38 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
       setAvailableLists([]);
     }
   }, [open, contactId, reload]);
+
+  // F5 — load the tenant's lifecycle preset once per open. The preset
+  // determines which stages render as <option>s in the Lifecycle dropdown
+  // (server also re-validates on POST so a stale local copy can't bypass).
+  useEffect(() => {
+    if (!open || !ready) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await get<{ data: { preset: string; stages: string[] } }>("/api/v1/lifecycle/preset");
+        if (!cancelled) setLifecyclePreset(r.data);
+      } catch {
+        // Best-effort — if preset can't load we hide the dropdown rather than 500 the modal.
+        if (!cancelled) setLifecyclePreset(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, ready, get]);
+
+  async function setLifecycleStage(nextStage: string) {
+    if (!contactId || !nextStage || nextStage === contact?.lifecycle_stage) return;
+    setLifecycleBusy(true);
+    try {
+      await post(`/api/v1/contacts/${contactId}/lifecycle-stage`, { stage: nextStage });
+      await reload();
+      onChanged?.();
+    } catch (err) {
+      alert(`Lifecycle change failed: ${(err as Error)?.message || "unknown"}`);
+    } finally {
+      setLifecycleBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (open && tab === "activity" && activity === null) loadActivity();
@@ -478,6 +522,43 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
                       onChange={(v) => setDraft({ ...draft, address_state: v })} draft={draft.address_state} />
                     <Field label="ZIP" value={contact.address_zip} editing={editing}
                       onChange={(v) => setDraft({ ...draft, address_zip: v })} draft={draft.address_zip} />
+                  </div>
+                </div>
+              )}
+
+              {/* F5 — Lifecycle dropdown (Brandon LOCK 2026-06-25). The
+                  visible stage list is gated by the tenant's preset; LUMEN
+                  enforces preset gating + optimistic-concurrency on POST. */}
+              {lifecyclePreset && (
+                <div>
+                  <h3 className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-2 flex items-center gap-1">
+                    <ActivityIcon className="h-3 w-3" /> Lifecycle
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={contact.lifecycle_stage || ""}
+                      onChange={(e) => setLifecycleStage(e.target.value)}
+                      disabled={lifecycleBusy}
+                      className="text-xs px-2 py-1 rounded-md border border-slate-300 bg-white text-slate-800 disabled:opacity-40 capitalize"
+                    >
+                      {!contact.lifecycle_stage && <option value="">— unset —</option>}
+                      {lifecyclePreset.stages.map((s) => (
+                        <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
+                      ))}
+                      {/* If the persisted stage isn't in the preset's visible
+                          set (a cutover edge case) render it as a read-only
+                          option so the dropdown shows the truth without
+                          forcing a save. */}
+                      {contact.lifecycle_stage && !lifecyclePreset.stages.includes(contact.lifecycle_stage) && (
+                        <option value={contact.lifecycle_stage}>
+                          {contact.lifecycle_stage.replace(/_/g, " ")} (outside preset)
+                        </option>
+                      )}
+                    </select>
+                    <span className="text-[10px] uppercase text-slate-400 tracking-wider">
+                      preset: {lifecyclePreset.preset}
+                    </span>
+                    {lifecycleBusy && <span className="text-[10px] text-slate-500">Saving…</span>}
                   </div>
                 </div>
               )}
