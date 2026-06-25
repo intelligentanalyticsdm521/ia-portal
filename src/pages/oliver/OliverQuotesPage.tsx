@@ -7,6 +7,10 @@ import {
   StatusBadge, type Column,
 } from "../../components/oliver/ui";
 import { QuoteCreateForm } from "./QuoteCreateForm";
+import {
+  ApproveMilestoneModal,
+  type MilestoneShape,
+} from "../../components/oliver/ApproveMilestoneModal";
 
 interface QuoteRow {
   id: string;
@@ -410,6 +414,62 @@ export function OliverQuotesPage() {
   );
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// F2 — Payment Splits inside the QuoteDetailDrawer.
+//
+// Payment Splits is an OLIVER-product feature (not consulting-only) per
+// SCOPE_WORKING.md F2. The drawer lets the founder pick a preset
+// (50/50, 40/30/30, custom) which calls
+//   POST /quotes/:id/payment-milestones { kind }
+// on oliver-api. The server seeds milestone rows according to the preset
+// and returns them. Each milestone row gets an [Approve + Charge] button
+// that opens ApproveMilestoneModal.
+//
+// "Custom" opens an inline editor for { name, pct } rows; submitting POSTs
+// the same endpoint with kind='custom' + the milestone payload.
+// ──────────────────────────────────────────────────────────────────────────
+type PaymentSplitKind = "" | "50_50" | "40_30_30" | "custom";
+
+interface PaymentMilestoneRow {
+  payment_milestone_id: string;
+  parent_kind: "quote" | "proposal" | "project";
+  parent_id: string;
+  sort_order: number;
+  name: string;
+  payment_pct: number | null;
+  payment_amount_cents: number | null;
+  status: string;
+  charge_id: string | null;
+}
+
+const SPLIT_OPTIONS: Array<{ key: PaymentSplitKind; label: string }> = [
+  { key: "",         label: "None" },
+  { key: "50_50",    label: "50 / 50" },
+  { key: "40_30_30", label: "40 / 30 / 30" },
+  { key: "custom",   label: "Custom" },
+];
+
+function statusBadgeStyle(status: string): React.CSSProperties {
+  const map: Record<string, { bg: string; color: string }> = {
+    "n/a":             { bg: "#F1F5F9", color: "#5A7A8A" },
+    ready:             { bg: "#E0E7FF", color: "#4338CA" },
+    requires_action:   { bg: "#FEF3C7", color: "#92400E" },
+    processing:        { bg: "#DBEAFE", color: "#1E40AF" },
+    succeeded:         { bg: "#D1FAE5", color: "#047857" },
+    partial_refund:    { bg: "#FEF3C7", color: "#92400E" },
+    full_refund:       { bg: "#FEE2E2", color: "#991B1B" },
+    disputed:          { bg: "#FEE2E2", color: "#991B1B" },
+    failed:            { bg: "#FEE2E2", color: "#991B1B" },
+    canceled:          { bg: "#F1F5F9", color: "#94A3B8" },
+  };
+  const pill = map[status] ?? map["n/a"];
+  return {
+    display: "inline-block", padding: "2px 8px", borderRadius: 99,
+    background: pill.bg, color: pill.color,
+    fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4,
+  };
+}
+
 function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: string; onClose: () => void; onChanged: () => void; api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T>; patch: <T>(p: string, b: unknown) => Promise<T>; del: <T>(p: string) => Promise<T> }; }) {
   const [q, setQ] = useState<QuoteDetail | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -419,11 +479,49 @@ function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: stri
   const [editValidUntil, setEditValidUntil] = useState<string>("");
   const [editNotes, setEditNotes] = useState<string>("");
 
+  // ── Payment Splits (F2) ────────────────────────────────────────────────
+  const [splitKind, setSplitKind] = useState<PaymentSplitKind>("");
+  const [milestones, setMilestones] = useState<PaymentMilestoneRow[]>([]);
+  const [splitsBusy, setSplitsBusy] = useState(false);
+  const [splitsErr, setSplitsErr] = useState<string | null>(null);
+  // Custom editor — only used when splitKind = 'custom'.
+  const [customRows, setCustomRows] = useState<Array<{ name: string; pct: number }>>([
+    { name: "Deposit", pct: 50 },
+    { name: "Final",   pct: 50 },
+  ]);
+  // The milestone currently being approved (drives the modal).
+  const [approveTarget, setApproveTarget] = useState<MilestoneShape | null>(null);
+
   const reload = useCallback(async () => {
     setQ(await api.get<QuoteDetail>(`/quotes/${quoteId}`));
   }, [api, quoteId]);
 
-  useEffect(() => { reload(); }, [reload]);
+  // Pull existing payment milestones for this quote. Returns [] when none
+  // are configured yet (server returns 200 + empty array). 404 / errors
+  // surface to splitsErr so the UI can show "Couldn't load milestones".
+  const reloadMilestones = useCallback(async () => {
+    try {
+      const list = await api.get<PaymentMilestoneRow[]>(`/quotes/${quoteId}/payment-milestones`);
+      setMilestones(Array.isArray(list) ? list : []);
+      // Infer the kind from the existing rows so the dropdown reflects
+      // saved state on re-open. 2 rows ≈ 50/50, 3 rows ≈ 40/30/30,
+      // anything else = custom.
+      if (Array.isArray(list) && list.length > 0) {
+        if (list.length === 2) setSplitKind("50_50");
+        else if (list.length === 3) setSplitKind("40_30_30");
+        else setSplitKind("custom");
+      } else {
+        setSplitKind("");
+      }
+      setSplitsErr(null);
+    } catch (e) {
+      setMilestones([]);
+      // Don't blow up the whole drawer for this — the section just sits empty.
+      setSplitsErr((e as Error).message);
+    }
+  }, [api, quoteId]);
+
+  useEffect(() => { reload(); reloadMilestones(); }, [reload, reloadMilestones]);
 
   if (!q) return <DetailDrawer open onClose={onClose} title="Loading…" width="lg"><div className="text-sm text-slate-500">Loading quote…</div></DetailDrawer>;
 
@@ -499,6 +597,72 @@ function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: stri
   }
   function removeEditItem(idx: number) { setEditItems((prev) => prev.filter((_, i) => i !== idx)); }
   function addEditLine() { setEditItems((prev) => [...prev, { description: "", quantity: 1, unit_price: 0 }]); }
+
+  // ── Payment Splits handlers ────────────────────────────────────────────
+  async function applySplitKind(kind: PaymentSplitKind) {
+    if (!q) return;
+    if (kind === splitKind) return;
+    if (kind === "" || kind === "custom") {
+      // 'None' clears UI selection but doesn't auto-delete server-side
+      // milestones — leave them alone for the founder to remove explicitly
+      // (avoids accidental destructive UI). 'custom' opens the inline
+      // editor; nothing is POSTed until they hit Save.
+      setSplitKind(kind);
+      return;
+    }
+    setSplitsBusy(true);
+    setSplitsErr(null);
+    try {
+      // Preset path — server seeds the milestone rows from the kind and
+      // returns the list. Idempotent: re-POSTing the same kind no-ops at
+      // the server (per F2 backend contract).
+      const rows = await api.post<PaymentMilestoneRow[]>(
+        `/quotes/${q.quote_id}/payment-milestones`,
+        { kind },
+      );
+      setMilestones(Array.isArray(rows) ? rows : []);
+      setSplitKind(kind);
+    } catch (e) {
+      setSplitsErr((e as Error).message);
+    } finally {
+      setSplitsBusy(false);
+    }
+  }
+
+  async function saveCustomSplit() {
+    if (!q) return;
+    const cleaned = customRows
+      .filter((r) => r.name.trim() && Number(r.pct) > 0)
+      .map((r) => ({ name: r.name.trim(), pct: Number(r.pct) }));
+    if (!cleaned.length) {
+      setSplitsErr("Add at least one milestone");
+      return;
+    }
+    const total = cleaned.reduce((s, r) => s + r.pct, 0);
+    if (Math.round(total * 100) / 100 !== 100) {
+      setSplitsErr(`Custom splits must sum to 100% (got ${total}%)`);
+      return;
+    }
+    setSplitsBusy(true);
+    setSplitsErr(null);
+    try {
+      const rows = await api.post<PaymentMilestoneRow[]>(
+        `/quotes/${q.quote_id}/payment-milestones`,
+        { kind: "custom", milestones: cleaned },
+      );
+      setMilestones(Array.isArray(rows) ? rows : []);
+    } catch (e) {
+      setSplitsErr((e as Error).message);
+    } finally {
+      setSplitsBusy(false);
+    }
+  }
+
+  function updateCustomRow(i: number, patch: Partial<{ name: string; pct: number }>) {
+    setCustomRows((prev) => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+  }
+  function addCustomRow() { setCustomRows((prev) => [...prev, { name: "", pct: 0 }]); }
+  function removeCustomRow(i: number) { setCustomRows((prev) => prev.filter((_, idx) => idx !== i)); }
 
   return (
     <DetailDrawer
@@ -607,6 +771,145 @@ function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: stri
             </Button>
           </div>
         </>
+      )}
+
+      {/* ── F2 Payment Splits ─────────────────────────────────────────── */}
+      <div style={{ marginTop: 20, borderTop: "1px solid #E2E8F0", paddingTop: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal" style={{ margin: 0 }}>
+            Payment splits
+          </h3>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A" }}>Payment terms</label>
+            <select
+              value={splitKind}
+              onChange={(e) => applySplitKind(e.target.value as PaymentSplitKind)}
+              disabled={splitsBusy}
+              style={{ ...qEditInputStyle, width: "auto", padding: "4px 8px" }}
+            >
+              {SPLIT_OPTIONS.map((o) => (
+                <option key={o.key} value={o.key}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {splitsErr && (
+          <div style={{ marginBottom: 8, padding: 8, fontSize: 11, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 4 }}>
+            {splitsErr}
+          </div>
+        )}
+
+        {/* Custom editor — only shown while picking custom AND no rows
+            from the server yet (or the founder wants to redo them). */}
+        {splitKind === "custom" && milestones.length === 0 && (
+          <div style={{ marginBottom: 12, padding: 10, background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 6 }}>
+              Custom milestones — must sum to 100%
+            </div>
+            {customRows.map((r, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 90px 32px", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                <input
+                  type="text" placeholder="Name (e.g. Deposit)"
+                  value={r.name}
+                  onChange={(e) => updateCustomRow(i, { name: e.target.value })}
+                  style={qEditInputStyle}
+                />
+                <input
+                  type="number" step="1" min="0" max="100"
+                  placeholder="%"
+                  value={r.pct}
+                  onChange={(e) => updateCustomRow(i, { pct: Number(e.target.value) })}
+                  style={{ ...qEditInputStyle, textAlign: "right" }}
+                />
+                <button
+                  onClick={() => removeCustomRow(i)}
+                  title="Remove"
+                  style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: 16 }}
+                >×</button>
+              </div>
+            ))}
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+              <button
+                onClick={addCustomRow}
+                style={{ fontSize: 11, fontWeight: 600, color: "#1A7DB5", background: "transparent", border: 0, cursor: "pointer" }}
+              >+ Add milestone</button>
+              <Button variant="primary" onClick={saveCustomSplit} disabled={splitsBusy}>
+                {splitsBusy ? "Saving…" : "Save milestones"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Milestone rows — server state. */}
+        {milestones.length > 0 && (
+          <div style={{ border: "1px solid #E2E8F0", borderRadius: 6 }}>
+            {milestones.map((m, i) => {
+              const isLast = i === milestones.length - 1;
+              const amount = m.payment_amount_cents != null
+                ? Number(m.payment_amount_cents)
+                : m.payment_pct != null
+                  ? Math.round((Number(m.payment_pct) / 100) * Math.round(Number(q.total) * 100))
+                  : 0;
+              const pctLabel = m.payment_pct != null ? `${m.payment_pct}%` : "—";
+              const canApprove = m.status === "n/a" || m.status === "ready" || m.status === "failed";
+              return (
+                <div key={m.payment_milestone_id} style={{
+                  display: "grid", gridTemplateColumns: "32px 1fr 80px 110px 130px 160px",
+                  gap: 8, padding: "10px 12px", alignItems: "center",
+                  borderBottom: !isLast ? "1px solid #F1F5F9" : "none",
+                }}>
+                  <span style={{ fontSize: 12, fontFamily: "monospace", color: "#94A3B8" }}>{m.sort_order}</span>
+                  <div style={{ fontSize: 13, color: "#0B1C24", fontWeight: 500 }}>{m.name}</div>
+                  <span style={{ fontSize: 12, fontFamily: "monospace", textAlign: "right", color: "#5A7A8A" }}>{pctLabel}</span>
+                  <span style={{ fontSize: 13, fontFamily: "monospace", textAlign: "right", color: "#0B1C24", fontWeight: 600 }}>
+                    {fmtMoney(amount / 100)}
+                  </span>
+                  <span style={statusBadgeStyle(m.status)}>{m.status.replace(/_/g, " ")}</span>
+                  <div style={{ textAlign: "right" }}>
+                    {canApprove ? (
+                      <Button variant="primary" onClick={() => setApproveTarget({
+                        payment_milestone_id: m.payment_milestone_id,
+                        name: m.name,
+                        payment_pct: m.payment_pct,
+                        payment_amount_cents: m.payment_amount_cents,
+                        status: m.status,
+                      })}>Approve + Charge</Button>
+                    ) : (
+                      <span style={{ fontSize: 10, color: "#94A3B8" }}>
+                        {m.status === "succeeded" ? "Paid" : "—"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {splitKind === "" && milestones.length === 0 && (
+          <div style={{ fontSize: 12, color: "#94A3B8", fontStyle: "italic" }}>
+            No payment splits configured. Pick a preset above to charge in steps.
+          </div>
+        )}
+      </div>
+
+      {approveTarget && q && (
+        <ApproveMilestoneModal
+          open
+          milestone={approveTarget}
+          parentKind="quote"
+          parentId={q.quote_id}
+          // parentTotal in cents — server stores DECIMAL(18,2); we round-trip
+          // through Math.round to dodge float drift.
+          parentTotal={Math.round(Number(q.total) * 100)}
+          onConfirm={async () => {
+            setApproveTarget(null);
+            await reloadMilestones();
+            onChanged();
+          }}
+          onCancel={() => setApproveTarget(null)}
+        />
       )}
     </DetailDrawer>
   );

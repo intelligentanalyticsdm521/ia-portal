@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
-  PageHeader, DataTable, EmptyState, Button, FilterBar, type Column,
+  PageHeader, DataTable, DetailDrawer, EmptyState, Button, FilterBar, type Column,
 } from "../../components/oliver/ui";
+import {
+  ApproveMilestoneModal,
+  type MilestoneShape,
+} from "../../components/oliver/ApproveMilestoneModal";
 
 interface Proposal {
   proposal_id: string;
@@ -79,6 +83,15 @@ export function OliverProposalsPage() {
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  // F2 — focus detail drawer (Payment Splits). Driven by ?focus=<proposal_id>
+  // so deep-links survive page reloads and the row click already sets it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusId = searchParams.get("focus");
+  const closeFocus = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("focus");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
@@ -262,7 +275,11 @@ export function OliverProposalsPage() {
             rowKey={(p) => p.proposal_id}
             initialSort={{ key: "title", direction: "desc" }}
             emptyMessage="No proposals match these filters."
-            onRowClick={(p) => window.location.href = `/app/services/oliver_proposals?focus=${p.proposal_id}`}
+            onRowClick={(p) => {
+              const next = new URLSearchParams(searchParams);
+              next.set("focus", p.proposal_id);
+              setSearchParams(next, { replace: false });
+            }}
           />
         </>
       )}
@@ -276,6 +293,19 @@ export function OliverProposalsPage() {
             setFlash(msg);
             setTimeout(() => setFlash(null), 4000);
           }}
+          api={{ get, post }}
+        />
+      )}
+
+      {focusId && (
+        <ProposalDetailDrawer
+          proposalId={focusId}
+          // Pull the matching row from current list so we have total/title
+          // without a second round trip when it's already cached. The
+          // drawer still re-fetches milestones on mount for freshness.
+          proposalSummary={proposals.find((p) => p.proposal_id === focusId) ?? null}
+          onClose={closeFocus}
+          onChanged={reload}
           api={{ get, post }}
         />
       )}
@@ -507,3 +537,314 @@ const pInput: React.CSSProperties = {
   border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6,
   background: "#fff", color: "#0B1C24",
 };
+
+// ──────────────────────────────────────────────────────────────────────────
+// F2 — ProposalDetailDrawer (Payment Splits surface for proposals).
+//
+// Mirrors the same payment-splits dropdown + milestone list + Approve modal
+// pattern from QuoteDetailDrawer in OliverQuotesPage.tsx. Opens on
+// ?focus=<proposal_id> URL state. Per the F2 brief this is a NEW drawer
+// scope because OliverProposalsPage previously had no detail drawer at all
+// (clicking a row reloaded the page with the URL param dangling).
+// ──────────────────────────────────────────────────────────────────────────
+type PaymentSplitKind = "" | "50_50" | "40_30_30" | "custom";
+
+interface PaymentMilestoneRow {
+  payment_milestone_id: string;
+  parent_kind: "quote" | "proposal" | "project";
+  parent_id: string;
+  sort_order: number;
+  name: string;
+  payment_pct: number | null;
+  payment_amount_cents: number | null;
+  status: string;
+  charge_id: string | null;
+}
+
+const SPLIT_OPTIONS: Array<{ key: PaymentSplitKind; label: string }> = [
+  { key: "",         label: "None" },
+  { key: "50_50",    label: "50 / 50" },
+  { key: "40_30_30", label: "40 / 30 / 30" },
+  { key: "custom",   label: "Custom" },
+];
+
+function statusBadgeStyle(status: string): React.CSSProperties {
+  const map: Record<string, { bg: string; color: string }> = {
+    "n/a":             { bg: "#F1F5F9", color: "#5A7A8A" },
+    ready:             { bg: "#E0E7FF", color: "#4338CA" },
+    requires_action:   { bg: "#FEF3C7", color: "#92400E" },
+    processing:        { bg: "#DBEAFE", color: "#1E40AF" },
+    succeeded:         { bg: "#D1FAE5", color: "#047857" },
+    partial_refund:    { bg: "#FEF3C7", color: "#92400E" },
+    full_refund:       { bg: "#FEE2E2", color: "#991B1B" },
+    disputed:          { bg: "#FEE2E2", color: "#991B1B" },
+    failed:            { bg: "#FEE2E2", color: "#991B1B" },
+    canceled:          { bg: "#F1F5F9", color: "#94A3B8" },
+  };
+  const pill = map[status] ?? map["n/a"];
+  return {
+    display: "inline-block", padding: "2px 8px", borderRadius: 99,
+    background: pill.bg, color: pill.color,
+    fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4,
+  };
+}
+
+function ProposalDetailDrawer({
+  proposalId,
+  proposalSummary,
+  onClose,
+  onChanged,
+  api,
+}: {
+  proposalId: string;
+  proposalSummary: Proposal | null;
+  onClose: () => void;
+  onChanged: () => void;
+  api: {
+    get: <T>(p: string) => Promise<T>;
+    post: <T>(p: string, body?: unknown) => Promise<T>;
+  };
+}) {
+  const [splitKind, setSplitKind] = useState<PaymentSplitKind>("");
+  const [milestones, setMilestones] = useState<PaymentMilestoneRow[]>([]);
+  const [splitsBusy, setSplitsBusy] = useState(false);
+  const [splitsErr, setSplitsErr] = useState<string | null>(null);
+  const [customRows, setCustomRows] = useState<Array<{ name: string; pct: number }>>([
+    { name: "Deposit", pct: 50 },
+    { name: "Final",   pct: 50 },
+  ]);
+  const [approveTarget, setApproveTarget] = useState<MilestoneShape | null>(null);
+
+  // Total in CENTS — server stores DECIMAL(18,2), round-trip Math.round.
+  const parentTotalCents = proposalSummary
+    ? Math.round(Number(proposalSummary.total) * 100)
+    : 0;
+  const proposalTitle = proposalSummary?.title ?? "Proposal";
+
+  const reloadMilestones = useCallback(async () => {
+    try {
+      const list = await api.get<PaymentMilestoneRow[]>(`/proposals/${proposalId}/payment-milestones`);
+      setMilestones(Array.isArray(list) ? list : []);
+      if (Array.isArray(list) && list.length > 0) {
+        if (list.length === 2) setSplitKind("50_50");
+        else if (list.length === 3) setSplitKind("40_30_30");
+        else setSplitKind("custom");
+      } else {
+        setSplitKind("");
+      }
+      setSplitsErr(null);
+    } catch (e) {
+      setMilestones([]);
+      setSplitsErr((e as Error).message);
+    }
+  }, [api, proposalId]);
+
+  useEffect(() => { reloadMilestones(); }, [reloadMilestones]);
+
+  async function applySplitKind(kind: PaymentSplitKind) {
+    if (kind === splitKind) return;
+    if (kind === "" || kind === "custom") {
+      setSplitKind(kind);
+      return;
+    }
+    setSplitsBusy(true);
+    setSplitsErr(null);
+    try {
+      const rows = await api.post<PaymentMilestoneRow[]>(
+        `/proposals/${proposalId}/payment-milestones`,
+        { kind },
+      );
+      setMilestones(Array.isArray(rows) ? rows : []);
+      setSplitKind(kind);
+    } catch (e) {
+      setSplitsErr((e as Error).message);
+    } finally {
+      setSplitsBusy(false);
+    }
+  }
+
+  async function saveCustomSplit() {
+    const cleaned = customRows
+      .filter((r) => r.name.trim() && Number(r.pct) > 0)
+      .map((r) => ({ name: r.name.trim(), pct: Number(r.pct) }));
+    if (!cleaned.length) {
+      setSplitsErr("Add at least one milestone");
+      return;
+    }
+    const total = cleaned.reduce((s, r) => s + r.pct, 0);
+    if (Math.round(total * 100) / 100 !== 100) {
+      setSplitsErr(`Custom splits must sum to 100% (got ${total}%)`);
+      return;
+    }
+    setSplitsBusy(true);
+    setSplitsErr(null);
+    try {
+      const rows = await api.post<PaymentMilestoneRow[]>(
+        `/proposals/${proposalId}/payment-milestones`,
+        { kind: "custom", milestones: cleaned },
+      );
+      setMilestones(Array.isArray(rows) ? rows : []);
+    } catch (e) {
+      setSplitsErr((e as Error).message);
+    } finally {
+      setSplitsBusy(false);
+    }
+  }
+
+  function updateCustomRow(i: number, patch: Partial<{ name: string; pct: number }>) {
+    setCustomRows((prev) => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+  }
+  function addCustomRow() { setCustomRows((prev) => [...prev, { name: "", pct: 0 }]); }
+  function removeCustomRow(i: number) { setCustomRows((prev) => prev.filter((_, idx) => idx !== i)); }
+
+  return (
+    <DetailDrawer
+      open onClose={onClose}
+      title={proposalTitle}
+      subtitle={proposalSummary?.proposal_number ?? proposalId}
+      width="xl"
+    >
+      <div style={{ marginBottom: 16, padding: 12, background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ color: "#5A7A8A" }}>Total</span>
+          <span style={{ color: "#0B1C24", fontFamily: "monospace", fontWeight: 700 }}>
+            {fmtMoney(proposalSummary?.total)}
+          </span>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 4, borderTop: "1px solid #E2E8F0", paddingTop: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal" style={{ margin: 0 }}>
+            Payment splits
+          </h3>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A" }}>Payment terms</label>
+            <select
+              value={splitKind}
+              onChange={(e) => applySplitKind(e.target.value as PaymentSplitKind)}
+              disabled={splitsBusy}
+              style={{ ...pInput, width: "auto", padding: "4px 8px" }}
+            >
+              {SPLIT_OPTIONS.map((o) => (
+                <option key={o.key} value={o.key}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {splitsErr && (
+          <div style={{ marginBottom: 8, padding: 8, fontSize: 11, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 4 }}>
+            {splitsErr}
+          </div>
+        )}
+
+        {splitKind === "custom" && milestones.length === 0 && (
+          <div style={{ marginBottom: 12, padding: 10, background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 6 }}>
+              Custom milestones — must sum to 100%
+            </div>
+            {customRows.map((r, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 90px 32px", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                <input
+                  type="text" placeholder="Name (e.g. Deposit)"
+                  value={r.name}
+                  onChange={(e) => updateCustomRow(i, { name: e.target.value })}
+                  style={pInput}
+                />
+                <input
+                  type="number" step="1" min="0" max="100"
+                  placeholder="%"
+                  value={r.pct}
+                  onChange={(e) => updateCustomRow(i, { pct: Number(e.target.value) })}
+                  style={{ ...pInput, textAlign: "right" }}
+                />
+                <button
+                  onClick={() => removeCustomRow(i)}
+                  title="Remove"
+                  style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: 16 }}
+                >×</button>
+              </div>
+            ))}
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+              <button
+                onClick={addCustomRow}
+                style={{ fontSize: 11, fontWeight: 600, color: "#1A7DB5", background: "transparent", border: 0, cursor: "pointer" }}
+              >+ Add milestone</button>
+              <Button variant="primary" onClick={saveCustomSplit} disabled={splitsBusy}>
+                {splitsBusy ? "Saving…" : "Save milestones"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {milestones.length > 0 && (
+          <div style={{ border: "1px solid #E2E8F0", borderRadius: 6 }}>
+            {milestones.map((m, i) => {
+              const isLast = i === milestones.length - 1;
+              const amount = m.payment_amount_cents != null
+                ? Number(m.payment_amount_cents)
+                : m.payment_pct != null
+                  ? Math.round((Number(m.payment_pct) / 100) * parentTotalCents)
+                  : 0;
+              const pctLabel = m.payment_pct != null ? `${m.payment_pct}%` : "—";
+              const canApprove = m.status === "n/a" || m.status === "ready" || m.status === "failed";
+              return (
+                <div key={m.payment_milestone_id} style={{
+                  display: "grid", gridTemplateColumns: "32px 1fr 80px 110px 130px 160px",
+                  gap: 8, padding: "10px 12px", alignItems: "center",
+                  borderBottom: !isLast ? "1px solid #F1F5F9" : "none",
+                }}>
+                  <span style={{ fontSize: 12, fontFamily: "monospace", color: "#94A3B8" }}>{m.sort_order}</span>
+                  <div style={{ fontSize: 13, color: "#0B1C24", fontWeight: 500 }}>{m.name}</div>
+                  <span style={{ fontSize: 12, fontFamily: "monospace", textAlign: "right", color: "#5A7A8A" }}>{pctLabel}</span>
+                  <span style={{ fontSize: 13, fontFamily: "monospace", textAlign: "right", color: "#0B1C24", fontWeight: 600 }}>
+                    {fmtMoney(amount / 100)}
+                  </span>
+                  <span style={statusBadgeStyle(m.status)}>{m.status.replace(/_/g, " ")}</span>
+                  <div style={{ textAlign: "right" }}>
+                    {canApprove ? (
+                      <Button variant="primary" onClick={() => setApproveTarget({
+                        payment_milestone_id: m.payment_milestone_id,
+                        name: m.name,
+                        payment_pct: m.payment_pct,
+                        payment_amount_cents: m.payment_amount_cents,
+                        status: m.status,
+                      })}>Approve + Charge</Button>
+                    ) : (
+                      <span style={{ fontSize: 10, color: "#94A3B8" }}>
+                        {m.status === "succeeded" ? "Paid" : "—"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {splitKind === "" && milestones.length === 0 && (
+          <div style={{ fontSize: 12, color: "#94A3B8", fontStyle: "italic" }}>
+            No payment splits configured. Pick a preset above to charge in steps.
+          </div>
+        )}
+      </div>
+
+      {approveTarget && (
+        <ApproveMilestoneModal
+          open
+          milestone={approveTarget}
+          parentKind="proposal"
+          parentId={proposalId}
+          parentTotal={parentTotalCents}
+          onConfirm={async () => {
+            setApproveTarget(null);
+            await reloadMilestones();
+            onChanged();
+          }}
+          onCancel={() => setApproveTarget(null)}
+        />
+      )}
+    </DetailDrawer>
+  );
+}
