@@ -33,7 +33,7 @@ import { IadmModal, CORE_BLUE, PRODUCT_ACCENT } from "../IadmModal";
 import { ClientTenantProvider, type ClientTenantValue } from "../../lib/clientTenantContext";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useAccessToken } from "../../auth/useAccessToken";
-import { connectGoogle as arionConnectGoogle, createSeoProject as arionCreateSeoProject } from "../../lib/arionApi";
+import { connectGoogle as arionConnectGoogle, createSeoProject as arionCreateSeoProject, markAppleClaimed as arionMarkAppleClaimed } from "../../lib/arionApi";
 import { InfoTip } from "../InfoTip";
 import { LogoPicker } from "../oliver/LogoPicker";
 import { PhoneInput } from "../PhoneInput";
@@ -2242,6 +2242,40 @@ function ArionIntegrationsSection({ v, setV, tenantId, arion, arionRunner }: {
     finally { setWorking(null); }
   }
 
+  // 2026-06-25 — Apple Business Connect has no OAuth/API. The old behavior
+  // opened `/app/arion/integrations?connect=apple&site_id=...` which was a
+  // dead URL (no handler existed there). Now: if not claimed, open the
+  // Apple Business Connect signup in a new tab AND let the founder click
+  // "Mark as Claimed" here once the tenant finishes. The button flips the
+  // local UI immediately so the founder sees the green badge.
+  async function markAppleClaimedFromModal() {
+    if (!siteId) return;
+    if (v.apple_claimed) {
+      // Already claimed — open Apple's portal to re-verify / re-manage.
+      window.open("https://register.apple.com/business", "_blank", "noopener");
+      return;
+    }
+    // Open Apple's signup first so the founder can walk the tenant through
+    // it, THEN record the claim in our DB.
+    window.open("https://register.apple.com/business", "_blank", "noopener");
+    if (!window.confirm("Open register.apple.com/business now. Click OK once the listing is claimed there to record it in the Portal.")) {
+      return;
+    }
+    setWorking("apple");
+    try {
+      const token = await getToken();
+      await arionMarkAppleClaimed({
+        baseUrl: ARION_API_BASE_URL,
+        bearerToken: token.accessToken,
+        tenantId,
+        siteId,
+        claimed: true,
+      });
+      setV({ ...v, apple_claimed: true });
+    } catch { /* swallow — preserves old behavior */ }
+    finally { setWorking(null); }
+  }
+
   const Row = ({ label, desc, connected, onClick, busyKey, cta }: { label: string; desc: string; connected: boolean; onClick?: () => void; busyKey?: string; cta?: string }) => (
     <div className="flex items-center justify-between gap-3 border border-slate-200 rounded-lg p-3">
       <div className="min-w-0 flex-1">
@@ -2383,10 +2417,11 @@ function ArionIntegrationsSection({ v, setV, tenantId, arion, arionRunner }: {
         />
         <Row
           label="Apple Business Connect"
-          desc="Apple Maps + Spotlight listing from YOUR Apple Business account. Optional for service businesses."
+          desc="Apple Maps + Spotlight listing from YOUR Apple Business account. No API exists — we open register.apple.com/business and then record the claim here."
           connected={v.apple_claimed}
-          onClick={() => window.open(`/app/arion/integrations?connect=apple&site_id=${siteId}`, "_blank")}
-          cta="Connect Apple"
+          onClick={markAppleClaimedFromModal}
+          busyKey="apple"
+          cta="Mark as Claimed"
         />
         <Row
           label="SE Ranking Project (we manage this)"

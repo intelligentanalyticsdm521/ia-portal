@@ -9,7 +9,7 @@ import { ArionCard, ArionServiceLayout, EmptyPanel } from './ArionServiceLayout'
 import { useArionSites } from './useArionSites';
 import { Sparkline } from '../../components/iainsights/Sparkline';
 import { SetupHints } from '../../components/SetupHints';
-import { Globe, Search as SearchIcon, MapPin, Layout } from 'lucide-react';
+import { Globe, Search as SearchIcon, MapPin, Layout, Apple as AppleIcon } from 'lucide-react';
 // Task #173 — dashboard onboarding banner that replaced the removed
 // "Get Started" nav entry. Self-gating (checks checklist + localStorage dismiss).
 // ArionDashboardSetupBanner removed 2026-06-17 — single onboarding nag
@@ -156,6 +156,21 @@ export function ArionOverviewPage({ service, status }: Props) {
               // the live googleBusinessProfile flag from /arion/overview.
               show: data ? !data.integrations.googleBusinessProfile : false,
               accent: "#16A34A",
+            },
+            {
+              // 2026-06-25 — Apple Business Connect has no OAuth/API, so the
+              // claim is recorded manually via a "Mark as Claimed" button on
+              // BusinessAppleOverview. This hint fades the moment that flag
+              // flips. ~1 in 6 Americans uses Apple Maps as their primary
+              // maps app (Siri, Spotlight, Mac Maps all read from the same
+              // Apple Business Connect listing).
+              id: "arion_apple_not_claimed",
+              icon: AppleIcon,
+              title: "Claim your Apple Maps listing",
+              body: "About 1 in 6 Americans uses Apple Maps as their primary maps app — and Siri, Spotlight, and Mac Maps all read from the same listing. Apple has no API, so we record the claim manually once you finish their signup.",
+              cta: { label: "Set up Apple Business", to: "/app/services/arion_business_apple_overview" },
+              show: data ? !data.integrations.appleBusinessConnect : false,
+              accent: "#0B1C24",
             },
             {
               id: "arion_no_seo",

@@ -40,6 +40,10 @@ export interface OverviewResponse {
     bingWebmaster: boolean;
     bingPlaces: boolean;
     appleBusinessConnect: boolean;
+    /** ISO timestamp of when the founder/tenant clicked "Mark as Claimed" in
+     *  the BusinessAppleOverview page. NULL if unclaimed. Surfaces in the
+     *  setup hint copy ("Claimed on Jun 25, 2026") since Apple has no API. */
+    appleBusinessConnectClaimedAt?: string | null;
     seRankingProject: boolean;
   };
   overview: {
@@ -554,6 +558,22 @@ export async function updateLinkedBusinessProfile(params: { baseUrl: string; bea
     method: 'PUT',
     path: `/arion/my-business/${params.provider}?siteId=${encodeURIComponent(params.siteId)}`,
     body: params.body
+  });
+}
+
+/**
+ * Apple Business Connect has no OAuth/API — claim status is recorded
+ * manually after the tenant finishes signup at register.apple.com/business.
+ * Pass `claimed: false` to UNMARK (clears apple_claimed_at).
+ */
+export async function markAppleClaimed(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; claimed?: boolean }) {
+  return requestJson<{ data: { ok: true; apple_claimed: boolean; apple_claimed_at: string | null } }>({
+    baseUrl: params.baseUrl,
+    bearerToken: params.bearerToken,
+    tenantId: params.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(params.siteId)}/apple/mark-claimed`,
+    body: { claimed: params.claimed !== false }
   });
 }
 

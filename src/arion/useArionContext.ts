@@ -14,6 +14,7 @@ import {
   getMyBusiness,
   updateGoogleBusiness,
   updateLinkedBusinessProfile,
+  markAppleClaimed as portalMarkAppleClaimed,
   connectGoogle as portalConnectGoogle,
   getEditorLink as portalGetEditorLink,
   getAdminLink as portalGetAdminLink,
@@ -317,6 +318,17 @@ export function useArionContext() {
           return updateGoogleBusiness({ ...b, siteId, body });
         }
         return updateLinkedBusinessProfile({ ...b, siteId, provider: provider as 'apple' | 'bing', body });
+      },
+
+      /**
+       * Apple Business Connect — manual claim flow. No OAuth/API exists, so
+       * the tenant (or founder helping them) clicks "Mark as Claimed" in
+       * BusinessAppleOverview after finishing signup at register.apple.com/business.
+       * Pass `claimed: false` to UNMARK (e.g. they lost ownership).
+       */
+      async markAppleClaimed(siteId: string, claimed: boolean = true) {
+        const b = await base();
+        return portalMarkAppleClaimed({ ...b, siteId, claimed });
       },
 
       async connectGoogle(siteId: string, returnUrl: string) {
