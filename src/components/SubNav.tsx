@@ -478,7 +478,10 @@ const CONSULTING_NAV: SubNavConfig = {
       items: [
         { key: "consulting_overview",          label: "Overview",          route: "/app/services/consulting_overview" },
         { key: "consulting_tickets",           label: "Service Requests",  route: "/app/services/consulting_tickets" },
-        { key: "consulting_projects",          label: "Projects",          route: "/app/services/consulting_projects" },
+        // F1 (Consulting Rework 2026-06-25) — SubNav points at the new
+        // list-view (consulting_projects_v2). Legacy card-grid page still
+        // mounted under consulting_projects so deep links don't break.
+        { key: "consulting_projects_v2",       label: "Projects",          route: "/app/services/consulting_projects_v2" },
         { key: "consulting_project_workspace", label: "Project Workspace", route: "/app/services/consulting_project_workspace" },
         { key: "consulting_deliverables",      label: "Deliverables",      route: "/app/services/consulting_deliverables" },
       ],

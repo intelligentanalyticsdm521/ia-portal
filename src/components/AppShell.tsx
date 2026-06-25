@@ -38,6 +38,10 @@ const CONSULTING_FOUNDER_ONLY = new Set<string>([
   "consulting_access_log",
   "consulting_workspace",
   "consulting_tenant_workspace",
+  // F1 (Consulting Rework 2026-06-25) — new Projects list view hits the
+  // founder-gated /consulting/projects + /consulting/categories endpoints.
+  // Non-founders would see 403s, so hide the nav link entirely.
+  "consulting_projects_v2",
 ]);
 
 function applyConsultingNavFilter(

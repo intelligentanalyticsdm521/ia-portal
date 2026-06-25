@@ -299,6 +299,12 @@ const ConsultingOnboardClientPage = lazyNamed(() => import('./consulting/Consult
 const ConsultingClientsPage = lazyNamed(() => import('./consulting/ConsultingClientsPage'), 'default');
 const ConsultingTicketsBoardPage = lazyNamed(() => import('./consulting/ConsultingTicketsBoardPage'), 'ConsultingTicketsBoardPage');
 const ConsultingProjectsBoardPage = lazyNamed(() => import('./consulting/ConsultingProjectsBoardPage'), 'ConsultingProjectsBoardPage');
+// F1 (Consulting Rework 2026-06-25) — new canonical Projects list view.
+// ConsultingProjectsBoardPage (card grid) is kept reachable via the legacy
+// `consulting_projects` key for back-compat; `consulting_projects_v2` is
+// the new SubNav target. Once parity is confirmed in F2+ we'll swap the
+// `consulting_projects` route to ConsultingProjectsPage and drop V1.
+const ConsultingProjectsPage = lazyNamed(() => import('./consulting/ConsultingProjectsPage'), 'ConsultingProjectsPage');
 const ConsultingProjectWorkspacePage = lazyNamed(() => import('./consulting/ConsultingProjectWorkspacePage'), 'ConsultingProjectWorkspacePage');
 const ConsultingDeliverablesPage = lazyNamed(() => import('./consulting/ConsultingDeliverablesPage'), 'ConsultingDeliverablesPage');
 
@@ -657,6 +663,8 @@ export function ServiceRouter() {
       case 'consulting_overview':         consultingPage = <ConsultingOverviewPage />; break;
       case 'consulting_tickets':          consultingPage = <ConsultingTicketsBoardPage />; break;
       case 'consulting_projects':         consultingPage = <ConsultingProjectsBoardPage />; break;
+      // F1 — new list-style Projects page (Consulting Rework 2026-06-25).
+      case 'consulting_projects_v2':      consultingPage = <ConsultingProjectsPage />; break;
       // Phase 1 v0 — 4-tier workspace (Project → Phase → Feature → Task).
       // List + drill-in read-only view. Backend feature/task endpoints
       // still pending; page renders a clear inline banner if missing.
