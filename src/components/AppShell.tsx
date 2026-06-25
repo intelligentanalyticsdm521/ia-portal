@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Menu, X } from "lucide-react";
 import { HeaderBar } from "./HeaderBar";
 import { IconRail, type ProductKey } from "./IconRail";
 import { SubNav, SUB_NAV_CONFIGS, SETTINGS_KEYS, type SubNavConfig } from "./SubNav";
@@ -96,10 +97,15 @@ export function AppShell() {
   const [activeProduct, setActiveProduct] = useState<ProductKey>(() =>
     deriveProduct(location.pathname)
   );
+  // Mobile MVP shell (2026-06-24): collapse IconRail + SubNav into a slide-over
+  // drawer at < md (768px). Desktop layout unchanged. Drawer closes on any
+  // route change so navigating in mobile drops you back to content.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Keep activeProduct in sync with URL changes (e.g., back/forward nav)
   useEffect(() => {
     setActiveProduct(deriveProduct(location.pathname));
+    setMobileNavOpen(false);
   }, [location.pathname]);
 
   const handleProductSelect = useCallback(
@@ -161,16 +167,59 @@ export function AppShell() {
 
 
       {/* Main layout: icon rail + sub-nav + content. Default align-items:stretch
-          on this flex row causes IconRail and SubNav to fill the full row height. */}
-      <div className="flex flex-1 min-h-0">
-        {/* Icon Rail — always visible */}
-        <IconRail activeProduct={activeProduct} onSelect={handleProductSelect} />
+          on this flex row causes IconRail and SubNav to fill the full row height.
+          Mobile MVP: below md, IconRail+SubNav collapse into a slide-over drawer
+          triggered by a hamburger button anchored to the main content area. */}
+      <div className="flex flex-1 min-h-0 relative">
+        {/* Hamburger — mobile only. Sits inside main content's top-left corner. */}
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen(true)}
+          className="md:hidden absolute top-2 left-2 z-30 flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          aria-label="Open navigation"
+        >
+          <Menu className="h-4 w-4" />
+          Menu
+        </button>
 
-        {/* Sub-Nav — visible when a product (not overview) is selected */}
-        {subNavConfig && <SubNav config={subNavConfig} />}
+        {/* Backdrop — mobile only, dismisses drawer on tap */}
+        {mobileNavOpen && (
+          <div
+            className="md:hidden fixed inset-0 z-40 bg-black/40"
+            onClick={() => setMobileNavOpen(false)}
+            aria-hidden="true"
+          />
+        )}
 
-        {/* Main content area */}
-        <main className="flex-1 overflow-y-auto bg-[#F2F6F9]">
+        {/* Icon Rail + Sub-Nav wrapper.
+            Desktop (md+): inline flex row, no transform.
+            Mobile (< md): fixed slide-over from the left, hidden by translate-x.
+            Drawer auto-closes via the useEffect above on any route change. */}
+        <div
+          className={
+            "flex md:relative md:translate-x-0 md:transform-none md:transition-none " +
+            "fixed inset-y-0 left-0 z-50 transition-transform duration-200 ease-out " +
+            "md:bg-transparent bg-white md:shadow-none shadow-2xl " +
+            (mobileNavOpen ? "translate-x-0" : "-translate-x-full")
+          }
+        >
+          {/* Mobile close button inside drawer */}
+          {mobileNavOpen && (
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(false)}
+              className="md:hidden absolute top-2 right-2 z-10 rounded-md p-1 text-slate-500 hover:bg-slate-100"
+              aria-label="Close navigation"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
+          <IconRail activeProduct={activeProduct} onSelect={handleProductSelect} />
+          {subNavConfig && <SubNav config={subNavConfig} />}
+        </div>
+
+        {/* Main content area. On mobile, top padding clears the hamburger. */}
+        <main className="flex-1 overflow-y-auto bg-[#F2F6F9] pt-12 md:pt-0">
           <Outlet />
         </main>
       </div>
