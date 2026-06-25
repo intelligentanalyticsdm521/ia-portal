@@ -72,6 +72,21 @@ const STATUS_COLOR: Record<string, string> = {
   approved: "#10b981",
 };
 
+// F4 (Consulting Rework 2026-06-25) — client-side intake submissions row.
+// Surface the rendered "Your Deliverables" stub so a client landing here
+// from a SPARK email + submission can see their previously-submitted
+// intakes. Full intake-submission list view ships in F4+; for now this is
+// a "you have N intakes" badge that links to the most recent one.
+interface IntakeSubmissionStub {
+  submission_id: string;
+  project_id: string;
+  project_name: string | null;
+  template_name: string;
+  is_draft: boolean | number;
+  submitted_at: string | null;
+  score_total: number | null;
+}
+
 export function ConsultingDeliverablesPage() {
   const { get, ready } = useOliverApi();
   const [items, setItems] = useState<CrossDeliverable[]>([]);
@@ -82,6 +97,9 @@ export function ConsultingDeliverablesPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // F4 stub — client-side intake submissions list. Quietly degrades to empty
+  // on 404 since the F4 backend may not be deployed yet.
+  const [intakes, setIntakes] = useState<IntakeSubmissionStub[]>([]);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -106,6 +124,22 @@ export function ConsultingDeliverablesPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // F4 stub — also load the viewer's intake submissions. Founder gets every
+  // submission (returns flat list), client gets only their own. Endpoint
+  // shape mirrors the F4 backend brief; 404s degrade silently so the rest
+  // of the page renders fine pre-deploy.
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    get<{ submissions: IntakeSubmissionStub[] }>("/consulting/intake-submissions?mine=1")
+      .then((r) => {
+        if (cancelled) return;
+        setIntakes(Array.isArray(r?.submissions) ? r.submissions : []);
+      })
+      .catch(() => { if (!cancelled) setIntakes([]); });
+    return () => { cancelled = true; };
+  }, [get, ready]);
 
   const filtered = useMemo(
     () =>
@@ -159,6 +193,43 @@ export function ConsultingDeliverablesPage() {
       loading={loading}
     >
       <div className="space-y-3">
+        {/* F4 stub — intake submissions strip (client lens). Surfaces every
+            intake form the viewer has submitted or drafted so they can
+            re-open / download the snapshot. Empty state (incl. pre-deploy
+            404) hides the strip entirely. */}
+        {intakes.length > 0 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="flex items-baseline justify-between gap-2 mb-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">
+                Your intake forms ({intakes.length})
+              </div>
+              <span className="text-[10px] italic text-amber-700">F4 preview · full list ships with the F4 backend</span>
+            </div>
+            <ul className="space-y-1">
+              {intakes.slice(0, 5).map((s) => (
+                <li key={s.submission_id} className="flex items-center justify-between gap-2 text-xs">
+                  <a
+                    href={`/app/consulting/intake/${s.submission_id}`}
+                    className="font-semibold text-amber-900 hover:underline"
+                  >
+                    {s.template_name}
+                  </a>
+                  <span className="text-amber-800">
+                    {s.project_name && <span className="mr-2">· {s.project_name}</span>}
+                    {s.is_draft && !s.submitted_at ? (
+                      <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold uppercase text-amber-800 border border-amber-300">Draft</span>
+                    ) : (
+                      <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-800 border border-emerald-300">
+                        {s.score_total != null ? `Score ${s.score_total}` : "Submitted"}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Counts strip */}
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">

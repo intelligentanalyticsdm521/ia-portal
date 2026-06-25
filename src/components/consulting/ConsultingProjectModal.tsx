@@ -37,9 +37,9 @@
 // only.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { IadmModal } from "../IadmModal";
+import { IadmModal, CORE_BLUE } from "../IadmModal";
 import { useOliverApi } from "../../hooks/useOliverApi";
-import { CheckCircle2, ChevronDown, ChevronRight, Lock, User } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, Lock, User, Send, AlertCircle } from "lucide-react";
 
 // ─── Color tokens ────────────────────────────────────────────────────────
 // Locked per F1 brief 2026-06-25.
@@ -136,6 +136,10 @@ export function ConsultingProjectModal({
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [milestoneNotice, setMilestoneNotice] = useState<string | null>(null);
+  // F4 — Send Intake modal trigger. Founder-only surface; the modal itself
+  // re-checks via the backend (founder-gated endpoint) so a stray click
+  // from a future client lens variant won't get past the API.
+  const [showSendIntake, setShowSendIntake] = useState(false);
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -241,6 +245,11 @@ export function ConsultingProjectModal({
     </span>
   ) : undefined;
 
+  // F4 — Show "Send Intake" only for founder viewer + when we have a real
+  // loaded project to bind the submission to. Disabled for internal projects
+  // (no client to email) — the picker would have no recipient.
+  const canSendIntake = viewerRole === "founder" && !!project && (!!project.client_email || !!project.client_name);
+
   return (
     <IadmModal
       open={open}
@@ -250,6 +259,25 @@ export function ConsultingProjectModal({
       title={project?.name || (loading ? "Loading…" : "Project")}
       subtitle={headerSubtitle}
       size="info"
+      headerActions={
+        viewerRole === "founder" && project ? (
+          <button
+            type="button"
+            onClick={() => setShowSendIntake(true)}
+            disabled={!canSendIntake}
+            title={
+              canSendIntake
+                ? "Pick an intake template and email the client a link"
+                : "Add a client contact to enable Send Intake"
+            }
+            className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ background: "#FEC82C", color: "#1A3A4A" }}
+          >
+            <Send className="h-3.5 w-3.5" />
+            Send Intake
+          </button>
+        ) : undefined
+      }
     >
       <div className="flex h-full flex-col">
         {/* Tab strip — Overview + Milestones live; the rest are disabled
@@ -301,6 +329,221 @@ export function ConsultingProjectModal({
             />
           )}
         </div>
+      </div>
+
+      {/* F4 — Send Intake nested modal. Mounted INSIDE the IadmModal body so
+          the founder doesn't lose project context while picking a template.
+          The nested IadmModal renders above its parent via fixed positioning
+          (see IadmModal's overlay z-index). */}
+      {showSendIntake && project && (
+        <SendIntakeModal
+          projectId={project.project_id}
+          clientName={project.client_name || null}
+          clientEmail={project.client_email || null}
+          onClose={() => setShowSendIntake(false)}
+          onSent={() => {
+            setShowSendIntake(false);
+            void load();
+            onChanged?.();
+          }}
+        />
+      )}
+    </IadmModal>
+  );
+}
+
+// ─── SendIntakeModal — F4 ────────────────────────────────────────────────
+// Founder picks an intake template + confirms recipient email → backend
+// creates a consulting.intake_submission row, sends a SPARK automation
+// email with the /app/consulting/intake/:submissionId link, and returns
+// the new submission_id for the project's deliverable list.
+//
+// Endpoints (F4 backend):
+//   GET  /consulting/document-templates?kind=intake  → picker list
+//   POST /consulting/projects/:id/intake-submissions  → create submission
+//          body: { template_id, send_email: true, recipient_email?, message? }
+
+interface IntakeTemplatePickerRow {
+  template_id: string;
+  slug: string;
+  scope: "system" | "founder" | "per_tenant";
+  name: string;
+  description?: string | null;
+  version: number;
+}
+
+function SendIntakeModal({
+  projectId, clientName, clientEmail, onClose, onSent,
+}: {
+  projectId: string;
+  clientName: string | null;
+  clientEmail: string | null;
+  onClose: () => void;
+  onSent: () => void;
+}) {
+  const { get, post } = useOliverApi();
+
+  const [templates, setTemplates] = useState<IntakeTemplatePickerRow[]>([]);
+  const [templateId, setTemplateId] = useState<string>("");
+  const [recipientEmail, setRecipientEmail] = useState<string>(clientEmail || "");
+  const [message, setMessage] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    get<{ templates: IntakeTemplatePickerRow[] }>("/consulting/document-templates?kind=intake")
+      .then((r) => {
+        if (cancelled) return;
+        const list = Array.isArray(r?.templates) ? r.templates : [];
+        setTemplates(list);
+        if (list.length > 0) setTemplateId(list[0].template_id);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        const msg = (e as Error).message || "Could not load intake templates";
+        if (/404|not.?found/i.test(msg)) {
+          setError("Intake templates API not deployed yet — coming with the F4 backend.");
+        } else {
+          setError(msg);
+        }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [get]);
+
+  async function handleSend() {
+    if (!templateId) { setError("Pick a template."); return; }
+    if (!recipientEmail.trim()) { setError("Recipient email is required."); return; }
+    setSending(true);
+    setError(null);
+    try {
+      await post(`/consulting/projects/${projectId}/intake-submissions`, {
+        template_id: templateId,
+        send_email: true,
+        recipient_email: recipientEmail.trim(),
+        message: message.trim() || null,
+      });
+      onSent();
+    } catch (e) {
+      const msg = (e as Error).message || "Send failed";
+      if (/404|not.?found/i.test(msg)) {
+        setError("Send-intake endpoint not deployed yet — submission record will create once the F4 backend ships.");
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const selectedTemplate = templates.find((t) => t.template_id === templateId) || null;
+
+  return (
+    <IadmModal
+      open
+      onClose={onClose}
+      product="oliver"
+      eyebrow="SEND INTAKE"
+      title="Send an intake form"
+      subtitle={
+        <span className="text-xs">
+          Pick a template, confirm the recipient, and we'll email the client a link to fill it out.
+        </span>
+      }
+      size="info"
+      footer={
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded border border-slate-300 text-xs font-semibold text-slate-700 bg-white"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={sending || !templateId || !recipientEmail.trim()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white disabled:opacity-50"
+            style={{ background: CORE_BLUE }}
+          >
+            <Send className="h-3.5 w-3.5" />
+            {sending ? "Sending…" : "Create & email link"}
+          </button>
+        </div>
+      }
+    >
+      <div className="px-5 py-4 space-y-4 overflow-y-auto">
+        {error && (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 inline-flex items-center gap-1.5">
+            <AlertCircle className="h-3.5 w-3.5" /> {error}
+          </div>
+        )}
+
+        <div>
+          <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+            Template
+          </label>
+          {loading ? (
+            <div className="text-xs text-slate-500 italic">Loading intake templates…</div>
+          ) : templates.length === 0 ? (
+            <div className="text-xs text-slate-500 italic">
+              No intake templates yet — build one in <strong>Consulting · Document Library</strong>.
+            </div>
+          ) : (
+            <select
+              value={templateId}
+              onChange={(e) => setTemplateId(e.target.value)}
+              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm bg-white"
+            >
+              {templates.map((t) => (
+                <option key={t.template_id} value={t.template_id}>
+                  {t.name} {t.scope === "system" ? "(system)" : ""} · v{t.version}
+                </option>
+              ))}
+            </select>
+          )}
+          {selectedTemplate?.description && (
+            <p className="text-[11px] text-slate-500 mt-1">{selectedTemplate.description}</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+            Recipient email
+          </label>
+          <input
+            type="email"
+            value={recipientEmail}
+            onChange={(e) => setRecipientEmail(e.target.value)}
+            placeholder={clientName ? `${clientName}'s email` : "client@example.com"}
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+          />
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            We'll send a short SPARK email with a link to <code>/app/consulting/intake/&lt;submission&gt;</code>.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+            Personal note (optional)
+          </label>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            rows={3}
+            placeholder="Hi Angel — please fill this out before our next call. — Brandon"
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+          />
+        </div>
+
+        <p className="text-[10px] italic text-slate-500">
+          A snapshot will be filed to the project's Deliverables tab after the client submits.
+        </p>
       </div>
     </IadmModal>
   );

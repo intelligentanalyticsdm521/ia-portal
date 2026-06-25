@@ -484,6 +484,10 @@ const CONSULTING_NAV: SubNavConfig = {
         { key: "consulting_projects_v2",       label: "Projects",          route: "/app/services/consulting_projects_v2" },
         { key: "consulting_project_workspace", label: "Project Workspace", route: "/app/services/consulting_project_workspace" },
         { key: "consulting_deliverables",      label: "Deliverables",      route: "/app/services/consulting_deliverables" },
+        // F4 (Consulting Rework 2026-06-25) — founder-only library of intake +
+        // proposal + report + scope-of-work + custom templates. Hidden for
+        // non-founder users via CONSULTING_FOUNDER_ONLY in AppShell.tsx.
+        { key: "consulting_documents",         label: "Document Library",  route: "/app/services/consulting_documents" },
       ],
     },
     {

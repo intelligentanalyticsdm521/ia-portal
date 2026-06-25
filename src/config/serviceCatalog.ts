@@ -374,6 +374,11 @@ export const SERVICE_CATALOG: PortalService[] = [
   // endpoints still pending — page renders empty/pending banner gracefully.
   { key: 'consulting_project_workspace', displayName: 'Project Workspace', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_project_workspace', description: 'Drill into a project to see the full Phase → Feature → Task tree. Read-only v0 of the 4-tier consulting hierarchy.' },
   { key: 'consulting_deliverables', displayName: 'Deliverables', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_deliverables', description: 'Unified artifact library — logos, code, copy, designs. Tagged by Build Your Series. Sourced from Projects + standalone uploads.' },
+  // F4 (Consulting Rework 2026-06-25) — Document Library (founder-only).
+  // Templates for intake forms (scored question schemas) + proposal / report
+  // / scope_of_work / custom (markdown bodies with merge tags). The nav
+  // entry is filtered out for non-founder users via CONSULTING_FOUNDER_ONLY.
+  { key: 'consulting_documents', displayName: 'Document Library', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_documents', description: 'Founder-only library of intake form + proposal + report + scope-of-work + custom templates. Drag-drop intake builder with scoring; rich-text editor with merge-tag autocomplete for the rest.' },
 
   // MY_BRAND entries REMOVED 2026-06-22 — top-level My Brand slot was a
   // premature Wave-2 add for the Q4 2026 deferred product. Removing the

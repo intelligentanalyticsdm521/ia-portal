@@ -42,6 +42,11 @@ const CONSULTING_FOUNDER_ONLY = new Set<string>([
   // founder-gated /consulting/projects + /consulting/categories endpoints.
   // Non-founders would see 403s, so hide the nav link entirely.
   "consulting_projects_v2",
+  // F4 (Consulting Rework 2026-06-25) — Document Library is founder-only.
+  // Client viewers never need to see template definitions — they only ever
+  // see the rendered intake form at /app/consulting/intake/:id, which is
+  // gated separately by submission_id ownership.
+  "consulting_documents",
 ]);
 
 function applyConsultingNavFilter(

@@ -73,6 +73,12 @@ import { SiteProvisioningStatus } from './pages/sites/SiteProvisioningStatus';
 // param that doesn't fit ServiceRouter's /services/:serviceKey shape.
 import { ConsultingTenantWorkspacePage } from './pages/consulting/ConsultingTenantWorkspacePage';
 
+// F4 (Consulting Rework 2026-06-25) — Client-facing intake form player.
+// Lives outside the service-key router because it carries a :submissionId
+// path param. Client lands here from a SPARK email link after the founder
+// hits "Send Intake" on a project.
+import { ConsultingIntakeFormPage } from './pages/consulting/ConsultingIntakeFormPage';
+
 /** Redirect that preserves the original query string + hash. Used for the
  *  /signup → /pricing 301-style redirects so Stripe Checkout completion
  *  links like /signup/onboarding?session_id=cs_test_… still land on the
@@ -205,6 +211,14 @@ export function App() {
             <Route
               path="services/consulting/tenant-workspace/:tenantId"
               element={<ConsultingTenantWorkspacePage />}
+            />
+
+            {/* F4 (Consulting Rework 2026-06-25) — client-facing intake form
+                player. URL: /app/consulting/intake/:submissionId. Outside the
+                /services/:serviceKey router because it carries a path param. */}
+            <Route
+              path="consulting/intake/:submissionId"
+              element={<ConsultingIntakeFormPage />}
             />
 
             {/* All feature-specific pages routed by service key */}

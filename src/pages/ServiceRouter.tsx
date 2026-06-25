@@ -307,6 +307,8 @@ const ConsultingProjectsBoardPage = lazyNamed(() => import('./consulting/Consult
 const ConsultingProjectsPage = lazyNamed(() => import('./consulting/ConsultingProjectsPage'), 'ConsultingProjectsPage');
 const ConsultingProjectWorkspacePage = lazyNamed(() => import('./consulting/ConsultingProjectWorkspacePage'), 'ConsultingProjectWorkspacePage');
 const ConsultingDeliverablesPage = lazyNamed(() => import('./consulting/ConsultingDeliverablesPage'), 'ConsultingDeliverablesPage');
+// F4 (Consulting Rework 2026-06-25) — Document Library (founder-only).
+const ConsultingDocumentLibraryPage = lazyNamed(() => import('./consulting/ConsultingDocumentLibraryPage'), 'ConsultingDocumentLibraryPage');
 
 // MY BRAND lazy imports live in the consolidated block near the top of
 // this file (the "MY BRAND pages — wave-2 lazy imports" section just below
@@ -670,6 +672,8 @@ export function ServiceRouter() {
       // still pending; page renders a clear inline banner if missing.
       case 'consulting_project_workspace': consultingPage = <ConsultingProjectWorkspacePage />; break;
       case 'consulting_deliverables':     consultingPage = <ConsultingDeliverablesPage />; break;
+      // F4 (Consulting Rework 2026-06-25) — Document Library (founder-only).
+      case 'consulting_documents':        consultingPage = <ConsultingDocumentLibraryPage />; break;
       case 'consulting_calendar':         consultingPage = <ConsultingCalendarPage />; break;
       case 'consulting_onboard_client':   consultingPage = <ConsultingOnboardClientPage />; break;
       case 'consulting_workspace':        consultingPage = <ConsultingClientsPage />; break;
