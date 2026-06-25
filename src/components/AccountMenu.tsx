@@ -12,6 +12,7 @@ import {
   DatabaseZap,
   ChevronRight,
   Palette,
+  Sparkles,
 } from 'lucide-react';
 
 /**
@@ -94,6 +95,7 @@ export function AccountMenu({
           <MenuSection label="My account">
             <MenuItem to="/app/account" icon={<User className="h-4 w-4" />} label="Profile & Personal Info" onClick={close} />
             <MenuItem to="/app/account" icon={<Bell className="h-4 w-4" />} label="Notification Preferences" onClick={close} />
+            <MenuItem to="/app/settings/tours" icon={<Sparkles className="h-4 w-4" />} label="Tours & Walkthroughs" onClick={close} />
           </MenuSection>
 
           {/* Business — applies to whole organization */}

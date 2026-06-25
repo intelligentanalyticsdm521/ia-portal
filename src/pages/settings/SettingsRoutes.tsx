@@ -173,6 +173,13 @@ const SETTINGS_TILES: Array<{
       { to: '/app/settings/data-privacy', label: 'Data & Privacy', description: 'Export + retention policy' },
     ],
   },
+  {
+    group: 'Help',
+    items: [
+      { to: '/app/settings/tours', label: 'Tours & Walkthroughs', description: 'Replay any of the 6 product tours — Guided or Walkthrough per product.' },
+      { to: '/app/settings/walkthroughs', label: 'All Walkthroughs', description: 'Full library of every walkthrough across all products.' },
+    ],
+  },
 ];
 
 export function SettingsHubPage() {

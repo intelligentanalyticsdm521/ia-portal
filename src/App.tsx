@@ -51,6 +51,7 @@ import SparkCustomerFlowPage from './pages/spark/SparkCustomerFlowPage';
 import SparkLifecyclePage from './pages/spark/SparkLifecyclePage';
 import SparkSyncIssuesPage from './pages/spark/SparkSyncIssuesPage';
 import WalkthroughsPage from './pages/settings/WalkthroughsPage';
+import SettingsToursPage from './pages/settings/SettingsToursPage';
 
 // Platform admin: team access (role + product gating)
 import { PlatformTeamAccess } from './pages/settings/PlatformTeamAccess';
@@ -148,6 +149,7 @@ export function App() {
             <Route path="settings/integrations" element={<IntegrationsSettingsPage />} />
             <Route path="settings/notifications" element={<NotificationsSettingsPage />} />
             <Route path="settings/walkthroughs" element={<WalkthroughsPage />} />
+            <Route path="settings/tours" element={<SettingsToursPage />} />
             <Route path="settings/security" element={<SecuritySettingsPage />} />
             <Route path="settings/data-privacy" element={<DataPrivacySettingsPage />} />
             <Route path="settings/argus-data-plan" element={<ArgusDataPlanPage />} />
