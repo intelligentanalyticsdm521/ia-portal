@@ -1,5 +1,5 @@
 import { emergencyActAsHeaders } from './emergencyActAs';
-import { getViewAsTenantId, viewAsTenantHeaders } from './viewAsTenant';
+import { getCurrentTenantOverride } from './tenantContext';
 
 export type SetupMode = 'ARION_AUTO_SETUP' | 'EXISTING_INTEGRATION';
 
@@ -265,7 +265,7 @@ async function requestJson<T>(params: {
   // View-as override: if the founder is viewing a client, route the call to
   // that tenant regardless of the tenantId the caller computed. Backend will
   // 403 non-GETs because of the view-as header below.
-  const viewAsTid = getViewAsTenantId();
+  const viewAsTid = getCurrentTenantOverride();
   const effectiveTenantId = viewAsTid && viewAsTid.trim() ? viewAsTid.trim() : params.tenantId;
   const res = await fetchWithTimeout(url, {
     method: params.method || 'GET',
@@ -278,10 +278,6 @@ async function requestJson<T>(params: {
       // (TODO — see followups) will be able to 403 non-GET mutations against
       // arion routes. For oliver-api the middleware is already in place.
       ...emergencyActAsHeaders(),
-      // View-as headers — present only while the founder is viewing a client's
-      // portal read-only. Backend enforceViewAsReadOnly 403s any non-GET in
-      // arion routes while these are set. No-op for everyone else.
-      ...viewAsTenantHeaders(),
     },
     body: params.body === undefined ? undefined : JSON.stringify(params.body)
   }, params.timeoutMs || defaultTimeout);
@@ -1453,10 +1449,11 @@ export async function submitConsultingInquiry(params: { baseUrl: string; bearerT
   return requestJson<any>({ ...params, method: 'POST', path: `/arion/sites/${encodeURIComponent(params.siteId)}/consulting-inquiry`, body: { service_type: params.serviceType, description: params.description, trigger_page: params.triggerPage, contact_pref: params.contactPref || 'email' } });
 }
 
-export async function getGoogleProperties(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
-  return requestJson<{ data: { ga4Properties: Array<{ propertyId: string; displayName: string; account: string }>; gscSites: Array<{ siteUrl: string; permissionLevel: string }>; currentGa4PropertyId: string | null } }>({
+export async function getGoogleProperties(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; showAll?: boolean }) {
+  const qs = params.showAll ? `&showAll=1` : '';
+  return requestJson<{ data: { ga4Properties: Array<{ propertyId: string; displayName: string; account: string }>; gscSites: Array<{ siteUrl: string; permissionLevel: string }>; ga4Properties_total?: number; gscSites_total?: number; domain_filter_active?: boolean; site_domain?: string | null; no_matching_properties?: boolean; can_auto_provision?: boolean; currentGa4PropertyId: string | null; currentGscSiteUrl?: string | null } }>({
     ...params,
-    path: `/arion/integrations/google/properties?siteId=${encodeURIComponent(params.siteId)}`
+    path: `/arion/integrations/google/properties?siteId=${encodeURIComponent(params.siteId)}${qs}`
   });
 }
 
@@ -1466,6 +1463,15 @@ export async function selectGoogleProperties(params: { baseUrl: string; bearerTo
     method: 'POST',
     path: '/arion/integrations/google/select',
     body: { siteId: params.siteId, ga4PropertyId: params.ga4PropertyId, gscSiteUrl: params.gscSiteUrl }
+  });
+}
+
+export async function autoProvisionGoogle(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; businessName?: string; contactEmail?: string }) {
+  return requestJson<{ data: { summary?: string; ga4_property_id?: string; gsc_site_url?: string; gbp_place_id?: string } }>({
+    ...params,
+    method: 'POST',
+    path: `/onboarding/google-oauth/auto-provision`,
+    body: { tenant_id: params.tenantId, site_id: params.siteId, business_name: params.businessName, contact_email: params.contactEmail },
   });
 }
 
