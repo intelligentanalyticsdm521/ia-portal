@@ -34,8 +34,8 @@ function withBusinessProfileBanner(page: React.ReactNode) {
   return (
     <>
       <ComingSoonBanner
-        feature="Business Profile"
-        detail="The Business Profile section is being rebuilt with auto-provisioning. Existing GBP data still flows for connected sites, but management tools land in our next release."
+        feature="Business Profile is coming soon"
+        detail="We're putting the finishing touches on Business Profile management. Your live Google Business Profile is still working — we'll let you know as soon as these tools are ready."
       />
       {page}
     </>
@@ -52,9 +52,8 @@ function withInsightsComingSoon(page: React.ReactNode) {
   return (
     <>
       <ComingSoonBanner
-        feature="IA Insights"
-        detail="We're rebuilding the scoring model so it grades fairly. No tenant has the 30+ days of data needed for accurate scores yet, and the model is in audit."
-        eta="EOM July 2026"
+        feature="Your IA Insights are collecting data"
+        detail="Once we have 30 days of activity for your business, your insights will be available here. We'll let you know as soon as they're ready."
       />
       {page}
     </>

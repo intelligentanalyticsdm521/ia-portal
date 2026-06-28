@@ -49,9 +49,9 @@ export function IAInsightsHeader({ data, mode = "product", activeProducts }: Pro
           <Sparkles className="h-4 w-4" />
         </div>
         <div className="text-sm text-amber-900">
-          <div className="font-semibold text-base">IA Insights — Coming Soon</div>
+          <div className="font-semibold text-base">Your IA Insights are collecting data</div>
           <div className="mt-1 text-xs text-amber-800 leading-relaxed max-w-2xl">
-            We're rebuilding our scoring model so it grades fairly. Right now, no tenant has the 30+ days of production data needed for accurate Platform / Trend / Intelligence scores, and the model is in audit. Expected: <strong>End of July 2026</strong>. Until then, the underlying GA4 / GSC / CRM / OLIVER data still flows — only the aggregate scores are paused.
+            Once we have 30 days of activity for your business, your insights will be available here. We'll let you know as soon as they're ready.
           </div>
         </div>
       </div>
