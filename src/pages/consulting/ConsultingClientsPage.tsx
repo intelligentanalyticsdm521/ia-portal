@@ -28,6 +28,7 @@ interface ClientRow {
   state_province?: string | null;
   created_at?: string;
   onboarding_completed_at?: string | null;
+  has_byb_subscription?: boolean;
 }
 
 // F-Founder.1 (defect 4.07 / 4.12) — surface clients with active or
@@ -112,12 +113,14 @@ export default function ConsultingClientsPage() {
     const q = filter.trim().toLowerCase();
     return rows
       .filter((r) => r.onboarding_completed_at || r.stripe_subscription_id)
-      // 4.07 — keep only clients with at least one current (active OR
-      // within-30d-of-completion) project. Without a project they don't
-      // belong on the Clients nav per Brandon's scope.
+      // Brandon 2026-06-28: surface client if EITHER has an open project
+      // (active OR completed within 30 days) OR has an active Build Your
+      // Brand subscription.
       .filter((r) => {
         const ps = projectsByClient.get((r.tenant_id || "").toLowerCase()) || [];
-        return ps.some(projectIsCurrent);
+        if (ps.some(projectIsCurrent)) return true;
+        if (r.has_byb_subscription) return true;
+        return false;
       })
       .filter((r) => !q || (r.business_name || "").toLowerCase().includes(q) || (r.contact_email || "").toLowerCase().includes(q))
       .sort((a, b) => (a.business_name || "").localeCompare(b.business_name || ""));
