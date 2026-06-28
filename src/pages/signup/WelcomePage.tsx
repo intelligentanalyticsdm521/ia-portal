@@ -17,7 +17,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
-type Status = 'loading' | 'success' | 'used' | 'invalid' | 'error';
+type Status = 'loading' | 'success' | 'used' | 'expired' | 'invalid' | 'error';
+type ResendStatus = 'idle' | 'sending' | 'sent' | 'rate_limited' | 'failed';
 
 export function WelcomePage() {
   const [params] = useSearchParams();
@@ -25,6 +26,13 @@ export function WelcomePage() {
   const [status, setStatus] = useState<Status>('loading');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [site, setSite] = useState<{ domain?: string; wp_admin_url?: string } | null>(null);
+  // 2026-06-27 — Resend-verification flow state. When activate.js returns
+  // 409 TOKEN_EXPIRED + can_resend, the page surfaces a "Send me a new link"
+  // button that POSTs the same (email, tenant_id, expired_token) to
+  // /onboarding/activate/resend. The endpoint rotates the stored hash and
+  // sends a fresh 48h activation email.
+  const [resendStatus, setResendStatus] = useState<ResendStatus>('idle');
+  const [resendRetryAfter, setResendRetryAfter] = useState<number | null>(null);
 
   const email = params.get('email') || '';
   const setupToken = params.get('setup_token') || '';
@@ -96,7 +104,16 @@ export function WelcomePage() {
             }
           }, 1800);
         } else if (res.status === 409) {
-          setStatus('used');
+          // 2026-06-27 — Two flavors of 409: TOKEN_ALREADY_USED (just "sign
+          // in") and TOKEN_EXPIRED with `can_resend: true` (mint new token).
+          // The server flagged can_resend; surface the resend UI instead of
+          // the dead-end "already used" message.
+          const code = body?.error?.code || '';
+          if (code === 'TOKEN_EXPIRED' && body?.error?.can_resend) {
+            setStatus('expired');
+          } else {
+            setStatus('used');
+          }
         } else if (res.status === 404 || res.status === 422) {
           setStatus('invalid');
           setErrorMsg(body?.error?.code || `HTTP ${res.status}`);
@@ -166,6 +183,73 @@ export function WelcomePage() {
             >
               Sign in
             </a>
+          </>
+        )}
+
+        {status === 'expired' && (
+          <>
+            {resendStatus === 'sent' ? (
+              <p className="text-sm text-slate-600">
+                We just sent a fresh activation link to your inbox. It's good
+                for the next 48 hours. You can close this tab.
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-slate-600 mb-4">
+                  This activation link expired. Activation links are good for
+                  48 hours after we send them. Send yourself a fresh one and
+                  we'll keep going from there.
+                </p>
+                {resendStatus === 'failed' && (
+                  <p className="text-xs text-rose-600 mb-3">
+                    We couldn't send a new link just now. Please try again, or
+                    email{' '}
+                    <a href="mailto:support@intelligentanalyticsdm.com" className="underline">support</a>.
+                  </p>
+                )}
+                {resendStatus === 'rate_limited' && (
+                  <p className="text-xs text-amber-600 mb-3">
+                    Too many resend attempts. Try again in{' '}
+                    {resendRetryAfter ? `${Math.ceil(resendRetryAfter / 60)} min` : 'a bit'}.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  disabled={resendStatus === 'sending'}
+                  onClick={async () => {
+                    setResendStatus('sending');
+                    setResendRetryAfter(null);
+                    try {
+                      const baseUrl = (import.meta.env.VITE_ARION_API_BASE_URL as string)?.replace(/\/$/, '')
+                        || 'https://app-arion-api-prod-e6fuc9gzd8f3hqfe.centralus-01.azurewebsites.net';
+                      const r = await fetch(`${baseUrl}/onboarding/activate/resend`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          email,
+                          tenant_id: tenantId,
+                          expired_token: setupToken,
+                        }),
+                      });
+                      const b = await r.json().catch(() => ({}));
+                      if (r.status === 200 && b.ok) {
+                        setResendStatus('sent');
+                      } else if (r.status === 429) {
+                        setResendStatus('rate_limited');
+                        setResendRetryAfter(Number(b?.retry_after_seconds) || null);
+                      } else {
+                        setResendStatus('failed');
+                      }
+                    } catch {
+                      setResendStatus('failed');
+                    }
+                  }}
+                  className="inline-block bg-iadm-gold text-iadm-ink rounded-lg px-6 py-2.5 font-medium hover:opacity-90 disabled:opacity-60"
+                >
+                  {resendStatus === 'sending' ? 'Sending…' : 'Send me a new link'}
+                </button>
+              </>
+            )}
           </>
         )}
 
