@@ -87,6 +87,94 @@ interface IntakeSubmissionStub {
   score_total: number | null;
 }
 
+// F-Shared.1 / defect 4.08 — minimal inline action panel for client review.
+// Lives in this file (not a separate component) per "simpler is better" rule.
+// Surfaces approve / request-revisions for SUBMITTED ticket deliverables.
+// Backend gates by client_tenant_id so non-clients silently 404.
+function DeliverableActions({ deliverableId, onChanged }: { deliverableId: string; onChanged: () => void }) {
+  const { post } = useOliverApi();
+  const [busy, setBusy] = useState(false);
+  const [revOpen, setRevOpen] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const approve = async () => {
+    setBusy(true); setError(null);
+    try {
+      await post(`/deliverables/${deliverableId}/approve`, {});
+      onChanged();
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  const submitRevisions = async () => {
+    if (!notes.trim()) { setError("Please tell us what to change"); return; }
+    setBusy(true); setError(null);
+    try {
+      await post(`/deliverables/${deliverableId}/request-revisions`, { notes: notes.trim() });
+      setRevOpen(false); setNotes("");
+      onChanged();
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  if (revOpen) {
+    return (
+      <div className="mt-2 rounded-lg bg-amber-50 border border-amber-200 p-2 space-y-1">
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="What needs to change?"
+          className="w-full text-xs rounded border border-amber-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-500"
+          rows={3}
+          disabled={busy}
+        />
+        {error && <div className="text-[11px] text-red-600">{error}</div>}
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={submitRevisions}
+            disabled={busy}
+            className="flex-1 text-[11px] font-bold px-2 py-1 rounded bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
+          >
+            {busy ? "Sending…" : "Send revisions"}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setRevOpen(false); setNotes(""); setError(null); }}
+            disabled={busy}
+            className="text-[11px] px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-100"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 flex gap-1">
+      <button
+        type="button"
+        onClick={approve}
+        disabled={busy}
+        className="flex-1 text-[11px] font-bold px-2 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+      >
+        {busy ? "…" : "Approve"}
+      </button>
+      <button
+        type="button"
+        onClick={() => setRevOpen(true)}
+        disabled={busy}
+        className="flex-1 text-[11px] font-bold px-2 py-1 rounded bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
+      >
+        Request revisions
+      </button>
+      {error && <div className="text-[11px] text-red-600">{error}</div>}
+    </div>
+  );
+}
+
 export function ConsultingDeliverablesPage() {
   const { get, ready } = useOliverApi();
   const [items, setItems] = useState<CrossDeliverable[]>([]);
@@ -408,6 +496,11 @@ export function ConsultingDeliverablesPage() {
                       Go to {isTicket ? "request" : "workspace"} →
                     </a>
                   </div>
+
+                  {/* defect 4.08 — client-side approve/revise on submitted ticket deliverables */}
+                  {isTicket && d.status === "submitted" && (
+                    <DeliverableActions deliverableId={d.deliverable_id} onChanged={load} />
+                  )}
 
                   <div className="mt-2 text-[10px] text-slate-400">
                     {d.created_at
