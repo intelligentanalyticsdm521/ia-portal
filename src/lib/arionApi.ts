@@ -1466,8 +1466,18 @@ export async function selectGoogleProperties(params: { baseUrl: string; bearerTo
   });
 }
 
+export interface AutoProvisionSubResult { ok: boolean; error?: string; property_id?: string; site_url?: string; location_name?: string; verification_pending?: boolean }
+export interface AutoProvisionResponse {
+  data: {
+    mode: 'ia_managed';
+    provision: { configured: boolean; ga4: AutoProvisionSubResult; gsc: AutoProvisionSubResult; gbp: AutoProvisionSubResult };
+    transfer: { configured?: boolean; ga4: AutoProvisionSubResult; gsc: AutoProvisionSubResult; gbp: AutoProvisionSubResult };
+    ownership_transferred: boolean;
+    warnings: string[];
+  };
+}
 export async function autoProvisionGoogle(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; businessName?: string; contactEmail?: string }) {
-  return requestJson<{ data: { summary?: string; ga4_property_id?: string; gsc_site_url?: string; gbp_place_id?: string } }>({
+  return requestJson<AutoProvisionResponse>({
     ...params,
     method: 'POST',
     path: `/onboarding/google-oauth/auto-provision`,

@@ -1250,7 +1250,21 @@ function GbpIntegrationCard({ siteId, gaConnected, gaConnecting, onConnectGoogle
     try {
       const token = await getToken();
       const { autoProvisionGoogle } = await import('../../lib/arionApi');
-      await autoProvisionGoogle({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+      const resp = await autoProvisionGoogle({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+      const p = resp?.data?.provision;
+      if (!p) {
+        setErrorMsg('Auto-provision returned an empty response.');
+      } else {
+        const fails: string[] = [];
+        if (!p.ga4?.ok) fails.push(`GA4: ${p.ga4?.error || 'failed'}`);
+        if (!p.gsc?.ok) fails.push(`GSC: ${p.gsc?.error || 'failed'}`);
+        if (!p.gbp?.ok) fails.push(`GBP: ${p.gbp?.error || 'failed'}`);
+        if (fails.length === 3) {
+          setErrorMsg(`Auto-provision failed for all three APIs:\n• ${fails.join('\n• ')}\n\nMost common cause: the IA master service account (id-ia-master-provisioner@iadm-arion-prod.iam.gserviceaccount.com) is not yet a member with create permission of your GA4 account / GBP business group.`);
+        } else if (fails.length > 0) {
+          setErrorMsg(`Partial provision — some sub-tasks failed:\n• ${fails.join('\n• ')}`);
+        }
+      }
       await loadPicker(false);
     } catch (err: any) {
       setErrorMsg(err?.message || 'Auto-provision failed');
