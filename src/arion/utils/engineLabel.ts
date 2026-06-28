@@ -6,12 +6,12 @@
 // so a raw numeric id never reaches the UI.
 
 export interface EngineLike {
-  engineLabel?: string;
-  label?: string;
-  longLabel?: string;
-  name?: string;
-  type?: string;
-  device?: string;
+  engineLabel?: string | null;
+  label?: string | null;
+  longLabel?: string | null;
+  name?: string | null;
+  type?: string | null;
+  device?: string | null;
 }
 
 export function canonicalEngineLabel(e: EngineLike | null | undefined): string {
