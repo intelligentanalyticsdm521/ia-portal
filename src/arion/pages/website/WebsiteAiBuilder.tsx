@@ -1,9 +1,27 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useArionContext } from '../../useArionContext';
 import { Card, Loading, EmptyPanel } from '../../components/Ui';
 import { AiBlockGenerator } from '../../components/AiBlockGenerator';
 import { AiPageAssembler } from '../../components/AiPageAssembler';
 import type { AiBlockKind } from '../../../lib/arionApi';
+import * as arionApi from '../../../lib/arionApi';
+import { useAppState } from '../../../app/AppState';
+import { useAccessToken } from '../../../auth/useAccessToken';
+
+// Cost-per-action mirrors lumen.argus_action_pricing (verified 2026-06-28).
+// Brandon-locked: AI Builder is included on all ARION tiers; only credit
+// balance gates each action. Block generation = 1 variant_explore call.
+// TODO F-Onb-D10: replace this hardcoded map with a GET /arion/ai-builder/pricing
+// endpoint so the canonical DB pricing is the source of truth.
+const ACTION_COSTS = {
+  element_rewrite: 1,
+  image_swap: 3,
+  variant_explore: 15,
+  page_add: 25,
+  copy_refresh: 50,
+} as const;
+const BLOCK_GEN_COST = ACTION_COSTS.variant_explore; // 15 credits per block
 
 /**
  * Website AI Builder — F-AI-WB Phase 1 (2026-06-20)
@@ -24,10 +42,32 @@ import type { AiBlockKind } from '../../../lib/arionApi';
  */
 export function WebsiteAiBuilder() {
   const { selectedSite, activeSiteId, loading } = useArionContext();
+  const { activeTenantId } = useAppState();
+  const { getToken } = useAccessToken();
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [generatorKind, setGeneratorKind] = useState<AiBlockKind | undefined>(undefined);
   const [assemblerOpen, setAssemblerOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [balance, setBalance] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!activeTenantId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const baseUrl = (import.meta.env.VITE_ARION_API_BASE_URL as string) || '';
+        const res = await arionApi.getArgusBalance({ baseUrl, bearerToken: token.accessToken, tenantId: activeTenantId });
+        if (!cancelled) {
+          const b = (res as any)?.balance ?? (res as any)?.data?.balance ?? null;
+          setBalance(typeof b === 'number' ? b : null);
+        }
+      } catch { /* leave null */ }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTenantId, getToken, refreshKey]);
+
+  const canAffordBlockGen = balance == null || balance >= BLOCK_GEN_COST;
 
   if (loading) return <Loading />;
   if (!selectedSite) return <EmptyPanel message="No site selected." />;
@@ -45,33 +85,57 @@ export function WebsiteAiBuilder() {
           padding: '14px 18px',
           borderRadius: 6,
           marginBottom: 16,
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
         }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase', letterSpacing: 0.6 }}>
-            Intelligence Layer · ARION IL
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24' }}>
+              Generate sections with AI, then publish them to your site
+            </div>
+            <div style={{ fontSize: 12, color: '#5A7A8A', marginTop: 4, maxWidth: 720 }}>
+              Pick a section type below. AI drafts three options using your brand
+              and industry. Accept the ones you like and publish to your site.
+            </div>
           </div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginTop: 4 }}>
-            Generate Elementor blocks with IL, then assemble them into a page
-          </div>
-          <div style={{ fontSize: 12, color: '#5A7A8A', marginTop: 4, maxWidth: 720 }}>
-            Pick a block kind (hero, services, testimonials, cta, about, faq,
-            gallery, contact). The Intelligence Layer drafts the section using
-            your site context. Accept the drafts you like, drag them into the
-            order you want, and ship to WordPress in one click.
+          {/* Credit balance pill */}
+          <div style={{
+            background: '#fff', border: '1px solid #CBD5E1',
+            borderRadius: 99, padding: '4px 12px',
+            display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+          }}>
+            <span style={{ fontSize: 11, color: '#5A7A8A', fontWeight: 500 }}>Credits</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: balance != null && balance < BLOCK_GEN_COST ? '#D85A30' : '#0B1C24' }}>
+              {balance == null ? '—' : balance.toLocaleString()}
+            </span>
+            <Link to="/app/services/arion_usage" style={{ fontSize: 11, color: '#2563eb', textDecoration: 'none', fontWeight: 600, marginLeft: 4 }}>
+              {balance != null && balance < BLOCK_GEN_COST ? 'Top up →' : 'Manage'}
+            </Link>
           </div>
         </div>
+
+        {/* Insufficient credits banner */}
+        {balance != null && balance < BLOCK_GEN_COST && (
+          <div style={{
+            background: '#FEF3C7', border: '1px solid #FCD34D',
+            borderRadius: 6, padding: '10px 14px', marginBottom: 14,
+            fontSize: 12, color: '#92400E',
+          }}>
+            You need at least <strong>{BLOCK_GEN_COST} credits</strong> to generate a new section. <Link to="/app/services/arion_usage" style={{ color: '#92400E', fontWeight: 700 }}>Top up your credits →</Link>
+          </div>
+        )}
 
         {/* Top actions */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
           <button
             onClick={() => openGeneratorForKind(undefined)}
-            style={primaryBtn}
-            disabled={!activeSiteId}
-          >Generate a block</button>
+            style={{ ...primaryBtn, opacity: (canAffordBlockGen && activeSiteId) ? 1 : 0.5, cursor: (canAffordBlockGen && activeSiteId) ? 'pointer' : 'not-allowed' }}
+            disabled={!activeSiteId || !canAffordBlockGen}
+            title={!canAffordBlockGen ? `Need ${BLOCK_GEN_COST} credits to generate` : ''}
+          >Generate a section · {BLOCK_GEN_COST} credits</button>
           <button
             onClick={() => setAssemblerOpen(true)}
             style={ghostBtn}
             disabled={!activeSiteId}
-          >Assemble accepted blocks → publish to WP</button>
+          >Publish accepted sections to my site (free)</button>
         </div>
 
         {/* Block kind quick-launch grid */}
@@ -85,19 +149,25 @@ export function WebsiteAiBuilder() {
               <button
                 key={b.kind}
                 onClick={() => openGeneratorForKind(b.kind)}
+                disabled={!canAffordBlockGen}
+                title={!canAffordBlockGen ? `Need ${BLOCK_GEN_COST} credits to generate` : ''}
                 style={{
                   textAlign: 'left',
                   background: '#fff',
                   border: '1px solid #E5EEF2',
                   borderRadius: 6,
                   padding: 12,
-                  cursor: 'pointer',
+                  cursor: canAffordBlockGen ? 'pointer' : 'not-allowed',
+                  opacity: canAffordBlockGen ? 1 : 0.55,
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 6,
                 }}
               >
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24' }}>{b.label}</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24' }}>{b.label}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', whiteSpace: 'nowrap' }}>{BLOCK_GEN_COST} credits</div>
+                </div>
                 <div style={{ fontSize: 11, color: '#5A7A8A', lineHeight: 1.4 }}>{b.description}</div>
               </button>
             ))}
