@@ -24,6 +24,7 @@ import {
 import { SeoDiagnosticPanel } from '../../components/SeoDiagnosticPanel';
 import { GlossaryIcon, GlossaryPanel } from '../../components/Glossary';
 import type { SeoRangeCode, SeoKeywordRecord, SeoRankingsResponse } from '../../../lib/arionApi';
+import { canonicalEngineLabel } from '../../utils/engineLabel';
 
 type SortKey = 'keyword' | 'currentPosition' | 'positionChange' | 'searchVolume' | 'cpc' | 'competition';
 
@@ -1114,7 +1115,7 @@ function SeoKeywordDetailModal({ siteId, keywordId, onClose }: { siteId: string;
                     <div key={e.engineId} style={{ border: '1px solid #eef2f5', borderRadius: 8, padding: '12px 16px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                         <div>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: '#0B1C24' }}>{e.engineLabel}</div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#0B1C24' }}>{canonicalEngineLabel(e)}</div>
                           <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 2 }}>
                             Ranked {e.rankingDays} of {e.rangeDays} days ({e.rankingDaysPct}%)
                           </div>
@@ -1130,7 +1131,7 @@ function SeoKeywordDetailModal({ siteId, keywordId, onClose }: { siteId: string;
                           )}
                         </div>
                       </div>
-                      <SeoPositionHistoryChart series={e.series} color={color} height={140} label={e.engineLabel} />
+                      <SeoPositionHistoryChart series={e.series} color={color} height={140} label={canonicalEngineLabel(e)} />
                     </div>
                   );
                 })}
@@ -1139,7 +1140,7 @@ function SeoKeywordDetailModal({ siteId, keywordId, onClose }: { siteId: string;
               {record.enginesNotRanking.length > 0 && (
                 <div style={{ marginTop: 16, background: '#FFF8E1', borderLeft: '3px solid #D4A800', borderRadius: 4, padding: '10px 14px' }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#0B1C24', marginBottom: 4 }}>Not ranking on</div>
-                  <div style={{ fontSize: 11, color: '#5A7A8A' }}>{record.enginesNotRanking.map((e) => e.engineLabel).join(' · ')}</div>
+                  <div style={{ fontSize: 11, color: '#5A7A8A' }}>{record.enginesNotRanking.map((e) => canonicalEngineLabel(e)).join(' · ')}</div>
                 </div>
               )}
             </>

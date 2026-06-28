@@ -31,6 +31,7 @@ import { useArionData } from '../../useArionData';
 import { AddonUpsell, EmptyPanel, Loading, ConsultingUpsell, ErrorBanner } from '../../components/Ui';
 import { SeoRangePicker, SeoStatCard, SeoFilterPills } from '../../components/SeoUi';
 import { GlossaryIcon } from '../../components/Glossary';
+import { canonicalEngineLabel } from '../../utils/engineLabel';
 import type {
   SeoRangeCode,
   SeoOverviewResponse,
@@ -242,7 +243,7 @@ export function SeoOverview() {
   // Engine toggle options (All + one per standard engine)
   const toggleOptions = [
     { value: 'all' as const, label: 'All' },
-    ...standardCards.map((c) => ({ value: c.engineId, label: c.label })),
+    ...standardCards.map((c) => ({ value: c.engineId, label: canonicalEngineLabel(c) })),
   ];
 
   return (
@@ -283,7 +284,7 @@ export function SeoOverview() {
           )
         ))}
         {extraStandard.map((c) => (
-          <EngineHeroCard key={c.engineId} card={c} accent="#2D9CDB" />
+          <EngineHeroCard key={c.engineId} card={c} accent="#2D9CDB" labelOverride={canonicalEngineLabel(c)} />
         ))}
       </div>
 
@@ -346,7 +347,7 @@ export function SeoOverview() {
       {/* Rankings widget */}
       <WidgetContainer
         title="Keyword Rankings"
-        subtitle={engineFilter === 'all' ? 'Averaged across all standard engines' : `Filtered: ${activeCard?.label ?? ''}`}
+        subtitle={engineFilter === 'all' ? 'Averaged across all standard engines' : `Filtered: ${canonicalEngineLabel(activeCard)}`}
         onSeeFull={() => navigate('/app/services/arion_seo_rankings')}
         seeFullLabel="See Full Rankings Summary"
       >
