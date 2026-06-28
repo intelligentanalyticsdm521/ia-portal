@@ -42,6 +42,25 @@ function withBusinessProfileBanner(page: React.ReactNode) {
   );
 }
 
+// IA Insights gated 2026-06-28 — entire stack behind Coming Soon pending model
+// audit (SCOPE_WORKING.md F-Onb-D8). No tenant has 30+ days of data; model is
+// mis-labeling Platform/Trend and producing math that doesn't reconcile.
+// Target re-enable: EOM July 2026. IAInsightsHeader itself short-circuits to
+// the same banner; this wrapper covers the page chrome so users see one
+// consistent message even if a sub-section forgets to render the header.
+function withInsightsComingSoon(page: React.ReactNode) {
+  return (
+    <>
+      <ComingSoonBanner
+        feature="IA Insights"
+        detail="We're rebuilding the scoring model so it grades fairly. No tenant has the 30+ days of data needed for accurate scores yet, and the model is in audit."
+        eta="EOM July 2026"
+      />
+      {page}
+    </>
+  );
+}
+
 // ARION pages — lazy-loaded; each becomes its own chunk
 const ArionOverviewPage = lazyNamed(() => import('./arion/ArionOverviewPage'), 'ArionOverviewPage');
 // ArionOnboardingPage removed 2026-06-17 — unified flow via UnifiedSetupCard on Command Center.
@@ -425,9 +444,9 @@ export function ServiceRouter() {
       case 'arion_business_apple_overview': arionPage = withBusinessProfileBanner(<BusinessAppleOverview />); break;
       case 'arion_brand': arionPage = <BrandPage />; break;
       // v5.x IA Insights architecture
-      case 'arion_ia_insights_health': arionPage = <ArionIAInsightsHealthPage />; break;
-      case 'arion_ia_insights_trends': arionPage = <ArionIAInsightsTrendsPage />; break;
-      case 'arion_ia_insights_intelligence': arionPage = <ArionIAInsightsIntelligencePage />; break;
+      case 'arion_ia_insights_health': arionPage = withInsightsComingSoon(<ArionIAInsightsHealthPage />); break;
+      case 'arion_ia_insights_trends': arionPage = withInsightsComingSoon(<ArionIAInsightsTrendsPage />); break;
+      case 'arion_ia_insights_intelligence': arionPage = withInsightsComingSoon(<ArionIAInsightsIntelligencePage />); break;
       case 'arion_service_area': arionPage = <ArionServiceAreaPage />; break;
       case 'arion_usage': arionPage = <ArionUsagePage service={service} status={status} />; break;
       case 'arion_plugin_provisioning': arionPage = <ArionPluginProvisioningPage service={service} status={status} />; break;
@@ -506,11 +525,11 @@ export function ServiceRouter() {
       case 'oliver_argus': oliverPage = <OliverArgusPage />; break;
       case 'oliver_payouts': oliverPage = <OliverPayoutsPage />; break;
       // v5.x IA Insights architecture
-      case 'oliver_ia_insights_health': oliverPage = <OliverIAInsightsHealthPage />; break;
-      case 'oliver_ia_insights_trends': oliverPage = <OliverIAInsightsTrendsPage />; break;
-      case 'oliver_ia_insights_intelligence': oliverPage = <OliverIAInsightsIntelligencePage />; break;
+      case 'oliver_ia_insights_health': oliverPage = withInsightsComingSoon(<OliverIAInsightsHealthPage />); break;
+      case 'oliver_ia_insights_trends': oliverPage = withInsightsComingSoon(<OliverIAInsightsTrendsPage />); break;
+      case 'oliver_ia_insights_intelligence': oliverPage = withInsightsComingSoon(<OliverIAInsightsIntelligencePage />); break;
       // ARGUS pages also routed via OLIVER section since ARGUS doesn't have its own section yet
-      case 'argus_ia_insights': oliverPage = <ArgusIAInsightsPage />; break;
+      case 'argus_ia_insights': oliverPage = withInsightsComingSoon(<ArgusIAInsightsPage />); break;
     }
     if (oliverPage) {
       return (
@@ -646,9 +665,9 @@ export function ServiceRouter() {
       // SparkWorkflowTriggersPage component retained for back-compat imports.
       case 'spark_config_backup': sparkPage = <SparkConfigBackupPage />; break;
       // v5.x IA Insights architecture
-      case 'spark_ia_insights_health': sparkPage = <SparkIAInsightsHealthPage />; break;
-      case 'spark_ia_insights_trends': sparkPage = <SparkIAInsightsTrendsPage />; break;
-      case 'spark_ia_insights_intelligence': sparkPage = <SparkIAInsightsIntelligencePage />; break;
+      case 'spark_ia_insights_health': sparkPage = withInsightsComingSoon(<SparkIAInsightsHealthPage />); break;
+      case 'spark_ia_insights_trends': sparkPage = withInsightsComingSoon(<SparkIAInsightsTrendsPage />); break;
+      case 'spark_ia_insights_intelligence': sparkPage = withInsightsComingSoon(<SparkIAInsightsIntelligencePage />); break;
       case 'spark_service_category': sparkPage = <SparkServiceCategoryPage />; break;
       case 'spark_form_builder': sparkPage = <SparkFormBuilderPage />; break;
       case 'spark_realtime_metrics': sparkPage = <SparkRealtimeMetricsPage />; break;

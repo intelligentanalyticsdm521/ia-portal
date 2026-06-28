@@ -32,7 +32,31 @@ interface Props {
   activeProducts?: Array<{ key: "arion" | "spark" | "oliver" | "stella"; active: boolean; score: number | null }>;
 }
 
+// Brandon-locked 2026-06-28 — gate ALL IA Insights surfaces behind Coming
+// Soon globally until model audit is complete. No tenant has 30+ days of
+// production data yet, and the existing scoring model is mis-labeling
+// Platform/Trend slots, showing prior scores for new tenants, and producing
+// math that doesn't match manual recalculation (see SCOPE_WORKING.md
+// F-Onb-D8). Target: EOM July 2026. Flip INSIGHTS_GLOBAL_GATE to false
+// after the model audit + fixes land.
+const INSIGHTS_GLOBAL_GATE = true;
+
 export function IAInsightsHeader({ data, mode = "product", activeProducts }: Props) {
+  if (INSIGHTS_GLOBAL_GATE) {
+    return (
+      <div className="rounded-lg border border-amber-300 bg-amber-50 p-5 mb-4 flex items-start gap-3">
+        <div className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-amber-200 text-amber-900">
+          <Sparkles className="h-4 w-4" />
+        </div>
+        <div className="text-sm text-amber-900">
+          <div className="font-semibold text-base">IA Insights — Coming Soon</div>
+          <div className="mt-1 text-xs text-amber-800 leading-relaxed max-w-2xl">
+            We're rebuilding our scoring model so it grades fairly. Right now, no tenant has the 30+ days of production data needed for accurate Platform / Trend / Intelligence scores, and the model is in audit. Expected: <strong>End of July 2026</strong>. Until then, the underlying GA4 / GSC / CRM / OLIVER data still flows — only the aggregate scores are paused.
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (!data) return <IAInsightsHeaderSkeleton />;
   const isArgus = mode === "argus";
 
