@@ -43,6 +43,11 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'arion_dashboard', displayName: 'Dashboard', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_dashboard', description: 'High-level ARION dashboard with website, hosting, SEO, and business profile status.' },
   { key: 'arion_website_overview', displayName: 'Website Overview', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_overview', description: 'Website health summary — uptime, WordPress version, plugin status, and quick actions.' },
   { key: 'arion_website_content', displayName: 'Website Content', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_content', description: 'Page and post content inventory with last-modified dates and publish status.' },
+  // F-AI-WB (re-added 2026-06-28) — catalog entry was lost during a scope flip;
+  // SubNav + ServiceRouter case were re-added but this entry was missed,
+  // causing the URL to render "Service not found". Scope: overnight-report/
+  // 38_AI_WEBSITE_BUILDER_v2_SCOPE.md + FEATURE_AI_BUILDER.md.
+  { key: 'arion_website_ai_builder', displayName: 'AI Builder', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_ai_builder', description: 'AI Website Builder — spend ARGUS Data Credits to generate pages, rewrite sections, generate media, or rebuild whole sites.' },
   { key: 'arion_website_content_seo_overview', displayName: 'Content SEO', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_content_seo_overview', description: 'Rank Math SEO coverage — per-page and per-post scores, focus keywords, schema, and top optimization opportunities.' },
   { key: 'arion_website_security_overview', displayName: 'Security Overview', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_security_overview', description: 'Wordfence scan results, threat level, and overall security posture.' },
   { key: 'arion_website_security_vulnerabilities', displayName: 'Security Vulnerabilities', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_security_vulnerabilities', description: 'Known plugin and theme vulnerabilities with severity and patch status.' },
