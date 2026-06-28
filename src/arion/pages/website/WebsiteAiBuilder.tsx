@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useArionContext } from '../../useArionContext';
-import { Card, Loading, EmptyPanel, TierGate } from '../../components/Ui';
+import { Card, Loading, EmptyPanel } from '../../components/Ui';
 import { AiBlockGenerator } from '../../components/AiBlockGenerator';
 import { AiPageAssembler } from '../../components/AiPageAssembler';
 import type { AiBlockKind } from '../../../lib/arionApi';
@@ -11,8 +11,10 @@ import type { AiBlockKind } from '../../../lib/arionApi';
  * Workspace page that surfaces the 8-emitter block generator + page
  * assembler. Lives under ARION → Website → AI Builder.
  *
- * Tier-gate: Pro+ (per locked memory — IL block generation is a Pro feature).
- * Lite/Standard see the section behind the standard TierGate overlay.
+ * Tier-gate REMOVED 2026-06-28 — Brandon clarified: included in ALL ARION
+ * tiers; only credit balance gates each action. If the user lacks credits to
+ * run an action, the emitter / page-assembler call returns an insufficient-
+ * credits response and the UI prompts them to top up.
  *
  * Phase 2+ TODO (see overnight-report):
  *   - Surface the per-section "Generate with IL" buttons on the live page
@@ -30,21 +32,13 @@ export function WebsiteAiBuilder() {
   if (loading) return <Loading />;
   if (!selectedSite) return <EmptyPanel message="No site selected." />;
 
-  const arionTier = (selectedSite.arionTier || 'lite') as string;
-
   function openGeneratorForKind(kind?: AiBlockKind) {
     setGeneratorKind(kind);
     setGeneratorOpen(true);
   }
 
   return (
-    <TierGate
-      currentTier={arionTier}
-      requiredTier="pro"
-      featureName="AI Website Builder"
-      planLabel="Pro plan required"
-    >
-      <div>
+    <div>
         <div style={{
           background: 'linear-gradient(to right, rgba(56,189,248,0.12), rgba(56,189,248,0.02))',
           border: '1px solid rgba(56,189,248,0.25)',
@@ -133,8 +127,7 @@ export function WebsiteAiBuilder() {
           onClose={() => setAssemblerOpen(false)}
           refreshKey={refreshKey}
         />
-      </div>
-    </TierGate>
+    </div>
   );
 }
 
