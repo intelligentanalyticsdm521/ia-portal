@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal, IadmButton } from "../IadmModal";
+import { PhoneInput } from "../PhoneInput";
 
 export interface ContactLite {
   id: number;
@@ -501,7 +502,8 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
                   <Field label="Email" value={contact.email} editing={editing} icon={Mail}
                     onChange={(v) => setDraft({ ...draft, email: v })} draft={draft.email} />
                   <Field label="Phone" value={contact.phone} editing={editing} icon={Phone}
-                    onChange={(v) => setDraft({ ...draft, phone: v })} draft={draft.phone} />
+                    onChange={(v) => setDraft({ ...draft, phone: v })} draft={draft.phone}
+                    as="phone" />
                   <Field label="Title" value={contact.title} editing={editing}
                     onChange={(v) => setDraft({ ...draft, title: v })} draft={draft.title} />
                 </div>
@@ -859,6 +861,7 @@ function Flag({ color, children }: { color: "rose" | "amber" | "emerald"; childr
 
 function Field({
   label, value, draft, editing, onChange, icon: Icon,
+  as,
 }: {
   label: string;
   value?: string | null;
@@ -866,16 +869,29 @@ function Field({
   editing: boolean;
   onChange: (v: string) => void;
   icon?: typeof Mail;
+  /** 2026-06-28 (#245) — render PhoneInput for phone fields so input
+      auto-formats to (XXX) XXX-XXXX as the user types. */
+  as?: "phone";
 }) {
+  const editingClassName =
+    "mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]";
   return (
     <div>
       <div className="text-[10px] uppercase text-slate-500 font-semibold">{label}</div>
       {editing ? (
-        <input
-          value={draft ?? ""}
-          onChange={(e) => onChange(e.target.value)}
-          className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
-        />
+        as === "phone" ? (
+          <PhoneInput
+            value={draft ?? ""}
+            onChange={(v) => onChange(v)}
+            className={editingClassName}
+          />
+        ) : (
+          <input
+            value={draft ?? ""}
+            onChange={(e) => onChange(e.target.value)}
+            className={editingClassName}
+          />
+        )
       ) : (
         <div className="mt-0.5 flex items-center gap-1 text-sm text-slate-900">
           {Icon && <Icon className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />}

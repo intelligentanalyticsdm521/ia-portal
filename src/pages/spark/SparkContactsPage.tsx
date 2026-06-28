@@ -18,6 +18,7 @@ import {
 // lifecycle_stage. Columns rendered from the tenant's lifecycle_preset
 // (simplified=3, moderate=5, advanced=10) via GET /api/v1/lifecycle/preset.
 import { SparkLifecycleKanban } from "../../components/spark/SparkLifecycleKanban";
+import { PhoneInput } from "../../components/PhoneInput";
 
 interface Contact {
   id: number;
@@ -604,7 +605,10 @@ export function SparkContactsPage() {
         </div>
         <div className="spark-field">
           <label className="spark-field-label">Phone</label>
-          <input type="tel" className="spark-field-input" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+          {/* 2026-06-28 (#245) drop bare input for shared PhoneInput so
+              "6414304320" formats to "(641) 430-4320" as the user types. */}
+          <PhoneInput className="spark-field-input" value={form.phone}
+            onChange={v => setForm({ ...form, phone: v })} />
         </div>
         <div className="spark-field">
           <label className="spark-field-label">Company</label>
