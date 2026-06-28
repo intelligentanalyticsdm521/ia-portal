@@ -6,7 +6,6 @@ import { IconRail, type ProductKey } from "./IconRail";
 import { SubNav, SUB_NAV_CONFIGS, SETTINGS_KEYS, type SubNavConfig } from "./SubNav";
 import { useOliverRole } from "../hooks/useOliverRole";
 import { useAppState } from "../app/AppState";
-import { useClientTenantIdOverride } from "../lib/clientTenantContext";
 import { ArgusChatbot } from "./argus/ArgusChatbot";
 import { EmergencyActAsBanner } from "./EmergencyActAsBanner";
 import { EmergencyActAsToast } from "./EmergencyActAsToast";
@@ -156,10 +155,13 @@ export function AppShell() {
   // emergency-access path keeps working.
   const isFounder = !!appState.bootstrap?.user?.isFounder;
   // 2026-06-28 (defect 4.03) — view-as override. When the founder is acting
-  // AS a client tenant (ViewAsTenantBanner is showing), hide founder-only
-  // nav items so the founder sees what the client sees. The JWT still says
-  // isFounder=true, but the active surface IS the client surface.
-  const actingAsClient = !!useClientTenantIdOverride();
+  // AS a client tenant via /c/:tenantId route, hide founder-only nav items
+  // so the founder sees what the client sees. Detect by URL pathname only
+  // — useClientTenantIdOverride() returns a value broader than just
+  // /c/:tenantId and was hiding founder items everywhere (regression
+  // 2026-06-28 evening: Projects + Clients + Documents disappeared from
+  // Brandon's own consulting nav in his IA tenant).
+  const actingAsClient = /^\/c\/[0-9a-f-]{8,}/i.test(location.pathname);
   const effectiveIsFounder = isFounder && !actingAsClient;
 
   const rawSubNavConfig =
