@@ -76,26 +76,34 @@ export function SeoRankings() {
   const engineMeta = r?.engines?.metadata || [];
   const upstreamError = r?.upstreamError;
 
-  // Consolidated engine toggle — build one option per engine from metadata.
-  // Filters to standard-search engines (AI engines are tracked on AI Search page).
+  // Consolidated engine toggle — canonical labels only (Brandon-locked 2026-06-28).
+  // Customer-facing display is ALWAYS "Google - Desktop", "Google - Mobile", "Bing".
+  // SE Ranking's internal engine ids / generic "Engine N" labels never reach the UI.
+  // Engines we don't formally support (Yandex, DuckDuckGo, etc.) are filtered out.
   const standardEngines = (engineMeta as any[]).filter((e) => !e.isAi);
-  const engineToggleOptions = [
-    { value: 'all', label: 'All' },
-    ...standardEngines.map((e: any) => {
-      // Derive a stable filter-value from the label: "Google Desktop" → "google-desktop"
-      const filterValue = (e.name || '').toLowerCase() === 'google'
-        ? (e.device === 'mobile' ? 'google-mobile' : 'google-desktop')
-        : (e.name || '').toLowerCase() === 'bing' ? 'bing' : e.id;
-      return { value: filterValue, label: e.label || `Engine ${e.id}` };
-    }),
-  ];
-  // Dedupe (in case multiple engine IDs map to same short label)
+  function canonicalEngine(e: any): { value: string; label: string } | null {
+    const name = String(e.name || '').toLowerCase();
+    const type = String(e.type || '').toLowerCase();
+    const label = String(e.label || '').toLowerCase();
+    const device = String(e.device || '').toLowerCase();
+    const isGoogle = name === 'google' || type === 'google' || /google/.test(label);
+    const isBing = name === 'bing' || type === 'bing' || /bing/.test(label);
+    if (isGoogle) {
+      return device === 'mobile'
+        ? { value: 'google-mobile', label: 'Google - Mobile' }
+        : { value: 'google-desktop', label: 'Google - Desktop' };
+    }
+    if (isBing) return { value: 'bing', label: 'Bing' };
+    return null;
+  }
   const seenLabels = new Set<string>();
-  const uniqueToggle = engineToggleOptions.filter((o) => {
-    if (seenLabels.has(o.value)) return false;
-    seenLabels.add(o.value);
-    return true;
-  });
+  const uniqueToggle = [
+    { value: 'all', label: 'All' },
+    ...standardEngines
+      .map(canonicalEngine)
+      .filter((o): o is { value: string; label: string } => !!o)
+      .filter((o) => (seenLabels.has(o.value) ? false : (seenLabels.add(o.value), true))),
+  ];
 
   // Top movers — sort by positionChange
   const sortedByChange = [...keywords].sort((a, b) => Number(b.positionChange || 0) - Number(a.positionChange || 0));

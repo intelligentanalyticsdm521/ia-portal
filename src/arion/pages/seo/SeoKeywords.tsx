@@ -233,7 +233,7 @@ export function SeoKeywords() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       <InfoCard title="Keywords">
         <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.875rem' }}>
-          <span><strong>Project:</strong> {String(tracked.project_id)}</span>
+          <span><strong>Site:</strong> {selectedSite?.primaryDomain || '—'}</span>
           <span><strong>Tier:</strong> {tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : '—'}</span>
           <span><strong>Tracked:</strong> {existingKeywords.length} / {cap}</span>
           <span><strong>Slots remaining:</strong> {remaining}</span>

@@ -190,7 +190,7 @@ export function SeoAIPrompts() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       <InfoCard title="AI Search Prompts">
         <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.875rem' }}>
-          <span><strong>Project:</strong> {String(r.project_id)}</span>
+          <span><strong>Site:</strong> {selectedSite?.primaryDomain || '—'}</span>
           <span><strong>Tier:</strong> {tier.charAt(0).toUpperCase() + tier.slice(1)}</span>
           <span><strong>Brand:</strong> {r.brand || <em style={{ color: '#9ca3af' }}>not set</em>}</span>
           <span><strong>Prompts:</strong> {totalPrompts} / {cap} total</span>
