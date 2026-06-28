@@ -1207,28 +1207,63 @@ function GbpIntegrationCard({ siteId, gaConnected, gaConnecting, onConnectGoogle
   const [locations, setLocations] = useState<any[]>([]);
   const [currentlySelected, setCurrentlySelected] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [siteDomain, setSiteDomain] = useState<string | null>(null);
+  const [noMatching, setNoMatching] = useState(false);
+  const [canAutoProvision, setCanAutoProvision] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const [provisioning, setProvisioning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [savedTitle, setSavedTitle] = useState<string | null>(null);
 
-  const openPicker = useCallback(async () => {
+  const loadPicker = useCallback(async (all: boolean) => {
     if (!siteId || !activeTenantId) return;
-    setPickerOpen(true);
     setLoading(true);
     setErrorMsg(null);
     try {
       const token = await getToken();
-      const res = await listGbpLocations({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+      const res = await listGbpLocations({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId, showAll: all });
       setLocations(res.data.locations || []);
       setCurrentlySelected(res.data.currently_selected);
       setSuggestion(res.data.suggestion);
+      setSiteDomain(res.data.site_domain || null);
+      setNoMatching(!!res.data.no_matching_locations);
+      setCanAutoProvision(!!res.data.can_auto_provision);
     } catch (err: any) {
       setErrorMsg(err?.message || 'Failed to load locations');
     } finally {
       setLoading(false);
     }
   }, [siteId, activeTenantId, apiBaseUrl, getToken]);
+
+  const openPicker = useCallback(async () => {
+    setPickerOpen(true);
+    setShowAll(false);
+    await loadPicker(false);
+  }, [loadPicker]);
+
+  const handleAutoProvision = useCallback(async () => {
+    if (!siteId || !activeTenantId) return;
+    setProvisioning(true);
+    setErrorMsg(null);
+    try {
+      const token = await getToken();
+      const { autoProvisionGoogle } = await import('../../lib/arionApi');
+      await autoProvisionGoogle({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+      await loadPicker(false);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Auto-provision failed');
+    } finally {
+      setProvisioning(false);
+    }
+  }, [siteId, activeTenantId, apiBaseUrl, getToken, loadPicker]);
+
+  const toggleShowAll = useCallback(async () => {
+    const next = !showAll;
+    setShowAll(next);
+    await loadPicker(next);
+  }, [showAll, loadPicker]);
 
   const handleSelect = useCallback(async (locationName: string) => {
     if (!siteId || !activeTenantId) return;
@@ -1312,8 +1347,14 @@ function GbpIntegrationCard({ siteId, gaConnected, gaConnecting, onConnectGoogle
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-[94vw] max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-4 border-b">
               <div className="text-xs uppercase text-gray-500 tracking-wide">Google Business Profile</div>
-              <div className="text-base font-bold text-gray-900 mt-0.5">Select the business for this site</div>
-              <div className="text-xs text-gray-500 mt-1">Pick the GBP listing that represents this website. ARION will only show data for the listing you select.</div>
+              <div className="text-base font-bold text-gray-900 mt-0.5">
+                Select the business for {siteDomain || 'this site'}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                {showAll
+                  ? 'Showing all GBP listings on the connected account — be careful to pick the one for ' + (siteDomain || 'this site') + '.'
+                  : 'Only listings matching this domain are shown.'}
+              </div>
             </div>
             <div className="flex-1 overflow-auto px-5 py-4">
               {loading ? (
@@ -1321,7 +1362,35 @@ function GbpIntegrationCard({ siteId, gaConnected, gaConnecting, onConnectGoogle
               ) : errorMsg ? (
                 <div className="bg-red-50 border-l-4 border-red-500 text-red-800 text-sm p-3 rounded">{errorMsg}</div>
               ) : locations.length === 0 ? (
-                <div className="text-sm text-gray-500 py-4 text-center">No GBP listings found on this Google account. If you manage your business on a different account, click Reconnect with that account.</div>
+                <div className="rounded-lg bg-blue-50 border border-blue-200 p-4">
+                  <p className="text-sm font-semibold text-blue-900">
+                    No GBP listing found for {siteDomain || 'this site'}.
+                  </p>
+                  <p className="mt-1 text-xs text-blue-800">
+                    {canAutoProvision
+                      ? "We'll create a new listing under our master Google account and invite the client as Manager — they receive an email invite, you click nothing else."
+                      : 'No matches on the connected Google account. Use Show all below if you have it under another account name, or click Reconnect to switch accounts.'}
+                  </p>
+                  {canAutoProvision && (
+                    <button
+                      type="button"
+                      onClick={handleAutoProvision}
+                      disabled={provisioning}
+                      className="mt-3 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {provisioning ? 'Creating…' : `Create new for ${siteDomain || 'this site'}`}
+                    </button>
+                  )}
+                  {!showAll && (
+                    <button
+                      type="button"
+                      onClick={toggleShowAll}
+                      className="ml-3 text-xs font-medium text-blue-700 underline hover:text-blue-900"
+                    >
+                      Show all (advanced)
+                    </button>
+                  )}
+                </div>
               ) : (
                 <div className="space-y-2">
                   {locations.map((loc) => {

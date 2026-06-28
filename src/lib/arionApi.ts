@@ -1779,10 +1779,11 @@ export async function setPluginLitespeedConfig(p: { baseUrl: string; bearerToken
   });
 }
 // v2.0.13 GBP location picker (security: no auto-resolve)
-export async function listGbpLocations(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
-  return requestJson<{ data: { locations: any[]; currently_selected: string | null; site_domain: string; suggestion: string | null } }>({
+export async function listGbpLocations(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; showAll?: boolean }) {
+  const qs = p.showAll ? `?showAll=1` : '';
+  return requestJson<{ data: { locations: any[]; locations_total?: number; domain_filter_active?: boolean; no_matching_locations?: boolean; can_auto_provision?: boolean; currently_selected: string | null; site_domain: string; suggestion: string | null } }>({
     ...p,
-    path: `/arion/sites/${encodeURIComponent(p.siteId)}/gbp/locations`,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/gbp/locations${qs}`,
   });
 }
 export async function selectGbpLocation(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; locationName: string }) {
