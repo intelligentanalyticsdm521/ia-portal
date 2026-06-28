@@ -24,6 +24,23 @@ import { SERVICE_CATALOG, resolveServiceStatus, type PortalService, type Service
 // without saving bytes.
 import { ArionPageWrapper } from '../arion/ArionPageWrapper';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
+import { ComingSoonBanner } from '../components/ComingSoonBanner';
+
+// Business Profile section gated 2026-06-28 — entire section behind Coming Soon
+// pending Google Workspace migration + GBP auto-provision rework (see
+// SCOPE_WORKING.md F-Onb-D3). Wrap each business page so power users (founder)
+// can still poke at it during dev while paying clients see the banner.
+function withBusinessProfileBanner(page: React.ReactNode) {
+  return (
+    <>
+      <ComingSoonBanner
+        feature="Business Profile"
+        detail="The Business Profile section is being rebuilt with auto-provisioning. Existing GBP data still flows for connected sites, but management tools land in our next release."
+      />
+      {page}
+    </>
+  );
+}
 
 // ARION pages — lazy-loaded; each becomes its own chunk
 const ArionOverviewPage = lazyNamed(() => import('./arion/ArionOverviewPage'), 'ArionOverviewPage');
@@ -298,14 +315,10 @@ const ConsultingAccessLogPage = lazyNamed(() => import('./consulting/ConsultingA
 const ConsultingOnboardClientPage = lazyNamed(() => import('./consulting/ConsultingOnboardClientPageV2'), 'ConsultingOnboardClientPageV2');
 const ConsultingClientsPage = lazyNamed(() => import('./consulting/ConsultingClientsPage'), 'default');
 const ConsultingTicketsBoardPage = lazyNamed(() => import('./consulting/ConsultingTicketsBoardPage'), 'ConsultingTicketsBoardPage');
-const ConsultingProjectsBoardPage = lazyNamed(() => import('./consulting/ConsultingProjectsBoardPage'), 'ConsultingProjectsBoardPage');
-// F1 (Consulting Rework 2026-06-25) — new canonical Projects list view.
-// ConsultingProjectsBoardPage (card grid) is kept reachable via the legacy
-// `consulting_projects` key for back-compat; `consulting_projects_v2` is
-// the new SubNav target. Once parity is confirmed in F2+ we'll swap the
-// `consulting_projects` route to ConsultingProjectsPage and drop V1.
+// F1 (Consulting Rework 2026-06-25) — canonical Projects list view.
+// Replaced the old card-grid ConsultingProjectsBoardPage + the orphaned
+// ConsultingProjectWorkspacePage (both deleted 2026-06-25).
 const ConsultingProjectsPage = lazyNamed(() => import('./consulting/ConsultingProjectsPage'), 'ConsultingProjectsPage');
-const ConsultingProjectWorkspacePage = lazyNamed(() => import('./consulting/ConsultingProjectWorkspacePage'), 'ConsultingProjectWorkspacePage');
 const ConsultingDeliverablesPage = lazyNamed(() => import('./consulting/ConsultingDeliverablesPage'), 'ConsultingDeliverablesPage');
 // F4 (Consulting Rework 2026-06-25) — Document Library (founder-only).
 const ConsultingDocumentLibraryPage = lazyNamed(() => import('./consulting/ConsultingDocumentLibraryPage'), 'ConsultingDocumentLibraryPage');
@@ -402,14 +415,14 @@ export function ServiceRouter() {
       case 'arion_search_core_web_vitals': return <Navigate to="/app/services/arion_website_performance_cache" replace />;
       case 'arion_search_bing_copilot': arionPage = <SearchBingCopilot />; break;
       case 'arion_search_bing_indexnow': arionPage = <SearchBingIndexNow />; break;
-      case 'arion_business_overview': arionPage = <BusinessOverview />; break;
-      case 'arion_business_locations': arionPage = <BusinessLocations />; break;
-      case 'arion_business_reviews': arionPage = <BusinessReviews />; break;
-      case 'arion_business_insights': arionPage = <BusinessInsights />; break;
-      case 'arion_business_posts': arionPage = <BusinessPosts />; break;
-      case 'arion_business_services': arionPage = <BusinessServices />; break;
-      case 'arion_business_bing_overview': arionPage = <BusinessBingOverview />; break;
-      case 'arion_business_apple_overview': arionPage = <BusinessAppleOverview />; break;
+      case 'arion_business_overview': arionPage = withBusinessProfileBanner(<BusinessOverview />); break;
+      case 'arion_business_locations': arionPage = withBusinessProfileBanner(<BusinessLocations />); break;
+      case 'arion_business_reviews': arionPage = withBusinessProfileBanner(<BusinessReviews />); break;
+      case 'arion_business_insights': arionPage = withBusinessProfileBanner(<BusinessInsights />); break;
+      case 'arion_business_posts': arionPage = withBusinessProfileBanner(<BusinessPosts />); break;
+      case 'arion_business_services': arionPage = withBusinessProfileBanner(<BusinessServices />); break;
+      case 'arion_business_bing_overview': arionPage = withBusinessProfileBanner(<BusinessBingOverview />); break;
+      case 'arion_business_apple_overview': arionPage = withBusinessProfileBanner(<BusinessAppleOverview />); break;
       case 'arion_brand': arionPage = <BrandPage />; break;
       // v5.x IA Insights architecture
       case 'arion_ia_insights_health': arionPage = <ArionIAInsightsHealthPage />; break;
@@ -664,13 +677,8 @@ export function ServiceRouter() {
       // F-140 — new structure: Overview / Requests / Projects / Deliverables / Calendar / Onboard
       case 'consulting_overview':         consultingPage = <ConsultingOverviewPage />; break;
       case 'consulting_tickets':          consultingPage = <ConsultingTicketsBoardPage />; break;
-      case 'consulting_projects':         consultingPage = <ConsultingProjectsBoardPage />; break;
-      // F1 — new list-style Projects page (Consulting Rework 2026-06-25).
-      case 'consulting_projects_v2':      consultingPage = <ConsultingProjectsPage />; break;
-      // Phase 1 v0 — 4-tier workspace (Project → Phase → Feature → Task).
-      // List + drill-in read-only view. Backend feature/task endpoints
-      // still pending; page renders a clear inline banner if missing.
-      case 'consulting_project_workspace': consultingPage = <ConsultingProjectWorkspacePage />; break;
+      // F1 (Consulting Rework 2026-06-25) — canonical Projects list view.
+      case 'consulting_projects':         consultingPage = <ConsultingProjectsPage />; break;
       case 'consulting_deliverables':     consultingPage = <ConsultingDeliverablesPage />; break;
       // F4 (Consulting Rework 2026-06-25) — Document Library (founder-only).
       case 'consulting_documents':        consultingPage = <ConsultingDocumentLibraryPage />; break;

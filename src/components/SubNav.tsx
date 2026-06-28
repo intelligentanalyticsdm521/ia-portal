@@ -251,16 +251,20 @@ const ARION_NAV: SubNavConfig = {
       ],
     },
     {
+      // Business Profile gated 2026-06-28 — entire section behind Coming Soon
+      // pending Google Workspace migration + GBP auto-provision rework
+      // (see SCOPE_WORKING.md F-Onb-D3). All items show the lock icon; routes
+      // still render the underlying pages with a ComingSoonBanner at top.
       label: "Business Profile", icon: MapPin, collapsible: true, sectionId: "business",
       items: [
-        { key: "arion_business_overview", label: "Overview", route: "/app/services/arion_business_overview" },
-        { key: "arion_business_locations", label: "Locations", route: "/app/services/arion_business_locations" },
-        { key: "arion_business_reviews", label: "Reviews", route: "/app/services/arion_business_reviews" },
-        { key: "arion_business_insights", label: "Insights", route: "/app/services/arion_business_insights" },
+        { key: "arion_business_overview", label: "Overview", route: "/app/services/arion_business_overview", gated: true },
+        { key: "arion_business_locations", label: "Locations", route: "/app/services/arion_business_locations", gated: true },
+        { key: "arion_business_reviews", label: "Reviews", route: "/app/services/arion_business_reviews", gated: true },
+        { key: "arion_business_insights", label: "Insights", route: "/app/services/arion_business_insights", gated: true },
         { key: "arion_business_posts", label: "Posts", route: "/app/services/arion_business_posts", gated: true },
         { key: "arion_business_services", label: "Services", route: "/app/services/arion_business_services", gated: true },
-        { key: "arion_business_bing_overview", label: "Bing Places", route: "/app/services/arion_business_bing_overview" },
-        { key: "arion_business_apple_overview", label: "Apple Maps", route: "/app/services/arion_business_apple_overview" },
+        { key: "arion_business_bing_overview", label: "Bing Places", route: "/app/services/arion_business_bing_overview", gated: true },
+        { key: "arion_business_apple_overview", label: "Apple Maps", route: "/app/services/arion_business_apple_overview", gated: true },
       ],
     },
     {
@@ -478,11 +482,10 @@ const CONSULTING_NAV: SubNavConfig = {
       items: [
         { key: "consulting_overview",          label: "Overview",          route: "/app/services/consulting_overview" },
         { key: "consulting_tickets",           label: "Service Requests",  route: "/app/services/consulting_tickets" },
-        // F1 (Consulting Rework 2026-06-25) — SubNav points at the new
-        // list-view (consulting_projects_v2). Legacy card-grid page still
-        // mounted under consulting_projects so deep links don't break.
-        { key: "consulting_projects_v2",       label: "Projects",          route: "/app/services/consulting_projects_v2" },
-        { key: "consulting_project_workspace", label: "Project Workspace", route: "/app/services/consulting_project_workspace" },
+        // F1 (Consulting Rework 2026-06-25) — Projects is the new list view
+        // at the canonical /consulting_projects URL. Old card-grid + old
+        // workspace pages deleted in same change.
+        { key: "consulting_projects",          label: "Projects",          route: "/app/services/consulting_projects" },
         { key: "consulting_deliverables",      label: "Deliverables",      route: "/app/services/consulting_deliverables" },
         // F4 (Consulting Rework 2026-06-25) — founder-only library of intake +
         // proposal + report + scope-of-work + custom templates. Hidden for
