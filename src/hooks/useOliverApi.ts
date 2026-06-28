@@ -5,8 +5,9 @@
 
 import { useCallback, useMemo } from "react";
 import { useMsal } from "@azure/msal-react";
-import { oliverGet, oliverPost, oliverPatch, oliverPut, oliverDelete, BYPASS_VIEW_AS } from "../lib/oliverApi";
+import { oliverGet, oliverPost, oliverPatch, oliverPut, oliverDelete, BYPASS_TENANT_OVERRIDE } from "../lib/oliverApi";
 import { useClientTenantIdOverride } from "../lib/clientTenantContext";
+import { useIsSuperAdmin } from "./useIsSuperAdmin";
 
 export interface TierGateError {
   type: "tier_gate";
@@ -59,16 +60,34 @@ export function useOliverApi() {
   // AND any active view-as session, and always send the caller's own
   // tenant_id (from their JWT). Used inside the modal for
   // `/admin/onboard-client/*` endpoints, which are gated by requireFounder
-  // (caller tenant must = FOUNDER_TENANT_ID). Without BYPASS_VIEW_AS the
+  // (caller tenant must = FOUNDER_TENANT_ID). Without BYPASS_TENANT_OVERRIDE the
   // view-as state would re-route founder admin calls to the client tenant
   // and break the founder gate.
+  //
+  // 2026-06-27 (N-09) Defense-in-depth client-side gate. The backend
+  // requireFounder middleware is still the security boundary, but if a
+  // non-founder transiently has access (XSS, role-cache staleness, view-as
+  // bug) the unguarded getFounder/postFounder would let them probe founder
+  // endpoints and neutralize view-as overrides. Throwing here makes
+  // misuse obvious in the console and easier to detect in logs.
+  const isSuperAdmin = useIsSuperAdmin();
   const getFounder = useCallback(
-    <T>(path: string) => oliverGet<T>(instance, account, path, BYPASS_VIEW_AS),
-    [instance, account]
+    <T>(path: string): Promise<T> => {
+      if (!isSuperAdmin) {
+        return Promise.reject(new Error("getFounder called by non-founder — backend requireFounder will 403 this request"));
+      }
+      return oliverGet<T>(instance, account, path, BYPASS_TENANT_OVERRIDE);
+    },
+    [instance, account, isSuperAdmin]
   );
   const postFounder = useCallback(
-    <T>(path: string, body?: unknown) => oliverPost<T>(instance, account, path, body, BYPASS_VIEW_AS),
-    [instance, account]
+    <T>(path: string, body?: unknown): Promise<T> => {
+      if (!isSuperAdmin) {
+        return Promise.reject(new Error("postFounder called by non-founder — backend requireFounder will 403 this request"));
+      }
+      return oliverPost<T>(instance, account, path, body, BYPASS_TENANT_OVERRIDE);
+    },
+    [instance, account, isSuperAdmin]
   );
 
   // Stable object identity — prevents consumers keyed on this hook's result
