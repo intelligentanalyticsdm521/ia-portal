@@ -240,10 +240,24 @@ export function SeoOverview() {
   const mmLostBacklinks = mm?.backlinks?.lost?.length ?? 0;
   const mmPageChanges = mm?.pageChanges?.length ?? 0;
 
-  // Engine toggle options (All + one per standard engine)
+  // Engine toggle options (All + one per canonical standard engine).
+  // Drive from standardCanonicalCards (which already locks Google/Bing labels
+  // via the SeoOverview heuristic) so the Provider pills never show
+  // SE Ranking's raw "Engine 12345" id even when individual cards lack
+  // name/type metadata.
+  const CANONICAL_TOGGLE_LABEL: Record<string, string> = {
+    google_desktop: 'Google - Desktop',
+    google_mobile: 'Google - Mobile',
+    bing: 'Bing',
+  };
   const toggleOptions = [
     { value: 'all' as const, label: 'All' },
-    ...standardCards.map((c) => ({ value: c.engineId, label: canonicalEngineLabel(c) })),
+    ...standardCanonicalCards
+      .filter((x) => x.card)
+      .map((x) => ({
+        value: x.card!.engineId,
+        label: CANONICAL_TOGGLE_LABEL[x.canonical.id] || canonicalEngineLabel(x.card!),
+      })),
   ];
 
   return (
