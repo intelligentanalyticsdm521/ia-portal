@@ -7,7 +7,7 @@ import { useCallback, useMemo } from "react";
 import { useMsal } from "@azure/msal-react";
 import { oliverGet, oliverPost, oliverPatch, oliverPut, oliverDelete, BYPASS_TENANT_OVERRIDE } from "../lib/oliverApi";
 import { useClientTenantIdOverride } from "../lib/clientTenantContext";
-import { useIsSuperAdmin } from "./useIsSuperAdmin";
+import { useIsFounder } from "./useIsFounder";
 
 export interface TierGateError {
   type: "tier_gate";
@@ -70,24 +70,30 @@ export function useOliverApi() {
   // bug) the unguarded getFounder/postFounder would let them probe founder
   // endpoints and neutralize view-as overrides. Throwing here makes
   // misuse obvious in the console and easier to detect in logs.
-  const isSuperAdmin = useIsSuperAdmin();
+  //
+  // 2026-06-28 — Use isFounder (NOT useIsSuperAdmin) per the role-access-model
+  // rule. Brandon is Founder, not super_admin. useIsSuperAdmin returns false
+  // for him by design (no super_admin/platform_admin role + not in env
+  // allow-list), so the original N-09 gate was rejecting his legitimate
+  // /admin/onboard-client and /consulting/* founder calls.
+  const isFounder = useIsFounder();
   const getFounder = useCallback(
     <T>(path: string): Promise<T> => {
-      if (!isSuperAdmin) {
+      if (!isFounder) {
         return Promise.reject(new Error("getFounder called by non-founder — backend requireFounder will 403 this request"));
       }
       return oliverGet<T>(instance, account, path, BYPASS_TENANT_OVERRIDE);
     },
-    [instance, account, isSuperAdmin]
+    [instance, account, isFounder]
   );
   const postFounder = useCallback(
     <T>(path: string, body?: unknown): Promise<T> => {
-      if (!isSuperAdmin) {
+      if (!isFounder) {
         return Promise.reject(new Error("postFounder called by non-founder — backend requireFounder will 403 this request"));
       }
       return oliverPost<T>(instance, account, path, body, BYPASS_TENANT_OVERRIDE);
     },
-    [instance, account, isSuperAdmin]
+    [instance, account, isFounder]
   );
 
   // Stable object identity — prevents consumers keyed on this hook's result

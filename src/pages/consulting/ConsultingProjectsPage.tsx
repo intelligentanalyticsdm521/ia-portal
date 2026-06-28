@@ -1,35 +1,30 @@
 // ConsultingProjectsPage — F1 (Consulting Rework, 2026-06-25)
 //
-// Founder-facing project LIST view. Replaces the old card-grid Board page
-// (ConsultingProjectsBoardPage.tsx) as the canonical project surface.
-// The Board page is intentionally LEFT IN PLACE behind the legacy
-// `consulting_projects` service key so any existing bookmarks / deep links
-// keep resolving; the new list view ships under `consulting_projects_v2`
-// and is wired into the SubNav as "Projects".
+// Founder-facing project LIST view. THE canonical Projects surface (mounted
+// at `consulting_projects` after the 2026-06-25 cleanup that deleted the
+// old card-grid Board page + the orphaned Project Workspace page).
 //
-// Locked Brandon decisions (2026-06-25, full F1 brief):
+// Locked Brandon decisions (2026-06-25):
 //   • List view, sorted by most recent activity (updated_at DESC)
 //   • Status filter pills: Closed | Completed | Action Needed | Awaiting
 //     Client Response | All
-//   • Client dropdown — searchable, includes 'Internal' option that maps
-//     to linked_tenant_id IS NULL (server-side via /consulting/projects
-//     filter)
+//   • Client dropdown — searchable, includes 'Internal' for unlinked rows
 //   • Category dropdown — populated from /consulting/categories
 //   • Closed projects auto-hidden — pill default ON, click to surface
-//     (7-day grace already enforced server-side by the API)
-//   • "+ New Project" → NewProjectModal (pick category → name + client →
-//     POST /consulting/projects → redirect to project detail).
+//   • "+ New Project" → NewProjectModal → POST /consulting/projects →
+//     immediately open ConsultingProjectModal for the new row.
 //   • "+ New Category" → disabled with tooltip "Coming in F6"
-//   • Row click → opens ConsultingProjectModal (sibling-agent build).
-//     Until that ships we navigate to the Project Workspace page so
-//     deep-link behaviour stays useful even before the modal lands.
+//   • Row click → opens ConsultingProjectModal (in-page, no nav).
+//   • `?open=<project_id>` query string auto-opens the modal (used by
+//     ConsultingIntakeFormPage's post-submit link).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { Folder, Plus, Search, AlertCircle, Clock, Pencil } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { IadmModal } from "../../components/IadmModal";
+import { ConsultingProjectModal } from "../../components/consulting/ConsultingProjectModal";
 import {
   ConsultingCategoryBuilderModal,
   iconComponentFor,
@@ -155,13 +150,30 @@ function statusBadgeColor(status: string): { bg: string; fg: string; label: stri
 // ── Page ────────────────────────────────────────────────────────────────
 
 export function ConsultingProjectsPage() {
+  // 2026-06-28 — Per SCOPE_WORKING.md 3134, /consulting/projects is DUAL-ROLE:
+  // "Client sees own tenant only; founder sees all." The backend
+  // (oliver-api/routes/consultingProjects.js) handles this via `isFounder(req)`
+  // — when the founder calls with no x-acting-tenant header, they see all
+  // projects across all tenants; when a client tenant user calls (or the
+  // founder is acting-as-client via the SubNav view-as button), the backend
+  // returns only that tenant's projects. So plain `get` is correct here, NOT
+  // `getFounder`. The prior comment claiming "/consulting/* endpoints are
+  // founder-only" was wrong and caused the projects list to break for the
+  // founder when N-09 mis-gated it via useIsSuperAdmin.
   const { get, ready } = useOliverApi();
-  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Row-click + post-create both open the ConsultingProjectModal in-page.
+  // `?open=<project_id>` (set by ConsultingIntakeFormPage after submit)
+  // hydrates this on mount so deep-links land directly on the right modal.
+  const [openProjectId, setOpenProjectId] = useState<string | null>(
+    () => searchParams.get("open"),
+  );
 
   // Filters
   const [statusPill, setStatusPill] = useState<StatusPill>("all");
@@ -200,8 +212,8 @@ export function ConsultingProjectsPage() {
       if (clientSearch.trim()) qs.set("client_search", clientSearch.trim());
       if (showClosed || statusPill === "closed") qs.set("include_closed", "1");
 
-      const r = await get<{ data: Project[] }>(`/consulting/projects?${qs.toString()}`);
-      const list = Array.isArray(r?.data) ? r.data : [];
+      const r = await get<Project[]>(`/consulting/projects?${qs.toString()}`);
+      const list = Array.isArray(r) ? r : [];
       setProjects(list);
     } catch (e) {
       setError((e as Error).message);
@@ -217,16 +229,16 @@ export function ConsultingProjectsPage() {
   // via the Category Builder modal so the picker stays in sync).
   const reloadCategories = useCallback(() => {
     if (!ready) return Promise.resolve();
-    return get<{ data: Category[] }>("/consulting/categories")
-      .then((r) => { setCategories(Array.isArray(r?.data) ? r.data : []); })
+    return get<Category[]>("/consulting/categories")
+      .then((r) => { setCategories(Array.isArray(r) ? r : []); })
       .catch(() => { setCategories([]); });
   }, [get, ready]);
 
   useEffect(() => {
     let cancelled = false;
     if (!ready) return;
-    get<{ data: Category[] }>("/consulting/categories")
-      .then((r) => { if (!cancelled) setCategories(Array.isArray(r?.data) ? r.data : []); })
+    get<Category[]>("/consulting/categories")
+      .then((r) => { if (!cancelled) setCategories(Array.isArray(r) ? r : []); })
       .catch(() => { if (!cancelled) setCategories([]); });
     return () => { cancelled = true; };
   }, [get, ready]);
@@ -275,19 +287,23 @@ export function ConsultingProjectsPage() {
   }, [projects, clientFilter, statusPill, showClosed]);
 
   function handleRowClick(p: Project) {
-    // ConsultingProjectModal is being built in a sibling agent. Until it
-    // lands, route to the Project Workspace page so the row remains useful
-    // — the workspace already loads /consulting/projects/:id. Once the
-    // modal ships, swap this for setOpenProjectId(p.project_id) + render
-    // the modal here.
-    navigate(`/app/services/consulting_project_workspace?project_id=${encodeURIComponent(p.project_id)}`);
+    setOpenProjectId(p.project_id);
   }
 
   function handleCreated(projectId: string) {
     setShowCreate(false);
-    // Same navigation contract as row-click so the founder lands on the
-    // same surface whether they create or open.
-    navigate(`/app/services/consulting_project_workspace?project_id=${encodeURIComponent(projectId)}`);
+    setOpenProjectId(projectId);
+  }
+
+  function handleModalClose() {
+    setOpenProjectId(null);
+    // Strip ?open=… from the URL so a back/forward + refresh doesn't reopen
+    // the modal mid-navigation. Other query params are preserved.
+    if (searchParams.has("open")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("open");
+      setSearchParams(next, { replace: true });
+    }
   }
 
   return (
@@ -502,6 +518,18 @@ export function ConsultingProjectsPage() {
         />
       )}
 
+      {/* F1 project modal — opens on row-click, post-create, or
+          ?open=<project_id> hydration (used by the intake form post-submit
+          link). onChanged refreshes the list so a status flip inside the
+          modal is reflected without a manual reload. */}
+      <ConsultingProjectModal
+        open={!!openProjectId}
+        projectId={openProjectId}
+        onClose={handleModalClose}
+        onChanged={loadProjects}
+      />
+
+
       {/* F6 — Category Builder modal. Opens for both "+ New Category"
           (editingCategory=null) and the inline Edit chip on each category
           tile in the Manage Categories panel. Refreshes the picker list
@@ -681,6 +709,9 @@ function NewProjectModal({
   onClose: () => void;
   onCreated: (projectId: string) => void;
 }) {
+  // Same dual-role behaviour as the parent page — /consulting/projects is
+  // dual-role per scope (founder sees all, client sees own). Use plain
+  // get/post so view-as mode and client logins route correctly.
   const { get, post } = useOliverApi();
 
   const [step, setStep] = useState<"category" | "details">("category");
@@ -697,10 +728,10 @@ function NewProjectModal({
   // /consulting/_/clients route.
   useEffect(() => {
     let cancelled = false;
-    get<{ data: { clients: Array<{ tenant_id: string; business_name: string }> } }>("/consulting-tickets/_/clients")
+    get<{ clients: Array<{ tenant_id: string; business_name: string }> }>("/consulting-tickets/_/clients")
       .then((r) => {
         if (cancelled) return;
-        const list = r?.data?.clients || [];
+        const list = r?.clients || [];
         setClients(list.map((c) => ({ tenant_id: c.tenant_id, business_name: c.business_name })));
       })
       .catch(() => { if (!cancelled) setClients([]); });
@@ -727,8 +758,8 @@ function NewProjectModal({
       if (clientTenantId && clientTenantId !== CLIENT_INTERNAL_SENTINEL) {
         body.linked_tenant_id = clientTenantId;
       }
-      const r = await post<{ data: { project: { project_id: string } } }>("/consulting/projects", body);
-      const newId = r?.data?.project?.project_id;
+      const r = await post<{ project: { project_id: string } }>("/consulting/projects", body);
+      const newId = r?.project?.project_id;
       if (!newId) throw new Error("Server did not return a project_id.");
       onCreated(newId);
     } catch (e) {
