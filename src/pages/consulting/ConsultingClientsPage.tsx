@@ -34,25 +34,22 @@ interface ClientRow {
 // F-Founder.1 (defect 4.07 / 4.12) — surface clients with active or
 // recently-completed projects. Brandon: "they show up on clients nav page
 // until their project is completed and for 30 days after completion."
+// Shape matches /consulting/projects (lumen.consulting_project): keyed off
+// client_tenant_id + actual_completion_date.
 interface ProjectRow {
   project_id: string;
-  tenant_id: string;
-  linked_tenant_id: string | null;
-  name: string;
+  client_tenant_id: string | null;
+  title: string;
   status: string;
-  closed_at: string | null;
-  completed_at: string | null;
+  actual_completion_date: string | null;
   created_at: string | null;
 }
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 function projectIsCurrent(p: ProjectRow): boolean {
-  // Active = anything that's not completed/cancelled. 30-day grace runs from
-  // completed_at (preferred) → closed_at → created_at fallback.
   const stale = p.status === "completed" || p.status === "cancelled" || p.status === "closed";
   if (!stale) return true;
-  const ts = p.completed_at || p.closed_at;
-  if (!ts) return false;
-  return Date.now() - new Date(ts).getTime() <= THIRTY_DAYS_MS;
+  if (!p.actual_completion_date) return false;
+  return Date.now() - new Date(p.actual_completion_date).getTime() <= THIRTY_DAYS_MS;
 }
 
 export default function ConsultingClientsPage() {
@@ -101,7 +98,7 @@ export default function ConsultingClientsPage() {
   const projectsByClient = useMemo(() => {
     const m = new Map<string, ProjectRow[]>();
     for (const p of projects) {
-      const k = (p.linked_tenant_id || "").toLowerCase();
+      const k = (p.client_tenant_id || "").toLowerCase();
       if (!k) continue;
       if (!m.has(k)) m.set(k, []);
       m.get(k)!.push(p);
@@ -188,7 +185,7 @@ export default function ConsultingClientsPage() {
                             <span className="text-[10px] uppercase font-bold text-slate-400">
                               {(p.status || "").replace(/_/g, " ")}
                             </span>
-                            <span className="truncate max-w-[20ch]">{p.name || "Untitled"}</span>
+                            <span className="truncate max-w-[20ch]">{p.title || "Untitled"}</span>
                           </a>
                         ))}
                         {ps.length > 3 && (
