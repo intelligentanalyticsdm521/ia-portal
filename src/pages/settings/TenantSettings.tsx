@@ -734,6 +734,11 @@ export function ConnectedAccountsTab() {
   const [ga4Properties, setGa4Properties] = useState<Array<{ propertyId: string; displayName: string; account: string }>>([]);
   const [gscSites, setGscSites] = useState<Array<{ siteUrl: string; permissionLevel: string }>>([]);
   const [currentGa4PropertyId, setCurrentGa4PropertyId] = useState<string | null>(null);
+  const [currentGa4PropertyName, setCurrentGa4PropertyName] = useState<string | null>(null);
+  const [currentGa4MatchesDomain, setCurrentGa4MatchesDomain] = useState<boolean>(true);
+  const [currentGscSiteUrl, setCurrentGscSiteUrl] = useState<string | null>(null);
+  const [currentGscMatchesDomain, setCurrentGscMatchesDomain] = useState<boolean>(true);
+  const [siteDomain, setSiteDomain] = useState<string | null>(null);
 
   // Load the first ARION site on mount so we have a siteId for API calls
   const siteLoadedRef = useRef(false);
@@ -766,9 +771,17 @@ export function ConnectedAccountsTab() {
       try {
         const token = await getToken();
         const resp = await getGoogleProperties({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
-        const hasProperty = !!resp?.data?.currentGa4PropertyId;
-        const hasGscSites = Array.isArray(resp?.data?.gscSites) && resp.data.gscSites.length > 0;
-        if (hasProperty || hasGscSites) setGaConnected(true);
+        const d = resp?.data;
+        const hasProperty = !!d?.currentGa4PropertyId;
+        const hasGsc = !!d?.currentGscSiteUrl;
+        const hasGscSites = Array.isArray(d?.gscSites) && d.gscSites.length > 0;
+        if (hasProperty || hasGsc || hasGscSites) setGaConnected(true);
+        if (d?.currentGa4PropertyId) setCurrentGa4PropertyId(d.currentGa4PropertyId);
+        if (d?.currentGa4PropertyName) setCurrentGa4PropertyName(d.currentGa4PropertyName);
+        if (typeof d?.currentGa4MatchesDomain === 'boolean') setCurrentGa4MatchesDomain(d.currentGa4MatchesDomain);
+        if (d?.currentGscSiteUrl) setCurrentGscSiteUrl(d.currentGscSiteUrl);
+        if (typeof d?.currentGscMatchesDomain === 'boolean') setCurrentGscMatchesDomain(d.currentGscMatchesDomain);
+        if (d?.site_domain) setSiteDomain(d.site_domain);
       } catch {
         // Endpoint returns an error when Google isn't connected — that's the normal "not connected" path.
       }
@@ -989,6 +1002,17 @@ export function ConnectedAccountsTab() {
                 <span className={`h-2 w-2 rounded-full ${gaConnected ? 'bg-green-500' : 'bg-gray-300'}`} />
                 <span className="text-xs text-gray-500">{gaConnected ? 'Connected' : 'Not connected'}</span>
               </div>
+              {gaConnected && (currentGa4PropertyName || currentGa4PropertyId) && (
+                <div className="mt-1 text-[11px] text-gray-600 truncate max-w-[280px]" title={currentGa4PropertyName || currentGa4PropertyId || ''}>
+                  Connected to: <span className="font-medium text-gray-800">{currentGa4PropertyName || currentGa4PropertyId}</span>
+                  {!currentGa4MatchesDomain && siteDomain && (
+                    <span className="ml-1 text-amber-700" title={`This property's name doesn't match ${siteDomain}`}>⚠ doesn't match {siteDomain}</span>
+                  )}
+                </div>
+              )}
+              {gaConnected && !currentGa4PropertyId && (
+                <div className="mt-1 text-[11px] text-amber-700">⚠ No GA4 property selected — click Change property</div>
+              )}
             </div>
             <div className="flex gap-2">
               {gaConnected && (
@@ -1120,6 +1144,14 @@ export function ConnectedAccountsTab() {
                   <span className={`h-2 w-2 rounded-full ${int.connected ? 'bg-green-500' : 'bg-gray-300'}`} />
                   <span className="text-xs text-gray-500">{int.connected ? 'Connected' : int.comingSoon ? 'Coming soon' : 'Not connected'}</span>
                 </div>
+                {int.key === 'gsc' && int.connected && currentGscSiteUrl && (
+                  <div className="mt-1 text-[11px] text-gray-600 truncate max-w-[280px]" title={currentGscSiteUrl}>
+                    Connected to: <span className="font-medium text-gray-800">{currentGscSiteUrl.replace(/^sc-domain:/, '')}</span>
+                    {!currentGscMatchesDomain && siteDomain && (
+                      <span className="ml-1 text-amber-700" title={`This GSC site doesn't match ${siteDomain}`}>⚠ doesn't match {siteDomain}</span>
+                    )}
+                  </div>
+                )}
                 {int.sharesGoogleAuth && (
                   <div className="mt-1 text-[10px] text-gray-400">Uses the same Google connection as Analytics</div>
                 )}

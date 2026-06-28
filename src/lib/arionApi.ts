@@ -1451,7 +1451,7 @@ export async function submitConsultingInquiry(params: { baseUrl: string; bearerT
 
 export async function getGoogleProperties(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; showAll?: boolean }) {
   const qs = params.showAll ? `&showAll=1` : '';
-  return requestJson<{ data: { ga4Properties: Array<{ propertyId: string; displayName: string; account: string }>; gscSites: Array<{ siteUrl: string; permissionLevel: string }>; ga4Properties_total?: number; gscSites_total?: number; domain_filter_active?: boolean; site_domain?: string | null; no_matching_properties?: boolean; can_auto_provision?: boolean; currentGa4PropertyId: string | null; currentGscSiteUrl?: string | null } }>({
+  return requestJson<{ data: { ga4Properties: Array<{ propertyId: string; displayName: string; account: string }>; gscSites: Array<{ siteUrl: string; permissionLevel: string }>; ga4Properties_total?: number; gscSites_total?: number; domain_filter_active?: boolean; site_domain?: string | null; no_matching_properties?: boolean; can_auto_provision?: boolean; currentGa4PropertyId: string | null; currentGa4PropertyName?: string | null; currentGa4MatchesDomain?: boolean; currentGscSiteUrl?: string | null; currentGscMatchesDomain?: boolean } }>({
     ...params,
     path: `/arion/integrations/google/properties?siteId=${encodeURIComponent(params.siteId)}${qs}`
   });
