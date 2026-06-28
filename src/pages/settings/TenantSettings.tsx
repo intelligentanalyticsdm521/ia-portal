@@ -1194,7 +1194,44 @@ interface NotifRule {
 /*  GBP Integration Card — explicit location picker (security fix)     */
 /* ------------------------------------------------------------------ */
 
+// 2026-06-28 — GBP picker + auto-provision gated pending Workspace migration.
+// Personal Gmail + Business Profile groups + service accounts is a Google
+// dead-end; full design + Workspace move tracked as a future enhancement.
+// Existing tenant GBP data continues to flow via prior OAuth pulls.
+const GBP_PICKER_ENABLED = false;
+
 function GbpIntegrationCard({ siteId, gaConnected, gaConnecting, onConnectGoogle }: {
+  siteId: string | null;
+  gaConnected: boolean;
+  gaConnecting: boolean;
+  onConnectGoogle: () => void;
+}) {
+  if (!GBP_PICKER_ENABLED) {
+    return (
+      <div className="rounded-lg border bg-white p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-gray-900">Google Business Profile</div>
+            <div className="mt-1 flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-amber-400" />
+              <span className="text-xs text-amber-700 font-medium">Improved integration coming soon</span>
+            </div>
+            <div className="mt-2 text-[11px] text-gray-500 leading-relaxed max-w-md">
+              GBP auto-provisioning is being rebuilt against Google Workspace so new clients connect with zero clicks. Existing GBP data already wired to a site continues to populate ARION dashboards through the prior Google OAuth pull — no action needed.
+            </div>
+          </div>
+          <span className="rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700 whitespace-nowrap">
+            Coming soon
+          </span>
+        </div>
+      </div>
+    );
+  }
+  // — original picker UI (kept intact for the post-Workspace re-enable) —
+  return <GbpIntegrationCardFull siteId={siteId} gaConnected={gaConnected} gaConnecting={gaConnecting} onConnectGoogle={onConnectGoogle} />;
+}
+
+function GbpIntegrationCardFull({ siteId, gaConnected, gaConnecting, onConnectGoogle }: {
   siteId: string | null;
   gaConnected: boolean;
   gaConnecting: boolean;
