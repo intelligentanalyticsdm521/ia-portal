@@ -6,10 +6,12 @@ import { IconRail, type ProductKey } from "./IconRail";
 import { SubNav, SUB_NAV_CONFIGS, SETTINGS_KEYS, type SubNavConfig } from "./SubNav";
 import { useOliverRole } from "../hooks/useOliverRole";
 import { useAppState } from "../app/AppState";
+import { useClientTenantIdOverride } from "../lib/clientTenantContext";
 import { ArgusChatbot } from "./argus/ArgusChatbot";
 import { EmergencyActAsBanner } from "./EmergencyActAsBanner";
 import { EmergencyActAsToast } from "./EmergencyActAsToast";
 import { ViewAsTenantBanner } from "./ViewAsTenantBanner";
+import { ConsultantModeBanner } from "./consulting/ConsultantModeBanner";
 // Onboarding V3 Phase 3 — slim "next thing to do" strip for first-time
 // users. Self-hides once dismissed (session-scoped) or once there are no
 // pending tasks. Co-exists with all existing setup banners.
@@ -38,10 +40,10 @@ const CONSULTING_FOUNDER_ONLY = new Set<string>([
   "consulting_access_log",
   "consulting_workspace",
   "consulting_tenant_workspace",
-  // F1 (Consulting Rework 2026-06-25) — new Projects list view hits the
+  // F1 (Consulting Rework 2026-06-25) — Projects list view hits the
   // founder-gated /consulting/projects + /consulting/categories endpoints.
   // Non-founders would see 403s, so hide the nav link entirely.
-  "consulting_projects_v2",
+  "consulting_projects",
   // F4 (Consulting Rework 2026-06-25) — Document Library is founder-only.
   // Client viewers never need to see template definitions — they only ever
   // see the rendered intake form at /app/consulting/intake/:id, which is
@@ -153,6 +155,12 @@ export function AppShell() {
   // backend sets isFounder=true for super-admins as well, so the existing
   // emergency-access path keeps working.
   const isFounder = !!appState.bootstrap?.user?.isFounder;
+  // 2026-06-28 (defect 4.03) — view-as override. When the founder is acting
+  // AS a client tenant (ViewAsTenantBanner is showing), hide founder-only
+  // nav items so the founder sees what the client sees. The JWT still says
+  // isFounder=true, but the active surface IS the client surface.
+  const actingAsClient = !!useClientTenantIdOverride();
+  const effectiveIsFounder = isFounder && !actingAsClient;
 
   const rawSubNavConfig =
     activeProduct !== "overview" ? SUB_NAV_CONFIGS[activeProduct] : null;
@@ -163,10 +171,11 @@ export function AppShell() {
     }
     if (activeProduct === "consulting") {
       // F1.9 — Onboard Client (and other founder-tools) hidden for non-founders
-      return applyConsultingNavFilter(rawSubNavConfig, isFounder);
+      // 4.03 — also hidden when view-as'ing a client
+      return applyConsultingNavFilter(rawSubNavConfig, effectiveIsFounder);
     }
     return rawSubNavConfig;
-  }, [rawSubNavConfig, activeProduct, roleInfo.allowedServiceKeys, isFounder]);
+  }, [rawSubNavConfig, activeProduct, roleInfo.allowedServiceKeys, effectiveIsFounder]);
 
   return (
     // h-screen (not min-h-screen) locks the shell to exactly 100vh so the nav row's
@@ -185,6 +194,12 @@ export function AppShell() {
           gets squeezed by the main content area. */}
       <div className="shrink-0">
         <EmergencyActAsBanner />
+      </div>
+
+      {/* Consultant Mode banner — shown while a founder is acting in a
+          client tenant via the View-as flow. Returns null when inactive. */}
+      <div className="shrink-0">
+        <ConsultantModeBanner />
       </div>
 
       {/* Top header */}
