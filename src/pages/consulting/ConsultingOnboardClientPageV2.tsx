@@ -25,9 +25,9 @@ import { useNavigate } from "react-router-dom";
 import { IadmModal, CORE_BLUE, PRODUCT_ACCENT } from "../../components/IadmModal";
 import { LogoPicker } from "../../components/oliver/LogoPicker";
 import { useOliverApi } from "../../hooks/useOliverApi";
-import { fetchPlanCatalog, type PlanCatalogEntry } from "../../lib/onboardingApi";
+import { fetchPlanCatalog, fetchArionSeoAddons, type PlanCatalogEntry, type ArionSeoAddonEntry } from "../../lib/onboardingApi";
 import { InfoTip } from "../../components/InfoTip";
-import { ClientTenantModal } from "../../components/consulting/ClientTenantModal";
+import { OnboardingWizardModal } from "../../components/consulting/OnboardingWizardModal";
 import {
   fetchSignupCatalog, createSignupCartCheckout,
   type SignupCatalog,
@@ -243,6 +243,7 @@ export function ConsultingOnboardClientPageV2() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [consultingPick, setConsultingPick] = useState<ConsultingPick | null>(null);
   const [arionPlans, setArionPlans] = useState<PlanCatalogEntry[]>([]);
+  const [arionSeoAddons, setArionSeoAddons] = useState<Record<string, ArionSeoAddonEntry>>({});
   const [oliverCat, setOliverCat] = useState<SignupCatalog | null>(null);
   const [sparkCat, setSparkCat] = useState<SignupCatalog | null>(null);
   const [consultingProducts, setConsultingProducts] = useState<ConsultingProduct[] | null>(null);
@@ -304,6 +305,11 @@ export function ConsultingOnboardClientPageV2() {
         console.error("[wizard] fetchPlanCatalog(arion) FAILED:", e);
         return [];
       }),
+      fetchArionSeoAddons().catch((e) => {
+        // eslint-disable-next-line no-console
+        console.error("[wizard] fetchArionSeoAddons FAILED:", e);
+        return {} as Record<string, ArionSeoAddonEntry>;
+      }),
       fetchSignupCatalog("oliver", cycle).catch((e) => {
         // eslint-disable-next-line no-console
         console.error("[wizard] fetchSignupCatalog(oliver) FAILED:", e);
@@ -324,9 +330,10 @@ export function ConsultingOnboardClientPageV2() {
           console.error("[wizard] consulting-products FAILED:", e);
           return { data: [] as ConsultingProduct[], err: (e as Error).message || String(e) };
         }),
-    ]).then(([ap, oc, sc, cp]) => {
+    ]).then(([ap, seo, oc, sc, cp]) => {
       if (cancelled) return;
       setArionPlans(ap || []);
+      setArionSeoAddons(seo || {});
       setOliverCat(oc);
       setSparkCat(sc);
       setConsultingProducts(cp.data || []);
@@ -770,7 +777,7 @@ export function ConsultingOnboardClientPageV2() {
           Task #257: after Save & Finish, redirect to the Tenant Workspace
           page so Brandon lands on the founder's "view-as-this-tenant"
           control center (not the dashboard). */}
-      <ClientTenantModal
+      <OnboardingWizardModal
         open={!!clientModal}
         tenantId={clientModal?.tenantId || null}
         tenantName={clientModal?.tenantName}
@@ -893,6 +900,7 @@ export function ConsultingOnboardClientPageV2() {
           cart={cart} upsertCart={upsertCart} removeCart={removeCart}
           cycle={cycle} setCycle={setCycle}
           arionPlans={arionPlans}
+          arionSeoAddons={arionSeoAddons}
           oliverCat={oliverCat} sparkCat={sparkCat}
           consultingProducts={consultingProducts} consultingPick={consultingPick} setConsultingPick={setConsultingPick}
           consultingError={consultingError}
@@ -1295,12 +1303,13 @@ function ModeCard({ active, onClick, title, desc }: { active: boolean; onClick: 
 
 // ─── Step 2 — Catalog-driven cart ────────────────────────────────────────
 
-function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, oliverCat, sparkCat, consultingProducts, consultingPick, setConsultingPick, consultingError, loading, arionSiteType, setArionSiteType, arionSiteUrl, setArionSiteUrl }: {
+function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, arionSeoAddons, oliverCat, sparkCat, consultingProducts, consultingPick, setConsultingPick, consultingError, loading, arionSiteType, setArionSiteType, arionSiteUrl, setArionSiteUrl }: {
   cart: CartItem[];
   upsertCart: (it: CartItem) => void;
   removeCart: (p: CartItem["product"]) => void;
   cycle: BillingCycle; setCycle: (c: BillingCycle) => void;
   arionPlans: PlanCatalogEntry[];
+  arionSeoAddons: Record<string, ArionSeoAddonEntry>;
   oliverCat: SignupCatalog | null;
   sparkCat: SignupCatalog | null;
   consultingProducts: ConsultingProduct[] | null;
@@ -1362,32 +1371,46 @@ function Step2Cart({ cart, upsertCart, removeCart, cycle, setCycle, arionPlans, 
             </div>
             {arionInCart && (
               <>
-                {/* SEO add-on — same display "from $X/mo" pattern as public
-                    /pricing State 2. Exact pricing confirmed at Stripe
-                    checkout (varies with billing cycle). */}
+                {/* SEO add-on — prices come from fetchArionSeoAddons() which
+                    pulls the live Stripe catalog. Never hardcode (per the
+                    Never-Hardcode-Prices rule and #250 fix). Cycle-aware:
+                    show /mo for monthly, /yr for annual. */}
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 mb-1">SEO add-on (optional)</label>
                   <div className="grid grid-cols-4 gap-2">
-                    {([
-                      { key: "", label: "None", from: null },
-                      { key: "essentials", label: "Essentials", from: 29 },
-                      { key: "growth", label: "Growth", from: 79 },
-                      { key: "authority", label: "Authority", from: 149 },
-                    ] as Array<{ key: "" | "essentials" | "growth" | "authority"; label: string; from: number | null }>).map((opt) => {
-                      const active = arionInCart.seo === opt.key || (!arionInCart.seo && opt.key === "");
-                      return (
-                        <button key={opt.key || "none"}
-                          onClick={() => upsertCart({ product: "arion", plan: arionInCart.plan, seo: opt.key })}
-                          className={`p-2 rounded-lg border-2 text-xs text-left ${active ? "bg-white shadow" : "border-slate-200 bg-white hover:border-slate-300"}`}
-                          style={active ? { borderColor: "#38BDF8" } : {}}
-                        >
-                          <div className="font-bold text-slate-900 text-[11px]">{opt.label}</div>
-                          <div className="text-[10px] text-slate-500 mt-0.5">
-                            {opt.from == null ? "—" : `from $${opt.from}/mo`}
-                          </div>
-                        </button>
-                      );
-                    })}
+                    {(() => {
+                      const order: Array<"" | "essentials" | "growth" | "authority"> = ["", "essentials", "growth", "authority"];
+                      const labelOf: Record<string, string> = { "": "None", essentials: "Essentials", growth: "Growth", authority: "Authority" };
+                      return order.map((key) => {
+                        const entry = key ? arionSeoAddons[key] : null;
+                        const monthly = entry?.pricing?.monthly_usd ?? null;
+                        const annualMo = entry?.pricing?.annual_per_month_usd ?? null;
+                        const annualYr = entry?.pricing?.annual_usd ?? null;
+                        const price = !key
+                          ? null
+                          : cycle === "annual"
+                            ? (annualYr != null ? annualYr : (annualMo != null ? annualMo * 12 : null))
+                            : monthly;
+                        const priceLabel = !key
+                          ? "—"
+                          : price == null
+                            ? "—"
+                            : cycle === "annual"
+                              ? `${money(price)}/yr`
+                              : `${money(price)}/mo`;
+                        const active = arionInCart.seo === key || (!arionInCart.seo && key === "");
+                        return (
+                          <button key={key || "none"}
+                            onClick={() => upsertCart({ product: "arion", plan: arionInCart.plan, seo: key })}
+                            className={`p-2 rounded-lg border-2 text-xs text-left ${active ? "bg-white shadow" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                            style={active ? { borderColor: "#38BDF8" } : {}}
+                          >
+                            <div className="font-bold text-slate-900 text-[11px]">{labelOf[key]}</div>
+                            <div className="text-[10px] text-slate-500 mt-0.5">{priceLabel}</div>
+                          </button>
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
                 {/* Site type */}
