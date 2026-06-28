@@ -364,15 +364,10 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'consulting_access_log', displayName: 'IA Access Log', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_access_log', description: 'Transparency: whether Intelligent Analytics manages this account and a full log of everything IA has done in it.' },
   { key: 'consulting_onboard_client', displayName: 'Onboard Client', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_onboard_client', description: 'Founder-only — onboard a new or existing client onto the IA platform (creates tenant, links/creates Stripe customer, sets up ARION site + plugin provisioning).' },
   { key: 'consulting_tickets', displayName: 'Service Requests', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_tickets', description: 'Recurring Build-Your-Business work — blog posts, monthly SEO reviews, quarterly content refreshes. Auto-generates next instance on close based on cadence. Founder sees all clients; clients see only their own.' },
-  { key: 'consulting_projects', displayName: 'Projects', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_projects', description: 'Multi-phase consulting projects (Custom Software, Agentic Builds, Full SEO Setup, etc.). Phase tracker + artifacts + auto-creates client review entries on Service Requests.' },
-  // F1 (Consulting Rework 2026-06-25) — new list-view Projects page. Replaces
-  // the card-grid `consulting_projects` surface as the canonical project
-  // hub; the old key remains registered so deep links don't 404.
-  { key: 'consulting_projects_v2', displayName: 'Projects', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_projects_v2', description: 'Canonical project list — filterable by status / client / category, sorted by most recent activity. Replaces the older card-grid view (still reachable via consulting_projects).' },
-  // Phase 1 v0 — 4-tier workspace (Project → Phase → Feature → Task) read-only.
-  // Schema in migration 091_consulting_rework_phase1.sql. Backend feature/task
-  // endpoints still pending — page renders empty/pending banner gracefully.
-  { key: 'consulting_project_workspace', displayName: 'Project Workspace', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_project_workspace', description: 'Drill into a project to see the full Phase → Feature → Task tree. Read-only v0 of the 4-tier consulting hierarchy.' },
+  // F1 (Consulting Rework 2026-06-25) — canonical Projects list view at the
+  // clean `/consulting_projects` URL. Replaces the old card-grid Board page
+  // + the orphaned Project Workspace page (both deleted same change).
+  { key: 'consulting_projects', displayName: 'Projects', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_projects', description: 'Project list — filterable by status / client / category, sorted by most recent activity. Click a row to open the full project modal.' },
   { key: 'consulting_deliverables', displayName: 'Deliverables', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_deliverables', description: 'Unified artifact library — logos, code, copy, designs. Tagged by Build Your Series. Sourced from Projects + standalone uploads.' },
   // F4 (Consulting Rework 2026-06-25) — Document Library (founder-only).
   // Templates for intake forms (scored question schemas) + proposal / report
