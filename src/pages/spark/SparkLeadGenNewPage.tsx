@@ -206,6 +206,15 @@ export function SparkLeadGenNewPage() {
   const [previewLoc, setPreviewLoc] = useState<ExpandLocResponse>({ cities: [], zip_count: 0 });
   const [previewLocLoading, setPreviewLocLoading] = useState(false);
 
+  // Tenant Lead Gen credit pool. Drives the max-leads cap + the Usage card in
+  // the right sidebar. Endpoint = GET /leadgen/credits (LUMEN-API), returns
+  // { monthly_allotment, remaining, overage_per_lead_cents }.
+  const [credits, setCredits] = useState<{
+    monthly_allotment: number;
+    remaining: number;
+    overage_per_lead_cents: number;
+  } | null>(null);
+
   // Load states once on mount.
   useEffect(() => {
     if (!ready) return;
@@ -216,6 +225,28 @@ export function SparkLeadGenNewPage() {
         setStates(r?.data || []);
       } catch {
         // Endpoint not live yet — leave empty so the dropdown renders disabled.
+      }
+    })();
+  }, [get, ready]);
+
+  // Load tenant credit pool once on mount. Silent-fail leaves credits=null so
+  // the UI falls back to the legacy fixed cap; better than blocking the form.
+  useEffect(() => {
+    if (!ready) return;
+    (async () => {
+      try {
+        // GET /api/v1/leadgen/credits → { data: { monthly_allotment, remaining, overage_per_lead_cents, ... } }
+        type CreditsResp = { data: { monthly_allotment: number; remaining: number; overage_per_lead_cents: number } };
+        const r = await get<CreditsResp>("/api/v1/leadgen/credits");
+        if (r?.data) {
+          setCredits({
+            monthly_allotment: Number(r.data.monthly_allotment) || 0,
+            remaining: Number(r.data.remaining) || 0,
+            overage_per_lead_cents: Number(r.data.overage_per_lead_cents) || 100,
+          });
+        }
+      } catch {
+        // Silent — cap stays at legacy fallback, no user-facing error.
       }
     })();
   }, [get, ready]);
@@ -396,7 +427,19 @@ export function SparkLeadGenNewPage() {
   }, [debouncedLoc, post, ready]);
 
   // ── derived ────────────────────────────────────────────────────────────
-  const estCostUsd = useMemo(() => form.maxLeads * COST_PER_LEAD_USD, [form.maxLeads]);
+  // Dynamic max cap: tenant's remaining credits + 50-lead overage buffer.
+  // Falls back to the legacy hard-coded MAX_LEADS_CAP when the credits
+  // endpoint hasn't returned yet, so the slider is never dead.
+  const OVERAGE_BUFFER = 50;
+  const dynamicMaxCap = credits ? credits.remaining + OVERAGE_BUFFER : MAX_LEADS_CAP;
+
+  // Cost = (leads over remaining) * overage rate. Leads within the monthly
+  // allotment are free (already paid for by the subscription).
+  const estCostUsd = useMemo(() => {
+    if (!credits) return form.maxLeads * COST_PER_LEAD_USD;
+    const overageLeads = Math.max(0, form.maxLeads - credits.remaining);
+    return (overageLeads * credits.overage_per_lead_cents) / 100;
+  }, [form.maxLeads, credits]);
   const estTimeStr = "4–7 min";
 
   const canSubmit =
@@ -734,13 +777,17 @@ export function SparkLeadGenNewPage() {
             <div className="mt-3">
               <label className="text-[10px] uppercase font-semibold text-slate-500 tracking-wide flex items-center justify-between">
                 <span>Max leads</span>
-                <span className="text-[11px] normal-case text-slate-400">Tier cap: {MAX_LEADS_CAP}</span>
+                <span className="text-[11px] normal-case text-slate-400">
+                  {credits
+                    ? `${credits.remaining.toLocaleString()} included · +${OVERAGE_BUFFER} overage`
+                    : `Tier cap: ${MAX_LEADS_CAP}`}
+                </span>
               </label>
               <div className="mt-0.5 flex items-center gap-2">
                 <input
                   type="range"
                   min={10}
-                  max={MAX_LEADS_CAP}
+                  max={dynamicMaxCap}
                   step={10}
                   value={form.maxLeads}
                   onChange={(e) => setForm({ ...form, maxLeads: Number(e.target.value) })}
@@ -748,6 +795,11 @@ export function SparkLeadGenNewPage() {
                 />
                 <span className="text-sm font-semibold text-slate-900 tabular-nums w-12 text-right">{form.maxLeads}</span>
               </div>
+              {credits && form.maxLeads > credits.remaining && (
+                <p className="text-[11px] text-amber-700 mt-1 font-medium">
+                  {form.maxLeads - credits.remaining} lead{form.maxLeads - credits.remaining === 1 ? "" : "s"} beyond your monthly allotment — charged at ${(credits.overage_per_lead_cents / 100).toFixed(2)}/lead.
+                </p>
+              )}
               <p className="text-[11px] text-slate-500 mt-1">Billed per delivered lead. If we find fewer than your max, you&apos;re only charged for what we deliver.</p>
             </div>
           </Section>
@@ -755,6 +807,34 @@ export function SparkLeadGenNewPage() {
 
         {/* ─── RIGHT: live preview panel ───────────────────────────────── */}
         <aside className="lg:sticky lg:top-4 self-start space-y-4">
+          {/* Usage / plan pool — visible at the TOP so the customer always
+              sees what they have available before they commit to a run. */}
+          {credits && (() => {
+            const used = Math.max(0, credits.monthly_allotment - credits.remaining);
+            const pct = credits.monthly_allotment > 0
+              ? Math.min(100, Math.round((used / credits.monthly_allotment) * 100))
+              : 0;
+            const barColor = pct >= 90 ? "bg-rose-500" : pct >= 70 ? "bg-amber-500" : "bg-emerald-500";
+            return (
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-700">Lead Gen usage</div>
+                  <div className="text-[10px] text-slate-400 tabular-nums">this month</div>
+                </div>
+                <div className="flex items-baseline gap-1.5 mb-2">
+                  <span className="text-2xl font-bold text-slate-900 tabular-nums">{credits.remaining.toLocaleString()}</span>
+                  <span className="text-xs text-slate-500">/ {credits.monthly_allotment.toLocaleString()} remaining</span>
+                </div>
+                <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                  <div className={`h-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
+                </div>
+                <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
+                  <span>{used.toLocaleString()} used</span>
+                  <span>Overage ${(credits.overage_per_lead_cents / 100).toFixed(2)}/lead</span>
+                </div>
+              </div>
+            );
+          })()}
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="px-4 py-2.5 border-b border-slate-100 bg-gradient-to-br from-orange-50/60 to-white">
               <div className="text-[10px] font-bold uppercase tracking-wider text-[#EF6C33]">Live preview</div>
