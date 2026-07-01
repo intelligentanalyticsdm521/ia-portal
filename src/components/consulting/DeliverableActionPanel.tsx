@@ -136,6 +136,12 @@ export interface DeliverableActionPanelProps {
    * trigger payment via a different surface). Default 'standalone'.
    */
   context?: "milestone" | "sr" | "standalone";
+  /**
+   * When true, all CTAs render disabled + dimmed. Used by hosts that render
+   * the panel inside a read-only/historical view (e.g. archived SR, closed
+   * project). Status meta strip still renders normally.
+   */
+  readOnly?: boolean;
 }
 
 // ─── Toast hook — minimal ────────────────────────────────────────────────
@@ -156,6 +162,7 @@ export function DeliverableActionPanel({
   onRequestRevision,
   onPay,
   context = "standalone",
+  readOnly = false,
 }: DeliverableActionPanelProps) {
   const { post } = useOliverApi();
   const [busy, setBusy] = useState(false);
@@ -341,7 +348,7 @@ export function DeliverableActionPanel({
               onChange={(e) => setRevNotes(e.target.value)}
               placeholder="What needs to change?"
               rows={3}
-              disabled={busy}
+              disabled={busy || readOnly}
               className="w-full rounded border border-amber-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
             />
             {error && <div className="mt-1 text-[11px] text-red-700">{error}</div>}
@@ -349,7 +356,7 @@ export function DeliverableActionPanel({
               <button
                 type="button"
                 onClick={handleRequestRevision}
-                disabled={busy}
+                disabled={busy || readOnly}
                 className="flex-1 rounded bg-amber-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-amber-700 disabled:opacity-50"
               >
                 {busy ? "Sending…" : "Send revisions"}
@@ -361,7 +368,7 @@ export function DeliverableActionPanel({
                   setRevNotes("");
                   setError(null);
                 }}
-                disabled={busy}
+                disabled={busy || readOnly}
                 className="rounded border border-slate-300 px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-100"
               >
                 Cancel
@@ -377,7 +384,7 @@ export function DeliverableActionPanel({
             <button
               type="button"
               onClick={handleApprove}
-              disabled={busy}
+              disabled={busy || readOnly}
               className="flex-1 rounded bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
             >
               {busy ? "…" : approveLabel}
@@ -385,7 +392,7 @@ export function DeliverableActionPanel({
             <button
               type="button"
               onClick={() => setRevOpen(true)}
-              disabled={busy}
+              disabled={busy || readOnly}
               className="flex-1 rounded bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-50"
             >
               Request Revisions
@@ -395,7 +402,7 @@ export function DeliverableActionPanel({
             <button
               type="button"
               onClick={handlePay}
-              disabled={busy}
+              disabled={busy || readOnly}
               className="w-full rounded border border-emerald-300 bg-white px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
             >
               Pay {formatMoneyCents(deliverable.payment_amount_cents)} now
@@ -447,7 +454,7 @@ export function DeliverableActionPanel({
         <button
           type="button"
           onClick={handleSendToClient}
-          disabled={busy}
+          disabled={busy || readOnly}
           className="w-full rounded bg-sky-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-700 disabled:opacity-50"
         >
           {busy ? "Sending…" : "Send to Client"}
