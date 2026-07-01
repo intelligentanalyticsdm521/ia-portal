@@ -46,6 +46,11 @@ interface BookingPage {
   logo_url: string | null;
   is_active: boolean;
   require_confirmation: boolean;
+  // F-52 — Price visibility per visitor kind. The public renderer looks up
+  // the visitor's email/phone in lumen.contact; if they match, they're
+  // treated as a returning customer.
+  show_price_to_new_customer: boolean;
+  show_price_to_returning_customer: boolean;
   // F-47 — slot capacity. 'auto' = one per slot (concurrency = worker count),
   // 'fixed' = capacity_count attendees per slot, 'group' = unlimited.
   capacity_mode: "auto" | "fixed" | "group";
@@ -173,6 +178,8 @@ export function OliverBookingPage() {
         is_active: draft.is_active,
         capacity_mode: draft.capacity_mode,
         capacity_count: draft.capacity_mode === "fixed" ? (draft.capacity_count || 1) : null,
+        show_price_to_new_customer: draft.show_price_to_new_customer,
+        show_price_to_returning_customer: draft.show_price_to_returning_customer,
       };
       if (bookingPage) {
         await patch(`/booking/pages/${bookingPage.booking_page_id}`, body);
@@ -438,6 +445,44 @@ export function OliverBookingPage() {
             placeholder="Custom thank-you shown after booking. Defaults to a generic confirmation."
           />
         </Field>
+      </SectionCard>
+
+      {/* ─── Section: Price visibility (F-52) ───────────────────────────────── */}
+      <SectionCard
+        icon={<Globe className="h-4 w-4" />}
+        title="Show the price on the booking page?"
+        subtitle="We check the visitor's email or phone against your customer list to tell prospects apart from repeat customers."
+      >
+        <div className="space-y-2">
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={draft?.show_price_to_new_customer ?? true}
+              onChange={(e) => setDraftField("show_price_to_new_customer", e.target.checked)}
+              className="mt-1 h-4 w-4"
+            />
+            <span className="text-sm">
+              <span className="font-medium">Show the price to new visitors</span>
+              <span className="block text-xs text-slate-500">
+                Prospects haven't seen your pricing yet; showing it helps them decide.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={draft?.show_price_to_returning_customer ?? false}
+              onChange={(e) => setDraftField("show_price_to_returning_customer", e.target.checked)}
+              className="mt-1 h-4 w-4"
+            />
+            <span className="text-sm">
+              <span className="font-medium">Show the price to returning customers</span>
+              <span className="block text-xs text-slate-500">
+                Off by default — repeat customers already know what they pay, so the confirmation stays focused on the appointment.
+              </span>
+            </span>
+          </label>
+        </div>
       </SectionCard>
 
       {/* ─── Section: When you're available ─────────────────────────────────── */}
@@ -709,6 +754,11 @@ function defaultBookingPage(): BookingPage {
     logo_url: null,
     is_active: true,
     require_confirmation: true,
+    // F-52 defaults mirror the SQL migration: show price to prospects who
+    // still need it to decide; hide from returning customers who already
+    // know what they pay.
+    show_price_to_new_customer: true,
+    show_price_to_returning_customer: false,
     capacity_mode: "auto",
     capacity_count: null,
   };
