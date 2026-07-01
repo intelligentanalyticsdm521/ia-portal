@@ -114,6 +114,106 @@ interface OrgProfile {
   brandColorAccent?: string | null;
   billingEmail?: string | null;
   supportEmail?: string | null;
+  /** Weekly hours of operation. `null` = not set. Stored as JSON on
+   *  core.tenants.business_hours (migration 120). Shape:
+   *  { mon: { open: 'HH:MM', close: 'HH:MM', closed: boolean }, ... } */
+  businessHours?: BusinessHours | null;
+}
+
+type DayKey = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+interface DayHours { open: string | null; close: string | null; closed: boolean }
+type BusinessHours = Record<DayKey, DayHours>;
+
+const DAY_ORDER: { key: DayKey; label: string }[] = [
+  { key: 'mon', label: 'Monday' },
+  { key: 'tue', label: 'Tuesday' },
+  { key: 'wed', label: 'Wednesday' },
+  { key: 'thu', label: 'Thursday' },
+  { key: 'fri', label: 'Friday' },
+  { key: 'sat', label: 'Saturday' },
+  { key: 'sun', label: 'Sunday' },
+];
+
+function defaultBusinessHours(): BusinessHours {
+  return {
+    mon: { open: '09:00', close: '17:00', closed: false },
+    tue: { open: '09:00', close: '17:00', closed: false },
+    wed: { open: '09:00', close: '17:00', closed: false },
+    thu: { open: '09:00', close: '17:00', closed: false },
+    fri: { open: '09:00', close: '17:00', closed: false },
+    sat: { open: null,    close: null,    closed: true  },
+    sun: { open: null,    close: null,    closed: true  },
+  };
+}
+
+// Simple 7-row editor: open time + close time + "Closed" per day. `value=null`
+// means the tenant hasn't set hours yet — we render the default template so
+// they can adjust and save; we only actually flip draft.businessHours when
+// the user edits a field (or clicks the Reset link).
+function BusinessHoursEditor({
+  value,
+  onChange,
+}: {
+  value: BusinessHours | null;
+  onChange: (next: BusinessHours) => void;
+}) {
+  const hours: BusinessHours = value ?? defaultBusinessHours();
+  const isUnset = value === null;
+
+  const updateDay = (day: DayKey, patch: Partial<DayHours>) => {
+    const next: BusinessHours = { ...hours, [day]: { ...hours[day], ...patch } };
+    onChange(next);
+  };
+
+  return (
+    <div className="mt-2 rounded-md border border-gray-200 bg-white">
+      {isUnset && (
+        <div className="border-b border-gray-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+          No hours saved yet — showing suggested defaults (Mon–Fri 9–5). Adjust below and click Save.
+        </div>
+      )}
+      <ul className="divide-y divide-gray-100">
+        {DAY_ORDER.map(({ key, label }) => {
+          const d = hours[key];
+          return (
+            <li key={key} className="flex flex-wrap items-center gap-3 px-3 py-2">
+              <span className="w-24 text-sm text-gray-700">{label}</span>
+              <input
+                type="time"
+                value={d.open ?? ''}
+                disabled={d.closed}
+                onChange={(e) => updateDay(key, { open: e.target.value || null })}
+                className="rounded border border-gray-300 px-2 py-1 text-sm disabled:bg-gray-50 disabled:text-gray-400"
+                aria-label={`${label} opening time`}
+              />
+              <span className="text-sm text-gray-400">to</span>
+              <input
+                type="time"
+                value={d.close ?? ''}
+                disabled={d.closed}
+                onChange={(e) => updateDay(key, { close: e.target.value || null })}
+                className="rounded border border-gray-300 px-2 py-1 text-sm disabled:bg-gray-50 disabled:text-gray-400"
+                aria-label={`${label} closing time`}
+              />
+              <label className="ml-auto inline-flex cursor-pointer items-center gap-1.5 text-xs text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={d.closed}
+                  onChange={(e) => {
+                    const closed = e.target.checked;
+                    updateDay(key, closed
+                      ? { closed: true, open: null, close: null }
+                      : { closed: false, open: d.open ?? '09:00', close: d.close ?? '17:00' });
+                  }}
+                />
+                Closed
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
 }
 
 // Canonical shared business profile (core.tenants) — the single record reused
@@ -168,6 +268,10 @@ export function OrganizationTab() {
         brandColorAccent: draft.brandColorAccent ?? '',
         billingEmail: draft.billingEmail ?? '',
         supportEmail: draft.supportEmail ?? '',
+        // Only send businessHours when the user has actually edited them
+        // (draft.businessHours !== undefined). Undefined = leave the DB alone
+        // per the empty-value guard on the backend.
+        ...(draft.businessHours !== undefined ? { businessHours: draft.businessHours } : {}),
       });
       setProfile(updated); setDraft(updated);
       setToast('Business profile saved — shared across all products');
@@ -232,6 +336,18 @@ export function OrganizationTab() {
       <div>
         <label className="block text-sm font-medium text-gray-700">Address</label>
         <textarea rows={2} value={draft.address || ''} onChange={(e) => set({ address: e.target.value })} className={cls} placeholder="123 Main St, Springfield IL 62701" />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Business hours</label>
+        <p className="mt-0.5 text-xs text-gray-500">
+          Shown on booking pages, customer portal, invoices, and email signatures. Toggle a day
+          <span className="mx-1 font-medium">Closed</span> if you don't operate that day.
+        </p>
+        <BusinessHoursEditor
+          value={draft.businessHours ?? null}
+          onChange={(next) => set({ businessHours: next })}
+        />
       </div>
 
       <div>

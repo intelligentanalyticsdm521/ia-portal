@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Button, StatusBadge } from "../ui";
-import { CatalogLineItemPicker, type LineItem } from "../CatalogLineItemPicker";
+import { CatalogLineItemPicker, computeLineTotal, type LineItem } from "../CatalogLineItemPicker";
 
 interface JobDetail {
   id: string;
@@ -44,6 +44,9 @@ interface PersistedLineItem {
   lineTotal: number;
   sortOrder: number;
   durationMinutes?: number | null;
+  // F-57 (Defect #92)
+  discountType?: "percent" | "fixed" | null;
+  discountValue?: number | null;
 }
 
 // Every status the job state machine knows about. The pill dropdown
@@ -120,6 +123,8 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
         service_offering_id: it.serviceOfferingId ?? null,
         duration_minutes: it.durationMinutes ?? null,
         sort_order: it.sortOrder,
+        discount_type: it.discountType ?? null,
+        discount_value: it.discountValue != null ? Number(it.discountValue) : null,
       }));
       setLineItems(itemRows);
       setOriginalLineItems(itemRows);
@@ -167,6 +172,8 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
           service_offering_id: it.service_offering_id || null,
           duration_minutes: it.duration_minutes ?? null,
           sort_order: i,
+          discount_type: it.discount_type ?? null,
+          discount_value: it.discount_value ?? null,
         })),
       });
       setOriginalLineItems(lineItems);
@@ -201,7 +208,7 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
   }
 
   const lineItemsDirty = JSON.stringify(lineItems) !== JSON.stringify(originalLineItems);
-  const lineItemsSubtotal = lineItems.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price || 0), 0);
+  const lineItemsSubtotal = lineItems.reduce((s, it) => s + computeLineTotal(it), 0);
   // Even terminal-state jobs are editable now (per founder spec — re-open
   // closed jobs by setting status back). The only thing isTerminal still
   // disables is line-item editing, since changing line items on a paid job

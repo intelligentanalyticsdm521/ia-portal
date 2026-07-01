@@ -20,6 +20,24 @@ export interface LineItem {
   service_offering_id?: string | null;
   duration_minutes?: number | null;
   sort_order?: number;
+  // F-57 (Defect #92): per-line-item discount. Both null = no discount.
+  discount_type?: "percent" | "fixed" | null;
+  discount_value?: number | null;
+}
+
+// F-57 helper — mirrors the backend calculator so the UI shows the same
+// number the server will persist as line_total.
+export function computeLineTotal(it: Pick<LineItem, "quantity" | "unit_price" | "discount_type" | "discount_value">): number {
+  const gross = Number(it.quantity || 0) * Number(it.unit_price || 0);
+  if (it.discount_type === "percent") {
+    const pct = Math.min(100, Math.max(0, Number(it.discount_value) || 0));
+    return Math.round((gross - gross * (pct / 100)) * 100) / 100;
+  }
+  if (it.discount_type === "fixed") {
+    const amt = Math.max(0, Number(it.discount_value) || 0);
+    return Math.round((gross - Math.min(gross, amt)) * 100) / 100;
+  }
+  return Math.round(gross * 100) / 100;
 }
 
 interface CatalogOffering {
@@ -120,7 +138,7 @@ export function CatalogLineItemPicker({
   }
 
   const subtotal = useMemo(
-    () => items.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price || 0), 0),
+    () => items.reduce((s, it) => s + computeLineTotal(it), 0),
     [items],
   );
   const totalDuration = useMemo(
@@ -144,13 +162,16 @@ export function CatalogLineItemPicker({
               <th style={{ textAlign: "left", padding: "6px 0", fontWeight: 600 }}>Service</th>
               <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600, width: 70 }}>Qty</th>
               <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600, width: 110 }}>Unit price</th>
+              <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600, width: 150 }}>Discount</th>
               <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600, width: 110 }}>Line total</th>
               <th style={{ width: 40 }} />
             </tr>
           </thead>
           <tbody>
             {items.map((it, idx) => {
-              const lineTotal = Number(it.quantity || 0) * Number(it.unit_price || 0);
+              const lineTotal = computeLineTotal(it);
+              const discountType = it.discount_type ?? "";
+              const discountValue = it.discount_value ?? 0;
               return (
                 <tr key={it.id || idx} style={{ borderBottom: "1px solid #F3F4F6" }}>
                   <td style={{ padding: "8px 0" }}>
@@ -185,6 +206,36 @@ export function CatalogLineItemPicker({
                       style={{ width: "100%", textAlign: "right", border: "1px solid #E5E7EB", borderRadius: 4, padding: "4px 6px", fontSize: 12, fontFamily: "monospace" }}
                     />
                   </td>
+                  <td style={{ padding: "8px" }}>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <select
+                        value={discountType}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === "percent" || v === "fixed") {
+                            updateItem(idx, { discount_type: v, discount_value: it.discount_value ?? 0 });
+                          } else {
+                            updateItem(idx, { discount_type: null, discount_value: null });
+                          }
+                        }}
+                        disabled={disabled}
+                        style={{ width: 62, border: "1px solid #E5E7EB", borderRadius: 4, padding: "4px 4px", fontSize: 11, background: "#fff" }}
+                        title="Line-item discount type"
+                      >
+                        <option value="">—</option>
+                        <option value="percent">%</option>
+                        <option value="fixed">$</option>
+                      </select>
+                      <input
+                        type="number" min={0} step="0.01"
+                        value={discountType ? discountValue : ""}
+                        placeholder="0"
+                        onChange={(e) => updateItem(idx, { discount_value: Number(e.target.value) || 0 })}
+                        disabled={disabled || !discountType}
+                        style={{ width: "100%", textAlign: "right", border: "1px solid #E5E7EB", borderRadius: 4, padding: "4px 6px", fontSize: 12, fontFamily: "monospace" }}
+                      />
+                    </div>
+                  </td>
                   <td style={{ padding: "8px", textAlign: "right", fontFamily: "monospace", fontWeight: 600, color: "#0B1C24" }}>
                     {fmtMoney(lineTotal)}
                   </td>
@@ -204,7 +255,7 @@ export function CatalogLineItemPicker({
               );
             })}
             <tr>
-              <td colSpan={3} style={{ padding: "10px 8px", textAlign: "right", fontSize: 12, color: "#5A7A8A", fontWeight: 600 }}>
+              <td colSpan={4} style={{ padding: "10px 8px", textAlign: "right", fontSize: 12, color: "#5A7A8A", fontWeight: 600 }}>
                 Subtotal
               </td>
               <td style={{ padding: "10px 8px", textAlign: "right", fontFamily: "monospace", fontWeight: 700, color: "#0B1C24" }}>
@@ -214,7 +265,7 @@ export function CatalogLineItemPicker({
             </tr>
             {totalDuration > 0 && (
               <tr>
-                <td colSpan={3} style={{ padding: "0 8px 6px", textAlign: "right", fontSize: 10, color: "#5A7A8A" }}>
+                <td colSpan={4} style={{ padding: "0 8px 6px", textAlign: "right", fontSize: 10, color: "#5A7A8A" }}>
                   Estimated duration
                 </td>
                 <td style={{ padding: "0 8px 6px", textAlign: "right", fontSize: 10, color: "#1A7DB5" }}>
