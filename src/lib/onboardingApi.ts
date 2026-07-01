@@ -130,6 +130,21 @@ export async function startByodVerification(domain: string) {
   }>('/onboarding/domains/byod', { domain });
 }
 
+export interface HostingerExistingDomain {
+  domain: string;
+  status: string | null;
+  expires_at: string | null;
+}
+
+// Defect #246 V1 — list domains already on the IA master Hostinger account so
+// the founder wizard can render a dropdown when the customer picks
+// `hostinger_existing` instead of asking them to hand-type the FQDN.
+export async function fetchHostingerExistingDomains(): Promise<HostingerExistingDomain[]> {
+  const data = await getJson<{ domains: HostingerExistingDomain[] }>(
+    '/onboarding/domains/hostinger-existing');
+  return data.domains || [];
+}
+
 export async function pollByodStatus(domain: string) {
   const res = await fetch(
     `${API_BASE}/onboarding/domains/byod/status?domain=${encodeURIComponent(domain)}`

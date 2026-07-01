@@ -49,7 +49,7 @@ import {
   coerceBrandIntake,
   type BrandIntake,
 } from "../../types/brandIntake";
-import { fetchArionSeoAddons, type ArionSeoAddonEntry } from "../../lib/onboardingApi";
+import { fetchArionSeoAddons, fetchHostingerExistingDomains, type ArionSeoAddonEntry, type HostingerExistingDomain } from "../../lib/onboardingApi";
 import { SparkBodyEditor } from "../spark/SparkBodyEditor";
 import { useSparkApi } from "../../hooks/useSparkApi";
 
@@ -1351,6 +1351,24 @@ function ArionSection({ v, setV, tenantId, profile, arionRunner, integ, setInteg
   const [forceEdit, setForceEdit] = useState(false);
   const { getToken: getArionToken } = useAccessToken();
 
+  // Defect #246 — Hostinger existing-domain picker. Lazy-load the IA master
+  // account's portfolio the first time the operator picks `hostinger_existing`
+  // in either the existing-site or new-site branch, cache in-component. Empty
+  // array + `hostingerErr` if listDomains upstream fails; UI falls back to a
+  // typed FQDN so the wizard is never blocked by a Hostinger outage.
+  const [hostingerDomains, setHostingerDomains] = useState<HostingerExistingDomain[] | null>(null);
+  const [hostingerLoading, setHostingerLoading] = useState(false);
+  const [hostingerErr, setHostingerErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (v.domain_choice !== "hostinger_existing") return;
+    if (hostingerDomains !== null || hostingerLoading) return;
+    setHostingerLoading(true);
+    fetchHostingerExistingDomains()
+      .then((list) => { setHostingerDomains(list); setHostingerErr(null); })
+      .catch((e) => { setHostingerDomains([]); setHostingerErr(String(e?.message || e)); })
+      .finally(() => setHostingerLoading(false));
+  }, [v.domain_choice, hostingerDomains, hostingerLoading]);
+
   // 2026-06-23 — runner state lives in the parent's useArionRunner hook now,
   // so persist("continue") on Save & Continue can launch it. We just read
   // status off the controller to show the inline progress panel when the
@@ -1517,20 +1535,25 @@ function ArionSection({ v, setV, tenantId, profile, arionRunner, integ, setInteg
               ))}
             </div>
             {v.domain_choice === "hostinger_existing" && (
-              <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                <b>Note:</b> the back-end auto-connect via Hostinger API is queued for build (#246).
-                For now this routes through the same plugin-install path as <code>byo</code>.
-              </div>
+              <HostingerDomainPicker
+                domains={hostingerDomains}
+                loading={hostingerLoading}
+                error={hostingerErr}
+                selected={v.domain}
+                onSelect={(d) => setV({ ...v, domain: d, existing_wp_url: d ? `https://${d}` : "" })}
+              />
             )}
           </div>
 
-          <Field
-            label="WordPress site URL"
-            value={v.existing_wp_url}
-            onChange={(u) => setV({ ...v, existing_wp_url: u, domain: u })}
-            placeholder="https://your-site.com"
-            hint="The URL you use to log in at /wp-admin"
-          />
+          {v.domain_choice !== "hostinger_existing" && (
+            <Field
+              label="WordPress site URL"
+              value={v.existing_wp_url}
+              onChange={(u) => setV({ ...v, existing_wp_url: u, domain: u })}
+              placeholder="https://your-site.com"
+              hint="The URL you use to log in at /wp-admin"
+            />
+          )}
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-2">How will you give us admin access?</label>
@@ -1586,13 +1609,23 @@ function ArionSection({ v, setV, tenantId, profile, arionRunner, integ, setInteg
         </div>
         {v.domain_choice && (
           <div className="mt-2">
-            <Field label={v.domain_choice === "subdomain" ? "Subdomain prefix" : "Domain"}
-              value={v.domain} onChange={(d) => setV({ ...v, domain: d })}
-              placeholder={v.domain_choice === "subdomain" ? "rollinginit (becomes rollinginit.ia-dm.com)" : "example.com"} />
-            {v.domain_choice === "hostinger_existing" && (
+            {v.domain_choice === "hostinger_existing" ? (
+              <HostingerDomainPicker
+                domains={hostingerDomains}
+                loading={hostingerLoading}
+                error={hostingerErr}
+                selected={v.domain}
+                onSelect={(d) => setV({ ...v, domain: d })}
+              />
+            ) : (
+              <Field label={v.domain_choice === "subdomain" ? "Subdomain prefix" : "Domain"}
+                value={v.domain} onChange={(d) => setV({ ...v, domain: d })}
+                placeholder={v.domain_choice === "subdomain" ? "rollinginit (becomes rollinginit.ia-dm.com)" : "example.com"} />
+            )}
+            {v.domain_choice === "purchase" && (
               <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                <b>Note:</b> the back-end auto-connect via Hostinger API is queued for build (#246).
-                For now this routes through the same provisioning as <code>byo</code> but flagged so we surface the right post-setup instructions.
+                <b>Coming soon.</b> Automated domain registration via the Hostinger registrar API is queued (defect #247).
+                For V1, either buy the domain directly on Hostinger under the IA master account and then pick <b>Connect a domain on my Hostinger</b>, or point it at us via <b>Use an existing domain (DNS hop)</b>.
               </div>
             )}
             {v.domain_choice === "migrate" && (
@@ -3469,6 +3502,62 @@ function Field({ label, value, onChange, type = "text", placeholder, hint, tip }
       <input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
       {hint && <div className="text-[10px] text-slate-500 mt-1">{hint}</div>}
+    </div>
+  );
+}
+
+// Defect #246 — dropdown of domains already on the IA master Hostinger
+// account. Renders one of four states: loading spinner, error + FQDN fallback,
+// empty portfolio + FQDN fallback, or a real <select>. FQDN fallback keeps the
+// wizard usable when Hostinger is down or when the operator wants to type in
+// a domain that isn't in the portfolio yet (e.g. just registered elsewhere).
+function HostingerDomainPicker({ domains, loading, error, selected, onSelect }: {
+  domains: HostingerExistingDomain[] | null;
+  loading: boolean;
+  error: string | null;
+  selected: string;
+  onSelect: (domain: string) => void;
+}) {
+  if (loading) {
+    return (
+      <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        Loading domains from Hostinger…
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="mt-2 space-y-2">
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <b>Couldn't reach Hostinger:</b> {error}. Type the domain manually below.
+        </div>
+        <Field label="Domain" value={selected} onChange={onSelect} placeholder="example.com" />
+      </div>
+    );
+  }
+  if (!domains || domains.length === 0) {
+    return (
+      <div className="mt-2 space-y-2">
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+          No domains on the Hostinger account yet — enter the FQDN and we'll wire it up.
+        </div>
+        <Field label="Domain" value={selected} onChange={onSelect} placeholder="example.com" />
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2">
+      <label className="block text-xs font-semibold text-slate-700 mb-1">Domain (from Hostinger)</label>
+      <select value={selected} onChange={(e) => onSelect(e.target.value)}
+        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white">
+        <option value="">Pick a domain…</option>
+        {domains.map((d) => (
+          <option key={d.domain} value={d.domain}>
+            {d.domain}{d.status ? ` — ${d.status}` : ""}{d.expires_at ? ` (expires ${d.expires_at.slice(0, 10)})` : ""}
+          </option>
+        ))}
+      </select>
+      <div className="text-[10px] text-slate-500 mt-1">Live from the IA master Hostinger portfolio. {domains.length} domain{domains.length === 1 ? "" : "s"}.</div>
     </div>
   );
 }
