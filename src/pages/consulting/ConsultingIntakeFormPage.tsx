@@ -296,7 +296,7 @@ export function ConsultingIntakeFormPage() {
             )}
             {result.project_id && (
               <Link
-                to={`/app/services/consulting_project_workspace?project_id=${encodeURIComponent(result.project_id)}`}
+                to={`/app/admin/consulting/projects?open=${encodeURIComponent(result.project_id)}`}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-[#0C4A60] text-white text-xs font-semibold hover:bg-[#0a3d50]"
               >
                 Open in Project

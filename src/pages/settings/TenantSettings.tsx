@@ -637,11 +637,58 @@ interface GooglePropertyModalProps {
   loading: boolean;
   onSelect: (ga4PropertyId: string, gscSiteUrl: string) => void;
   onClose: () => void;
+  tenantId?: string | null;
+  siteId?: string | null;
+  apiBaseUrl?: string;
+  getToken?: () => Promise<{ accessToken: string }>;
+  onRefreshProperties?: () => Promise<void> | void;
 }
 
-function GooglePropertyModal({ ga4Properties, gscSites, currentGa4PropertyId, loading, onSelect, onClose }: GooglePropertyModalProps) {
+function GooglePropertyModal({ ga4Properties, gscSites, currentGa4PropertyId, loading, onSelect, onClose, tenantId, siteId, apiBaseUrl, getToken, onRefreshProperties }: GooglePropertyModalProps) {
   const [selectedGa4, setSelectedGa4] = useState(currentGa4PropertyId || '');
   const [selectedGsc, setSelectedGsc] = useState('');
+  const [provisioning, setProvisioning] = useState(false);
+  const [provisionError, setProvisionError] = useState<string | null>(null);
+  const [justCreated, setJustCreated] = useState<{ ga4?: string; gsc?: string; gbp?: string } | null>(null);
+
+  const handleCreateNew = async () => {
+    if (!tenantId || !siteId || !apiBaseUrl || !getToken) {
+      setProvisionError('Missing site or tenant context for auto-provisioning.');
+      return;
+    }
+    setProvisioning(true);
+    setProvisionError(null);
+    setJustCreated(null);
+    try {
+      const token = await getToken();
+      const { autoProvisionGoogle } = await import('../../lib/arionApi');
+      const resp = await autoProvisionGoogle({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId, siteId }) as { data?: { provision?: { ga4?: { ok?: boolean; propertyId?: string; error?: string }; gsc?: { ok?: boolean; siteUrl?: string; error?: string }; gbp?: { ok?: boolean; locationId?: string; error?: string } } } };
+      const p = resp?.data?.provision;
+      if (!p) {
+        setProvisionError('Auto-provision returned an empty response.');
+      } else {
+        setJustCreated({
+          ga4: p.ga4?.ok ? p.ga4.propertyId : undefined,
+          gsc: p.gsc?.ok ? p.gsc.siteUrl : undefined,
+          gbp: p.gbp?.ok ? p.gbp.locationId : undefined,
+        });
+        const fails: string[] = [];
+        if (!p.ga4?.ok) fails.push(`GA4: ${p.ga4?.error || 'failed'}`);
+        if (!p.gsc?.ok) fails.push(`GSC: ${p.gsc?.error || 'failed'}`);
+        if (!p.gbp?.ok) fails.push(`GBP: ${p.gbp?.error || 'failed'}`);
+        if (fails.length === 3) {
+          setProvisionError(`Auto-provision failed:\n• ${fails.join('\n• ')}`);
+        } else if (fails.length > 0) {
+          setProvisionError(`Partial provision — some sub-tasks failed:\n• ${fails.join('\n• ')}`);
+        }
+        if (onRefreshProperties) await onRefreshProperties();
+      }
+    } catch (err) {
+      setProvisionError((err as Error)?.message || 'Auto-provision failed');
+    } finally {
+      setProvisioning(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -693,6 +740,31 @@ function GooglePropertyModal({ ga4Properties, gscSites, currentGa4PropertyId, lo
               </select>
             )}
           </div>
+        </div>
+
+        {/* Create-new (auto-provision) */}
+        <div className="mt-5 border-t border-gray-200 pt-4">
+          <button
+            type="button"
+            onClick={handleCreateNew}
+            disabled={provisioning || !tenantId || !siteId}
+            className="rounded-md border border-blue-600 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+          >
+            {provisioning ? 'Creating...' : 'Create new GA4 + Search Console'}
+          </button>
+          {justCreated && (
+            <div className="mt-2 rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
+              <p className="font-medium">Created successfully:</p>
+              <ul className="mt-1 list-disc pl-5">
+                {justCreated.ga4 && <li>GA4 property: {justCreated.ga4}</li>}
+                {justCreated.gsc && <li>Search Console site: {justCreated.gsc}</li>}
+                {justCreated.gbp && <li>Business Profile: {justCreated.gbp}</li>}
+              </ul>
+            </div>
+          )}
+          {provisionError && (
+            <div className="mt-2 whitespace-pre-line rounded-md bg-red-50 p-3 text-sm text-red-700">{provisionError}</div>
+          )}
         </div>
 
         <div className="mt-5 flex justify-end gap-3">
@@ -1205,6 +1277,11 @@ export function ConnectedAccountsTab() {
           loading={propertyModalLoading}
           onSelect={handlePropertySelect}
           onClose={() => setShowPropertyModal(false)}
+          tenantId={activeTenantId}
+          siteId={siteId}
+          apiBaseUrl={apiBaseUrl}
+          getToken={getToken}
+          onRefreshProperties={openPropertySelector}
         />
       )}
 

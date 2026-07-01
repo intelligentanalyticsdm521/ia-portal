@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAppState } from '../app/AppState';
 import { useAccessToken } from '../auth/useAccessToken';
+import { getViewAsTenantId } from '../lib/viewAsTenant';
 import {
   ArionApiError,
   type ArionSiteSummary,
@@ -161,7 +162,19 @@ export function useArionContext() {
   // SubNav uses <NavLink to={item.route}> which drops query strings.
   // localStorage keyed on tenant_id is the cleanest fix — survives
   // bookmarks, navigation, and tab refreshes.
-  const storageKey = activeTenantId ? `arion.activeSiteId.${activeTenantId.toLowerCase()}` : null;
+  //
+  // Bug fix 2026-06-26: When the founder is in view-as mode, the
+  // effective tenant is the client they're viewing, NOT
+  // `useAppState().activeTenantId` (which stays pinned to the founder's
+  // home tenant). Previously the key was always built from the founder
+  // tenant id, so a site_id picked while view-as'ing client A got
+  // persisted under the founder's slot — and the next session,
+  // regardless of which client was being viewed, read that stale id.
+  // The visible symptom was "every tenant ARION view shows Briarwood
+  // Dental." Now we scope the key to the effective tenant so each
+  // client gets its own slot.
+  const effectiveTenantId = (getViewAsTenantId() || activeTenantId || '').toLowerCase();
+  const storageKey = effectiveTenantId ? `arion.activeSiteId.${effectiveTenantId}` : null;
   const urlSiteId = searchParams.get('siteId');
   const storedSiteId = storageKey ? (typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null) : null;
   const selectedSiteId = urlSiteId || storedSiteId;

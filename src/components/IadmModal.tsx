@@ -47,7 +47,7 @@ export type IadmModalProduct = "spark" | "oliver" | "arion" | "argus" | "stella"
  *
  * See Global/Modal_Standards.md for the full decision tree.
  */
-export type IadmModalSize = "nav" | "info" | "report" | "confirm" | "md" | "lg";
+export type IadmModalSize = "nav" | "info" | "report" | "confirm" | "md" | "lg" | "xl";
 
 interface Props {
   open: boolean;
@@ -63,14 +63,14 @@ interface Props {
   /** Footer area. Caller is responsible for button order (Core Blue first,
    *  Platform color second). Sticky to bottom. */
   footer?: ReactNode;
-  /** "md" = 800px × 70vh.  "lg" (default) = 1200px × 80vh. */
+  /** "md" = 800px × 70vh.  "lg" (default) = 1200px × 80vh.  "xl" = 90vw × 90vh (consultant workspace). */
   size?: IadmModalSize;
   children: ReactNode;
 }
 
 // F-107 — Canvas dimensions per size standard. "confirm" uses an auto height
 // (the only non-fixed size — short content, no body scroll, no whitespace).
-const FIXED: Record<IadmModalSize, { w: number; h: number | "auto" }> = {
+const FIXED: Record<IadmModalSize, { w: number | "xl"; h: number | "auto" }> = {
   nav:     { w: 560,  h: 50 },
   info:    { w: 1200, h: 80 },
   report:  { w: 1400, h: 90 },
@@ -80,6 +80,10 @@ const FIXED: Record<IadmModalSize, { w: number; h: number | "auto" }> = {
   // report/confirm directly.
   md: { w: 1200, h: 80 },
   lg: { w: 1200, h: 80 },
+  // 2026-06-27 — consultant workspace size: an XL surface that fills 90% of
+  // the screen, used by ClientTenantModal to embed the client's full Portal
+  // via iframe. Width sentinel "xl" maps to `90vw` in the style block below.
+  xl: { w: "xl", h: 90 },
 };
 
 export const PRODUCT_ACCENT: Record<IadmModalProduct, string> = {
@@ -137,7 +141,7 @@ export function IadmModal({
         onMouseDown={(e) => e.stopPropagation()}
         className="flex flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
         style={{
-          width:  `min(${dims.w}px, 94vw)`,
+          width:  dims.w === "xl" ? "90vw" : `min(${dims.w}px, 94vw)`,
           // "auto" height (confirm only) lets the modal size to its content
           // — no body scroll, no fixed canvas. Every other size is fixed.
           height: dims.h === "auto" ? "auto" : `${dims.h}vh`,

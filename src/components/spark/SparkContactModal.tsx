@@ -430,7 +430,8 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
             { key: "notes",    label: contact?.notes?.length ? `Notes (${contact.notes.length})` : "Notes", icon: FileText },
             { key: "lists",    label: lists?.length ? `Lists (${lists.length})` : "Lists", icon: ListIcon },
             { key: "tags",     label: contact?.tags?.length ? `Tags (${contact.tags.length})` : "Tags", icon: TagIcon },
-            { key: "danger",   label: "More", icon: AlertTriangle },
+            // G4-S2: renamed 'More' → 'Delete' for discoverability. Position kept last (danger zone convention).
+            { key: "danger",   label: "Delete", icon: AlertTriangle },
           ] as Array<{ key: Tab; label: string; icon: typeof Edit3 }>).map((t) => {
             const Icon = t.icon;
             return (

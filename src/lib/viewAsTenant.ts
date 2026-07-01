@@ -111,6 +111,22 @@ export function startViewAsTenant(tenantId: string, tenantName: string): void {
 export function exitViewAsTenant(): void {
   currentState = null;
   persist(null);
+  // Bug fix 2026-06-26: also purge any per-client `arion.activeSiteId.*`
+  // selections that were persisted during view-as sessions. Without this
+  // sweep, a site_id picked while viewing client A could survive and bleed
+  // back into the founder's home tenant on the next ARION page load.
+  try {
+    if (typeof localStorage !== "undefined") {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("arion.activeSiteId.")) {
+          localStorage.removeItem(k);
+        }
+      }
+    }
+  } catch {
+    /* private mode / quota — non-fatal */
+  }
   notify();
 }
 
@@ -124,9 +140,19 @@ export function subscribeViewAsTenant(listener: Listener): () => void {
 
 /**
  * Header builder for view-as mode. Returns:
- *   - x-view-as-tenant: <tid>     — target tenant id the founder is viewing
- *   - x-view-as-mode: read_only   — backend enforces 403 on non-GET
+ *   - x-view-as-tenant: <tid>  — target tenant id the founder is operating on
+ *
  * Returns empty object when not in view-as mode.
+ *
+ * 2026-06-25 — Read-only mode header removed. The Client Workspace modal is a
+ * full-access founder passthrough into the client's portal; Brandon needs to
+ * do real work for the client (not just walk them through). Backend
+ * middleware (enforceViewAsReadOnly.js in LUMEN-API et al) no longer sees the
+ * mode header and lets writes through normally.
+ *
+ * Safety story: the backend still validates the caller's JWT is a founder
+ * tenant member before honoring the x-view-as-tenant override. If a
+ * non-founder forges the header, it's ignored.
  *
  * Spread into fetch headers alongside Authorization / x-tenant-key.
  */
@@ -134,6 +160,5 @@ export function viewAsTenantHeaders(): Record<string, string> {
   if (!currentState) return {};
   return {
     "x-view-as-tenant": currentState.tenantId,
-    "x-view-as-mode": "read_only",
   };
 }

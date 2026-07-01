@@ -98,7 +98,7 @@ export function OliverRecurringPage() {
   const [error, setError] = useState<unknown>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
+  const [filter, setFilter] = useState("status:active");
   const [search, setSearch] = useState("");
 
   const reload = useCallback(async () => {
@@ -241,28 +241,59 @@ export function OliverRecurringPage() {
 
   const subColumns: Column<Subscription>[] = [
     {
-      key: "service",
-      header: "Service",
+      key: "customer",
+      header: "Customer",
       sortable: true,
-      sortAccessor: (s) => s.serviceName?.toLowerCase() ?? "",
+      sortAccessor: (s) => (s.accountName || s.contactName || "").toLowerCase(),
       render: (s) => (
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 500, color: "#0B1C24" }}>{s.serviceName}</div>
-          {s.lineItems && s.lineItems !== s.serviceName
-            ? <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 1 }}>{s.lineItems}</div>
-            : s.description && <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 1 }}>{s.description.slice(0, 60)}{s.description.length > 60 ? "…" : ""}</div>}
+        <div style={{ fontSize: 12, color: "#0B1C24", fontWeight: 500 }}>
+          {s.accountName || s.contactName || "—"}
         </div>
       ),
     },
     {
-      key: "customer",
-      header: "Customer",
+      key: "contact",
+      header: "Contact",
       render: (s) => (
         <div>
-          <div style={{ fontSize: 12, color: "#0B1C24" }}>{s.accountName || s.contactName || "—"}</div>
+          {s.contactName && s.contactName !== s.accountName && (
+            <div style={{ fontSize: 12, color: "#0B1C24" }}>{s.contactName}</div>
+          )}
           {s.contactEmail && <div style={{ fontSize: 10, color: "#5A7A8A" }}>{s.contactEmail}</div>}
+          {!s.contactName && !s.contactEmail && <span style={{ fontSize: 12, color: "#94A3B8" }}>—</span>}
         </div>
       ),
+    },
+    {
+      key: "services",
+      header: "Services",
+      sortable: true,
+      sortAccessor: (s) => s.serviceName?.toLowerCase() ?? "",
+      render: (s) => {
+        // Split lineItems on common delimiters; fall back to serviceName.
+        const raw = s.lineItems && s.lineItems !== s.serviceName ? s.lineItems : s.serviceName;
+        const items = (raw || "")
+          .split(/\s*(?:,|;|\n|•)\s*/)
+          .map(t => t.trim())
+          .filter(Boolean);
+        if (!items.length) return <span style={{ fontSize: 12, color: "#94A3B8" }}>—</span>;
+        const head = items.slice(0, 3);
+        const overflow = items.length - head.length;
+        return (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+            {head.map((it, i) => (
+              <span key={i} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "#F1F5F9", color: "#0B1C24", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {it}
+              </span>
+            ))}
+            {overflow > 0 && (
+              <span title={items.slice(3).join(", ")} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "#E0EAF1", color: "#0C4A60", fontWeight: 600 }}>
+                +{overflow} more
+              </span>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "listprice", header: "List price", align: "right",
@@ -486,7 +517,7 @@ export function OliverRecurringPage() {
               columns={subColumns}
               rowKey={(s) => s.id}
               onRowClick={(s) => setOpenModalId(s.id)}
-              initialSort={{ key: "service", direction: "asc" }}
+              initialSort={{ key: "customer", direction: "asc" }}
               emptyMessage="No subscriptions match these filters."
             />
           </>

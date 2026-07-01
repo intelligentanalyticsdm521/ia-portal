@@ -480,26 +480,20 @@ const CONSULTING_NAV: SubNavConfig = {
     {
       label: "",
       items: [
+        // 2026-06-29 — Founder-only surfaces relocated to /app/admin/consulting/*.
+        // Overview / Deliverables remain client-readable at the legacy
+        // /app/services/consulting_* paths. applyConsultingNavFilter in
+        // AppShell continues to drop founder-only items for non-founders;
+        // the URL move means founders + clients no longer share a nav row.
         { key: "consulting_overview",          label: "Overview",          route: "/app/services/consulting_overview" },
-        { key: "consulting_tickets",           label: "Service Requests",  route: "/app/services/consulting_tickets" },
-        // F1 (Consulting Rework 2026-06-25) — Projects is the new list view
-        // at the canonical /consulting_projects URL. Old card-grid + old
-        // workspace pages deleted in same change.
-        { key: "consulting_projects",          label: "Projects",          route: "/app/services/consulting_projects" },
+        { key: "consulting_tickets",           label: "Service Requests",  route: "/app/admin/consulting/requests" },
+        { key: "consulting_projects",          label: "Projects",          route: "/app/admin/consulting/projects" },
         { key: "consulting_deliverables",      label: "Deliverables",      route: "/app/services/consulting_deliverables" },
-        // F4 (Consulting Rework 2026-06-25) — founder-only library of intake +
-        // proposal + report + scope-of-work + custom templates. Hidden for
-        // non-founder users via CONSULTING_FOUNDER_ONLY in AppShell.tsx.
-        { key: "consulting_documents",         label: "Document Library",  route: "/app/services/consulting_documents" },
-        // 2026-06-25 — "Clients" hosts the founder view-as-tenant launcher
-        // (ConsultingClientsPage at /app/services/consulting_workspace).
-        // Eye/View-as button per row gated on isFounder; was previously
-        // invisible because no SubNav entry pointed at the page.
-        { key: "consulting_workspace",         label: "Clients",           route: "/app/services/consulting_workspace" },
-        // Onboard Client wizard REMOVED from nav 2026-06-25 — onboarding is
-        // now a project category (onboarding_consulting / onboarding_onetime)
-        // launched from the Projects page. The /consulting_onboard_client
-        // route + page stay alive for deep links and as a fallback path.
+        { key: "consulting_documents",         label: "Document Library",  route: "/app/admin/consulting/document-library" },
+        { key: "consulting_workspace",         label: "Clients",           route: "/app/admin/consulting/clients" },
+        // Onboard Client wizard reachable at /app/admin/consulting/onboard-client
+        // but intentionally NOT in the SubNav — launched from the Projects page
+        // / Clients picker. Kept routable for deep links + email CTAs.
       ],
     },
   ],

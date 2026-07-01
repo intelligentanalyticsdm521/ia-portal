@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { Users, Megaphone, Globe as GlobeIcon, Zap as ZapIcon } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { useLumenApi } from "../../hooks/useLumenApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { findWalkthrough, Walkthrough } from "../../components/walkthroughs/walkthroughRegistry";
+import { WalkthroughRunner } from "../../components/walkthroughs/WalkthroughRunner";
 // SparkSetupCard removed 2026-06-17 — single onboarding nag lives on
 // Command Center (UnifiedSetupCard). Don't add it back here.
 // Dashboard widgets (hero stats, charts, funnels, ARGUS box, quick
@@ -28,8 +31,24 @@ interface GrowthVelocity {
   active_automations: number;
 }
 
+// G4-S8: treat completed OR skipped as "user has been through it" so we
+// don't re-fire the umbrella walkthrough on every subsequent visit.
+function isSparkBasicsCompleted(status: string | undefined | null): boolean {
+  return status === "completed" || status === "skipped";
+}
+
+interface WalkthroughProgressRow {
+  walkthrough_id?: string;
+  status?: string;
+}
+interface WalkthroughProgressResponse {
+  data?: WalkthroughProgressRow | null;
+}
+
 export function SparkOverviewPage() {
   const { get, ready } = useSparkApi();
+  const { get: lumenGet, ready: lumenReady } = useLumenApi();
+  const [activeWalkthrough, setActiveWalkthrough] = useState<Walkthrough | null>(null);
   const [usage, setUsage] = useState<UsageResponse["data"] | null>(null);
   const [activeAutomations, setActiveAutomations] = useState<number | null>(null);
   // FIX B3 (2026-06-22) — Real signal for the "verify sender domain" hint.
@@ -72,6 +91,34 @@ export function SparkOverviewPage() {
     load();
     return () => { cancelled = true; };
   }, [get, ready]);
+
+  // G4-S8: auto-fire spark-basics walkthrough on first visit. Gates on lumen.walkthrough_progress (migration 110). If backend not deployed yet, the fetch 404s and the walkthrough auto-fires — which is the desired first-run behavior anyway.
+  useEffect(() => {
+    if (!lumenReady) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        let row: WalkthroughProgressRow | null = null;
+        try {
+          const r = await lumenGet<WalkthroughProgressResponse>(
+            "/walkthrough-progress?walkthrough_id=spark-basics"
+          );
+          row = (r?.data ?? null) as WalkthroughProgressRow | null;
+        } catch {
+          // 404 / not-yet-deployed / transient — fall through to auto-fire.
+          row = null;
+        }
+        if (cancelled) return;
+        if (!row || !isSparkBasicsCompleted(row.status)) {
+          const w = findWalkthrough("spark-basics");
+          if (w) setActiveWalkthrough(w);
+        }
+      } catch {
+        // Never break the page render if the gate fails.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [lumenGet, lumenReady]);
 
   return (
     <SparkPageShell
@@ -136,6 +183,13 @@ export function SparkOverviewPage() {
           },
         ]} />
       </div>
+      {/* G4-S8: umbrella spark-basics walkthrough auto-fires on first visit (see useEffect above). */}
+      <WalkthroughRunner
+        open={!!activeWalkthrough}
+        walkthrough={activeWalkthrough}
+        onClose={() => setActiveWalkthrough(null)}
+        onComplete={() => setActiveWalkthrough(null)}
+      />
     </SparkPageShell>
   );
 }

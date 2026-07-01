@@ -8,7 +8,7 @@
 import type { IPublicClientApplication, AccountInfo } from "@azure/msal-browser";
 import { authScopes } from "../auth/msalConfig";
 import { emergencyActAsHeaders } from "./emergencyActAs";
-import { getViewAsTenantId, viewAsTenantHeaders } from "./viewAsTenant";
+import { getCurrentTenantOverride } from "./tenantContext";
 
 const OLIVER_API_BASE =
   (import.meta.env.VITE_OLIVER_API_BASE as string) ||
@@ -29,11 +29,11 @@ function getTenantId(token: string): string {
 }
 
 /**
- * Sentinel: pass this as tenantOverride to ignore the global view-as state
+ * Sentinel: pass this as tenantOverride to ignore the global tenant override
  * and force the JWT's own tenant id. Used by founder-scoped endpoints
  * (`/admin/onboard-client/*`) that must always be invoked as the founder.
  */
-export const BYPASS_VIEW_AS = "__bypass_view_as__";
+export const BYPASS_TENANT_OVERRIDE = "__bypass_tenant_override__";
 
 async function oliverFetch<T>(
   msal: IPublicClientApplication,
@@ -45,16 +45,16 @@ async function oliverFetch<T>(
   const token = await getToken(msal, account);
   // Precedence:
   //   1. Explicit tenantOverride from caller (e.g. ClientTenantModal scoping)
-  //   2. View-as tenant from global state (founder read-only impersonation)
+  //   2. Global tenant override from tenantContext (founder scoping into a client)
   //   3. The JWT's own tid (default — caller's own tenant)
   //
-  // BYPASS_VIEW_AS sentinel → skip step 2 AND step 1; always JWT.
-  const bypassViewAs = tenantOverride === BYPASS_VIEW_AS;
-  const viewAsTid = bypassViewAs ? null : getViewAsTenantId();
-  const explicitOverride = bypassViewAs ? null : tenantOverride;
+  // BYPASS_TENANT_OVERRIDE sentinel → skip step 2 AND step 1; always JWT.
+  const bypassTenantOverride = tenantOverride === BYPASS_TENANT_OVERRIDE;
+  const contextTid = bypassTenantOverride ? null : getCurrentTenantOverride();
+  const explicitOverride = bypassTenantOverride ? null : tenantOverride;
   const tenantId =
     (explicitOverride && explicitOverride.trim()) ||
-    (viewAsTid && viewAsTid.trim()) ||
+    (contextTid && contextTid.trim()) ||
     getTenantId(token);
 
   const res = await fetch(`${OLIVER_API_BASE}${path}`, {
@@ -68,12 +68,6 @@ async function oliverFetch<T>(
       // 403s any non-GET request while this header is set (except the
       // /super/end-session carve-out). No-op for everyone else.
       ...emergencyActAsHeaders(),
-      // View-as headers — present whenever the founder is viewing a client's
-      // portal read-only. enforceViewAsReadOnly middleware 403s non-GET when
-      // these are set + the caller's JWT resolves to a founder identity. No-op
-      // for everyone else. BYPASSED when caller forced founder-scope (the
-      // /admin/onboard-client/* endpoints must never look like a view-as call).
-      ...(bypassViewAs ? {} : viewAsTenantHeaders()),
       ...(init?.headers as Record<string, string>),
     },
   });

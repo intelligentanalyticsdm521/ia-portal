@@ -31,26 +31,12 @@ interface ClientRow {
   has_byb_subscription?: boolean;
 }
 
-// F-Founder.1 (defect 4.07 / 4.12) — surface clients with active or
-// recently-completed projects. Brandon: "they show up on clients nav page
-// until their project is completed and for 30 days after completion."
-// Shape matches /consulting/projects (lumen.consulting_project): keyed off
-// client_tenant_id + actual_completion_date.
-interface ProjectRow {
-  project_id: string;
-  client_tenant_id: string | null;
-  title: string;
-  status: string;
-  actual_completion_date: string | null;
-  created_at: string | null;
-}
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-function projectIsCurrent(p: ProjectRow): boolean {
-  const stale = p.status === "completed" || p.status === "cancelled" || p.status === "closed";
-  if (!stale) return true;
-  if (!p.actual_completion_date) return false;
-  return Date.now() - new Date(p.actual_completion_date).getTime() <= THIRTY_DAYS_MS;
-}
+// G3-S7: use ?clients_nav=1 for the 4-branch server-side filter (per SCOPE_WORKING.md Delta 2 Amended). Backend at /admin/consulting/clients-nav-branch.
+type ClientsNavRow = {
+  tenant_id: string;
+  name: string;
+  branch_reason: 'active_project' | 'recently_closed' | 'byb_sub' | 'paid_finished_onboarding' | null;
+};
 
 export default function ConsultingClientsPage() {
   const { get } = useOliverApi();
@@ -61,7 +47,7 @@ export default function ConsultingClientsPage() {
   // but we double-gate the action button as defence in depth.
   const isFounder = !!appState.bootstrap?.user?.isFounder;
   const [rows, setRows] = useState<ClientRow[]>([]);
-  const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [clientsNav, setClientsNav] = useState<ClientsNavRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
   function openClientWorkspace(tenantId: string, _tenantName: string) {
@@ -78,50 +64,57 @@ export default function ConsultingClientsPage() {
     setLoading(true);
     Promise.all([
       get<ClientRow[]>("/admin/onboard-client/in-progress").catch(() => []),
-      get<ProjectRow[] | { data?: ProjectRow[] }>("/consulting/projects").catch(() => []),
+      // G3-S7: use ?clients_nav=1 for the 4-branch server-side filter (per SCOPE_WORKING.md Delta 2 Amended). Backend at /admin/consulting/clients-nav-branch.
+      get<{ clients?: ClientsNavRow[] }>("/consulting/projects?clients_nav=1").catch(() => ({ clients: [] as ClientsNavRow[] })),
     ])
-      .then(([clients, projResp]) => {
+      .then(([clients, navResp]) => {
         if (cancelled) return;
         setRows(Array.isArray(clients) ? clients : []);
-        const list = Array.isArray(projResp)
-          ? projResp
-          : Array.isArray((projResp as { data?: ProjectRow[] })?.data)
-            ? ((projResp as { data: ProjectRow[] }).data)
-            : [];
-        setProjects(list);
+        const list = Array.isArray((navResp as { clients?: ClientsNavRow[] })?.clients)
+          ? ((navResp as { clients: ClientsNavRow[] }).clients)
+          : [];
+        setClientsNav(list);
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [get]);
 
-  // F-Founder.1 — group projects per client + drive the 30-day filter.
-  const projectsByClient = useMemo(() => {
-    const m = new Map<string, ProjectRow[]>();
-    for (const p of projects) {
-      const k = (p.client_tenant_id || "").toLowerCase();
-      if (!k) continue;
-      if (!m.has(k)) m.set(k, []);
-      m.get(k)!.push(p);
+  // G3-S7: server does the 4-branch filter; client just filters by search.
+  // We join with `rows` (from /admin/onboard-client/in-progress) opportunistically
+  // to preserve contact/location details when available, but the visible list
+  // is driven by the server's clients_nav response.
+  const rowsByTenant = useMemo(() => {
+    const m = new Map<string, ClientRow>();
+    for (const r of rows) {
+      const k = (r.tenant_id || "").toLowerCase();
+      if (k) m.set(k, r);
     }
     return m;
-  }, [projects]);
+  }, [rows]);
 
   const live = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    return rows
-      .filter((r) => r.onboarding_completed_at || r.stripe_subscription_id)
-      // Brandon 2026-06-28: surface client if EITHER has an open project
-      // (active OR completed within 30 days) OR has an active Build Your
-      // Brand subscription.
-      .filter((r) => {
-        const ps = projectsByClient.get((r.tenant_id || "").toLowerCase()) || [];
-        if (ps.some(projectIsCurrent)) return true;
-        if (r.has_byb_subscription) return true;
-        return false;
+    return clientsNav
+      .filter((c) => {
+        if (!q) return true;
+        const extra = rowsByTenant.get((c.tenant_id || "").toLowerCase());
+        return (
+          (c.name || "").toLowerCase().includes(q) ||
+          (extra?.contact_email || "").toLowerCase().includes(q)
+        );
       })
-      .filter((r) => !q || (r.business_name || "").toLowerCase().includes(q) || (r.contact_email || "").toLowerCase().includes(q))
-      .sort((a, b) => (a.business_name || "").localeCompare(b.business_name || ""));
-  }, [rows, projectsByClient, filter]);
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  }, [clientsNav, rowsByTenant, filter]);
+
+  function branchReasonLabel(r: ClientsNavRow['branch_reason']): string {
+    switch (r) {
+      case 'active_project': return 'Active project';
+      case 'recently_closed': return 'Recently closed';
+      case 'byb_sub': return 'Build Your Brand';
+      case 'paid_finished_onboarding': return 'Paid — finished onboarding';
+      default: return '—';
+    }
+  }
 
   return (
     <div className="px-6 py-6 max-w-6xl mx-auto">
@@ -158,48 +151,20 @@ export default function ConsultingClientsPage() {
             <thead className="bg-slate-50 text-[10px] uppercase text-slate-500 tracking-wide">
               <tr>
                 <th className="text-left px-4 py-2 font-semibold">Business</th>
-                <th className="text-left px-4 py-2 font-semibold">Contact</th>
-                <th className="text-left px-4 py-2 font-semibold">Active Projects</th>
-                <th className="text-left px-4 py-2 font-semibold">Location</th>
+                <th className="text-left px-4 py-2 font-semibold">Branch Reason</th>
                 <th className="text-right px-4 py-2 font-semibold">Workspace</th>
               </tr>
             </thead>
             <tbody>
-              {live.map((c) => {
-                const ps = (projectsByClient.get((c.tenant_id || "").toLowerCase()) || []).filter(projectIsCurrent);
-                return (
+              {live.map((c) => (
                 <tr key={c.tenant_id} className="border-t border-slate-100 hover:bg-slate-50 transition">
-                  <td className="px-4 py-3 font-semibold text-slate-900">{c.business_name || "Unnamed tenant"}</td>
-                  <td className="px-4 py-3 text-slate-700">{c.contact_email || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {ps.length === 0 ? (
-                      <span className="text-slate-400">—</span>
-                    ) : (
-                      <div className="flex flex-col gap-1">
-                        {ps.slice(0, 3).map((p) => (
-                          <a
-                            key={p.project_id}
-                            href={`/app/services/consulting_projects?project=${p.project_id}`}
-                            className="inline-flex items-center gap-1 text-xs text-slate-700 hover:text-blue-600 hover:underline"
-                          >
-                            <span className="text-[10px] uppercase font-bold text-slate-400">
-                              {(p.status || "").replace(/_/g, " ")}
-                            </span>
-                            <span className="truncate max-w-[20ch]">{p.title || "Untitled"}</span>
-                          </a>
-                        ))}
-                        {ps.length > 3 && (
-                          <span className="text-[10px] text-slate-400">+{ps.length - 3} more</span>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{[c.city, c.state_province].filter(Boolean).join(", ") || "—"}</td>
+                  <td className="px-4 py-3 font-semibold text-slate-900">{c.name || "Unnamed tenant"}</td>
+                  <td className="px-4 py-3 text-slate-600">{branchReasonLabel(c.branch_reason)}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex items-center gap-2">
                       {isFounder ? (
                         <button
-                          onClick={() => openClientWorkspace(c.tenant_id, c.business_name || "Tenant")}
+                          onClick={() => openClientWorkspace(c.tenant_id, c.name || "Tenant")}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50"
                           title="See exactly what this client sees in their portal (read-only)"
                         >
@@ -208,7 +173,7 @@ export default function ConsultingClientsPage() {
                         </button>
                       ) : null}
                       <button
-                        onClick={() => openClientWorkspace(c.tenant_id, c.business_name || "Tenant")}
+                        onClick={() => openClientWorkspace(c.tenant_id, c.name || "Tenant")}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold"
                         style={{ background: CORE_BLUE }}
                       >
@@ -217,8 +182,7 @@ export default function ConsultingClientsPage() {
                     </div>
                   </td>
                 </tr>
-              );
-              })}
+              ))}
             </tbody>
           </table>
         </div>

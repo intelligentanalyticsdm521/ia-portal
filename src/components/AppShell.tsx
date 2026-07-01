@@ -34,20 +34,19 @@ function applyOliverNavFilter(
 // F1.9 — Hide founder-only Consulting items (Onboard Client + Access Log +
 // Clients picker + Tenant Workspace) for non-super-users. Per locked rule:
 // "Onboard Client button hidden from non-founder users".
+// 2026-06-29: relocation to /app/admin/consulting/* moved Service Requests
+// (consulting_tickets) into the founder-only set as well — the new admin
+// URL is gated by RequireFounderRoute, so clients clicking the link would
+// just bounce to /overview. Drop the nav row entirely to keep the SubNav
+// honest about what's reachable.
 const CONSULTING_FOUNDER_ONLY = new Set<string>([
   "consulting_onboard_client",
   "consulting_access_log",
   "consulting_workspace",
   "consulting_tenant_workspace",
-  // F1 (Consulting Rework 2026-06-25) — Projects list view hits the
-  // founder-gated /consulting/projects + /consulting/categories endpoints.
-  // Non-founders would see 403s, so hide the nav link entirely.
   "consulting_projects",
-  // F4 (Consulting Rework 2026-06-25) — Document Library is founder-only.
-  // Client viewers never need to see template definitions — they only ever
-  // see the rendered intake form at /app/consulting/intake/:id, which is
-  // gated separately by submission_id ownership.
   "consulting_documents",
+  "consulting_tickets",
 ]);
 
 function applyConsultingNavFilter(
@@ -63,6 +62,21 @@ function applyConsultingNavFilter(
 
 /** Derive the active product from the current URL path */
 function deriveProduct(pathname: string): ProductKey {
+  // 2026-06-29 — Founder-side Consulting moved to /app/admin/consulting/*.
+  // Activate the Consulting product slot so the SubNav + IconRail highlight
+  // matches user expectation. Sits above the SETTINGS_KEYS check because
+  // there's no overlap.
+  if (pathname.startsWith("/app/admin/consulting")) return "consulting";
+
+  // F-Client.Consulting (2026-06-29) — CLIENT-facing consulting surface
+  // at /app/consulting/{projects,deliverables,requests}. The layout
+  // provides its own three-pill nav internally so we don't need to render
+  // the founder SubNav here — but the IconRail "Consulting" entry should
+  // still highlight as active when the user is on one of these tabs.
+  // Also covers /app/consulting/intake/:submissionId (the existing client
+  // intake form player), which conceptually belongs to the same surface.
+  if (/^\/app\/consulting(\/|$)/.test(pathname)) return "consulting";
+
   // F-86 — Settings-class URLs share the product prefix (oliver_settings,
   // spark_account_profile, etc.) but should activate the Settings SubNav,
   // not the product's daily-work SubNav. Check the SETTINGS_KEYS set first.
@@ -91,9 +105,18 @@ function deriveProduct(pathname: string): ProductKey {
   return map[prefix] ?? "overview";
 }
 
-/** Get the default route for a product (first nav item) */
-function defaultRouteFor(key: ProductKey): string {
+/** Get the default route for a product (first nav item).
+ *  2026-06-29: Consulting is role-split — founders land on the relocated
+ *  /app/admin/consulting/clients surface; clients land on the new
+ *  CLIENT-facing /app/consulting/projects surface (F-Client.Consulting).
+ *  Other products still use the first-item-wins rule. */
+function defaultRouteFor(key: ProductKey, isFounder: boolean): string {
   if (key === "overview") return "/app/overview";
+  if (key === "consulting") {
+    return isFounder
+      ? "/app/admin/consulting/clients"
+      : "/app/consulting/projects";
+  }
   const config = SUB_NAV_CONFIGS[key];
   if (!config) return "/app/overview";
   for (const group of config.groups) {
@@ -127,22 +150,6 @@ export function AppShell() {
     setMobileNavOpen(false);
   }, [location.pathname]);
 
-  const handleProductSelect = useCallback(
-    (key: ProductKey) => {
-      setActiveProduct(key);
-      // Mobile-drawer behavior: if the user just opened the drawer and tapped
-      // a product that HAS its own SubNav (arion / oliver / spark / consulting
-      // / settings), skip the auto-navigate so the drawer stays open and the
-      // user can pick a child. For products WITHOUT a SubNav (overview /
-      // stella / forge / argus today) we navigate immediately — that route
-      // change closes the drawer via the useEffect above.
-      if (mobileNavOpen && SUB_NAV_CONFIGS[key]) return;
-      // Navigate to the product's default page
-      navigate(defaultRouteFor(key));
-    },
-    [navigate, mobileNavOpen]
-  );
-
   // OLIVER role drives accountant nav filtering. The hook fetches /overview/me
   // once per session; defaults to 'admin' until resolved so the full nav
   // doesn't briefly flash a restricted view for real admins.
@@ -155,19 +162,49 @@ export function AppShell() {
   // emergency-access path keeps working.
   const isFounder = !!appState.bootstrap?.user?.isFounder;
   // 2026-06-28 (defect 4.03) — view-as override. When the founder is acting
-  // AS a client tenant via /c/:tenantId route, hide founder-only nav items
-  // so the founder sees what the client sees. Detect by URL pathname only
-  // — useClientTenantIdOverride() returns a value broader than just
-  // /c/:tenantId and was hiding founder items everywhere (regression
-  // 2026-06-28 evening: Projects + Clients + Documents disappeared from
-  // Brandon's own consulting nav in his IA tenant).
-  const actingAsClient = /^\/c\/[0-9a-f-]{8,}/i.test(location.pathname);
+  // AS a client tenant, hide founder-only nav items so the founder sees what
+  // the client sees. We read the EXPLICIT WORKSPACE flag that ConsultantWorkspaceEntry
+  // sets in sessionStorage (and ConsultantModeBanner clears on exit). URL-only
+  // detection was wrong because after /c/:tid → /app redirect the URL no longer
+  // matches /c/, so view-as state was lost everywhere (2026-06-29 bug: IconRail
+  // "Consulting" sent founder to /admin/consulting/clients even while view-as).
+  // We do NOT use useClientTenantIdOverride()/activeTenantId-vs-home checks —
+  // those are too broad and caused the 2026-06-28 regression where founder nav
+  // disappeared in Brandon's own IA tenant.
+  const actingAsClient = (() => {
+    try { return sessionStorage.getItem('iadm.portal.consultantWorkspace.v1') === 'true'; }
+    catch { return false; }
+  })();
   const effectiveIsFounder = isFounder && !actingAsClient;
 
+  const handleProductSelect = useCallback(
+    (key: ProductKey) => {
+      setActiveProduct(key);
+      // Mobile-drawer behavior: if the user just opened the drawer and tapped
+      // a product that HAS its own SubNav (arion / oliver / spark / consulting
+      // / settings), skip the auto-navigate so the drawer stays open and the
+      // user can pick a child. For products WITHOUT a SubNav (overview /
+      // stella / forge / argus today) we navigate immediately — that route
+      // change closes the drawer via the useEffect above.
+      if (mobileNavOpen && SUB_NAV_CONFIGS[key]) return;
+      // Navigate to the product's default page. 2026-06-29: Consulting
+      // routes to /app/admin/consulting/clients for founders (Brandon
+      // sees Clients first) and to the shared Overview for clients.
+      navigate(defaultRouteFor(key, effectiveIsFounder));
+    },
+    [navigate, mobileNavOpen, effectiveIsFounder]
+  );
+
+  // F-Client.Consulting (2026-06-29) — the CLIENT-facing /app/consulting/*
+  // surface supplies its own three-tab pill nav inside ClientConsultingLayout.
+  // Suppress the founder SubNav there so we don't double up on navigation
+  // chrome. Founder /app/admin/consulting/* still gets the founder SubNav.
+  const onClientConsultingSurface = /^\/app\/consulting(\/|$)/.test(location.pathname);
   const rawSubNavConfig =
     activeProduct !== "overview" ? SUB_NAV_CONFIGS[activeProduct] : null;
   const subNavConfig = useMemo(() => {
     if (!rawSubNavConfig) return null;
+    if (onClientConsultingSurface) return null;
     if (activeProduct === "oliver") {
       return applyOliverNavFilter(rawSubNavConfig, roleInfo.allowedServiceKeys);
     }
@@ -177,7 +214,7 @@ export function AppShell() {
       return applyConsultingNavFilter(rawSubNavConfig, effectiveIsFounder);
     }
     return rawSubNavConfig;
-  }, [rawSubNavConfig, activeProduct, roleInfo.allowedServiceKeys, effectiveIsFounder]);
+  }, [rawSubNavConfig, activeProduct, roleInfo.allowedServiceKeys, effectiveIsFounder, onClientConsultingSurface]);
 
   return (
     // h-screen (not min-h-screen) locks the shell to exactly 100vh so the nav row's

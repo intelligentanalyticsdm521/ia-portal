@@ -5,6 +5,7 @@ import { LandingPage } from './pages/LandingPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 // F3 — Scope Change Revisions public surface (no auth, token IS the auth).
 import { PublicRevisionPage } from './pages/public/PublicRevisionPage';
+import { BusinessCardPublicPage } from './pages/public/BusinessCardPublicPage';
 
 import { AppGate } from './app/AppGate';
 import { AppLayout } from './components/AppLayout';
@@ -35,6 +36,10 @@ import { ArgusMarginPage } from './pages/admin/ArgusMarginPage';
 import { PlatformAdminPage } from './pages/PlatformAdminPage';
 import { ArionOnboardExistingPage } from './pages/admin/ArionOnboardExistingPage';
 import { AdminLeadgenPage } from './pages/admin/AdminLeadgenPage';
+// G5-S8 (CRITICAL_DEFECTS_SCOPE_2026-06-30) — Founder-only Infra Health snapshot.
+// Reads /admin/infra-health/summary from oliver-api. Warns when ADR-001/002
+// trigger thresholds are crossed.
+import { InfraHealthPage } from './pages/admin/InfraHealthPage';
 
 // NEW: SPARK pricing page route
 import { SparkPricingPage } from './pages/spark/SparkPricingPage';
@@ -79,6 +84,42 @@ import { ConsultingTenantWorkspacePage } from './pages/consulting/ConsultingTena
 // hits "Send Intake" on a project.
 import { ConsultingIntakeFormPage } from './pages/consulting/ConsultingIntakeFormPage';
 
+// Consultant workspace entry — captures /c/:tid → sessionStorage → /app.
+import { ConsultantWorkspaceEntry } from './app/ConsultantWorkspaceEntry';
+
+// 2026-06-29 — Founder-side consulting routes relocated under /app/admin/consulting/*.
+// Old /app/services/consulting_{workspace,tickets,projects,onboard_client,documents}
+// paths still resolve through ServiceRouter, which 301s founders here and 404s
+// non-founders (see ServiceRouter consulting dispatch). RequireFounderRoute
+// gates every child so clients who land here directly get bounced to /overview.
+import { RequireFounderRoute } from './app/RequireFounderRoute';
+import { lazy, Suspense } from 'react';
+// Each page file exports a default that matches the named export; using the
+// default keeps these lazy() calls minimal and tree-shaker-friendly.
+const ConsultingClientsPageAdmin = lazy(() => import('./pages/consulting/ConsultingClientsPage'));
+const ConsultingTicketsBoardPageAdmin = lazy(() => import('./pages/consulting/ConsultingTicketsBoardPage'));
+const ConsultingProjectsPageAdmin = lazy(() => import('./pages/consulting/ConsultingProjectsPage'));
+const ConsultingOnboardClientPageAdmin = lazy(() => import('./pages/consulting/ConsultingOnboardClientPageV2'));
+const ConsultingDocumentLibraryPageAdmin = lazy(() => import('./pages/consulting/ConsultingDocumentLibraryPage'));
+
+// 2026-06-29 — CLIENT-facing consulting surface. Mounts under
+// /app/consulting/{projects,deliverables,requests} inside a thin
+// ClientConsultingLayout that supplies the three-tab pill nav. No founder
+// gating at this layer; each page does its own subscription/upsell checks
+// where needed (Service Requests gates on Build Your Brand sub).
+import { ClientConsultingLayout } from './components/consulting/ClientConsultingLayout';
+const ClientConsultingProjectsPage = lazy(() => import('./pages/consulting/ClientConsultingProjectsPage'));
+const ClientConsultingDeliverablesPage = lazy(() => import('./pages/consulting/ClientConsultingDeliverablesPage'));
+const ClientConsultingServiceRequestsPage = lazy(() => import('./pages/consulting/ClientConsultingServiceRequestsPage'));
+
+function AdminRouteLoading() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 60, color: '#5A7A8A', fontSize: 13 }}>
+      Loading…
+    </div>
+  );
+}
+
 /** Redirect that preserves the original query string + hash. Used for the
  *  /signup → /pricing 301-style redirects so Stripe Checkout completion
  *  links like /signup/onboarding?session_id=cs_test_… still land on the
@@ -111,6 +152,11 @@ export function App() {
               string (NVARCHAR(80)) issued by oliver-api when the founder
               creates a draft revision.  No auth needed. */}
           <Route path="/p/revisions/:token" element={<PublicRevisionPage />} />
+
+          {/* Public Business Card page — no auth. The vCard QR encodes this URL;
+              scanning opens the card. Brandon can also "Add to Home Screen" on
+              his phone for a one-tap widget. */}
+          <Route path="/card/:shortCode" element={<BusinessCardPublicPage />} />
 
           {/* 301-style redirects from the old /signup URLs.
               RedirectPreservingSearch keeps ?session_id=… so Stripe Checkout
@@ -174,6 +220,55 @@ export function App() {
             <Route path="admin" element={<PlatformAdminPage />} />
             <Route path="admin/onboard-arion-existing" element={<ArionOnboardExistingPage />} />
             <Route path="admin/leadgen" element={<AdminLeadgenPage />} />
+            <Route path="admin/infra-health" element={<InfraHealthPage />} />
+
+            {/* 2026-06-29 — Founder-side Consulting relocated to /app/admin/consulting/*.
+                RequireFounderRoute bounces non-founders to /app/overview. Old
+                /app/services/consulting_{workspace,tickets,projects,onboard_client,documents}
+                redirect founders here at the ServiceRouter level and 404 non-founders. */}
+            <Route path="admin/consulting" element={<RequireFounderRoute />}>
+              <Route index element={<Navigate to="clients" replace />} />
+              <Route
+                path="clients"
+                element={
+                  <Suspense fallback={<AdminRouteLoading />}>
+                    <ConsultingClientsPageAdmin />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="requests"
+                element={
+                  <Suspense fallback={<AdminRouteLoading />}>
+                    <ConsultingTicketsBoardPageAdmin />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="projects"
+                element={
+                  <Suspense fallback={<AdminRouteLoading />}>
+                    <ConsultingProjectsPageAdmin />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="onboard-client"
+                element={
+                  <Suspense fallback={<AdminRouteLoading />}>
+                    <ConsultingOnboardClientPageAdmin />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="document-library"
+                element={
+                  <Suspense fallback={<AdminRouteLoading />}>
+                    <ConsultingDocumentLibraryPageAdmin />
+                  </Suspense>
+                }
+              />
+            </Route>
 
             {/* Personal account settings (hamburger menu items) */}
             <Route path="account" element={<PersonalSettings />} />
@@ -221,9 +316,51 @@ export function App() {
               element={<ConsultingIntakeFormPage />}
             />
 
+            {/* F-Client.Consulting (2026-06-29) — CLIENT-facing consulting
+                surface. Three tabs (Projects / Deliverables / Service Requests)
+                served by ClientConsultingLayout. /app/consulting (no child)
+                redirects to /projects as the default landing — matches the
+                IconRail "Consulting" target in deriveProduct(). Declared
+                BEFORE the /services/:serviceKey catch-all and AFTER the
+                /consulting/intake route so each child path resolves first. */}
+            <Route path="consulting" element={<ClientConsultingLayout />}>
+              <Route index element={<Navigate to="projects" replace />} />
+              <Route
+                path="projects"
+                element={
+                  <Suspense fallback={<AdminRouteLoading />}>
+                    <ClientConsultingProjectsPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="deliverables"
+                element={
+                  <Suspense fallback={<AdminRouteLoading />}>
+                    <ClientConsultingDeliverablesPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="requests"
+                element={
+                  <Suspense fallback={<AdminRouteLoading />}>
+                    <ClientConsultingServiceRequestsPage />
+                  </Suspense>
+                }
+              />
+            </Route>
+
             {/* All feature-specific pages routed by service key */}
             <Route path="services/:serviceKey" element={<ServiceRouter />} />
           </Route>
+
+          {/* Consultant workspace entry — new-tab passthrough at /c/<tid>.
+              Declared BEFORE the catch-all so React Router matches it
+              instead of redirecting to "/". The entry component writes the
+              tid to sessionStorage and redirects to /app/overview where
+              AppGate reads it and bootstraps as the client tenant. */}
+          <Route path="/c/:tid" element={<ConsultantWorkspaceEntry />} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />

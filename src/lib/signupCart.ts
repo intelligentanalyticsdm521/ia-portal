@@ -25,7 +25,7 @@ export interface SparkItem {
 export interface ArionItem {
   product: "arion";
   plan: string;                 // lite | essentials | growth | authority
-  seo?: "" | "essentials" | "growth" | "authority";
+  seo?: "" | "starter" | "essentials" | "growth" | "authority";
 }
 export type CartItem = OliverItem | SparkItem | ArionItem;
 

@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { CORE_BLUE, PRODUCT_ACCENT } from "../../components/IadmModal";
-import { ClientTenantModal } from "../../components/consulting/ClientTenantModal";
+import { OnboardingWizardModal } from "../../components/consulting/OnboardingWizardModal";
 
 // ── Types — mirror the backend response in onboardClient.js ─────────────
 
@@ -216,7 +216,7 @@ export function ConsultingTenantWorkspacePage() {
     return (
       <div className="p-6">
         <button
-          onClick={() => navigate("/app/services/consulting_onboard_client")}
+          onClick={() => navigate("/app/admin/consulting/onboard-client")}
           className="mb-4 inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900"
         >
           <ArrowLeft className="h-4 w-4" /> Back to Onboard Client
@@ -234,7 +234,7 @@ export function ConsultingTenantWorkspacePage() {
     <div className="p-6 max-w-6xl mx-auto">
       {/* Back link */}
       <button
-        onClick={() => navigate("/app/services/consulting_onboard_client")}
+        onClick={() => navigate("/app/admin/consulting/onboard-client")}
         className="mb-4 inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900"
       >
         <ArrowLeft className="h-4 w-4" /> Back to Onboard Client
@@ -350,7 +350,7 @@ export function ConsultingTenantWorkspacePage() {
       </div>
 
       {/* ── Sub-modal — onboarding (in-memory act-as) ─────────────── */}
-      <ClientTenantModal
+      <OnboardingWizardModal
         open={showOnboardingModal}
         tenantId={showOnboardingModal ? tenantId : null}
         tenantName={tenant.business_name}
@@ -371,7 +371,7 @@ export function ConsultingTenantWorkspacePage() {
       />
 
       {/* ── Sub-modal — consulting (act-as for ongoing per-product work) ─ */}
-      <ClientTenantModal
+      <OnboardingWizardModal
         open={actingAsTenantId !== null}
         tenantId={actingAsTenantId}
         tenantName={tenant.business_name}

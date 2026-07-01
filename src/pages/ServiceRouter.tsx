@@ -1,5 +1,6 @@
 import { lazy, Suspense, useMemo } from 'react';
-import { useParams, Navigate } from 'react-router-dom';
+import { useParams, useLocation, Navigate } from 'react-router-dom';
+import { useIsFounder } from '../hooks/useIsFounder';
 
 // Lazy-load a named React export so it's compatible with React.lazy
 // (which expects { default: Component }). Lets each service section
@@ -322,24 +323,15 @@ const OliverPayoutsPage = lazyNamed(() => import('./oliver/OliverPayoutsPage'), 
 const ArionUsagePage = lazyNamed(() => import('./arion/ArionUsagePage'), 'ArionUsagePage');
 const ArionPluginProvisioningPage = lazyNamed(() => import('./arion/ArionPluginProvisioningPage'), 'ArionPluginProvisioningPage');
 
-// CONSULTING — lazy-loaded
+// CONSULTING — lazy-loaded. 2026-06-29: the founder-side pages
+// (ConsultingClientsPage / ConsultingTicketsBoardPage / ConsultingProjectsPage /
+// ConsultingOnboardClientPageV2 / ConsultingDocumentLibraryPage) moved to
+// /app/admin/consulting/* and are imported by App.tsx directly. Only the
+// shared/client-readable consulting surfaces remain in this dispatcher.
 const ConsultingOverviewPage = lazyNamed(() => import('./consulting/ConsultingOverviewPage'), 'ConsultingOverviewPage');
 const ConsultingCalendarPage = lazyNamed(() => import('./consulting/ConsultingCalendarPage'), 'ConsultingCalendarPage');
 const ConsultingAccessLogPage = lazyNamed(() => import('./consulting/ConsultingAccessLogPage'), 'ConsultingAccessLogPage');
-// F-Onboard-v2 (2026-06-17): swap to ConsultingOnboardClientPageV2 — 7-step
-// rebuild (customer mode, multi-product cart w/ consulting price override,
-// dynamic coupon autocomplete, deep business profile, beefed account, review,
-// progress). Original V1 file kept in repo for one cycle as rollback path.
-const ConsultingOnboardClientPage = lazyNamed(() => import('./consulting/ConsultingOnboardClientPageV2'), 'ConsultingOnboardClientPageV2');
-const ConsultingClientsPage = lazyNamed(() => import('./consulting/ConsultingClientsPage'), 'default');
-const ConsultingTicketsBoardPage = lazyNamed(() => import('./consulting/ConsultingTicketsBoardPage'), 'ConsultingTicketsBoardPage');
-// F1 (Consulting Rework 2026-06-25) — canonical Projects list view.
-// Replaced the old card-grid ConsultingProjectsBoardPage + the orphaned
-// ConsultingProjectWorkspacePage (both deleted 2026-06-25).
-const ConsultingProjectsPage = lazyNamed(() => import('./consulting/ConsultingProjectsPage'), 'ConsultingProjectsPage');
 const ConsultingDeliverablesPage = lazyNamed(() => import('./consulting/ConsultingDeliverablesPage'), 'ConsultingDeliverablesPage');
-// F4 (Consulting Rework 2026-06-25) — Document Library (founder-only).
-const ConsultingDocumentLibraryPage = lazyNamed(() => import('./consulting/ConsultingDocumentLibraryPage'), 'ConsultingDocumentLibraryPage');
 
 // MY BRAND lazy imports live in the consolidated block near the top of
 // this file (the "MY BRAND pages — wave-2 lazy imports" section just below
@@ -356,9 +348,39 @@ function RouteLoading() {
   );
 }
 
+// 2026-06-29 — Founder-side Consulting pages relocated under /app/admin/consulting/*.
+// Founders hitting the old /app/services/consulting_* URLs get a 301-style
+// redirect; non-founders get bounced to /app/overview (clients have no
+// equivalent admin surface).
+const CONSULTING_FOUNDER_RELOCATIONS: Record<string, string> = {
+  consulting_workspace: '/app/admin/consulting/clients',
+  consulting_tickets: '/app/admin/consulting/requests',
+  consulting_projects: '/app/admin/consulting/projects',
+  consulting_onboard_client: '/app/admin/consulting/onboard-client',
+  consulting_documents: '/app/admin/consulting/document-library',
+};
+
 export function ServiceRouter() {
   const { serviceKey } = useParams<{ serviceKey: string }>();
   const { enabledServices } = useAppState();
+  const isFounder = useIsFounder();
+  const { pathname } = useLocation();
+  const actingAsClient = /^\/c\/[0-9a-f-]{8,}/i.test(pathname);
+  const effectiveIsFounder = isFounder && !actingAsClient;
+
+  // Old founder-side consulting URLs — relocate to /app/admin/consulting/*.
+  // Done before the SERVICE_CATALOG lookup so the redirect fires even if the
+  // catalog row gets pruned later.
+  if (serviceKey && CONSULTING_FOUNDER_RELOCATIONS[serviceKey]) {
+    if (effectiveIsFounder) {
+      return <Navigate to={CONSULTING_FOUNDER_RELOCATIONS[serviceKey]} replace />;
+    }
+    // Non-founders (and founders acting-as-client) bounce to /overview —
+    // mirrors RequireFounderRoute behaviour and matches the spec's
+    // "404 for clients" choice (we don't render a 404 inside the app shell;
+    // overview is the consistent fallback).
+    return <Navigate to="/app/overview" replace />;
+  }
 
   const service: PortalService | null = useMemo(
     () => SERVICE_CATALOG.find((s) => s.key === serviceKey) ?? null,
@@ -692,21 +714,21 @@ export function ServiceRouter() {
   if (service.section === 'CONSULTING') {
     let consultingPage: React.ReactNode = null;
     switch (service.key) {
-      // F-140 — new structure: Overview / Requests / Projects / Deliverables / Calendar / Onboard
+      // F-140 — Consulting dispatch. NOTE: consulting_workspace / _tickets /
+      // _projects / _onboard_client / _documents are intercepted by the
+      // CONSULTING_FOUNDER_RELOCATIONS table at the top of this component
+      // (founders → /app/admin/consulting/*; non-founders → /overview),
+      // so they never reach this switch.
       case 'consulting_overview':         consultingPage = <ConsultingOverviewPage />; break;
-      case 'consulting_tickets':          consultingPage = <ConsultingTicketsBoardPage />; break;
-      // F1 (Consulting Rework 2026-06-25) — canonical Projects list view.
-      case 'consulting_projects':         consultingPage = <ConsultingProjectsPage />; break;
       case 'consulting_deliverables':     consultingPage = <ConsultingDeliverablesPage />; break;
-      // F4 (Consulting Rework 2026-06-25) — Document Library (founder-only).
-      case 'consulting_documents':        consultingPage = <ConsultingDocumentLibraryPage />; break;
       case 'consulting_calendar':         consultingPage = <ConsultingCalendarPage />; break;
-      case 'consulting_onboard_client':   consultingPage = <ConsultingOnboardClientPage />; break;
-      case 'consulting_workspace':        consultingPage = <ConsultingClientsPage />; break;
       // Founder-only utility surfaces (still accessible by URL)
       case 'consulting_access_log':       consultingPage = <ConsultingAccessLogPage />; break;
       // Legacy "Build Your X" per-engagement task/deliverable pages —
-      // redirected to the unified Requests Board with an engagement filter.
+      // forwarded to the relocated Requests Board (founder admin). The
+      // CONSULTING_FOUNDER_RELOCATIONS table only matches the canonical
+      // consulting_tickets key, so we redirect explicitly here for the
+      // legacy aliases that still exist in old emails / saved links.
       case 'consulting_brand_tasks':
       case 'consulting_brand_deliverables':
       case 'consulting_foundation_tasks':
@@ -715,7 +737,9 @@ export function ServiceRouter() {
       case 'consulting_clarity_deliverables':
       case 'consulting_engine_tasks':
       case 'consulting_engine_deliverables':
-        consultingPage = <ConsultingTicketsBoardPage />; break;
+        return effectiveIsFounder
+          ? <Navigate to="/app/admin/consulting/requests" replace />
+          : <Navigate to="/app/overview" replace />;
       default: break;
     }
     if (consultingPage) {

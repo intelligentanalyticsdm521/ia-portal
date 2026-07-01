@@ -494,7 +494,7 @@ function TicketDetailModal({ ticketId, onClose, onChanged }: { ticketId: string;
         { project_type: convertType, title: detail?.ticket?.title }
       );
       // Jump to the new project
-      window.location.href = `/app/services/consulting_projects?open=${r.data.project_id}`;
+      window.location.href = `/app/admin/consulting/projects?open=${r.data.project_id}`;
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -611,7 +611,7 @@ function TicketDetailModal({ ticketId, onClose, onChanged }: { ticketId: string;
         )}
         {t.project_id && (
           <div className="bg-purple-50 border border-purple-200 rounded p-2 text-xs">
-            🔗 Part of project — <a href={`/app/services/consulting_projects?open=${t.project_id}`} className="font-semibold text-purple-700 hover:underline">open project</a>
+            🔗 Part of project — <a href={`/app/admin/consulting/projects?open=${t.project_id}`} className="font-semibold text-purple-700 hover:underline">open project</a>
           </div>
         )}
 

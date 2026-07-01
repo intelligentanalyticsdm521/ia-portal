@@ -1,7 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useArionContext } from '../useArionContext';
 import { IadmModal } from '../../components/IadmModal';
 import type { AiBlockKind } from '../../lib/arionApi';
+import * as arionApiLib from '../../lib/arionApi';
+import { useAppState } from '../../app/AppState';
+import { useAccessToken } from '../../auth/useAccessToken';
+import { BLOCK_DEFAULTS, computeSectionCost } from '../pages/website/WebsiteAiBuilder';
 
 /**
  * AiBlockGenerator — F-AI-WB Phase 1 (2026-06-20)
@@ -61,17 +66,70 @@ export function AiBlockGenerator({
   onAccepted?: (draftBlockId: string, kind: AiBlockKind) => void;
 }) {
   const { arionApi, activeSiteId } = useArionContext();
+  const { activeTenantId } = useAppState();
+  const { getToken } = useAccessToken();
 
   const [step, setStep] = useState<Step>(initialKind ? 'context' : 'pick');
   const [kind, setKind] = useState<AiBlockKind | null>(initialKind || null);
   const [tone, setTone] = useState('');
   const [industry, setIndustry] = useState('');
   const [extraNotes, setExtraNotes] = useState('');
+  // Section configurator state — drives the live cost computation.
+  const [userPrompt, setUserPrompt] = useState('');
+  const [paragraphs, setParagraphs] = useState(1);
+  const [columns, setColumns] = useState(0);
+  const [items, setItems] = useState(0);
+  const [withImage, setWithImage] = useState(false);
+  const [imageQuality, setImageQuality] = useState<'std' | 'hd'>('std');
+  const [imagePrompt, setImagePrompt] = useState('');
+  const [withForm, setWithForm] = useState(false);
+  const [balance, setBalance] = useState<number | null>(null);
   const [result, setResult] = useState<GenResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showElementorView, setShowElementorView] = useState(false);
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
+
+  // Apply BLOCK_DEFAULTS whenever the user picks a kind.
+  useEffect(() => {
+    if (!kind) return;
+    const def = BLOCK_DEFAULTS[kind];
+    if (!def) return;
+    setParagraphs(def.paragraphs);
+    setColumns(def.columns);
+    setItems(def.items);
+    setWithImage(def.images > 0);
+    setImageQuality(def.imageQuality);
+    setWithForm(def.form);
+  }, [kind]);
+
+  // Fetch current ARGUS balance whenever the drawer opens.
+  useEffect(() => {
+    if (!open || !activeTenantId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const baseUrl = (import.meta.env.VITE_ARION_API_BASE_URL as string) || '';
+        const res = await arionApiLib.getArgusBalance({ baseUrl, bearerToken: token.accessToken, tenantId: activeTenantId });
+        if (!cancelled) {
+          const b = (res as any)?.balance ?? (res as any)?.data?.balance ?? null;
+          setBalance(typeof b === 'number' ? b : null);
+        }
+      } catch { /* leave null */ }
+    })();
+    return () => { cancelled = true; };
+  }, [open, activeTenantId, getToken]);
+
+  // Live cost preview based on current configurator state.
+  const liveCost = useMemo(() => computeSectionCost({
+    paragraphs, columns, items,
+    images: withImage ? 1 : 0,
+    imageQuality,
+    form: withForm,
+  }), [paragraphs, columns, items, withImage, imageQuality, withForm]);
+
+  const canAfford = balance == null || balance >= liveCost;
 
   // Elapsed-time timer while generating
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -119,6 +177,19 @@ export function AiBlockGenerator({
     if (tone.trim()) ctx.tone = tone.trim();
     if (industry.trim()) ctx.industry = industry.trim();
     if (extraNotes.trim()) ctx.notes = extraNotes.trim();
+    if (userPrompt.trim()) ctx.user_prompt = userPrompt.trim();
+    // Configurator passes — backend can opt in to honor each.
+    ctx.paragraphs = paragraphs;
+    ctx.columns = columns;
+    ctx.items = items;
+    ctx.with_image = withImage;
+    if (withImage) {
+      ctx.image_quality = imageQuality;
+      if (imagePrompt.trim()) ctx.image_prompt = imagePrompt.trim();
+    }
+    ctx.with_form = withForm;
+    // Credits the client expects to spend (server enforces actual debit).
+    ctx.client_estimated_cost = liveCost;
     return ctx;
   }
 
@@ -191,13 +262,29 @@ export function AiBlockGenerator({
         )}
 
         {step === 'context' && kind && (
-          <ContextForm
-            kind={kind}
-            tone={tone} setTone={setTone}
-            industry={industry} setIndustry={setIndustry}
-            extraNotes={extraNotes} setExtraNotes={setExtraNotes}
-            onChangeKind={() => setStep('pick')}
-          />
+          <>
+            <ContextForm
+              kind={kind}
+              tone={tone} setTone={setTone}
+              industry={industry} setIndustry={setIndustry}
+              extraNotes={extraNotes} setExtraNotes={setExtraNotes}
+              onChangeKind={() => setStep('pick')}
+            />
+            <SectionConfigurator
+              kind={kind}
+              userPrompt={userPrompt} setUserPrompt={setUserPrompt}
+              paragraphs={paragraphs} setParagraphs={setParagraphs}
+              columns={columns} setColumns={setColumns}
+              items={items} setItems={setItems}
+              withImage={withImage} setWithImage={setWithImage}
+              imageQuality={imageQuality} setImageQuality={setImageQuality}
+              imagePrompt={imagePrompt} setImagePrompt={setImagePrompt}
+              withForm={withForm} setWithForm={setWithForm}
+              liveCost={liveCost}
+              balance={balance}
+              canAfford={canAfford}
+            />
+          </>
         )}
 
         {step === 'generating' && (
@@ -237,12 +324,17 @@ export function AiBlockGenerator({
       return (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 24px', gap: 8 }}>
           <div style={{ fontSize: 11, color: '#5A7A8A' }}>
-            Tier-gated: Pro+. Cost basis is metered against your ARGUS data plan.
+            Included on all ARION plans. Costs adjust based on what you add to the section.
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button style={ghost} onClick={onClose}>Cancel</button>
-            <button style={primary} onClick={runGenerate} disabled={!activeSiteId || !kind}>
-              Generate
+            <button
+              style={canAfford ? primary : { ...primary, opacity: 0.55, cursor: 'not-allowed' }}
+              onClick={runGenerate}
+              disabled={!activeSiteId || !kind || !canAfford}
+              title={!canAfford ? `Need ${liveCost} credits — you have ${balance ?? 0}` : ''}
+            >
+              {canAfford ? `Generate · ${liveCost} credits` : `Need ${liveCost} credits`}
             </button>
           </div>
         </div>
@@ -434,6 +526,213 @@ function Field({
         />
       )}
     </div>
+  );
+}
+
+function SectionConfigurator({
+  kind,
+  userPrompt, setUserPrompt,
+  paragraphs, setParagraphs,
+  columns, setColumns,
+  items, setItems,
+  withImage, setWithImage,
+  imageQuality, setImageQuality,
+  imagePrompt, setImagePrompt,
+  withForm, setWithForm,
+  liveCost,
+  balance,
+  canAfford,
+}: {
+  kind: AiBlockKind;
+  userPrompt: string; setUserPrompt: (v: string) => void;
+  paragraphs: number; setParagraphs: (v: number) => void;
+  columns: number; setColumns: (v: number) => void;
+  items: number; setItems: (v: number) => void;
+  withImage: boolean; setWithImage: (v: boolean) => void;
+  imageQuality: 'std' | 'hd'; setImageQuality: (v: 'std' | 'hd') => void;
+  imagePrompt: string; setImagePrompt: (v: string) => void;
+  withForm: boolean; setWithForm: (v: boolean) => void;
+  liveCost: number;
+  balance: number | null;
+  canAfford: boolean;
+}) {
+  const allowColumns = ['services', 'cta', 'contact'].includes(kind);
+  const allowItems = ['testimonials', 'faq', 'gallery'].includes(kind);
+  const allowForm = ['cta', 'contact'].includes(kind);
+  const itemsLabel = kind === 'gallery' ? 'Images in gallery' : kind === 'testimonials' ? 'Testimonials' : kind === 'faq' ? 'Questions' : 'Items';
+
+  const rowStyle: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '10px 12px', border: '1px solid #E5EEF2', borderRadius: 6,
+    background: '#fff', marginBottom: 8,
+  };
+  const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: '#0B1C24' };
+  const hintStyle: React.CSSProperties = { fontSize: 11, color: '#5A7A8A', marginTop: 2 };
+
+  return (
+    <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #E5EEF2' }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#0B1C24', marginBottom: 4 }}>
+        Tell us what you want
+      </div>
+      <div style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 12 }}>
+        Describe the section like you would to a designer. The cost on the Generate button updates as you add to it.
+      </div>
+
+      <Field
+        label="What should this section say or do?"
+        placeholder={`e.g. ${kind === 'hero' ? 'Bold welcome with our pricing offer and a "Get a quote" button.' : kind === 'services' ? 'Three service tiles — Lawn care, Snow removal, Tree trimming.' : 'Friendly section about us with a clear next step.'}`}
+        value={userPrompt}
+        onChange={setUserPrompt}
+        multiline
+      />
+
+      <div style={{ marginTop: 12 }}>
+        <NumberRow label="Paragraphs of copy" hint="1 paragraph included. Extra paragraphs add 1 credit each." min={1} max={5} value={paragraphs} setValue={setParagraphs} />
+
+        {allowColumns && (
+          <NumberRow label="Columns / cards" hint="Side-by-side blocks of copy. Each column adds 3 credits." min={0} max={6} value={columns} setValue={setColumns} />
+        )}
+
+        {allowItems && (
+          <NumberRow label={itemsLabel} hint="Each item adds 2 credits." min={0} max={12} value={items} setValue={setItems} />
+        )}
+
+        <div style={rowStyle}>
+          <div style={{ flex: 1 }}>
+            <div style={labelStyle}>Generate an AI image for this section</div>
+            <div style={hintStyle}>Standard image: 8 credits. Higher quality: 16 credits.</div>
+          </div>
+          <ToggleSwitch checked={withImage} onChange={setWithImage} />
+        </div>
+
+        {withImage && (
+          <div style={{ marginLeft: 12, padding: '10px 12px', borderLeft: '2px solid #38BDF8', marginBottom: 8, background: '#F8FAFC' }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <button
+                type="button"
+                onClick={() => setImageQuality('std')}
+                style={{
+                  flex: 1, padding: '6px 10px', borderRadius: 4, fontSize: 12, cursor: 'pointer',
+                  border: imageQuality === 'std' ? '2px solid #38BDF8' : '1px solid #CBD5E1',
+                  background: imageQuality === 'std' ? '#E0F2FE' : '#fff',
+                  fontWeight: imageQuality === 'std' ? 600 : 400, color: '#0B1C24',
+                }}
+              >Standard · 8 credits</button>
+              <button
+                type="button"
+                onClick={() => setImageQuality('hd')}
+                style={{
+                  flex: 1, padding: '6px 10px', borderRadius: 4, fontSize: 12, cursor: 'pointer',
+                  border: imageQuality === 'hd' ? '2px solid #38BDF8' : '1px solid #CBD5E1',
+                  background: imageQuality === 'hd' ? '#E0F2FE' : '#fff',
+                  fontWeight: imageQuality === 'hd' ? 600 : 400, color: '#0B1C24',
+                }}
+              >Higher quality · 16 credits</button>
+            </div>
+            <Field
+              label="Describe the image"
+              placeholder="e.g. A warm overhead shot of a freshly mowed front lawn at sunset."
+              value={imagePrompt}
+              onChange={setImagePrompt}
+              multiline
+            />
+          </div>
+        )}
+
+        {allowForm && (
+          <div style={rowStyle}>
+            <div style={{ flex: 1 }}>
+              <div style={labelStyle}>Include a contact form</div>
+              <div style={hintStyle}>Adds a name + email + message form. 5 credits.</div>
+            </div>
+            <ToggleSwitch checked={withForm} onChange={setWithForm} />
+          </div>
+        )}
+      </div>
+
+      <div style={{
+        marginTop: 14, padding: '12px 14px', borderRadius: 6,
+        background: canAfford ? '#F0FDF4' : '#FEF2F2',
+        border: `1px solid ${canAfford ? '#1D9E75' : '#DC2626'}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <div>
+          <div style={{ fontSize: 11, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.6 }}>
+            This section will cost
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#0B1C24' }}>
+            {liveCost} credits
+          </div>
+        </div>
+        {balance != null && (
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: '#5A7A8A' }}>Your balance</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: canAfford ? '#0B1C24' : '#DC2626' }}>
+              {balance.toLocaleString()} credits
+            </div>
+          </div>
+        )}
+      </div>
+      {!canAfford && (
+        <div style={{ marginTop: 8, fontSize: 12, color: '#DC2626' }}>
+          You don&apos;t have enough credits for this section. <Link to="/app/argus/credits" style={{ color: '#DC2626', fontWeight: 600 }}>Top up your data plan</Link> or simplify the section to fit your balance.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NumberRow({
+  label, hint, min, max, value, setValue,
+}: {
+  label: string; hint: string; min: number; max: number;
+  value: number; setValue: (v: number) => void;
+}) {
+  const btn: React.CSSProperties = {
+    width: 28, height: 28, borderRadius: 4, border: '1px solid #CBD5E1',
+    background: '#fff', cursor: 'pointer', fontSize: 16, fontWeight: 600, color: '#0B1C24',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  };
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '10px 12px', border: '1px solid #E5EEF2', borderRadius: 6,
+      background: '#fff', marginBottom: 8,
+    }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#0B1C24' }}>{label}</div>
+        <div style={{ fontSize: 11, color: '#5A7A8A', marginTop: 2 }}>{hint}</div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button type="button" style={btn} onClick={() => setValue(Math.max(min, value - 1))} disabled={value <= min}>−</button>
+        <div style={{ minWidth: 24, textAlign: 'center', fontWeight: 600, fontSize: 14, color: '#0B1C24' }}>{value}</div>
+        <button type="button" style={btn} onClick={() => setValue(Math.min(max, value + 1))} disabled={value >= max}>+</button>
+      </div>
+    </div>
+  );
+}
+
+function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label style={{ position: 'relative', display: 'inline-block', width: 40, height: 22, cursor: 'pointer' }}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ opacity: 0, width: 0, height: 0 }}
+      />
+      <span style={{
+        position: 'absolute', inset: 0,
+        background: checked ? '#38BDF8' : '#CBD5E1',
+        borderRadius: 22, transition: 'background 0.15s',
+      }}>
+        <span style={{
+          position: 'absolute', width: 16, height: 16, top: 3,
+          left: checked ? 21 : 3, background: '#fff',
+          borderRadius: '50%', transition: 'left 0.15s',
+        }} />
+      </span>
+    </label>
   );
 }
 

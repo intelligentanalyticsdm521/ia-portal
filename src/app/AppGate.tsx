@@ -144,25 +144,103 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         // the new founder-team guard in onboardClient.js / verify.js).
         //
         // Order of preference:
-        //   (a) explicit stored choice (Switch Tenant button) — but only
-        //       for super-user; non-super-user stored values are ignored
+        //   (a) explicit per-tab "act as" via sessionStorage — super-user
+        //       picker writes here so a swap is scoped to the tab and gone
+        //       on next browser launch
         //   (b) sole membership
         //   (c) backend-supplied homeTenantId (IA team → founder tenant,
         //       clients → oldest active membership)
         //   (d) first membership as last-resort fallback
-        const stored = appState.activeTenantId;
-        const storedMatch = stored ? tenants.find((t) => t.tenantId === stored) : null;
+        //
+        // 2026-06-26 — REMOVED long-term `iadm.portal.activeTenantId`
+        // localStorage pin for super-users. Brandon reported "ARION shows
+        // Briarwood Dental on every tenant page" — root cause was the
+        // localStorage pin from a previous super-user picker click, which
+        // stuck the founder session in client tenant context across reloads
+        // and across days. Now: pins live in sessionStorage (per-tab,
+        // ephemeral). Founders default to home tenant on every fresh open;
+        // explicit per-tab swap via super-user picker still works.
         const homeMatch = v.homeTenantId
           ? tenants.find((t) => t.tenantId === v.homeTenantId)
           : null;
         const isSuperUser = !!v.user?.isSuperUser;
+        const SESSION_ACT_AS_KEY = 'iadm.portal.actAsTenantId.v1';
+        const sessionActAs = (() => {
+          try { return typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_ACT_AS_KEY) : null; }
+          catch { return null; }
+        })();
+        const sessionMatch = sessionActAs ? tenants.find((t) => t.tenantId === sessionActAs) : null;
+
+        // One-time migration: nuke any stale long-term pin from before this
+        // fix so it can't override the home-tenant default on next boot.
+        if (isSuperUser) {
+          try { localStorage.removeItem('iadm.portal.activeTenantId'); } catch {}
+        }
+
+        // ── Consultant workspace URL override ──────────────────────────────
+        // 2026-06-27 — Founder (Brandon) can land on /c/:client_tenant_id to
+        // open a consultant workspace scoped to a client tenant he holds a
+        // `consultant_grant` for (not necessarily a full membership). See
+        // memory: consultant-grant-model. Platform-api's /select-tenant
+        // endpoint was patched the same day to accept consultant_grant
+        // access, so we just override tenantToSelect with the URL-supplied
+        // UUID here — the selectTenant call below will succeed against any
+        // tenant Brandon has a grant for, even when it isn't in `tenants[]`.
+        //
+        // Additive: if the path doesn't match or the user isn't a founder,
+        // we fall through to the normal homeMatch/sessionMatch logic below.
+        const CONSULTANT_WORKSPACE_KEY = 'iadm.portal.consultantWorkspace.v1';
+        const CONSULTANT_TARGET_KEY = 'iadm.portal.consultantTargetTid.v1';
+        const consultantPathMatch = (() => {
+          try {
+            const path = typeof window !== 'undefined' ? window.location.pathname : '';
+            const m = path.match(/^\/c\/([0-9a-f-]{36})\/?/i);
+            return m ? m[1] : null;
+          } catch { return null; }
+        })();
+        // sessionStorage backup of the target tid. ConsultantWorkspaceEntry
+        // (the /c/:tid route element) writes this before redirecting to
+        // /app/overview so we can read it here during bootstrap. Per-tab
+        // session means each consultant workspace tab is independent — the
+        // founder's main IA tab doesn't see this key.
+        const consultantSessionTid = (() => {
+          try {
+            if (typeof sessionStorage === 'undefined') return null;
+            const v = sessionStorage.getItem(CONSULTANT_TARGET_KEY) || '';
+            return /^[0-9a-f-]{36}$/i.test(v) ? v : null;
+          } catch { return null; }
+        })();
+        const consultantTargetTid = consultantPathMatch || consultantSessionTid;
+        const isFounder = !!v.user?.isFounder;
+        const isConsultantWorkspace = !!(consultantTargetTid && isFounder);
+        try {
+          if (typeof sessionStorage !== 'undefined') {
+            if (isConsultantWorkspace) {
+              sessionStorage.setItem(CONSULTANT_WORKSPACE_KEY, 'true');
+            } else {
+              sessionStorage.removeItem(CONSULTANT_WORKSPACE_KEY);
+            }
+          }
+        } catch { /* storage denied — ignore */ }
 
         let tenantToSelect: string | null = null;
-        if (tenants.length === 1) {
+        if (isConsultantWorkspace) {
+          // Founder opened /c/:tid in an iframe. Target tid comes from URL
+          // (first paint) or sessionStorage (post-MSAL-redirect recovery —
+          // the auth dance rewrites the URL to /auth/callback so we'd lose
+          // the path match otherwise). platform-api's /select-tenant accepts
+          // consultant_grant, so this tid resolves even if it's not in v.tenants.
+          tenantToSelect = consultantTargetTid;
+          // Rewrite URL to /app/* so React Router renders the AppShell tree
+          // (the Portal has no /c/:tid Route).
+          try {
+            window.history.replaceState({}, '', '/app/overview');
+          } catch { /* same-origin only — should always succeed */ }
+        } else if (tenants.length === 1) {
           tenantToSelect = tenants[0].tenantId;
         } else if (isSuperUser) {
-          // Super-user: respect stored choice; otherwise show picker.
-          tenantToSelect = storedMatch?.tenantId || null;
+          // Super-user: per-tab session swap first, then HOME by default.
+          tenantToSelect = sessionMatch?.tenantId || homeMatch?.tenantId || tenants[0].tenantId;
         } else {
           // Non-super-user: ALWAYS auto-route to home tenant.
           tenantToSelect = homeMatch?.tenantId || tenants[0].tenantId;

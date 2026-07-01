@@ -1,0 +1,24 @@
+{
+  "name": "Brandon Sheriff — Business Card",
+  "short_name": "My Card",
+  "description": "Brandon Sheriff — Intelligent Analytics",
+  "start_url": "/brandon-card.html",
+  "scope": "/brandon-card.html",
+  "display": "standalone",
+  "background_color": "#0F172A",
+  "theme_color": "#0F172A",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='32' fill='%230F172A'/><rect x='28' y='28' width='136' height='136' rx='12' fill='white'/><g fill='%230F172A'><rect x='44' y='44' width='32' height='32'/><rect x='116' y='44' width='32' height='32'/><rect x='44' y='116' width='32' height='32'/><rect x='84' y='84' width='8' height='8'/><rect x='100' y='84' width='8' height='8'/><rect x='84' y='100' width='8' height='8'/><rect x='100' y='100' width='8' height='8'/><rect x='84' y='116' width='8' height='8'/><rect x='100' y='124' width='8' height='8'/><rect x='116' y='100' width='8' height='8'/><rect x='124' y='84' width='8' height='8'/><rect x='124' y='116' width='8' height='8'/></g></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='80' fill='%230F172A'/><rect x='72' y='72' width='368' height='368' rx='32' fill='white'/><g fill='%230F172A'><rect x='112' y='112' width='88' height='88'/><rect x='312' y='112' width='88' height='88'/><rect x='112' y='312' width='88' height='88'/><rect x='224' y='224' width='24' height='24'/><rect x='264' y='224' width='24' height='24'/><rect x='224' y='264' width='24' height='24'/><rect x='264' y='264' width='24' height='24'/></g></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

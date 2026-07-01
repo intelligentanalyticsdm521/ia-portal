@@ -159,6 +159,53 @@ export const WALKTHROUGHS: Walkthrough[] = [
   },
   // ─── SPARK ─────────────────────────────────────────────────────────────
   {
+    id: "spark-basics",
+    product: "spark",
+    title: "SPARK basics",
+    oneLiner: "The umbrella first-run walkthrough — email + SMS + CRM in one, explained end-to-end.",
+    estimatedMinutes: 21,
+    steps: [
+      {
+        kind: "intro",
+        title: "Welcome to SPARK",
+        body: "SPARK is your email, SMS, and CRM all in one place. For a small business owner, that means every lead, every message, and every follow-up lives in one system — no juggling Mailchimp + a spreadsheet + your phone. This walkthrough covers the 7 things you need to know before you send your first campaign.",
+      },
+      {
+        kind: "explain",
+        title: "Upload your contacts",
+        body: "Nothing works until SPARK knows who to talk to. Two ways to get contacts in: (1) Upload a CSV from the Contacts page — we auto-map name, email, phone; (2) Click + New Contact to add one manually. Existing customers from Stripe sync automatically.",
+      },
+      {
+        kind: "explain",
+        title: "Organize with lists + segments",
+        body: "A LIST is a static group you build by hand (e.g. \"January event attendees\"). A SEGMENT is a dynamic filter that updates itself (e.g. \"opened a campaign in the last 30 days\"). Use lists for one-time sends; use segments for ongoing automation targets.",
+      },
+      {
+        kind: "explain",
+        title: "Send your first campaign",
+        body: "Click Campaigns → + New Campaign. Pick a template, pick a list or segment, schedule or send immediately. Open + click rates roll into the campaign card as they come in.",
+      },
+      {
+        kind: "explain",
+        title: "Automation basics",
+        body: "Rules are event-triggered emails or SMS: \"when a contact submits the contact form, send the welcome email 5 minutes later.\" Set them up once in Automations and they run forever without you.",
+      },
+      {
+        kind: "explain",
+        title: "Always test-send first",
+        body: "Before every campaign, click Send Test and send it to yourself. Check the subject line, check merge tags rendered right, check the unsubscribe link. Two minutes here saves a bad send to your whole list.",
+      },
+      {
+        kind: "cta",
+        title: "Wrap-up + next steps",
+        body: "Check the Deliverability tab weekly to keep your sender reputation healthy. Keep growing your list — every contact form submission counts. When you're ready to go deeper, run the advanced SPARK walkthroughs (Contacts, Templates, Campaigns, Lifecycle) from Settings → Walkthroughs.",
+        ctaLabel: "Go to SPARK",
+        ctaPath: "/app/spark",
+      },
+    ],
+  },
+  // Advanced walkthrough — deprecated auto-fire; use spark-basics as the umbrella first-run walkthrough. Keep entries for manual re-trigger.
+  {
     id: "spark-contacts",
     product: "spark",
     title: "Contacts in SPARK",
@@ -189,6 +236,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
       },
     ],
   },
+  // Advanced walkthrough — deprecated auto-fire; use spark-basics as the umbrella first-run walkthrough. Keep entries for manual re-trigger.
   {
     id: "spark-templates",
     product: "spark",
@@ -220,6 +268,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
       },
     ],
   },
+  // Advanced walkthrough — deprecated auto-fire; use spark-basics as the umbrella first-run walkthrough. Keep entries for manual re-trigger.
   {
     id: "spark-campaigns",
     product: "spark",
@@ -251,6 +300,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
       },
     ],
   },
+  // Advanced walkthrough — deprecated auto-fire; use spark-basics as the umbrella first-run walkthrough. Keep entries for manual re-trigger.
   {
     id: "spark-lifecycle",
     product: "spark",

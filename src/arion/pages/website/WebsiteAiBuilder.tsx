@@ -9,19 +9,54 @@ import * as arionApi from '../../../lib/arionApi';
 import { useAppState } from '../../../app/AppState';
 import { useAccessToken } from '../../../auth/useAccessToken';
 
-// Cost-per-action mirrors lumen.argus_action_pricing (verified 2026-06-28).
-// Brandon-locked: AI Builder is included on all ARION tiers; only credit
-// balance gates each action. Block generation = 1 variant_explore call.
-// TODO F-Onb-D10: replace this hardcoded map with a GET /arion/ai-builder/pricing
-// endpoint so the canonical DB pricing is the source of truth.
-const ACTION_COSTS = {
-  element_rewrite: 1,
-  image_swap: 3,
-  variant_explore: 15,
-  page_add: 25,
-  copy_refresh: 50,
+// Section build cost model (Brandon-locked 2026-06-28).
+// Cost = base + extraParagraphs + columns×3 + items×2 + images×(std?8:hd?16) + form?5
+// Real AI cost-basis is tracked per-call in lumen.ai_call_audit (input_tokens,
+// output_tokens, image_count, cost_basis_usd) so credit prices can be reviewed
+// quarterly against actual spend.
+// TODO F-Onb-D10: move COSTS + BLOCK_DEFAULTS into a GET /arion/ai-builder/pricing
+// endpoint so DB is source of truth.
+export const SECTION_COSTS = {
+  base: 2,
+  extraParagraph: 1,
+  perColumn: 3,
+  perItem: 2,
+  imageStd: 8,
+  imageHd: 16,
+  form: 5,
 } as const;
-const BLOCK_GEN_COST = ACTION_COSTS.variant_explore; // 15 credits per block
+
+interface BlockDefaults {
+  paragraphs: number; // 1 = single paragraph (base), 2+ adds extraParagraph
+  columns: number;
+  items: number;
+  images: number;
+  imageQuality: 'std' | 'hd';
+  form: boolean;
+}
+
+export const BLOCK_DEFAULTS: Record<string, BlockDefaults> = {
+  hero:         { paragraphs: 1, columns: 0, items: 0, images: 1, imageQuality: 'std', form: false },
+  services:     { paragraphs: 1, columns: 3, items: 0, images: 0, imageQuality: 'std', form: false },
+  testimonials: { paragraphs: 1, columns: 0, items: 3, images: 0, imageQuality: 'std', form: false },
+  cta:          { paragraphs: 1, columns: 2, items: 0, images: 0, imageQuality: 'std', form: true },
+  about:        { paragraphs: 3, columns: 0, items: 0, images: 1, imageQuality: 'std', form: false },
+  faq:          { paragraphs: 1, columns: 0, items: 5, images: 0, imageQuality: 'std', form: false },
+  gallery:      { paragraphs: 1, columns: 0, items: 0, images: 6, imageQuality: 'std', form: false },
+  contact:      { paragraphs: 1, columns: 1, items: 0, images: 0, imageQuality: 'std', form: true },
+};
+
+export function computeSectionCost(cfg: BlockDefaults): number {
+  let c = SECTION_COSTS.base;
+  c += Math.max(0, cfg.paragraphs - 1) * SECTION_COSTS.extraParagraph;
+  c += cfg.columns * SECTION_COSTS.perColumn;
+  c += cfg.items * SECTION_COSTS.perItem;
+  c += cfg.images * (cfg.imageQuality === 'hd' ? SECTION_COSTS.imageHd : SECTION_COSTS.imageStd);
+  if (cfg.form) c += SECTION_COSTS.form;
+  return c;
+}
+
+const MIN_BLOCK_COST = SECTION_COSTS.base; // cheapest possible section if user strips everything
 
 /**
  * Website AI Builder — F-AI-WB Phase 1 (2026-06-20)
@@ -67,7 +102,7 @@ export function WebsiteAiBuilder() {
     return () => { cancelled = true; };
   }, [activeTenantId, getToken, refreshKey]);
 
-  const canAffordBlockGen = balance == null || balance >= BLOCK_GEN_COST;
+  const canAffordBlockGen = balance == null || balance >= MIN_BLOCK_COST;
 
   if (loading) return <Loading />;
   if (!selectedSite) return <EmptyPanel message="No site selected." />;
@@ -103,23 +138,23 @@ export function WebsiteAiBuilder() {
             display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
           }}>
             <span style={{ fontSize: 11, color: '#5A7A8A', fontWeight: 500 }}>Credits</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: balance != null && balance < BLOCK_GEN_COST ? '#D85A30' : '#0B1C24' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: balance != null && balance < MIN_BLOCK_COST ? '#D85A30' : '#0B1C24' }}>
               {balance == null ? '—' : balance.toLocaleString()}
             </span>
             <Link to="/app/services/arion_usage" style={{ fontSize: 11, color: '#2563eb', textDecoration: 'none', fontWeight: 600, marginLeft: 4 }}>
-              {balance != null && balance < BLOCK_GEN_COST ? 'Top up →' : 'Manage'}
+              {balance != null && balance < MIN_BLOCK_COST ? 'Top up →' : 'Manage'}
             </Link>
           </div>
         </div>
 
         {/* Insufficient credits banner */}
-        {balance != null && balance < BLOCK_GEN_COST && (
+        {balance != null && balance < MIN_BLOCK_COST && (
           <div style={{
             background: '#FEF3C7', border: '1px solid #FCD34D',
             borderRadius: 6, padding: '10px 14px', marginBottom: 14,
             fontSize: 12, color: '#92400E',
           }}>
-            You need at least <strong>{BLOCK_GEN_COST} credits</strong> to generate a new section. <Link to="/app/services/arion_usage" style={{ color: '#92400E', fontWeight: 700 }}>Top up your credits →</Link>
+            You need at least <strong>{MIN_BLOCK_COST} credits</strong> to generate even the simplest section. <Link to="/app/services/arion_usage" style={{ color: '#92400E', fontWeight: 700 }}>Top up your credits →</Link>
           </div>
         )}
 
@@ -129,8 +164,8 @@ export function WebsiteAiBuilder() {
             onClick={() => openGeneratorForKind(undefined)}
             style={{ ...primaryBtn, opacity: (canAffordBlockGen && activeSiteId) ? 1 : 0.5, cursor: (canAffordBlockGen && activeSiteId) ? 'pointer' : 'not-allowed' }}
             disabled={!activeSiteId || !canAffordBlockGen}
-            title={!canAffordBlockGen ? `Need ${BLOCK_GEN_COST} credits to generate` : ''}
-          >Generate a section · {BLOCK_GEN_COST} credits</button>
+            title={!canAffordBlockGen ? `Need ${MIN_BLOCK_COST}+ credits to generate` : 'Configure your section in the next step'}
+          >Generate a section · from {MIN_BLOCK_COST} credits</button>
           <button
             onClick={() => setAssemblerOpen(true)}
             style={ghostBtn}
@@ -150,7 +185,7 @@ export function WebsiteAiBuilder() {
                 key={b.kind}
                 onClick={() => openGeneratorForKind(b.kind)}
                 disabled={!canAffordBlockGen}
-                title={!canAffordBlockGen ? `Need ${BLOCK_GEN_COST} credits to generate` : ''}
+                title={!canAffordBlockGen ? `Need ${MIN_BLOCK_COST}+ credits to generate` : ''}
                 style={{
                   textAlign: 'left',
                   background: '#fff',
@@ -166,7 +201,9 @@ export function WebsiteAiBuilder() {
               >
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24' }}>{b.label}</div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', whiteSpace: 'nowrap' }}>{BLOCK_GEN_COST} credits</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', whiteSpace: 'nowrap' }}>
+                    from {computeSectionCost(BLOCK_DEFAULTS[b.kind] || BLOCK_DEFAULTS.hero)} credits
+                  </div>
                 </div>
                 <div style={{ fontSize: 11, color: '#5A7A8A', lineHeight: 1.4 }}>{b.description}</div>
               </button>

@@ -13,7 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { useAppState } from "../../app/AppState";
 import { useOliverApi } from "../../hooks/useOliverApi";
-import { ClientTenantModal } from "../consulting/ClientTenantModal";
+import { OnboardingWizardModal } from "../consulting/OnboardingWizardModal";
 import { WalkthroughRunner } from "../walkthroughs/WalkthroughRunner";
 import { findWalkthrough, Walkthrough } from "../walkthroughs/walkthroughRegistry";
 
@@ -125,7 +125,7 @@ export function UnifiedSetupCard() {
           )}
         </div>
       </div>
-      <ClientTenantModal
+      <OnboardingWizardModal
         open={open}
         tenantId={activeTenantId}
         mode="onboarding"
@@ -151,7 +151,8 @@ export function UnifiedSetupCard() {
             });
           }
           if (cart.includes("spark")) {
-            ["spark-contacts", "spark-templates", "spark-lifecycle", "spark-campaigns"].forEach((id) => {
+            // G4-S6: SPARK in cart → fire only spark-basics umbrella walkthrough (per DEFECT_PLAN 2026-06-30). Individual spark-* walkthroughs remain in registry for advanced manual re-trigger.
+            ["spark-basics"].forEach((id) => {
               const w = findWalkthrough(id); if (w) queue.push(w);
             });
           }

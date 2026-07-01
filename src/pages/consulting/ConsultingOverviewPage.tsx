@@ -108,8 +108,8 @@ export function ConsultingOverviewPage() {
             <div className="rounded-xl bg-white border border-slate-200 divide-y divide-slate-100">
               {data?.alerts.map((a, i) => {
                 const route = a.project_id
-                  ? `/app/services/consulting_projects?open=${a.project_id}`
-                  : `/app/services/consulting_tickets?open=${a.ref_id}`;
+                  ? `/app/admin/consulting/projects?open=${a.project_id}`
+                  : `/app/admin/consulting/requests?open=${a.ref_id}`;
                 return (
                   <Link to={route} key={`${a.kind}-${a.ref_id}-${i}`}
                     className="flex items-center gap-3 p-3 hover:bg-amber-50">
@@ -141,8 +141,8 @@ export function ConsultingOverviewPage() {
             <div className="rounded-xl bg-white border border-slate-200 divide-y divide-slate-100 max-h-[480px] overflow-y-auto">
               {data?.notifications.map((n, i) => {
                 const route = n.kind === "project_status"
-                  ? `/app/services/consulting_projects?open=${n.ref_id}`
-                  : `/app/services/consulting_tickets?open=${n.ref_id}`;
+                  ? `/app/admin/consulting/projects?open=${n.ref_id}`
+                  : `/app/admin/consulting/requests?open=${n.ref_id}`;
                 const ageHrs = (Date.now() - new Date(n.created_at).getTime()) / 36e5;
                 const ageLabel = ageHrs < 1 ? `${Math.round(ageHrs * 60)}m`
                               : ageHrs < 24 ? `${Math.round(ageHrs)}h`

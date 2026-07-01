@@ -44,7 +44,7 @@ import { ChevronLeft, Save, Palette, Type, Mic2, Image as ImageIcon, Quote } fro
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useLumenApi } from "../../hooks/useLumenApi";
 import { LogoPicker } from "../../components/oliver/LogoPicker";
-import { BRAND_VOICE_CATALOG } from "../../components/consulting/ClientTenantModal";
+import { BRAND_VOICE_CATALOG } from "../../components/consulting/OnboardingWizardModal";
 
 // ── Curated 12-font catalog ───────────────────────────────────────────────
 // V1: small, hand-picked list of safe web fonts. When we ship a true font

@@ -18,6 +18,8 @@ interface SubItem {
   recurring_interval_count?: number | null;
   /** Backend returns this — needed for PATCH /subscriptions/:id item edits. */
   stripe_subscription_item_id?: string | null;
+  /** Used by the "Add line item" picker to detect duplicates and bump qty instead. */
+  stripe_price_id?: string | null;
 }
 interface SubscriptionDetail {
   subscription_id: string;
@@ -110,6 +112,39 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
   const [editingItems, setEditingItems] = useState(false);
   const [draftItems, setDraftItems] = useState<Record<string, { quantity: number; deleted: boolean }>>({});
   const [savingItems, setSavingItems] = useState(false);
+  // Items added during edit mode that don't exist on the subscription yet.
+  // Each carries a temp id (for React keying), the chosen catalog price
+  // (price_id is what the backend forwards to Stripe subscriptions.update —
+  // see oliver-api subscriptions.js:739-743), and the resolved display fields.
+  interface NewItemDraft {
+    tempId: string;
+    price_id: string;
+    product_name: string;
+    unit_amount: number;
+    recurring_interval?: string | null;
+    recurring_interval_count?: number | null;
+    quantity: number;
+  }
+  const [newItems, setNewItems] = useState<NewItemDraft[]>([]);
+  // Catalog cache + picker open state for the "+ Add line item" affordance.
+  interface CatalogPrice {
+    price_id: string;
+    unit_amount: number;
+    label?: string | null;
+    pricing_model?: string | null;
+    recurring_interval?: string | null;
+    recurring_interval_count?: number | null;
+  }
+  interface CatalogOffering {
+    offering_id: string;
+    name: string;
+    description?: string | null;
+    prices?: CatalogPrice[];
+  }
+  const [catalog, setCatalog] = useState<CatalogOffering[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState("");
   // Bug #35 — Reschedule next billing date. Opens an inline date picker
   // when the admin clicks "Reschedule"; submit posts to the new
   // /subscriptions/:id/reschedule endpoint which syncs to Stripe.
@@ -133,6 +168,41 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
   }, [api, subscriptionId]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  // Lazy-load the catalog the first time the user opens the "+ Add line item"
+  // picker. Recurring prices only — one-time prices can't be attached to a
+  // subscription line item (Stripe rejects them).
+  useEffect(() => {
+    if (!pickerOpen || catalogLoaded) return;
+    (async () => {
+      try {
+        const data = await api.get<{ data: CatalogOffering[] } | CatalogOffering[]>("/catalog/offerings?include_prices=1");
+        const list = Array.isArray(data) ? data : ((data as { data?: CatalogOffering[] }).data ?? []);
+        setCatalog(list);
+      } catch {
+        setCatalog([]);
+      } finally {
+        setCatalogLoaded(true);
+      }
+    })();
+  }, [pickerOpen, catalogLoaded, api]);
+
+  // Catalog rows flattened to (offering, price) pairs, recurring only, with a
+  // search filter applied. Stable order: offering name asc, then price label.
+  const catalogChoices = useMemo(() => {
+    const rows: Array<{ offering: CatalogOffering; price: CatalogPrice; key: string }> = [];
+    for (const off of catalog) {
+      for (const p of off.prices || []) {
+        if (!p.recurring_interval) continue;
+        rows.push({ offering: off, price: p, key: `${off.offering_id}:${p.price_id}` });
+      }
+    }
+    const q = pickerSearch.trim().toLowerCase();
+    const filtered = q
+      ? rows.filter(r => r.offering.name.toLowerCase().includes(q) || (r.price.label || "").toLowerCase().includes(q))
+      : rows;
+    return filtered.sort((a, b) => a.offering.name.localeCompare(b.offering.name) || (a.price.label || "").localeCompare(b.price.label || ""));
+  }, [catalog, pickerSearch]);
 
   async function doAction(action: string, opts?: { confirm?: string; body?: unknown }) {
     if (opts?.confirm && !confirm(opts.confirm)) return;
@@ -305,23 +375,31 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
           )}
           {editingItems && (
             <div style={{ display: "flex", gap: 6 }}>
-              <Button variant="ghost" onClick={() => { setEditingItems(false); setDraftItems({}); }} disabled={savingItems}>Cancel</Button>
+              <Button variant="ghost"
+                onClick={() => { setEditingItems(false); setDraftItems({}); setNewItems([]); setPickerOpen(false); }}
+                disabled={savingItems}>Cancel</Button>
               <Button variant="primary" disabled={savingItems} onClick={async () => {
                 setSavingItems(true);
                 try {
-                  // Build the items payload — only include changed/deleted rows.
-                  const payload = (sub.items || []).map((it) => {
+                  // Build the items payload — include changed/deleted existing rows
+                  // and new rows from the catalog picker.
+                  const existingPayload = (sub.items || []).map((it) => {
                     const d = draftItems[it.item_id];
                     if (!d || !it.stripe_subscription_item_id) return null;
                     if (d.deleted) return { stripe_subscription_item_id: it.stripe_subscription_item_id, deleted: true };
                     if (d.quantity !== Number(it.quantity)) return { stripe_subscription_item_id: it.stripe_subscription_item_id, quantity: d.quantity };
                     return null;
                   }).filter(Boolean);
+                  // New items: oliver-api routes/subscriptions.js:739-743 calls
+                  // stripe.subscriptionItems.create when price_id is present
+                  // without stripe_subscription_item_id.
+                  const newPayload = newItems.map(n => ({ price_id: n.price_id, quantity: n.quantity }));
+                  const payload = [...existingPayload, ...newPayload];
                   if (!payload.length) {
-                    setEditingItems(false); setDraftItems({}); return;
+                    setEditingItems(false); setDraftItems({}); setNewItems([]); setPickerOpen(false); return;
                   }
                   await api.patch(`/subscriptions/${subscriptionId}`, { items: payload });
-                  setEditingItems(false); setDraftItems({});
+                  setEditingItems(false); setDraftItems({}); setNewItems([]); setPickerOpen(false);
                   setToast("Subscription updated"); setTimeout(() => setToast(null), 2500);
                   await reload();
                   onChanged?.();
@@ -346,6 +424,34 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
               </tr>
             </thead>
             <tbody>
+              {editingItems && newItems.map((n) => (
+                <tr key={n.tempId} style={{ borderBottom: "1px solid #F3F4F6", background: "#F0FDF4" }}>
+                  <td style={{ padding: "8px 0", color: "#0B1C24" }}>
+                    <span style={{ display: "inline-block", padding: "1px 6px", fontSize: 10, fontWeight: 700, color: "#15803D", background: "#DCFCE7", borderRadius: 4, marginRight: 6 }}>NEW</span>
+                    {n.product_name}
+                    {n.recurring_interval && <span style={{ color: "#94A3B8", marginLeft: 6 }}>· /{n.recurring_interval_count && n.recurring_interval_count > 1 ? `${n.recurring_interval_count} ` : ""}{n.recurring_interval}</span>}
+                  </td>
+                  <td style={{ padding: "8px", textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(n.unit_amount)}</td>
+                  <td style={{ padding: "8px", textAlign: "right" }}>
+                    <input
+                      type="number" min={1} value={n.quantity}
+                      onChange={(e) => {
+                        const q = Math.max(1, Number(e.target.value) || 1);
+                        setNewItems(prev => prev.map(p => p.tempId === n.tempId ? { ...p, quantity: q } : p));
+                      }}
+                      style={{ width: 56, padding: "2px 6px", textAlign: "right", border: "1px solid #E5E7EB", borderRadius: 4 }}
+                    />
+                  </td>
+                  <td style={{ padding: "8px 0", textAlign: "right", fontFamily: "monospace", fontWeight: 600 }}>{fmtMoney(Number(n.unit_amount) * n.quantity)}</td>
+                  <td style={{ padding: "8px 0", textAlign: "right" }}>
+                    <button
+                      onClick={() => setNewItems(prev => prev.filter(p => p.tempId !== n.tempId))}
+                      style={{ background: "none", border: "none", color: "#DC2626", cursor: "pointer", fontSize: 14, lineHeight: 1 }}
+                      title="Discard this new item"
+                    >×</button>
+                  </td>
+                </tr>
+              ))}
               {(sub.items || []).map((it) => {
                 const d = draftItems[it.item_id];
                 const qty = editingItems && d ? d.quantity : Number(it.quantity);
@@ -392,6 +498,94 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
               })}
             </tbody>
           </table>
+        )}
+        {editingItems && (
+          <div style={{ marginTop: 12 }}>
+            {!pickerOpen ? (
+              <button
+                onClick={() => setPickerOpen(true)}
+                style={{ background: "none", border: "1px dashed #94A3B8", color: "#1A7DB5", cursor: "pointer", fontSize: 12, fontWeight: 600, padding: "8px 14px", borderRadius: 6 }}
+              >+ Add line item</button>
+            ) : (
+              <div style={{ border: "1px solid #E5E7EB", borderRadius: 8, padding: 12, background: "#F8FAFC" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>Add line item from catalog</div>
+                  <button
+                    onClick={() => { setPickerOpen(false); setPickerSearch(""); }}
+                    style={{ background: "none", border: "none", color: "#5A7A8A", cursor: "pointer", fontSize: 14, lineHeight: 1 }}
+                    title="Close picker"
+                  >×</button>
+                </div>
+                <input
+                  type="text"
+                  value={pickerSearch}
+                  onChange={e => setPickerSearch(e.target.value)}
+                  placeholder="Search services…"
+                  style={{ width: "100%", padding: "6px 10px", fontSize: 12, border: "1px solid #E5E7EB", borderRadius: 4, marginBottom: 8 }}
+                  autoFocus
+                />
+                {!catalogLoaded ? (
+                  <div style={{ fontSize: 11, color: "#94A3B8", padding: 8 }}>Loading catalog…</div>
+                ) : catalogChoices.length === 0 ? (
+                  <div style={{ fontSize: 11, color: "#94A3B8", padding: 8 }}>
+                    {catalog.length === 0 ? "No catalog items available." : "No recurring prices match your search."}
+                  </div>
+                ) : (
+                  <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid #E5E7EB", borderRadius: 4, background: "white" }}>
+                    {catalogChoices.map(({ offering, price, key }) => (
+                      <button
+                        key={key}
+                        onClick={() => {
+                          // Don't allow duplicates — if the price is already on the
+                          // subscription (existing or pending), bump quantity instead.
+                          const existing = (sub?.items || []).find(it => it.stripe_price_id === price.price_id);
+                          if (existing) {
+                            const current = draftItems[existing.item_id]?.quantity ?? Number(existing.quantity) ?? 1;
+                            setDraftItems(prev => ({
+                              ...prev,
+                              [existing.item_id]: { quantity: current + 1, deleted: false },
+                            }));
+                          } else {
+                            const dup = newItems.find(n => n.price_id === price.price_id);
+                            if (dup) {
+                              setNewItems(prev => prev.map(p => p.tempId === dup.tempId ? { ...p, quantity: p.quantity + 1 } : p));
+                            } else {
+                              const tempId = `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                              setNewItems(prev => [...prev, {
+                                tempId,
+                                price_id: price.price_id,
+                                product_name: offering.name + (price.label ? ` — ${price.label}` : ""),
+                                unit_amount: price.unit_amount,
+                                recurring_interval: price.recurring_interval || null,
+                                recurring_interval_count: price.recurring_interval_count || null,
+                                quantity: 1,
+                              }]);
+                            }
+                          }
+                          setPickerSearch("");
+                          setPickerOpen(false);
+                        }}
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          width: "100%", padding: "8px 12px", border: "none",
+                          borderBottom: "1px solid #F3F4F6", background: "white", cursor: "pointer",
+                          textAlign: "left", fontSize: 12,
+                        }}
+                      >
+                        <span style={{ color: "#0B1C24" }}>
+                          {offering.name}
+                          {price.label && <span style={{ color: "#5A7A8A", marginLeft: 6 }}>· {price.label}</span>}
+                        </span>
+                        <span style={{ color: "#5A7A8A", fontFamily: "monospace" }}>
+                          {fmtMoney(price.unit_amount)}/{price.recurring_interval_count && price.recurring_interval_count > 1 ? `${price.recurring_interval_count} ` : ""}{price.recurring_interval}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
 

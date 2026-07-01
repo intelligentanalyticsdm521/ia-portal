@@ -5,7 +5,7 @@
 import type { IPublicClientApplication, AccountInfo } from "@azure/msal-browser";
 import { authScopes } from "../auth/msalConfig";
 import { emergencyActAsHeaders } from "./emergencyActAs";
-import { getViewAsTenantId, viewAsTenantHeaders } from "./viewAsTenant";
+import { getCurrentTenantOverride } from "./tenantContext";
 
 const SPARK_API_BASE =
   (import.meta.env.VITE_SPARK_API_BASE as string) ||
@@ -35,7 +35,7 @@ async function sparkFetch<T>(
 ): Promise<T> {
   const token = await getToken(msal, account);
   // Precedence: explicit override > view-as tenant > JWT default.
-  const viewAsTid = getViewAsTenantId();
+  const viewAsTid = getCurrentTenantOverride();
   const tenantId =
     (tenantOverride && tenantOverride.trim()) ||
     (viewAsTid && viewAsTid.trim()) ||
@@ -52,8 +52,6 @@ async function sparkFetch<T>(
       // (followup). Sending the header now is forward-compat so backend can
       // start enforcing without another Portal release.
       ...emergencyActAsHeaders(),
-      // Founder view-as — no-op outside an active view-as session.
-      ...viewAsTenantHeaders(),
       ...(init?.headers as Record<string, string>),
     },
   });

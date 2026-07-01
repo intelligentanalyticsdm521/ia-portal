@@ -1,15 +1,20 @@
-// clientTenantContext — in-memory React context for "founder operating on a
-// client tenant" mode. Lives only inside the ClientTenantModal; closing the
-// modal drops the override and every API call falls back to your iadm tenant.
+// clientTenantContext — DEPRECATED thin re-export shim.
 //
-// No localStorage. No global state. No banner. Open the modal → context is
-// set → API hooks read it and send x-tenant-key: <client tenant_id>. Close
-// the modal → context is unset → API hooks send your own iadm tenant_id.
-//
-// Audit columns server-side still stamp the founder's identity from the JWT,
-// so logs say "Brandon @ IA" with tenant scope = the client.
+// This module has been renamed to `./tenantContext`. Existing call sites
+// keep working through the re-exports below; new code should import from
+// `./tenantContext` directly. Removed in the Cleanup phase.
 import { createContext, useContext } from "react";
+import type { PropsWithChildren } from "react";
+import { TenantProvider, useEffectiveTenantId } from "./tenantContext";
 
+export { useEffectiveTenantId, useClientTenantIdOverride } from "./tenantContext";
+
+/**
+ * @deprecated Legacy shape carrying the client tenant_id plus display
+ * metadata and the modal's opening mode. The new `TenantProvider` takes a
+ * bare `value: string | null` — callers should migrate and read display
+ * metadata from AppState / lumen.account instead.
+ */
 export interface ClientTenantValue {
   tenantId: string;
   tenantName?: string;
@@ -17,18 +22,37 @@ export interface ClientTenantValue {
   mode: "onboarding" | "consulting";
 }
 
-const ClientTenantContext = createContext<ClientTenantValue | null>(null);
+// Legacy context that still carries the rich value so `useClientTenant()`
+// keeps working for call sites that read `tenantName` / `mode`. The new
+// TenantProvider (which carries only the tenant_id string) is also pumped
+// in parallel so fetch-time API clients see the override too.
+const LegacyClientTenantContext = createContext<ClientTenantValue | null>(null);
 
-/** Provider — wrap the ClientTenantModal's children with this. */
-export const ClientTenantProvider = ClientTenantContext.Provider;
-
-/** Read the current client tenant override. null = operate on caller's own tenant. */
-export function useClientTenant(): ClientTenantValue | null {
-  return useContext(ClientTenantContext);
+interface ClientTenantProviderProps {
+  value: ClientTenantValue;
 }
 
-/** API-hook helper — returns the tenant_id to send as x-tenant-key, or null to use the JWT default. */
-export function useClientTenantIdOverride(): string | null {
-  const ctx = useContext(ClientTenantContext);
-  return ctx?.tenantId || null;
+/**
+ * @deprecated Use `TenantProvider` from `./tenantContext` instead. This
+ * shim bridges the legacy `{ tenantId, tenantName, mode }` shape onto the
+ * new bare-string `TenantProvider`.
+ */
+export function ClientTenantProvider({
+  value,
+  children
+}: PropsWithChildren<ClientTenantProviderProps>) {
+  return (
+    <LegacyClientTenantContext.Provider value={value}>
+      <TenantProvider value={value.tenantId || null}>{children}</TenantProvider>
+    </LegacyClientTenantContext.Provider>
+  );
+}
+
+/**
+ * @deprecated Read display metadata from AppState / lumen.account and the
+ * effective tenant_id from `useEffectiveTenantId`. Returns the full legacy
+ * value object during the migration window.
+ */
+export function useClientTenant(): ClientTenantValue | null {
+  return useContext(LegacyClientTenantContext);
 }

@@ -212,10 +212,10 @@ export const ARGUS_INTENTS: ArgusIntent[] = [
   // ── CONSULTING ───────────────────────────────────────────────────────────
   { id: "consulting_service_request", keywords: ["submit service request", "new service request", "request consulting", "submit consulting ticket", "consulting ticket", "request work"],
     reply: "Service Requests is the kanban for recurring Build-Your-Business work — blog posts, monthly SEO reviews, content refreshes. Drop a new ticket in the 'New' column and the founder will pick it up.",
-    cta: { label: "Open Service Requests", to: "/app/services/consulting_tickets" } },
+    cta: { label: "Open Service Requests", to: "/app/admin/consulting/requests" } },
   { id: "consulting_projects_view", keywords: ["view consulting projects", "my consulting projects", "consulting work", "consulting engagements", "see projects"],
     reply: "Projects shows every multi-phase consulting engagement — Custom Software, Agentic Builds, Full SEO Setup — with phase tracker, deliverables, and the Phase → Feature → Task drill-down.",
-    cta: { label: "Open Projects", to: "/app/services/consulting_projects" } },
+    cta: { label: "Open Projects", to: "/app/admin/consulting/projects" } },
   { id: "consulting_invoice_schedule", keywords: ["invoice schedule", "billing schedule", "upcoming invoices", "next invoice", "billing cycle"],
     reply: "Your invoice schedule (recurring charges, next billing dates, monthly retainers) lives in Plan & Pricing. OLIVER subscriptions for your own customers are on Subscriptions.",
     cta: { label: "Open Plan & Pricing", to: "/app/settings/plan-pricing" } },

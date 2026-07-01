@@ -365,20 +365,18 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'consulting_engine_tasks', displayName: 'Engine Tasks', section: 'CONSULTING', defaultStatus: 'coming_soon', route: '/app/services/consulting_engine_tasks', description: '(Deprecated) See Service Requests.' },
   { key: 'consulting_engine_deliverables', displayName: 'Engine Deliverables', section: 'CONSULTING', defaultStatus: 'coming_soon', route: '/app/services/consulting_engine_deliverables', description: '(Deprecated) See Deliverables library.' },
   { key: 'consulting_calendar', displayName: 'Calendar & Events', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_calendar', description: 'Scheduled events — discovery calls, QBRs, strategy sessions, reviews.' },
-  { key: 'consulting_workspace', displayName: 'Clients', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_workspace', description: 'List of every client tenant. Click a row to open their workspace modal — scoped to their tenant for ongoing consulting work.' },
+  // 2026-06-29 — Founder-side Consulting URLs relocated to /app/admin/consulting/*.
+  // The catalog rows kept the original service_key values (other surfaces
+  // reference them) but the route now points at the new admin URL so
+  // GlobalSearch + GetStartedCard send the user directly to the canonical
+  // location without bouncing through the ServiceRouter redirect.
+  { key: 'consulting_workspace', displayName: 'Clients', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/admin/consulting/clients', description: 'List of every client tenant. Click a row to open their workspace modal — scoped to their tenant for ongoing consulting work.' },
   { key: 'consulting_access_log', displayName: 'IA Access Log', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_access_log', description: 'Transparency: whether Intelligent Analytics manages this account and a full log of everything IA has done in it.' },
-  { key: 'consulting_onboard_client', displayName: 'Onboard Client', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_onboard_client', description: 'Founder-only — onboard a new or existing client onto the IA platform (creates tenant, links/creates Stripe customer, sets up ARION site + plugin provisioning).' },
-  { key: 'consulting_tickets', displayName: 'Service Requests', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_tickets', description: 'Recurring Build-Your-Business work — blog posts, monthly SEO reviews, quarterly content refreshes. Auto-generates next instance on close based on cadence. Founder sees all clients; clients see only their own.' },
-  // F1 (Consulting Rework 2026-06-25) — canonical Projects list view at the
-  // clean `/consulting_projects` URL. Replaces the old card-grid Board page
-  // + the orphaned Project Workspace page (both deleted same change).
-  { key: 'consulting_projects', displayName: 'Projects', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_projects', description: 'Project list — filterable by status / client / category, sorted by most recent activity. Click a row to open the full project modal.' },
+  { key: 'consulting_onboard_client', displayName: 'Onboard Client', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/admin/consulting/onboard-client', description: 'Founder-only — onboard a new or existing client onto the IA platform (creates tenant, links/creates Stripe customer, sets up ARION site + plugin provisioning).' },
+  { key: 'consulting_tickets', displayName: 'Service Requests', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/admin/consulting/requests', description: 'Recurring Build-Your-Business work — blog posts, monthly SEO reviews, quarterly content refreshes. Auto-generates next instance on close based on cadence. Founder sees all clients; clients see only their own.' },
+  { key: 'consulting_projects', displayName: 'Projects', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/admin/consulting/projects', description: 'Project list — filterable by status / client / category, sorted by most recent activity. Click a row to open the full project modal.' },
   { key: 'consulting_deliverables', displayName: 'Deliverables', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_deliverables', description: 'Unified artifact library — logos, code, copy, designs. Tagged by Build Your Series. Sourced from Projects + standalone uploads.' },
-  // F4 (Consulting Rework 2026-06-25) — Document Library (founder-only).
-  // Templates for intake forms (scored question schemas) + proposal / report
-  // / scope_of_work / custom (markdown bodies with merge tags). The nav
-  // entry is filtered out for non-founder users via CONSULTING_FOUNDER_ONLY.
-  { key: 'consulting_documents', displayName: 'Document Library', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_documents', description: 'Founder-only library of intake form + proposal + report + scope-of-work + custom templates. Drag-drop intake builder with scoring; rich-text editor with merge-tag autocomplete for the rest.' },
+  { key: 'consulting_documents', displayName: 'Document Library', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/admin/consulting/document-library', description: 'Founder-only library of intake form + proposal + report + scope-of-work + custom templates. Drag-drop intake builder with scoring; rich-text editor with merge-tag autocomplete for the rest.' },
 
   // MY_BRAND entries REMOVED 2026-06-22 — top-level My Brand slot was a
   // premature Wave-2 add for the Q4 2026 deferred product. Removing the

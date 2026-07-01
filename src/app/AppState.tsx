@@ -15,7 +15,7 @@ interface AppStateValue {
   enabledServices: Set<string>;
 }
 
-const AppStateContext = createContext<AppStateValue | undefined>(undefined);
+export const AppStateContext = createContext<AppStateValue | undefined>(undefined);
 
 const STORAGE_KEYS = {
   activeTenantId: 'iadm.portal.activeTenantId'
