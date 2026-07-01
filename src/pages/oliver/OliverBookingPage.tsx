@@ -46,6 +46,10 @@ interface BookingPage {
   logo_url: string | null;
   is_active: boolean;
   require_confirmation: boolean;
+  // F-47 — slot capacity. 'auto' = one per slot (concurrency = worker count),
+  // 'fixed' = capacity_count attendees per slot, 'group' = unlimited.
+  capacity_mode: "auto" | "fixed" | "group";
+  capacity_count: number | null;
   url?: string;
 }
 
@@ -167,6 +171,8 @@ export function OliverBookingPage() {
         confirmation_message: draft.confirmation_message,
         require_confirmation: draft.require_confirmation,
         is_active: draft.is_active,
+        capacity_mode: draft.capacity_mode,
+        capacity_count: draft.capacity_mode === "fixed" ? (draft.capacity_count || 1) : null,
       };
       if (bookingPage) {
         await patch(`/booking/pages/${bookingPage.booking_page_id}`, body);
@@ -373,6 +379,44 @@ export function OliverBookingPage() {
               {BUFFER_OPTIONS.map((d) => <option key={d} value={d}>{d === 0 ? "None" : `${d} minutes`}</option>)}
             </select>
           </Field>
+          {/* F-47 — Slot capacity. Auto = one attendee per slot with
+              concurrency driven by active worker count (default, matches
+              legacy behaviour). Fixed = tenant picks N attendees per slot
+              (e.g. 3 bookings per hour). Group = unlimited attendees per
+              slot (webinar/open-house). */}
+          <Field label="Slot capacity">
+            <select
+              value={draft?.capacity_mode || "auto"}
+              onChange={(e) => {
+                const mode = e.target.value as "auto" | "fixed" | "group";
+                setDraft((d) => d ? {
+                  ...d,
+                  capacity_mode: mode,
+                  capacity_count: mode === "fixed" ? (d.capacity_count || 3) : null,
+                } : d);
+              }}
+              className={inputCls}
+            >
+              <option value="auto">Auto — based on worker availability</option>
+              <option value="fixed">Fixed — set attendees per slot</option>
+              <option value="group">Group — unlimited attendees per slot</option>
+            </select>
+          </Field>
+          {draft?.capacity_mode === "fixed" && (
+            <Field label="Attendees per slot">
+              <input
+                type="number"
+                min={1}
+                max={999}
+                value={draft?.capacity_count ?? 1}
+                onChange={(e) => setDraftField(
+                  "capacity_count",
+                  Math.max(1, Math.min(999, Number(e.target.value) || 1)),
+                )}
+                className={inputCls}
+              />
+            </Field>
+          )}
         </div>
 
         <Field label="Description (optional)">
@@ -665,5 +709,7 @@ function defaultBookingPage(): BookingPage {
     logo_url: null,
     is_active: true,
     require_confirmation: true,
+    capacity_mode: "auto",
+    capacity_count: null,
   };
 }
