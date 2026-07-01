@@ -191,11 +191,12 @@ export function ConsultingOnboardClientPageV2() {
   const [view, setView] = useState<"list" | "wizard">("list");
   const [inProgress, setInProgress] = useState<InProgressOnboarding[]>([]);
   const [listLoading, setListLoading] = useState(true);
-  // F-LIFE.3 (2026-06-21): Path A vs Path B filter chip group above the list.
-  // "all" = no filter, "A" = self-serve (onboarded_by_founder=false),
-  // "B" = wizard-driven (onboarded_by_founder=true). Wired to the new
-  // ?path=A|B query param on /admin/onboard-client/in-progress.
-  const [pathFilter, setPathFilter] = useState<"all" | "A" | "B">("all");
+  // DEFECT #342 (2026-07-01): Path A retired from this surface — Onboard
+  // Client is founder-path (Path B) only per Delta / SCOPE_WORKING.md
+  // 2026-06-25. Filter is hardcoded to "B" so the list query is
+  // ?path=B and self-serve rows never leak into the founder wizard page.
+  // Backend endpoints for Path A remain (defensive) — do not surface.
+  const [pathFilter] = useState<"B">("B");
   // Client tenant modal — opens via Continue button on the list. Null = closed.
   const [clientModal, setClientModal] = useState<{
     tenantId: string;
@@ -209,7 +210,8 @@ export function ConsultingOnboardClientPageV2() {
     setListLoading(true);
     // F-LIFE.3: include ?path=A|B when a filter chip is active. Backend maps
     // A → onboarded_by_founder=0, B → onboarded_by_founder=1, omitted → all.
-    const qs = pathFilter === "all" ? "" : `?path=${pathFilter}`;
+    // DEFECT #342: always ?path=B — Path A retired from this surface.
+    const qs = `?path=${pathFilter}`;
     get<InProgressOnboarding[]>(`/admin/onboard-client/in-progress${qs}`)
       .then((r) => { if (!cancelled) setInProgress(Array.isArray(r) ? r : []); })
       .catch(() => { if (!cancelled) setInProgress([]); })
@@ -728,8 +730,6 @@ export function ConsultingOnboardClientPageV2() {
         <OnboardingsList
           rows={inProgress}
           loading={listLoading}
-          pathFilter={pathFilter}
-          setPathFilter={setPathFilter}
           onNew={() => setView("wizard")}
           onContinue={(t) => {
             // Open the ClientTenantModal in onboarding mode. All API calls
@@ -1037,24 +1037,17 @@ function Pill({ bg, text, label, tip }: { bg: string; text: string; label: strin
 
 // ─── Landing page list of in-progress onboardings ────────────────────────
 
-function OnboardingsList({ rows, loading, pathFilter, setPathFilter, onNew, onCancel, onContinue, onResendWelcome }: {
+function OnboardingsList({ rows, loading, onNew, onCancel, onContinue, onResendWelcome }: {
   rows: InProgressOnboarding[];
   loading: boolean;
-  pathFilter: "all" | "A" | "B";
-  setPathFilter: (p: "all" | "A" | "B") => void;
   onNew: () => void;
   onCancel: (tenant: InProgressOnboarding) => void;
   onContinue: (tenant: InProgressOnboarding) => void;
   onResendWelcome: (tenant: InProgressOnboarding) => void;
 }) {
-  // F-LIFE.3 (2026-06-21): Path A vs Path B filter chips. Default "All".
-  // A = self-serve (client did the signup, onboarded_by_founder=false).
-  // B = wizard-driven (founder ran /admin/onboard-client, onboarded_by_founder=true).
-  const FILTER_OPTIONS: Array<{ key: "all" | "A" | "B"; label: string; tip: string }> = [
-    { key: "all", label: "All", tip: "Show every onboarding (Path A + Path B)" },
-    { key: "A", label: "Path A (self-serve)", tip: "Clients who signed up via the public /signup flow" },
-    { key: "B", label: "Path B (you onboarded)", tip: "Tenants you created via the Onboard Client wizard" },
-  ];
+  // DEFECT #342 (2026-07-01): Path A/B filter chips removed. Onboard Client
+  // is founder-path (Path B) only per Delta / SCOPE_WORKING.md 2026-06-25.
+  // Self-serve (Path A) tenants live elsewhere (Consulting Clients page).
   return (
     <div className="max-w-6xl mx-auto p-6">
       <div className="flex items-center justify-between mb-4">
@@ -1070,27 +1063,7 @@ function OnboardingsList({ rows, loading, pathFilter, setPathFilter, onNew, onCa
         </button>
       </div>
 
-      {/* F-LIFE.3 filter chip group — Path A vs Path B vs All. */}
-      <div className="flex items-center gap-2 mb-5">
-        <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mr-1">Filter:</span>
-        {FILTER_OPTIONS.map((opt) => {
-          const active = pathFilter === opt.key;
-          return (
-            <button key={opt.key}
-              onClick={() => setPathFilter(opt.key)}
-              title={opt.tip}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
-                active
-                  ? "text-white border-transparent"
-                  : "bg-white text-slate-700 border-slate-300 hover:border-slate-400"
-              }`}
-              style={active ? { background: CORE_BLUE } : {}}
-            >
-              {opt.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* DEFECT #342: Path A/B filter chips removed — founder path only. */}
 
       {loading ? (
         <div className="text-center text-sm text-slate-500 py-12">Loading onboardings…</div>
@@ -1124,22 +1097,15 @@ function OnboardingsList({ rows, loading, pathFilter, setPathFilter, onNew, onCa
                       <div className="font-semibold text-slate-900">{r.business_name}</div>
                       <div className="text-[10px] text-slate-500 font-mono flex items-center gap-1.5">
                         <span>{r.tenant_id.slice(0, 8)}…</span>
-                        {/* F-LIFE.3 per-row path badge. Path B (wizard) gets an
-                            indigo pill; Path A (self-serve / pre-wizard) gets
-                            a gray pill. Driven by onboarded_by_founder. */}
-                        {r.onboarded_by_founder ? (
+                        {/* DEFECT #342: Path A row branch removed — this page
+                            is founder-path only. Kept "via wizard" pill for
+                            provenance clarity on Path B rows. */}
+                        {r.onboarded_by_founder && (
                           <span
                             title={r.onboarded_by_user_id ? `Onboarded via founder wizard by user ${r.onboarded_by_user_id.slice(0, 8)}…` : "Onboarded via founder wizard"}
                             className="inline-block px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-indigo-100 text-indigo-700"
                           >
                             via wizard
-                          </span>
-                        ) : (
-                          <span
-                            title="Self-serve signup — client created their own tenant"
-                            className="inline-block px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-slate-200 text-slate-600"
-                          >
-                            self-serve
                           </span>
                         )}
                       </div>

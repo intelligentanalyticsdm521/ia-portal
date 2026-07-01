@@ -295,9 +295,19 @@ export function OliverSettingsPage() {
     // Bug #24 (OL.1.4) — brand_color must be a full "#RRGGBB" (7 chars) before
     // we submit; the text-input variant of the colour picker would otherwise
     // happily accept "#FF000" and the server would store it as-is.
-    if (bizDraft.brandColor && !/^#[0-9A-Fa-f]{6}$/.test(bizDraft.brandColor.trim())) {
-      setBizMessage("Brand colour must be a 7-character hex value like #FF0000.");
-      return;
+    // 2026-07-01: normalize before check — auto-prepend '#' if missing (users
+    // often type "FF0000" without the leading '#'), and update draft so the
+    // save payload uses the normalized value.
+    if (bizDraft.brandColor) {
+      const raw = bizDraft.brandColor.trim();
+      const normalized = /^[0-9A-Fa-f]{6}$/.test(raw) ? `#${raw}` : raw;
+      if (!/^#[0-9A-Fa-f]{6}$/.test(normalized)) {
+        setBizMessage("Brand colour must be a hex value like #FF0000 or FF0000.");
+        return;
+      }
+      if (normalized !== bizDraft.brandColor) {
+        bizDraft.brandColor = normalized;
+      }
     }
 
     setBizSaving(true);
