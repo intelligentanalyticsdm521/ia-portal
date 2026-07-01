@@ -4,6 +4,7 @@ import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { Card, StatCard, InfoCard, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
 import { MultiLineChart } from '../../components/Charts';
+import PhoneInput from '../../../components/PhoneInput';
 
 function fmtNum(n: any): string { return n == null || isNaN(Number(n)) ? '--' : Number(n).toLocaleString(); }
 
@@ -130,7 +131,7 @@ export function BusinessOverview() {
             <div style={{ color: '#5A7A8A' }}>Business name</div>
             <input className="field-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             <div style={{ color: '#5A7A8A' }}>Phone</div>
-            <input className="field-input" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+            <PhoneInput className="field-input" value={form.phone} onChange={v => setForm({ ...form, phone: v })} />
             <div style={{ color: '#5A7A8A' }}>Website</div>
             <input className="field-input" value={form.website} onChange={e => setForm({ ...form, website: e.target.value })} />
             <div style={{ color: '#5A7A8A', alignSelf: 'start', paddingTop: 6 }}>Description</div>

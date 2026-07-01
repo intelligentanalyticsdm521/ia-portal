@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal, IadmButton } from "../IadmModal";
+import PhoneInput from "../PhoneInput";
 
 // ── Trigger taxonomy ──────────────────────────────────────────────────────
 export type TriggerType =
@@ -559,7 +560,7 @@ function ActionFieldsEditor({
       return (
         <div className="space-y-3">
           <FormRow label="From phone">
-            <input value={fields.send_sms.from_phone} onChange={(e) => update("send_sms", { from_phone: e.target.value })} placeholder="+15555550100" className="auto-input" />
+            <PhoneInput value={fields.send_sms.from_phone} onChange={(v) => update("send_sms", { from_phone: v })} placeholder="+15555550100" className="auto-input" />
           </FormRow>
           <FormRow label={`Message (${fields.send_sms.message.length}/1600 chars)`}>
             <textarea

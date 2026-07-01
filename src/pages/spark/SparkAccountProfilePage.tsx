@@ -10,6 +10,7 @@ import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { Check, ArrowRight, Info } from "lucide-react";
+import PhoneInput from "../../components/PhoneInput";
 
 interface Profile {
   businessName: string | null;
@@ -120,8 +121,8 @@ export function SparkAccountProfilePage() {
                   onChange={(e) => set("primaryContactEmail", e.target.value)} />
               </Field>
               <Field label="Contact phone">
-                <input className="spark-input" value={form.primaryContactPhone ?? ""}
-                  onChange={(e) => set("primaryContactPhone", e.target.value)} />
+                <PhoneInput className="spark-input" value={form.primaryContactPhone ?? ""}
+                  onChange={(v) => set("primaryContactPhone", v)} />
               </Field>
             </Row>
           </Section>

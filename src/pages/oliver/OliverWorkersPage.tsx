@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import PhoneInput from "../../components/PhoneInput";
 import {
   PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState, Button,
   StatusBadge, type Column,
@@ -321,7 +322,7 @@ function WorkerDrawer({ workerId, onClose, onSaved, api }: { workerId: string | 
             <input value={worker.email} onChange={(e) => setField("email", e.target.value)} className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
           </Field>
           <Field label="Phone">
-            <input value={worker.phone ?? ""} onChange={(e) => setField("phone", e.target.value)} className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
+            <PhoneInput value={worker.phone ?? ""} onChange={(v) => setField("phone", v)} className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm" />
           </Field>
           <Field label="Type">
             <select value={worker.type} onChange={(e) => setField("type", e.target.value)} className="block w-full rounded-lg ring-1 ring-gray-300 px-3 py-2 text-sm">

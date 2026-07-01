@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAppState } from '../app/AppState';
 import { getProfile, updateProfile, type ProfileResponse, type UpdateProfileRequest, PlatformApiError } from '../lib/platformApi';
 import { useAccessToken } from '../auth/useAccessToken';
+import PhoneInput from '../components/PhoneInput';
 
 type FormState = {
   firstName: string;
@@ -249,11 +250,10 @@ export function ProfilePage() {
 
               <label className="grid gap-1 text-sm">
                 <span className="text-gray-600">Phone number</span>
-                <input
+                <PhoneInput
                   className="iadm-input"
                   value={form.primaryContactPhone}
-                  onChange={(e) => setForm((p) => (p ? { ...p, primaryContactPhone: e.target.value } : p))}
-                  autoComplete="tel"
+                  onChange={(v) => setForm((p) => (p ? { ...p, primaryContactPhone: v } : p))}
                 />
               </label>
             </div>
