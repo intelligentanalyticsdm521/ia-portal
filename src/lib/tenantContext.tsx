@@ -87,11 +87,17 @@ export function useIsImpersonating(): boolean {
 }
 
 /**
- * @deprecated Use `useEffectiveTenantId` instead. Kept as a thin re-export
- * during the rename so existing call sites keep working; removed in the
- * Cleanup phase.
+ * useClientTenantIdOverride — returns ONLY the override context value, or
+ * `null` when no TenantProvider is mounted above. Does NOT subscribe to
+ * AppState. This is critical for API hooks (useOliverApi/useLumenApi/
+ * useSparkApi): subscribing to AppState here caused identity churn on
+ * activeTenantId transitions, cascading into acquireTokenSilent →
+ * InteractionRequiredAuthError → hard redirect loop. Callers that want
+ * "override-or-active" should use `useEffectiveTenantId` explicitly.
  */
-export const useClientTenantIdOverride = useEffectiveTenantId;
+export function useClientTenantIdOverride(): string | null {
+  return useContext(TenantOverrideContext);
+}
 
 // ---------------------------------------------------------------------------
 // Module-level non-React subscriber API
