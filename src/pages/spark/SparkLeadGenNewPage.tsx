@@ -427,19 +427,19 @@ export function SparkLeadGenNewPage() {
   }, [debouncedLoc, post, ready]);
 
   // ── derived ────────────────────────────────────────────────────────────
-  // Dynamic max cap: tenant's remaining credits + 50-lead overage buffer.
-  // Falls back to the legacy hard-coded MAX_LEADS_CAP when the credits
-  // endpoint hasn't returned yet, so the slider is never dead.
-  const OVERAGE_BUFFER = 50;
-  const dynamicMaxCap = credits ? credits.remaining + OVERAGE_BUFFER : MAX_LEADS_CAP;
+  // Max = whatever the tenant's subscription allotment currently provides.
+  // In Brandon's billing model there is NO per-lead overage. Extra volume
+  // comes from either (a) increasing the subscription's Extra-Leads add-on
+  // quantity (per-tier pack sizes: Essentials=5, Growth/Authority=10) or
+  // (b) an ad-hoc lead-pack product — not yet built. So the slider is a
+  // hard stop at remaining; the "buy more" affordance sits below.
+  const dynamicMaxCap = credits ? credits.remaining : MAX_LEADS_CAP;
 
-  // Cost = (leads over remaining) * overage rate. Leads within the monthly
-  // allotment are free (already paid for by the subscription).
-  const estCostUsd = useMemo(() => {
-    if (!credits) return form.maxLeads * COST_PER_LEAD_USD;
-    const overageLeads = Math.max(0, form.maxLeads - credits.remaining);
-    return (overageLeads * credits.overage_per_lead_cents) / 100;
-  }, [form.maxLeads, credits]);
+  // Estimated cost is $0 for leads within the monthly allotment (they're
+  // already paid for by the subscription). Kept as a stable computed for
+  // the sidebar; when we wire ad-hoc purchase the response will drive
+  // cost directly from Stripe.
+  const estCostUsd = 0;
   const estTimeStr = "4–7 min";
 
   const canSubmit =
@@ -779,7 +779,7 @@ export function SparkLeadGenNewPage() {
                 <span>Max leads</span>
                 <span className="text-[11px] normal-case text-slate-400">
                   {credits
-                    ? `${credits.remaining.toLocaleString()} included · +${OVERAGE_BUFFER} overage`
+                    ? `${credits.remaining.toLocaleString()} available this month`
                     : `Tier cap: ${MAX_LEADS_CAP}`}
                 </span>
               </label>
@@ -795,12 +795,12 @@ export function SparkLeadGenNewPage() {
                 />
                 <span className="text-sm font-semibold text-slate-900 tabular-nums w-12 text-right">{form.maxLeads}</span>
               </div>
-              {credits && form.maxLeads > credits.remaining && (
+              {credits && credits.remaining < credits.monthly_allotment * 0.25 && (
                 <p className="text-[11px] text-amber-700 mt-1 font-medium">
-                  {form.maxLeads - credits.remaining} lead{form.maxLeads - credits.remaining === 1 ? "" : "s"} beyond your monthly allotment — charged at ${(credits.overage_per_lead_cents / 100).toFixed(2)}/lead.
+                  Running low. Add an Extra Leads pack to your subscription — or top up ad-hoc for this run (coming soon).
                 </p>
               )}
-              <p className="text-[11px] text-slate-500 mt-1">Billed per delivered lead. If we find fewer than your max, you&apos;re only charged for what we deliver.</p>
+              <p className="text-[11px] text-slate-500 mt-1">Included in your subscription. Need more? Increase your Extra Leads add-on quantity on your plan.</p>
             </div>
           </Section>
         </div>
@@ -830,7 +830,7 @@ export function SparkLeadGenNewPage() {
                 </div>
                 <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
                   <span>{used.toLocaleString()} used</span>
-                  <span>Overage ${(credits.overage_per_lead_cents / 100).toFixed(2)}/lead</span>
+                  <span>Need more? Add pack on your plan</span>
                 </div>
               </div>
             );
