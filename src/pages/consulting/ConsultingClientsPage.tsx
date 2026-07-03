@@ -35,7 +35,7 @@ interface ClientRow {
 type ClientsNavRow = {
   tenant_id: string;
   name: string;
-  branch_reason: 'active_project' | 'recently_closed' | 'byb_sub' | 'paid_finished_onboarding' | null;
+  branch_reason: 'open_project' | 'active_project' | 'both' | 'recently_closed' | 'byb_sub' | 'paid_finished_onboarding' | null;
 };
 
 // F-Founder.1 — Client details modal shape. `/consulting/projects` returns
@@ -177,7 +177,9 @@ export default function ConsultingClientsPage() {
 
   function branchReasonLabel(r: ClientsNavRow['branch_reason']): string {
     switch (r) {
+      case 'open_project':
       case 'active_project': return 'Active project';
+      case 'both': return 'Build Your Brand + active project';
       case 'recently_closed': return 'Recently closed';
       case 'byb_sub': return 'Build Your Brand';
       case 'paid_finished_onboarding': return 'Paid — finished onboarding';
