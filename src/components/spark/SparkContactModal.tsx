@@ -148,6 +148,22 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
   const [lifecyclePreset, setLifecyclePreset] = useState<{ preset: string; stages: string[] } | null>(null);
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
 
+  // #355 — Cascade delete preview. Fetched on demand when the user clicks
+  // Delete. If the API returns counts (invoices/subs/proposals/docs), we render
+  // an itemised confirm. If it returns {} (feature flag off or no linked oliver
+  // rows) we fall back to the plain "reversible from trash" copy.
+  interface CascadePreview {
+    invoices?: number;
+    subs?: number;
+    proposals?: number;
+    docs?: number;
+    stripe_subs_to_cancel?: number;
+  }
+  const [cascadePreview, setCascadePreview] = useState<CascadePreview | null>(null);
+  const [cascadePreviewOpen, setCascadePreviewOpen] = useState(false);
+  const [cascadePreviewLoading, setCascadePreviewLoading] = useState(false);
+  const [cascadeDeleting, setCascadeDeleting] = useState(false);
+
   const reload = useCallback(async () => {
     if (!ready || !contactId) return;
     setLoading(true);
@@ -311,15 +327,37 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
     }
   }
 
+  // #355 — Fetch cascade preview counts before showing the confirm modal.
+  // If preview returns any non-zero count OR the endpoint is enabled at all,
+  // we open the itemised cascade modal. Otherwise fall back to plain-copy
+  // confirm modal (still an in-component overlay for consistency).
   async function softDelete() {
     if (!contactId || !contact) return;
-    if (!confirm(`Delete ${fullName}? This is reversible from the trash for 30 days.`)) return;
+    setCascadePreviewLoading(true);
+    setCascadePreview(null);
+    try {
+      const r = await get<CascadePreview>(`/api/v1/contacts/${contactId}/archive-cascade/preview`);
+      setCascadePreview(r || {});
+    } catch {
+      setCascadePreview({});
+    } finally {
+      setCascadePreviewLoading(false);
+      setCascadePreviewOpen(true);
+    }
+  }
+
+  async function confirmCascadeDelete() {
+    if (!contactId) return;
+    setCascadeDeleting(true);
     try {
       await del(`/api/v1/contacts/${contactId}`);
+      setCascadePreviewOpen(false);
       onChanged?.();
       onClose();
     } catch (err) {
       setError(err);
+    } finally {
+      setCascadeDeleting(false);
     }
   }
 
@@ -846,6 +884,67 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
             </div>
           )}
         </div>
+
+        {/* #355 — cascade-delete confirm overlay. Plain inline overlay
+             (no extra dep) shown on top of the modal body. Copy varies by
+             whether the preview endpoint returned counts. */}
+        {cascadePreviewOpen && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+            <div className="w-full max-w-md rounded-lg bg-white shadow-xl ring-1 ring-slate-200">
+              <div className="border-b border-slate-200 px-4 py-3">
+                <div className="flex items-center gap-2 text-rose-700">
+                  <AlertTriangle className="h-4 w-4" />
+                  <h3 className="text-sm font-semibold">Delete {fullName}?</h3>
+                </div>
+              </div>
+              <div className="px-4 py-4 text-sm text-slate-700">
+                {cascadePreviewLoading ? (
+                  <div className="text-slate-500">Checking linked records…</div>
+                ) : cascadePreview && (
+                  (cascadePreview.invoices || cascadePreview.subs || cascadePreview.proposals || cascadePreview.docs)
+                    ? (
+                      <div className="space-y-2">
+                        <p>This will archive:</p>
+                        <ul className="ml-4 list-disc space-y-0.5 text-slate-700">
+                          {!!cascadePreview.invoices && <li>{cascadePreview.invoices} invoice{cascadePreview.invoices === 1 ? "" : "s"}</li>}
+                          {!!cascadePreview.subs && (
+                            <li>
+                              {cascadePreview.subs} subscription{cascadePreview.subs === 1 ? "" : "s"}
+                              {!!cascadePreview.stripe_subs_to_cancel && (
+                                <> ({cascadePreview.stripe_subs_to_cancel} Stripe sub{cascadePreview.stripe_subs_to_cancel === 1 ? "" : "s"} will be cancelled at period end)</>
+                              )}
+                            </li>
+                          )}
+                          {!!cascadePreview.proposals && <li>{cascadePreview.proposals} proposal{cascadePreview.proposals === 1 ? "" : "s"}</li>}
+                          {!!cascadePreview.docs && <li>{cascadePreview.docs} consulting doc{cascadePreview.docs === 1 ? "" : "s"}</li>}
+                        </ul>
+                        <p className="text-xs text-slate-500">Reversible from trash for 30 days.</p>
+                      </div>
+                    )
+                    : (
+                      <p>Delete this contact? Reversible from trash for 30 days.</p>
+                    )
+                )}
+              </div>
+              <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
+                <IadmButton
+                  variant="ghost"
+                  onClick={() => setCascadePreviewOpen(false)}
+                  disabled={cascadeDeleting}
+                >
+                  Cancel
+                </IadmButton>
+                <IadmButton
+                  variant="primary"
+                  onClick={confirmCascadeDelete}
+                  disabled={cascadeDeleting || cascadePreviewLoading}
+                >
+                  {cascadeDeleting ? "Deleting…" : "Confirm delete"}
+                </IadmButton>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </IadmModal>
   );

@@ -257,12 +257,52 @@ export function SparkContactsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, availableTags, post, loadTags]);
 
+  // #355 — Bulk cascade preview. Loops the single-contact preview endpoint for
+  // each selected id and sums the counts client-side. P0 slice; server-side
+  // batch aggregation can come later.
+  interface CascadePreview {
+    invoices?: number;
+    subs?: number;
+    proposals?: number;
+    docs?: number;
+    stripe_subs_to_cancel?: number;
+  }
+  const [bulkCascadeOpen, setBulkCascadeOpen] = useState(false);
+  const [bulkCascadeLoading, setBulkCascadeLoading] = useState(false);
+  const [bulkCascadeTotals, setBulkCascadeTotals] = useState<CascadePreview | null>(null);
+
   const confirmAndBulkDelete = useCallback(async () => {
     if (selected.size === 0) return;
-    if (!confirm(`Soft-delete ${selected.size} contacts? They'll be hidden from lists but retained for 90 days.`)) return;
+    setBulkCascadeLoading(true);
+    setBulkCascadeTotals(null);
+    setBulkCascadeOpen(true);
+    try {
+      const ids = Array.from(selected);
+      const results = await Promise.all(ids.map(async (id) => {
+        try { return await get<CascadePreview>(`/api/v1/contacts/${id}/archive-cascade/preview`); }
+        catch { return {} as CascadePreview; }
+      }));
+      const totals: CascadePreview = { invoices: 0, subs: 0, proposals: 0, docs: 0, stripe_subs_to_cancel: 0 };
+      for (const r of results) {
+        totals.invoices! += r.invoices || 0;
+        totals.subs! += r.subs || 0;
+        totals.proposals! += r.proposals || 0;
+        totals.docs! += r.docs || 0;
+        totals.stripe_subs_to_cancel! += r.stripe_subs_to_cancel || 0;
+      }
+      setBulkCascadeTotals(totals);
+    } finally {
+      setBulkCascadeLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, get]);
+
+  const performBulkDelete = useCallback(async () => {
+    if (selected.size === 0) return;
     setBulkBusy("delete");
     try {
       await post("/api/v1/contacts/bulk/delete", { contact_ids: Array.from(selected) });
+      setBulkCascadeOpen(false);
       clearSelection();
       await load();
     } catch (e) {
@@ -679,6 +719,66 @@ export function SparkContactsPage() {
         onClose={() => { setDrawer(null); setDetail(null); load(); }}
         onChanged={() => { load(); }}
       />
+
+      {/* #355 — Bulk cascade delete confirm modal. Same UX pattern as the
+           single-contact confirm in SparkContactModal, but aggregates counts
+           across all selected ids. If nothing links back to OLIVER (empty
+           totals), we show plain-copy confirmation. */}
+      {bulkCascadeOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white shadow-xl ring-1 ring-slate-200">
+            <div className="border-b border-slate-200 px-4 py-3">
+              <div className="flex items-center gap-2 text-rose-700">
+                <AlertTriangle className="h-4 w-4" />
+                <h3 className="text-sm font-semibold">
+                  Delete {selected.size} contact{selected.size === 1 ? "" : "s"}?
+                </h3>
+              </div>
+            </div>
+            <div className="px-4 py-4 text-sm text-slate-700">
+              {bulkCascadeLoading || !bulkCascadeTotals ? (
+                <div className="text-slate-500">Checking linked records…</div>
+              ) : (bulkCascadeTotals.invoices || bulkCascadeTotals.subs || bulkCascadeTotals.proposals || bulkCascadeTotals.docs) ? (
+                <div className="space-y-2">
+                  <p>This will archive:</p>
+                  <ul className="ml-4 list-disc space-y-0.5 text-slate-700">
+                    {!!bulkCascadeTotals.invoices && <li>{bulkCascadeTotals.invoices} invoice{bulkCascadeTotals.invoices === 1 ? "" : "s"}</li>}
+                    {!!bulkCascadeTotals.subs && (
+                      <li>
+                        {bulkCascadeTotals.subs} subscription{bulkCascadeTotals.subs === 1 ? "" : "s"}
+                        {!!bulkCascadeTotals.stripe_subs_to_cancel && (
+                          <> ({bulkCascadeTotals.stripe_subs_to_cancel} Stripe sub{bulkCascadeTotals.stripe_subs_to_cancel === 1 ? "" : "s"} will be cancelled at period end)</>
+                        )}
+                      </li>
+                    )}
+                    {!!bulkCascadeTotals.proposals && <li>{bulkCascadeTotals.proposals} proposal{bulkCascadeTotals.proposals === 1 ? "" : "s"}</li>}
+                    {!!bulkCascadeTotals.docs && <li>{bulkCascadeTotals.docs} consulting doc{bulkCascadeTotals.docs === 1 ? "" : "s"}</li>}
+                  </ul>
+                  <p className="text-xs text-slate-500">Reversible from trash for 30 days.</p>
+                </div>
+              ) : (
+                <p>Soft-delete {selected.size} contact{selected.size === 1 ? "" : "s"}? Reversible from trash for 30 days.</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
+              <button
+                onClick={() => setBulkCascadeOpen(false)}
+                disabled={bulkBusy === "delete"}
+                className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={performBulkDelete}
+                disabled={bulkBusy === "delete" || bulkCascadeLoading}
+                className="inline-flex items-center gap-1 rounded bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                {bulkBusy === "delete" ? "Deleting…" : "Confirm delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </SparkPageShell>
   );
 }
