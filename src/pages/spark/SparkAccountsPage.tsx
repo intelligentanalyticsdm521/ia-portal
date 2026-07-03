@@ -6,7 +6,7 @@ import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkTable, type SparkTableColumn } from "../../components/spark/SparkTable";
 import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
 import { SparkSearchBox } from "../../components/spark/SparkSearchBox";
-import { Building2, Users, ExternalLink, Plus, ArrowLeft } from "lucide-react";
+import { Building2, Users, ExternalLink, Plus, ArrowLeft, Edit3, Save, Trash2, X } from "lucide-react";
 
 interface Account {
   id: number;
@@ -39,7 +39,7 @@ const HEALTH_COLORS: Record<string, string> = {
 };
 
 export function SparkAccountsPage() {
-  const { get, post, ready } = useSparkApi();
+  const { get, post, put, del, ready } = useSparkApi();
 
   // List state
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -57,6 +57,18 @@ export function SparkAccountsPage() {
   const [selected, setSelected] = useState<Account | null>(null);
   const [selectedContacts, setSelectedContacts] = useState<AccountContact[]>([]);
   const [selectedLoading, setSelectedLoading] = useState(false);
+
+  // #255-A2 (2026-07-03) — edit + delete on the Companies detail view.
+  // Previously the detail view was read-only with no way to fix a bad
+  // name / delete a duplicate — the SPARK CRM edit/delete gap Brandon
+  // reported.
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: "", domain: "", industry: "", website: "",
+    employee_count: "", annual_revenue: "",
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [detailErr, setDetailErr] = useState<string | null>(null);
 
   // ─ Load list ─────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -109,6 +121,64 @@ export function SparkAccountsPage() {
     } catch (err) { setError(err); } finally { setSaving(false); }
   }
 
+  // ─ #255-A2 edit + delete helpers ─────────────────────────────────────────
+  function startEdit() {
+    if (!selected) return;
+    setEditForm({
+      name: selected.name || "",
+      domain: selected.domain || "",
+      industry: selected.industry || "",
+      website: selected.website || "",
+      employee_count: selected.employee_count || "",
+      annual_revenue: selected.annual_revenue != null ? String(selected.annual_revenue) : "",
+    });
+    setDetailErr(null);
+    setEditing(true);
+  }
+  async function saveEdit() {
+    if (!selected) return;
+    if (!editForm.name.trim()) { setDetailErr("Name is required."); return; }
+    setSavingEdit(true);
+    setDetailErr(null);
+    try {
+      const payload: Record<string, unknown> = {
+        name: editForm.name.trim(),
+        domain: editForm.domain.trim() || null,
+        industry: editForm.industry.trim() || null,
+        website: editForm.website.trim() || null,
+        employee_count: editForm.employee_count.trim() || null,
+      };
+      if (editForm.annual_revenue.trim()) {
+        const n = Number(editForm.annual_revenue.replace(/[,\s$]/g, ""));
+        if (!Number.isFinite(n)) { setDetailErr("Annual revenue must be a number."); setSavingEdit(false); return; }
+        payload.annual_revenue = n;
+      } else {
+        payload.annual_revenue = null;
+      }
+      const r = await put<{ data: Account }>(`/api/v1/lumen-accounts/${selected.id}`, payload);
+      setSelected(r?.data || selected);
+      setEditing(false);
+      await load();
+    } catch (err) {
+      setDetailErr((err as Error).message || "Save failed");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+  async function deleteAccount() {
+    if (!selected) return;
+    if (!confirm(`Delete "${selected.name}"? Contacts stay in your CRM — only the company grouping is removed.`)) return;
+    setDetailErr(null);
+    try {
+      await del(`/api/v1/lumen-accounts/${selected.id}`);
+      setSelected(null);
+      setEditing(false);
+      await load();
+    } catch (err) {
+      setDetailErr((err as Error).message || "Delete failed");
+    }
+  }
+
   // ─ Render: DETAIL view when an account is selected ──────────────────────
   if (selected) {
     return (
@@ -116,9 +186,24 @@ export function SparkAccountsPage() {
         title={selected.name}
         subtitle={selected.domain || selected.industry || "Company detail"}
         actions={
-          <button onClick={() => setSelected(null)} className="spark-btn spark-btn-secondary">
-            <ArrowLeft className="h-3.5 w-3.5" /> Back to list
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { setSelected(null); setEditing(false); }} className="spark-btn spark-btn-secondary">
+              <ArrowLeft className="h-3.5 w-3.5" /> Back to list
+            </button>
+            {!editing && (
+              <>
+                <button onClick={startEdit} className="spark-btn spark-btn-secondary">
+                  <Edit3 className="h-3.5 w-3.5" /> Edit
+                </button>
+                <button
+                  onClick={deleteAccount}
+                  className="spark-btn spark-btn-secondary text-rose-600 hover:bg-rose-50 border-rose-200"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                </button>
+              </>
+            )}
+          </div>
         }
         stats={
           <SparkStatStrip stats={[
@@ -131,6 +216,86 @@ export function SparkAccountsPage() {
           ]} />
         }
       >
+        {detailErr && (
+          <div className="mb-3 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">
+            {detailErr}
+          </div>
+        )}
+
+        {editing && (
+          <div className="spark-mini-card mb-3">
+            <div className="spark-mini-card-header">
+              <span className="spark-mini-card-title">Edit company</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setEditing(false); setDetailErr(null); }}
+                  className="spark-btn spark-btn-secondary"
+                  disabled={savingEdit}
+                >
+                  <X className="h-3.5 w-3.5" /> Cancel
+                </button>
+                <button onClick={saveEdit} className="spark-btn spark-btn-primary" disabled={savingEdit}>
+                  <Save className="h-3.5 w-3.5" /> {savingEdit ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3">
+              <div className="spark-field">
+                <label className="spark-field-label">Name</label>
+                <input
+                  className="spark-field-input"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                />
+              </div>
+              <div className="spark-field">
+                <label className="spark-field-label">Domain</label>
+                <input
+                  className="spark-field-input"
+                  value={editForm.domain}
+                  onChange={(e) => setEditForm({ ...editForm, domain: e.target.value })}
+                  placeholder="acme.com"
+                />
+              </div>
+              <div className="spark-field">
+                <label className="spark-field-label">Industry</label>
+                <input
+                  className="spark-field-input"
+                  value={editForm.industry}
+                  onChange={(e) => setEditForm({ ...editForm, industry: e.target.value })}
+                />
+              </div>
+              <div className="spark-field">
+                <label className="spark-field-label">Website</label>
+                <input
+                  className="spark-field-input"
+                  value={editForm.website}
+                  onChange={(e) => setEditForm({ ...editForm, website: e.target.value })}
+                  placeholder="https://acme.com"
+                />
+              </div>
+              <div className="spark-field">
+                <label className="spark-field-label">Employee count</label>
+                <input
+                  className="spark-field-input"
+                  value={editForm.employee_count}
+                  onChange={(e) => setEditForm({ ...editForm, employee_count: e.target.value })}
+                  placeholder="1-10, 11-50, etc."
+                />
+              </div>
+              <div className="spark-field">
+                <label className="spark-field-label">Annual revenue (USD)</label>
+                <input
+                  className="spark-field-input"
+                  value={editForm.annual_revenue}
+                  onChange={(e) => setEditForm({ ...editForm, annual_revenue: e.target.value })}
+                  placeholder="500000"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="spark-mini-card">
           <div className="spark-mini-card-header">
             <span className="spark-mini-card-title">Contacts at this company</span>
