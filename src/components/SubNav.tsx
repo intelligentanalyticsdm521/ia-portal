@@ -114,6 +114,9 @@ const OLIVER_NAV: SubNavConfig = {
       label: "Billing", icon: CreditCard, collapsible: true, sectionId: "oliver_billing",
       items: [
         { key: "oliver_quotes", label: "Quotes & Proposals", route: "/app/services/oliver_quotes" },
+        // #77 — Proposal Templates. Sits directly under Quotes & Proposals
+        // because it's the templates library for that surface.
+        { key: "oliver_proposal_templates", label: "Templates", route: "/app/oliver/quotes/templates" },
         { key: "oliver_invoices", label: "Invoices", route: "/app/services/oliver_invoices" },
         { key: "oliver_recurring", label: "Subscriptions", route: "/app/services/oliver_recurring" },
         { key: "oliver_payments", label: "Payments", route: "/app/services/oliver_payments" },
@@ -759,7 +762,7 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/oliver_catalog") || path.includes("/oliver_categories") || path.includes("/oliver_service_categories") || path.includes("/oliver_coupons")) return "oliver_products";
   if (path.includes("/oliver_expenses") || path.includes("/oliver_job_costing")) return "oliver_expenses";
   // F-93 — oliver_templates moved from Settings → Billing main nav.
-  if (path.includes("/oliver_quotes") || path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders") || path.includes("/oliver_templates")) return "oliver_billing";
+  if (path.includes("/oliver_quotes") || path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders") || path.includes("/oliver_templates") || path.includes("/oliver/quotes/templates")) return "oliver_billing";
   // F-114 — Portals hub + legacy Portal Designer / Portals & Domains all live in the W&A group.
   if (path.includes("/oliver_portals_hub") || path.includes("/oliver_portal_designer") || path.includes("/oliver_portal_domains") || path.includes("/oliver_automations") || path.includes("/oliver_addons") || path.includes("/oliver_workflow_settings")) return "oliver_workflow";
   if (path.includes("/oliver_ia_insights")) return "oliver_ia_insights";

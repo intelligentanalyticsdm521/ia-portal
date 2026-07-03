@@ -31,6 +31,8 @@ import {
   DataPrivacySettingsPage,
 } from './pages/settings/SettingsRoutes';
 import { BrandIdentityPage } from './pages/settings/BrandIdentityPage';
+// F-79 per-tenant custom email sender domain (task #116).
+import { SenderDomainPage } from './pages/settings/SenderDomainPage';
 import { ArgusDataPlanPage } from './pages/settings/ArgusDataPlanPage';
 import { ArgusMarginPage } from './pages/admin/ArgusMarginPage';
 import { PlatformAdminPage } from './pages/PlatformAdminPage';
@@ -43,6 +45,10 @@ import { InfraHealthPage } from './pages/admin/InfraHealthPage';
 
 // NEW: SPARK pricing page route
 import { SparkPricingPage } from './pages/spark/SparkPricingPage';
+
+// #77 — Proposal Templates. Explicit route because the desired URL
+// (/app/oliver/quotes/templates) doesn't fit the /services/:serviceKey shape.
+import { OliverProposalTemplatesPage } from './pages/oliver/OliverProposalTemplatesPage';
 
 // Tenant contact-intelligence weight tuning page. Lives at a dedicated
 // /app/spark/contact-scoring route (rather than the service-key router)
@@ -203,6 +209,7 @@ export function App() {
             <Route path="settings/edit" element={<SettingsEditPage />} />
             <Route path="settings/business-profile" element={<BusinessProfileSettingsPage />} />
             <Route path="settings/brand-identity" element={<BrandIdentityPage />} />
+            <Route path="settings/sender-domain" element={<SenderDomainPage />} />
             <Route path="settings/plan-pricing" element={<PlanPricingSettingsPage />} />
             <Route path="settings/team-members" element={<TeamMembersSettingsPage />} />
             <Route path="settings/integrations" element={<IntegrationsSettingsPage />} />
@@ -350,6 +357,11 @@ export function App() {
                 }
               />
             </Route>
+
+            {/* #77 — Proposal Templates (Quotes → Templates). Explicit
+                route so the URL is /app/oliver/quotes/templates rather than
+                the service-key catch-all. Must come BEFORE the catch-all. */}
+            <Route path="oliver/quotes/templates" element={<OliverProposalTemplatesPage />} />
 
             {/* All feature-specific pages routed by service key */}
             <Route path="services/:serviceKey" element={<ServiceRouter />} />

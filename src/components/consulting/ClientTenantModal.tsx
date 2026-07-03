@@ -40,6 +40,7 @@ import {
   DataPrivacySettingsPage,
 } from "../../pages/settings/SettingsRoutes";
 import { BrandIdentityPage } from "../../pages/settings/BrandIdentityPage";
+import { SenderDomainPage } from "../../pages/settings/SenderDomainPage";
 import { ArgusDataPlanPage } from "../../pages/settings/ArgusDataPlanPage";
 import { ArgusMarginPage } from "../../pages/admin/ArgusMarginPage";
 import { PlatformAdminPage } from "../../pages/PlatformAdminPage";
@@ -181,6 +182,7 @@ export function ClientTenantModal({ open, tenantId, tenantName, onClose }: Props
                   <Route path="settings/edit" element={<SettingsEditPage />} />
                   <Route path="settings/business-profile" element={<BusinessProfileSettingsPage />} />
                   <Route path="settings/brand-identity" element={<BrandIdentityPage />} />
+                  <Route path="settings/sender-domain" element={<SenderDomainPage />} />
                   <Route path="settings/plan-pricing" element={<PlanPricingSettingsPage />} />
                   <Route path="settings/team-members" element={<TeamMembersSettingsPage />} />
                   <Route path="settings/integrations" element={<IntegrationsSettingsPage />} />

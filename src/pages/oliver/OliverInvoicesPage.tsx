@@ -292,7 +292,7 @@ export function OliverInvoicesPage() {
             <Button variant="secondary" onClick={exportCsv} disabled={exporting || !rows.length}>
               {exporting ? "Exporting…" : "Export CSV"}
             </Button>
-            {!showCreate && <Button variant="primary" onClick={() => setShowCreate(true)}>+ Create invoice</Button>}
+            {!showCreate && <Button variant="primary" data-tour="new-invoice" onClick={() => setShowCreate(true)}>+ Create invoice</Button>}
           </>
         }
       />
@@ -335,7 +335,7 @@ export function OliverInvoicesPage() {
         <EmptyState
           title="No invoices yet"
           description="Create your first invoice to start collecting payments. Each invoice generates a Stripe-hosted Pay Now link."
-          action={<Button variant="primary" onClick={() => setShowCreate(true)}>+ Create invoice</Button>}
+          action={<Button variant="primary" data-tour="new-invoice" onClick={() => setShowCreate(true)}>+ Create invoice</Button>}
         />
       ) : (
         <>

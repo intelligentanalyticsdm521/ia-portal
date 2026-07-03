@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Palette,
   Sparkles,
+  Mail,
 } from 'lucide-react';
 
 /**
@@ -105,6 +106,7 @@ export function AccountMenu({
             <MenuItem to="/app/settings/plan-pricing" icon={<CreditCard className="h-4 w-4" />} label="Plan & Pricing" onClick={close} />
             <MenuItem to="/app/settings/team-members" icon={<Users className="h-4 w-4" />} label="Team Members" onClick={close} />
             <MenuItem to="/app/settings/integrations" icon={<Plug className="h-4 w-4" />} label="Connected Accounts" onClick={close} />
+            <MenuItem to="/app/settings/sender-domain" icon={<Mail className="h-4 w-4" />} label="Email Sender Domain" onClick={close} />
           </MenuSection>
 
           {/* F-02 — REMOVED OLIVER settings block from hamburger. Per-product

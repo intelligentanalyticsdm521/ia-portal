@@ -787,6 +787,37 @@ function stepGoogleOauth(): Step {
   };
 }
 
+/* Step: arion_push_ga4_gtag — F-Onb-D1. Immediately after Google OAuth
+ * lands the GA4 property (arion.site.ga4_measurement_id populated), push
+ * the measurement_id to the IA WordPress plugin so it auto-injects the
+ * gtag.js snippet on wp_head. Runs before Bing so the tracker is live on
+ * the site the moment the customer sees "Google connected". Skip-allowed:
+ * a customer with `ia_ga4_gtag_enabled` filtered off, or a BYO GA4 that
+ * failed to persist, shouldn't block the whole runner. */
+function stepPushGa4Gtag(): Step {
+  return {
+    id: "arion_push_ga4_gtag",
+    label_user_facing: "Turning on site analytics",
+    label_friendly: "arion: push GA4 measurement_id to IA plugin (gtag inject)",
+    on_failure: "skip_allowed",
+    max_retries: 2,
+    retry_delay_ms: DEFAULT_POLL_MS,
+    action: async (ctx): Promise<ActionResult> => {
+      const ex = extras(ctx);
+      if (!ex.site_id) return { ok: false, error: "site_id missing" };
+      const r = await arionFetch(ctx, `/onboarding/runner/push-ga4-measurement-id`, {
+        method: "POST",
+        body: JSON.stringify({
+          tenant_id: ctx.tenant_id,
+          site_id: ex.site_id,
+        }),
+      });
+      if (!r.ok) return { ok: false, error: r.error, retryable_after_ms: r.retryable_after_ms };
+      return { ok: true, data: r.data };
+    },
+  };
+}
+
 /* Step: arion_bing_setup_probe — same shape as google probe. */
 function stepBingSetupProbe(): Step {
   return {
@@ -921,6 +952,7 @@ export function buildArionSteps(
       ...seoChain,
       stepGoogleSetupProbe(),
       stepGoogleOauth(),
+      stepPushGa4Gtag(),
       stepBingSetupProbe(),
       stepBingOauth(),
     ];
@@ -934,6 +966,7 @@ export function buildArionSteps(
     ...seoChain,
     stepGoogleSetupProbe(),
     stepGoogleOauth(),
+    stepPushGa4Gtag(),
     stepBingSetupProbe(),
     stepBingOauth(),
   ];

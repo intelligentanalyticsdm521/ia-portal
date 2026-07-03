@@ -39,7 +39,7 @@ interface Props {
 // math that doesn't match manual recalculation (see SCOPE_WORKING.md
 // F-Onb-D8). Target: EOM July 2026. Flip INSIGHTS_GLOBAL_GATE to false
 // after the model audit + fixes land.
-const INSIGHTS_GLOBAL_GATE = true;
+const INSIGHTS_GLOBAL_GATE = false;
 
 export function IAInsightsHeader({ data, mode = "product", activeProducts }: Props) {
   if (INSIGHTS_GLOBAL_GATE) {

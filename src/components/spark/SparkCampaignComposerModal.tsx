@@ -470,6 +470,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
             <IadmButton
               variant="accent"
               product="spark"
+              data-tour="save-campaign"
               onClick={saveDraft}
               disabled={saving || sending || !canSave()}
               icon={<ArrowRight className="h-3 w-3" />}
@@ -505,6 +506,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                 return (
                   <button
                     key={c.key}
+                    data-tour={`campaign-channel-${c.key}`}
                     onClick={() => { setChannel(c.key); setStep("compose"); }}
                     className="group flex flex-col items-start gap-2 rounded-lg border-2 border-slate-200 bg-white p-4 text-left transition-colors hover:border-[#EF6C33] hover:bg-[#EF6C33]/5"
                   >
@@ -564,6 +566,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
               <div>
                 <label className="block text-[10px] uppercase font-semibold text-slate-500 mb-1">Campaign name</label>
                 <input
+                  data-tour="campaign-name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   autoFocus
@@ -596,6 +599,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                     </div>
                     <div className="relative">
                       <input
+                        data-tour="campaign-subject"
                         ref={subjectRef}
                         value={subject}
                         onChange={(e) => setSubject(e.target.value)}
@@ -613,6 +617,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                     <div>
                       <label className="block text-[10px] uppercase font-semibold text-slate-500 mb-1">From</label>
                       <select
+                        data-tour="campaign-sender"
                         value={senderId}
                         onChange={(e) => {
                           const next = e.target.value === "" ? "" : Number(e.target.value);

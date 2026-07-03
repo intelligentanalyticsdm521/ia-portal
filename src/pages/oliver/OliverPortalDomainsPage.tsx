@@ -55,8 +55,18 @@ const PORTAL_META: Record<PortalKind, { label: string; icon: typeof Users; defau
   booking:  { label: "Booking",         icon: CalendarIcon, defaultSuffix: "book.ia-dm.com", available: true, tierGate: "Standard+ (no custom domain)" },
 };
 
+// F-58 — simple text-column preference for per-tenant custom portal
+// domains, exposed via /settings/portals/custom-domains. Pro+ only.
+interface F58CustomDomains {
+  tier: string;
+  canUseCustomDomain: boolean;
+  minTier: string;
+  customerPortalCustomDomain: string | null;
+  crewPortalCustomDomain: string | null;
+}
+
 export function OliverPortalDomainsPage() {
-  const { get, post, del, ready } = useOliverApi();
+  const { get, post, patch, del, ready } = useOliverApi();
   const [domains, setDomains] = useState<PortalDomain[]>([]);
   const [tenantSlug, setTenantSlug] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -64,16 +74,30 @@ export function OliverPortalDomainsPage() {
   const [busyPortal, setBusyPortal] = useState<PortalKind | null>(null);
   const [customInputs, setCustomInputs] = useState<Record<PortalKind, string>>({ customer: "", crew: "", booking: "" });
   const [activeInstructions, setActiveInstructions] = useState<{ kind: PortalKind; data: BindResponse } | null>(null);
+  // F-58 state — read once, PATCH on Save.
+  const [f58, setF58] = useState<F58CustomDomains | null>(null);
+  const [f58Draft, setF58Draft] = useState<{ customer: string; crew: string }>({ customer: "", crew: "" });
+  const [f58Saving, setF58Saving] = useState(false);
+  const [f58Msg, setF58Msg] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [list, slugRes] = await Promise.all([
+      const [list, slugRes, f58Res] = await Promise.all([
         get<PortalDomain[]>("/portal-domains"),
         get<{ slug: string | null }>("/portal-domains/tenant-slug").catch(() => ({ slug: null })),
+        // F-58 — non-fatal if the endpoint is missing on older deploys.
+        get<F58CustomDomains>("/settings/portals/custom-domains").catch(() => null),
       ]);
       setDomains(list || []);
       setTenantSlug(slugRes?.slug || "");
+      if (f58Res) {
+        setF58(f58Res);
+        setF58Draft({
+          customer: f58Res.customerPortalCustomDomain || "",
+          crew: f58Res.crewPortalCustomDomain || "",
+        });
+      }
     } catch (e) { setError(e); }
     finally { setLoading(false); }
   }, [get]);
@@ -144,12 +168,137 @@ export function OliverPortalDomainsPage() {
     navigator.clipboard.writeText(text).catch(() => {});
   }
 
+  // F-58 save. PATCHes ONLY the fields that changed vs the loaded state so we
+  // don't accidentally clear a domain the user didn't touch. Empty-string
+  // sent explicitly = intentional clear (matches backend normalize()).
+  async function saveF58() {
+    if (!f58) return;
+    const patchBody: Record<string, string> = {};
+    if (f58Draft.customer !== (f58.customerPortalCustomDomain || "")) {
+      patchBody.customerPortalCustomDomain = f58Draft.customer;
+    }
+    if (f58Draft.crew !== (f58.crewPortalCustomDomain || "")) {
+      patchBody.crewPortalCustomDomain = f58Draft.crew;
+    }
+    if (Object.keys(patchBody).length === 0) {
+      setF58Msg("No changes to save.");
+      setTimeout(() => setF58Msg(null), 2500);
+      return;
+    }
+    setF58Saving(true); setF58Msg(null);
+    try {
+      const r = await patch<F58CustomDomains>("/settings/portals/custom-domains", patchBody);
+      setF58(r);
+      setF58Draft({
+        customer: r.customerPortalCustomDomain || "",
+        crew: r.crewPortalCustomDomain || "",
+      });
+      setF58Msg("Saved.");
+      setTimeout(() => setF58Msg(null), 3000);
+    } catch (e) {
+      setF58Msg(`Error: ${e instanceof Error ? e.message : "unknown"}`);
+    } finally {
+      setF58Saving(false);
+    }
+  }
+
   return (
     <OliverPageWrapper title="Portals & Domains" subtitle="Customer + crew portal URLs" error={error} loading={loading && !domains.length}>
       <PageHeader
         title="Portals & Domains"
         subtitle="Manage the URLs your customers and crew use to access their portals. Default subdomains are free; bring your own domain on Pro+."
       />
+
+      {/* F-58 — simple text-column preference for per-tenant custom portal
+          domains. Sits above the automated /portal-domains card set so a
+          tenant can declare intent even before running through the SWA
+          binding flow. Pro+ only (server 402s below-tier PATCHes). */}
+      {f58 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <div className="card-ttl">Per-tenant custom portal domain</div>
+            {f58.canUseCustomDomain ? (
+              <span style={{
+                padding: "1px 6px", borderRadius: 999,
+                background: "#D1FAE5", color: "#065F46",
+                fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase",
+              }}>Pro+ · Available</span>
+            ) : (
+              <span style={{
+                padding: "1px 6px", borderRadius: 999,
+                background: "#FEF3C7", color: "#92400E",
+                fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase",
+              }}>Pro+ · Locked</span>
+            )}
+          </div>
+          <div className="card-sub" style={{ marginBottom: 10 }}>
+            Store the hostname you want your customer + crew portals to answer on.
+            You still need to add a <code style={{ fontFamily: "monospace", background: "#F1F5F9", padding: "1px 4px", borderRadius: 3 }}>CNAME</code> at your DNS provider pointing at the value shown on the portal-specific card below — this field just persists your choice. Requires the <strong>Pro</strong> plan or higher.
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <label style={{ display: "block" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>
+                Customer portal domain
+              </div>
+              <input
+                type="text"
+                value={f58Draft.customer}
+                onChange={(e) => setF58Draft({ ...f58Draft, customer: e.target.value })}
+                placeholder="portal.yourbusiness.com"
+                disabled={!f58.canUseCustomDomain || f58Saving}
+                style={{
+                  width: "100%", padding: "8px 10px", border: "1px solid #E5E7EB",
+                  borderRadius: 6, fontSize: 13, fontFamily: "monospace",
+                  background: !f58.canUseCustomDomain ? "#F8FAFC" : "#fff",
+                  color: !f58.canUseCustomDomain ? "#94A3B8" : "#0B1C24",
+                }}
+              />
+              <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 4 }}>
+                DNS: <code style={{ fontFamily: "monospace" }}>CNAME</code> {f58Draft.customer || "portal.yourbusiness.com"} → <code style={{ fontFamily: "monospace" }}>{tenantSlug || "&lt;your-slug&gt;"}.customer.ia-dm.com</code>
+              </div>
+            </label>
+
+            <label style={{ display: "block" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>
+                Crew portal domain
+              </div>
+              <input
+                type="text"
+                value={f58Draft.crew}
+                onChange={(e) => setF58Draft({ ...f58Draft, crew: e.target.value })}
+                placeholder="crew.yourbusiness.com"
+                disabled={!f58.canUseCustomDomain || f58Saving}
+                style={{
+                  width: "100%", padding: "8px 10px", border: "1px solid #E5E7EB",
+                  borderRadius: 6, fontSize: 13, fontFamily: "monospace",
+                  background: !f58.canUseCustomDomain ? "#F8FAFC" : "#fff",
+                  color: !f58.canUseCustomDomain ? "#94A3B8" : "#0B1C24",
+                }}
+              />
+              <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 4 }}>
+                DNS: <code style={{ fontFamily: "monospace" }}>CNAME</code> {f58Draft.crew || "crew.yourbusiness.com"} → <code style={{ fontFamily: "monospace" }}>{tenantSlug || "&lt;your-slug&gt;"}.crew.ia-dm.com</code>
+              </div>
+            </label>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+            <Button
+              variant="primary"
+              onClick={saveF58}
+              disabled={!f58.canUseCustomDomain || f58Saving}
+            >
+              {f58Saving ? "Saving…" : "Save"}
+            </Button>
+            {f58Msg && <span style={{ fontSize: 11, color: f58Msg.startsWith("Error") ? "#B91C1C" : "#065F46" }}>{f58Msg}</span>}
+            {!f58.canUseCustomDomain && (
+              <span style={{ fontSize: 11, color: "#92400E" }}>
+                Your plan is <strong>{f58.tier}</strong> — upgrade to Pro to unlock custom portal domains.
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {(["customer", "crew", "booking"] as PortalKind[]).map((kind) => {
         const meta = PORTAL_META[kind];

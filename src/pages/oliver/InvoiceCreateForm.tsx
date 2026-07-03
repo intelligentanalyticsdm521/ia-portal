@@ -276,6 +276,7 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
         {mode === "customer" ? (
           <Field label="Customer">
             <select
+              data-tour="invoice-customer"
               value={selectedContactId}
               onChange={(e) => setSelectedContactId(e.target.value)}
               style={selectStyle}
@@ -349,6 +350,7 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
             <div key={i} style={{ padding: "8px 10px", borderBottom: i < items.length - 1 ? "1px solid #f0f4f6" : "none" }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 110px 92px 28px", gap: 8, alignItems: "center" }}>
                 <input
+                  data-tour={i === 0 ? "invoice-line-description" : undefined}
                   type="text" placeholder="Description"
                   value={it.description}
                   onChange={(e) => updateItem(i, { description: e.target.value })}
@@ -361,6 +363,7 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
                   style={{ ...inputStyle, textAlign: "right" }}
                 />
                 <input
+                  data-tour={i === 0 ? "invoice-line-price" : undefined}
                   type="number" step="0.01" min="0"
                   value={it.unit_price}
                   onChange={(e) => updateItem(i, { unit_price: Number(e.target.value) })}
@@ -441,6 +444,7 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
         <Button variant="secondary" onClick={onCancel}>Cancel</Button>
         <Button
           variant="primary"
+          data-tour="save-invoice"
           onClick={submit}
           disabled={submitting || (mode === "job" ? !selectedJobId : !selectedContactId) || !items.length}
         >

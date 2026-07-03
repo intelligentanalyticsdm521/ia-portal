@@ -249,6 +249,7 @@ export function SeoKeywords() {
         </p>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.75rem' }}>
           <input
+            data-tour="keyword-seed"
             type="text"
             value={seed}
             onChange={(e) => setSeed(e.target.value)}
@@ -265,6 +266,7 @@ export function SeoKeywords() {
             }}
           />
           <button
+            data-tour="research-keyword"
             onClick={runResearch}
             disabled={!seed.trim() || researchLoading}
             style={{
@@ -431,6 +433,7 @@ export function SeoKeywords() {
           keywords are filtered automatically.
         </p>
         <textarea
+          data-tour="keyword-paste"
           value={pasteText}
           onChange={(e) => setPasteText(e.target.value)}
           placeholder={'mobile detailing des moines\nauto detailing near me\nceramic coating, paint correction, interior cleaning'}
@@ -453,6 +456,7 @@ export function SeoKeywords() {
               : `${remaining} slot${remaining === 1 ? '' : 's'} remaining`}
           </span>
           <button
+            data-tour="add-keyword"
             onClick={addPastedKeywords}
             disabled={!pasteText.trim() || pasteLoading || remaining === 0}
             style={{

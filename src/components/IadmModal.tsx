@@ -206,6 +206,7 @@ export function IadmModal({
  */
 export function IadmButton({
   variant, product, onClick, disabled, type = "button", children, icon,
+  "data-tour": dataTour,
 }: {
   variant: "primary" | "accent" | "ghost";
   product?: IadmModalProduct;
@@ -214,11 +215,13 @@ export function IadmButton({
   type?: "button" | "submit";
   children: ReactNode;
   icon?: ReactNode;
+  /** InteractiveWalkthrough hook — lets flows spotlight this button by selector. */
+  "data-tour"?: string;
 }) {
   const baseClass = "inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50";
   if (variant === "primary") {
     return (
-      <button type={type} onClick={onClick} disabled={disabled} className={baseClass + " text-white"} style={{ background: CORE_BLUE }}>
+      <button data-tour={dataTour} type={type} onClick={onClick} disabled={disabled} className={baseClass + " text-white"} style={{ background: CORE_BLUE }}>
         {icon}{children}
       </button>
     );
@@ -226,13 +229,13 @@ export function IadmButton({
   if (variant === "accent") {
     const c = product ? PRODUCT_ACCENT[product] : PRODUCT_ACCENT.spark;
     return (
-      <button type={type} onClick={onClick} disabled={disabled} className={baseClass + " text-white"} style={{ background: c }}>
+      <button data-tour={dataTour} type={type} onClick={onClick} disabled={disabled} className={baseClass + " text-white"} style={{ background: c }}>
         {icon}{children}
       </button>
     );
   }
   return (
-    <button type={type} onClick={onClick} disabled={disabled} className={baseClass + " border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}>
+    <button data-tour={dataTour} type={type} onClick={onClick} disabled={disabled} className={baseClass + " border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}>
       {icon}{children}
     </button>
   );

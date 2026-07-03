@@ -213,7 +213,7 @@ export function OliverContactsPage() {
             <Button variant="secondary" onClick={exportCsv} disabled={exporting || !contacts.length}>
               {exporting ? "Exporting…" : "Export CSV"}
             </Button>
-            <Button variant="primary" onClick={() => setShowCreate(true)}>+ New customer</Button>
+            <Button variant="primary" data-tour="new-customer" onClick={() => setShowCreate(true)}>+ New customer</Button>
           </>
         }
       />
@@ -334,15 +334,15 @@ function NewContactModal({ onClose, onCreated, create }: { onClose: () => void; 
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-        <FormField label="First name *" value={first} onChange={setFirst} />
-        <FormField label="Last name *" value={last} onChange={setLast} />
+        <FormField label="First name *" value={first} onChange={setFirst} dataTour="customer-first-name" />
+        <FormField label="Last name *" value={last} onChange={setLast} dataTour="customer-last-name" />
       </div>
-      <FormField label="Email" value={email} onChange={setEmail} type="email" />
+      <FormField label="Email" value={email} onChange={setEmail} type="email" dataTour="customer-email" />
       <PhoneFormField label="Phone" value={phone} onChange={setPhone} />
       <FormField label="Company name" value={company} onChange={setCompany} />
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" onClick={submit} disabled={submitting || !first.trim() || !last.trim()}>
+        <Button variant="primary" data-tour="save-customer" onClick={submit} disabled={submitting || !first.trim() || !last.trim()}>
           {submitting ? "Creating…" : "Create customer"}
         </Button>
       </div>
@@ -350,11 +350,12 @@ function NewContactModal({ onClose, onCreated, create }: { onClose: () => void; 
   );
 }
 
-function FormField({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
+function FormField({ label, value, onChange, type = "text", dataTour }: { label: string; value: string; onChange: (v: string) => void; type?: string; dataTour?: string }) {
   return (
     <label style={{ display: "block", marginBottom: 10 }}>
       <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 }}>{label}</span>
       <input
+        data-tour={dataTour}
         type={type} value={value} onChange={(e) => onChange(e.target.value)}
         style={{ width: "100%", padding: "7px 10px", fontSize: 12, border: "1px solid rgba(45,156,219,0.28)", borderRadius: 6, background: "#fff" }}
       />

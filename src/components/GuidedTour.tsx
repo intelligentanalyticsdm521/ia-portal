@@ -905,6 +905,60 @@ export const ARION_QUICK_TOUR: TourDef = {
 
 export const ALL_TOURS: TourDef[] = [OLIVER_QUICK_TOUR, SPARK_QUICK_TOUR, ARION_QUICK_TOUR];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// #256 sub-nav section support.
+//
+// A "full tour" step often only makes sense once you're in a particular product
+// section. This helper lets a caller run just the slice of steps that live
+// under one section (e.g. "leadgen"), so users can replay a targeted piece of
+// a tour without sitting through the whole thing.
+//
+// Section heuristic (spec-locked): pull the section token out of `step.route`
+// or `step.targetSelector` via /\/app\/(arion|spark|oliver)\/SECTION/. Steps
+// with no match land in the synthetic "General" bucket — that's where hero /
+// center steps and legacy `/app/services/*` routes end up.
+//
+// Persistence: sub-tours track their own completion under
+// `tour:completed:${tourId}:${sectionKey}`, independent of the full-tour key.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SECTION_RE = /\/app\/(?:arion|spark|oliver)\/([a-z-]+)/;
+
+/** Extract the sub-nav section key for a step, or "General" if none matches. */
+export function sectionForStep(step: TourStep): string {
+  const hay = step.route || "";
+  const selHay = step.targetSelector || "";
+  const m = SECTION_RE.exec(hay) || SECTION_RE.exec(selHay);
+  return m ? m[1] : "General";
+}
+
+/**
+ * Return a new TourDef containing only the steps that belong to `sectionKey`.
+ * The returned tour keeps the same id/title/accent — the id gets a suffix so
+ * completion state doesn't collide with the full tour. Returns null if the
+ * section has no steps.
+ */
+export function filterTourToSection(tour: TourDef, sectionKey: string): TourDef | null {
+  const steps = tour.steps.filter((s) => sectionForStep(s) === sectionKey);
+  if (steps.length === 0) return null;
+  return {
+    id: `${tour.id}:${sectionKey}`,
+    title: `${tour.title} — ${sectionKey}`,
+    accent: tour.accent,
+    steps,
+  };
+}
+
+/** Group a tour's steps by section, preserving first-appearance order. */
+export function groupTourSections(tour: TourDef): { key: string; count: number }[] {
+  const seen = new Map<string, number>();
+  for (const s of tour.steps) {
+    const k = sectionForStep(s);
+    seen.set(k, (seen.get(k) ?? 0) + 1);
+  }
+  return Array.from(seen.entries()).map(([key, count]) => ({ key, count }));
+}
+
 // Returns the first tour that hasn't been completed for this user — used by
 // the auto-launch logic to decide whether to pop a tour on first dashboard
 // visit. Returns null if everything's been completed.
