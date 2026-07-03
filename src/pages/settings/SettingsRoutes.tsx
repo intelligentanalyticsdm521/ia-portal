@@ -151,6 +151,7 @@ const SETTINGS_TILES: Array<{
       { to: '/app/settings/business-profile', label: 'Business Profile', description: 'Name, address, phone, email, logo, brand colors' },
       { to: '/app/settings/brand-identity', label: 'Brand Identity', description: 'Logo, colors, typography, voice, tagline — applies everywhere' },
       { to: '/app/settings/plan-pricing', label: 'Plan & Pricing', description: 'Subscriptions, invoices, plan changes' },
+      { to: '/app/settings/argus-data-plan', label: 'ARGUS AI Data Plan', description: 'AI credits — balance, packs, auto-topoff, and usage by action.' },
       { to: '/app/settings/team-members', label: 'Team Members', description: 'Invite users to your organization' },
       { to: '/app/settings/integrations', label: 'Connected Accounts & Integrations', description: 'Google, Bing, Stripe, lead intake' },
       { to: '/app/settings/sender-domain', label: 'Email Sender Domain', description: 'Send from your own domain — DNS records + verification' },

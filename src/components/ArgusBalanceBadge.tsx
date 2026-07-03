@@ -28,6 +28,10 @@ interface ArgusCreditsResponse {
 
 const LOW_BALANCE_THRESHOLD = 100;
 
+// Warn at most once per session so the credit-endpoint failure is visible in
+// the console without spamming on every focus refetch.
+let warnedOnce = false;
+
 function formatDate(iso: string | null): string {
   if (!iso) return 'Never';
   try {
@@ -77,8 +81,27 @@ export function ArgusBalanceBadge() {
   }, [data]);
 
   if (error || !data) {
-    // Don't render an error to the user — quietly hide if endpoint not reachable
-    return null;
+    // Endpoint unreachable / empty — keep the meter discoverable with a muted
+    // placeholder pill instead of vanishing entirely. Warn once so the cause
+    // is visible in the console.
+    if (!warnedOnce) {
+      warnedOnce = true;
+      console.warn(
+        '[ArgusBalanceBadge] AI credit balance unavailable — showing placeholder.',
+        error ?? '(no data)',
+      );
+    }
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-400"
+        title="AI credit balance unavailable"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" strokeLinejoin="round" />
+        </svg>
+        <span>AI Credits: —</span>
+      </span>
+    );
   }
 
   const pillCls = isLow

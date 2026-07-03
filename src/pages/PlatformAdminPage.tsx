@@ -9,7 +9,7 @@
  * /app/settings/*.
  */
 import { Link } from 'react-router-dom';
-import { Shield, Database, Users as UsersIcon, Settings as SettingsIcon, Target } from 'lucide-react';
+import { Shield, Database, Users as UsersIcon, Settings as SettingsIcon, Target, TrendingUp } from 'lucide-react';
 
 export function PlatformAdminPage() {
   return (
@@ -47,6 +47,18 @@ export function PlatformAdminPage() {
           </div>
           <div className="mt-1 text-xs text-gray-500">
             Term + industry review queues, source ablation, global blocklist, Hunter balance.
+          </div>
+        </Link>
+        <Link
+          to="/app/admin/argus-margin"
+          className="rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-[#EF6C33] hover:bg-amber-50/40"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <TrendingUp className="h-4 w-4 text-[#EF6C33]" />
+            ARGUS Margin Dashboard
+          </div>
+          <div className="mt-1 text-xs text-gray-500">
+            Per-action cost basis vs credits sold; quarterly pricing edit surface.
           </div>
         </Link>
         <PlaceholderTile
