@@ -667,10 +667,12 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, cartTier, onClose, onFi
   const sparkApi = useSparkApi();
   // Cart can come from props (explicit) OR be derived from the prefill payload
   // (core.tenants.signup_product → ["arion"|"spark"|"oliver"|"consulting"]
-  // OR all four for multi). Default ["arion","spark","oliver"] is a final
-  // fallback only when nothing is known — never the first choice. This is
-  // what Brandon complained about: SPARK-only buyers seeing ARION/OLIVER.
-  const [effectiveCart, setEffectiveCart] = useState<ProductKey[]>(cart && cart.length ? cart : ["arion","spark","oliver"]);
+  // OR all four for multi). DEFECT #248: never default to a fabricated
+  // ["arion","spark","oliver"] cart — that caused a "cart flash" where
+  // SPARK-only or ARION-only buyers briefly saw all three product sections
+  // before prefill landed. Start empty and render a "Loading products…"
+  // placeholder in the section body until prefill fills this in.
+  const [effectiveCart, setEffectiveCart] = useState<ProductKey[]>(cart && cart.length ? cart : []);
   const sections = useMemo(() => buildSections(effectiveCart), [effectiveCart]);
   const [stepIdx, setStepIdx] = useState(0);
   const [state, setState] = useState<OnboardingState>(EMPTY_STATE);
@@ -885,6 +887,12 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, cartTier, onClose, onFi
         {err && <div className="mb-3 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">{err}</div>}
         {loading ? (
           <div className="text-sm text-slate-500">Loading saved progress…</div>
+        ) : effectiveCart.length === 0 && current.product ? (
+          // DEFECT #248: cart hasn't been resolved yet (prefill in-flight or
+          // returned empty). Rather than flash a fabricated product section
+          // ["arion","spark","oliver"], render a placeholder until we know
+          // what's actually in the tenant's cart.
+          <div className="text-sm text-slate-500">Loading products…</div>
         ) : (
           <SectionBody section={current} state={state} setState={setState} api={{ get, post }} accent={accent} tenantId={tenantId} arionRunner={arionRunner} cartTier={cartTier} />
         )}

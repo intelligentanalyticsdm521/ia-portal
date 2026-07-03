@@ -204,6 +204,14 @@ export function ConsultingOnboardClientPageV2() {
     mode: "onboarding" | "consulting";
   } | null>(null);
 
+  // DEFECT #248: after Step 6 submit succeeds and the tenant is created, we
+  // immediately open the OnboardingWizardModal (modal #2) with the new
+  // tenant_id so the founder is dropped into the second wizard and Save &
+  // Finish (which fires the CIAM welcome) is one flow away. Without this,
+  // finishing the bootstrap wizard without opening modal #2 leaves the client
+  // with no CIAM invite — the two-modal CIAM gap.
+  const [openWizardTid, setOpenWizardTid] = useState<string | null>(null);
+
   useEffect(() => {
     if (view !== "list") return;
     let cancelled = false;
@@ -260,6 +268,18 @@ export function ConsultingOnboardClientPageV2() {
   const [selectedCoupon, setSelectedCoupon] = useState<CouponOption | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
   const [collectionMethod, setCollectionMethod] = useState<"charge_automatically" | "send_invoice">("charge_automatically");
+
+  // DEFECT #248 — 100%-off coupon guard. When the founder picks a 100%-off
+  // coupon there's nothing to charge, so a Stripe Checkout URL would just
+  // dead-end with a "you owe $0" screen. Force `send_invoice` (no card
+  // required) whenever the selected coupon is 100% off, and lock the
+  // picker so the founder can't flip it back to charge_automatically.
+  const couponIs100Off = selectedCoupon?.percent_off === 100;
+  useEffect(() => {
+    if (couponIs100Off && collectionMethod !== "send_invoice") {
+      setCollectionMethod("send_invoice");
+    }
+  }, [couponIs100Off, collectionMethod]);
 
   // Step 4 — Profile (defaults match OLIVER OrganizationTab + canonical brand palette)
   const [profile, setProfile] = useState<BusinessProfile>({
@@ -622,6 +642,15 @@ export function ConsultingOnboardClientPageV2() {
       // coupon there's nothing to pay so this stays null.
       if (adminResp.invoice_url) setCheckoutUrl(adminResp.invoice_url);
       setStep(7);
+      // DEFECT #248 (two-modal CIAM gap): immediately open the
+      // OnboardingWizardModal in place with the newly created tenant_id.
+      // Without this, the founder can finish the bootstrap wizard and close
+      // it before ever opening modal #2 — which is where Save & Finish
+      // fires POST /admin/onboard-client/finish-onboarding and sends the
+      // CIAM welcome. Dropping straight into modal #2 closes the gap. The
+      // tenant workspace navigation only happens after Save & Finish
+      // (handled by handleWizardFinished below).
+      if (adminResp.tenant_id) setOpenWizardTid(adminResp.tenant_id);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -792,6 +821,31 @@ export function ConsultingOnboardClientPageV2() {
         }}
       />
 
+      {/* DEFECT #248 — two-modal CIAM gap. After Step 6 submit succeeds we
+          drop the founder straight into modal #2 (OnboardingWizardModal) so
+          Save & Finish (which triggers POST /admin/onboard-client/finish-
+          onboarding, which sends the CIAM welcome) is one flow away. We pass
+          the derived cart so modal #2 doesn't flash the fabricated
+          ["arion","spark","oliver"] default before prefill lands. */}
+      <OnboardingWizardModal
+        open={!!openWizardTid}
+        tenantId={openWizardTid}
+        tenantName={businessName}
+        mode="onboarding"
+        cart={[
+          ...cart.map((it) => it.product),
+          ...(consultingPick ? (["consulting"] as const) : []),
+        ]}
+        onClose={() => setOpenWizardTid(null)}
+        onFinished={() => {
+          const finishedTenantId = openWizardTid;
+          setOpenWizardTid(null);
+          if (finishedTenantId) {
+            navigate(`/app/services/consulting/tenant-workspace/${finishedTenantId}`);
+          }
+        }}
+      />
+
     <IadmModal
       open={view === "wizard"}
       onClose={closeWizardToList}
@@ -916,6 +970,7 @@ export function ConsultingOnboardClientPageV2() {
           couponOptions={couponOptions} couponLoading={couponLoading}
           selectedCoupon={selectedCoupon} setSelectedCoupon={setSelectedCoupon}
           collectionMethod={collectionMethod} setCollectionMethod={setCollectionMethod}
+          couponIs100Off={couponIs100Off}
         />
       )}
 
@@ -1696,11 +1751,12 @@ function ConsultingPicker({ products, pick, setPick, cycle }: {
 
 // ─── Step 3 — Coupon + payment method ────────────────────────────────────
 
-function Step3Checkout({ couponQuery, setCouponQuery, couponOptions, couponLoading, selectedCoupon, setSelectedCoupon, collectionMethod, setCollectionMethod }: {
+function Step3Checkout({ couponQuery, setCouponQuery, couponOptions, couponLoading, selectedCoupon, setSelectedCoupon, collectionMethod, setCollectionMethod, couponIs100Off }: {
   couponQuery: string; setCouponQuery: (v: string) => void;
   couponOptions: CouponOption[]; couponLoading: boolean;
   selectedCoupon: CouponOption | null; setSelectedCoupon: (c: CouponOption | null) => void;
   collectionMethod: "charge_automatically" | "send_invoice"; setCollectionMethod: (m: "charge_automatically" | "send_invoice") => void;
+  couponIs100Off: boolean;
 }) {
   return (
     <StepShell>
@@ -1748,9 +1804,18 @@ function Step3Checkout({ couponQuery, setCouponQuery, couponOptions, couponLoadi
 
       <div className="mt-6">
         <label className="block text-xs font-semibold text-slate-700 mb-2">Payment method</label>
+        {/* DEFECT #248: 100%-off coupon guard. A Stripe Checkout URL for a
+            $0 charge dead-ends, so lock the picker to `send_invoice` and
+            surface why. */}
+        {couponIs100Off && (
+          <div className="mb-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+            This coupon is 100% off — no card required, no Stripe Checkout URL will be created.
+          </div>
+        )}
         <div className="space-y-2">
           <PaymentChoice active={collectionMethod === "charge_automatically"}
-            onClick={() => setCollectionMethod("charge_automatically")}
+            onClick={() => { if (!couponIs100Off) setCollectionMethod("charge_automatically"); }}
+            disabled={couponIs100Off}
             title="Charge automatically (Stripe Checkout link)"
             desc="Stripe Checkout URL is generated. Client clicks it, enters card, card stays on file for recurring billing." />
           <PaymentChoice active={collectionMethod === "send_invoice"}
@@ -1763,11 +1828,12 @@ function Step3Checkout({ couponQuery, setCouponQuery, couponOptions, couponLoadi
   );
 }
 
-function PaymentChoice({ active, onClick, title, desc }: { active: boolean; onClick: () => void; title: string; desc: string }) {
+function PaymentChoice({ active, onClick, title, desc, disabled }: { active: boolean; onClick: () => void; title: string; desc: string; disabled?: boolean }) {
   return (
-    <button onClick={onClick}
-      className={`w-full text-left p-4 rounded-xl border-2 ${active ? "bg-white" : "border-slate-200 bg-white hover:border-slate-300"}`}
+    <button onClick={onClick} disabled={disabled}
+      className={`w-full text-left p-4 rounded-xl border-2 ${active ? "bg-white" : "border-slate-200 bg-white hover:border-slate-300"} disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-slate-200`}
       style={active ? { borderColor: ACCENT } : {}}
+      title={disabled ? "Disabled — coupon covers 100%, no charge needed" : undefined}
     >
       <div className="text-sm font-bold" style={{ color: INK }}>{title}</div>
       <div className="text-xs text-slate-500 mt-1">{desc}</div>
