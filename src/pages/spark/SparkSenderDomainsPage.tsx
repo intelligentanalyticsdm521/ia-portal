@@ -91,6 +91,11 @@ export function SparkSenderDomainsPage() {
   const [senderMode, setSenderMode] = useState<"ia_default" | "white_label" | null>(null);
   const [hostingerManaged, setHostingerManaged] = useState<boolean>(false);
   const [savingMode, setSavingMode] = useState(false);
+  // Surfaced when persisting sender_mode fails. Previously a silent
+  // .catch(()=>null) swallowed the 404 so a missing/broken /spark-settings
+  // endpoint left the picker looking saved when it wasn't (#116). We now show
+  // a small inline message so a future regression is visible.
+  const [settingsError, setSettingsError] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     if (!ready) return;
@@ -98,12 +103,15 @@ export function SparkSenderDomainsPage() {
     try {
       const [d, s] = await Promise.all([
         get<{ data: Domain[] }>("/api/v1/sender-domains"),
-        // Best-effort — the spark-settings endpoint may not exist yet;
-        // a 404 here just means we fall back to defaults.
-        get<SparkSettingsResp>("/api/v1/spark-settings").catch(() => ({} as SparkSettingsResp)),
+        // Best-effort on read: if /spark-settings is unreachable we fall back
+        // to the IA default rather than crashing the whole page. `null` here
+        // means "read failed"; we distinguish that below from a genuine empty.
+        get<SparkSettingsResp>("/api/v1/spark-settings").catch(() => null),
       ]);
       setList(d?.data || []);
-      setSenderMode(s?.data?.sender_mode ?? null);
+      // On a failed read, default to 'ia_default' (safe, no-DNS mode) instead
+      // of leaving the mode null / banner blank.
+      setSenderMode(s?.data?.sender_mode ?? "ia_default");
       setHostingerManaged(!!s?.data?.hostinger_managed);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
@@ -137,21 +145,31 @@ export function SparkSenderDomainsPage() {
 
   async function pickIaDefault() {
     setSavingMode(true);
+    setSettingsError(null);
     try {
-      // Best-effort persist. If the endpoint isn't there yet, we still
-      // close the wizard — the tenant's intent is captured client-side
-      // until LUMEN-API ships the persistence route.
-      await post("/api/v1/spark-settings", { sender_mode: "ia_default" }).catch(() => null);
+      // Persist the choice. If the endpoint fails we still advance the wizard
+      // (the tenant's intent is honored client-side) but surface an inline
+      // error so a persistence regression is visible instead of silent (#116).
+      await post("/api/v1/spark-settings", { sender_mode: "ia_default" });
       setSenderMode("ia_default");
+      setWizardStep("done");
+    } catch (err) {
+      setSenderMode("ia_default");
+      setSettingsError(`Your choice may not have been saved: ${(err as Error).message}`);
       setWizardStep("done");
     } finally { setSavingMode(false); }
   }
 
   async function pickWhiteLabel() {
     setSavingMode(true);
+    setSettingsError(null);
     try {
-      await post("/api/v1/spark-settings", { sender_mode: "white_label" }).catch(() => null);
+      await post("/api/v1/spark-settings", { sender_mode: "white_label" });
       setSenderMode("white_label");
+      setWizardStep("collect");
+    } catch (err) {
+      setSenderMode("white_label");
+      setSettingsError(`Your choice may not have been saved: ${(err as Error).message}`);
       setWizardStep("collect");
     } finally { setSavingMode(false); }
   }
@@ -308,6 +326,19 @@ export function SparkSenderDomainsPage() {
       loading={loading}
       error={error}
     >
+      {/* Persistence error — sender_mode couldn't be saved (#116). */}
+      {settingsError && (
+        <div className="mb-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 flex items-center justify-between gap-2">
+          <span>{settingsError}</span>
+          <button
+            onClick={() => setSettingsError(null)}
+            className="text-xs px-2 py-1 rounded border border-amber-300 text-amber-700 hover:bg-white shrink-0"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Current mode banner */}
       {senderMode && (
         <div className="mb-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm flex items-center justify-between">
