@@ -30,7 +30,7 @@ export const SPARK_CREATE_FIRST_CONTACT: InteractiveFlow = {
       placement: "bottom",
     },
     {
-      targetSelector: 'input[name="first_name"]',
+      targetSelector: 'input[data-tour="contact-first-name"]',
       advance: "input",
       waitForMs: 1500,
       title: "Type their first name",
@@ -38,7 +38,7 @@ export const SPARK_CREATE_FIRST_CONTACT: InteractiveFlow = {
       placement: "right",
     },
     {
-      targetSelector: 'input[name="email"]',
+      targetSelector: 'input[data-tour="contact-email"]',
       advance: "input",
       title: "Add their email",
       body: "This is how SPARK matches them against email campaigns and companies. Case doesn't matter.",

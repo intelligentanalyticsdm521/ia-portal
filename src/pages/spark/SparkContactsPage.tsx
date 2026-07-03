@@ -436,7 +436,7 @@ export function SparkContactsPage() {
           <button onClick={() => setDrawer("import")} className="spark-btn spark-btn-secondary">
             <Upload className="h-3.5 w-3.5" /> Import
           </button>
-          <button onClick={() => setDrawer("add")} className="spark-btn spark-btn-accent">
+          <button data-tour="new-contact" onClick={() => setDrawer("add")} className="spark-btn spark-btn-accent">
             <Plus className="h-3.5 w-3.5" /> New contact
           </button>
         </>
@@ -583,7 +583,7 @@ export function SparkContactsPage() {
         footer={
           <>
             <button onClick={() => setDrawer(null)} className="spark-btn spark-btn-secondary">Cancel</button>
-            <button onClick={handleAdd} disabled={saving || (!form.first_name && !form.email)} className="spark-btn spark-btn-primary">
+            <button data-tour="save-contact" onClick={handleAdd} disabled={saving || (!form.first_name && !form.email)} className="spark-btn spark-btn-primary">
               {saving ? "Saving…" : "Save contact"}
             </button>
           </>
@@ -592,16 +592,16 @@ export function SparkContactsPage() {
         <div className="grid grid-cols-2 gap-3">
           <div className="spark-field">
             <label className="spark-field-label">First name</label>
-            <input className="spark-field-input" value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} autoFocus />
+            <input data-tour="contact-first-name" name="first_name" className="spark-field-input" value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} autoFocus />
           </div>
           <div className="spark-field">
             <label className="spark-field-label">Last name</label>
-            <input className="spark-field-input" value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} />
+            <input data-tour="contact-last-name" name="last_name" className="spark-field-input" value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} />
           </div>
         </div>
         <div className="spark-field">
           <label className="spark-field-label">Email</label>
-          <input type="email" className="spark-field-input" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="name@company.com" />
+          <input data-tour="contact-email" name="email" type="email" className="spark-field-input" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="name@company.com" />
         </div>
         <div className="spark-field">
           <label className="spark-field-label">Phone</label>

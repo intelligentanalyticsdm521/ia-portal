@@ -848,7 +848,13 @@ export function SubNav({ config }: SubNavProps) {
           const Icon = group.icon;
 
           return (
-            <div key={gi} className={gi > 0 ? "mt-1" : ""}>
+            <div
+              key={gi}
+              className={gi > 0 ? "mt-1" : ""}
+              // #256 2026-07-04: expose sectionId so the derived-tour runner's
+              // group-intro step can spotlight the entire nav group.
+              data-subnav-group={sid || group.label || undefined}
+            >
               {/* Section header — collapsible with icon, or standalone link.
                   Clicking routes to the section's landing page (usually Overview) AND expands. */}
               {group.label && group.collapsible ? (

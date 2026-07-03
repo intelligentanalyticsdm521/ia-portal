@@ -130,28 +130,16 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
           raf = requestAnimationFrame(measure);
           return;
         }
-        // #256 bug fix (2026-07-03): Brandon reported "sometimes it displays
-        // blank steps" + "isn't highlighting the pieces." Root cause: target
-        // element never appears (route changed, nav collapsed, feature-flag
-        // hidden), and previously we rendered the tooltip anyway with just a
-        // dark backdrop and no spotlight. Auto-skip to the next step instead
-        // so the user never sees a "broken" step. Log a warn so we can catch
-        // stale selectors in dev.
+        // #256 2026-07-04 FIX: When target selector fails to appear, render
+        // the tooltip CENTERED with the step's title + body so the user always
+        // sees content. Previous auto-skip made steps appear to "flip through
+        // with no popups" (Brandon report). Now every step renders content
+        // even when the target isn't on-screen.
         console.warn(
-          `[GuidedTour] target selector "${step.targetSelector}" not found after 4s in tour "${tour.id}" step ${stepIdx + 1}/${tour.steps.length}. Auto-advancing.`,
+          `[GuidedTour] target "${step.targetSelector}" not found after 4s in tour "${tour.id}" step ${stepIdx + 1}/${tour.steps.length}. Rendering centered fallback.`,
         );
-        // Advance on the next tick so React sees a coherent state change.
-        setTimeout(() => {
-          if (cancelled) return;
-          if (stepIdx + 1 >= tour.steps.length) {
-            // Last step — treat as center hero card so the "Finish" button
-            // is still reachable instead of finishing silently.
-            setTargetRect(null);
-            setReady(true);
-          } else {
-            setStepIdx((i) => i + 1);
-          }
-        }, 0);
+        setTargetRect(null);
+        setReady(true);
         return;
       }
       if (elapsed < minWait) {
@@ -903,7 +891,19 @@ export const ARION_QUICK_TOUR: TourDef = {
   ],
 };
 
-export const ALL_TOURS: TourDef[] = [OLIVER_QUICK_TOUR, SPARK_QUICK_TOUR, ARION_QUICK_TOUR];
+// #256 2026-07-04: ALL_TOURS now merges the auto-generated per-platform
+// "Full Tour" (derived from SUB_NAV_CONFIGS — every nav item covered
+// automatically, selectors stay in sync with any nav refactor) with the
+// legacy hand-written QUICK tours (kept as a fallback / short intro).
+// The derived tours appear first so they're the default for the "Tours"
+// launcher menu.
+import { buildAllDerivedTours } from "./derivedTours";
+export const ALL_TOURS: TourDef[] = [
+  ...buildAllDerivedTours(),
+  OLIVER_QUICK_TOUR,
+  SPARK_QUICK_TOUR,
+  ARION_QUICK_TOUR,
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // #256 sub-nav section support.
@@ -926,10 +926,22 @@ const SECTION_RE = /\/app\/(?:arion|spark|oliver)\/([a-z-]+)/;
 
 /** Extract the sub-nav section key for a step, or "General" if none matches. */
 export function sectionForStep(step: TourStep): string {
+  // #256 2026-07-04: derived tours attach step.section directly from the
+  // SubNavConfig group.sectionId. Prefer that over the route-regex fallback
+  // because /app/services/{key} routes never match the regex.
+  // @ts-expect-error section is a runtime addition from derivedTours
+  const s = step.section as string | undefined;
+  if (s) return s;
   const hay = step.route || "";
   const selHay = step.targetSelector || "";
   const m = SECTION_RE.exec(hay) || SECTION_RE.exec(selHay);
   return m ? m[1] : "General";
+}
+
+/** Human-readable section label — prefers step.sectionLabel from derivedTours. */
+export function sectionLabelForStep(step: TourStep): string | undefined {
+  // @ts-expect-error sectionLabel is a runtime addition from derivedTours
+  return step.sectionLabel as string | undefined;
 }
 
 /**
@@ -949,14 +961,18 @@ export function filterTourToSection(tour: TourDef, sectionKey: string): TourDef 
   };
 }
 
-/** Group a tour's steps by section, preserving first-appearance order. */
-export function groupTourSections(tour: TourDef): { key: string; count: number }[] {
-  const seen = new Map<string, number>();
+/** Group a tour's steps by section, preserving first-appearance order.
+ *  Returns { key, label, count } — label is the human-readable name from
+ *  the SubNavConfig group when available, otherwise the key itself. */
+export function groupTourSections(tour: TourDef): { key: string; label: string; count: number }[] {
+  const seen = new Map<string, { label: string; count: number }>();
   for (const s of tour.steps) {
     const k = sectionForStep(s);
-    seen.set(k, (seen.get(k) ?? 0) + 1);
+    const cur = seen.get(k);
+    if (cur) cur.count += 1;
+    else seen.set(k, { label: sectionLabelForStep(s) || k, count: 1 });
   }
-  return Array.from(seen.entries()).map(([key, count]) => ({ key, count }));
+  return Array.from(seen.entries()).map(([key, v]) => ({ key, label: v.label, count: v.count }));
 }
 
 // Returns the first tour that hasn't been completed for this user — used by
