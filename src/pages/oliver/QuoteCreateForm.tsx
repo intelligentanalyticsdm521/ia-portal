@@ -86,6 +86,13 @@ function contactName(c: ContactListItem) {
   return c.company_name || `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || c.email || "(no name)";
 }
 
+interface ProposalTemplate {
+  template_id: string;
+  name: string;
+  body: any;
+  is_default?: boolean;
+}
+
 export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialContactId }: CreateQuoteProps) {
   const { get, post, ready } = useOliverApi();
   const [mode, setMode] = useState<"customer" | "job">(initialJobId ? "job" : "customer");
@@ -105,28 +112,65 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
   const [invDisc, setInvDisc] = useState<Disc>({ ...NO_DISC });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // #77 — Proposal template picker (symmetric with New Proposal drawer).
+  const [templates, setTemplates] = useState<ProposalTemplate[]>([]);
+  const [templateId, setTemplateId] = useState("");
 
   useEffect(() => {
     if (!ready) return;
     (async () => {
       try {
-        const [c, o, j1, j2, j3, cp] = await Promise.all([
+        const [c, o, j1, j2, j3, cp, tpl] = await Promise.all([
           get<ContactListItem[]>("/contacts"),
           get<Offering[]>("/catalog/offerings?include_prices=1").catch(() => [] as Offering[]),
           get<JobListItem[]>("/jobs?status=inquiry&per_page=50").catch(() => [] as JobListItem[]),
           get<JobListItem[]>("/jobs?status=quoted&per_page=50").catch(() => [] as JobListItem[]),
           get<JobListItem[]>("/jobs?status=scheduled&per_page=50").catch(() => [] as JobListItem[]),
           get<CouponLite[]>("/coupons").catch(() => [] as CouponLite[]),
+          get<ProposalTemplate[]>("/proposal-templates").catch(() => [] as ProposalTemplate[]),
         ]);
         setContacts(c || []);
         setOfferings(o || []);
         setJobs([...(j1 || []), ...(j2 || []), ...(j3 || [])]);
         setCoupons(cp || []);
+        setTemplates(tpl || []);
       } catch (e) {
         setError(`Failed to load data: ${(e as Error).message}`);
       }
     })();
   }, [get, ready]);
+
+  function applyTemplate(t: ProposalTemplate) {
+    const b = t.body || {};
+    if (Array.isArray(b.line_items) && b.line_items.length > 0) {
+      setItems(b.line_items.map((it: any) => ({
+        description: String(it?.description ?? ""),
+        quantity: Number(it?.quantity ?? 1),
+        unit_price: Number(it?.unit_price ?? 0),
+      })));
+    }
+    if (typeof b.tax_rate === "number") {
+      setTaxMode("percent");
+      setTaxRate(String(b.tax_rate));
+    }
+    // Canonical body has `terms` (not `notes`); fall back to `scope`.
+    const noteSource = typeof b.terms === "string" && b.terms
+      ? b.terms
+      : (typeof b.scope === "string" ? b.scope : "");
+    if (noteSource) setNotes(noteSource);
+    if (typeof b.valid_until_days === "number" && b.valid_until_days > 0) {
+      const d = new Date();
+      d.setDate(d.getDate() + b.valid_until_days);
+      setValidUntil(d.toISOString().slice(0, 10));
+    }
+  }
+
+  function onSelectTemplate(id: string) {
+    setTemplateId(id);
+    if (!id) return;
+    const t = templates.find((x) => x.template_id === id);
+    if (t) applyTemplate(t);
+  }
 
   const totals = useMemo(() => {
     let gross = 0, lineDiscounts = 0;
@@ -222,6 +266,19 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
         <button className={`ptab${docType === "quote" ? " active" : ""}`} onClick={() => setDocType("quote")}>Quote</button>
         <button className={`ptab${docType === "proposal" ? " active" : ""}`} onClick={() => setDocType("proposal")}>Proposal</button>
       </div>
+
+      {templates.length > 0 && (
+        <Field label="Start from template (optional)" style={{ marginBottom: 12 }}>
+          <select value={templateId} onChange={(e) => onSelectTemplate(e.target.value)} style={selectStyle}>
+            <option value="">— No template —</option>
+            {templates.map((t) => (
+              <option key={t.template_id} value={t.template_id}>
+                {t.name}{t.is_default ? " (default)" : ""}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
 
       {error && (
         <div style={{

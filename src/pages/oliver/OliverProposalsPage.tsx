@@ -353,6 +353,11 @@ function CreateProposalDrawer({
 }) {
   const [contacts, setContacts] = useState<Array<{ contact_id: string; first_name?: string; last_name?: string; email?: string; company_name?: string }>>([]);
   const [contactId, setContactId] = useState("");
+  // #77 — Proposal template picker. Fetched alongside contacts; canonical
+  // template.body shape:
+  //   { title?, scope?, terms?, line_items?, tax_rate?, valid_until_days? }
+  const [templates, setTemplates] = useState<Array<{ template_id: string; name: string; body: any; is_default?: boolean }>>([]);
+  const [templateId, setTemplateId] = useState("");
   const [title, setTitle] = useState("");
   const [scope, setScope] = useState("");
   const [terms, setTerms] = useState("Payment due within 30 days of acceptance.");
@@ -375,8 +380,52 @@ function CreateProposalDrawer({
         const r = await api.get<Array<{ contact_id: string; first_name?: string; last_name?: string; email?: string; company_name?: string }>>("/contacts?per_page=200");
         setContacts(Array.isArray(r) ? r : []);
       } catch { setContacts([]); }
+      try {
+        const t = await api.get<Array<{ template_id: string; name: string; body: any; is_default?: boolean }>>("/proposal-templates");
+        const list = Array.isArray(t) ? t : [];
+        setTemplates(list);
+        // Auto-pick the default template on mount, if any.
+        if (list.length > 0) {
+          const def = list.find((x) => x.is_default);
+          if (def) {
+            setTemplateId((prev) => {
+              if (prev) return prev;
+              applyTemplate(def);
+              return def.template_id;
+            });
+          }
+        }
+      } catch { setTemplates([]); }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
+
+  function applyTemplate(t: { template_id: string; name: string; body: any }) {
+    const b = t.body || {};
+    if (typeof b.title === "string" && b.title.trim()) setTitle(b.title);
+    if (typeof b.scope === "string") setScope(b.scope);
+    if (typeof b.terms === "string") setTerms(b.terms);
+    if (typeof b.tax_rate === "number") setTaxRate(String(b.tax_rate));
+    if (Array.isArray(b.line_items) && b.line_items.length > 0) {
+      setItems(b.line_items.map((it: any) => ({
+        description: String(it?.description ?? ""),
+        quantity: Number(it?.quantity ?? 1),
+        unit_price: Number(it?.unit_price ?? 0),
+      })));
+    }
+    if (typeof b.valid_until_days === "number" && b.valid_until_days > 0) {
+      const d = new Date();
+      d.setDate(d.getDate() + b.valid_until_days);
+      setValidUntil(d.toISOString().slice(0, 10));
+    }
+  }
+
+  function onSelectTemplate(id: string) {
+    setTemplateId(id);
+    if (!id) return;
+    const t = templates.find((x) => x.template_id === id);
+    if (t) applyTemplate(t);
+  }
 
   const subtotal = items.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price || 0), 0);
   const tax = subtotal * (Number(taxRate) / 100);
@@ -437,6 +486,20 @@ function CreateProposalDrawer({
         </div>
 
         <div style={{ padding: 20, display: "grid", gap: 14 }}>
+          {templates.length > 0 && (
+            <label style={{ display: "block" }}>
+              <span style={pLabel}>Start from template (optional)</span>
+              <select style={pInput} value={templateId} onChange={(e) => onSelectTemplate(e.target.value)}>
+                <option value="">— No template —</option>
+                {templates.map((t) => (
+                  <option key={t.template_id} value={t.template_id}>
+                    {t.name}{t.is_default ? " (default)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
           <label style={{ display: "block" }}>
             <span style={pLabel}>Proposal title</span>
             <input type="text" style={pInput}
