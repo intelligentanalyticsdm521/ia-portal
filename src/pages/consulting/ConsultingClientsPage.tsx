@@ -113,7 +113,10 @@ export default function ConsultingClientsPage() {
       isFounder
         ? getFounder<{ tenant?: TenantWorkspaceLite }>(`/admin/tenant-workspace/${encodeURIComponent(tid)}`).catch(() => null)
         : Promise.resolve(null),
-      get<ClientProjectRow[]>("/consulting/projects").catch(() => []),
+      // F-Founder.1 — server-side filter by linked_tenant_id so we don't
+      // pull every founder project just to filter to one. The client-side
+      // filter below stays as a safety net.
+      get<ClientProjectRow[]>(`/consulting/projects?linked_tenant_id=${encodeURIComponent(tid)}`).catch(() => []),
     ])
       .then(([wsResp, projResp]) => {
         if (cancelled) return;
