@@ -153,6 +153,19 @@ export function OliverPortalDomainsPage() {
     } finally { setBusyPortal(null); }
   }
 
+  // Auto-poll: while any active portal domain row is in a non-terminal state
+  // (pending / validating / provisioning / building / deploying), silently
+  // re-fetch the list every 45s so the Ready/Failed transition surfaces
+  // without the user hitting Refresh. Stops the moment no non-terminal rows
+  // remain (or on unmount).
+  useEffect(() => {
+    const NON_TERMINAL = new Set(["pending", "validating", "provisioning", "building", "deploying"]);
+    const anyNonTerminal = domains.some((d) => d.is_active && NON_TERMINAL.has(d.status));
+    if (!anyNonTerminal) return;
+    const id = window.setInterval(() => { reload(); }, 45000);
+    return () => window.clearInterval(id);
+  }, [domains, reload]);
+
   async function disconnect(d: PortalDomain) {
     if (!confirm(`Disconnect ${d.hostname}? This removes the SWA binding + DNS record. The default subdomain will continue to work.`)) return;
     setBusyPortal(d.portal_kind);
