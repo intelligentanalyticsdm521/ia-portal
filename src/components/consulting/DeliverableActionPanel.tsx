@@ -21,9 +21,17 @@
 //   POST /consulting/deliverables/:id/revision        — body { revision_notes }
 //   POST /consulting/deliverables/:id/send-to-client  — founder transitions
 //                                                       pending → awaiting_client_review.
-//   POST /consulting/deliverables/:id/pay             — milestone payment
-//                                                       trigger; redirects to
-//                                                       OLIVER F2 charge flow.
+//   POST /consulting/deliverables/:id/pay             — client-side deliverable
+//                                                       pay. STILL DEFERRED
+//                                                       (ADR-006): client pays
+//                                                       via a Stripe portal
+//                                                       invoice link; status
+//                                                       syncs from the webhook.
+//                                                       Founder-side milestone
+//                                                       charges go through
+//                                                       POST /payment-milestones/:id/approve
+//                                                       (confirm_charge), NOT
+//                                                       this route.
 //
 // Per SCOPE_WORKING.md Delta 4 (locked 2026-06-28): one component, role-aware,
 // payment-trigger only shown when the host context is a milestone AND the
@@ -124,10 +132,11 @@ export interface DeliverableActionPanelProps {
   /** Optional override mirroring onApprove for the revisions branch. */
   onRequestRevision?: (notes: string) => Promise<void> | void;
   /**
-   * Optional pay-CTA override. Default behaviour POSTs to the
-   * /consulting/deliverables/:id/pay endpoint which redirects through
-   * OLIVER F2. Hosts that already own the Stripe checkout flow can wire
-   * their own here.
+   * Optional pay-CTA override. Default behaviour POSTs to
+   * /consulting/deliverables/:id/pay, which is still deferred server-side
+   * (ADR-006 — client pays via Stripe portal invoice link). Hosts that own a
+   * working Stripe checkout flow should wire their own handler here; otherwise
+   * the default surfaces the backend's not-yet-implemented message.
    */
   onPay?: () => Promise<void> | void;
   /**

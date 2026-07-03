@@ -697,9 +697,19 @@ function ManageCategoriesModal({
 // clones the milestone template, returns the new project_id, and the page
 // navigates to the project detail surface.
 
+// New Project picker row. The backend broadened /consulting/_/active-oliver-clients
+// (LOCKED SCOPE 2026-07-04) from OLIVER-subscribers-only to ALL founder-tenant
+// lumen.contact rows. Contacts that haven't onboarded a tenant yet return
+// tenant_id=null + has_tenant=false and are linked to the project by
+// lumen_contact_id instead of linked_tenant_id.
 interface ClientPickerRow {
-  tenant_id: string;
+  /** null until the contact onboards a tenant. */
+  tenant_id: string | null;
+  /** Display label — resolved name → company → first+last → email. */
   business_name: string;
+  lumen_contact_id?: number | string | null;
+  has_tenant?: boolean;
+  linked_tenant_id?: string | null;
 }
 
 function NewProjectModal({
@@ -717,31 +727,58 @@ function NewProjectModal({
   const [step, setStep] = useState<"category" | "details">("category");
   const [categoryId, setCategoryId] = useState<string>("");
   const [name, setName] = useState("");
-  const [clientTenantId, setClientTenantId] = useState<string>("");
+  // Selected client is keyed by a synthetic option value so we can carry
+  // either a tenant_id (onboarded client) or a lumen_contact_id (contact-only
+  // client with no tenant yet). "" ⇒ Internal.
+  const [clientKey, setClientKey] = useState<string>("");
   const [description, setDescription] = useState("");
   const [clients, setClients] = useState<ClientPickerRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // G4-PROJECT-OWNER-SELECTOR (LOCKED 2026-07-03) — Picker limited to
-  // tenants with an active OLIVER subscription per Brandon: "When I create
-  // a new project I should be able to select from any active OLIVER
-  // client determined by our workflow." Was the consulting-tickets client
-  // list, which surfaced any tenant with a historical ticket — often
-  // stale.
+  // G4-PROJECT-OWNER-SELECTOR — picker source. Brandon LOCKED SCOPE 2026-07-04
+  // broadened this from OLIVER-subscribers-only to ALL founder-tenant contacts
+  // (overriding the 2026-07-03 OLIVER-only lock). The endpoint returns
+  // { data: { clients: [...] } } — useOliverApi auto-unwraps the outer {data}
+  // envelope, so `r` is { clients: [...] }. Contacts without a tenant carry
+  // tenant_id=null and are linked to the project by lumen_contact_id.
   useEffect(() => {
     let cancelled = false;
-    get<{ clients: Array<{ tenant_id: string; business_name: string; tier?: string }> }>(
+    get<{ clients: Array<Partial<ClientPickerRow> & { display_name?: string | null; company_name?: string | null; email?: string | null }> }>(
       "/consulting/_/active-oliver-clients",
     )
       .then((r) => {
         if (cancelled) return;
         const list = r?.clients || [];
-        setClients(list.map((c) => ({ tenant_id: c.tenant_id, business_name: c.business_name })));
+        setClients(
+          list.map((c) => ({
+            tenant_id: c.tenant_id ?? null,
+            business_name:
+              (c.business_name && c.business_name !== "(unnamed)" ? c.business_name : null) ||
+              c.display_name ||
+              c.company_name ||
+              c.email ||
+              "(unnamed)",
+            lumen_contact_id: c.lumen_contact_id ?? null,
+            has_tenant: c.has_tenant ?? !!c.tenant_id,
+            linked_tenant_id: c.linked_tenant_id ?? c.tenant_id ?? null,
+          })),
+        );
       })
       .catch(() => { if (!cancelled) setClients([]); });
     return () => { cancelled = true; };
   }, [get]);
+
+  // Build stable option keys: prefer tenant_id, fall back to contact id.
+  const clientOptionKey = useCallback(
+    (c: ClientPickerRow): string =>
+      c.tenant_id ? `t:${c.tenant_id}` : c.lumen_contact_id != null ? `c:${c.lumen_contact_id}` : "",
+    [],
+  );
+  const selectedClientRow = useMemo(
+    () => clients.find((c) => clientOptionKey(c) === clientKey) || null,
+    [clients, clientKey, clientOptionKey],
+  );
 
   const selectedCategory = useMemo(
     () => categories.find((c) => c.category_id === categoryId) || null,
@@ -759,9 +796,15 @@ function NewProjectModal({
         name: name.trim(),
       };
       if (description.trim()) body.description = description.trim();
-      // Empty client tenant id ⇒ Internal project (linked_tenant_id NULL).
-      if (clientTenantId && clientTenantId !== CLIENT_INTERNAL_SENTINEL) {
-        body.linked_tenant_id = clientTenantId;
+      // Attach the picked client. An onboarded client links by tenant; a
+      // contact-only client links by lumen_contact_id (the backend accepts
+      // linked_tenant_id null in that case). Empty ⇒ Internal project.
+      if (selectedClientRow) {
+        if (selectedClientRow.tenant_id) {
+          body.linked_tenant_id = selectedClientRow.tenant_id;
+        } else if (selectedClientRow.lumen_contact_id != null) {
+          body.lumen_contact_id = selectedClientRow.lumen_contact_id;
+        }
       }
       const r = await post<{ project: { project_id: string } }>("/consulting/projects", body);
       const newId = r?.project?.project_id;
@@ -869,14 +912,19 @@ function NewProjectModal({
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Client</label>
               <select
-                value={clientTenantId}
-                onChange={(e) => setClientTenantId(e.target.value)}
+                value={clientKey}
+                onChange={(e) => setClientKey(e.target.value)}
                 className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm bg-white"
               >
                 <option value="">Internal (no client tenant)</option>
-                {clients.map((c) => (
-                  <option key={c.tenant_id} value={c.tenant_id}>{c.business_name}</option>
-                ))}
+                {clients.map((c) => {
+                  const key = clientOptionKey(c);
+                  return (
+                    <option key={key} value={key}>
+                      {c.business_name}{!c.has_tenant ? " (contact)" : ""}
+                    </option>
+                  );
+                })}
               </select>
               <p className="text-[11px] text-slate-500 mt-1">
                 Leave as Internal for IA-only projects (logo work, internal tooling, etc.).

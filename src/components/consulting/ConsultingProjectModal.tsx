@@ -13,11 +13,12 @@
 //     description card, category, contact card, owner avatar, dates,
 //     total budget. Status dropdown (founder can manually flip status).
 //   - Milestones tab: VERTICAL list (not inline) with numbered circles —
-//     complete=#38BDF8 (IL blue) checkmark, active=#FEC82C (OLIVER gold)
+//     complete=#38BDF8 (IL blue) checkmark, in-flight=#FEC82C (OLIVER gold)
 //     pulsing dot, not_started=outline only #CBD5E1. Expand on click shows
-//     description, status dropdown (founder advances), internal review
-//     checklist placeholder, and payment-trigger banner when applicable
-//     (banner reads "Payment splits arrive in F2").
+//     description, live status dropdown (founder advances/reverts via the
+//     migration-106 enum), internal review checklist placeholder, and a
+//     payment-trigger banner that reflects payment_charge_status. Completing
+//     an is_payment_trigger milestone flags the charge 'ready' server-side.
 //
 // API surface used (F1 only):
 //   GET  /consulting/projects/:id            → project row + milestones[]
@@ -25,12 +26,14 @@
 //                                              owed by the F1 backend agent;
 //                                              we render a graceful inline
 //                                              banner if the route 404s.
-//   PATCH /consulting/projects/:id            → status changes (founder)
+//   PATCH /consulting/projects/:id            → status changes (founder).
+//                                              Live (backend commit dfb6567);
+//                                              terminal statuses stamp closed_at.
 //   PATCH /consulting/projects/:id/milestones/:mid
-//                                            → milestone status changes.
-//                                              Stub for F1 — if the route
-//                                              404s, the modal surfaces
-//                                              "Coming in F2" inline.
+//                                            → milestone status changes. Live.
+//                                              complete stamps completed_at +
+//                                              auto-advances the next milestone;
+//                                              revert clears completed_at.
 //
 // Per [[no-tenant-in-ui]] this file uses "Business" / "Client" in any
 // customer-visible copy — schema names like client_tenant_id stay in code
@@ -57,7 +60,18 @@ type ProjectStatus =
   | "completed"
   | "cancelled";
 
-type MilestoneStatus = "not_started" | "active" | "in_progress" | "complete" | "skipped";
+// Canonical enum = migration 106 CHECK on consulting.project_milestone.status.
+// NO 'active' — writing it violates the CHECK and 500s the milestone write.
+// 'in_progress' is the schema's in-flight value (verified 2026-07-04 by the
+// backend agent against the migration directly).
+type MilestoneStatus =
+  | "not_started"
+  | "in_progress"
+  | "awaiting_client"
+  | "awaiting_internal"
+  | "complete"
+  | "blocked"
+  | "skipped";
 
 export interface ConsultingProjectMilestone {
   milestone_id: string;
@@ -192,38 +206,30 @@ export function ConsultingProjectModal({
 
   async function handleStatusChange(next: ProjectStatus) {
     if (!project) return;
+    setErr(null);
     try {
+      // PATCH /consulting/projects/:id is live (backend commit dfb6567).
+      // Terminal statuses (closed/completed/cancelled) stamp closed_at server-side.
       await patch(`/consulting/projects/${project.project_id}`, { status: next });
       await load();
       onChanged?.();
     } catch (e) {
-      const msg = (e as Error).message || "Could not save status";
-      // PATCH route arrives in a later F-feature (Brandon backend agent F1
-      // does not promise PATCH /consulting/projects/:id). Surface "coming in
-      // F2" on 404 so the founder doesn't see a raw stack.
-      if (msg.includes("404")) {
-        setErr("Status edits arrive in F2 — read-only for now.");
-      } else {
-        setErr(msg);
-      }
+      setErr((e as Error).message || "Could not save status");
     }
   }
 
   async function handleMilestoneStatusChange(mid: string, next: MilestoneStatus) {
+    setMilestoneNotice(null);
     try {
-      // Optimistic stub — see header doc. F1 backend may not ship this PATCH;
-      // we still call it so when the route lands we get the update for free.
+      // PATCH /consulting/projects/:id/milestones/:mid is live (backend commit
+      // dfb6567). complete stamps completed_at + auto-advances the next
+      // milestone; un-complete clears completed_at (Brandon's Rolling In It
+      // case); is_payment_trigger milestones flip payment_charge_status='ready'.
       await patch(`/consulting/projects/${projectId}/milestones/${mid}`, { status: next });
-      setMilestoneNotice(null);
       await load();
       onChanged?.();
     } catch (e) {
-      const msg = (e as Error).message || "Could not save milestone status";
-      if (msg.includes("404")) {
-        setMilestoneNotice("Milestone editing arrives in F2.");
-      } else {
-        setMilestoneNotice(msg);
-      }
+      setMilestoneNotice((e as Error).message || "Could not save milestone status");
     }
   }
 
@@ -830,11 +836,14 @@ function MilestoneRow({
   onStatusChange: (mid: string, s: MilestoneStatus) => void;
 }) {
   const [open, setOpen] = useState(false);
-  // Treat both 'active' and the legacy 'in_progress' as the visible "active"
-  // state — the schema uses 'in_progress' (oliver-api/routes/consulting.js:483)
-  // while the F1 brief vocabulary uses 'active'. The visual is identical.
+  // Schema in-flight states (migration 106): in_progress + the two "parked"
+  // waiting states all render with the gold pulsing "active" circle. NO
+  // 'active' value exists in the enum.
   const isComplete = milestone.status === "complete";
-  const isActive = milestone.status === "active" || milestone.status === "in_progress";
+  const isActive =
+    milestone.status === "in_progress" ||
+    milestone.status === "awaiting_client" ||
+    milestone.status === "awaiting_internal";
   const isSkipped = milestone.status === "skipped";
 
   const isPaymentTrigger = Boolean(
@@ -896,10 +905,11 @@ function MilestoneRow({
             <div className="text-xs italic text-slate-400">No description.</div>
           )}
 
-          {/* Founder status dropdown. F1 backend may not ship the PATCH route;
-              the handler surfaces "Coming in F2" inline on a 404 rather than
-              500ing the modal. Per the F1 brief, this is intentionally
-              optimistic-then-degrade. */}
+          {/* Founder status dropdown — PATCH /consulting/projects/:id/milestones/:mid
+              is live. Options MUST match the migration-106 CHECK enum exactly
+              (no 'active'). Setting 'complete' stamps completed_at + auto-advances
+              the next milestone; setting it back to not_started/in_progress
+              un-completes (clears completed_at) — Brandon's Rolling In It case. */}
           {viewerRole === "founder" && (
             <div className="flex flex-wrap items-center gap-2">
               <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -911,11 +921,22 @@ function MilestoneRow({
                 className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
               >
                 <option value="not_started">Not started</option>
-                <option value="active">Active</option>
                 <option value="in_progress">In progress</option>
+                <option value="awaiting_client">Awaiting client</option>
+                <option value="awaiting_internal">Awaiting internal</option>
+                <option value="blocked">Blocked</option>
                 <option value="complete">Complete</option>
                 <option value="skipped">Skipped</option>
               </select>
+              {isComplete && (
+                <button
+                  type="button"
+                  onClick={() => onStatusChange(milestone.milestone_id, "in_progress")}
+                  className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  Mark incomplete
+                </button>
+              )}
             </div>
           )}
 
@@ -926,17 +947,24 @@ function MilestoneRow({
               get an empty-state hint. */}
           <ChecklistPreview milestone={milestone} />
 
-          {/* Payment-trigger banner — F2 wires the actual charge controls.
-              Per the F1 brief this banner is intentionally read-only. */}
+          {/* Payment-trigger banner. Completing this milestone flips
+              payment_charge_status → 'ready' server-side (backend commit
+              dfb6567); the actual card charge runs through the existing
+              payment-milestone approve flow (confirm_charge). This banner
+              reflects that state instead of a deferred notice. */}
           {isPaymentTrigger && (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
               <div className="font-semibold">Payment milestone</div>
               <div className="mt-0.5">
                 {milestone.payment_pct
-                  ? `Triggers a ${milestone.payment_pct}% charge when marked complete.`
-                  : "Triggers a charge when marked complete."}
-                {" "}Payment splits arrive in F2.
+                  ? `Marking this complete flags a ${milestone.payment_pct}% charge as ready.`
+                  : "Marking this complete flags the charge as ready."}
               </div>
+              {milestone.payment_charge_status && milestone.payment_charge_status !== "n/a" && (
+                <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                  Charge: {milestone.payment_charge_status.replace(/_/g, " ")}
+                </div>
+              )}
             </div>
           )}
         </div>

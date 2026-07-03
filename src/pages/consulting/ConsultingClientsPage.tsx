@@ -31,11 +31,30 @@ interface ClientRow {
   has_byb_subscription?: boolean;
 }
 
-// G3-S7: use ?clients_nav=1 for the 4-branch server-side filter (per SCOPE_WORKING.md Delta 2 Amended). Backend at /admin/consulting/clients-nav-branch.
+// ?clients_nav=1 → server-side branch filter. Rebuilt 2026-07-04 (Brandon-
+// LOCKED): tenant rows (has_tenant=true, tenant_id set) UNION contact-only
+// rows (has_tenant=false, tenant_id null, lumen_contact_id set) for clients
+// whose onboarding project is attached by lumen_contact_id with no linked
+// tenant yet. Contact-only rows hide the Access-Portal / View-as buttons.
+type ClientsNavBranchReason =
+  | 'open_project'
+  | 'active_project'
+  | 'both'
+  | 'recently_closed'
+  | 'byb_sub'
+  | 'onboarding_in_progress'
+  | 'paid_finished_onboarding'
+  | 'active_oliver'
+  | 'has_project'
+  | 'contact_project'
+  | null;
+
 type ClientsNavRow = {
-  tenant_id: string;
+  tenant_id: string | null;
   name: string;
-  branch_reason: 'open_project' | 'active_project' | 'both' | 'recently_closed' | 'byb_sub' | 'paid_finished_onboarding' | null;
+  branch_reason: ClientsNavBranchReason;
+  has_tenant?: boolean;
+  lumen_contact_id?: number | string | null;
 };
 
 // F-Founder.1 — Client details modal shape. `/consulting/projects` returns
@@ -107,6 +126,12 @@ export default function ConsultingClientsPage() {
     setDetailsLoading(true);
     setDetailsTenant(null);
     setDetailsProjects([]);
+    // Contact-only rows (no tenant yet) can't hit tenant-scoped endpoints;
+    // show the modal with just the name + branch reason.
+    if (!tid) {
+      setDetailsLoading(false);
+      return () => { cancelled = true; };
+    }
     Promise.all([
       // /admin/tenant-workspace/:tid is founder-gated on the backend; guard
       // the frontend caller too so a non-founder view doesn't reject-log.
@@ -178,11 +203,15 @@ export default function ConsultingClientsPage() {
   function branchReasonLabel(r: ClientsNavRow['branch_reason']): string {
     switch (r) {
       case 'open_project':
-      case 'active_project': return 'Active project';
+      case 'active_project':
+      case 'has_project': return 'Active project';
       case 'both': return 'Build Your Brand + active project';
       case 'recently_closed': return 'Recently closed';
       case 'byb_sub': return 'Build Your Brand';
+      case 'onboarding_in_progress': return 'Onboarding in progress';
       case 'paid_finished_onboarding': return 'Paid — finished onboarding';
+      case 'active_oliver': return 'Active OLIVER';
+      case 'contact_project': return 'Onboarding (contact)';
       default: return '—';
     }
   }
@@ -227,37 +256,44 @@ export default function ConsultingClientsPage() {
               </tr>
             </thead>
             <tbody>
-              {live.map((c) => (
-                <tr
-                  key={c.tenant_id}
-                  className="border-t border-slate-100 hover:bg-slate-50 transition cursor-pointer"
-                  onClick={() => setSelectedClient(c)}
-                >
-                  <td className="px-4 py-3 font-semibold text-slate-900">{c.name || "Unnamed tenant"}</td>
-                  <td className="px-4 py-3 text-slate-600">{branchReasonLabel(c.branch_reason)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex items-center gap-2">
-                      {isFounder ? (
+              {live.map((c) => {
+                // Contact-only rows have no tenant yet — no view-as / portal
+                // access possible. Suppress those buttons; the row still opens
+                // the details modal on click.
+                const hasTenant = (c.has_tenant ?? !!c.tenant_id) && !!c.tenant_id;
+                const rowKey = c.tenant_id || `contact:${c.lumen_contact_id ?? c.name}`;
+                return (
+                  <tr
+                    key={rowKey}
+                    className="border-t border-slate-100 hover:bg-slate-50 transition cursor-pointer"
+                    onClick={() => setSelectedClient(c)}
+                  >
+                    <td className="px-4 py-3 font-semibold text-slate-900">{c.name || "Unnamed tenant"}</td>
+                    <td className="px-4 py-3 text-slate-600">{branchReasonLabel(c.branch_reason)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="inline-flex items-center gap-2">
+                        {isFounder && hasTenant ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); if (c.tenant_id) openClientWorkspace(c.tenant_id); }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50"
+                            title="See exactly what this client sees in their portal (read-only)"
+                          >
+                            <Eye className="h-3 w-3" />
+                            View as
+                          </button>
+                        ) : null}
                         <button
-                          onClick={(e) => { e.stopPropagation(); openClientWorkspace(c.tenant_id); }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50"
-                          title="See exactly what this client sees in their portal (read-only)"
+                          onClick={(e) => { e.stopPropagation(); setSelectedClient(c); }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold"
+                          style={{ background: CORE_BLUE }}
                         >
-                          <Eye className="h-3 w-3" />
-                          View as
+                          Open <ExternalLink className="h-3 w-3" />
                         </button>
-                      ) : null}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setSelectedClient(c); }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold"
-                        style={{ background: CORE_BLUE }}
-                      >
-                        Open <ExternalLink className="h-3 w-3" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -271,7 +307,7 @@ export default function ConsultingClientsPage() {
         loading={detailsLoading}
         tenant={detailsTenant}
         projects={detailsProjects}
-        rowFromList={selectedClient ? rows.find((r) => (r.tenant_id || "").toLowerCase() === selectedClient.tenant_id.toLowerCase()) || null : null}
+        rowFromList={selectedClient?.tenant_id ? rows.find((r) => (r.tenant_id || "").toLowerCase() === selectedClient.tenant_id!.toLowerCase()) || null : null}
         branchLabel={selectedClient ? branchReasonLabel(selectedClient.branch_reason) : ""}
         onClose={() => setSelectedClient(null)}
         onAccessPortal={(tid) => { openClientWorkspace(tid); }}
@@ -330,13 +366,17 @@ function ClientDetailsModal({
       footer={(
         <>
           <IadmButton variant="ghost" onClick={onClose}>Close</IadmButton>
-          <IadmButton
-            variant="primary"
-            onClick={() => onAccessPortal(client.tenant_id)}
-            icon={<ExternalLink className="h-3 w-3" />}
-          >
-            Access Portal
-          </IadmButton>
+          {/* Contact-only clients (no tenant yet) can't be portal-accessed —
+              they haven't onboarded a tenant. Hide the button for them. */}
+          {client.tenant_id ? (
+            <IadmButton
+              variant="primary"
+              onClick={() => onAccessPortal(client.tenant_id!)}
+              icon={<ExternalLink className="h-3 w-3" />}
+            >
+              Access Portal
+            </IadmButton>
+          ) : null}
         </>
       )}
     >
