@@ -130,8 +130,28 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
           raf = requestAnimationFrame(measure);
           return;
         }
-        setTargetRect(null);
-        setReady(true);
+        // #256 bug fix (2026-07-03): Brandon reported "sometimes it displays
+        // blank steps" + "isn't highlighting the pieces." Root cause: target
+        // element never appears (route changed, nav collapsed, feature-flag
+        // hidden), and previously we rendered the tooltip anyway with just a
+        // dark backdrop and no spotlight. Auto-skip to the next step instead
+        // so the user never sees a "broken" step. Log a warn so we can catch
+        // stale selectors in dev.
+        console.warn(
+          `[GuidedTour] target selector "${step.targetSelector}" not found after 4s in tour "${tour.id}" step ${stepIdx + 1}/${tour.steps.length}. Auto-advancing.`,
+        );
+        // Advance on the next tick so React sees a coherent state change.
+        setTimeout(() => {
+          if (cancelled) return;
+          if (stepIdx + 1 >= tour.steps.length) {
+            // Last step — treat as center hero card so the "Finish" button
+            // is still reachable instead of finishing silently.
+            setTargetRect(null);
+            setReady(true);
+          } else {
+            setStepIdx((i) => i + 1);
+          }
+        }, 0);
         return;
       }
       if (elapsed < minWait) {
