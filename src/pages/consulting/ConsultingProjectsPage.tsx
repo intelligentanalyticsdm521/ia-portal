@@ -723,12 +723,17 @@ function NewProjectModal({
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Reuse the consulting-tickets client list endpoint — same founder-gated
-  // view of every linked client tenant. Avoids inventing a duplicate
-  // /consulting/_/clients route.
+  // G4-PROJECT-OWNER-SELECTOR (LOCKED 2026-07-03) — Picker limited to
+  // tenants with an active OLIVER subscription per Brandon: "When I create
+  // a new project I should be able to select from any active OLIVER
+  // client determined by our workflow." Was the consulting-tickets client
+  // list, which surfaced any tenant with a historical ticket — often
+  // stale.
   useEffect(() => {
     let cancelled = false;
-    get<{ clients: Array<{ tenant_id: string; business_name: string }> }>("/consulting-tickets/_/clients")
+    get<{ clients: Array<{ tenant_id: string; business_name: string; tier?: string }> }>(
+      "/consulting/_/active-oliver-clients",
+    )
       .then((r) => {
         if (cancelled) return;
         const list = r?.clients || [];
