@@ -33,11 +33,11 @@ import { IadmModal, CORE_BLUE, PRODUCT_ACCENT } from "../IadmModal";
 import { ClientTenantProvider, type ClientTenantValue } from "../../lib/clientTenantContext";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useAccessToken } from "../../auth/useAccessToken";
-import { connectGoogle as arionConnectGoogle, createSeoProject as arionCreateSeoProject, markAppleClaimed as arionMarkAppleClaimed } from "../../lib/arionApi";
+import { connectGoogle as arionConnectGoogle, createSeoProject as arionCreateSeoProject, markAppleClaimed as arionMarkAppleClaimed, getTrackedKeywords as arionGetTrackedKeywords, addTrackedKeywords as arionAddTrackedKeywords, removeTrackedKeywords as arionRemoveTrackedKeywords, researchKeyword as arionResearchKeyword, type SeoTrackedKeyword, type SeoKeywordResearchResponse, type SeoKeywordResearchRow } from "../../lib/arionApi";
 import { InfoTip } from "../InfoTip";
 import { LogoPicker } from "../oliver/LogoPicker";
 import { PhoneInput } from "../PhoneInput";
-import { BarChart3, Building2, CheckCircle2, ExternalLink, Globe, MapPin, Plus, Search, Sparkles, Trash2, TrendingUp, UserCheck } from "lucide-react";
+import { AlertTriangle, BarChart3, Building2, CheckCircle2, ExternalLink, Globe, Loader2, MapPin, Plus, Search, Sparkles, Trash2, TrendingUp, UserCheck } from "lucide-react";
 import { mergeStrict } from "../../lib/mergeStrict";
 import { createRunner } from "../../lib/onboardingRunner/runner";
 import { buildArionSteps, type ArionDomainPath } from "../../lib/onboardingRunner/arionSteps";
@@ -1870,7 +1870,7 @@ function ArionSection({ v, setV, tenantId, profile, arionRunner, integ, setInteg
             has made the first new-vs-existing decision (same pattern
             the setup preview panel above uses). */}
       {v.siteMode && (
-        <ArionSeoToolsSubsection hasSeoAddon={hasSeoAddon} seoAddonTier={existingSite?.seoAddonTier || null} />
+        <ArionSeoToolsSubsection hasSeoAddon={hasSeoAddon} seoAddonTier={existingSite?.seoAddonTier || null} siteId={existingSite?.site_id || null} tenantId={tenantId} />
       )}
 
       {/* ── Google + Bing dual-path picker ────────────────────────────
@@ -1938,9 +1938,11 @@ function ArionSection({ v, setV, tenantId, profile, arionRunner, integ, setInteg
 // Catalog source: fetchArionSeoAddons() — never hardcode prices, per
 // feedback_no_fabricated_catalog. The catalog endpoint sits on arion-api
 // and returns Essentials/Growth/Authority with their pricing envelopes.
-function ArionSeoToolsSubsection({ hasSeoAddon, seoAddonTier }: {
+function ArionSeoToolsSubsection({ hasSeoAddon, seoAddonTier, siteId, tenantId }: {
   hasSeoAddon: boolean;
   seoAddonTier: string | null;
+  siteId: string | null;
+  tenantId: string;
 }) {
   const [showPicker, setShowPicker] = useState(false);
   const [addons, setAddons] = useState<Record<string, ArionSeoAddonEntry> | null>(null);
@@ -2003,6 +2005,17 @@ function ArionSeoToolsSubsection({ hasSeoAddon, seoAddonTier }: {
             <span className="text-emerald-800"> — your tools include {activeBlurb}.</span>
           </div>
         </div>
+      )}
+
+      {/* ── Keyword selection within the tier cap (PB-6) ──────────────────
+            When the tenant has an SEO add-on AND a live site (SE Ranking
+            project exists), surface a transparent keyword picker: shows the
+            tracked keywords, the tier cap, and lets the founder trim/add
+            within the cap during onboarding. This absorbs the Briarwood /
+            MWAG "over the cap" case — the founder sees the overage and trims
+            to fit before finishing, instead of discovering the cap later. */}
+      {hasSeoAddon && siteId && (
+        <ArionSeoKeywordPicker siteId={siteId} tenantId={tenantId} seoAddonTier={seoAddonTier} />
       )}
 
       {/* Upsell banner — customer did NOT buy an SEO add-on */}
@@ -2084,6 +2097,419 @@ function ArionSeoToolsSubsection({ hasSeoAddon, seoAddonTier }: {
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ArionSection · SEO keyword picker within tier cap (PB-6) ─────────────
+//
+// Transparent onboarding surface for the tier keyword cap. Renders only when
+// the tenant has an ARION SEO add-on AND a live SE Ranking project. Reuses the
+// same arion-api endpoints the post-launch SEO dashboard uses:
+//   GET    /arion/seo/keywords          — list tracked keywords (+tier)
+//   POST   /arion/seo/keywords/add      — add (tier-cap enforced server-side)
+//   DELETE /arion/seo/keywords          — remove (trim)
+//   POST   /arion/seo/keywords/research — seed → suggestions w/ volume/difficulty
+//
+// The value here is the founder SEES the cap during onboarding and can trim an
+// over-cap project (Briarwood/MWAG were migrated over their tier cap) to fit,
+// or add the client's target keywords up to the cap, without leaving the wizard.
+const KEYWORD_TIER_CAPS: Record<string, number> = { starter: 10, essentials: 25, growth: 60, authority: 150 };
+
+function ArionSeoKeywordPicker({ siteId, tenantId, seoAddonTier }: {
+  siteId: string;
+  tenantId: string;
+  seoAddonTier: string | null;
+}) {
+  const { getToken } = useAccessToken();
+
+  const [tracked, setTracked] = useState<SeoTrackedKeyword[]>([]);
+  const [projectId, setProjectId] = useState<string | number | null>(null);
+  const [respTier, setRespTier] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Research
+  const [seed, setSeed] = useState("");
+  const [research, setResearch] = useState<SeoKeywordResearchResponse | null>(null);
+  const [researching, setResearching] = useState(false);
+  const [researchError, setResearchError] = useState<string | null>(null);
+
+  // Selections
+  const [selAdd, setSelAdd] = useState<Set<string>>(new Set());
+  const [selRemove, setSelRemove] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState<null | "add" | "remove" | "paste">(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // Paste-many
+  const [pasteText, setPasteText] = useState("");
+
+  const tier = (respTier || seoAddonTier || "").toLowerCase();
+  const cap = KEYWORD_TIER_CAPS[tier] || 0;
+  const count = tracked.length;
+  const remaining = Math.max(cap - count, 0);
+  const overBy = cap > 0 ? Math.max(count - cap, 0) : 0;
+
+  async function reload() {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const token = await getToken();
+      const res = await arionGetTrackedKeywords({ baseUrl: ARION_API_BASE_URL, bearerToken: token.accessToken, tenantId, siteId });
+      setTracked(Array.isArray(res?.data) ? res.data : []);
+      setProjectId(res?.project_id ?? null);
+      setRespTier(res?.tier ? String(res.tier) : null);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const token = await getToken();
+        const res = await arionGetTrackedKeywords({ baseUrl: ARION_API_BASE_URL, bearerToken: token.accessToken, tenantId, siteId });
+        if (cancelled) return;
+        setTracked(Array.isArray(res?.data) ? res.data : []);
+        setProjectId(res?.project_id ?? null);
+        setRespTier(res?.tier ? String(res.tier) : null);
+      } catch (e) {
+        if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteId, tenantId]);
+
+  async function runResearch() {
+    if (!seed.trim()) return;
+    setResearching(true);
+    setResearchError(null);
+    setSelAdd(new Set());
+    setNotice(null);
+    setActionError(null);
+    try {
+      const token = await getToken();
+      const res = await arionResearchKeyword({ baseUrl: ARION_API_BASE_URL, bearerToken: token.accessToken, tenantId, siteId, seed: seed.trim(), region: "us", limit: 25 });
+      setResearch(res);
+    } catch (e) {
+      setResearchError(e instanceof Error ? e.message : String(e));
+      setResearch(null);
+    } finally {
+      setResearching(false);
+    }
+  }
+
+  // Flatten + dedupe the four research buckets into one candidate list. Already-
+  // tracked keywords are marked (not selectable). Simpler than the 4-tab dash —
+  // this is an onboarding assist, not the full research console.
+  const trackedNames = useMemo(
+    () => new Set(tracked.map((k) => String(k.name || "").toLowerCase())),
+    [tracked]
+  );
+  const candidates = useMemo<SeoKeywordResearchRow[]>(() => {
+    const d = research?.data;
+    if (!d) return [];
+    const rows = [...(d.suggestions || []), ...(d.related || []), ...(d.longtail || []), ...(d.questions || [])];
+    const seen = new Set<string>();
+    const out: SeoKeywordResearchRow[] = [];
+    for (const r of rows) {
+      const key = String(r.keyword || "").toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(r);
+    }
+    return out.slice(0, 40);
+  }, [research]);
+
+  function toggleAdd(keyword: string) {
+    setSelAdd((prev) => {
+      const next = new Set(prev);
+      if (next.has(keyword)) next.delete(keyword); else next.add(keyword);
+      return next;
+    });
+  }
+  function toggleRemove(id: string) {
+    setSelRemove((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function addSelected() {
+    if (selAdd.size === 0) return;
+    if (cap > 0 && count + selAdd.size > cap) {
+      setActionError(`Adding ${selAdd.size} would exceed your ${tier} cap of ${cap} (currently ${count}). Trim first or select fewer.`);
+      return;
+    }
+    setBusy("add");
+    setActionError(null);
+    setNotice(null);
+    try {
+      const token = await getToken();
+      const kws = Array.from(selAdd);
+      await arionAddTrackedKeywords({ baseUrl: ARION_API_BASE_URL, bearerToken: token.accessToken, tenantId, siteId, keywords: kws });
+      setNotice(`Added ${kws.length} keyword${kws.length === 1 ? "" : "s"}.`);
+      setSelAdd(new Set());
+      await reload();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function parsePasted(raw: string): string[] {
+    const lines = raw.split(/[\n,]+/).map((s) => s.trim().toLowerCase()).filter((s) => s.length >= 2 && s.length <= 80);
+    const seen = new Set<string>();
+    const unique: string[] = [];
+    for (const kw of lines) { if (!seen.has(kw)) { seen.add(kw); unique.push(kw); } }
+    return unique.filter((kw) => !trackedNames.has(kw));
+  }
+
+  async function addPasted() {
+    const list = parsePasted(pasteText);
+    if (list.length === 0) {
+      setActionError("No new keywords found (or all are already tracked).");
+      return;
+    }
+    if (cap > 0 && count + list.length > cap) {
+      setActionError(`Adding ${list.length} would exceed your ${tier} cap of ${cap} (currently ${count}).`);
+      return;
+    }
+    setBusy("paste");
+    setActionError(null);
+    setNotice(null);
+    try {
+      const token = await getToken();
+      await arionAddTrackedKeywords({ baseUrl: ARION_API_BASE_URL, bearerToken: token.accessToken, tenantId, siteId, keywords: list });
+      setNotice(`Added ${list.length} keyword${list.length === 1 ? "" : "s"}.`);
+      setPasteText("");
+      await reload();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeSelected() {
+    if (selRemove.size === 0) return;
+    setBusy("remove");
+    setActionError(null);
+    setNotice(null);
+    try {
+      const token = await getToken();
+      const ids = Array.from(selRemove).map((s) => Number(s)).filter((n) => Number.isFinite(n));
+      await arionRemoveTrackedKeywords({ baseUrl: ARION_API_BASE_URL, bearerToken: token.accessToken, tenantId, siteId, keywordIds: ids });
+      setNotice(`Removed ${ids.length} keyword${ids.length === 1 ? "" : "s"}.`);
+      setSelRemove(new Set());
+      await reload();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const inputCls = "w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-400";
+
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <Search className="h-4 w-4 text-sky-600 shrink-0" />
+          <div className="text-sm font-semibold text-slate-900">Tracked keywords</div>
+        </div>
+        <div className="text-[11px] font-medium text-slate-600">
+          {loading ? "Loading…" : cap > 0
+            ? <><span className={overBy > 0 ? "text-rose-600 font-semibold" : "text-slate-900 font-semibold"}>{count}</span> / {cap} · {remaining} slot{remaining === 1 ? "" : "s"} open</>
+            : <span className="text-slate-500">{count} tracked</span>}
+        </div>
+      </div>
+      <p className="mt-1 text-[11px] leading-snug text-slate-500">
+        These are the keywords your ARION SEO tools rank-track. The {tier || "current"} plan tracks up to {cap || "—"} — trim or add to fit before finishing.
+      </p>
+
+      {loadError && (
+        <div className="mt-2 rounded-md bg-rose-50 border border-rose-200 px-2.5 py-1.5 text-[11px] text-rose-800">
+          Couldn't load keywords: {loadError}
+        </div>
+      )}
+
+      {!loading && !loadError && projectId == null && (
+        <div className="mt-2 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-[11px] text-amber-900">
+          No SE Ranking project linked to this site yet. It's created during ARION provisioning — once it's live, keywords appear here.
+        </div>
+      )}
+
+      {!loading && !loadError && projectId != null && (
+        <>
+          {/* Over-cap trim banner (Briarwood / MWAG case) */}
+          {overBy > 0 && (
+            <div className="mt-2.5 rounded-md bg-rose-50 border border-rose-200 px-3 py-2 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-rose-600 mt-0.5 shrink-0" />
+              <div className="text-[11px] leading-snug text-rose-900">
+                <span className="font-semibold">{overBy} over the {tier} cap.</span> Select {overBy} below and remove {overBy === 1 ? "it" : "them"} to fit — or move the client to a higher tier.
+              </div>
+            </div>
+          )}
+
+          {notice && (
+            <div className="mt-2 rounded-md bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 text-[11px] text-emerald-800">{notice}</div>
+          )}
+          {actionError && (
+            <div className="mt-2 rounded-md bg-rose-50 border border-rose-200 px-2.5 py-1.5 text-[11px] text-rose-800">{actionError}</div>
+          )}
+
+          {/* Tracked list */}
+          <div className="mt-2.5 max-h-52 overflow-auto rounded-md border border-slate-200">
+            {tracked.length === 0 ? (
+              <div className="px-3 py-4 text-center text-[11px] text-slate-500">No keywords tracked yet. Add some below.</div>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {tracked.map((k) => {
+                  const id = String(k.id);
+                  const checked = selRemove.has(id);
+                  return (
+                    <li key={id} className="flex items-center gap-2 px-2.5 py-1.5">
+                      <input type="checkbox" checked={checked} onChange={() => toggleRemove(id)} className="shrink-0" />
+                      <span className="min-w-0 flex-1 truncate text-xs text-slate-800">
+                        {k.name || <em className="text-slate-400">(unnamed #{id})</em>}
+                      </span>
+                      {k.first_check_date ? (
+                        <span className="text-[10px] text-slate-400 shrink-0">{k.first_check_date}</span>
+                      ) : (
+                        <span className="text-[10px] text-slate-300 shrink-0">pending</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+          {selRemove.size > 0 && (
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <button type="button" onClick={() => setSelRemove(new Set())} className="rounded-md border border-slate-300 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50">Clear</button>
+              <button
+                type="button"
+                onClick={removeSelected}
+                disabled={busy === "remove"}
+                className="inline-flex items-center gap-1 rounded-md bg-rose-600 hover:bg-rose-700 px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-60"
+              >
+                {busy === "remove" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                Remove {selRemove.size}
+              </button>
+            </div>
+          )}
+
+          {/* Research */}
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            <div className="text-[11px] font-semibold text-slate-700 mb-1.5">Find keywords</div>
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                value={seed}
+                onChange={(e) => setSeed(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); runResearch(); } }}
+                placeholder='e.g. "mobile detailing des moines"'
+                className={inputCls}
+              />
+              <button
+                type="button"
+                onClick={runResearch}
+                disabled={!seed.trim() || researching}
+                className="inline-flex items-center gap-1 rounded-md bg-sky-600 hover:bg-sky-700 px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-60 shrink-0"
+              >
+                {researching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+                Research
+              </button>
+            </div>
+            {researchError && (
+              <div className="mt-1.5 text-[11px] text-rose-700">{researchError}</div>
+            )}
+            {research?.meta && (
+              <div className="mt-1 text-[10px] text-slate-400">
+                Daily research budget: {research.meta.used}/{research.meta.cap} used · {research.meta.remaining} left
+              </div>
+            )}
+            {candidates.length > 0 && (
+              <>
+                <div className="mt-2 max-h-52 overflow-auto rounded-md border border-slate-200">
+                  <ul className="divide-y divide-slate-100">
+                    {candidates.map((row, i) => {
+                      const already = trackedNames.has(String(row.keyword).toLowerCase());
+                      const checked = selAdd.has(row.keyword);
+                      return (
+                        <li key={`${row.keyword}-${i}`} className={`flex items-center gap-2 px-2.5 py-1.5 ${already ? "bg-emerald-50/60" : ""}`}>
+                          {already ? (
+                            <span className="text-[10px] font-medium text-emerald-600 w-10 shrink-0">Tracked</span>
+                          ) : (
+                            <input type="checkbox" checked={checked} onChange={() => toggleAdd(row.keyword)} className="shrink-0 w-10" />
+                          )}
+                          <span className="min-w-0 flex-1 truncate text-xs text-slate-800">{row.keyword}</span>
+                          <span className="text-[10px] text-slate-400 shrink-0">{Number(row.volume || 0).toLocaleString()}/mo · KD {row.difficulty ?? "—"}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+                {selAdd.size > 0 && (
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-slate-600">
+                      {selAdd.size} selected · leaves {Math.max(remaining - selAdd.size, 0)} open
+                    </span>
+                    <button
+                      type="button"
+                      onClick={addSelected}
+                      disabled={busy === "add"}
+                      className="inline-flex items-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-60"
+                    >
+                      {busy === "add" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                      Add {selAdd.size}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Paste-many */}
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            <div className="text-[11px] font-semibold text-slate-700 mb-1.5">Or paste your own</div>
+            <textarea
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              rows={2}
+              placeholder={"one per line, or comma-separated"}
+              className={`${inputCls} resize-y font-mono`}
+            />
+            <div className="mt-1.5 flex items-center justify-between">
+              <span className="text-[10px] text-slate-400">
+                {pasteText.trim() ? `${parsePasted(pasteText).length} new` : `${remaining} slot${remaining === 1 ? "" : "s"} open`}
+              </span>
+              <button
+                type="button"
+                onClick={addPasted}
+                disabled={!pasteText.trim() || busy === "paste" || remaining === 0}
+                className="inline-flex items-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-60"
+              >
+                {busy === "paste" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                Add
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
