@@ -287,7 +287,7 @@ type JobLayoutProps = {
   onAssignWorker: (workerId: string) => Promise<void>;
 };
 
-type JobTab = "details" | "lines" | "workers" | "activity";
+type JobTab = "details" | "lines" | "workers" | "activity" | "proof";
 
 function JobLayout(p: JobLayoutProps) {
   const [tab, setTab] = useState<JobTab>("details");
@@ -338,6 +338,7 @@ function JobLayout(p: JobLayoutProps) {
             <TabBtn label={`Line items${p.lineItems.length ? ` (${p.lineItems.length})` : ""}${p.lineItemsDirty ? " *" : ""}`} active={tab === "lines"} onClick={() => setTab("lines")} />
             <TabBtn label={`Workers & Time${job.assignedWorkers?.length ? ` (${job.assignedWorkers.length})` : ""}`} active={tab === "workers"} onClick={() => setTab("workers")} />
             <TabBtn label={`Activity${job.statusHistory?.length ? ` (${job.statusHistory.length})` : ""}`} active={tab === "activity"} onClick={() => setTab("activity")} />
+            <TabBtn label="Proof of Work" active={tab === "proof"} onClick={() => setTab("proof")} />
           </div>
 
           {tab === "details" && (
@@ -349,6 +350,10 @@ function JobLayout(p: JobLayoutProps) {
               startEditDetails={p.startEditDetails} saveDetails={p.saveDetails} cancelEditDetails={p.cancelEditDetails}
               saving={p.busy === "save-details"}
             />
+          )}
+
+          {tab === "proof" && (
+            <ProofReviewTab jobId={jobId} api={p.api} />
           )}
 
           {tab === "lines" && (
@@ -890,6 +895,184 @@ function AssignmentRow({
           style={{ fontSize: 11, padding: "3px 10px", border: "1px solid rgba(45,156,219,0.28)", background: "#fff", color: "#1A7DB5", borderRadius: 4, cursor: "pointer", fontWeight: 500 }}>
           {worker.actualHours != null ? `${hours.toFixed(1)}h` : "+ Hours"}
         </button>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OL-7 — Proof-of-work review (2026-07-03). Crew submit proofs from the
+// employee portal (photos / notes / signatures); this is the manager side:
+// list submitted proofs for a job and approve / reject / reopen each one.
+// Backend: GET /jobs/:id/proofs · PATCH /jobs/:jobId/proofs/:proofId/review
+// (both return an { data } envelope — the admin api client does NOT auto-unwrap).
+// ─────────────────────────────────────────────────────────────────────────────
+interface Proof {
+  proof_id: string;
+  job_id: string;
+  worker_id: string | null;
+  type: string | null;
+  content: string | null;
+  blob_url: string | null;
+  captured_at: string | null;
+  created_at: string | null;
+  review_status: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  review_note: string | null;
+}
+
+const REVIEW_PILL: Record<string, { bg: string; fg: string; label: string }> = {
+  pending: { bg: "#FEF3C7", fg: "#92400E", label: "Pending review" },
+  approved: { bg: "#DCFCE7", fg: "#166534", label: "Approved" },
+  rejected: { bg: "#FEE2E2", fg: "#991B1B", label: "Rejected" },
+};
+
+function ProofReviewTab({
+  jobId, api,
+}: {
+  jobId: string;
+  api: {
+    get: <T>(p: string) => Promise<T>;
+    post: <T>(p: string, b?: unknown) => Promise<T>;
+    patch: <T>(p: string, b: unknown) => Promise<T>;
+  };
+}) {
+  const [proofs, setProofs] = useState<Proof[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  // proofId -> reject note being composed
+  const [notes, setNotes] = useState<Record<string, string>>({});
+
+  const load = useCallback(async () => {
+    setErr(null);
+    try {
+      const resp = await api.get<{ data: Proof[] } | Proof[]>(`/jobs/${jobId}/proofs`);
+      const list = Array.isArray(resp) ? resp : resp?.data ?? [];
+      setProofs(list);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to load proofs");
+      setProofs([]);
+    }
+  }, [api, jobId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function review(proofId: string, status: "approved" | "rejected" | "pending") {
+    setBusyId(proofId);
+    setErr(null);
+    try {
+      const note = status === "rejected" ? (notes[proofId] || "").trim() || null : null;
+      const resp = await api.patch<{ data: Partial<Proof> } | Partial<Proof>>(
+        `/jobs/${jobId}/proofs/${proofId}/review`,
+        { status, note },
+      );
+      const updated = (resp && "data" in (resp as object) ? (resp as { data: Partial<Proof> }).data : resp) as Partial<Proof>;
+      setProofs((prev) =>
+        (prev || []).map((p) =>
+          p.proof_id === proofId
+            ? { ...p, review_status: status, review_note: updated?.review_note ?? note, reviewed_at: updated?.reviewed_at ?? null }
+            : p,
+        ),
+      );
+      if (status !== "rejected") setNotes((n) => { const c = { ...n }; delete c[proofId]; return c; });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to update proof");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (proofs === null) {
+    return <div style={{ padding: 16, fontSize: 12, color: "#5A7A8A" }}>Loading proofs…</div>;
+  }
+
+  return (
+    <div className="card">
+      <div className="card-hdr">
+        <div>
+          <div className="card-ttl">Proof of work</div>
+          <div className="card-sub">
+            {proofs.length} submission{proofs.length === 1 ? "" : "s"} from the crew · review to approve or reject
+          </div>
+        </div>
+      </div>
+
+      {err && (
+        <div style={{ margin: "0 0 12px", background: "#FEE2E2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 6, padding: "8px 12px", fontSize: 12 }}>{err}</div>
+      )}
+
+      {proofs.length === 0 ? (
+        <div style={{ padding: "20px 4px", fontSize: 12, color: "#94A3B8", textAlign: "center" }}>
+          No proof of work submitted yet. Crew uploads (photos, notes, signatures) will appear here for review.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {proofs.map((p) => {
+            const pill = REVIEW_PILL[p.review_status] || REVIEW_PILL.pending;
+            const when = p.captured_at || p.created_at;
+            const busy = busyId === p.proof_id;
+            return (
+              <div key={p.proof_id} style={{ border: "1px solid #E5E7EB", borderRadius: 8, padding: 12, background: "#fff" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, color: "#5A7A8A", background: "#F1F5F9", padding: "2px 7px", borderRadius: 4, fontWeight: 600 }}>
+                      {p.type || "note"}
+                    </span>
+                    {when && <span style={{ fontSize: 11, color: "#94A3B8" }}>{new Date(when).toLocaleString()}</span>}
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: pill.fg, background: pill.bg, padding: "2px 8px", borderRadius: 999 }}>{pill.label}</span>
+                </div>
+
+                {p.blob_url && (
+                  <a href={p.blob_url} target="_blank" rel="noopener noreferrer" style={{ display: "block", marginBottom: 8 }}>
+                    <img src={p.blob_url} alt={p.type || "proof"} style={{ maxWidth: "100%", maxHeight: 260, borderRadius: 6, border: "1px solid #E5E7EB", objectFit: "contain" }} />
+                  </a>
+                )}
+                {p.content && (
+                  <div style={{ fontSize: 13, color: "#0B1C24", whiteSpace: "pre-wrap", marginBottom: 8 }}>{p.content}</div>
+                )}
+                {p.review_status === "rejected" && p.review_note && (
+                  <div style={{ fontSize: 12, color: "#991B1B", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: "6px 10px", marginBottom: 8 }}>
+                    <strong>Rejection note:</strong> {p.review_note}
+                  </div>
+                )}
+
+                {p.review_status === "pending" ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <input
+                      type="text" placeholder="Optional note (shown to crew if rejected)"
+                      value={notes[p.proof_id] || ""}
+                      onChange={(e) => setNotes((n) => ({ ...n, [p.proof_id]: e.target.value }))}
+                      style={{ width: "100%", padding: "6px 8px", fontSize: 12, border: "1px solid #E5E7EB", borderRadius: 4, boxSizing: "border-box" }}
+                    />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        type="button" disabled={busy} onClick={() => review(p.proof_id, "approved")}
+                        style={{ fontSize: 12, padding: "6px 14px", border: "none", background: "#16A34A", color: "#fff", borderRadius: 6, cursor: busy ? "wait" : "pointer", fontWeight: 600 }}
+                      >
+                        {busy ? "…" : "Approve"}
+                      </button>
+                      <button
+                        type="button" disabled={busy} onClick={() => review(p.proof_id, "rejected")}
+                        style={{ fontSize: 12, padding: "6px 14px", border: "1px solid #FECACA", background: "#fff", color: "#B91C1C", borderRadius: 6, cursor: busy ? "wait" : "pointer", fontWeight: 600 }}
+                      >
+                        {busy ? "…" : "Reject"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button" disabled={busy} onClick={() => review(p.proof_id, "pending")}
+                    style={{ fontSize: 11, padding: "4px 10px", border: "1px solid #E5E7EB", background: "#F8FAFC", color: "#5A7A8A", borderRadius: 4, cursor: busy ? "wait" : "pointer" }}
+                  >
+                    {busy ? "…" : "Reopen review"}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
