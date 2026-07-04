@@ -46,7 +46,13 @@ function statusBadge(status: string): { bg: string; fg: string; label: string } 
   switch (String(status || "").toLowerCase()) {
     case "active":    return { bg: "#dbeafe", fg: "#1d4ed8", label: "Active" };
     case "on_hold":   return { bg: "#fef3c7", fg: "#a16207", label: "On Hold" };
+    case "paused":    return { bg: "#fef3c7", fg: "#a16207", label: "Paused" };
+    case "blocked":   return { bg: "#fee2e2", fg: "#b91c1c", label: "Blocked" };
+    case "awaiting_client_response": return { bg: "#fef3c7", fg: "#a16207", label: "Awaiting You" };
+    case "awaiting_internal_review": return { bg: "#e0e7ff", fg: "#3730a3", label: "In Review" };
+    case "payment_required": return { bg: "#fce7f3", fg: "#9d174d", label: "Payment Required" };
     case "completed": return { bg: "#d1fae5", fg: "#047857", label: "Completed" };
+    case "closed":    return { bg: "#e2e8f0", fg: "#475569", label: "Closed" };
     case "cancelled": return { bg: "#e2e8f0", fg: "#475569", label: "Cancelled" };
     default:          return { bg: "#e2e8f0", fg: "#334155", label: status || "—" };
   }

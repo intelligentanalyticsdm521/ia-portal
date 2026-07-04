@@ -143,6 +143,13 @@ function statusBadgeColor(status: string): { bg: string; fg: string; label: stri
     case "completed":         return { bg: "#d1fae5", fg: "#047857", label: "Completed" };
     case "closed":            return { bg: "#e2e8f0", fg: "#475569", label: "Closed" };
     case "cancelled":         return { bg: "#e2e8f0", fg: "#475569", label: "Cancelled" };
+    // CS-5 — the consulting.project.status CHECK values that previously fell to
+    // the generic default pill.
+    case "paused":                   return { bg: "#fef3c7", fg: "#a16207", label: "Paused" };
+    case "blocked":                  return { bg: "#fee2e2", fg: "#b91c1c", label: "Blocked" };
+    case "awaiting_client_response": return { bg: "#fef3c7", fg: "#a16207", label: "Awaiting Client" };
+    case "awaiting_internal_review": return { bg: "#e0e7ff", fg: "#3730a3", label: "Awaiting Internal" };
+    case "payment_required":         return { bg: "#fce7f3", fg: "#9d174d", label: "Payment Required" };
     default:                  return { bg: "#e2e8f0", fg: "#334155", label: s || "—" };
   }
 }

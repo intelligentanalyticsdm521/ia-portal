@@ -53,12 +53,20 @@ const NEUTRAL = "#CBD5E1";    // not_started milestone circle outline
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
+// CS-5 — MUST match the consulting.project.status CHECK enum exactly (9
+// values). 'on_hold' was NEVER in the CHECK — picking it 500'd the status
+// PATCH; 'paused'/'blocked'/'awaiting_internal_review'/'payment_required' are
+// valid server-set statuses that previously had no pill and crashed the
+// Record lookup. All nine are now represented.
 type ProjectStatus =
   | "active"
+  | "paused"
+  | "blocked"
   | "awaiting_client_response"
-  | "on_hold"
-  | "closed"
+  | "awaiting_internal_review"
+  | "payment_required"
   | "completed"
+  | "closed"
   | "cancelled";
 
 // Canonical enum = migration 106 CHECK on consulting.project_milestone.status.
@@ -698,8 +706,11 @@ function DisabledTab({ label }: { label: string }) {
 
 const STATUS_PILL_STYLE: Record<ProjectStatus, { bg: string; fg: string; label: string }> = {
   active:                    { bg: "#DCFCE7", fg: "#166534", label: "Active" },
+  paused:                    { bg: "#FEF3C7", fg: "#92400E", label: "Paused" },
+  blocked:                   { bg: "#FEE2E2", fg: "#991B1B", label: "Blocked" },
   awaiting_client_response:  { bg: "#FEF3C7", fg: "#92400E", label: "Awaiting client" },
-  on_hold:                   { bg: "#FEE2E2", fg: "#991B1B", label: "On hold" },
+  awaiting_internal_review:  { bg: "#E0E7FF", fg: "#3730A3", label: "Awaiting internal" },
+  payment_required:          { bg: "#FCE7F3", fg: "#9D174D", label: "Payment required" },
   closed:                    { bg: "#E2E8F0", fg: "#475569", label: "Closed" },
   completed:                 { bg: "#CFFAFE", fg: "#155E75", label: "Completed" },
   cancelled:                 { bg: "#F1F5F9", fg: "#64748B", label: "Cancelled" },
@@ -811,8 +822,10 @@ function OverviewTab({
               className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold"
             >
               <option value="active">Active</option>
+              <option value="paused">Paused</option>
+              <option value="blocked">Blocked</option>
               <option value="awaiting_client_response">Awaiting client</option>
-              <option value="on_hold">On hold</option>
+              <option value="awaiting_internal_review">Awaiting internal review</option>
               <option value="completed">Completed</option>
               <option value="closed">Closed</option>
               <option value="cancelled">Cancelled</option>
