@@ -187,12 +187,12 @@ export function ArionOverviewPage({ service, status }: Props) {
               title: "Install the IA plugin",
               body: "The plugin pushes site data to ARION (security scans, plugin status, content health). Plugin Provisioning has the one-click installer.",
               cta: { label: "Open plugin provisioning", to: "/app/services/arion_plugin_provisioning" },
-              // FIX B2 — was `show: true`. Real signal lives at
-              // /arion/sites/:id/plugin/status (`plugin_status === 'connected'`)
-              // and is NOT on /arion/overview today. Safe default = false so
-              // we don't nag tenants who already installed the plugin.
-              // See the TODO above SetupHints for the backend field needed.
-              show: false,
+              // A3-2 (2026-07-03) — the backend field now exists:
+              // /arion/overview returns hosting.pluginConnected (=
+              // arion.site.plugin_status === 'connected'). Show the hint iff
+              // the plugin is NOT connected, so we nudge tenants who still
+              // need to install it and stay silent for those who already have.
+              show: !data?.hosting?.pluginConnected,
               accent: "#1A3A4A",
             },
           ]} />

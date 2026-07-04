@@ -62,6 +62,9 @@ export interface OverviewResponse {
     phpVersion: string | null;
     performanceScore: number | null;
     lastHealthCheckAt: string | null;
+    /** A3-2 — true when arion.site.plugin_status === 'connected'. Drives the
+     *  "install the IA plugin" hint on the ARION overview (show iff false). */
+    pluginConnected?: boolean;
   };
   seo: {
     connected: boolean;
