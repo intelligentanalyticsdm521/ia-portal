@@ -341,6 +341,11 @@ interface Section {
   title: string;
   product?: ProductKey;
   required?: boolean;
+  // PB-1 (two-phase wizard): 1 = one-time Business + User profile onboarding;
+  // 2 = per-platform onboarding. Phase 1 is skipped once the tenant's business
+  // profile is complete (business_profile_finished_at set), so onboarding a
+  // second product never re-collects/overwrites the profile.
+  phase?: 1 | 2;
 }
 
 function buildSections(cart: ProductKey[]): Section[] {
@@ -370,8 +375,17 @@ function buildSections(cart: ProductKey[]): Section[] {
   }
   if (cart.includes("consulting")) out.push({ id: "consulting", title: "Consulting kickoff", product: "consulting" });
   out.push({ id: "finish", title: "Finish" });
-  return out;
+  // PB-1 — tag phases: profile + owner = Phase 1 (one-time business/user profile);
+  // everything else (lifecycle, platform sections, finish) = Phase 2 (platform setup).
+  const PHASE1_IDS = new Set<SectionId>(["profile", "owner"]);
+  return out.map((s) => ({ ...s, phase: PHASE1_IDS.has(s.id) ? 1 : 2 } as Section));
 }
+
+// PB-1 — human labels for the phase banner above the step indicator.
+const PHASE_LABEL: Record<1 | 2, string> = {
+  1: "Phase 1 · Business & user profile",
+  2: "Phase 2 · Platform setup",
+};
 
 function accentFor(section: Section): string {
   if (!section.product) return CORE_BLUE;
@@ -905,8 +919,14 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, cartTier, onClose, onFi
 // ─── Step indicator ──────────────────────────────────────────────────────
 
 function StepStrip({ current, sections, accent }: { current: number; sections: Section[]; accent: string }) {
+  const phase = (sections[current]?.phase ?? 2) as 1 | 2;
   return (
     <div className="mb-4">
+      {/* PB-1 — two-phase banner: makes explicit that the wizard is Business/User
+          profile (Phase 1, one-time) then Platform setup (Phase 2). */}
+      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: accent }}>
+        {PHASE_LABEL[phase]}
+      </div>
       <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
         <div className="h-full transition-all" style={{ background: accent, width: `${((current + 1) / sections.length) * 100}%` }} />
       </div>
@@ -1862,6 +1882,42 @@ function ArionSection({ v, setV, tenantId, profile, arionRunner, integ, setInteg
             before the first new-vs-existing decision. */}
       {v.siteMode && (
         <ArionIntegrationsPathPickerSubsection integ={integ} setInteg={setInteg} />
+      )}
+
+      {/* ── Plugin AI Features (6th ARION subsection) — PB-1 stub ──────
+            Per [[reference_founder_wizard_structure]] the ARION section has 6
+            subsections; this is the missing "Plugin AI Features" preview. The
+            IA plugin ships these AI features that activate on the live site
+            after provisioning — informational here, configured post-launch. */}
+      {v.siteMode && (
+        <div className="mt-6">
+          <div className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+            <Sparkles size={15} /> Plugin AI Features
+          </div>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Included with your IA plugin — these light up on your site after launch. Nothing to set up now.
+          </p>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {[
+              { t: "AI Content Blocks", d: "Generate on-brand section copy inline while editing pages." },
+              { t: "AI Image Generation", d: "Create on-brand images for pages, posts, and services." },
+              { t: "AI SEO Meta", d: "Auto-draft titles + meta descriptions for every page." },
+              { t: "AI FAQ Builder", d: "Schema-ready Q&A generated from your services." },
+              { t: "AI Alt Text", d: "Accessibility + image SEO written for you." },
+              { t: "AI Internal Links", d: "Smart cross-linking suggestions across your content." },
+            ].map((f) => (
+              <div key={f.t} className="rounded-lg border border-slate-200 bg-white p-3">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
+                  <Sparkles size={13} className="text-slate-400" /> {f.t}
+                </div>
+                <div className="mt-1 text-[11px] leading-snug text-slate-500">{f.d}</div>
+                <div className="mt-2 inline-block rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                  Configured after launch
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
