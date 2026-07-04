@@ -45,7 +45,19 @@ export function UnifiedSetupCard() {
   // arrive here AFTER their founder already onboarded them must NOT see the
   // modal — finished_at being set is the suppression signal.
   useEffect(() => {
-    if (progress === null) return; // wait until we've read progress once
+    // PA-3 (2026-07-03) — gate on "have we ATTEMPTED a load", not "progress is
+    // non-null". `reachable` starts null and only flips true/false inside
+    // reload(), which itself no-ops until `ready && activeTenantId` — so
+    // reachable !== null means AppGate finished bootstrapping AND we completed
+    // one progress fetch. The old `progress === null` guard permanently
+    // swallowed the ?welcome=1 intent for a fresh guest buyer whose tenant has
+    // NO onboarding-progress row yet (getFounder returns null → progress stays
+    // null → wizard never auto-opened, even on a warm bootstrap). This also
+    // covers the cold/slow-bootstrap race (activeTenantId null on first paint):
+    // reload re-runs when activeTenantId lands, flips reachable, and this
+    // effect re-fires.
+    if (reachable === null) return; // haven't completed a load attempt yet
+    if (!activeTenantId) return;
     const params = new URLSearchParams(window.location.search);
     const wantsOpen = params.has("welcome") || params.has("onboarding");
     if (!wantsOpen) return;
@@ -63,7 +75,7 @@ export function UnifiedSetupCard() {
     params.delete("onboarding");
     const newSearch = params.toString();
     window.history.replaceState({}, "", window.location.pathname + (newSearch ? `?${newSearch}` : "") + window.location.hash);
-  }, [progress]);
+  }, [progress, reachable, activeTenantId]);
 
   const reload = useCallback(async () => {
     if (!ready || !activeTenantId) return;
