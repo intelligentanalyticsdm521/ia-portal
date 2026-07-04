@@ -5,10 +5,13 @@ import { useAppState } from "../../app/AppState";
 import { useUserAccess } from "../../hooks/useUserAccess";
 import {
   listTenantUsers, updateTenantUserRole, updateTenantUserProducts,
-  type PlatformTenantUser, type PlatformRole,
+  listPendingInvitations, inviteTenantUser,
+  type PlatformTenantUser, type PlatformRole, type PendingInvitation,
 } from "../../lib/platformApi";
 
 const PRODUCT_OPTIONS = ["arion", "oliver", "spark", "stella", "forge", "argus", "consulting"];
+
+const ROLE_LABEL: Record<string, string> = { admin: "Admin", user: "User", read_only: "Read only" };
 
 export function PlatformTeamAccess() {
   const { instance, accounts } = useMsal();
@@ -16,9 +19,17 @@ export function PlatformTeamAccess() {
   const { active } = useAppState();
   const { isAdmin, canManageUsers, access } = useUserAccess();
   const [users, setUsers] = useState<PlatformTenantUser[]>([]);
+  const [invitations, setInvitations] = useState<PendingInvitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
+
+  // Invite form
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<PlatformRole>("user");
+  const [inviting, setInviting] = useState(false);
+  const [inviteMsg, setInviteMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const load = useCallback(async () => {
     if (!account || !active?.tenant?.tenantId || !canManageUsers) return;
@@ -26,17 +37,45 @@ export function PlatformTeamAccess() {
     setError(null);
     try {
       const r = await instance.acquireTokenSilent({ scopes: authScopes, account });
-      const res = await listTenantUsers({
+      const common = {
         baseUrl: import.meta.env.VITE_PLATFORM_API_BASE_URL,
         bearerToken: r.accessToken,
         tenantId: active.tenant.tenantId,
-      });
-      setUsers(res.users);
+      };
+      const [usersRes, invRes] = await Promise.all([
+        listTenantUsers(common),
+        listPendingInvitations(common).catch(() => ({ invitations: [] as PendingInvitation[] })),
+      ]);
+      setUsers(usersRes.users);
+      setInvitations(invRes.invitations);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
   }, [account, active?.tenant?.tenantId, canManageUsers, instance]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function submitInvite() {
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email) { setInviteMsg({ kind: "err", text: "Enter an email address." }); return; }
+    setInviting(true);
+    setInviteMsg(null);
+    try {
+      const r = await instance.acquireTokenSilent({ scopes: authScopes, account: account! });
+      const res = await inviteTenantUser({
+        baseUrl: import.meta.env.VITE_PLATFORM_API_BASE_URL,
+        bearerToken: r.accessToken,
+        tenantId: active!.tenant!.tenantId,
+        email,
+        role: inviteRole,
+      });
+      setInviteMsg({ kind: "ok", text: res.note || "Invitation created." });
+      setInviteEmail("");
+      setInviteRole("user");
+      await load();
+    } catch (err: any) {
+      setInviteMsg({ kind: "err", text: err?.message || "Could not create the invitation." });
+    } finally { setInviting(false); }
+  }
 
   async function changeRole(user: PlatformTenantUser, role: PlatformRole) {
     setSavingUserId(user.userId);
@@ -93,10 +132,85 @@ export function PlatformTeamAccess() {
 
   return (
     <div className="space-y-4 p-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Team access</h1>
-        <p className="mt-1 text-sm text-gray-600">Manage platform roles + per-product access for users in this tenant.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Team access</h1>
+          <p className="mt-1 text-sm text-gray-600">Invite teammates and manage their roles + per-product access.</p>
+        </div>
+        <button
+          onClick={() => { setShowInvite(v => !v); setInviteMsg(null); }}
+          className="shrink-0 rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700"
+        >
+          {showInvite ? "Close" : "Invite teammate"}
+        </button>
       </div>
+
+      {showInvite && (
+        <div className="iadm-card">
+          <div className="iadm-card-body space-y-3">
+            <h2 className="text-sm font-semibold text-gray-800">Invite a teammate</h2>
+            <p className="text-xs text-gray-500">
+              They'll join your team automatically the first time they sign in with this email.
+              You can adjust their product access once they've joined.
+            </p>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="flex flex-col text-xs text-gray-600">
+                Email
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={e => setInviteEmail(e.target.value)}
+                  placeholder="teammate@business.com"
+                  className="mt-1 w-64 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="flex flex-col text-xs text-gray-600">
+                Role
+                <select
+                  value={inviteRole}
+                  onChange={e => setInviteRole(e.target.value as PlatformRole)}
+                  className="mt-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                >
+                  <option value="admin">Admin — full access, can manage the team</option>
+                  <option value="user">User — day-to-day work, no settings/billing</option>
+                  <option value="read_only">Read only — view, no changes</option>
+                </select>
+              </label>
+              <button
+                onClick={submitInvite}
+                disabled={inviting}
+                className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {inviting ? "Sending…" : "Send invite"}
+              </button>
+            </div>
+            {inviteMsg && (
+              <div className={`text-xs ${inviteMsg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
+                {inviteMsg.text}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {invitations.length > 0 && (
+        <div className="iadm-card">
+          <div className="iadm-card-body">
+            <h2 className="text-sm font-semibold text-gray-800">Pending invitations</h2>
+            <p className="text-xs text-gray-500 mb-2">Waiting for the invitee to sign in for the first time.</p>
+            <ul className="divide-y divide-gray-100">
+              {invitations.map(inv => (
+                <li key={inv.email} className="flex items-center justify-between py-2 text-sm">
+                  <span className="text-gray-700">{inv.email}</span>
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                    {ROLE_LABEL[inv.role_key] || inv.role_key} · pending
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
 
       <div className="iadm-card">
         <div className="iadm-card-body">

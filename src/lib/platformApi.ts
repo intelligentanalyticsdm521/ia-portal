@@ -459,6 +459,66 @@ export async function updateTenantUserProducts(params: {
   return body as PlatformTenantUser;
 }
 
+export interface PendingInvitation {
+  email: string;
+  role_key: string;
+  status: string;
+  invited_at: string;
+}
+
+export async function listPendingInvitations(params: {
+  baseUrl: string;
+  bearerToken: string;
+  tenantId: string;
+}): Promise<{ invitations: PendingInvitation[] }> {
+  const url = `${normalizeBaseUrl(params.baseUrl)}/tenant-invitations`;
+  const res = await fetchWithTimeout(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${params.bearerToken}`,
+      'Content-Type': 'application/json',
+      'x-tenant-key': params.tenantId,
+      ...emergencyActAsHeaders(),
+    },
+  });
+  const body = safeJsonParse(await res.text());
+  if (!res.ok) {
+    const msg = typeof body === 'object' && body && 'error' in body
+      ? String((body as any).error)
+      : `Request failed (${res.status})`;
+    throw new PlatformApiError(msg, res.status, body);
+  }
+  return body as { invitations: PendingInvitation[] };
+}
+
+export async function inviteTenantUser(params: {
+  baseUrl: string;
+  bearerToken: string;
+  tenantId: string;
+  email: string;
+  role: PlatformRole;
+}): Promise<{ email: string; role: PlatformRole; status: string; note?: string }> {
+  const url = `${normalizeBaseUrl(params.baseUrl)}/tenant-users/invite`;
+  const res = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${params.bearerToken}`,
+      'Content-Type': 'application/json',
+      'x-tenant-key': params.tenantId,
+      ...emergencyActAsHeaders(),
+    },
+    body: JSON.stringify({ email: params.email, role: params.role }),
+  });
+  const body = safeJsonParse(await res.text());
+  if (!res.ok) {
+    const msg = typeof body === 'object' && body && ('details' in body || 'error' in body)
+      ? String((body as any).details || (body as any).error)
+      : `Request failed (${res.status})`;
+    throw new PlatformApiError(msg, res.status, body);
+  }
+  return body as { email: string; role: PlatformRole; status: string; note?: string };
+}
+
 export async function updateProfile(params: {
   baseUrl: string;
   bearerToken: string;
