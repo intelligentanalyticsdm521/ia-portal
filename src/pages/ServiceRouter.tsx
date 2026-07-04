@@ -199,8 +199,6 @@ const SparkContactBulkPage = lazyNamed(() => import('./spark/SparkContactBulkPag
 const SparkApprovalsPage = lazyNamed(() => import('./spark/SparkApprovalsPage'), 'SparkApprovalsPage');
 const SparkSmsInboxPage = lazyNamed(() => import('./spark/SparkSmsInboxPage'), 'SparkSmsInboxPage');
 const SparkSmsCampaignsPage = lazyNamed(() => import('./spark/SparkSmsCampaignsPage'), 'SparkSmsCampaignsPage');
-const SparkEmailTemplatesPage = lazyNamed(() => import('./spark/SparkEmailTemplatesPage'), 'SparkEmailTemplatesPage');
-const SparkAutomationBuilderPage = lazyNamed(() => import('./spark/SparkAutomationBuilderPage'), 'SparkAutomationBuilderPage');
 const SparkDeliverabilityPage = lazyNamed(() => import('./spark/SparkDeliverabilityPage'), 'SparkDeliverabilityPage');
 const SparkAbTestsPage = lazyNamed(() => import('./spark/SparkAbTestsPage'), 'SparkAbTestsPage');
 // SparkLeadSuppressionPage + SparkTerritoriesPage replaced by SparkLeadInboxPage
@@ -637,8 +635,13 @@ export function ServiceRouter() {
       // v1.0 additions
       case 'spark_approvals': sparkPage = <SparkApprovalsPage />; break;
       case 'spark_sms_inbox': sparkPage = <SparkSmsInboxPage />; break;
-      case 'spark_email_templates': sparkPage = <SparkEmailTemplatesPage />; break;
-      case 'spark_automation_builder': sparkPage = <SparkAutomationBuilderPage />; break;
+      // SP-6 — orphaned pre-unification routes redirect to their canonical
+      // replacements (unified Templates page + Workflow & Automations page) so
+      // old deep links land somewhere sensible instead of a dead page. The
+      // standalone SparkEmailTemplatesPage / SparkAutomationBuilderPage files
+      // were deleted (superseded by SparkTemplateEditorModal + SparkAutomationModal).
+      case 'spark_email_templates': sparkPage = <SparkTemplatesPage />; break;
+      case 'spark_automation_builder': sparkPage = <SparkWorkflowsAutomationsPage />; break;
       case 'spark_deliverability': sparkPage = <SparkDeliverabilityPage />; break;
       case 'spark_ab_tests': sparkPage = <SparkAbTestsPage />; break;
       // Back-compat for the pre-unification routes. Render the unified Lead

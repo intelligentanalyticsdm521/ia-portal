@@ -101,9 +101,16 @@ interface Props {
    * Otherwise the tab lists all open tenant-level suggestions.
    */
   contactId?: number | null;
+  /**
+   * SP-5 — when opened fresh (not edit mode) with a preset list, seed the
+   * recipient list so a "Send" click from the Lists page lands in the
+   * composer already targeting that list. Ignored in edit mode (the loaded
+   * campaign's own recipient_list_id wins).
+   */
+  presetListId?: number | null;
 }
 
-export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampaignId = null, contactId = null }: Props) {
+export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampaignId = null, contactId = null, presetListId = null }: Props) {
   const { get, post, put, ready } = useSparkApi() as {
     get: <T>(p: string) => Promise<T>;
     post: <T>(p: string, body?: unknown) => Promise<T>;
@@ -297,8 +304,12 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
           setEditStatus(c.status || null);
         })
         .catch((err) => setError(String((err as Error)?.message || err)));
+    } else if (presetListId != null) {
+      // SP-5 — opened from the Lists page "Send" action → preselect that list
+      // as the campaign's recipient target. The user still picks the channel.
+      setListId(presetListId);
     }
-  }, [open, ready, get, editCampaignId, contactId]);
+  }, [open, ready, get, editCampaignId, contactId, presetListId]);
 
   // Edit-mode back-fill: if the loaded draft was saved before the picker
   // had any senders to choose from (the migration-065 root-cause case), it

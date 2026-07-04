@@ -5,6 +5,7 @@ import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkTable } from "../../components/spark/SparkTable";
 import { SparkSearchBox } from "../../components/spark/SparkSearchBox";
 import { SparkListDetailModal } from "../../components/spark/SparkListDetailModal";
+import { SparkCampaignComposerModal } from "../../components/spark/SparkCampaignComposerModal";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { List as ListIcon, Plus, Users, Send } from "lucide-react";
 
@@ -28,6 +29,9 @@ export function SparkListsPage() {
   const [saving, setSaving] = useState(false);
   // F-96 — click any list row to open the detail modal (was a dead row).
   const [detailListId, setDetailListId] = useState<number | null>(null);
+  // SP-5 — "Send" on a list row opens the campaign composer targeting that list
+  // (was a dead alert "flow connects in v2").
+  const [composeListId, setComposeListId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -135,10 +139,10 @@ export function SparkListsPage() {
           ]}
           rowActions={l => (
             <button
-              onClick={() => alert(`Send campaign to ${l.name} — flow connects in v2`)}
+              onClick={() => setComposeListId(l.id)}
               className="spark-btn spark-btn-sm spark-btn-secondary"
               disabled={l.contact_count === 0}
-              title={l.contact_count === 0 ? "Add contacts first" : "Send a campaign"}
+              title={l.contact_count === 0 ? "Add contacts first" : "Send a campaign to this list"}
             >
               <Send className="h-3 w-3" /> Send
             </button>
@@ -182,6 +186,15 @@ export function SparkListsPage() {
         onClose={() => setDetailListId(null)}
         listId={detailListId}
         onChanged={() => { load(); }}
+      />
+
+      {/* SP-5 — compose a campaign targeting a specific list (replaces the old
+          "flow connects in v2" alert). The composer opens with the list preset. */}
+      <SparkCampaignComposerModal
+        open={composeListId !== null}
+        onClose={() => setComposeListId(null)}
+        onCreated={() => setComposeListId(null)}
+        presetListId={composeListId}
       />
     </SparkPageShell>
   );

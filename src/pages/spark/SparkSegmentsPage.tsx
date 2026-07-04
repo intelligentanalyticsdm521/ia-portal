@@ -4,7 +4,13 @@ import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkTable } from "../../components/spark/SparkTable";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
-import { Plus, Filter, Users, Zap, Sparkles } from "lucide-react";
+import { Plus, Filter, Users, Zap, Sparkles, AlertTriangle } from "lucide-react";
+
+// SP-6 — a single campaign send is hard-capped at this many recipients
+// (campaigns.js SEG_HARD_CAP). A segment that evaluates larger can't be sent
+// as one campaign, so we warn the user where the count is known (the table)
+// and set the expectation at create time.
+const SEND_CAP = 100_000;
 
 interface Segment {
   id: number;
@@ -148,9 +154,18 @@ export function SparkSegmentsPage() {
             {
               key: "count", header: "Matches", width: "compact",
               cell: s => (
-                <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-medium">
-                  <Zap className="h-3 w-3" /> {s.contact_count.toLocaleString()}
-                </span>
+                s.contact_count > SEND_CAP ? (
+                  <span
+                    className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium"
+                    title={`Exceeds the ${SEND_CAP.toLocaleString()}-per-send cap — this segment can't be sent as one campaign. Split it into a static List or narrow the filter.`}
+                  >
+                    <AlertTriangle className="h-3 w-3" /> {s.contact_count.toLocaleString()}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-medium">
+                    <Zap className="h-3 w-3" /> {s.contact_count.toLocaleString()}
+                  </span>
+                )
               ),
             },
             {
@@ -192,6 +207,16 @@ export function SparkSegmentsPage() {
               <div>
                 <strong className="text-violet-900">Visual filter builder coming in v2</strong>
                 <p className="mt-1">Pick fields, operators, and values from dropdowns. AND/OR logic. Saved filter sets reusable across segments.</p>
+              </div>
+            </div>
+          </div>
+          {/* SP-6 — set the send-cap expectation up front. */}
+          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <strong className="text-amber-900">Sending cap: {SEND_CAP.toLocaleString()} contacts per campaign.</strong>
+                <p className="mt-1">If this segment matches more than that, you'll be prompted to split it into a static List (or narrow the filter) before it can be sent as one campaign.</p>
               </div>
             </div>
           </div>
