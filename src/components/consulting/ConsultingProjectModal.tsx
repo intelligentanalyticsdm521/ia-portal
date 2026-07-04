@@ -155,6 +155,9 @@ export function ConsultingProjectModal({
   // Onboarding" button on the Platform-Provisioning milestone; scoped to the
   // project's linked_tenant_id.
   const [onboardWizardOpen, setOnboardWizardOpen] = useState(false);
+  // PB-4 (Δ4): view-as (consulting act-as) shell — the founder verifies the
+  // client's setup here before completing the Walkthrough & Handover milestone.
+  const [viewAsOpen, setViewAsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [milestoneNotice, setMilestoneNotice] = useState<string | null>(null);
@@ -332,6 +335,7 @@ export function ConsultingProjectModal({
               nextStepBanner={nextStepBanner}
               viewerRole={viewerRole}
               onStatusChange={handleStatusChange}
+              onAccessPortal={() => setViewAsOpen(true)}
             />
           )}
           {data && tab === "milestones" && (
@@ -374,8 +378,21 @@ export function ConsultingProjectModal({
           tenantId={onboardWizardOpen ? data.project.linked_tenant_id : null}
           tenantName={data.project.client_name || undefined}
           mode="onboarding"
+          deferWelcome
+
           onClose={() => { setOnboardWizardOpen(false); void load(); onChanged?.(); }}
           onFinished={() => { void load(); onChanged?.(); }}
+        />
+      )}
+
+      {/* PB-4 (Δ4) — view-as (consulting act-as) shell for founder verification. */}
+      {data?.project?.linked_tenant_id && (
+        <OnboardingWizardModal
+          open={viewAsOpen}
+          tenantId={viewAsOpen ? data.project.linked_tenant_id : null}
+          tenantName={data.project.client_name || undefined}
+          mode="consulting"
+          onClose={() => setViewAsOpen(false)}
         />
       )}
     </IadmModal>
@@ -653,6 +670,7 @@ function OverviewTab({
   nextStepBanner,
   viewerRole,
   onStatusChange,
+  onAccessPortal,
 }: {
   project: ConsultingProjectRow;
   milestoneCount: number;
@@ -660,6 +678,7 @@ function OverviewTab({
   nextStepBanner: string | null;
   viewerRole: "founder" | "client";
   onStatusChange: (s: ProjectStatus) => void;
+  onAccessPortal?: () => void;
 }) {
   const progressPct = milestoneCount > 0
     ? Math.round((milestonesComplete / milestoneCount) * 100)
@@ -679,6 +698,19 @@ function OverviewTab({
         >
           {nextStepBanner}
         </div>
+      )}
+
+      {/* PB-4 (Δ4) — Access client portal (view-as). The founder verifies the
+          client's setup here, then marks the Walkthrough & Handover milestone
+          complete (which fires the welcome). Gated on a provisioned tenant. */}
+      {viewerRole === "founder" && project.linked_tenant_id && onAccessPortal && (
+        <button
+          type="button"
+          onClick={onAccessPortal}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 transition-colors hover:bg-sky-100"
+        >
+          Access client portal (view-as) →
+        </button>
       )}
 
       {/* Description + meta card */}

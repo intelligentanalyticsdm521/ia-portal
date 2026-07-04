@@ -649,15 +649,19 @@ export interface OnboardingWizardModalProps {
   cartTier?: { spark?: string; oliver?: string; arion?: string };
   onClose: () => void;
   onFinished?: () => void;
+  /** PB-4 (Δ4): when true, Save & Finish does NOT send the welcome email — it's
+   *  deferred until the founder marks the project's "Walkthrough & Handover"
+   *  milestone complete. Set by the consulting project launch (PB-2). */
+  deferWelcome?: boolean;
 }
 
-export function OnboardingWizardModal({ open, tenantId, tenantName, mode, cart, cartTier, onClose, onFinished }: OnboardingWizardModalProps) {
+export function OnboardingWizardModal({ open, tenantId, tenantName, mode, cart, cartTier, onClose, onFinished, deferWelcome }: OnboardingWizardModalProps) {
   if (!open || !tenantId) return null;
   const ctx: ClientTenantValue = { tenantId, tenantName, mode };
   return (
     <ClientTenantProvider value={ctx}>
       {mode === "onboarding"
-        ? <UnifiedOnboarding tenantId={tenantId} tenantName={tenantName} cart={cart} cartTier={cartTier} onClose={onClose} onFinished={onFinished} />
+        ? <UnifiedOnboarding tenantId={tenantId} tenantName={tenantName} cart={cart} cartTier={cartTier} onClose={onClose} onFinished={onFinished} deferWelcome={deferWelcome} />
         : <ConsultingModeShell tenantId={tenantId} tenantName={tenantName} onClose={onClose} />}
     </ClientTenantProvider>
   );
@@ -665,10 +669,10 @@ export function OnboardingWizardModal({ open, tenantId, tenantName, mode, cart, 
 
 // ─── Unified onboarding ──────────────────────────────────────────────────
 
-function UnifiedOnboarding({ tenantId, tenantName, cart, cartTier, onClose, onFinished }: {
+function UnifiedOnboarding({ tenantId, tenantName, cart, cartTier, onClose, onFinished, deferWelcome }: {
   tenantId: string; tenantName?: string; cart: ProductKey[] | undefined;
   cartTier?: { spark?: string; oliver?: string; arion?: string };
-  onClose: () => void; onFinished?: () => void;
+  onClose: () => void; onFinished?: () => void; deferWelcome?: boolean;
 }) {
   // get/post/patch are CLIENT-scoped (header = client tenant_id) — used for
   // Stripe Connect, PATCH /settings (business profile), etc.
@@ -809,7 +813,7 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, cartTier, onClose, onFi
         tenant_id: tenantId, step: stepIdx, section: current.id, state, mode,
       });
       if (mode === "finish") {
-        await postFounder("/admin/onboard-client/finish-onboarding", { tenant_id: tenantId });
+        await postFounder("/admin/onboard-client/finish-onboarding", { tenant_id: tenantId, defer_welcome: !!deferWelcome });
         onFinished?.();
         onClose();
       } else if (mode === "close") {
