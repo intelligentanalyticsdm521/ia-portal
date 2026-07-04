@@ -84,6 +84,7 @@ export interface ConsultingProjectMilestone {
   completed_at?: string | null;
   is_payment_trigger?: boolean | number;
   payment_pct?: number | null;
+  payment_amount_cents?: number | null;
   payment_charge_status?: string | null;
   internal_review_checklist_json?: unknown;
   /** Server-side flag — true when seeded from a system category template. */
@@ -161,6 +162,8 @@ export function ConsultingProjectModal({
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [milestoneNotice, setMilestoneNotice] = useState<string | null>(null);
+  // CS-1 — milestone metadata edit target (null = closed).
+  const [editingMilestone, setEditingMilestone] = useState<ConsultingProjectMilestone | null>(null);
   // F4 — Send Intake modal trigger. Founder-only surface; the modal itself
   // re-checks via the backend (founder-gated endpoint) so a stray click
   // from a future client lens variant won't get past the API.
@@ -344,6 +347,7 @@ export function ConsultingProjectModal({
               viewerRole={viewerRole}
               notice={milestoneNotice}
               onStatusChange={handleMilestoneStatusChange}
+              onEditMilestone={viewerRole === "founder" ? setEditingMilestone : undefined}
               canOnboard={Boolean(data.project.linked_tenant_id)}
               onStartOnboarding={() => setOnboardWizardOpen(true)}
             />
@@ -365,6 +369,22 @@ export function ConsultingProjectModal({
             setShowSendIntake(false);
             void load();
             onChanged?.();
+          }}
+        />
+      )}
+
+      {/* CS-1 — milestone metadata edit modal. PATCHes the milestone route with
+          the metadata fields (no `status`), so the backend takes the edit branch
+          and skips the status-transition side effects. */}
+      {editingMilestone && (
+        <EditMilestoneModal
+          milestone={editingMilestone}
+          onClose={() => setEditingMilestone(null)}
+          onSave={async (fields) => {
+            await patch(`/consulting/projects/${projectId}/milestones/${editingMilestone.milestone_id}`, fields);
+            await load();
+            onChanged?.();
+            setEditingMilestone(null);
           }}
         />
       )}
@@ -845,6 +865,7 @@ function MilestonesTab({
   viewerRole,
   notice,
   onStatusChange,
+  onEditMilestone,
   canOnboard,
   onStartOnboarding,
 }: {
@@ -852,6 +873,7 @@ function MilestonesTab({
   viewerRole: "founder" | "client";
   notice: string | null;
   onStatusChange: (mid: string, s: MilestoneStatus) => void;
+  onEditMilestone?: (m: ConsultingProjectMilestone) => void;
   canOnboard?: boolean;
   onStartOnboarding?: () => void;
 }) {
@@ -877,6 +899,7 @@ function MilestonesTab({
             milestone={m}
             viewerRole={viewerRole}
             onStatusChange={onStatusChange}
+            onEditMilestone={onEditMilestone}
             canOnboard={canOnboard}
             onStartOnboarding={onStartOnboarding}
           />
@@ -891,6 +914,7 @@ function MilestoneRow({
   milestone,
   viewerRole,
   onStatusChange,
+  onEditMilestone,
   canOnboard,
   onStartOnboarding,
 }: {
@@ -898,6 +922,7 @@ function MilestoneRow({
   milestone: ConsultingProjectMilestone;
   viewerRole: "founder" | "client";
   onStatusChange: (mid: string, s: MilestoneStatus) => void;
+  onEditMilestone?: (m: ConsultingProjectMilestone) => void;
   canOnboard?: boolean;
   onStartOnboarding?: () => void;
 }) {
@@ -1001,6 +1026,18 @@ function MilestoneRow({
                   className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
                 >
                   Mark incomplete
+                </button>
+              )}
+              {/* CS-1 — edit milestone metadata (name / description / payment
+                  trigger + amount / due date). Opens EditMilestoneModal, which
+                  PATCHes the same route with the metadata fields (no status). */}
+              {onEditMilestone && (
+                <button
+                  type="button"
+                  onClick={() => onEditMilestone(milestone)}
+                  className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  Edit details
                 </button>
               )}
             </div>
@@ -1200,6 +1237,149 @@ function formatMoney(cents: number | null | undefined, currency: string | null |
   } catch {
     return `$${value.toFixed(0)}`;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CS-1 — EditMilestoneModal. Founder edits milestone metadata: name,
+// description, payment-trigger flag + amount, and due date. Saves via the
+// parent's onSave, which PATCHes .../milestones/:mid with metadata fields (no
+// `status`), so the backend takes its metadata branch (no status side effects).
+// ─────────────────────────────────────────────────────────────────────────
+function EditMilestoneModal({
+  milestone,
+  onClose,
+  onSave,
+}: {
+  milestone: ConsultingProjectMilestone;
+  onClose: () => void;
+  onSave: (fields: Record<string, unknown>) => Promise<void>;
+}) {
+  const initialPT = Boolean(
+    typeof milestone.is_payment_trigger === "number"
+      ? milestone.is_payment_trigger === 1
+      : milestone.is_payment_trigger,
+  );
+  const [name, setName] = useState(milestone.name || "");
+  const [description, setDescription] = useState(milestone.description || "");
+  const [isPaymentTrigger, setIsPaymentTrigger] = useState(initialPT);
+  const [amountDollars, setAmountDollars] = useState(
+    milestone.payment_amount_cents != null
+      ? String((Number(milestone.payment_amount_cents) / 100).toFixed(2))
+      : "",
+  );
+  const [dueDate, setDueDate] = useState(
+    milestone.due_date ? String(milestone.due_date).slice(0, 10) : "",
+  );
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function handleSubmit() {
+    if (!name.trim()) { setErr("Name is required."); return; }
+    setSaving(true);
+    setErr(null);
+    try {
+      const fields: Record<string, unknown> = {
+        name: name.trim(),
+        description: description.trim() || null,
+        is_payment_trigger: isPaymentTrigger,
+        due_at: dueDate ? new Date(`${dueDate}T00:00:00`).toISOString() : null,
+      };
+      const amt = amountDollars.trim();
+      const cents = amt === "" ? null : Math.round(Number(amt) * 100);
+      if (cents != null && (!Number.isFinite(cents) || cents < 0)) {
+        setErr("Enter a valid amount.");
+        setSaving(false);
+        return;
+      }
+      fields.payment_amount_cents = cents;
+      await onSave(fields);
+    } catch (e) {
+      setErr((e as Error).message || "Could not save milestone.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="border-b border-slate-100 px-5 py-3">
+          <h3 className="text-sm font-bold text-slate-900">Edit milestone</h3>
+        </div>
+        <div className="space-y-3 px-5 py-4">
+          {err && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{err}</div>
+          )}
+          <label className="block">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Name</span>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Description</span>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Due date</span>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={isPaymentTrigger} onChange={(e) => setIsPaymentTrigger(e.target.checked)} />
+            <span className="text-sm font-medium text-slate-700">Payment trigger milestone</span>
+          </label>
+          {isPaymentTrigger && (
+            <label className="block">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Payment amount (USD)</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={amountDollars}
+                onChange={(e) => setAmountDollars(e.target.value)}
+                placeholder="e.g. 1500.00"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={saving}
+            className="rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default ConsultingProjectModal;
