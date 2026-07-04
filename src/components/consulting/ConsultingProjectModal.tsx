@@ -148,7 +148,7 @@ export function ConsultingProjectModal({
   onChanged,
   viewerRole = "founder",
 }: ConsultingProjectModalProps) {
-  const { get, patch } = useOliverApi();
+  const { get, post, patch, del } = useOliverApi();
 
   const [tab, setTab] = useState<"overview" | "milestones">("overview");
   const [data, setData] = useState<WorkspaceResponse | null>(null);
@@ -164,6 +164,8 @@ export function ConsultingProjectModal({
   const [milestoneNotice, setMilestoneNotice] = useState<string | null>(null);
   // CS-1 — milestone metadata edit target (null = closed).
   const [editingMilestone, setEditingMilestone] = useState<ConsultingProjectMilestone | null>(null);
+  // CS-2 — add-milestone modal open flag.
+  const [addingMilestone, setAddingMilestone] = useState(false);
   // F4 — Send Intake modal trigger. Founder-only surface; the modal itself
   // re-checks via the backend (founder-gated endpoint) so a stray click
   // from a future client lens variant won't get past the API.
@@ -244,6 +246,21 @@ export function ConsultingProjectModal({
       onChanged?.();
     } catch (e) {
       setMilestoneNotice((e as Error).message || "Could not save milestone status");
+    }
+  }
+
+  // CS-2 — delete a milestone (confirm-guarded). The backend blocks
+  // complete / paid / deliverable-bearing milestones with a friendly 409,
+  // surfaced in the milestone notice.
+  async function handleDeleteMilestone(m: ConsultingProjectMilestone) {
+    if (!window.confirm(`Delete milestone "${m.name}"? This can't be undone.`)) return;
+    setMilestoneNotice(null);
+    try {
+      await del(`/consulting/projects/${projectId}/milestones/${m.milestone_id}`);
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setMilestoneNotice((e as Error).message || "Could not delete milestone");
     }
   }
 
@@ -348,6 +365,8 @@ export function ConsultingProjectModal({
               notice={milestoneNotice}
               onStatusChange={handleMilestoneStatusChange}
               onEditMilestone={viewerRole === "founder" ? setEditingMilestone : undefined}
+              onAddMilestone={viewerRole === "founder" ? () => setAddingMilestone(true) : undefined}
+              onDeleteMilestone={viewerRole === "founder" ? handleDeleteMilestone : undefined}
               canOnboard={Boolean(data.project.linked_tenant_id)}
               onStartOnboarding={() => setOnboardWizardOpen(true)}
             />
@@ -385,6 +404,23 @@ export function ConsultingProjectModal({
             await load();
             onChanged?.();
             setEditingMilestone(null);
+          }}
+        />
+      )}
+
+      {/* CS-2 — add-milestone modal. Reuses EditMilestoneModal in create mode;
+          POSTs to the new add route (appends at sort_order MAX+1). */}
+      {addingMilestone && (
+        <EditMilestoneModal
+          title="Add milestone"
+          submitLabel="Add milestone"
+          milestone={{ milestone_id: "", sort_order: 0, name: "", status: "not_started" } as ConsultingProjectMilestone}
+          onClose={() => setAddingMilestone(false)}
+          onSave={async (fields) => {
+            await post(`/consulting/projects/${projectId}/milestones`, fields);
+            await load();
+            onChanged?.();
+            setAddingMilestone(false);
           }}
         />
       )}
@@ -866,6 +902,8 @@ function MilestonesTab({
   notice,
   onStatusChange,
   onEditMilestone,
+  onAddMilestone,
+  onDeleteMilestone,
   canOnboard,
   onStartOnboarding,
 }: {
@@ -874,6 +912,8 @@ function MilestonesTab({
   notice: string | null;
   onStatusChange: (mid: string, s: MilestoneStatus) => void;
   onEditMilestone?: (m: ConsultingProjectMilestone) => void;
+  onAddMilestone?: () => void;
+  onDeleteMilestone?: (m: ConsultingProjectMilestone) => void;
   canOnboard?: boolean;
   onStartOnboarding?: () => void;
 }) {
@@ -900,11 +940,23 @@ function MilestonesTab({
             viewerRole={viewerRole}
             onStatusChange={onStatusChange}
             onEditMilestone={onEditMilestone}
+            onDeleteMilestone={onDeleteMilestone}
             canOnboard={canOnboard}
             onStartOnboarding={onStartOnboarding}
           />
         ))}
       </ol>
+      {/* CS-2 — founder adds a custom milestone to tailor the cloned template
+          into a bespoke scope. */}
+      {viewerRole === "founder" && onAddMilestone && (
+        <button
+          type="button"
+          onClick={onAddMilestone}
+          className="mt-1 w-full rounded-lg border-2 border-dashed border-slate-300 bg-white py-2 text-xs font-semibold text-slate-500 hover:border-slate-400 hover:text-slate-700"
+        >
+          + Add milestone
+        </button>
+      )}
     </div>
   );
 }
@@ -915,6 +967,7 @@ function MilestoneRow({
   viewerRole,
   onStatusChange,
   onEditMilestone,
+  onDeleteMilestone,
   canOnboard,
   onStartOnboarding,
 }: {
@@ -923,6 +976,7 @@ function MilestoneRow({
   viewerRole: "founder" | "client";
   onStatusChange: (mid: string, s: MilestoneStatus) => void;
   onEditMilestone?: (m: ConsultingProjectMilestone) => void;
+  onDeleteMilestone?: (m: ConsultingProjectMilestone) => void;
   canOnboard?: boolean;
   onStartOnboarding?: () => void;
 }) {
@@ -1038,6 +1092,18 @@ function MilestoneRow({
                   className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
                 >
                   Edit details
+                </button>
+              )}
+              {/* CS-2 — remove a milestone (confirm-guarded in the host). The
+                  backend blocks deleting a complete / paid / deliverable-bearing
+                  milestone with a friendly 409. */}
+              {onDeleteMilestone && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteMilestone(milestone)}
+                  className="rounded border border-red-200 bg-white px-2 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-50"
+                >
+                  Delete
                 </button>
               )}
             </div>
@@ -1249,10 +1315,14 @@ function EditMilestoneModal({
   milestone,
   onClose,
   onSave,
+  title,
+  submitLabel,
 }: {
   milestone: ConsultingProjectMilestone;
   onClose: () => void;
   onSave: (fields: Record<string, unknown>) => Promise<void>;
+  title?: string;
+  submitLabel?: string;
 }) {
   const initialPT = Boolean(
     typeof milestone.is_payment_trigger === "number"
@@ -1308,7 +1378,7 @@ function EditMilestoneModal({
     >
       <div className="w-full max-w-md rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="border-b border-slate-100 px-5 py-3">
-          <h3 className="text-sm font-bold text-slate-900">Edit milestone</h3>
+          <h3 className="text-sm font-bold text-slate-900">{title || "Edit milestone"}</h3>
         </div>
         <div className="space-y-3 px-5 py-4">
           {err && (
@@ -1374,7 +1444,7 @@ function EditMilestoneModal({
             disabled={saving}
             className="rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Save changes"}
+            {saving ? "Saving…" : (submitLabel || "Save changes")}
           </button>
         </div>
       </div>
