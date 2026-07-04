@@ -41,6 +41,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { IadmModal, CORE_BLUE } from "../IadmModal";
+import { OnboardingWizardModal } from "./OnboardingWizardModal";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { CheckCircle2, ChevronDown, ChevronRight, Lock, User, Send, AlertCircle } from "lucide-react";
 
@@ -100,6 +101,9 @@ export interface ConsultingProjectRow {
   client_name?: string | null;
   client_email?: string | null;
   client_phone?: string | null;
+  /** PB-2 — set once the client is provisioned a tenant (consulting.project
+   *  .linked_tenant_id). Drives the milestone "Start Onboarding" launcher. */
+  linked_tenant_id?: string | null;
   owner_user_id?: string | null;
   owner_display_name?: string | null;
   owner_avatar_url?: string | null;
@@ -147,6 +151,10 @@ export function ConsultingProjectModal({
 
   const [tab, setTab] = useState<"overview" | "milestones">("overview");
   const [data, setData] = useState<WorkspaceResponse | null>(null);
+  // PB-2 — milestone-anchored onboarding launcher. Opened by the "Start
+  // Onboarding" button on the Platform-Provisioning milestone; scoped to the
+  // project's linked_tenant_id.
+  const [onboardWizardOpen, setOnboardWizardOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [milestoneNotice, setMilestoneNotice] = useState<string | null>(null);
@@ -332,6 +340,8 @@ export function ConsultingProjectModal({
               viewerRole={viewerRole}
               notice={milestoneNotice}
               onStatusChange={handleMilestoneStatusChange}
+              canOnboard={Boolean(data.project.linked_tenant_id)}
+              onStartOnboarding={() => setOnboardWizardOpen(true)}
             />
           )}
         </div>
@@ -352,6 +362,20 @@ export function ConsultingProjectModal({
             void load();
             onChanged?.();
           }}
+        />
+      )}
+
+      {/* PB-2 — milestone-anchored onboarding wizard. Launched from the
+          Platform-Provisioning milestone's "Start Onboarding" button; scoped to
+          the client's tenant (Business/User profile → platform onboarding). */}
+      {data?.project?.linked_tenant_id && (
+        <OnboardingWizardModal
+          open={onboardWizardOpen}
+          tenantId={onboardWizardOpen ? data.project.linked_tenant_id : null}
+          tenantName={data.project.client_name || undefined}
+          mode="onboarding"
+          onClose={() => { setOnboardWizardOpen(false); void load(); onChanged?.(); }}
+          onFinished={() => { void load(); onChanged?.(); }}
         />
       )}
     </IadmModal>
@@ -789,11 +813,15 @@ function MilestonesTab({
   viewerRole,
   notice,
   onStatusChange,
+  canOnboard,
+  onStartOnboarding,
 }: {
   milestones: ConsultingProjectMilestone[];
   viewerRole: "founder" | "client";
   notice: string | null;
   onStatusChange: (mid: string, s: MilestoneStatus) => void;
+  canOnboard?: boolean;
+  onStartOnboarding?: () => void;
 }) {
   if (milestones.length === 0) {
     return (
@@ -817,6 +845,8 @@ function MilestonesTab({
             milestone={m}
             viewerRole={viewerRole}
             onStatusChange={onStatusChange}
+            canOnboard={canOnboard}
+            onStartOnboarding={onStartOnboarding}
           />
         ))}
       </ol>
@@ -829,11 +859,15 @@ function MilestoneRow({
   milestone,
   viewerRole,
   onStatusChange,
+  canOnboard,
+  onStartOnboarding,
 }: {
   number: number;
   milestone: ConsultingProjectMilestone;
   viewerRole: "founder" | "client";
   onStatusChange: (mid: string, s: MilestoneStatus) => void;
+  canOnboard?: boolean;
+  onStartOnboarding?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   // Schema in-flight states (migration 106): in_progress + the two "parked"
@@ -936,6 +970,31 @@ function MilestoneRow({
                 >
                   Mark incomplete
                 </button>
+              )}
+            </div>
+          )}
+
+          {/* PB-2 — Start Onboarding launcher on the Platform-Provisioning
+              milestone. Launches the two-phase wizard scoped to the client's
+              tenant: selection → business/user profile → platform onboarding. */}
+          {viewerRole === "founder" && /provision/i.test(milestone.name) && onStartOnboarding && (
+            <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
+              <div className="text-xs font-semibold text-sky-900">Platform onboarding</div>
+              <div className="mt-0.5 text-[11px] text-sky-800">
+                Launch the guided setup — selection, then business and user profile, then platform onboarding.
+              </div>
+              <button
+                type="button"
+                disabled={!canOnboard}
+                onClick={onStartOnboarding}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Start Onboarding →
+              </button>
+              {!canOnboard && (
+                <div className="mt-1 text-[10px] text-sky-700">
+                  Assign the client a tenant first (via their paid subscription) to enable onboarding.
+                </div>
               )}
             </div>
           )}
