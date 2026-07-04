@@ -5,6 +5,7 @@ import { useArionContext } from '../../useArionContext';
 import { useAnalyticsData } from '../../analytics/useAnalyticsData';
 import { ARION_COLORS, ARION_PALETTE, CHART_FILLS, DELTA_COLORS, PERIOD_OPTIONS, formatNumber, formatPct, formatDuration, bounceColor, formatDelta } from '../../analytics/chartConfig';
 import { ConsultingUpsell } from '../../components/Ui';
+import { AnalyticsNotConnected } from '../../analytics/AnalyticsNotConnected';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip);
 
@@ -17,6 +18,9 @@ export function AnalyticsContent() {
   const canCompare = tier === 'pro' || tier === 'business';
 
   const { data, loading, error } = useAnalyticsData(activeSiteId, period, compare);
+
+  // A3-1 — no blank page when GA4 isn't connected yet.
+  if (data?.connected === false) return <AnalyticsNotConnected />;
 
   if (loading) {
     return <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>Loading content data...</div>;

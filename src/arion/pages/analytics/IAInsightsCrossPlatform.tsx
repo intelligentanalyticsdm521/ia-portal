@@ -2,10 +2,15 @@ import { useArionContext } from '../../useArionContext';
 import { useAnalyticsData } from '../../analytics/useAnalyticsData';
 import { formatNumber } from '../../analytics/chartConfig';
 import { ConsultingUpsell } from '../../components/Ui';
+import { AnalyticsNotConnected } from '../../analytics/AnalyticsNotConnected';
 
 export function IAInsightsCrossPlatform() {
   const { selectedSite, activeSiteId } = useArionContext();
   const { data, loading } = useAnalyticsData(activeSiteId, 30);
+
+  // A3-1 — the funnel's top-of-funnel metric is GA4 sessions; show a connect
+  // CTA instead of an all-zero funnel when GA4 isn't linked yet.
+  if (data?.connected === false) return <AnalyticsNotConnected />;
 
   if (!selectedSite) {
     return <div style={{ padding: 24, color: '#5A7A8A' }}>No ARION site selected.</div>;
