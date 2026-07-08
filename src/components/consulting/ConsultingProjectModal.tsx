@@ -557,6 +557,8 @@ export function ConsultingProjectModal({
         <AddDocumentModal
           projectId={project.project_id}
           milestoneId={addDocMilestoneId}
+          clientEmail={project.client_email || null}
+          onCreateProposal={(mid) => { setShowAddDoc(false); setAddDocMilestoneId(null); handleCreateProposal(mid); }}
           onClose={() => { setShowAddDoc(false); setAddDocMilestoneId(null); }}
           onAdded={() => {
             setShowAddDoc(false);
@@ -949,7 +951,7 @@ function SendIntakeModal({
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             rows={3}
-            placeholder="Hi Angel — please fill this out before our next call. — Brandon"
+            placeholder="Add a personal note (optional)"
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
           />
         </div>
@@ -979,20 +981,27 @@ interface DocTemplatePickerRow {
 }
 
 function AddDocumentModal({
-  projectId, milestoneId, onClose, onAdded,
+  projectId, milestoneId, clientEmail, onClose, onAdded, onCreateProposal,
 }: {
   projectId: string;
   milestoneId?: string | null;
+  clientEmail?: string | null;
   onClose: () => void;
   onAdded: () => void;
+  onCreateProposal?: (milestoneId: string) => void;
 }) {
   const { get, post } = useOliverApi();
 
   const [templates, setTemplates] = useState<DocTemplatePickerRow[]>([]);
   const [templateId, setTemplateId] = useState<string>("");
+  const [sendNow, setSendNow] = useState(true);
+  const [recipient, setRecipient] = useState<string>(clientEmail || "");
+  const [note, setNote] = useState("");
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => { setRecipient(clientEmail || ""); }, [clientEmail]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1010,18 +1019,29 @@ function AddDocumentModal({
     return () => { cancelled = true; };
   }, [get]);
 
+  const isProposal = templateId === "__proposal__";
+
   async function handleAdd() {
     if (!templateId) { setError("Pick a document."); return; }
+    // A proposal is just a document type — create it in OLIVER, linked to this step.
+    if (isProposal) {
+      if (milestoneId && onCreateProposal) onCreateProposal(milestoneId);
+      onClose();
+      return;
+    }
     setAdding(true);
     setError(null);
     try {
       await post(`/consulting/projects/${projectId}/intake-submissions`, {
         template_id: templateId,
         milestone_id: milestoneId || null,
+        send_email: sendNow,
+        recipient_email: recipient.trim() || undefined,
+        message: note.trim() || undefined,
       });
       onAdded();
     } catch (e) {
-      setError((e as Error).message || "Could not attach document");
+      setError((e as Error).message || "Could not add document");
     } finally {
       setAdding(false);
     }
@@ -1035,8 +1055,8 @@ function AddDocumentModal({
       onClose={onClose}
       product="oliver"
       eyebrow="ADD DOCUMENT"
-      title="Attach a document to this step"
-      subtitle={<span className="text-xs">Pick any document template — it files onto the milestone. Nothing is emailed.</span>}
+      title="Add a document to this step"
+      subtitle={<span className="text-xs">Pick a document (a form or a proposal). Optionally send it to the client right now.</span>}
       size="info"
       footer={
         <div className="flex items-center justify-end gap-2">
@@ -1054,7 +1074,7 @@ function AddDocumentModal({
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white disabled:opacity-50"
             style={{ background: CORE_BLUE }}
           >
-            {adding ? "Attaching…" : "Attach document"}
+            {adding ? "Working…" : isProposal ? "Create proposal" : sendNow ? "Add & send" : "Add document"}
           </button>
         </div>
       }
@@ -1070,20 +1090,17 @@ function AddDocumentModal({
             Document
           </label>
           {loading ? (
-            <div className="text-xs text-slate-500 italic">Loading document templates…</div>
-          ) : templates.length === 0 ? (
-            <div className="text-xs text-slate-500 italic">
-              No document templates yet — build one in <strong>Consulting · Document Library</strong>.
-            </div>
+            <div className="text-xs text-slate-500 italic">Loading documents…</div>
           ) : (
             <select
               value={templateId}
               onChange={(e) => setTemplateId(e.target.value)}
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm bg-white"
             >
+              {onCreateProposal && <option value="__proposal__">Proposal (create in OLIVER)</option>}
               {templates.map((t) => (
                 <option key={t.template_id} value={t.template_id}>
-                  {t.name} · {t.kind}{t.scope === "system" ? " (system)" : ""} · v{t.version}
+                  {t.name}{t.kind !== "intake" ? ` · ${t.kind}` : ""}
                 </option>
               ))}
             </select>
@@ -1091,12 +1108,47 @@ function AddDocumentModal({
           {selected?.description && (
             <p className="text-[11px] text-slate-500 mt-1">{selected.description}</p>
           )}
-          {selected?.kind === "intake" && (
-            <p className="text-[11px] text-amber-700 mt-1">
-              This is an intake form. Attaching files it as a draft — use <strong>Send intake</strong> instead to email the client a fillable link.
-            </p>
-          )}
         </div>
+
+        {!isProposal && (
+          <>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={sendNow} onChange={(e) => setSendNow(e.target.checked)} />
+              Send to the client now
+            </label>
+            {sendNow && (
+              <>
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                    Recipient (from the client's contact)
+                  </label>
+                  <input
+                    type="email"
+                    value={recipient}
+                    onChange={(e) => setRecipient(e.target.value)}
+                    placeholder="client@example.com"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  />
+                  {!recipient && (
+                    <p className="text-[11px] text-amber-700 mt-0.5">No contact email on file — add one to the client, or type it here.</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                    Note (optional)
+                  </label>
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    rows={2}
+                    placeholder="Add a personal note (optional)"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  />
+                </div>
+              </>
+            )}
+          </>
+        )}
       </div>
     </IadmModal>
   );
@@ -1547,36 +1599,14 @@ function MilestoneRow({
           <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Documents</span>
-              {viewerRole === "founder" && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {onAddDocument && (
-                    <button
-                      type="button"
-                      onClick={() => onAddDocument(milestone.milestone_id)}
-                      className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      + Add document
-                    </button>
-                  )}
-                  {onCreateProposal && (
-                    <button
-                      type="button"
-                      onClick={() => onCreateProposal(milestone.milestone_id)}
-                      className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      + Create proposal
-                    </button>
-                  )}
-                  {onSendIntake && (
-                    <button
-                      type="button"
-                      onClick={() => onSendIntake(milestone.milestone_id)}
-                      className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      Send intake
-                    </button>
-                  )}
-                </div>
+              {viewerRole === "founder" && onAddDocument && (
+                <button
+                  type="button"
+                  onClick={() => onAddDocument(milestone.milestone_id)}
+                  className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  + Add document
+                </button>
               )}
             </div>
             {intakes.length === 0 && proposals.length === 0 ? (
@@ -1634,7 +1664,7 @@ function MilestoneRow({
             )}
             {viewerRole === "founder" && (
               <p className="mt-1.5 text-[10px] text-slate-400">
-                <strong>+ Create proposal</strong> makes a draft linked here — open <strong>OLIVER › Proposals</strong> to add line items &amp; send.
+                <strong>+ Add document</strong> attaches a form or a proposal and can email the client the link right away.
               </p>
             )}
           </div>
