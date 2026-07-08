@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Users, Megaphone, Globe as GlobeIcon, Zap as ZapIcon } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { useLumenApi } from "../../hooks/useLumenApi";
+import { useMsal } from "@azure/msal-react";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { findWalkthrough, Walkthrough } from "../../components/walkthroughs/walkthroughRegistry";
 import { WalkthroughRunner } from "../../components/walkthroughs/WalkthroughRunner";
@@ -42,12 +43,24 @@ interface WalkthroughProgressRow {
   status?: string;
 }
 interface WalkthroughProgressResponse {
-  data?: WalkthroughProgressRow | null;
+  // GET /walkthrough-progress returns { rows: [...] } — NOT a { data } envelope.
+  // lumenFetch only auto-unwraps { data }, so the raw { rows } object arrives here.
+  rows?: WalkthroughProgressRow[];
 }
 
 export function SparkOverviewPage() {
   const { get, ready } = useSparkApi();
-  const { get: lumenGet, ready: lumenReady } = useLumenApi();
+  const { get: lumenGet, put: lumenPut, ready: lumenReady } = useLumenApi();
+  const { accounts } = useMsal();
+  // Per-USER identity (not tenant) for once-only walkthrough gating.
+  const walkthroughUserId = accounts[0]?.localAccountId || accounts[0]?.homeAccountId || "anon";
+  const walkthroughSeenKey = `iadm.walkthrough.spark-basics.seen.${walkthroughUserId}`;
+  // A founder/consultant viewing a client's portal is NOT the client user —
+  // never fire the onboarding walkthrough in view-as / consultant-workspace mode.
+  const inConsultantWorkspace = (() => {
+    try { return sessionStorage.getItem("iadm.portal.consultantWorkspace.v1") === "true"; }
+    catch { return false; }
+  })();
   const [activeWalkthrough, setActiveWalkthrough] = useState<Walkthrough | null>(null);
   const [usage, setUsage] = useState<UsageResponse["data"] | null>(null);
   const [activeAutomations, setActiveAutomations] = useState<number | null>(null);
@@ -95,6 +108,15 @@ export function SparkOverviewPage() {
   // G4-S8: auto-fire spark-basics walkthrough on first visit. Gates on lumen.walkthrough_progress (migration 110). If backend not deployed yet, the fetch 404s and the walkthrough auto-fires — which is the desired first-run behavior anyway.
   useEffect(() => {
     if (!lumenReady) return;
+    // (1) Never onboard a founder/consultant working inside a client's portal —
+    // they are not the client user. Fixes "fires every time I open a client's SPARK".
+    if (inConsultantWorkspace) return;
+    // (2) Per-USER once-only gate. Reads the logged-in USER (not the tenant): if
+    // this user has already been shown spark-basics, never re-fire. This is the
+    // durable gate — the backend lumen.walkthrough_progress is per-tenant and is
+    // NOT persisting in prod (0 rows), so the per-user marker is what actually
+    // stops the every-login loop.
+    try { if (localStorage.getItem(walkthroughSeenKey) === "1") return; } catch { /* ignore */ }
     let cancelled = false;
     (async () => {
       try {
@@ -103,7 +125,7 @@ export function SparkOverviewPage() {
           const r = await lumenGet<WalkthroughProgressResponse>(
             "/walkthrough-progress?walkthrough_id=spark-basics"
           );
-          row = (r?.data ?? null) as WalkthroughProgressRow | null;
+          row = (r?.rows?.[0] ?? null) as WalkthroughProgressRow | null;
         } catch {
           // 404 / not-yet-deployed / transient — fall through to auto-fire.
           row = null;
@@ -111,14 +133,30 @@ export function SparkOverviewPage() {
         if (cancelled) return;
         if (!row || !isSparkBasicsCompleted(row.status)) {
           const w = findWalkthrough("spark-basics");
-          if (w) setActiveWalkthrough(w);
+          if (w) {
+            // Mark seen for THIS user so it shows at most once (first login).
+            try { localStorage.setItem(walkthroughSeenKey, "1"); } catch { /* ignore */ }
+            setActiveWalkthrough(w);
+          }
         }
       } catch {
         // Never break the page render if the gate fails.
       }
     })();
     return () => { cancelled = true; };
-  }, [lumenGet, lumenReady]);
+  }, [lumenGet, lumenReady, inConsultantWorkspace, walkthroughSeenKey]);
+
+  // Persist the walkthrough outcome so it doesn't re-fire on every visit.
+  // Root cause of the loop: onComplete/onClose only closed the modal locally
+  // and never wrote lumen.walkthrough_progress, so the GET gate always saw
+  // "no row" and re-fired spark-basics every login. Best-effort PUT.
+  async function persistWalkthrough(id: string, status: "completed" | "skipped") {
+    try {
+      await lumenPut("/walkthrough-progress", { walkthrough_id: id, status });
+    } catch {
+      // never block closing the modal on a persistence hiccup
+    }
+  }
 
   return (
     <SparkPageShell
@@ -187,8 +225,16 @@ export function SparkOverviewPage() {
       <WalkthroughRunner
         open={!!activeWalkthrough}
         walkthrough={activeWalkthrough}
-        onClose={() => setActiveWalkthrough(null)}
-        onComplete={() => setActiveWalkthrough(null)}
+        onClose={() => {
+          const id = activeWalkthrough?.id;
+          setActiveWalkthrough(null);
+          if (id) void persistWalkthrough(id, "skipped");
+        }}
+        onComplete={() => {
+          const id = activeWalkthrough?.id;
+          setActiveWalkthrough(null);
+          if (id) void persistWalkthrough(id, "completed");
+        }}
       />
     </SparkPageShell>
   );
