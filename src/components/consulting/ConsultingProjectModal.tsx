@@ -181,7 +181,7 @@ export function ConsultingProjectModal({
 }: ConsultingProjectModalProps) {
   const { get, post, patch, del } = useOliverApi();
 
-  const [tab, setTab] = useState<"overview" | "milestones" | "deliverables" | "notes" | "activity" | "invoices">("overview");
+  const [tab, setTab] = useState<"overview" | "milestones" | "deliverables" | "notes" | "activity" | "invoices" | "proposals">("overview");
   const [data, setData] = useState<WorkspaceResponse | null>(null);
   // PB-2 — milestone-anchored onboarding launcher. Opened by the "Start
   // Onboarding" button on the Platform-Provisioning milestone; scoped to the
@@ -371,6 +371,7 @@ export function ConsultingProjectModal({
           <TabButton active={tab === "notes"} onClick={() => setTab("notes")}>Notes</TabButton>
           <TabButton active={tab === "activity"} onClick={() => setTab("activity")}>Activity</TabButton>
           <TabButton active={tab === "invoices"} onClick={() => setTab("invoices")}>Invoices</TabButton>
+          <TabButton active={tab === "proposals"} onClick={() => setTab("proposals")}>Proposals</TabButton>
         </div>
 
         <div className="flex-1 overflow-y-auto bg-slate-50">
@@ -428,6 +429,9 @@ export function ConsultingProjectModal({
           )}
           {data && tab === "invoices" && (
             <PaymentScheduleTab projectId={data.project.project_id} viewerRole={viewerRole} />
+          )}
+          {data && tab === "proposals" && (
+            <ProposalsTab projectId={data.project.project_id} milestones={milestones} viewerRole={viewerRole} />
           )}
         </div>
       </div>
@@ -510,6 +514,129 @@ export function ConsultingProjectModal({
         />
       )}
     </IadmModal>
+  );
+}
+
+// ─── ProposalsTab — link OLIVER proposals to this project + milestone ─────
+interface ProposalRow {
+  proposal_id: string;
+  title?: string | null;
+  status?: string | null;
+  total?: number | null;
+  project_id?: string | null;
+  milestone_id?: string | null;
+}
+
+function ProposalsTab({ projectId, milestones, viewerRole }: {
+  projectId: string;
+  milestones: ConsultingProjectMilestone[];
+  viewerRole?: string;
+}) {
+  const { get, post } = useOliverApi();
+  const [linked, setLinked] = useState<ProposalRow[]>([]);
+  const [all, setAll] = useState<ProposalRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [pickProposal, setPickProposal] = useState("");
+  const [pickMilestone, setPickMilestone] = useState("");
+  const [linking, setLinking] = useState(false);
+
+  const money = (n: number | null | undefined) =>
+    `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const loadProposals = useCallback(async () => {
+    setLoading(true); setErr(null);
+    try {
+      const r = await get<{ proposals: ProposalRow[] }>(`/proposals?project_id=${encodeURIComponent(projectId)}`);
+      setLinked(Array.isArray(r?.proposals) ? r.proposals : []);
+      const a = await get<{ proposals: ProposalRow[] }>(`/proposals`);
+      setAll(Array.isArray(a?.proposals) ? a.proposals : []);
+    } catch (e) {
+      setErr((e as Error).message || "Could not load proposals");
+    } finally {
+      setLoading(false);
+    }
+  }, [get, projectId]);
+
+  useEffect(() => { void loadProposals(); }, [loadProposals]);
+
+  const unlinked = all.filter((p) => !p.project_id && p.status !== "declined");
+
+  async function handleLink() {
+    if (!pickProposal) return;
+    setLinking(true); setErr(null);
+    try {
+      await post(`/proposals/${pickProposal}/link`, { project_id: projectId, milestone_id: pickMilestone || null });
+      setPickProposal(""); setPickMilestone("");
+      await loadProposals();
+    } catch (e) {
+      setErr((e as Error).message || "Could not link proposal");
+    } finally {
+      setLinking(false);
+    }
+  }
+
+  return (
+    <div className="px-5 py-4 space-y-5 text-sm">
+      {err && <div className="rounded-lg bg-red-50 text-red-700 px-3 py-2 text-xs">{err}</div>}
+      <section>
+        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Proposals on this project</div>
+        {loading ? (
+          <div className="text-xs text-slate-500">Loading…</div>
+        ) : linked.length === 0 ? (
+          <div className="text-xs text-slate-500 italic">No proposals linked yet.</div>
+        ) : (
+          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 overflow-hidden">
+            {linked.map((p) => {
+              const ms = milestones.find((m) => m.milestone_id === p.milestone_id);
+              return (
+                <li key={p.proposal_id} className="px-3 py-2 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-slate-800 truncate">{p.title || "(untitled proposal)"}</div>
+                    <div className="text-[11px] text-slate-500">
+                      {money(p.total)}{ms ? ` · advances "${ms.name}" on accept` : ""}
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500 flex-shrink-0">
+                    {String(p.status || "—").replace(/_/g, " ")}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      {viewerRole === "founder" && (
+        <section className="rounded-lg border border-slate-200 p-3 space-y-2">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Link an existing proposal</div>
+          <select value={pickProposal} onChange={(e) => setPickProposal(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm">
+            <option value="">Select a proposal…</option>
+            {unlinked.map((p) => (
+              <option key={p.proposal_id} value={p.proposal_id}>
+                {(p.title || "(untitled)") + " — " + money(p.total) + " (" + (p.status || "") + ")"}
+              </option>
+            ))}
+          </select>
+          <select value={pickMilestone} onChange={(e) => setPickMilestone(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm">
+            <option value="">Advance which milestone when accepted? (optional)</option>
+            {milestones.map((m) => (
+              <option key={m.milestone_id} value={m.milestone_id}>{m.name}</option>
+            ))}
+          </select>
+          <button onClick={handleLink} disabled={!pickProposal || linking}
+            className="px-4 py-2 rounded-lg text-white font-semibold text-xs disabled:opacity-50"
+            style={{ background: "#1A3A4A" }}>
+            {linking ? "Linking…" : "Link proposal to project"}
+          </button>
+          <p className="text-[11px] text-slate-500">
+            Create a new proposal in OLIVER → Proposals, then link it here. When the client accepts it, the milestone above advances automatically.
+          </p>
+        </section>
+      )}
+    </div>
   );
 }
 
