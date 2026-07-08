@@ -916,6 +916,104 @@ function stepBingOauth(): Step {
  * Public builder
  * ────────────────────────────────────────────────────────────────────── */
 
+/* ──────────────────────────────────────────────────────────────────────
+ * Workflow node manifest (P0-4, Agency Foundation build 2026-07-04)
+ *
+ * The ORDER + conditional inclusion of ARION onboarding steps is now
+ * declared as DATA — a per-workflow manifest keyed by workflow_key that
+ * mirrors the seeded node rows in oliver.automation_rule 1:1
+ * (workflow_key + node_seq + action_params_json.step_id + conditional).
+ * Each manifest entry keeps a reference to the CODE builder that owns the
+ * step's action/waitFor/verify closures (those cannot live in the DB).
+ *
+ * buildArionSteps() materializes a manifest into the EXACT same Step[] it
+ * returned before this refactor — this changes ONLY where the orchestrator
+ * sources its ordered list, not any provisioning route and not the
+ * arion-func phase order.
+ *
+ * Phase 0 keeps the manifest in code (the single runtime source of order);
+ * the DB node rows are the OBSERVE copy the ARGUS Workflow surface renders.
+ * Converging the runtime source onto a DB fetch is the deferred convergence
+ * step (contract §7) — deliberately NOT done in Phase 0 so the
+ * provisioning-critical path gains no new runtime failure mode.
+ * ────────────────────────────────────────────────────────────────────── */
+
+interface ArionStepFlags {
+  has_seo_addon: boolean;
+}
+
+interface ArionWorkflowNode {
+  /** step_id — matches the seeded oliver.automation_rule node row. */
+  id: string;
+  /** Code builder owning this step's action/waitFor/verify closures. */
+  build: () => Step;
+  /** Optional conditional inclusion; omitted = always included. */
+  when?: (flags: ArionStepFlags) => boolean;
+}
+
+const seoOn = (f: ArionStepFlags): boolean => f.has_seo_addon === true;
+
+/**
+ * Manifests keyed by workflow_key (mirror oliver.automation_rule rows):
+ *   onboarding.arion.purchase  → domain_path purchase | subdomain
+ *   onboarding.arion.byo       → domain_path byo | hostinger_existing
+ *   onboarding.arion.migrate   → domain_path migrate
+ *
+ * NOTE: 'arion_plugin_swap' resolves to DIFFERENT builders per workflow —
+ * stepPluginStackSwap (purchase: full golden-master) vs stepPluginInstallOnly
+ * (byo: IA-plugin-only) — which intentionally share the same step id. This is
+ * why the manifest references builder functions, not just step ids.
+ */
+export const ARION_WORKFLOW_MANIFESTS: Record<string, ArionWorkflowNode[]> = {
+  "onboarding.arion.purchase": [
+    { id: "arion_questionnaire", build: stepQuestionnaire },
+    { id: "arion_hostinger_provision", build: stepHostingerProvision },
+    { id: "arion_plugin_swap", build: stepPluginStackSwap },
+    { id: "arion_create_wp_user", build: stepCreateWpUser },
+    { id: "arion_ai_website_builder", build: stepAiWebsiteBuilder },
+    { id: "arion_seo_project_create", build: stepSeoProjectCreate, when: seoOn },
+    { id: "arion_seo_keywords_seed", build: stepSeoKeywordsSeed, when: seoOn },
+    { id: "arion_seo_competitors_seed", build: stepSeoCompetitorsSeed, when: seoOn },
+    { id: "arion_seo_configure_tier", build: stepSeoConfigureTier, when: seoOn },
+    { id: "arion_google_setup_probe", build: stepGoogleSetupProbe },
+    { id: "arion_google_oauth", build: stepGoogleOauth },
+    { id: "arion_push_ga4_gtag", build: stepPushGa4Gtag },
+    { id: "arion_bing_setup_probe", build: stepBingSetupProbe },
+    { id: "arion_bing_oauth", build: stepBingOauth },
+  ],
+  "onboarding.arion.byo": [
+    { id: "arion_questionnaire", build: stepQuestionnaire },
+    { id: "arion_plugin_swap", build: stepPluginInstallOnly },
+    { id: "arion_create_wp_user", build: stepCreateWpUser },
+    { id: "arion_seo_project_create", build: stepSeoProjectCreate, when: seoOn },
+    { id: "arion_seo_keywords_seed", build: stepSeoKeywordsSeed, when: seoOn },
+    { id: "arion_seo_competitors_seed", build: stepSeoCompetitorsSeed, when: seoOn },
+    { id: "arion_seo_configure_tier", build: stepSeoConfigureTier, when: seoOn },
+    { id: "arion_google_setup_probe", build: stepGoogleSetupProbe },
+    { id: "arion_google_oauth", build: stepGoogleOauth },
+    { id: "arion_push_ga4_gtag", build: stepPushGa4Gtag },
+    { id: "arion_bing_setup_probe", build: stepBingSetupProbe },
+    { id: "arion_bing_oauth", build: stepBingOauth },
+  ],
+  "onboarding.arion.migrate": [
+    { id: "arion_questionnaire", build: stepQuestionnaire },
+    { id: "arion_mark_for_consulting", build: stepMarkForConsulting },
+  ],
+};
+
+/** domain_path → workflow_key. purchase/subdomain and byo/hostinger_existing
+ *  collapse to the same manifest, exactly as the old branching did. */
+export function arionWorkflowKey(domain_path: ArionDomainPath): string {
+  if (domain_path === "migrate") return "onboarding.arion.migrate";
+  if (domain_path === "purchase" || domain_path === "subdomain") return "onboarding.arion.purchase";
+  return "onboarding.arion.byo"; // byo | hostinger_existing
+}
+
+/** Materialize a manifest into the ordered Step[] the engine walks. */
+function materializeArionManifest(nodes: ArionWorkflowNode[], flags: ArionStepFlags): Step[] {
+  return nodes.filter((n) => !n.when || n.when(flags)).map((n) => n.build());
+}
+
 /**
  * Build the ARION step list for a given domain path + SEO add-on flag.
  *
@@ -923,53 +1021,17 @@ function stepBingOauth(): Step {
  *   purchase | subdomain   → full provision + AI WB
  *   byo | hostinger_existing → IA Plugin only, no AI WB
  *   migrate                → questionnaire + flag for consulting; runner stops
+ *
+ * Output is byte-identical to the pre-P0-4 hardcoded arrays — the manifest
+ * is a 1:1 transcription of the old ordered builder calls (SEO chain gated
+ * on has_seo_addon in the same position).
  */
 export function buildArionSteps(
   domain_path: ArionDomainPath,
   has_seo_addon: boolean,
 ): Step[] {
-  // Migrate path — questionnaire (capture business details for the
-  // consulting team's cutover scoping) then flag the tenant and stop.
-  if (domain_path === "migrate") {
-    return [stepQuestionnaire(), stepMarkForConsulting()];
-  }
-
-  const seoChain: Step[] = has_seo_addon ? [
-    stepSeoProjectCreate(),
-    stepSeoKeywordsSeed(),
-    stepSeoCompetitorsSeed(),
-    stepSeoConfigureTier(),
-  ] : [];
-
-  // purchase / subdomain — full provision + AI WB
-  if (domain_path === "purchase" || domain_path === "subdomain") {
-    return [
-      stepQuestionnaire(),
-      stepHostingerProvision(),
-      stepPluginStackSwap(),
-      stepCreateWpUser(),
-      stepAiWebsiteBuilder(),
-      ...seoChain,
-      stepGoogleSetupProbe(),
-      stepGoogleOauth(),
-      stepPushGa4Gtag(),
-      stepBingSetupProbe(),
-      stepBingOauth(),
-    ];
-  }
-
-  // byo / hostinger_existing — install IA plugin only, skip AI WB
-  return [
-    stepQuestionnaire(),
-    stepPluginInstallOnly(),
-    stepCreateWpUser(),
-    ...seoChain,
-    stepGoogleSetupProbe(),
-    stepGoogleOauth(),
-    stepPushGa4Gtag(),
-    stepBingSetupProbe(),
-    stepBingOauth(),
-  ];
+  const manifest = ARION_WORKFLOW_MANIFESTS[arionWorkflowKey(domain_path)];
+  return materializeArionManifest(manifest, { has_seo_addon });
 }
 
 export default buildArionSteps;

@@ -386,6 +386,41 @@ function stepProductCatalog(): Step {
  * Public builder
  * ────────────────────────────────────────────────────────────────────── */
 
+/* ──────────────────────────────────────────────────────────────────────
+ * Workflow node manifest (P0-4, Agency Foundation build 2026-07-04)
+ *
+ * The ORDER of OLIVER onboarding steps is now declared as DATA — a manifest
+ * (workflow_key 'onboarding.oliver') that mirrors the seeded node rows in
+ * oliver.automation_rule 1:1 (node_seq + action_params_json.step_id). Each
+ * entry references the CODE builder owning the step's closures. stripe_path
+ * and tier are passed to the builders that branch on them (stepStripeConnect,
+ * stepPortalWhiteLabel) — the branch logic is unchanged.
+ *
+ * Output is byte-identical to the pre-P0-4 hardcoded array. Phase 0 keeps the
+ * manifest in code (runtime source of order); the DB rows are the observe
+ * copy the ARGUS surface renders. DB-driven order is deferred (contract §7).
+ * ────────────────────────────────────────────────────────────────────── */
+
+interface OliverStepArgs {
+  stripe_path: OliverStripePath;
+  tier: OliverTier;
+}
+
+interface OliverWorkflowNode {
+  /** step_id — matches the seeded oliver.automation_rule node row. */
+  id: string;
+  /** Code builder owning this step's action/waitFor/verify closures. */
+  build: (args: OliverStepArgs) => Step;
+}
+
+/** Manifest keyed by workflow_key 'onboarding.oliver' (mirrors DB node rows). */
+export const OLIVER_WORKFLOW_MANIFEST: OliverWorkflowNode[] = [
+  { id: "oliver_stripe_connect", build: ({ stripe_path }) => stepStripeConnect(stripe_path) },
+  { id: "oliver_templates", build: () => stepTemplates() },
+  { id: "oliver_portal_white_label", build: ({ tier }) => stepPortalWhiteLabel(tier) },
+  { id: "oliver_service_catalog_seed", build: () => stepProductCatalog() },
+];
+
 /**
  * Build the OLIVER step list for a given Stripe path + tier.
  *
@@ -403,12 +438,8 @@ export function buildOliverSteps(
   stripe_path: OliverStripePath,
   tier: OliverTier,
 ): Step[] {
-  return [
-    stepStripeConnect(stripe_path),
-    stepTemplates(),
-    stepPortalWhiteLabel(tier),
-    stepProductCatalog(),
-  ];
+  const args: OliverStepArgs = { stripe_path, tier };
+  return OLIVER_WORKFLOW_MANIFEST.map((n) => n.build(args));
 }
 
 export default buildOliverSteps;
