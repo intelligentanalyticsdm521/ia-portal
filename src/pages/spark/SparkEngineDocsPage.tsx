@@ -80,10 +80,10 @@ const ARION_ENGINES: EngineDoc[] = [
       { key: "rating", weight: 0.30, source: "GBP average rating", benchmark: "gbp_avg_rating (4.5 home services, 4.7 legal)" },
     ] },
   { key: "technical", label: "Technical & Site Health", question: "Is the foundation solid?", icon: ShieldCheck, weight: 0.08, product: "ARION",
-    description: "Translates technical issues to business impact. Mobile PageSpeed + CWV + Wordfence + plugin currency.",
+    description: "Translates technical issues to business impact. Mobile PageSpeed + CWV + Shield Security + plugin currency.",
     scoreInputs: [
       { key: "mobile_perf", weight: 0.30, source: "Latest PageSpeed mobile score" },
-      { key: "security_score", weight: 0.25, source: "Wordfence overall_score or vulnerability count" },
+      { key: "security_score", weight: 0.25, source: "Shield Security overall_score or vulnerability count" },
       { key: "cwv_score", weight: 0.25, source: "LCP + CLS thresholds", benchmark: "cwv_mobile_lcp_ms (2500ms target)" },
       { key: "plugins_updates", weight: 0.20, source: "Outdated plugin count" },
     ] },

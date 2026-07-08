@@ -81,7 +81,7 @@ export function SecurityFirewall() {
         color: '#3b82f6',
         fontSize: 12,
       }}>
-        Upgrade to Pro for Wordfence Premium real-time rules.
+        Upgrade to Pro for Shield Security Pro real-time rules.
       </div>
 
       <ConsultingUpsell

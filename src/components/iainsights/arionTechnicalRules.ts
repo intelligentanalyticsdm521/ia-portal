@@ -2,7 +2,7 @@
 //
 // 22 conditional rules covering:
 //   - PageSpeed Insights mobile + desktop scores + CrUX field data
-//   - Wordfence firewall + scan + 2FA coverage
+//   - Shield firewall + scan + 2FA coverage
 //   - Plugin risk inventory (high-risk band, stale plugins)
 //   - SSL / WordPress version / PHP version freshness
 //   - Hosting uptime + maintenance posture
@@ -80,22 +80,24 @@ export const TECHNICAL_RULES: InsightRule[] = [
     action: () => `Trigger a manual PSI snapshot from the Core Web Vitals page now to get baseline performance data immediately, rather than waiting for the monthly timer.`,
   },
 
-  // ─── Wordfence Security ───────────────────────────────────────────
+  // ─── Shield Security ──────────────────────────────────────────────
   {
     id: "tech.wf.overall_score",
     category: "security",
     kind: "observation",
     dataSources: ["plugin"],
     priority: 9,
-    appliesWhen: (c) => c.plugin?.wfFull?.installed === true,
+    // Only fire when Shield reports a real overall_score — a null score is
+    // insufficient data, not a low score.
+    appliesWhen: (c) => c.plugin?.wfFull?.installed === true && c.plugin?.wfFull?.overall_score != null,
     observation: (c) => {
       const wf = c.plugin?.wfFull;
       const overall = Number(wf?.overall_score || 0);
       const firewall = Number(wf?.firewall_score || 0);
       const scan = Number(wf?.scan_score || 0);
-      if (overall >= 90) return `Wordfence protection is at ${overall}%. Firewall coverage ${firewall}% and scan coverage ${scan}%. Strong security posture; maintain weekly scan review cadence.`;
-      if (overall >= 70) return `Wordfence protection is at ${overall}%. Firewall ${firewall}%, scan ${scan}%. Healthy baseline; review the configuration gaps that aren't at 100% to close out the remaining hardening.`;
-      return `Wordfence protection is at ${overall}%. Firewall ${firewall}%, scan ${scan}%. Significant configuration gaps — Wordfence is installed but several protective features aren't enabled or are misconfigured. Review the Wordfence dashboard for specific gaps.`;
+      if (overall >= 90) return `Shield protection is at ${overall}%. Firewall coverage ${firewall}% and scan coverage ${scan}%. Strong security posture; maintain weekly scan review cadence.`;
+      if (overall >= 70) return `Shield protection is at ${overall}%. Firewall ${firewall}%, scan ${scan}%. Healthy baseline; review the configuration gaps that aren't at 100% to close out the remaining hardening.`;
+      return `Shield protection is at ${overall}%. Firewall ${firewall}%, scan ${scan}%. Significant configuration gaps — Shield is installed but several protective features aren't enabled or are misconfigured. Review the Shield dashboard for specific gaps.`;
     },
   },
   {
@@ -105,8 +107,8 @@ export const TECHNICAL_RULES: InsightRule[] = [
     dataSources: ["plugin"],
     priority: 9,
     appliesWhen: (c) => c.plugin?.wfFull && !c.plugin.wfFull.installed,
-    observation: () => `Wordfence is not installed. Production WordPress sites without a web-application firewall + malware scanner are exposed to commodity attacks (botnet exploits, brute-force login, plugin CVEs).`,
-    action: () => `Install Wordfence (free tier is sufficient for most sites). Take 15 minutes to enable: Firewall (Extended Protection), Login Security (2FA + reCAPTCHA), and Scanning (set to daily).`,
+    observation: () => `Shield is not installed. Production WordPress sites without a web-application firewall + malware scanner are exposed to commodity attacks (botnet exploits, brute-force login, plugin CVEs).`,
+    action: () => `Install Shield (free tier is sufficient for most sites). Take 15 minutes to enable: Firewall (Extended Protection), Login Security (2FA + reCAPTCHA), and Scanning (set to daily).`,
   },
   {
     id: "tech.wf.blocked_attacks",
@@ -119,8 +121,8 @@ export const TECHNICAL_RULES: InsightRule[] = [
       const wf = c.plugin?.wfFull;
       const blocked = Number(wf?.blocked_attacks_30d_total || 0);
       const top = wf?.top_countries?.[0];
-      if (blocked > 10000) return `Wordfence blocked ${blocked.toLocaleString()} attack attempts in the last 30 days${top ? `, most from ${top.country}` : ""}. High attack volume usually means your site is a generic target (login pages, common plugin vulns) — keep firewall + 2FA configurations current.`;
-      return `Wordfence blocked ${blocked.toLocaleString()} attack attempts in the last 30 days${top ? `, most from ${top.country}` : ""}. Normal baseline traffic for a public WordPress site; no specific concern.`;
+      if (blocked > 10000) return `Shield blocked ${blocked.toLocaleString()} attack attempts in the last 30 days${top ? `, most from ${top.country}` : ""}. High attack volume usually means your site is a generic target (login pages, common plugin vulns) — keep firewall + 2FA configurations current.`;
+      return `Shield blocked ${blocked.toLocaleString()} attack attempts in the last 30 days${top ? `, most from ${top.country}` : ""}. Normal baseline traffic for a public WordPress site; no specific concern.`;
     },
   },
   {
@@ -141,7 +143,7 @@ export const TECHNICAL_RULES: InsightRule[] = [
       const cov = Number(wf?.admin_2fa?.coverage_pct || 0);
       return `${with2fa} of ${total} admin accounts have 2FA enabled (${cov}% coverage). Admin-account 2FA is the single highest-impact security upgrade — it blocks ~99% of account takeovers even if a password leaks.`;
     },
-    action: () => `Enroll every administrator in 2FA this week. WP Admin → Wordfence → Login Security → enable 2FA for each admin account. Each admin can use the free Wordfence app or any TOTP app.`,
+    action: () => `Enroll every administrator in 2FA this week. WP Admin → Shield → Login Security → enable 2FA for each admin account. Each admin can use any TOTP app.`,
   },
   {
     id: "tech.wf.2fa_complete",
@@ -167,7 +169,7 @@ export const TECHNICAL_RULES: InsightRule[] = [
     observation: (c) => {
       const issues = c.plugin?.scanIssues?.issues || [];
       const crit = issues.filter((i: any) => i.severity === "critical" || i.severity === "high").length;
-      return `Wordfence has detected ${crit} critical-or-high scan finding${crit === 1 ? "" : "s"} on your site. These are file-integrity, malware-signature, or suspicious-pattern matches — different from outdated-plugin CVE matches. Review immediately.`;
+      return `Shield has detected ${crit} critical-or-high scan finding${crit === 1 ? "" : "s"} on your site. These are file-integrity, malware-signature, or suspicious-pattern matches — different from outdated-plugin CVE matches. Review immediately.`;
     },
     action: () => `Open the Security Overview page modal in the portal — scan findings are listed there with full context. Remediate critical findings today; high-severity within the week.`,
   },
@@ -317,7 +319,7 @@ export const TECHNICAL_RULES: InsightRule[] = [
     dataSources: ["plugin"],
     priority: 10,
     appliesWhen: (c) => c.plugin == null || (!c.plugin.wfFull && !c.plugin.psi),
-    observation: () => `IA Plugin is not connected. Without it there's no visibility into PageSpeed scores, Wordfence security posture, plugin risk inventory, scan findings, SSL status, or WordPress/PHP version freshness — these are the inputs to every Technical & Site Health observation.`,
+    observation: () => `IA Plugin is not connected. Without it there's no visibility into PageSpeed scores, Shield security posture, plugin risk inventory, scan findings, SSL status, or WordPress/PHP version freshness — these are the inputs to every Technical & Site Health observation.`,
     action: () => `Install + activate the IA Plugin on the WordPress site. Once connected, ARION pulls the full technical telemetry bundle within 24 hours.`,
   },
 
@@ -338,6 +340,6 @@ export const TECHNICAL_RULES: InsightRule[] = [
       const crit = issues.filter((i: any) => i.severity === "critical" || i.severity === "high").length;
       return wf?.installed === true && mobile >= 75 && wfOverall >= 80 && crit === 0;
     },
-    observation: () => `Technical baseline is healthy: PageSpeed > 75, Wordfence > 80%, no critical scan findings. Maintain monthly updates + quarterly PSI reviews to keep this position.`,
+    observation: () => `Technical baseline is healthy: PageSpeed > 75, Shield > 80%, no critical scan findings. Maintain monthly updates + quarterly PSI reviews to keep this position.`,
   },
 ];

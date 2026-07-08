@@ -1494,7 +1494,7 @@ export function renderModalContent(reportKey: string, d: any, searchData?: any, 
           <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, color: '#D4A800', marginBottom: 8 }}>Unlocks with IA Plugin</div>
           <ul style={{ fontSize: 11, color: '#5A7A8A', lineHeight: 1.7, paddingLeft: 18, marginTop: 0 }}>
             <li>WordPress &amp; PHP version status</li>
-            <li>Plugin security scan (Wordfence)</li>
+            <li>Plugin security scan (Shield Security)</li>
             <li>SSL certificate expiry countdown</li>
             <li>Backup status and last successful backup</li>
             <li>Uptime monitoring</li>

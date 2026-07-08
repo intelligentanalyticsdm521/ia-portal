@@ -101,7 +101,7 @@ function describeItem(product: string, item: SubNavItem): string {
     arion_dashboard: "ARION overview — site health, content freshness, SEO score, integrations status.",
     arion_website: "Your live WordPress site — pages, blocks, and inline editors.",
     arion_hosting: "Hostinger integration + WP admin access + DNS + SSL status.",
-    arion_security: "Wordfence security scans, PSI performance snapshots, uptime.",
+    arion_security: "Shield Security scans, PSI performance snapshots, uptime.",
     arion_seo: "SE Ranking-powered SEO — keywords, competitors, audit, content briefs.",
     arion_analytics: "GA4 + GSC dashboards + IA Insights scoring.",
   };

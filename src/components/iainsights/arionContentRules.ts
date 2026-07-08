@@ -11,7 +11,7 @@
 //   - Content gaps (orphaned pages, low-engagement high-traffic)
 //   - Engagement per content type
 //
-// Heavy use of pluginData (Wordfence + content age + word count + SEO
+// Heavy use of pluginData (Shield + content age + word count + SEO
 // detail) and SE Ranking decay data.
 
 import { type InsightRule, fmt, pct } from "./insightRules";

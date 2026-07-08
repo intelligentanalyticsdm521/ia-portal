@@ -48,7 +48,7 @@ export interface InsightContext {
   seo?: any;
   /** SE Ranking decay (rank-loss) data. */
   seoDecay?: any;
-  /** IA Plugin bundle (Wordfence, PSI, content age, plugin risk, etc.). */
+  /** IA Plugin bundle (Shield, PSI, content age, plugin risk, etc.). */
   plugin?: any;
   /** Tenant's primary domain string for personalised observations. */
   domain?: string;

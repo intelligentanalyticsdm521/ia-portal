@@ -12,9 +12,9 @@ import {
 /**
  * Security Overview — visual-first security posture for the site.
  *
- * Wordfence dual-gauge (firewall% + scan%), 30-day blocked-attack
+ * Shield dual-gauge (firewall% + scan%), 30-day blocked-attack
  * time-series with 7d highlight, top attacker countries, attack types,
- * admin 2FA coverage ring, plus a "Full Wordfence report" modal with
+ * admin 2FA coverage ring, plus a "Full Shield report" modal with
  * all scan findings.
  */
 export function SecurityOverview() {
@@ -88,10 +88,81 @@ export function SecurityOverview() {
   if (loading || secLoading) return <Loading />;
   if (!selectedSite) return <div style={{ padding: 24, color: 'var(--text-muted)' }}>No site selected.</div>;
 
+  // ── Shield Security dashboard (Wordfence replaced 2026-07-05) ──
+  // The IA plugin now sources security data from Shield (provider:'shield'),
+  // same payload shape. We render Shield's real protective signals; security
+  // *scores* are intentionally not shown here (reworked separately).
+  const shieldFull: any = (full as any)?.provider === 'shield' ? full : null;
+  if (shieldFull || !wf?.installed) {
+    const domain = (selectedSite as any)?.domain || 'your site';
+    if (!shieldFull) {
+      return (
+        <div><Card><div style={{ padding: 24, color: 'var(--text-muted)' }}>
+          No security plugin detected on {domain}. Shield Security will appear here once its connection is confirmed.
+        </div></Card></div>
+      );
+    }
+    const twofa = shieldFull.admin_2fa || { total_admins: 0, with_2fa: 0, coverage_pct: 0 };
+    const siteBlocks = Number(shieldFull.site_blocks_total ?? 0);
+    const threatIntel = Number(shieldFull.threat_intel_ips ?? shieldFull.blocked_ips_total ?? 0);
+    const malware = Number(shieldFull.malware_findings ?? 0);
+    const openFindings = Number(shieldFull.scan_findings_open ?? 0);
+    const scanNever = (shieldFull.scan_status || 'never') === 'never';
+    const tile = (label: string, value: string, accent: string) => (
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '14px 16px' }}>
+        <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: '#64748b', fontWeight: 600 }}>{label}</div>
+        <div style={{ fontSize: 22, fontWeight: 700, color: accent, marginTop: 4 }}>{value}</div>
+      </div>
+    );
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+          <span style={{ fontSize: 22 }}>🛡️</span>
+          <h2 style={{ margin: 0, fontSize: 18, color: '#0B1C24' }}>Security — Shield Security</h2>
+        </div>
+        <div style={{ background: '#F0FDF4', borderLeft: '4px solid #1D9E75', padding: '14px 18px', borderRadius: 6, marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#0B1C24' }}>
+            ✓ Shield Security is active on {domain}.
+          </div>
+          <div style={{ fontSize: 13, color: '#334155', marginTop: 4 }}>
+            Firewall, bot blocking, brute-force protection, and malware scanning are running.{threatIntel > 0 ? ` ${threatIntel.toLocaleString()} known-malicious IPs are pre-blocked from the CrowdSec threat-intel feed.` : ''}
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 12, marginBottom: 16 }}>
+          {tile('Attacks blocked (this site)', siteBlocks.toLocaleString(), siteBlocks > 0 ? '#D97706' : '#1D9E75')}
+          {tile('Offenses recorded', Number(shieldFull.offenses_total ?? 0).toLocaleString(), '#0B1C24')}
+          {tile('Threat-intel IPs pre-blocked', threatIntel.toLocaleString(), '#0B1C24')}
+          {tile('Admin 2FA', `${twofa.with_2fa}/${twofa.total_admins}`, twofa.coverage_pct >= 50 ? '#1D9E75' : '#D97706')}
+          {tile('Malware findings', String(malware), malware > 0 ? '#D85A30' : '#1D9E75')}
+          {tile('Open findings', String(openFindings), openFindings > 0 ? '#D97706' : '#1D9E75')}
+          {tile('Last scan', scanNever ? 'Not yet run' : (shieldFull.last_scan_at ? new Date(shieldFull.last_scan_at).toLocaleDateString() : '—'), '#0B1C24')}
+        </div>
+        {Array.isArray(shieldFull.attack_types) && shieldFull.attack_types.length > 0 && (
+          <Card>
+            <div style={{ padding: 16 }}>
+              <h3 style={{ marginTop: 0, fontSize: 14 }}>What Shield is blocking</h3>
+              {shieldFull.attack_types.map((t: any, i: number) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f1f5f9' }}>
+                  <span style={{ fontSize: 13, color: '#334155' }}>{t.type}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{Number(t.count).toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+        {scanNever && (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 12 }}>
+            A full malware/file scan hasn't run yet — Shield scans on its schedule; detailed scan results appear here after the first run.
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const storyBand = (() => {
-    if (!wf?.installed) return { tone: 'warn' as const, text: 'Wordfence is not installed. Install it to enable firewall protection and malware scanning.' };
-    if (overallScore != null && overallScore >= 80) return { tone: 'ok' as const, text: `Your security posture is strong. Wordfence is blocking ${blocked30dTotal.toLocaleString()} attacks per month.` };
-    if (overallScore != null && overallScore >= 50) return { tone: 'warn' as const, text: `Your security posture has gaps. Wordfence caught ${blocked30dTotal.toLocaleString()} attacks this month, but your configuration isn't maxed out.` };
+    if (!wf?.installed) return { tone: 'warn' as const, text: 'Shield Security is not active. Enable it for firewall protection and malware scanning.' };
+    if (overallScore != null && overallScore >= 80) return { tone: 'ok' as const, text: `Your security posture is strong. Shield is blocking ${blocked30dTotal.toLocaleString()} attacks per month.` };
+    if (overallScore != null && overallScore >= 50) return { tone: 'warn' as const, text: `Your security posture has gaps. Shield caught ${blocked30dTotal.toLocaleString()} attacks this month, but your configuration isn't maxed out.` };
     return { tone: 'err' as const, text: `Your security posture is weak. Enable the firewall, scan settings, and 2FA to tighten protection.` };
   })();
 
@@ -131,7 +202,7 @@ export function SecurityOverview() {
       </div>
 
       {/* Wordfence real-state panel (v2.0.11 — replaced made-up composite with actual state) */}
-      <Card title="Wordfence protection status">
+      <Card title="Shield protection status">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
           <StateTile
             label="Firewall"
@@ -156,7 +227,7 @@ export function SecurityOverview() {
           />
         </div>
         <div style={{ fontSize: 11, color: '#5A7A8A', marginTop: 12, lineHeight: 1.5 }}>
-          Each item reflects actual Wordfence state on your site. Use the "Safe Configuration" button above to enable anything showing OFF.
+          Each item reflects actual Shield state on your site. Use the "Safe Configuration" button above to enable anything showing OFF.
         </div>
       </Card>
 
@@ -171,7 +242,7 @@ export function SecurityOverview() {
       {/* Blocked attacks timeseries */}
       <Card title="Blocked attacks (last 30 days)">
         {blocked30d.length === 0 ? (
-          <EmptyInline message="No blocked-attack data yet — Wordfence collects this in the background." />
+          <EmptyInline message="No blocked-attack data yet — Shield collects this in the background." />
         ) : (
           <div style={{ height: 220 }}>
             <ResponsiveContainer>
@@ -279,7 +350,7 @@ export function SecurityOverview() {
       >
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 8 }}>
-            Live findings from Wordfence's scanner, sorted by severity. Each finding links back to the file + threat detail.
+            Live findings from Shield's scanner, sorted by severity. Each finding links back to the file + threat detail.
           </div>
         </div>
         {issues.length === 0 ? (
@@ -352,11 +423,11 @@ export function SecurityOverview() {
         open={configOpen}
         onClose={() => setConfigOpen(false)}
         eyebrow="Security configuration"
-        title="Safe Wordfence settings"
+        title="Safe Shield settings"
         width={700}
       >
         <div style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 14, lineHeight: 1.5 }}>
-          These settings tighten your site's security. ARION only allows you to <strong>enable</strong> protections here — to disable any of them you must go to the Wordfence admin directly. This keeps your site safe from accidental misconfigurations.
+          These settings tighten your site's security. ARION only allows you to <strong>enable</strong> protections here — to disable any of them you must go to the Shield Security admin directly. This keeps your site safe from accidental misconfigurations.
         </div>
         <div style={{ marginBottom: 14, padding: 12, background: '#EFF6FF', borderLeft: '3px solid #0284c7', borderRadius: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div style={{ fontSize: 12, color: '#0B1C24', lineHeight: 1.5, flex: 1 }}>
@@ -376,7 +447,7 @@ export function SecurityOverview() {
         )}
         <div style={{ display: 'grid', gap: 10 }}>
           {[
-            { key: 'firewall_enabled', label: 'Wordfence firewall', desc: 'Blocks known attack patterns. Wordfence starts in learning mode (monitor only) for the first week, then auto-enforces.' },
+            { key: 'firewall_enabled', label: 'Shield firewall', desc: 'Blocks known attack patterns. Shield enforces its firewall + bot protection continuously.' },
             { key: 'brute_force', label: 'Brute-force login protection', desc: 'Locks out IPs after repeated failed logins. Huge protection against credential-stuffing attacks.' },
             { key: 'require_admin_2fa', label: 'Require 2FA for admins', desc: 'Forces every administrator account to enroll in 2FA before they can log in. Blocks 99%+ of account takeovers.' },
             { key: 'block_fake_bots', label: 'Block fake search bots', desc: 'Real Googlebot traffic is allowed; fake bots claiming to be Google are blocked.' },
@@ -417,7 +488,7 @@ export function SecurityOverview() {
           })}
         </div>
         <div style={{ marginTop: 16, padding: 12, background: '#FFFBEB', borderLeft: '3px solid #D97706', borderRadius: 4, fontSize: 11, color: '#78350F', lineHeight: 1.5 }}>
-          <strong>Need to disable a setting?</strong> Open your WordPress admin → Wordfence → All Options. ARION intentionally doesn't let you disable security protections remotely.
+          <strong>Need to disable a setting?</strong> Open your WordPress admin → Shield Security → settings. ARION intentionally doesn't let you disable security protections remotely.
         </div>
       </DetailsModal>
 

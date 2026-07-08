@@ -174,7 +174,7 @@ export function WebsiteOverview() {
       )}
 
       {/* IA Defaults action bar — applies recommended config across every
-          protected plugin (LiteSpeed, Wordfence, Rank Math, WP Mail SMTP,
+          protected plugin (LiteSpeed, Shield Security, Rank Math, WP Mail SMTP,
           Safe SVG) and triggers a fresh PageSpeed run */}
       {pluginConnected && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
@@ -312,7 +312,7 @@ export function WebsiteOverview() {
                 <Empty message="Plugin not reachable — connect to see live security status." />
               ) : (
                 <div>
-                  <HealthRow status={wf?.firewall_enabled ? 'ok' : wf?.installed ? 'err' : 'warn'} label="Wordfence firewall" value={wf?.installed ? (wf.firewall_enabled ? 'Active' : 'Disabled') : 'Not installed'} />
+                  <HealthRow status={wf?.firewall_enabled ? 'ok' : wf?.installed ? 'err' : 'warn'} label="Shield firewall" value={wf?.installed ? (wf.firewall_enabled ? 'Active' : 'Disabled') : 'Not installed'} />
                   <HealthRow status={firewallScore != null && firewallScore >= 70 ? 'ok' : firewallScore != null ? 'warn' : 'warn'} label="Firewall score" value={firewallScore != null ? `${firewallScore}%` : '—'} />
                   <HealthRow status={scanScore != null && scanScore >= 70 ? 'ok' : scanScore != null ? 'warn' : 'warn'} label="Scan score" value={scanScore != null ? `${scanScore}%` : '—'} />
                   <HealthRow status={core?.critical_count === 0 ? 'ok' : 'err'} label="WP Site Health critical" value={core?.critical_count ?? '—'} />
@@ -415,7 +415,7 @@ export function WebsiteOverview() {
             {evL ? (
               <div style={{ padding: 8, color: '#5A7A8A', fontSize: 12 }}>Loading…</div>
             ) : recentEvents.length === 0 ? (
-              <Empty message="No plugin-reported events yet. Publishing content, activating plugins, or Wordfence alerts will appear here." />
+              <Empty message="No plugin-reported events yet. Publishing content, activating plugins, or security alerts will appear here." />
             ) : (
               <div>
                 {recentEvents.slice(0, 8).map((e: any) => (
@@ -472,7 +472,7 @@ export function WebsiteOverview() {
           <div style={{ fontSize: 12, fontWeight: 600, color: '#0B1C24', marginBottom: 8 }}>What this does</div>
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: '#5A7A8A', lineHeight: 1.8 }}>
             <li><strong>LiteSpeed Cache</strong> — page + mobile + browser cache, CSS/JS minify, image optimization + WebP, lazy-load, DB cleanup (~30 settings)</li>
-            <li><strong>Wordfence</strong> — firewall ON, brute-force protection, require 2FA for admins, all scans enabled, block fake bots, hide WP version (~20 settings)</li>
+            <li><strong>Shield Security</strong> — firewall ON, brute-force protection, require 2FA for admins, all scans enabled, block fake bots, hide WP version (~20 settings)</li>
             <li><strong>Rank Math SEO</strong> — headless support, readability analysis, sitemap generation</li>
             <li><strong>WP Mail SMTP</strong> — sets From email/name to your admin email + site name (doesn't touch SMTP credentials)</li>
             <li><strong>Safe SVG</strong> — verifies active</li>

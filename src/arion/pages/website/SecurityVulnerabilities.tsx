@@ -6,9 +6,9 @@ import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Responsive
 
 /**
  * Security Vulnerabilities — cross-references installed plugins against the
- * Wordfence public vulnerability feed. Surfaces known CVEs AND outdated
+ * Shield Security public vulnerability feed. Surfaces known CVEs AND outdated
  * plugins (which are the #1 vector for future vulnerabilities), so the page
- * is always actionable even when the Wordfence feed returns no matches.
+ * is always actionable even when the Shield Security feed returns no matches.
  */
 export function SecurityVulnerabilities() {
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
@@ -26,7 +26,7 @@ export function SecurityVulnerabilities() {
     [activeSiteId, version]
   );
 
-  // v2.0.7 — plugin risk analysis + Wordfence scan findings
+  // v2.0.7 — plugin risk analysis + Shield Security scan findings
   const { data: riskEnv } = useArionData(
     () => activeSiteId ? arionApi.getPluginRiskAnalysis(activeSiteId) : Promise.resolve(null),
     [activeSiteId, version]
@@ -68,8 +68,8 @@ export function SecurityVulnerabilities() {
   const critical = v.critical ?? 0;
   const high = v.high ?? 0;
   const medium = v.medium ?? 0;
-  const wordfenceStatus = v.wordfence_status || 'unknown';
-  const scanFindingsTotal = v.wordfence_scan_findings_total ?? 0;
+  const wordfenceStatus = v.security_status || v.wordfence_status || 'unknown';
+  const scanFindingsTotal = v.security_scan_findings_total ?? v.wordfence_scan_findings_total ?? 0;
   const pluginSource = v.plugin_source;
   const pluginListError = v.plugin_list_error;
   const dataSource = v.data_source;
@@ -112,14 +112,14 @@ export function SecurityVulnerabilities() {
       return {
         tone: 'warn' as const,
         headline: `No known CVEs — but ${outdatedActive} active plugins are running outdated versions.`,
-        body: 'Your current plugin versions have no known vulnerabilities in the Wordfence database. However, outdated plugins are the #1 cause of future vulnerabilities — patches released now often fix CVEs that will be disclosed later. Update on your next maintenance pass.',
+        body: 'Your current plugin versions have no known vulnerabilities in the Shield Security database. However, outdated plugins are the #1 cause of future vulnerabilities — patches released now often fix CVEs that will be disclosed later. Update on your next maintenance pass.',
       };
     }
     if (pluginsChecked > 0) {
       return {
         tone: 'ok' as const,
         headline: 'Your site has no known vulnerabilities and every plugin is current.',
-        body: `We checked ${pluginsChecked} installed plugins. Wordfence ran ${scanFindingsTotal} scan finding${scanFindingsTotal === 1 ? '' : 's'} locally on the site and none matched known plugin CVEs. Nothing to address right now — keep an eye on this page after future updates.`,
+        body: `We checked ${pluginsChecked} installed plugins. Shield Security ran ${scanFindingsTotal} scan finding${scanFindingsTotal === 1 ? '' : 's'} locally on the site and none matched known plugin CVEs. Nothing to address right now — keep an eye on this page after future updates.`,
       };
     }
     return {
@@ -329,7 +329,7 @@ export function SecurityVulnerabilities() {
         );
       })()}
 
-      {/* Wordfence scan findings summary */}
+      {/* Shield Security scan findings summary */}
       {(() => {
         const scan = (scanEnv as any)?.data;
         if (!scan || !scan.installed) return null;
@@ -337,9 +337,9 @@ export function SecurityVulnerabilities() {
         if (issues.length === 0) return null;
         return (
           <div style={{ marginTop: 16 }}>
-            <Card title={`Wordfence scan findings (${issues.length})`}>
+            <Card title={`Shield Security scan findings (${issues.length})`}>
               <div style={{ fontSize: 11, color: '#5A7A8A', marginBottom: 10, lineHeight: 1.5 }}>
-                Findings from Wordfence's file-integrity + malware scanner. These are different from CVE matches — they catch actual file modifications, suspicious patterns, and known-bad signatures on your server.
+                Findings from Shield Security's file-integrity + malware scanner. These are different from CVE matches — they catch actual file modifications, suspicious patterns, and known-bad signatures on your server.
               </div>
               <table className="tbl" style={{ width: '100%', fontSize: 12 }}>
                 <thead>
@@ -435,7 +435,7 @@ export function SecurityVulnerabilities() {
               {pluginSource && <span style={{ marginLeft: 6, fontSize: 10, color: '#94A3B8' }}>(source: {pluginSource})</span>}
             </div>
             <div>
-              <strong>Wordfence on site:</strong>{' '}
+              <strong>Shield Security on site:</strong>{' '}
               <span style={{ color: wordfenceStatus === 'installed' ? '#1D9E75' : '#D97706', fontWeight: 600 }}>
                 {wordfenceStatus}
               </span>{' '}

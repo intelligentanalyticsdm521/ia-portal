@@ -187,7 +187,7 @@ export const ARGUS_INTENTS: ArgusIntent[] = [
   { id: "arion_plugin", keywords: ["install plugin", "wordpress plugin", "ia plugin"],
     reply: "Plugin Provisioning is the one-click installer for the IA plugin (pushes site data to ARION).",
     cta: { label: "Open Plugin Provisioning", to: "/app/services/arion_plugin_provisioning" } },
-  { id: "arion_security", keywords: ["security", "vulnerabilities", "wordfence"],
+  { id: "arion_security", keywords: ["security", "vulnerabilities", "shield", "wordfence"],
     reply: "ARION Security shows scan results, threats, and vulnerability status.",
     cta: { label: "Open Security", to: "/app/services/arion_website_security_overview" } },
   { id: "arion_backups", keywords: ["backup", "restore site", "backup site"],

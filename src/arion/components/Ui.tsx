@@ -410,7 +410,7 @@ export function HealthScoreRing({
 }
 
 /**
- * MiniGauge — small radial percentage for Wordfence-style dual scores.
+ * MiniGauge — small radial percentage for Shield Security-style dual scores.
  */
 export function MiniGauge({
   score, label, size = 100,

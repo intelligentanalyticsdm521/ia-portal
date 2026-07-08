@@ -681,6 +681,10 @@ export function technicalHealthEngine(input: EngineInput): ReportAnalysis {
   const wfOverall = pluginData?.wfFull?.overall_score ?? null;
   const vulnerabilities = Number(pluginData?.wfFull?.vulnerabilities_count || pluginData?.security?.vulnerabilities || 0);
   const pluginsOutdated = Number(pluginData?.plugins?.outdated_count || 0);
+  // Shield Security can return a null overall_score. Only treat the score as
+  // known when it's a real number; a null score with no vulnerability signal
+  // is insufficient data, not a low score.
+  const securityScoreKnown = wfOverall != null || vulnerabilities > 0;
 
   const performanceScore = (mobilePerf + desktopPerf) / 2;
   const securityScore = wfOverall != null ? clamp(Number(wfOverall), 0, 100) : (vulnerabilities === 0 ? 80 : 50);
@@ -689,12 +693,21 @@ export function technicalHealthEngine(input: EngineInput): ReportAnalysis {
   const cwvScore = (lcpMobile > 0 && lcpMobile < lcpBenchmark ? 100 : lcpMobile < lcpBenchmark * 1.6 ? 60 : 30) * 0.5
                  + (cls > 0 && cls < 0.1 ? 100 : cls < 0.25 ? 60 : 30) * 0.5;
 
-  const score = Math.round(
-    performanceScore * 0.30 +
-    securityScore * 0.25 +
-    cwvScore * 0.25 +
-    updatesScore * 0.20
-  );
+  // When the security score is unknown (Shield returned null and no vulns
+  // detected), redistribute its 0.25 weight across the measured components so
+  // an absent score doesn't report a wrong low health number.
+  const score = securityScoreKnown
+    ? Math.round(
+        performanceScore * 0.30 +
+        securityScore * 0.25 +
+        cwvScore * 0.25 +
+        updatesScore * 0.20
+      )
+    : Math.round(
+        performanceScore * 0.40 +
+        cwvScore * 0.33 +
+        updatesScore * 0.27
+      );
 
   const observations: string[] = [];
   if (mobilePerf > 0) {
@@ -702,9 +715,11 @@ export function technicalHealthEngine(input: EngineInput): ReportAnalysis {
     observations.push(`Mobile PageSpeed: ${Math.round(mobilePerf)}/100, LCP ${lcpSec.toFixed(2)}s, CLS ${cls.toFixed(3)}. ${lcpSec > 2.5 ? `A 2-second LCP improvement typically lifts service-business conversion 12-15%. Current LCP of ${lcpSec.toFixed(2)}s is leaving conversion on the table.` : "Core Web Vitals are passing — strong technical foundation."}`);
   }
   if (vulnerabilities > 0) {
-    observations.push(`${vulnerabilities} known plugin vulnerabilities detected by Wordfence. Each unpatched vulnerability is an open door — even one critical-severity finding can lead to a complete site compromise and recovery costs that dwarf the cost of patching.`);
+    observations.push(`${vulnerabilities} known plugin vulnerabilities detected by Shield Security. Each unpatched vulnerability is an open door — even one critical-severity finding can lead to a complete site compromise and recovery costs that dwarf the cost of patching.`);
+  } else if (securityScoreKnown) {
+    observations.push("No active plugin vulnerabilities — Shield Security is clean. Maintain monthly plugin updates to keep it that way.");
   } else {
-    observations.push("No active plugin vulnerabilities — Wordfence is clean. Maintain monthly plugin updates to keep it that way.");
+    observations.push("Security score is not yet available — Shield Security hasn't reported an overall score for this site. Once it does, the security component will factor into your health score. Until then this score reflects performance, Core Web Vitals, and plugin updates only.");
   }
   if (pluginsOutdated > 0) {
     observations.push(`${pluginsOutdated} plugins have updates pending. Outdated plugins are the most common WordPress attack vector — schedule monthly updates to close the window.`);
@@ -718,7 +733,7 @@ export function technicalHealthEngine(input: EngineInput): ReportAnalysis {
     actions.push(`Optimize images on the homepage: convert to WebP, set explicit dimensions, lazy-load below-fold. This is the highest-ROI LCP fix for most service-business sites.`);
   }
   if (vulnerabilities > 0) {
-    actions.push(`Patch the ${vulnerabilities} flagged plugin vulnerabilities this week. Wordfence's report lists the affected plugin and severity — update or replace each.`);
+    actions.push(`Patch the ${vulnerabilities} flagged plugin vulnerabilities this week. Shield Security's report lists the affected plugin and severity — update or replace each.`);
   }
   if (pluginsOutdated >= 3) {
     actions.push(`Schedule a plugin maintenance window: update the ${pluginsOutdated} outdated plugins on staging first, then promote to production. Backup before each batch.`);

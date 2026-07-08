@@ -734,7 +734,7 @@ export const ARION_QUICK_TOUR: TourDef = {
     // ── Security & Performance ─────────────────────────────────────────────
     {
       title: "Security — Overview",
-      body: "Wordfence scan results, threat level, and security posture at a glance.",
+      body: "Shield Security scan results, threat level, and security posture at a glance.",
       targetSelector: "a[href='/app/services/arion_website_security_overview']",
       placement: "right",
     },

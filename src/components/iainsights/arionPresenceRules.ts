@@ -13,7 +13,7 @@ function components(c: any) {
   const psi = c.plugin?.psi || [];
   const latestPsi = psi.length > 0 ? psi[psi.length - 1] : null;
   const performance = Number(latestPsi?.mobileScore ?? latestPsi?.mobile?.performance ?? NaN);
-  // Security (Wordfence overall)
+  // Security (Shield overall) — null score is excluded, not scored low.
   const security = Number(c.plugin?.wfFull?.overall_score ?? NaN);
   // SEO content (avg Rank Math score)
   const content = Number(c.plugin?.seoAgg?.seo?.avg_seo_score ?? NaN);
@@ -110,7 +110,7 @@ export const PRESENCE_RULES: InsightRule[] = [
       const weakest = usable.slice().sort((a, b) => a.score - b.score)[0];
       const map: Record<string, string> = {
         performance: `Run Lighthouse on the homepage and address the top 3 opportunities — typically render-blocking JS, oversized images, and CLS.`,
-        security: `Open the Security Overview page — install or reconfigure Wordfence, enable 2FA on all admin accounts, and resolve any critical scan findings.`,
+        security: `Open the Security Overview page — install or reconfigure Shield, enable 2FA on all admin accounts, and resolve any critical scan findings.`,
         content: `Audit posts with Rank Math SEO scores below 50 — fix focus keywords, meta descriptions, and heading hierarchy on the top-traffic ones.`,
         local: `Reply to unanswered GBP reviews, publish 1 GBP post this week, and upload 3-5 photos. Each compounds your local-pack ranking.`,
         search: `Identify quick-win keywords ranking 11-20 in SE Ranking. A focused content refresh + 2-3 internal links can push them onto page 1.`,
@@ -161,8 +161,8 @@ export const PRESENCE_RULES: InsightRule[] = [
     dataSources: ["plugin"],
     priority: 8,
     appliesWhen: (c) => c.plugin?.wfFull && !c.plugin.wfFull.installed,
-    observation: () => `Wordfence not installed. Security posture is currently unmeasured + unprotected — a public WordPress site without a firewall is exposed to commodity attacks regardless of how careful the rest of your security is.`,
-    action: () => `Install Wordfence (free tier sufficient). Enable Firewall, Login Security (2FA), and daily scans within 15 minutes of activation.`,
+    observation: () => `Shield not installed. Security posture is currently unmeasured + unprotected — a public WordPress site without a firewall is exposed to commodity attacks regardless of how careful the rest of your security is.`,
+    action: () => `Install Shield (free tier sufficient). Enable Firewall, Login Security (2FA), and daily scans within 15 minutes of activation.`,
   },
   {
     id: "presence.performance.no_psi",
@@ -270,7 +270,7 @@ export const PRESENCE_RULES: InsightRule[] = [
       if (c.gbp?.connected === true) connected.push("GBP");
       if (c.bing?.connected === true) connected.push("Bing");
       if (c.seo?.connected === true) connected.push("SE Ranking");
-      if (c.plugin?.wfFull?.installed === true) connected.push("Wordfence");
+      if (c.plugin?.wfFull?.installed === true) connected.push("Shield");
       if (c.plugin?.psi != null) connected.push("PSI");
       return `Data sources currently feeding presence analysis: ${connected.length > 0 ? connected.join(" · ") : "none"}. ${connected.length < 4 ? "Adding the missing sources expands the accuracy of every other observation." : "Strong cross-source coverage — most observations have enough data to be reliable."}`;
     },
