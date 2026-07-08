@@ -43,6 +43,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { IadmModal, CORE_BLUE } from "../IadmModal";
 import { OnboardingWizardModal } from "./OnboardingWizardModal";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { DeliverableActionPanel, type DeliverableShape } from "./DeliverableActionPanel";
 import { CheckCircle2, ChevronDown, ChevronRight, Lock, User, Send, AlertCircle } from "lucide-react";
 
 // ─── Color tokens ────────────────────────────────────────────────────────
@@ -129,9 +130,31 @@ export interface ConsultingProjectRow {
   next_step_for_founder?: string | null;
 }
 
+// CS-6 — consulting.deliverable row as returned by GET /consulting/projects/:id.
+// Columns confirmed via SQL against iadm_services.consulting.deliverable.
+// NOTE: the wire column is `revision_note` (SINGULAR); DeliverableActionPanel's
+// shape uses `revision_notes` (PLURAL) — mapped at the render site below.
+interface ConsultingDeliverable {
+  deliverable_id: string;
+  title?: string | null;
+  description?: string | null;
+  file_url?: string | null;
+  file_name?: string | null;
+  status: string;
+  is_payment_trigger?: boolean | number | null;
+  payment_amount_cents?: number | null;
+  payment_charge_status?: string | null;
+  created_at?: string | null;
+  approved_at?: string | null;
+  revision_requested_at?: string | null;
+  revision_note?: string | null;
+  sent_at?: string | null;
+}
+
 interface WorkspaceResponse {
   project: ConsultingProjectRow;
   milestones: ConsultingProjectMilestone[];
+  deliverables?: ConsultingDeliverable[];
 }
 
 // ─── Modal props ─────────────────────────────────────────────────────────
@@ -158,7 +181,7 @@ export function ConsultingProjectModal({
 }: ConsultingProjectModalProps) {
   const { get, post, patch, del } = useOliverApi();
 
-  const [tab, setTab] = useState<"overview" | "milestones">("overview");
+  const [tab, setTab] = useState<"overview" | "milestones" | "deliverables" | "notes" | "activity" | "invoices">("overview");
   const [data, setData] = useState<WorkspaceResponse | null>(null);
   // PB-2 — milestone-anchored onboarding launcher. Opened by the "Start
   // Onboarding" button on the Platform-Provisioning milestone; scoped to the
@@ -337,10 +360,17 @@ export function ConsultingProjectModal({
               </span>
             )}
           </TabButton>
-          <DisabledTab label="Messages" />
-          <DisabledTab label="Activity" />
-          <DisabledTab label="Deliverables" />
-          <DisabledTab label="Invoices" />
+          <TabButton active={tab === "deliverables"} onClick={() => setTab("deliverables")}>
+            Deliverables
+            {(data?.deliverables?.length ?? 0) > 0 && (
+              <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                {data?.deliverables?.length}
+              </span>
+            )}
+          </TabButton>
+          <TabButton active={tab === "notes"} onClick={() => setTab("notes")}>Notes</TabButton>
+          <TabButton active={tab === "activity"} onClick={() => setTab("activity")}>Activity</TabButton>
+          <TabButton active={tab === "invoices"} onClick={() => setTab("invoices")}>Invoices</TabButton>
         </div>
 
         <div className="flex-1 overflow-y-auto bg-slate-50">
@@ -378,6 +408,26 @@ export function ConsultingProjectModal({
               canOnboard={Boolean(data.project.linked_tenant_id)}
               onStartOnboarding={() => setOnboardWizardOpen(true)}
             />
+          )}
+          {data && tab === "deliverables" && (
+            <DeliverablesTab
+              deliverables={data.deliverables || []}
+              viewerRole={viewerRole}
+              onChanged={load}
+            />
+          )}
+          {data && tab === "notes" && (
+            <ProjectNotesTab projectId={data.project.project_id} viewerRole={viewerRole} />
+          )}
+          {data && tab === "activity" && (
+            <ProjectActivityTab
+              project={data.project}
+              milestones={milestones}
+              deliverables={data.deliverables || []}
+            />
+          )}
+          {data && tab === "invoices" && (
+            <PaymentScheduleTab projectId={data.project.project_id} viewerRole={viewerRole} />
           )}
         </div>
       </div>
@@ -1461,6 +1511,571 @@ function EditMilestoneModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CS-6 — Founder Deliverables tab.
+//
+// Lists the project's deliverables (consulting.deliverable rows returned by
+// GET /consulting/projects/:id) with title / description / file download, then
+// mounts the shared DeliverableActionPanel inline beneath each row. The panel
+// is self-contained (POSTs via useOliverApi) and fully status-aware — it
+// renders its own StatusPill + the founder CTAs (Send to Client on pending,
+// Waiting-on-client / Approved / In-revision meta strips otherwise) — so this
+// host only owns the title/description/file presentation.
+//
+// context="standalone" (the panel default) deliberately suppresses the Pay CTA
+// here: project-level deliverable payment flows through the milestone surface,
+// not this list. The wire column revision_note (SINGULAR) is mapped to the
+// panel shape's revision_notes (PLURAL) at the mount site.
+// ─────────────────────────────────────────────────────────────────────────
+function DeliverablesTab({
+  deliverables,
+  viewerRole,
+  onChanged,
+}: {
+  deliverables: ConsultingDeliverable[];
+  viewerRole: "founder" | "client";
+  onChanged: () => void;
+}) {
+  if (!deliverables.length) {
+    return (
+      <div className="px-6 py-10 text-center text-sm text-slate-500">
+        No deliverables on this project yet. They appear here once a deliverable is filed to a milestone.
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3 p-4">
+      {deliverables.map((d) => {
+        const panelShape: DeliverableShape = {
+          deliverable_id: d.deliverable_id,
+          status: d.status,
+          is_payment_trigger: d.is_payment_trigger ?? null,
+          payment_amount_cents: d.payment_amount_cents ?? null,
+          payment_charge_status: d.payment_charge_status ?? null,
+          approved_at: d.approved_at ?? null,
+          revision_requested_at: d.revision_requested_at ?? null,
+          // consulting.deliverable.revision_note (SINGULAR) → panel's plural field.
+          revision_notes: d.revision_note ?? null,
+        };
+        return (
+          <div key={d.deliverable_id} className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold text-slate-900">
+                  {d.title || d.file_name || "Untitled deliverable"}
+                </div>
+                {d.description?.trim() && (
+                  <div className="mt-0.5 whitespace-pre-wrap text-xs text-slate-600">{d.description}</div>
+                )}
+                {d.sent_at && (
+                  <div className="mt-1 text-[11px] text-slate-400">
+                    Sent to client {new Date(d.sent_at).toLocaleDateString()}
+                  </div>
+                )}
+              </div>
+              {d.file_url && (
+                <a
+                  href={d.file_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  {d.file_name ? "Download" : "Open file"}
+                </a>
+              )}
+            </div>
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <DeliverableActionPanel
+                deliverable={panelShape}
+                viewerRole={viewerRole}
+                onChanged={onChanged}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CS-7 — Project Notes tab.
+//
+// Project-level notes thread (consulting.project_note), mirroring the
+// deliverable-note thread UX. GET/POST /consulting/projects/:id/notes. Founder
+// picks visibility (internal vs client-visible); the server locks clients to
+// client_visible. Degrades to a quiet empty state on 404 so it survives a
+// backend that hasn't shipped the routes yet.
+// ─────────────────────────────────────────────────────────────────────────
+type ProjectNoteVisibility = "internal" | "client_visible";
+interface ProjectNote {
+  note_id: string;
+  author_kind?: string;
+  author_display_name?: string | null;
+  body: string;
+  visibility: ProjectNoteVisibility;
+  created_at: string | null;
+}
+
+function ProjectNotesTab({
+  projectId,
+  viewerRole,
+}: {
+  projectId: string;
+  viewerRole: "founder" | "client";
+}) {
+  const { get, post } = useOliverApi();
+  const [notes, setNotes] = useState<ProjectNote[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [body, setBody] = useState("");
+  const [visibility, setVisibility] = useState<ProjectNoteVisibility>("client_visible");
+  const [busy, setBusy] = useState(false);
+  const [composeError, setComposeError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await get<{ notes: ProjectNote[] }>(`/consulting/projects/${projectId}/notes`);
+      setNotes(Array.isArray(r?.notes) ? r.notes : []);
+    } catch (e) {
+      const msg = (e as Error).message || "";
+      if (msg.includes("404") || /not[_\s-]?found/i.test(msg)) setNotes([]);
+      else setError(msg || "Could not load notes.");
+    } finally {
+      setLoading(false);
+    }
+  }, [get, projectId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function handleSend() {
+    const trimmed = body.trim();
+    if (!trimmed) { setComposeError("Type a note first."); return; }
+    setBusy(true);
+    setComposeError(null);
+    try {
+      const payload: { body: string; visibility?: ProjectNoteVisibility } = { body: trimmed };
+      if (viewerRole === "founder") payload.visibility = visibility;
+      await post(`/consulting/projects/${projectId}/notes`, payload);
+      setBody("");
+      await load();
+    } catch (e) {
+      setComposeError((e as Error).message || "Could not post note.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2 p-4">
+      {loading ? (
+        <div className="rounded-lg border border-dashed border-slate-200 px-3 py-2 text-xs italic text-slate-400">Loading notes…</div>
+      ) : error ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>
+      ) : notes.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-xs italic text-slate-400">
+          No notes on this project yet.
+        </div>
+      ) : (
+        <ul className="space-y-1.5">
+          {notes.map((n) => {
+            const isInternal = n.visibility === "internal";
+            if (isInternal && viewerRole === "client") return null;
+            return (
+              <li key={n.note_id} className={`rounded-lg border px-2.5 py-1.5 ${isInternal ? "border-slate-300 bg-slate-100" : "border-slate-200 bg-white"}`}>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-semibold text-slate-800">{n.author_display_name || n.author_kind || "—"}</span>
+                  <span className="text-[10px] text-slate-400">{fmtNoteDateTime(n.created_at)}</span>
+                  {isInternal && (
+                    <span className="ml-auto rounded-full bg-slate-300 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-700">Internal</span>
+                  )}
+                </div>
+                <div className="mt-0.5 whitespace-pre-wrap text-xs text-slate-700">{n.body}</div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <div className="rounded-lg border border-slate-200 bg-white p-2">
+        {viewerRole === "founder" && (
+          <div className="mb-1 text-[10px] italic text-slate-500">Internal notes are NOT visible to your client.</div>
+        )}
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder={viewerRole === "founder" ? "Add a note for your team or your client…" : "Add a note for the IA team…"}
+          rows={2}
+          disabled={busy}
+          className="w-full resize-y rounded border border-slate-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500"
+        />
+        <div className="mt-1.5 flex items-center gap-2">
+          {viewerRole === "founder" && (
+            <select
+              value={visibility}
+              onChange={(e) => setVisibility(e.target.value as ProjectNoteVisibility)}
+              disabled={busy}
+              className="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[11px]"
+              aria-label="Note visibility"
+            >
+              <option value="client_visible">Visible to client</option>
+              <option value="internal">Internal (team only)</option>
+            </select>
+          )}
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={busy || !body.trim()}
+            className="ml-auto rounded bg-sky-600 px-3 py-1 text-[11px] font-bold text-white hover:bg-sky-700 disabled:opacity-50"
+          >
+            {busy ? "Posting…" : "Post note"}
+          </button>
+        </div>
+        {composeError && <div className="mt-1 text-[11px] text-red-700">{composeError}</div>}
+      </div>
+    </div>
+  );
+}
+
+function fmtNoteDateTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CS-7 — Project Activity tab.
+//
+// A read-only timeline synthesized from the timestamps ALREADY loaded in the
+// project workspace (project create/start/close, milestone completions,
+// deliverable filed/sent/revision/approved). No new event-log table or
+// write-path instrumentation — the feed is derived from current-state rows, so
+// it's honest and immediately useful. A persistent, granular event log is a
+// deliberate future enhancement if richer history is needed.
+// ─────────────────────────────────────────────────────────────────────────
+function ProjectActivityTab({
+  project,
+  milestones,
+  deliverables,
+}: {
+  project: ConsultingProjectRow;
+  milestones: ConsultingProjectMilestone[];
+  deliverables: ConsultingDeliverable[];
+}) {
+  const events = useMemo(() => {
+    const out: { at: string; label: string; tone: "slate" | "sky" | "amber" | "emerald" }[] = [];
+    const push = (at: string | null | undefined, label: string, tone: "slate" | "sky" | "amber" | "emerald") => {
+      if (at) out.push({ at, label, tone });
+    };
+    push(project.created_at, "Project created", "slate");
+    push(project.started_at, "Project started", "sky");
+    push(project.closed_at, "Project closed", "slate");
+    for (const m of milestones) {
+      push(m.completed_at, `Milestone completed — ${m.name}`, "emerald");
+    }
+    for (const d of deliverables) {
+      const t = d.title || d.file_name || "deliverable";
+      push(d.created_at, `Deliverable filed — ${t}`, "slate");
+      push(d.sent_at, `Sent to client — ${t}`, "sky");
+      push(d.revision_requested_at, `Revisions requested — ${t}`, "amber");
+      push(d.approved_at, `Approved — ${t}`, "emerald");
+    }
+    return out.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  }, [project, milestones, deliverables]);
+
+  if (events.length === 0) {
+    return (
+      <div className="px-6 py-10 text-center text-sm text-slate-500">
+        No activity yet. Milestone and deliverable events will appear here as work progresses.
+      </div>
+    );
+  }
+
+  const dot: Record<string, string> = {
+    slate: "bg-slate-400",
+    sky: "bg-sky-500",
+    amber: "bg-amber-500",
+    emerald: "bg-emerald-500",
+  };
+
+  return (
+    <div className="p-4">
+      <ul className="space-y-0">
+        {events.map((e, i) => (
+          <li key={`${e.at}-${i}`} className="flex gap-3">
+            <div className="flex flex-col items-center">
+              <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dot[e.tone] || "bg-slate-400"}`} />
+              {i < events.length - 1 && <span className="w-px flex-1 bg-slate-200" />}
+            </div>
+            <div className="pb-4">
+              <div className="text-xs font-medium text-slate-800">{e.label}</div>
+              <div className="text-[11px] text-slate-400">{fmtNoteDateTime(e.at)}</div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CS-8 — Payment schedule (manual split) tab.
+//
+// Founder sets a payment split (50/50, 40/30/30, or custom %) for the project.
+// POST /consulting/projects/:id/payment-milestones materializes the split into
+// `oliver.payment_milestone` rows (parent_kind 'project') — the SAME table the
+// charge engine bills. This surface is SETUP ONLY: it creates the schedule; it
+// does NOT charge a card. Firing the actual client charge is the separate
+// confirm_charge-guarded flow (CS-3, deferred pending a supervised live test),
+// so there is deliberately no "Charge now" button here.
+//
+// Reads the existing GET /payment-milestones?parent_kind=project&parent_id=…
+// (unwrapped to an array by useOliverApi). Clear & re-split is allowed only
+// while every milestone is still in a planning state (server-enforced).
+// ─────────────────────────────────────────────────────────────────────────
+interface PaymentMilestoneRow {
+  payment_milestone_id: string;
+  sort_order: number;
+  name: string;
+  payment_pct?: number | null;
+  payment_amount_cents?: number | null;
+  status: string;
+}
+
+function fmtCents(cents: number | null | undefined): string {
+  if (cents == null || !Number.isFinite(Number(cents))) return "";
+  return `$${(Number(cents) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function PaymentScheduleTab({
+  projectId,
+  viewerRole,
+}: {
+  projectId: string;
+  viewerRole: "founder" | "client";
+}) {
+  const { get, post, del } = useOliverApi();
+  const [rows, setRows] = useState<PaymentMilestoneRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customRows, setCustomRows] = useState<{ name: string; pct: string }[]>([
+    { name: "Deposit", pct: "50" },
+    { name: "Final Payment", pct: "50" },
+  ]);
+
+  const isFounder = viewerRole === "founder";
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await get<PaymentMilestoneRow[]>(
+        `/payment-milestones?parent_kind=project&parent_id=${encodeURIComponent(projectId)}`,
+      );
+      setRows(Array.isArray(r) ? r : []);
+    } catch (e) {
+      const msg = (e as Error).message || "";
+      if (msg.includes("404") || /not[_\s-]?found/i.test(msg)) setRows([]);
+      else setError(msg || "Could not load the payment schedule.");
+    } finally {
+      setLoading(false);
+    }
+  }, [get, projectId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function createSplit(kind: "50_50" | "40_30_30" | "custom") {
+    setBusy(true);
+    setError(null);
+    try {
+      const payload: { kind: string; milestones?: { name: string; payment_pct: number }[] } = { kind };
+      if (kind === "custom") {
+        const parsed = customRows.map((r) => ({ name: r.name.trim(), payment_pct: Number(r.pct) }));
+        const sum = parsed.reduce((s, m) => s + (Number.isFinite(m.payment_pct) ? m.payment_pct : 0), 0);
+        if (parsed.some((m) => !m.name)) { setError("Every milestone needs a name."); setBusy(false); return; }
+        if (Math.abs(sum - 100) > 0.01) { setError(`Percentages must sum to 100 (got ${sum}).`); setBusy(false); return; }
+        payload.milestones = parsed;
+      }
+      await post(`/consulting/projects/${projectId}/payment-milestones`, payload);
+      setCustomOpen(false);
+      await load();
+    } catch (e) {
+      setError((e as Error).message || "Could not create the schedule.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearSchedule() {
+    setBusy(true);
+    setError(null);
+    try {
+      await del(`/consulting/projects/${projectId}/payment-milestones`);
+      await load();
+    } catch (e) {
+      setError((e as Error).message || "Could not clear the schedule.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading) {
+    return <div className="px-6 py-10 text-center text-sm text-slate-500">Loading payment schedule…</div>;
+  }
+
+  const anyCharged = rows.some((r) => !["ready", "n/a"].includes(String(r.status)));
+
+  return (
+    <div className="space-y-3 p-4">
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
+      )}
+
+      {rows.length === 0 ? (
+        // ── No schedule yet — the split picker ──
+        isFounder ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="text-sm font-semibold text-slate-900">Set a payment schedule</div>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Choose how this project&apos;s fee is split into milestones. This just sets up the schedule — no card is charged here.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => createSplit("50_50")}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                50 / 50 &mdash; Deposit + Final
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => createSplit("40_30_30")}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                40 / 30 / 30 &mdash; Deposit + Mid + Final
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setCustomOpen((v) => !v)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Custom…
+              </button>
+            </div>
+
+            {customOpen && (
+              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="space-y-1.5">
+                  {customRows.map((r, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input
+                        value={r.name}
+                        onChange={(e) => setCustomRows((rs) => rs.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                        placeholder="Milestone name"
+                        className="flex-1 rounded border border-slate-300 px-2 py-1 text-xs"
+                      />
+                      <input
+                        value={r.pct}
+                        onChange={(e) => setCustomRows((rs) => rs.map((x, j) => j === i ? { ...x, pct: e.target.value.replace(/[^0-9.]/g, "") } : x))}
+                        inputMode="decimal"
+                        className="w-16 rounded border border-slate-300 px-2 py-1 text-xs text-right"
+                      />
+                      <span className="text-xs text-slate-500">%</span>
+                      {customRows.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setCustomRows((rs) => rs.filter((_, j) => j !== i))}
+                          className="text-xs text-slate-400 hover:text-rose-600"
+                          aria-label="Remove milestone"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCustomRows((rs) => [...rs, { name: "", pct: "" }])}
+                    className="text-[11px] font-semibold text-sky-700 hover:underline"
+                  >
+                    + Add milestone
+                  </button>
+                  <span className="text-[11px] text-slate-400">
+                    Sum: {customRows.reduce((s, r) => s + (Number(r.pct) || 0), 0)}%
+                  </span>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => createSplit("custom")}
+                    className="ml-auto rounded bg-slate-900 px-3 py-1 text-[11px] font-bold text-white hover:bg-slate-800 disabled:opacity-50"
+                  >
+                    {busy ? "Saving…" : "Create schedule"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="px-6 py-10 text-center text-sm text-slate-500">No payment schedule set for this project yet.</div>
+        )
+      ) : (
+        // ── Schedule exists — list + clear ──
+        <>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                  <th className="px-3 py-2 font-semibold">Milestone</th>
+                  <th className="px-3 py-2 text-right font-semibold">%</th>
+                  <th className="px-3 py-2 text-right font-semibold">Amount</th>
+                  <th className="px-3 py-2 text-right font-semibold">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice().sort((a, b) => a.sort_order - b.sort_order).map((r) => (
+                  <tr key={r.payment_milestone_id} className="border-b border-slate-100 last:border-0">
+                    <td className="px-3 py-2 text-slate-800">{r.name}</td>
+                    <td className="px-3 py-2 text-right text-slate-600">{r.payment_pct != null ? `${r.payment_pct}%` : "—"}</td>
+                    <td className="px-3 py-2 text-right text-slate-600">{r.payment_amount_cents != null ? fmtCents(r.payment_amount_cents) : "—"}</td>
+                    <td className="px-3 py-2 text-right">
+                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                        {String(r.status).replace(/_/g, " ")}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Charging a milestone is done from the payments surface once the client&apos;s card is on file.
+          </p>
+          {isFounder && !anyCharged && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={clearSchedule}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 disabled:opacity-50"
+            >
+              {busy ? "Clearing…" : "Clear & re-split"}
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }
