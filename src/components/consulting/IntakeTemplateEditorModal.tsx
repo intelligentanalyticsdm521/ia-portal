@@ -70,7 +70,58 @@ export interface IntakeQuestion {
   max_select?: number;
   max_items?: number;
   placeholder?: string;
+  // Optional field this answer pre-fills when the intake is submitted. Namespaced:
+  //   brand.*   → client's brand voice profile (AI tone)
+  //   profile.* → the Business Profile section of onboarding (confirmed, not silently written)
+  //   owner.*   → the Owner Account section of onboarding
+  maps_to?: string;
 }
+
+// The target fields an intake answer can pre-fill. Grouped by destination.
+// Keys MUST match the backend projection (lib/intakeProjection.js) + the
+// onboarding prefill shape (onboardClient.js prefill.profile / prefill.owner).
+export const MAPS_TO_OPTIONS: { group: string; items: { value: string; label: string }[] }[] = [
+  {
+    group: "Business profile (fills the onboarding Business Profile step)",
+    items: [
+      { value: "profile.business_name", label: "Business name" },
+      { value: "profile.primary_contact_email", label: "Business contact email" },
+      { value: "profile.phone", label: "Business phone" },
+      { value: "profile.website", label: "Website URL" },
+      { value: "profile.address_street", label: "Address — street" },
+      { value: "profile.address_city", label: "Address — city" },
+      { value: "profile.address_state", label: "Address — state/province" },
+      { value: "profile.address_zip", label: "Address — postal code" },
+      { value: "profile.primary_color", label: "Brand color (primary)" },
+      { value: "profile.logo_url", label: "Logo URL" },
+    ],
+  },
+  {
+    group: "Owner account (fills the onboarding Owner step)",
+    items: [
+      { value: "owner.first_name", label: "Owner first name" },
+      { value: "owner.last_name", label: "Owner last name" },
+      { value: "owner.display_name", label: "Owner display name" },
+    ],
+  },
+  {
+    group: "Brand voice (syncs to the AI brand profile)",
+    items: [
+      { value: "brand.voice_traits", label: "Voice traits (multi-select)" },
+      { value: "brand.tones_to_avoid", label: "Tones to avoid (multi-select)" },
+      { value: "brand.slider_casual_formal", label: "Slider — casual ↔ formal" },
+      { value: "brand.slider_affordable_premium", label: "Slider — affordable ↔ premium" },
+      { value: "brand.slider_traditional_modern", label: "Slider — traditional ↔ modern" },
+      { value: "brand.slider_local_corporate", label: "Slider — local ↔ corporate" },
+      { value: "brand.differentiators", label: "Differentiators (bullet list)" },
+      { value: "brand.visual_direction", label: "Visual direction (single-select)" },
+      { value: "brand.photography_preference", label: "Photography preference (single-select)" },
+      { value: "brand.admired_brands", label: "Admired brands (text)" },
+      { value: "brand.avoid_brand", label: "Brand to avoid (text)" },
+      { value: "brand.positioning_territories", label: "Positioning territories (multi-select)" },
+    ],
+  },
+];
 
 export interface IntakeScoreRule {
   present_points?: number;
@@ -95,8 +146,12 @@ interface TemplateDetail {
   kind: "intake";
   name: string;
   description?: string | null;
-  question_schema_json: IntakeQuestion[] | string | null;
-  score_config_json: IntakeScoreConfig | string | null;
+  // The API (normalizeTemplateRow) returns `question_schema`/`score_config`;
+  // keep the `_json` aliases for tolerance.
+  question_schema?: IntakeQuestion[] | string | null;
+  score_config?: IntakeScoreConfig | string | null;
+  question_schema_json?: IntakeQuestion[] | string | null;
+  score_config_json?: IntakeScoreConfig | string | null;
   version: number;
   is_system_seed: boolean | number;
   is_archived: boolean | number;
@@ -199,8 +254,8 @@ export function IntakeTemplateEditorModal({
       setName(t.name || "");
       setSlug(t.slug || "");
       setDescription(t.description || "");
-      setQuestions(parseQuestions(t.question_schema_json));
-      setScoreConfig(parseScore(t.score_config_json));
+      setQuestions(parseQuestions(t.question_schema ?? t.question_schema_json));
+      setScoreConfig(parseScore(t.score_config ?? t.score_config_json));
       setIsSystem(asBool(t.is_system_seed));
       setVersion(t.version || 1);
     } catch (e) {
@@ -376,13 +431,18 @@ export function IntakeTemplateEditorModal({
     if (questions.length === 0) { setErr("Add at least one question before saving."); return; }
     setSaving(true);
     try {
+      const scoreConfigOut = { ...scoreConfig, max_points: computedMax || scoreConfig.max_points };
       const body = {
         kind: "intake" as const,
         name: name.trim(),
         slug: (slug || slugify(name)).trim() || slugify(name),
         description: description.trim() || null,
+        // Canonical names the backend reads. (`_json` aliases kept for any
+        // older backend still expecting them — backend accepts either.)
+        question_schema: questions,
+        score_config: scoreConfigOut,
         question_schema_json: questions,
-        score_config_json: { ...scoreConfig, max_points: computedMax || scoreConfig.max_points },
+        score_config_json: scoreConfigOut,
       };
       if (isCreate) {
         await post(`/consulting/document-templates`, body);
@@ -813,6 +873,37 @@ function QuestionRow({
               />
             </div>
           )}
+
+          {/* Pre-fills — where this answer flows when the intake is submitted.
+              Optional; drives the data-driven intake→prefill (no hardcoding). */}
+          <div>
+            <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+              Pre-fills (optional)
+            </label>
+            <select
+              value={question.maps_to || ""}
+              onChange={(e) => onChange({ maps_to: e.target.value || undefined })}
+              disabled={readOnly}
+              className="w-full rounded border border-slate-300 px-2 py-1 text-xs bg-white disabled:bg-slate-50"
+            >
+              <option value="">— Doesn't pre-fill anything</option>
+              {MAPS_TO_OPTIONS.map((g) => (
+                <optgroup key={g.group} label={g.group}>
+                  {g.items.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            {question.maps_to && (
+              <p className="mt-0.5 text-[10px] text-slate-500">
+                On submit, this answer pre-fills <code>{question.maps_to}</code>
+                {question.maps_to.startsWith("profile.") || question.maps_to.startsWith("owner.")
+                  ? " — shown in onboarding for confirmation, never written silently."
+                  : " — synced to the client's brand voice profile."}
+              </p>
+            )}
+          </div>
 
           {/* Section + scoring */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
