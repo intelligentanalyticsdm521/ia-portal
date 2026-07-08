@@ -206,6 +206,9 @@ export function ConsultingProjectModal({
   // Documents surfaced per-milestone: intakes + proposals for this project.
   const [intakes, setIntakes] = useState<IntakeSubRow[]>([]);
   const [projProposals, setProjProposals] = useState<ProposalRow[]>([]);
+  // Add-document (attach any template to a milestone). Null = closed.
+  const [addDocMilestoneId, setAddDocMilestoneId] = useState<string | null>(null);
+  const [showAddDoc, setShowAddDoc] = useState(false);
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -279,6 +282,21 @@ export function ConsultingProjectModal({
     }
   }
 
+  // Delete (archive) the whole project — founder only. Hides it from the list
+  // immediately; reversible server-side. Confirm-guarded against misclicks.
+  async function handleDeleteProject() {
+    if (!project) return;
+    if (!window.confirm(`Delete project "${project.name}"? It will be removed from your projects list.`)) return;
+    setErr(null);
+    try {
+      await del(`/consulting/projects/${project.project_id}`);
+      onChanged?.();
+      onClose();
+    } catch (e) {
+      setErr((e as Error).message || "Could not delete project");
+    }
+  }
+
   async function handleMilestoneStatusChange(mid: string, next: MilestoneStatus) {
     setMilestoneNotice(null);
     try {
@@ -306,6 +324,52 @@ export function ConsultingProjectModal({
       onChanged?.();
     } catch (e) {
       setMilestoneNotice((e as Error).message || "Could not delete milestone");
+    }
+  }
+
+  // Create an OLIVER proposal already linked to this milestone. The draft opens
+  // for line items + send in OLIVER › Proposals; it shows on the milestone here.
+  async function handleCreateProposal(milestoneId: string) {
+    if (!project) return;
+    setMilestoneNotice(null);
+    try {
+      await post(`/proposals`, {
+        title: `${project.name} — Proposal`,
+        project_id: project.project_id,
+        milestone_id: milestoneId,
+      });
+      await load();
+      onChanged?.();
+      setMilestoneNotice("Proposal created and linked to this milestone. Open OLIVER › Proposals to add line items and send it.");
+    } catch (e) {
+      setMilestoneNotice((e as Error).message || "Could not create proposal");
+    }
+  }
+
+  // Remove an attached document (intake/scoping/custom) from its milestone.
+  async function handleRemoveIntake(submissionId: string) {
+    if (!window.confirm("Remove this document from the milestone? This can't be undone.")) return;
+    setMilestoneNotice(null);
+    try {
+      await del(`/consulting/intake-submissions/${submissionId}`);
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setMilestoneNotice((e as Error).message || "Could not remove document");
+    }
+  }
+
+  // Unlink a proposal from its milestone. Keeps the proposal itself (just clears
+  // the project/milestone link) so it stays available in OLIVER › Proposals.
+  async function handleRemoveProposal(proposalId: string) {
+    if (!window.confirm("Unlink this proposal from the milestone? The proposal itself is kept.")) return;
+    setMilestoneNotice(null);
+    try {
+      await post(`/proposals/${proposalId}/link`, { project_id: null, milestone_id: null });
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setMilestoneNotice((e as Error).message || "Could not unlink proposal");
     }
   }
 
@@ -343,21 +407,31 @@ export function ConsultingProjectModal({
       size="info"
       headerActions={
         viewerRole === "founder" && project ? (
-          <button
-            type="button"
-            onClick={() => setShowSendIntake(true)}
-            disabled={!canSendIntake}
-            title={
-              canSendIntake
-                ? "Pick an intake template and email the client a link"
-                : "Add a client contact to enable Send Intake"
-            }
-            className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ background: "#FEC82C", color: "#1A3A4A" }}
-          >
-            <Send className="h-3.5 w-3.5" />
-            Send Intake
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowSendIntake(true)}
+              disabled={!canSendIntake}
+              title={
+                canSendIntake
+                  ? "Pick an intake template and email the client a link"
+                  : "Add a client contact to enable Send Intake"
+              }
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ background: "#FEC82C", color: "#1A3A4A" }}
+            >
+              <Send className="h-3.5 w-3.5" />
+              Send Intake
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteProject}
+              title="Delete this project (removes it from your list)"
+              className="inline-flex items-center gap-1.5 rounded-md border border-white/30 px-3 py-1.5 text-xs font-semibold text-white/90 hover:bg-white/10"
+            >
+              Delete
+            </button>
+          </div>
         ) : undefined
       }
     >
@@ -425,6 +499,10 @@ export function ConsultingProjectModal({
               intakes={intakes}
               proposals={projProposals}
               onSendIntake={viewerRole === "founder" ? (mid) => { setIntakeMilestoneId(mid); setShowSendIntake(true); } : undefined}
+              onAddDocument={viewerRole === "founder" ? (mid) => { setAddDocMilestoneId(mid); setShowAddDoc(true); } : undefined}
+              onCreateProposal={viewerRole === "founder" ? handleCreateProposal : undefined}
+              onRemoveIntake={viewerRole === "founder" ? handleRemoveIntake : undefined}
+              onRemoveProposal={viewerRole === "founder" ? handleRemoveProposal : undefined}
             />
           )}
           {data && tab === "deliverables" && (
@@ -467,6 +545,22 @@ export function ConsultingProjectModal({
           onSent={() => {
             setShowSendIntake(false);
             setIntakeMilestoneId(null);
+            void load();
+            onChanged?.();
+          }}
+        />
+      )}
+
+      {/* Attach ANY document template (scoping doc, intake, scope-of-work, custom)
+          to a milestone — no email, just files it on the step. */}
+      {showAddDoc && project && (
+        <AddDocumentModal
+          projectId={project.project_id}
+          milestoneId={addDocMilestoneId}
+          onClose={() => { setShowAddDoc(false); setAddDocMilestoneId(null); }}
+          onAdded={() => {
+            setShowAddDoc(false);
+            setAddDocMilestoneId(null);
             void load();
             onChanged?.();
           }}
@@ -868,6 +962,146 @@ function SendIntakeModal({
   );
 }
 
+// ─── AddDocumentModal ──────────────────────────────────────────────────────
+// Attach ANY document template to a milestone (scoping doc, scope-of-work,
+// custom deliverable, or an intake to fill later). No email — this just files
+// the document onto the step. Emailing a fillable intake link is the separate
+// "Send intake" action. Backs POST /consulting/projects/:id/intake-submissions
+// (which now accepts any template kind, not just intake).
+interface DocTemplatePickerRow {
+  template_id: string;
+  slug: string;
+  scope: "system" | "founder" | "per_tenant";
+  kind: string;
+  name: string;
+  description?: string | null;
+  version: number;
+}
+
+function AddDocumentModal({
+  projectId, milestoneId, onClose, onAdded,
+}: {
+  projectId: string;
+  milestoneId?: string | null;
+  onClose: () => void;
+  onAdded: () => void;
+}) {
+  const { get, post } = useOliverApi();
+
+  const [templates, setTemplates] = useState<DocTemplatePickerRow[]>([]);
+  const [templateId, setTemplateId] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    get<{ templates: DocTemplatePickerRow[] }>("/consulting/document-templates")
+      .then((r) => {
+        if (cancelled) return;
+        const list = Array.isArray(r?.templates) ? r.templates : [];
+        setTemplates(list);
+        if (list.length > 0) setTemplateId(list[0].template_id);
+      })
+      .catch((e) => { if (!cancelled) setError((e as Error).message || "Could not load templates"); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [get]);
+
+  async function handleAdd() {
+    if (!templateId) { setError("Pick a document."); return; }
+    setAdding(true);
+    setError(null);
+    try {
+      await post(`/consulting/projects/${projectId}/intake-submissions`, {
+        template_id: templateId,
+        milestone_id: milestoneId || null,
+      });
+      onAdded();
+    } catch (e) {
+      setError((e as Error).message || "Could not attach document");
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  const selected = templates.find((t) => t.template_id === templateId) || null;
+
+  return (
+    <IadmModal
+      open
+      onClose={onClose}
+      product="oliver"
+      eyebrow="ADD DOCUMENT"
+      title="Attach a document to this step"
+      subtitle={<span className="text-xs">Pick any document template — it files onto the milestone. Nothing is emailed.</span>}
+      size="info"
+      footer={
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded border border-slate-300 text-xs font-semibold text-slate-700 bg-white"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={adding || !templateId}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white disabled:opacity-50"
+            style={{ background: CORE_BLUE }}
+          >
+            {adding ? "Attaching…" : "Attach document"}
+          </button>
+        </div>
+      }
+    >
+      <div className="px-5 py-4 space-y-4 overflow-y-auto">
+        {error && (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 inline-flex items-center gap-1.5">
+            <AlertCircle className="h-3.5 w-3.5" /> {error}
+          </div>
+        )}
+        <div>
+          <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+            Document
+          </label>
+          {loading ? (
+            <div className="text-xs text-slate-500 italic">Loading document templates…</div>
+          ) : templates.length === 0 ? (
+            <div className="text-xs text-slate-500 italic">
+              No document templates yet — build one in <strong>Consulting · Document Library</strong>.
+            </div>
+          ) : (
+            <select
+              value={templateId}
+              onChange={(e) => setTemplateId(e.target.value)}
+              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm bg-white"
+            >
+              {templates.map((t) => (
+                <option key={t.template_id} value={t.template_id}>
+                  {t.name} · {t.kind}{t.scope === "system" ? " (system)" : ""} · v{t.version}
+                </option>
+              ))}
+            </select>
+          )}
+          {selected?.description && (
+            <p className="text-[11px] text-slate-500 mt-1">{selected.description}</p>
+          )}
+          {selected?.kind === "intake" && (
+            <p className="text-[11px] text-amber-700 mt-1">
+              This is an intake form. Attaching files it as a draft — use <strong>Send intake</strong> instead to email the client a fillable link.
+            </p>
+          )}
+        </div>
+      </div>
+    </IadmModal>
+  );
+}
+
 // ─── Pieces ──────────────────────────────────────────────────────────────
 
 function TabButton({ active, onClick, children }: {
@@ -1130,6 +1364,10 @@ function MilestonesTab({
   intakes = [],
   proposals = [],
   onSendIntake,
+  onAddDocument,
+  onCreateProposal,
+  onRemoveIntake,
+  onRemoveProposal,
 }: {
   milestones: ConsultingProjectMilestone[];
   viewerRole: "founder" | "client";
@@ -1143,6 +1381,10 @@ function MilestonesTab({
   intakes?: IntakeSubRow[];
   proposals?: ProposalRow[];
   onSendIntake?: (milestoneId: string) => void;
+  onAddDocument?: (milestoneId: string) => void;
+  onCreateProposal?: (milestoneId: string) => void;
+  onRemoveIntake?: (submissionId: string) => void;
+  onRemoveProposal?: (proposalId: string) => void;
 }) {
   if (milestones.length === 0) {
     return (
@@ -1173,6 +1415,10 @@ function MilestonesTab({
             intakes={intakes.filter((i) => i.milestone_id === m.milestone_id)}
             proposals={proposals.filter((p) => p.milestone_id === m.milestone_id)}
             onSendIntake={onSendIntake}
+            onAddDocument={onAddDocument}
+            onCreateProposal={onCreateProposal}
+            onRemoveIntake={onRemoveIntake}
+            onRemoveProposal={onRemoveProposal}
           />
         ))}
       </ol>
@@ -1203,6 +1449,10 @@ function MilestoneRow({
   intakes = [],
   proposals = [],
   onSendIntake,
+  onAddDocument,
+  onCreateProposal,
+  onRemoveIntake,
+  onRemoveProposal,
 }: {
   number: number;
   milestone: ConsultingProjectMilestone;
@@ -1215,6 +1465,10 @@ function MilestoneRow({
   intakes?: IntakeSubRow[];
   proposals?: ProposalRow[];
   onSendIntake?: (milestoneId: string) => void;
+  onAddDocument?: (milestoneId: string) => void;
+  onCreateProposal?: (milestoneId: string) => void;
+  onRemoveIntake?: (submissionId: string) => void;
+  onRemoveProposal?: (proposalId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   // Schema in-flight states (migration 106): in_progress + the two "parked"
@@ -1286,18 +1540,43 @@ function MilestoneRow({
             <div className="text-xs italic text-slate-400">No description.</div>
           )}
 
-          {/* Documents on this milestone — intakes sent + proposals linked here. */}
+          {/* Documents on this milestone. Everything here is a workflow the founder
+              controls: attach ANY document (scoping doc, intake, custom), create an
+              OLIVER proposal, send an intake for the client to fill, and remove any
+              of them. Nothing is hardcoded to the milestone. */}
           <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-            <div className="mb-2 flex items-center justify-between">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Documents</span>
-              {viewerRole === "founder" && onSendIntake && (
-                <button
-                  type="button"
-                  onClick={() => onSendIntake(milestone.milestone_id)}
-                  className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  + Send intake
-                </button>
+              {viewerRole === "founder" && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {onAddDocument && (
+                    <button
+                      type="button"
+                      onClick={() => onAddDocument(milestone.milestone_id)}
+                      className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      + Add document
+                    </button>
+                  )}
+                  {onCreateProposal && (
+                    <button
+                      type="button"
+                      onClick={() => onCreateProposal(milestone.milestone_id)}
+                      className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      + Create proposal
+                    </button>
+                  )}
+                  {onSendIntake && (
+                    <button
+                      type="button"
+                      onClick={() => onSendIntake(milestone.milestone_id)}
+                      className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Send intake
+                    </button>
+                  )}
+                </div>
               )}
             </div>
             {intakes.length === 0 && proposals.length === 0 ? (
@@ -1307,16 +1586,28 @@ function MilestoneRow({
                 {intakes.map((i) => (
                   <li key={i.submission_id} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-1 text-[11px]">
                     <span className="truncate text-slate-700">
-                      📋 {i.template_name || "Intake"}{i.is_draft ? " (draft)" : ""}{i.score_total != null ? ` · ${i.score_total} pts` : ""}
+                      📋 {i.template_name || "Document"}{i.is_draft ? " (draft)" : ""}{i.score_total != null ? ` · ${i.score_total} pts` : ""}
                     </span>
-                    <a
-                      href={`/app/consulting/intake/${i.submission_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-shrink-0 font-semibold text-sky-700 hover:underline"
-                    >
-                      Open
-                    </a>
+                    <span className="flex flex-shrink-0 items-center gap-2">
+                      <a
+                        href={`/app/consulting/intake/${i.submission_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-sky-700 hover:underline"
+                      >
+                        Open
+                      </a>
+                      {viewerRole === "founder" && onRemoveIntake && (
+                        <button
+                          type="button"
+                          title="Remove from milestone"
+                          onClick={() => onRemoveIntake(i.submission_id)}
+                          className="font-semibold text-slate-400 hover:text-rose-600"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </span>
                   </li>
                 ))}
                 {proposals.map((p) => (
@@ -1324,14 +1615,26 @@ function MilestoneRow({
                     <span className="truncate text-slate-700">
                       📄 {p.title || "Proposal"} · ${Number(p.total || 0).toLocaleString()}
                     </span>
-                    <span className="flex-shrink-0 uppercase text-slate-500">{String(p.status || "").replace(/_/g, " ")}</span>
+                    <span className="flex flex-shrink-0 items-center gap-2">
+                      <span className="uppercase text-slate-500">{String(p.status || "").replace(/_/g, " ")}</span>
+                      {viewerRole === "founder" && onRemoveProposal && (
+                        <button
+                          type="button"
+                          title="Unlink from milestone (keeps the proposal)"
+                          onClick={() => onRemoveProposal(p.proposal_id)}
+                          className="font-semibold text-slate-400 hover:text-rose-600"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </span>
                   </li>
                 ))}
               </ul>
             )}
             {viewerRole === "founder" && (
               <p className="mt-1.5 text-[10px] text-slate-400">
-                Proposals: link one to this milestone from the <strong>Proposals</strong> tab.
+                <strong>+ Create proposal</strong> makes a draft linked here — open <strong>OLIVER › Proposals</strong> to add line items &amp; send.
               </p>
             )}
           </div>
