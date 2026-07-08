@@ -201,6 +201,11 @@ export function ConsultingProjectModal({
   // re-checks via the backend (founder-gated endpoint) so a stray click
   // from a future client lens variant won't get past the API.
   const [showSendIntake, setShowSendIntake] = useState(false);
+  // Milestone that a Send-Intake was launched from (null = project-level).
+  const [intakeMilestoneId, setIntakeMilestoneId] = useState<string | null>(null);
+  // Documents surfaced per-milestone: intakes + proposals for this project.
+  const [intakes, setIntakes] = useState<IntakeSubRow[]>([]);
+  const [projProposals, setProjProposals] = useState<ProposalRow[]>([]);
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -210,6 +215,15 @@ export function ConsultingProjectModal({
       // useOliverApi auto-unwraps the {data:...} envelope (oliverApi.ts:113).
       const r = await get<WorkspaceResponse>(`/consulting/projects/${projectId}`);
       setData(r);
+      // Load documents surfaced on milestones (non-fatal if either fails).
+      try {
+        const ik = await get<{ submissions: IntakeSubRow[] }>(`/consulting/projects/${projectId}/intake-submissions?include_drafts=1`);
+        setIntakes(Array.isArray(ik?.submissions) ? ik.submissions : []);
+      } catch { /* non-fatal */ }
+      try {
+        const pr = await get<{ proposals: ProposalRow[] }>(`/proposals?project_id=${encodeURIComponent(projectId)}`);
+        setProjProposals(Array.isArray(pr?.proposals) ? pr.proposals : []);
+      } catch { /* non-fatal */ }
     } catch (e) {
       setErr((e as Error).message || "Could not load project");
     } finally {
@@ -408,6 +422,9 @@ export function ConsultingProjectModal({
               onDeleteMilestone={viewerRole === "founder" ? handleDeleteMilestone : undefined}
               canOnboard={Boolean(data.project.linked_tenant_id)}
               onStartOnboarding={() => setOnboardWizardOpen(true)}
+              intakes={intakes}
+              proposals={projProposals}
+              onSendIntake={viewerRole === "founder" ? (mid) => { setIntakeMilestoneId(mid); setShowSendIntake(true); } : undefined}
             />
           )}
           {data && tab === "deliverables" && (
@@ -443,11 +460,13 @@ export function ConsultingProjectModal({
       {showSendIntake && project && (
         <SendIntakeModal
           projectId={project.project_id}
+          milestoneId={intakeMilestoneId}
           clientName={project.client_name || null}
           clientEmail={project.client_email || null}
-          onClose={() => setShowSendIntake(false)}
+          onClose={() => { setShowSendIntake(false); setIntakeMilestoneId(null); }}
           onSent={() => {
             setShowSendIntake(false);
+            setIntakeMilestoneId(null);
             void load();
             onChanged?.();
           }}
@@ -518,6 +537,16 @@ export function ConsultingProjectModal({
 }
 
 // ─── ProposalsTab — link OLIVER proposals to this project + milestone ─────
+interface IntakeSubRow {
+  submission_id: string;
+  milestone_id?: string | null;
+  template_name?: string | null;
+  template_slug?: string | null;
+  score_total?: number | null;
+  is_draft?: boolean;
+  submitted_at?: string | null;
+}
+
 interface ProposalRow {
   proposal_id: string;
   title?: string | null;
@@ -661,9 +690,10 @@ interface IntakeTemplatePickerRow {
 }
 
 function SendIntakeModal({
-  projectId, clientName, clientEmail, onClose, onSent,
+  projectId, milestoneId, clientName, clientEmail, onClose, onSent,
 }: {
   projectId: string;
+  milestoneId?: string | null;
   clientName: string | null;
   clientEmail: string | null;
   onClose: () => void;
@@ -711,6 +741,7 @@ function SendIntakeModal({
     try {
       await post(`/consulting/projects/${projectId}/intake-submissions`, {
         template_id: templateId,
+        milestone_id: milestoneId || null,
         send_email: true,
         recipient_email: recipientEmail.trim(),
         message: message.trim() || null,
@@ -1096,6 +1127,9 @@ function MilestonesTab({
   onDeleteMilestone,
   canOnboard,
   onStartOnboarding,
+  intakes = [],
+  proposals = [],
+  onSendIntake,
 }: {
   milestones: ConsultingProjectMilestone[];
   viewerRole: "founder" | "client";
@@ -1106,6 +1140,9 @@ function MilestonesTab({
   onDeleteMilestone?: (m: ConsultingProjectMilestone) => void;
   canOnboard?: boolean;
   onStartOnboarding?: () => void;
+  intakes?: IntakeSubRow[];
+  proposals?: ProposalRow[];
+  onSendIntake?: (milestoneId: string) => void;
 }) {
   if (milestones.length === 0) {
     return (
@@ -1133,6 +1170,9 @@ function MilestonesTab({
             onDeleteMilestone={onDeleteMilestone}
             canOnboard={canOnboard}
             onStartOnboarding={onStartOnboarding}
+            intakes={intakes.filter((i) => i.milestone_id === m.milestone_id)}
+            proposals={proposals.filter((p) => p.milestone_id === m.milestone_id)}
+            onSendIntake={onSendIntake}
           />
         ))}
       </ol>
@@ -1160,6 +1200,9 @@ function MilestoneRow({
   onDeleteMilestone,
   canOnboard,
   onStartOnboarding,
+  intakes = [],
+  proposals = [],
+  onSendIntake,
 }: {
   number: number;
   milestone: ConsultingProjectMilestone;
@@ -1169,6 +1212,9 @@ function MilestoneRow({
   onDeleteMilestone?: (m: ConsultingProjectMilestone) => void;
   canOnboard?: boolean;
   onStartOnboarding?: () => void;
+  intakes?: IntakeSubRow[];
+  proposals?: ProposalRow[];
+  onSendIntake?: (milestoneId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   // Schema in-flight states (migration 106): in_progress + the two "parked"
@@ -1239,6 +1285,56 @@ function MilestoneRow({
           ) : (
             <div className="text-xs italic text-slate-400">No description.</div>
           )}
+
+          {/* Documents on this milestone — intakes sent + proposals linked here. */}
+          <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Documents</span>
+              {viewerRole === "founder" && onSendIntake && (
+                <button
+                  type="button"
+                  onClick={() => onSendIntake(milestone.milestone_id)}
+                  className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  + Send intake
+                </button>
+              )}
+            </div>
+            {intakes.length === 0 && proposals.length === 0 ? (
+              <div className="text-[11px] italic text-slate-400">No documents on this milestone yet.</div>
+            ) : (
+              <ul className="space-y-1">
+                {intakes.map((i) => (
+                  <li key={i.submission_id} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-1 text-[11px]">
+                    <span className="truncate text-slate-700">
+                      📋 {i.template_name || "Intake"}{i.is_draft ? " (draft)" : ""}{i.score_total != null ? ` · ${i.score_total} pts` : ""}
+                    </span>
+                    <a
+                      href={`/app/consulting/intake/${i.submission_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-shrink-0 font-semibold text-sky-700 hover:underline"
+                    >
+                      Open
+                    </a>
+                  </li>
+                ))}
+                {proposals.map((p) => (
+                  <li key={p.proposal_id} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-1 text-[11px]">
+                    <span className="truncate text-slate-700">
+                      📄 {p.title || "Proposal"} · ${Number(p.total || 0).toLocaleString()}
+                    </span>
+                    <span className="flex-shrink-0 uppercase text-slate-500">{String(p.status || "").replace(/_/g, " ")}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {viewerRole === "founder" && (
+              <p className="mt-1.5 text-[10px] text-slate-400">
+                Proposals: link one to this milestone from the <strong>Proposals</strong> tab.
+              </p>
+            )}
+          </div>
 
           {/* Founder status dropdown — PATCH /consulting/projects/:id/milestones/:mid
               is live. Options MUST match the migration-106 CHECK enum exactly
