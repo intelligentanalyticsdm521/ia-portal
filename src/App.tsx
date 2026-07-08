@@ -5,6 +5,7 @@ import { LandingPage } from './pages/LandingPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 // F3 — Scope Change Revisions public surface (no auth, token IS the auth).
 import { PublicRevisionPage } from './pages/public/PublicRevisionPage';
+import { PublicFormPage } from './pages/public/PublicFormPage';
 import { BusinessCardPublicPage } from './pages/public/BusinessCardPublicPage';
 
 import { AppGate } from './app/AppGate';
@@ -158,6 +159,11 @@ export function App() {
               string (NVARCHAR(80)) issued by oliver-api when the founder
               creates a draft revision.  No auth needed. */}
           <Route path="/p/revisions/:token" element={<PublicRevisionPage />} />
+
+          {/* Public consulting form fill — no auth, public_token IS the auth.
+              A prospect who isn't a tenant yet opens the emailed link, fills the
+              form, and submits (mirrors /p/proposals). */}
+          <Route path="/p/forms/:token" element={<PublicFormPage />} />
 
           {/* Public Business Card page — no auth. The vCard QR encodes this URL;
               scanning opens the card. Brandon can also "Add to Home Screen" on
