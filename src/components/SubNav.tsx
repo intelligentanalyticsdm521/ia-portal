@@ -665,6 +665,7 @@ const ARGUS_NAV: SubNavConfig = {
         { key: "argus_health",        label: "Health",        route: "/app/services/argus_health" },
         { key: "argus_trends",        label: "Trends",        route: "/app/services/argus_trends",        tag: { label: "ARGUS", color: "#84CC16" } },
         { key: "argus_cross_platform", label: "Cross-Platform Intelligence",  route: "/app/services/argus_cross_platform", tag: { label: "ARGUS", color: "#84CC16" } },
+        { key: "argus_workflows",      label: "Workflow & Automations", route: "/app/services/argus_workflows", tag: { label: "ARGUS", color: "#84CC16" } },
       ],
     },
   ],

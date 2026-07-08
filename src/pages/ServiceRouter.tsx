@@ -131,6 +131,7 @@ const ArgusIAInsightsPage = lazyNamed(() => import('./argus/ArgusIAInsightsPage'
 const ArgusHealthPage = lazyNamed(() => import('./argus/ArgusHealthPage'), 'ArgusHealthPage');
 const ArgusTrendsPage = lazyNamed(() => import('./argus/ArgusTrendsPage'), 'ArgusTrendsPage');
 const ArgusIntelligencePage = lazyNamed(() => import('./argus/ArgusIntelligencePage'), 'ArgusIntelligencePage');
+const ArgusWorkflowAutomationsPage = lazyNamed(() => import('./argus/ArgusWorkflowAutomationsPage'), 'ArgusWorkflowAutomationsPage');
 // 2026-06-21: ArgusCrossChannelPage renamed to ArgusIAInsightsIntelligencePage
 // to align with the per-platform Insights pattern.
 // 2026-06-22: canonical service key renamed to `argus_cross_platform`;
@@ -581,6 +582,10 @@ export function ServiceRouter() {
   }
   if (service.key === 'argus_cross_platform' || service.key === 'argus_cross_channel') {
     return <Suspense fallback={<RouteLoading />}><ArgusIAInsightsIntelligencePage /></Suspense>;
+  }
+  // P0-7 (Agency Foundation) — ARGUS Workflow & Automations observe surface.
+  if (service.key === 'argus_workflows' || service.key === 'argus_workflow_automations') {
+    return <Suspense fallback={<RouteLoading />}><ArgusWorkflowAutomationsPage /></Suspense>;
   }
 
   if (service.section === 'LUMEN') {
