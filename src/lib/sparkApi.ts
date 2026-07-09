@@ -26,6 +26,18 @@ function getTenantId(token: string): string {
   }
 }
 
+// The user's REAL active IADM tenant (AppState → STORAGE_KEYS.activeTenantId).
+// CRITICAL (2026-07-09): the shared CIAM JWT `tid` is the same for every user
+// and resolves to the founder tenant, so falling back to it routed clients to
+// Intelligent Analytics. Scope to the real active tenant instead.
+function readActiveTenantId(): string {
+  try {
+    return (localStorage.getItem("iadm.portal.activeTenantId") || "").trim();
+  } catch {
+    return "";
+  }
+}
+
 async function sparkFetch<T>(
   msal: IPublicClientApplication,
   account: AccountInfo,
@@ -39,6 +51,7 @@ async function sparkFetch<T>(
   const tenantId =
     (tenantOverride && tenantOverride.trim()) ||
     (viewAsTid && viewAsTid.trim()) ||
+    readActiveTenantId() ||
     getTenantId(token);
 
   const res = await fetch(`${SPARK_API_BASE}${path}`, {

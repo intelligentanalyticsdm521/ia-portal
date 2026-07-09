@@ -28,6 +28,23 @@ function getTenantId(token: string): string {
   }
 }
 
+// The user's REAL active IADM tenant, chosen by AppGate from session/verify's
+// homeTenantId and persisted here by AppState (STORAGE_KEYS.activeTenantId).
+//
+// CRITICAL (2026-07-09): with a SHARED CIAM directory the JWT `tid` claim is
+// the same for every user and resolves server-side to the founder tenant — so
+// falling straight back to getTenantId(token) routed every client's API calls
+// to Intelligent Analytics ("not a member of the selected tenant" / IA data in
+// SPARK). The user's actual tenant lives in AppState; read it here so fetch-time
+// (non-React) clients scope to the right tenant. JWT tid stays as a last resort.
+function readActiveTenantId(): string {
+  try {
+    return (localStorage.getItem("iadm.portal.activeTenantId") || "").trim();
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Sentinel: pass this as tenantOverride to ignore the global tenant override
  * and force the JWT's own tenant id. Used by founder-scoped endpoints
@@ -55,6 +72,7 @@ async function oliverFetch<T>(
   const tenantId =
     (explicitOverride && explicitOverride.trim()) ||
     (contextTid && contextTid.trim()) ||
+    (bypassTenantOverride ? "" : readActiveTenantId()) ||
     getTenantId(token);
 
   const res = await fetch(`${OLIVER_API_BASE}${path}`, {

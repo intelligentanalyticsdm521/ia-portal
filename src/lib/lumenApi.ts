@@ -40,6 +40,18 @@ function getTenantId(token: string): string {
   }
 }
 
+// The user's REAL active IADM tenant (AppState → STORAGE_KEYS.activeTenantId).
+// CRITICAL (2026-07-09): the shared CIAM JWT `tid` is identical for every user
+// and resolves to the founder tenant, so falling straight back to it made SPARK
+// show Intelligent Analytics data for every client. Scope to the real tenant.
+function readActiveTenantId(): string {
+  try {
+    return (localStorage.getItem("iadm.portal.activeTenantId") || "").trim();
+  } catch {
+    return "";
+  }
+}
+
 async function lumenFetch<T>(
   msal: IPublicClientApplication,
   account: AccountInfo,
@@ -56,6 +68,7 @@ async function lumenFetch<T>(
   const tenantId =
     (tenantOverride && tenantOverride.trim()) ||
     (viewAsTid && viewAsTid.trim()) ||
+    readActiveTenantId() ||
     getTenantId(token);
 
   const res = await fetch(`${LUMEN_API_BASE}${path}`, {
