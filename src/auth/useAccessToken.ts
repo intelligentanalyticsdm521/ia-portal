@@ -33,8 +33,21 @@ export function useAccessToken() {
     }
   }, [instance, activeAccount]);
 
-  const login = useCallback(() => {
-    return instance.loginRedirect({ scopes: authScopes });
+  const login = useCallback((opts?: { create?: boolean; loginHint?: string }) => {
+    // Welcome/activation links land on /app/...?welcome=1&prefill_email=... —
+    // a first-time client. Send them straight to Entra's Create-account page
+    // (prompt=create) pre-filled with their email, instead of the sign-in
+    // screen where they'd have to hunt for "No account? Create one". Returning
+    // users (no welcome context) get the normal sign-in.
+    const params = new URLSearchParams(window.location.search);
+    const wantCreate = opts?.create ?? (params.get('welcome') === '1');
+    const loginHint = opts?.loginHint ?? (params.get('prefill_email') || undefined);
+    const req: Parameters<typeof instance.loginRedirect>[0] = { scopes: authScopes };
+    if (wantCreate) {
+      req.prompt = 'create';
+      if (loginHint) req.loginHint = loginHint;
+    }
+    return instance.loginRedirect(req);
   }, [instance]);
 
   const logout = useCallback(() => {

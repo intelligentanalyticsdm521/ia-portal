@@ -82,6 +82,21 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     bootstrapDoneRef.current = false;
   }, [isAuthenticated, activeAccount]);
 
+  // Welcome/activation links (?welcome=1) are first-time clients. Skip the
+  // interstitial sign-in screen and send them straight to Entra's Create-account
+  // page (login() detects the welcome context → prompt=create + email hint).
+  // Guarded by a ref + sessionStorage so a cancelled/returned redirect can't loop.
+  const welcomeRedirectRef = useRef(false);
+  useEffect(() => {
+    if (isAuthenticated) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('welcome') !== '1') return;
+    if (welcomeRedirectRef.current || sessionStorage.getItem('welcome_create_redirect') === '1') return;
+    welcomeRedirectRef.current = true;
+    sessionStorage.setItem('welcome_create_redirect', '1');
+    login({ create: true, loginHint: params.get('prefill_email') || undefined });
+  }, [isAuthenticated, login]);
+
   // Bootstrap effect — depends ONLY on auth identity, not on state it writes to
   useEffect(() => {
     async function run() {
@@ -439,18 +454,21 @@ export function AppGate({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated) {
+    const isWelcome = new URLSearchParams(window.location.search).get('welcome') === '1';
     return (
       <div className="mx-auto flex max-w-xl flex-col gap-4 px-6 py-16">
         <h1 className="text-2xl font-semibold">IADM Portal</h1>
         <p className="text-gray-600">
-          Sign in to access your tenant dashboard, modules, and account settings.
+          {isWelcome
+            ? "Welcome! Let's finish setting up your account — create your password to get in."
+            : 'Sign in to access your tenant dashboard, modules, and account settings.'}
         </p>
         <button
           type="button"
           className="inline-flex w-fit items-center justify-center rounded-md bg-black px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
-          onClick={() => login()}
+          onClick={() => login(isWelcome ? { create: true } : undefined)}
         >
-          Sign in
+          {isWelcome ? 'Create your account' : 'Sign in'}
         </button>
       </div>
     );
