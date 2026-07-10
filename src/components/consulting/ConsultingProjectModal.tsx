@@ -192,6 +192,7 @@ export function ConsultingProjectModal({
   const [viewAsOpen, setViewAsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [deleteArmed, setDeleteArmed] = useState(false);
   const [milestoneNotice, setMilestoneNotice] = useState<string | null>(null);
   // CS-1 — milestone metadata edit target (null = closed).
   const [editingMilestone, setEditingMilestone] = useState<ConsultingProjectMilestone | null>(null);
@@ -286,7 +287,15 @@ export function ConsultingProjectModal({
   // immediately; reversible server-side. Confirm-guarded against misclicks.
   async function handleDeleteProject() {
     if (!project) return;
-    if (!window.confirm(`Delete project "${project.name}"? It will be removed from your projects list.`)) return;
+    // Inline 2-click confirm instead of window.confirm(): the native dialog
+    // blocked automated testing and could read as a page freeze. First click
+    // arms (button turns red "Confirm delete?"); second click within 4s deletes.
+    if (!deleteArmed) {
+      setDeleteArmed(true);
+      setTimeout(() => setDeleteArmed(false), 4000);
+      return;
+    }
+    setDeleteArmed(false);
     setErr(null);
     try {
       await del(`/consulting/projects/${project.project_id}`);
@@ -427,9 +436,9 @@ export function ConsultingProjectModal({
               type="button"
               onClick={handleDeleteProject}
               title="Delete this project (removes it from your list)"
-              className="inline-flex items-center gap-1.5 rounded-md border border-white/30 px-3 py-1.5 text-xs font-semibold text-white/90 hover:bg-white/10"
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-semibold ${deleteArmed ? "border-rose-400 bg-rose-500 text-white hover:bg-rose-600" : "border-white/30 text-white/90 hover:bg-white/10"}`}
             >
-              Delete
+              {deleteArmed ? "Confirm delete?" : "Delete"}
             </button>
           </div>
         ) : undefined

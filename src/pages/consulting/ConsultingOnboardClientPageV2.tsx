@@ -534,18 +534,23 @@ export function ConsultingOnboardClientPageV2() {
     // /sites/:id/integrations-status; no need to merge it into wizard state.
   };
 
-  // FIX (2026-06-23) — founder self-onboard prefill.
-  // Fire prefill on wizard open (Option C from the diagnosis): when the
-  // founder enters the wizard, hit /admin/onboard-client/onboarding-progress
-  // with NO tenant_id query param. The backend defaults to the authenticated
-  // caller's tenant (the founder tenant), which already has business name,
-  // address, brand colors, phone, etc. populated in core.tenants. This
-  // covers Brandon's "onboard myself / my own tenant" path AND any future IA
-  // staff who run the wizard for the founder tenant. Empty values do NOT
-  // overwrite anything the founder has typed (mergeStrict drops them) — per
-  // the standing rule from feedback_2026_06_17_lessons.md.
+  // Founder self-onboard prefill — GATED (2026-07-10 fix).
+  //
+  // This used to fire on EVERY wizard open with no tenant_id, so the backend
+  // defaulted to the FOUNDER tenant and prefilled the founder's business name,
+  // email, address, brand colors, phone, AND owner name into the form. For the
+  // common New-client path that is a TRAP: a founder who clicks through creates
+  // a duplicate "Intelligent Analytics" tenant with a founder-email owner (the
+  // welcome then fails because sendPathBWelcome refuses founder-team emails).
+  // There is no self-onboard entry today (no /self route; isSelfOnboard is
+  // never set true), so this prefill only ever mis-fired for real new clients.
+  //
+  // Now gated on isSelfOnboard: a NEW client starts blank; EXISTING-client
+  // prefill is handled explicitly by tenant_id in onContinueFromStep1. If a
+  // genuine "onboard myself" entry is added later, set isSelfOnboard=true and
+  // this convenience prefill re-enables — without re-introducing the trap.
   useEffect(() => {
-    if (view !== "wizard") return;
+    if (view !== "wizard" || !isSelfOnboard) return;
     let cancelled = false;
     (async () => {
       try {
@@ -559,7 +564,7 @@ export function ConsultingOnboardClientPageV2() {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view]);
+  }, [view, isSelfOnboard]);
 
   const onContinueFromStep1 = async () => {
     if (customerMode === "existing" && selectedExistingTenantId) {
@@ -1560,6 +1565,23 @@ function SparkPicker({ cat, item, upsert, cycle }: {
 
   if (volumes.length === 0) {
     return <div className="text-xs text-amber-600">SPARK volumes not available — Stripe prices not configured.</div>;
+  }
+
+  // 2026-07-10 fix: SPARK is NOT in the cart until the founder explicitly adds
+  // it. Previously the slider rendered a default 5k / "Standard included" view
+  // even when SPARK was absent from the cart, so founders thought SPARK was
+  // included when it never got provisioned. Require an explicit add (mirrors
+  // OLIVER's tier-click), THEN show the volume/feature picker.
+  if (!item) {
+    return (
+      <button
+        type="button"
+        onClick={() => setItem({})}
+        className="w-full rounded-lg border-2 border-dashed border-slate-300 py-3 text-sm font-semibold text-slate-600 hover:border-[#EF6C33] hover:text-[#EF6C33]"
+      >
+        + Add SPARK
+      </button>
+    );
   }
 
   return (
