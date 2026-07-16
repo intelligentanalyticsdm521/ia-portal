@@ -5,6 +5,7 @@ import { useAccessToken } from '../auth/useAccessToken';
 import { useAppState } from './AppState';
 import { PlatformApiError, selectTenant, sessionVerify } from '../lib/platformApi';
 import { getCurrentActAsSession } from '../lib/founderApi';
+import { DEV_AUTH } from '../lib/devAuth';
 import {
   setEmergencyActAsState,
   getEmergencyActAsState,
@@ -61,7 +62,13 @@ async function retryOnce<T>(fn: () => Promise<T>, label: string): Promise<T> {
 const BOOTSTRAP_STEP_TIMEOUT_MS = 12_000;
 
 export function AppGate({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useIsAuthenticated();
+  // Call the hook unconditionally (rules of hooks), then OR the dev flag in.
+  // Under VITE_DEV_AUTH=1 there is no MSAL session and never will be — the
+  // backend authenticates on the x-dev-tenant header instead (lib/devAuth.ts).
+  // Compiled out of production builds: Vite inlines import.meta.env at build
+  // time, so DEV_AUTH is the literal `false` there.
+  const msalAuthenticated = useIsAuthenticated();
+  const isAuthenticated = DEV_AUTH || msalAuthenticated;
   const { instance: msal } = useMsal();
   const { activeAccount, login, getToken } = useAccessToken();
   const appState = useAppState();
@@ -456,16 +463,21 @@ export function AppGate({ children }: { children: React.ReactNode }) {
   if (!isAuthenticated) {
     const isWelcome = new URLSearchParams(window.location.search).get('welcome') === '1';
     return (
-      <div className="mx-auto flex max-w-xl flex-col gap-4 px-6 py-16">
-        <h1 className="text-2xl font-semibold">IADM Portal</h1>
-        <p className="text-gray-600">
-          {isWelcome
-            ? "Welcome! Let's finish setting up your account — create your password to get in."
-            : 'Sign in to access your tenant dashboard, modules, and account settings.'}
-        </p>
+      <div className="mx-auto flex max-w-xl flex-col gap-6 px-6 py-16">
+        <img src="/ia-lockup-horiz-white.svg" alt="Intelligent Analytics" className="h-12 w-auto self-start" />
+        <div>
+          <h1 className="text-2xl font-semibold">
+            {isWelcome ? "Let's finish setting up your account" : 'Sign in'}
+          </h1>
+          <p className="mt-2 text-gray-600">
+            {isWelcome
+              ? 'Create your password and we’ll take you straight to your dashboard.'
+              : 'Access your dashboard, modules, and account settings.'}
+          </p>
+        </div>
         <button
           type="button"
-          className="inline-flex w-fit items-center justify-center rounded-md bg-black px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
+          className="iadm-btn-primary w-fit"
           onClick={() => login(isWelcome ? { create: true } : undefined)}
         >
           {isWelcome ? 'Create your account' : 'Sign in'}

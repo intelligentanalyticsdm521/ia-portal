@@ -5,6 +5,12 @@ import './styles/index.css';
 
 import { AuthProvider } from './auth/AuthProvider';
 import { initMsal } from './auth/pca';
+import { installDevAuthFetch } from './lib/devAuth';
+
+// LOCAL DEV ONLY — attach x-dev-tenant to loopback API calls so the Portal can
+// run without CIAM. No-op unless VITE_DEV_AUTH=1, and Vite compiles it out of a
+// production build entirely. Must run before anything issues a fetch.
+installDevAuthFetch();
 
 // 2026-06-13 — Stale-chunk recovery. When the Portal redeploys, the JS chunk
 // hashes in the new build don't match the chunks the user's already-loaded

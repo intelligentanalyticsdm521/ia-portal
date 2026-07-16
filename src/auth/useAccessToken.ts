@@ -6,13 +6,23 @@ import {
 import { useMsal } from '@azure/msal-react';
 import { useCallback, useMemo } from 'react';
 import { authScopes } from './msalConfig';
+import { DEV_AUTH, DEV_TOKEN_RESULT } from '../lib/devAuth';
 
 export function useAccessToken() {
   const { instance, accounts } = useMsal();
 
-  const activeAccount: AccountInfo | null = useMemo(() => accounts[0] || null, [accounts]);
+  const activeAccount: AccountInfo | null = useMemo(
+    // Under dev auth there is no MSAL account and never will be. Hand back a
+    // stand-in so AppGate's `if (!activeAccount)` guards don't dead-end.
+    () => (DEV_AUTH ? (DEV_TOKEN_RESULT.account as unknown as AccountInfo) : accounts[0] || null),
+    [accounts]
+  );
 
   const getToken = useCallback(async (): Promise<AuthenticationResult> => {
+    // The returned token is never validated — the backend authenticates on the
+    // x-dev-tenant header the fetch interceptor attaches (see lib/devAuth.ts).
+    if (DEV_AUTH) return DEV_TOKEN_RESULT as unknown as AuthenticationResult;
+
     if (!activeAccount) {
       throw new Error('No active account. User must sign in.');
     }
