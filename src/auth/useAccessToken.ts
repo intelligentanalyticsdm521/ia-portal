@@ -8,6 +8,37 @@ import { useCallback, useMemo } from 'react';
 import { authScopes } from './msalConfig';
 import { DEV_AUTH, DEV_TOKEN_RESULT } from '../lib/devAuth';
 
+/**
+ * The signed-in account, or the dev stand-in under VITE_DEV_AUTH=1.
+ *
+ * ALWAYS use this instead of reading `useMsal().accounts[0]` directly.
+ *
+ * Under dev auth there is no MSAL session and never will be, so `accounts` is
+ * permanently empty. Any hook that derives readiness from `accounts[0]` is
+ * therefore dead in local dev: useSparkApi returned `ready: false` forever,
+ * SparkCampaignsPage's `if (!ready) return` never fired its fetch, and every
+ * SPARK page sat on "Still loading…" with no network request and no error.
+ *
+ * Compiled out of production builds — Vite inlines import.meta.env at build
+ * time, so DEV_AUTH is the literal `false` there and this collapses to
+ * `accounts[0]`.
+ *
+ * Typed `AccountInfo` rather than `AccountInfo | null` so it is a drop-in
+ * replacement for the `accounts[0]` reads it supersedes. That matches the
+ * existing typing exactly: TypeScript types array index access as `AccountInfo`
+ * (noUncheckedIndexedAccess is off), while it is `undefined` at runtime when no
+ * one is signed in. This hook neither adds nor removes that risk — the callers
+ * that already guarded on it (`ready: !!account`) still work unchanged. Use
+ * useAccessToken().activeAccount where you need the honest `| null`.
+ */
+export function useActiveAccount(): AccountInfo {
+  const { accounts } = useMsal();
+  return useMemo(
+    () => (DEV_AUTH ? (DEV_TOKEN_RESULT.account as unknown as AccountInfo) : accounts[0]),
+    [accounts]
+  );
+}
+
 export function useAccessToken() {
   const { instance, accounts } = useMsal();
 

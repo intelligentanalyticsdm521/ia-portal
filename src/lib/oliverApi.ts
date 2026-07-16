@@ -7,6 +7,7 @@
 
 import type { IPublicClientApplication, AccountInfo } from "@azure/msal-browser";
 import { authScopes } from "../auth/msalConfig";
+import { acquireApiToken } from "./msalToken";
 import { emergencyActAsHeaders } from "./emergencyActAs";
 import { getCurrentTenantOverride } from "./tenantContext";
 
@@ -14,9 +15,11 @@ const OLIVER_API_BASE =
   (import.meta.env.VITE_OLIVER_API_BASE as string) ||
   "https://app-oliver-api-prod-eaffhyhqgrgbcfh0.centralus-01.azurewebsites.net";
 
+// Delegates to the one shared token seam so the dev-auth short-circuit lives
+// in exactly one place. Four identical private copies of this used to exist,
+// and all four threw authority_mismatch under VITE_DEV_AUTH=1.
 async function getToken(msal: IPublicClientApplication, account: AccountInfo): Promise<string> {
-  const r = await msal.acquireTokenSilent({ scopes: authScopes, account });
-  return r.accessToken;
+  return acquireApiToken(msal, account);
 }
 
 function getTenantId(token: string): string {

@@ -11,12 +11,15 @@
 
 import { useCallback, useMemo } from "react";
 import { useMsal } from "@azure/msal-react";
+import { useActiveAccount } from "../auth/useAccessToken";
 import { lumenGet, lumenPost, lumenPut, lumenPatch, lumenDelete } from "../lib/lumenApi";
 import { useClientTenantIdOverride } from "../lib/clientTenantContext";
 
 export function useLumenApi() {
-  const { instance, accounts } = useMsal();
-  const account = accounts[0];
+  const { instance } = useMsal();
+  // NOT accounts[0] — under VITE_DEV_AUTH=1 there is no MSAL session, so that is
+  // permanently undefined and every account-gated fetch silently never fires.
+  const account = useActiveAccount();
   // Founder ClientTenantModal override — when set, hits the LUMEN-API as
   // that client's tenant via x-tenant-id. Otherwise the JWT's tid is used.
   const tenantOverride = useClientTenantIdOverride();

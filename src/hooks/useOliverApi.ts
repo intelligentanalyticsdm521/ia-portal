@@ -5,6 +5,7 @@
 
 import { useCallback, useMemo } from "react";
 import { useMsal } from "@azure/msal-react";
+import { useActiveAccount } from "../auth/useAccessToken";
 import { oliverGet, oliverPost, oliverPatch, oliverPut, oliverDelete, BYPASS_TENANT_OVERRIDE } from "../lib/oliverApi";
 import { useClientTenantIdOverride } from "../lib/clientTenantContext";
 import { useIsFounder } from "./useIsFounder";
@@ -25,8 +26,10 @@ export function isTierGateError(err: unknown): err is TierGateError {
 }
 
 export function useOliverApi() {
-  const { instance, accounts } = useMsal();
-  const account = accounts[0];
+  const { instance } = useMsal();
+  // NOT accounts[0] — under VITE_DEV_AUTH=1 there is no MSAL session, so that is
+  // permanently undefined and every account-gated fetch silently never fires.
+  const account = useActiveAccount();
   // If we're inside a ClientTenantModal, this returns the client's tenant_id.
   // Otherwise null — API calls go to the caller's own tenant from their JWT.
   const tenantOverride = useClientTenantIdOverride();

@@ -6,11 +6,14 @@
 
 import { useCallback } from "react";
 import { useMsal } from "@azure/msal-react";
+import { useActiveAccount } from "../auth/useAccessToken";
 import { oliverGet, oliverPost } from "../lib/oliverApi";
 
 export function useConsultingApi() {
-  const { instance, accounts } = useMsal();
-  const account = accounts[0];
+  const { instance } = useMsal();
+  // NOT accounts[0] — under VITE_DEV_AUTH=1 there is no MSAL session, so that is
+  // permanently undefined and every account-gated fetch silently never fires.
+  const account = useActiveAccount();
 
   const get = useCallback(
     <T>(path: string) => oliverGet<T>(instance, account, path),

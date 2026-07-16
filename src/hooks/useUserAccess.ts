@@ -5,13 +5,16 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useMsal } from "@azure/msal-react";
+import { useActiveAccount } from "../auth/useAccessToken";
 import { authScopes } from "../auth/msalConfig";
 import { useAppState } from "../app/AppState";
 import { getMeAccess, type MeAccessResponse } from "../lib/platformApi";
 
 export function useUserAccess() {
-  const { instance, accounts } = useMsal();
-  const account = accounts[0];
+  const { instance } = useMsal();
+  // NOT accounts[0] — under VITE_DEV_AUTH=1 there is no MSAL session, so that is
+  // permanently undefined and every account-gated fetch silently never fires.
+  const account = useActiveAccount();
   const { active } = useAppState();
   const [access, setAccess] = useState<MeAccessResponse | null>(null);
   const [loading, setLoading] = useState(false);

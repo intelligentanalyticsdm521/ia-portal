@@ -2,10 +2,14 @@ import { useCallback, useMemo } from "react";
 import { useMsal } from "@azure/msal-react";
 import { sparkGet, sparkPost, sparkPut, sparkPatch, sparkDelete } from "../lib/sparkApi";
 import { useClientTenantIdOverride } from "../lib/clientTenantContext";
+import { useActiveAccount } from "../auth/useAccessToken";
 
 export function useSparkApi() {
-  const { instance, accounts } = useMsal();
-  const account = accounts[0];
+  const { instance } = useMsal();
+  // NOT accounts[0] — under VITE_DEV_AUTH=1 there is no MSAL session, so that is
+  // permanently undefined and `ready` below never becomes true, leaving every
+  // SPARK page stuck on "Still loading…" with no request and no error.
+  const account = useActiveAccount();
   const tenantOverride = useClientTenantIdOverride();
 
   const get = useCallback(<T>(path: string) => sparkGet<T>(instance, account, path, tenantOverride), [instance, account, tenantOverride]);
