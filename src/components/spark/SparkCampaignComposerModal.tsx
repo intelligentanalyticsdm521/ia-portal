@@ -414,19 +414,41 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     try {
       // Save any pending edits first so the send uses the latest content,
       // then fire the send. Backend's POST /campaigns/:id/send accepts an
-      // empty body and returns { sent, failed } stats.
+      // empty body and returns
+      //   { data: { succeeded, suppressed, failed, recipients_count, status } }
+      //
+      // This used to read `data.sent`, which the API has never returned, so it
+      // always fell back to 0 — a fully successful send reported
+      // "Campaign sent — 0 delivered". The `as any` casts hid the mismatch from
+      // the compiler; the response is typed properly now so the contract is
+      // checked at build time.
       if (canSave()) {
         await put<{ data: unknown }>(`/api/v1/campaigns/${editCampaignId}`, buildPayload());
       }
-      const r = await post<{ data: { sent: number; failed: number } }>(
-        `/api/v1/campaigns/${editCampaignId}/send`,
-        {},
-      );
+      const r = await post<{
+        data: {
+          campaign_id: number;
+          recipients_count: number;
+          succeeded: number;
+          suppressed: number;
+          failed: number;
+          status: string;
+        };
+      }>(`/api/v1/campaigns/${editCampaignId}/send`, {});
       onCreated?.(editCampaignId);
       onClose();
-      const sent = (r as any)?.data?.sent ?? 0;
-      const failed = (r as any)?.data?.failed ?? 0;
-      alert(`Campaign sent — ${sent} delivered${failed ? `, ${failed} failed` : ""}.`);
+
+      const succeeded = r?.data?.succeeded ?? 0;
+      const failed = r?.data?.failed ?? 0;
+      const suppressed = r?.data?.suppressed ?? 0;
+
+      // Suppressed recipients were deliberately skipped (unsubscribed or
+      // previously hard-bounced). Surfacing them separately keeps the numbers
+      // honest — they are neither delivered nor failed.
+      const parts = [`${succeeded} delivered`];
+      if (failed) parts.push(`${failed} failed`);
+      if (suppressed) parts.push(`${suppressed} skipped (unsubscribed or bounced)`);
+      alert(`Campaign sent — ${parts.join(", ")}.`);
     } catch (err) {
       setError(String((err as Error)?.message || err));
     } finally {
