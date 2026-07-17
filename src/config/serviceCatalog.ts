@@ -302,7 +302,6 @@ export const SERVICE_CATALOG: PortalService[] = [
   // step list. Step editing ships in Phase 2.
   { key: 'spark_tasks', displayName: 'Tasks', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/services/spark_tasks', description: 'Reusable named sub-automations. Any IL automation step of kind `task_call` invokes a row from this list by id.' },
   { key: 'spark_api_keys', displayName: 'API Keys', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_api_keys', description: 'Issue API keys for Zapier / n8n / custom integrations. Scoped + revocable.' },
-  { key: 'spark_review_widget', displayName: 'Review Widget', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_review_widget', description: 'Public review widget URL + collected reviews + per-platform deep-links (Google/Yelp/Facebook). Auto-fires after every NPS promoter.' },
   // Phase 3A (2026-06-16) — UI now shows a Coming Soon banner pending our
   // own webhook stack in v1.5. Pulled from main nav.
   { key: 'spark_webhooks', displayName: 'Webhooks', section: 'LUMEN', defaultStatus: 'coming_soon', route: '/app/services/spark_webhooks', description: 'Outbound webhook subscriptions — Coming Soon. Our own implementation lands in SPARK v1.5.' },

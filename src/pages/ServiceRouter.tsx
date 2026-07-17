@@ -233,7 +233,6 @@ const SparkWorkflowsAutomationsPage = lazyNamed(() => import('./spark/SparkWorkf
 // invoked via task_call). Backs the F-CS.3 dropdown in the IL Customize editor.
 const SparkTasksPage = lazyNamed(() => import('./spark/SparkTasksPage'), 'SparkTasksPage');
 const SparkApiKeysPage = lazyNamed(() => import('./spark/SparkApiKeysPage'), 'SparkApiKeysPage');
-const SparkReviewWidgetPage = lazyNamed(() => import('./spark/SparkReviewWidgetPage'), 'SparkReviewWidgetPage');
 const SparkWebhooksPage = lazyNamed(() => import('./spark/SparkWebhooksPage'), 'SparkWebhooksPage');
 const SparkSmsTemplatesPage = lazyNamed(() => import('./spark/SparkSmsTemplatesPage'), 'SparkSmsTemplatesPage');
 const SparkContactImportPage = lazyNamed(() => import('./spark/SparkContactImportPage'), 'SparkContactImportPage');
@@ -677,7 +676,6 @@ export function ServiceRouter() {
       // the unified Workflows & Automations page (rules tab).
       case 'spark_rules': sparkPage = <SparkWorkflowsAutomationsPage />; break;
       case 'spark_api_keys': sparkPage = <SparkApiKeysPage />; break;
-      case 'spark_review_widget': sparkPage = <SparkReviewWidgetPage />; break;
       case 'spark_webhooks': sparkPage = <SparkWebhooksPage />; break;
       case 'spark_sms_templates': sparkPage = <SparkSmsTemplatesPage />; break;
       case 'spark_sms_campaigns': sparkPage = <SparkSmsCampaignsPage />; break;

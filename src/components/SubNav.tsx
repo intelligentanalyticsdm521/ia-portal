@@ -425,9 +425,6 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_nps", label: "NPS", route: "/app/services/spark_nps" },
         { key: "spark_nps_schedules", label: "NPS Schedules", route: "/app/services/spark_nps_schedules" },
         { key: "spark_reviews", label: "Reputation Hub", route: "/app/services/spark_reviews" },
-        // F-93 — Review Widget stays here. It's a customer-facing widget
-        // feature you configure + share, not a toggle setting.
-        { key: "spark_review_widget", label: "Review Widget", route: "/app/services/spark_review_widget" },
         { key: "spark_referrals", label: "Referrals", route: "/app/services/spark_referrals" },
       ],
     },
