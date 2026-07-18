@@ -195,7 +195,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   // ServiceRouter).
   { key: 'oliver_expenses', displayName: 'Expenses (moved to STELLA)', section: 'OLIVER', defaultStatus: 'coming_soon', route: '/app/services/oliver_expenses', description: 'Deprecated — Expenses moves to STELLA for the expanded build. Existing data preserved.' },
   // F-116 — STELLA Expenses placeholder for the future rebuild.
-  { key: 'stella_expenses_coming', displayName: 'Expenses (Coming Soon)', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_expenses_coming', description: 'Expansive expense + reimbursement + budget tracking. Rebuilds during STELLA build sessions.' },
+  { key: 'stella_expenses_coming', displayName: 'Expenses', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_expenses_coming', description: 'STELLA 0.1.0 — record, categorize, and approve business expenses.' },
   { key: 'oliver_reschedule_requests', displayName: 'Reschedule Queue', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_reschedule_requests', description: 'Customer self-service reschedule requests with admin approval (Pro).' },
   { key: 'oliver_quote_options', displayName: 'Quote Options', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_quote_options', description: 'Multi-option (good/better/best) pricing tiers on a quote (Pro). Open from a quote.' },
   { key: 'oliver_territories', displayName: 'Territories', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_territories', description: 'Service area rules + primary/backup workers (Business).' },
@@ -327,7 +327,7 @@ export const SERVICE_CATALOG: PortalService[] = [
   // overview from StellaExpensesComingPage, IA Insights header sub-routes,
   // etc.). They render the generic "Coming soon" placeholder in
   // ServiceRouter — no dedicated page component needed.
-  { key: 'stella_coming', displayName: 'STELLA Overview', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_coming', description: 'STELLA reporting & business intelligence — coming soon. Currently rebuilds during STELLA build sessions.' },
+  { key: 'stella_coming', displayName: 'Overview', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_coming', description: 'STELLA 0.1.0 — your monthly profit & loss over real invoices and expenses.' },
   { key: 'forge_coming', displayName: 'FORGE Overview', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_coming', description: 'FORGE integration hub — coming soon. The home for cross-product integrations and data plumbing.' },
   { key: 'argus_coming', displayName: 'ARGUS Overview', section: 'ARGUS', defaultStatus: 'coming_soon', route: '/app/services/argus_coming', description: 'ARGUS AI agents — coming soon. Autonomous AI doing work on your behalf under your guardrails.' },
   { key: 'spark_workflow_triggers', displayName: 'Workflow Triggers', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_workflow_triggers', description: 'Per-contact triggers (health tier change / lead score threshold / activity silence / tag added) that fire an action.' },
@@ -378,13 +378,22 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'consulting_deliverables', displayName: 'Deliverables', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_deliverables', description: 'Unified artifact library — logos, code, copy, designs. Tagged by Build Your Series. Sourced from Projects + standalone uploads.' },
   { key: 'consulting_documents', displayName: 'Document Library', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/admin/consulting/document-library', description: 'Founder-only library of intake form + proposal + report + scope-of-work + custom templates. Drag-drop intake builder with scoring; rich-text editor with merge-tag autocomplete for the rest.' },
 
-  // MY_BRAND entries REMOVED 2026-06-22 — top-level My Brand slot was a
-  // premature Wave-2 add for the Q4 2026 deferred product. Removing the
-  // catalog rows unregisters the routes (ServiceRouter dispatches by
-  // service.key), kills the IconRail enablement signal, and prevents
-  // landing-page tiles from picking these up. The 'MY_BRAND' value is
-  // intentionally left in the PortalService['section'] union + LAYER_LABELS
-  // so a future Q4 build can re-introduce these rows without a type churn.
+  // MY_BRAND — Creative Studio (re-added 2026-07-18, Item 1 Task 2). The 10
+  // pages under Portal/src/pages/myBrand/* were built + merged but the catalog
+  // rows were removed 2026-06-22, so ServiceRouter (dispatches by service.key)
+  // rendered "Service not found". The hub is reached via `arion_brand`
+  // (ARION > Your Brand), now routed to MyBrandLandingPage; these rows register
+  // the 9 sub-page routes the hub tiles deep-link to. Backend access is
+  // fail-closed via MY_BRAND_LAUNCHED (LUMEN lib/myBrand/tierCheck.js) until launch.
+  { key: 'my_brand_image_studio', displayName: 'Image Studio', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_image_studio', description: 'Generate on-brand images from a prompt — uses your brand colors, fonts, and logo.', tierGate: 'Standard' },
+  { key: 'my_brand_voice', displayName: 'Brand Voice', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_voice', description: 'Capture your voice profile and check any copy for drift before you publish.' },
+  { key: 'my_brand_templates', displayName: 'Template Studio', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_templates', description: 'Mini-canva: design social posts, ads, and email banners from reusable templates.', tierGate: 'Standard' },
+  { key: 'my_brand_assets', displayName: 'Asset Library', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_assets', description: 'Central library for logos, photos, generated images, and finished designs.' },
+  { key: 'my_brand_social_channels', displayName: 'Social Channels', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_social_channels', description: 'Connect Facebook, Instagram, LinkedIn, X, TikTok, YouTube, and Google Business.', tierGate: 'Standard' },
+  { key: 'my_brand_compose', displayName: 'Composer', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_compose', description: 'Compose once, publish to every connected channel with per-channel preview.', tierGate: 'Standard' },
+  { key: 'my_brand_calendar', displayName: 'Calendar', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_calendar', description: 'Schedule and re-arrange upcoming posts across every connected channel.', tierGate: 'Standard' },
+  { key: 'my_brand_analytics', displayName: 'Analytics', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_analytics', description: 'Per-channel and per-post engagement, reach, and follower trends.', tierGate: 'Pro' },
+  { key: 'my_brand_approvals', displayName: 'Approval Inbox', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_approvals', description: 'Founder/admin review queue for team-submitted posts when approval gating is on.' },
 ];
 
 export function resolveServiceStatus(service: PortalService, enabledKeys: Set<string>): ServiceStatus {

@@ -120,8 +120,8 @@ const BusinessPosts = lazyNamed(() => import('../arion/pages/business/BusinessPo
 const BusinessServices = lazyNamed(() => import('../arion/pages/business/BusinessServices'), 'BusinessServices');
 const BusinessBingOverview = lazyNamed(() => import('../arion/pages/business/BusinessBingOverview'), 'BusinessBingOverview');
 const BusinessAppleOverview = lazyNamed(() => import('../arion/pages/business/BusinessAppleOverview'), 'BusinessAppleOverview');
-// Brand
-const BrandPage = lazyNamed(() => import('../arion/pages/BrandPage'), 'BrandPage');
+// Brand — the old BrandPage "Coming soon" stub is retired; arion_brand now
+// routes to MyBrandLandingPage (see MY BRAND pages block below). Item 1 Task 3.
 // v5.x IA Insights architecture — Health, Trends, Intelligence, Cross-Platform (ARGUS)
 const ArionIAInsightsHealthPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsHealthPage'), 'ArionIAInsightsHealthPage');
 const ArionIAInsightsTrendsPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsTrendsPage'), 'ArionIAInsightsTrendsPage');
@@ -145,13 +145,19 @@ const OliverIAInsightsHealthPage = lazyNamed(() => import('./oliver/OliverIAInsi
 const OliverIAInsightsTrendsPage = lazyNamed(() => import('./oliver/OliverIAInsightsTrendsPage'), 'OliverIAInsightsTrendsPage');
 const OliverIAInsightsIntelligencePage = lazyNamed(() => import('./oliver/OliverIAInsightsIntelligencePage'), 'OliverIAInsightsIntelligencePage');
 
-// MY BRAND pages — 2026-06-22: My Brand top-level slot was REMOVED from
-// IconRail/SubNav (Q4 2026 deferred product). The page files under
-// src/pages/myBrand/* remain on disk for the eventual Q4 build, but they
-// are no longer imported or routed here — the section dispatcher block
-// below has been deleted so the bundle no longer pulls those modules.
-// To revive: re-add the lazy imports + the MY_BRAND case in dispatch +
-// re-register the route in serviceCatalog.
+// MY BRAND pages — re-added 2026-07-18 (Item 1 Task 3). The 10 pages under
+// src/pages/myBrand/* were built + merged but unrouted since 2026-06-22;
+// re-registered here + in serviceCatalog + the MY_BRAND dispatch block below.
+const MyBrandLandingPage = lazyNamed(() => import('./myBrand/MyBrandLandingPage'), 'MyBrandLandingPage');
+const MyBrandImageStudioPage = lazyNamed(() => import('./myBrand/ImageStudioPage'), 'ImageStudioPage');
+const MyBrandVoicePage = lazyNamed(() => import('./myBrand/VoicePage'), 'VoicePage');
+const MyBrandTemplateStudioPage = lazyNamed(() => import('./myBrand/TemplateStudioPage'), 'TemplateStudioPage');
+const MyBrandAssetLibraryPage = lazyNamed(() => import('./myBrand/AssetLibraryPage'), 'AssetLibraryPage');
+const MyBrandSocialChannelsPage = lazyNamed(() => import('./myBrand/SocialChannelsPage'), 'SocialChannelsPage');
+const MyBrandSocialComposerPage = lazyNamed(() => import('./myBrand/SocialComposerPage'), 'SocialComposerPage');
+const MyBrandSocialCalendarPage = lazyNamed(() => import('./myBrand/SocialCalendarPage'), 'SocialCalendarPage');
+const MyBrandSocialAnalyticsPage = lazyNamed(() => import('./myBrand/SocialAnalyticsPage'), 'SocialAnalyticsPage');
+const MyBrandSocialApprovalsPage = lazyNamed(() => import('./myBrand/SocialApprovalsPage'), 'SocialApprovalsPage');
 
 // SPARK / LUMEN pages — lazy-loaded
 const SparkOverviewPage = lazyNamed(() => import('./spark/SparkOverviewPage'), 'SparkOverviewPage');
@@ -313,8 +319,9 @@ const OliverWorkflowTemplatesPage = lazyNamed(() => import('./oliver/OliverWorkf
 const OliverJobOffersPage = lazyNamed(() => import('./oliver/OliverJobOffersPage'), 'OliverJobOffersPage');
 const OliverSupportTicketsPage = lazyNamed(() => import('./oliver/OliverSupportTicketsPage'), 'OliverSupportTicketsPage');
 const OliverTimeTrackingPage = lazyNamed(() => import('./oliver/OliverTimeTrackingPage'), 'OliverTimeTrackingPage');
-// F-116 — Expenses deprecated, replaced with STELLA placeholder
-const StellaExpensesComingPage = lazyNamed(() => import('./stella/StellaExpensesComingPage'), 'StellaExpensesComingPage');
+// STELLA 0.1.0 — live Expenses + P&L Overview (replace the F-116 coming-soon placeholder)
+const StellaExpensesPage = lazyNamed(() => import('./stella/StellaExpensesPage'), 'StellaExpensesPage');
+const StellaOverviewPage = lazyNamed(() => import('./stella/StellaOverviewPage'), 'StellaOverviewPage');
 const OliverRescheduleRequestsPage = lazyNamed(() => import('./oliver/OliverRescheduleRequestsPage'), 'OliverRescheduleRequestsPage');
 const OliverQuoteOptionsPage = lazyNamed(() => import('./oliver/OliverQuoteOptionsPage'), 'OliverQuoteOptionsPage');
 const OliverTerritoriesPage = lazyNamed(() => import('./oliver/OliverTerritoriesPage'), 'OliverTerritoriesPage');
@@ -465,7 +472,7 @@ export function ServiceRouter() {
       case 'arion_business_services': arionPage = withBusinessProfileBanner(<BusinessServices />); break;
       case 'arion_business_bing_overview': arionPage = withBusinessProfileBanner(<BusinessBingOverview />); break;
       case 'arion_business_apple_overview': arionPage = withBusinessProfileBanner(<BusinessAppleOverview />); break;
-      case 'arion_brand': arionPage = <BrandPage />; break;
+      case 'arion_brand': arionPage = <MyBrandLandingPage />; break; // My Brand hub (was BrandPage "Coming soon" stub) — Item 1 Task 3
       // v5.x IA Insights architecture
       case 'arion_ia_insights_health': arionPage = <ArionIAInsightsHealthPage />; break;
       case 'arion_ia_insights_trends': arionPage = <ArionIAInsightsTrendsPage />; break;
@@ -481,6 +488,48 @@ export function ServiceRouter() {
           <Suspense fallback={<RouteLoading />}>
             <ArionPageWrapper>{arionPage}</ArionPageWrapper>
           </Suspense>
+        </PageErrorBoundary>
+      );
+    }
+  }
+
+  // MY_BRAND — Creative Studio (Item 1 Task 3). Hub is reached via arion_brand
+  // (ARION section, above); these are the sub-page routes the hub tiles link to.
+  if (service.section === 'MY_BRAND') {
+    let page: React.ReactNode = null;
+    switch (service.key) {
+      case 'my_brand_image_studio': page = <MyBrandImageStudioPage />; break;
+      case 'my_brand_voice': page = <MyBrandVoicePage />; break;
+      case 'my_brand_templates': page = <MyBrandTemplateStudioPage />; break;
+      case 'my_brand_assets': page = <MyBrandAssetLibraryPage />; break;
+      case 'my_brand_social_channels': page = <MyBrandSocialChannelsPage />; break;
+      case 'my_brand_compose': page = <MyBrandSocialComposerPage />; break;
+      case 'my_brand_calendar': page = <MyBrandSocialCalendarPage />; break;
+      case 'my_brand_analytics': page = <MyBrandSocialAnalyticsPage />; break;
+      case 'my_brand_approvals': page = <MyBrandSocialApprovalsPage />; break;
+      default: break;
+    }
+    if (page) {
+      return (
+        <PageErrorBoundary scope={`my-brand/${service.key}`}>
+          <Suspense fallback={<RouteLoading />}>{page}</Suspense>
+        </PageErrorBoundary>
+      );
+    }
+  }
+
+  if (service.section === 'STELLA') {
+    let stellaPage: React.ReactNode = null;
+    switch (service.key) {
+      // STELLA 0.1.0 — live surfaces (Overview P&L + Expenses).
+      case 'stella_coming': stellaPage = <StellaOverviewPage />; break;
+      case 'stella_expenses_coming': stellaPage = <StellaExpensesPage />; break;
+      default: break;
+    }
+    if (stellaPage) {
+      return (
+        <PageErrorBoundary scope={`stella/${service.key}`}>
+          <Suspense fallback={<RouteLoading />}>{stellaPage}</Suspense>
         </PageErrorBoundary>
       );
     }
@@ -537,10 +586,9 @@ export function ServiceRouter() {
       case 'oliver_job_offers': oliverPage = <OliverJobOffersPage />; break;
       case 'oliver_support_tickets': oliverPage = <OliverSupportTicketsPage />; break;
       case 'oliver_time_tracking': oliverPage = <OliverTimeTrackingPage />; break;
-      // F-116 — Expenses moved to STELLA. Deep links to oliver_expenses
-      // render the STELLA placeholder instead of the deprecated page.
-      case 'oliver_expenses': oliverPage = <StellaExpensesComingPage />; break;
-      case 'stella_expenses_coming': oliverPage = <StellaExpensesComingPage />; break;
+      // F-116 — Expenses moved to STELLA. Deep links to the deprecated
+      // oliver_expenses route now render the live STELLA Expenses page.
+      case 'oliver_expenses': oliverPage = <StellaExpensesPage />; break;
       case 'oliver_reschedule_requests': oliverPage = <OliverRescheduleRequestsPage />; break;
       case 'oliver_quote_options': oliverPage = <OliverQuoteOptionsPage />; break;
       case 'oliver_territories': oliverPage = <OliverTerritoriesPage />; break;

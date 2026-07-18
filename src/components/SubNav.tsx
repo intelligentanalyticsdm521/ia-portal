@@ -510,18 +510,17 @@ const PLACEHOLDER_NAV = (name: string, tagline: string): SubNavConfig => ({
   ],
 });
 
-// F-116 — STELLA placeholder nav: Coming Soon + Expenses-rebuild placeholder
-// so OLIVER's deprecated Expenses surface has a forward-looking home in
-// the product where the next-gen build will land.
+// STELLA 0.1.0 — live nav: Overview (monthly P&L) + Expenses. Was the F-116
+// coming-soon placeholder; the next-gen build has landed.
 const STELLA_NAV: SubNavConfig = {
   productName: "STELLA",
-  tagline: "Reporting & BI · Coming Soon",
+  tagline: "Reporting & BI",
   groups: [
     {
       label: "",
       items: [
-        { key: "stella_coming", label: "Overview (Coming Soon)", route: "/app/services/stella_coming" },
-        { key: "stella_expenses_coming", label: "Expenses (Coming Soon)", route: "/app/services/stella_expenses_coming" },
+        { key: "stella_coming", label: "Overview", route: "/app/services/stella_coming" },
+        { key: "stella_expenses_coming", label: "Expenses", route: "/app/services/stella_expenses_coming" },
       ],
     },
   ],
