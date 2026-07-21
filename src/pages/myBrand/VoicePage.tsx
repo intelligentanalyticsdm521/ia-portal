@@ -1,36 +1,28 @@
-// VoicePage — Brand Voice Profile editor + Drift Dashboard (My Brand · Voice).
+// VoicePage — Brand Voice summary + Drift Dashboard (My Brand · Voice).
 //
-// Two tabs:
-//   - "Profile"         → edit the tenant voice profile (tone attributes,
-//                         3-6 voice examples, brand keywords, avoid list).
-//                         Below the editor: last-5 recent voice checks table.
-//   - "Drift Dashboard" → rolling 30-day score health: 30d avg score gauge,
-//                         per-surface bar chart, rolling line trend (built
-//                         from the per-check series), and a worst-scoring
-//                         items table with an inspector modal.
+// Canonical SparkPageShell page. Two tabs (segmented control in the shell's
+// `filters` slot):
+//   - "Profile"         → READ-ONLY summary of the tenant voice profile
+//                         (tone chips, saved examples, keywords, avoid list)
+//                         plus the last-5 recent voice checks table. Editing
+//                         happens in VoiceProfileEditorModal (IadmModal
+//                         size="info"), opened from the header action.
+//   - "Drift Dashboard" → rolling 30-day score health: topline numbers in the
+//                         shell `stats` strip, per-surface bar chart, rolling
+//                         line trend, and a worst-scoring items table with an
+//                         inspector modal. Pro+ (voice_monitor) — the compact
+//                         MyBrandUpgradeGate covers the locked sub-surface.
 //
 // Backend (LUMEN-API · /api/v1/my-brand/voice/*):
 //   GET  /profile            — returns { tone_attributes, voice_examples, ... }
-//   PUT  /profile            — { tone_attributes, voice_examples }
+//   PUT  /profile            — handled by VoiceProfileEditorModal
 //   GET  /drift-summary?days — { days, overall, by_surface[] }
 //   GET  /checks?days&limit  — paged check log
 //
-// Schema gap surfaced for wave-3:
-//   The PUT profile body in routes/myBrand/voiceMonitor.js only accepts
-//   `tone_attributes` (free-form JSON object) and `voice_examples` (string[]).
-//   It does NOT yet have first-class fields for `keywords` or `avoid_list`.
-//   Until backend gets them, the UI persists both inside the tone_attributes
-//   JSON envelope as `{ attributes, keywords, avoid_list }` so the data round-
-//   trips cleanly. The Haiku prompt builder JSON.stringify()s the whole
-//   tone_attributes object so the model can still reason about keywords +
-//   avoid words. When backend adds first-class columns, the UI will switch
-//   to those without losing existing tenant data — `migrateLegacyShape()`
-//   below covers the read-side.
-//
 // Score scale:
 //   The backend's brand_voice_check.score column is a float in [0, 1] per
-//   voiceMonitor.scoreText() — so a 30-day "avg out of 100" gauge multiplies
-//   the avg by 100. The same scale drives the per-surface bars and the
+//   voiceMonitor.scoreText() — so every "out of 100" display multiplies the
+//   score by 100. The same scale drives the per-surface bars and the
 //   color-coded tier badge.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -39,6 +31,14 @@ import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { MyBrandUpgradeGate } from "../../components/MyBrandUpgradeGate";
 import { useMyBrandTier } from "../../hooks/useMyBrandTier";
+import {
+  VoiceProfileEditorModal,
+  migrateLegacyShape,
+  MAX_TONE,
+  MAX_EXAMPLES,
+  type ToneEnvelope,
+  type VoiceProfile,
+} from "../../components/myBrand/VoiceProfileEditorModal";
 import {
   ResponsiveContainer,
   BarChart,
@@ -53,10 +53,7 @@ import {
 } from "recharts";
 import {
   Mic2,
-  Save,
-  Plus,
-  Trash2,
-  RefreshCw,
+  Pencil,
   AlertTriangle,
   CheckCircle2,
   Eye,
@@ -67,27 +64,6 @@ import {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const TONE_OPTIONS = [
-  "Professional",
-  "Friendly",
-  "Playful",
-  "Bold",
-  "Formal",
-  "Casual",
-  "Authoritative",
-  "Approachable",
-  "Witty",
-  "Empathetic",
-  "Confident",
-  "Educational",
-];
-const MAX_TONE = 5;
-
-const MIN_EXAMPLES = 3;
-const MAX_EXAMPLES = 6;
-const MIN_EXAMPLE_CHARS = 50;
-const MAX_EXAMPLE_CHARS = 2000;
-
 // Score → tier band (mirrors the 0.8 / 0.6 cuts in the backend drift summary).
 function scoreTier(score: number | null): { label: string; color: string } {
   if (score == null) return { label: "No data", color: "#94a3b8" };
@@ -97,29 +73,6 @@ function scoreTier(score: number | null): { label: string; color: string } {
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
-
-// Free-form tone_attributes envelope — we own this shape on the client until
-// the backend grows first-class keywords / avoid-list columns.
-interface ToneEnvelope {
-  attributes?: string[];
-  keywords?: string[];
-  avoid_list?: string[];
-  // Anything else the backend (or a future schema migration) hands us is
-  // preserved verbatim on save — see saveProfile() pass-through.
-  [key: string]: unknown;
-}
-
-interface VoiceProfile {
-  tenant_id: string;
-  tone_attributes: ToneEnvelope | null;
-  voice_examples: string[];
-  embedding_model_id: string | null;
-  embedding_version: number | null;
-  embeddings_computed_at: string | null;
-  has_embeddings: boolean;
-  created_at: string | null;
-  updated_at: string | null;
-}
 
 interface SurfaceStat {
   surface: string;
@@ -163,25 +116,6 @@ interface ChecksResponse {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function migrateLegacyShape(raw: ToneEnvelope | null | undefined): ToneEnvelope {
-  if (!raw) return { attributes: [], keywords: [], avoid_list: [] };
-  // If the tenant's profile pre-dates wave-2 it may have used a different
-  // shape (e.g. `tone: "Professional, Friendly"` from an early draft). Read
-  // tolerantly so existing tenants don't see an empty editor on first load.
-  const attributes = Array.isArray(raw.attributes)
-    ? (raw.attributes as string[]).filter((s) => typeof s === "string")
-    : [];
-  const keywords = Array.isArray(raw.keywords)
-    ? (raw.keywords as string[]).filter((s) => typeof s === "string")
-    : [];
-  const avoid_list = Array.isArray(raw.avoid_list)
-    ? (raw.avoid_list as string[]).filter((s) => typeof s === "string")
-    : Array.isArray((raw as { avoidList?: unknown }).avoidList)
-      ? ((raw as { avoidList: string[] }).avoidList).filter((s) => typeof s === "string")
-      : [];
-  return { ...raw, attributes, keywords, avoid_list };
-}
-
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   try {
@@ -201,7 +135,7 @@ function shortSurface(surface: string): string {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export function VoicePage() {
-  const { get, put, ready } = useLumenApi();
+  const { get, ready } = useLumenApi();
   // Voice Monitor (drift dashboard + checks log) is Pro+. The Profile tab
   // and the pre-publish /score endpoint stay open to all tiers — see scope.
   // We only lock the Drift Dashboard sub-surface, not the whole page.
@@ -210,13 +144,9 @@ export function VoicePage() {
 
   const [tab, setTab] = useState<"profile" | "drift">("profile");
 
-  // Profile-tab state
+  // Profile (read-only on this page — editing lives in the modal)
   const [profile, setProfile] = useState<VoiceProfile | null>(null);
-  const [envelope, setEnvelope] = useState<ToneEnvelope>({ attributes: [], keywords: [], avoid_list: [] });
-  const [examples, setExamples] = useState<string[]>(["", "", ""]);
-  const [keywordDraft, setKeywordDraft] = useState("");
-  const [avoidDraft, setAvoidDraft] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
 
   // Dashboard + log state (shared by both tabs — recent-5 on Profile tab
   // is just a slice of the checks list).
@@ -231,7 +161,7 @@ export function VoicePage() {
   const [inspect, setInspect] = useState<VoiceCheck | null>(null);
 
   // Load everything in parallel. Failing on any one shouldn't blank the
-  // whole page — surface partial state so the user can still edit their
+  // whole page — surface partial state so the user can still view their
   // profile if the drift endpoint is down (and vice versa).
   const loadAll = useCallback(async () => {
     if (!ready) return;
@@ -244,20 +174,9 @@ export function VoicePage() {
         get<ChecksResponse>("/api/v1/my-brand/voice/checks?days=30&limit=50"),
       ]);
 
-      if (profileRes.status === "fulfilled" && profileRes.value) {
-        const p = profileRes.value;
-        setProfile(p);
-        const env = migrateLegacyShape(p.tone_attributes);
-        setEnvelope(env);
-        // Pad voice_examples to at least MIN_EXAMPLES so the editor renders 3 boxes on first paint.
-        const ex = Array.isArray(p.voice_examples) ? [...p.voice_examples] : [];
-        while (ex.length < MIN_EXAMPLES) ex.push("");
-        setExamples(ex.slice(0, MAX_EXAMPLES));
-      } else if (profileRes.status === "fulfilled") {
-        // First-time tenant — no profile row yet. Start with empty defaults.
-        setProfile(null);
-        setEnvelope({ attributes: [], keywords: [], avoid_list: [] });
-        setExamples(["", "", ""]);
+      if (profileRes.status === "fulfilled") {
+        // null = first-time tenant, no profile row yet.
+        setProfile(profileRes.value ?? null);
       } else {
         // Profile load failed; bubble up only if we have NOTHING else either.
         if (summaryRes.status !== "fulfilled" && checksRes.status !== "fulfilled") {
@@ -289,100 +208,14 @@ export function VoicePage() {
     loadAll();
   }, [loadAll]);
 
-  // ── Profile tab actions ───────────────────────────────────────────────────
+  // ── Derived data ──────────────────────────────────────────────────────────
 
-  const toggleTone = useCallback((tone: string) => {
-    setEnvelope((prev) => {
-      const cur = prev.attributes || [];
-      if (cur.includes(tone)) {
-        return { ...prev, attributes: cur.filter((t) => t !== tone) };
-      }
-      if (cur.length >= MAX_TONE) return prev; // capped
-      return { ...prev, attributes: [...cur, tone] };
-    });
-  }, []);
-
-  const updateExample = useCallback((idx: number, val: string) => {
-    setExamples((prev) => prev.map((e, i) => (i === idx ? val.slice(0, MAX_EXAMPLE_CHARS) : e)));
-  }, []);
-
-  const addExample = useCallback(() => {
-    setExamples((prev) => (prev.length < MAX_EXAMPLES ? [...prev, ""] : prev));
-  }, []);
-
-  const removeExample = useCallback((idx: number) => {
-    setExamples((prev) => {
-      if (prev.length <= MIN_EXAMPLES) return prev.map((e, i) => (i === idx ? "" : e));
-      return prev.filter((_, i) => i !== idx);
-    });
-  }, []);
-
-  const addKeyword = useCallback(() => {
-    const v = keywordDraft.trim();
-    if (!v) return;
-    setEnvelope((prev) => {
-      const cur = prev.keywords || [];
-      if (cur.includes(v)) return prev;
-      return { ...prev, keywords: [...cur, v] };
-    });
-    setKeywordDraft("");
-  }, [keywordDraft]);
-
-  const removeKeyword = useCallback((kw: string) => {
-    setEnvelope((prev) => ({ ...prev, keywords: (prev.keywords || []).filter((k) => k !== kw) }));
-  }, []);
-
-  const addAvoid = useCallback(() => {
-    const v = avoidDraft.trim();
-    if (!v) return;
-    setEnvelope((prev) => {
-      const cur = prev.avoid_list || [];
-      if (cur.includes(v)) return prev;
-      return { ...prev, avoid_list: [...cur, v] };
-    });
-    setAvoidDraft("");
-  }, [avoidDraft]);
-
-  const removeAvoid = useCallback((w: string) => {
-    setEnvelope((prev) => ({ ...prev, avoid_list: (prev.avoid_list || []).filter((k) => k !== w) }));
-  }, []);
-
-  // Save validation — match backend rules (3-6 examples, each min 50 chars).
-  // We allow the user to type fewer; we just gate the Save button.
-  const validExamples = examples.filter((e) => e.trim().length >= MIN_EXAMPLE_CHARS);
-  const canSave =
-    (envelope.attributes?.length || 0) > 0 &&
-    validExamples.length >= MIN_EXAMPLES;
-
-  const saveProfile = useCallback(async () => {
-    if (!canSave) return;
-    setSaving(true);
-    try {
-      // Trim each example, drop empties, cap at MAX_EXAMPLES — same shape the
-      // backend enforces, but matching it here keeps the response in sync.
-      const cleanedExamples = examples
-        .map((e) => e.trim())
-        .filter((e) => e.length >= MIN_EXAMPLE_CHARS)
-        .slice(0, MAX_EXAMPLES);
-
-      // tone_attributes envelope passthrough — preserve any keys the
-      // backend might have set (e.g. version metadata) by spreading
-      // the loaded shape first.
-      const body = {
-        tone_attributes: { ...envelope },
-        voice_examples: cleanedExamples,
-      };
-
-      await put<VoiceProfile>("/api/v1/my-brand/voice/profile", body);
-      await loadAll();
-    } catch (err) {
-      alert(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setSaving(false);
-    }
-  }, [canSave, envelope, examples, put, loadAll]);
-
-  // ── Derived dashboard data ────────────────────────────────────────────────
+  // Read-tolerant envelope for the read-only summary (same migration the
+  // editor modal applies before editing).
+  const summaryEnvelope = useMemo(
+    () => migrateLegacyShape(profile?.tone_attributes),
+    [profile],
+  );
 
   // Per-surface bar chart — convert avg_score 0-1 → 0-100 for display.
   const surfaceBars = useMemo(() => {
@@ -419,17 +252,84 @@ export function VoicePage() {
     return [...checks].sort((a, b) => a.score - b.score).slice(0, 10);
   }, [checks]);
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Shell slots ───────────────────────────────────────────────────────────
 
+  // Primary page action — SPARK-orange pill opening the editor modal.
   const headerActions = (
     <button
-      onClick={loadAll}
-      className="text-sm px-3 py-1.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 flex items-center gap-1"
       type="button"
+      onClick={() => setEditorOpen(true)}
+      className="rounded-lg bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#d75a25] inline-flex items-center gap-1"
     >
-      <RefreshCw className="h-4 w-4" /> Refresh
+      <Pencil className="h-3.5 w-3.5" /> Edit voice profile
     </button>
   );
+
+  // Tab switcher — canon segmented control in the shell `filters` slot.
+  const filters = (
+    <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+      {([
+        { key: "profile", label: "Profile" },
+        { key: "drift", label: "Drift Dashboard" },
+      ] as Array<{ key: typeof tab; label: string }>).map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          onClick={() => setTab(t.key)}
+          className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+            tab === t.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  // Drift topline — inline stat strip in the shell `stats` slot (NOT a card
+  // grid). Only rendered on the unlocked Drift tab.
+  const overallAvgPct = summary?.overall.avg_score == null ? null : Math.round(summary.overall.avg_score * 100);
+  const overallTier = scoreTier(overallAvgPct);
+  const stats =
+    tab === "drift" && !driftLocked && !loading ? (
+      <div className="spark-stat-strip">
+        <div className="spark-stat-item">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">30d avg score</div>
+          <div className="mt-0.5 flex items-center gap-2">
+            <span className="text-xl font-semibold" style={{ color: overallTier.color }}>
+              {overallAvgPct == null ? "—" : overallAvgPct}
+            </span>
+            <span
+              className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+              style={{ background: `${overallTier.color}1a`, color: overallTier.color }}
+            >
+              {overallTier.label}
+            </span>
+          </div>
+        </div>
+        <StatItem
+          label="On-brand"
+          value={summary?.overall.on_brand_pct == null ? null : Math.round(summary.overall.on_brand_pct * 100)}
+          suffix="%"
+          color="#10b981"
+        />
+        <StatItem
+          label="Mild drift"
+          value={summary?.overall.mild_drift_pct == null ? null : Math.round(summary.overall.mild_drift_pct * 100)}
+          suffix="%"
+          color="#eab308"
+        />
+        <StatItem
+          label="Strong drift"
+          value={summary?.overall.strong_drift_pct == null ? null : Math.round(summary.overall.strong_drift_pct * 100)}
+          suffix="%"
+          color="#dc2626"
+        />
+        <StatItem label="Checks (30d)" value={summary?.overall.check_count ?? 0} color="#1A3A4A" />
+      </div>
+    ) : undefined;
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <SparkPageShell
@@ -437,315 +337,172 @@ export function VoicePage() {
       subtitle="Capture your voice profile and see how on-brand recent copy has been."
       help="Profile defines your tone, sample writing, and the brand-specific keywords / avoid-list the Intelligence Layer uses to score new text. Drift Dashboard shows how every surface (ARION pages, SPARK campaigns, social posts, ARGUS replies) has scored over the last 30 days."
       actions={headerActions}
+      stats={stats}
+      filters={filters}
       loading={loading}
       error={error}
     >
-      {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-3 py-1 rounded-t-md">
-        <TabButton active={tab === "profile"} onClick={() => setTab("profile")} icon={<Mic2 className="h-3.5 w-3.5" />} label="Profile" />
-        <TabButton active={tab === "drift"} onClick={() => setTab("drift")} icon={<Sparkles className="h-3.5 w-3.5" />} label="Drift Dashboard" />
-      </div>
+      {tab === "profile" ? (
+        <ProfileSummary
+          profile={profile}
+          envelope={summaryEnvelope}
+          recentChecks={checks.slice(0, 5)}
+          onEdit={() => setEditorOpen(true)}
+          onInspect={(c) => setInspect(c)}
+          onOpenDrift={() => setTab("drift")}
+        />
+      ) : driftLocked ? (
+        <MyBrandUpgradeGate
+          compact
+          featureName="Voice Drift Dashboard"
+          requiredTier={gate.requiredTier("voice_monitor")}
+          currentTier={gate.tier}
+          description="Post-publish voice scoring and the rolling drift dashboard are Pro-tier features. Pre-publish checks remain available on every plan."
+        />
+      ) : (
+        <DriftTab
+          surfaceBars={surfaceBars}
+          trendLine={trendLine}
+          worst10={worst10}
+          onInspect={(c) => setInspect(c)}
+        />
+      )}
 
-      <div className="bg-white border border-t-0 border-slate-200 rounded-b-md p-5">
-        {tab === "profile" ? (
-          <ProfileTab
-            profile={profile}
-            envelope={envelope}
-            toggleTone={toggleTone}
-            examples={examples}
-            updateExample={updateExample}
-            addExample={addExample}
-            removeExample={removeExample}
-            keywordDraft={keywordDraft}
-            setKeywordDraft={setKeywordDraft}
-            addKeyword={addKeyword}
-            removeKeyword={removeKeyword}
-            avoidDraft={avoidDraft}
-            setAvoidDraft={setAvoidDraft}
-            addAvoid={addAvoid}
-            removeAvoid={removeAvoid}
-            canSave={canSave}
-            saving={saving}
-            saveProfile={saveProfile}
-            recentChecks={checks.slice(0, 5)}
-            validCount={validExamples.length}
-          />
-        ) : driftLocked ? (
-          <MyBrandUpgradeGate
-            compact
-            featureName="Voice Drift Dashboard"
-            requiredTier={gate.requiredTier("voice_monitor")}
-            currentTier={gate.tier}
-            description="Post-publish voice scoring and the rolling drift dashboard are Pro-tier features. Pre-publish checks remain available on every plan."
-          />
-        ) : (
-          <DriftTab
-            summary={summary}
-            surfaceBars={surfaceBars}
-            trendLine={trendLine}
-            worst10={worst10}
-            onInspect={(c) => setInspect(c)}
-          />
-        )}
-      </div>
-
+      {editorOpen && (
+        <VoiceProfileEditorModal
+          open
+          onClose={() => setEditorOpen(false)}
+          onChanged={() => {
+            setEditorOpen(false);
+            loadAll();
+          }}
+        />
+      )}
       {inspect && <InspectModal check={inspect} onClose={() => setInspect(null)} />}
     </SparkPageShell>
   );
 }
 
-// ── Tab chrome ───────────────────────────────────────────────────────────────
+// ── Profile tab (read-only summary) ──────────────────────────────────────────
 
-function TabButton({
-  active,
-  onClick,
-  icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-        active
-          ? "bg-white text-slate-900 shadow-sm border border-slate-200"
-          : "text-slate-600 hover:bg-white/60 hover:text-slate-900"
-      }`}
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
-  );
-}
-
-// ── Profile tab ──────────────────────────────────────────────────────────────
-
-interface ProfileTabProps {
+interface ProfileSummaryProps {
   profile: VoiceProfile | null;
   envelope: ToneEnvelope;
-  toggleTone: (t: string) => void;
-  examples: string[];
-  updateExample: (idx: number, val: string) => void;
-  addExample: () => void;
-  removeExample: (idx: number) => void;
-  keywordDraft: string;
-  setKeywordDraft: (v: string) => void;
-  addKeyword: () => void;
-  removeKeyword: (kw: string) => void;
-  avoidDraft: string;
-  setAvoidDraft: (v: string) => void;
-  addAvoid: () => void;
-  removeAvoid: (w: string) => void;
-  canSave: boolean;
-  saving: boolean;
-  saveProfile: () => void;
   recentChecks: VoiceCheck[];
-  validCount: number;
+  onEdit: () => void;
+  onInspect: (c: VoiceCheck) => void;
+  onOpenDrift: () => void;
 }
 
-function ProfileTab(props: ProfileTabProps) {
-  const {
-    profile, envelope, toggleTone,
-    examples, updateExample, addExample, removeExample,
-    keywordDraft, setKeywordDraft, addKeyword, removeKeyword,
-    avoidDraft, setAvoidDraft, addAvoid, removeAvoid,
-    canSave, saving, saveProfile, recentChecks, validCount,
-  } = props;
-
-  const selectedTones = envelope.attributes || [];
+function ProfileSummary({ profile, envelope, recentChecks, onEdit, onInspect, onOpenDrift }: ProfileSummaryProps) {
+  const tones = envelope.attributes || [];
   const keywords = envelope.keywords || [];
   const avoidList = envelope.avoid_list || [];
+  const savedExamples = Array.isArray(profile?.voice_examples) ? profile!.voice_examples : [];
 
   return (
     <div className="grid grid-cols-1 gap-6">
-      {/* Tone attributes */}
-      <Section
-        title="Tone Attributes"
-        hint={`Pick up to ${MAX_TONE} attributes that describe how your brand should sound. ${selectedTones.length}/${MAX_TONE} selected.`}
-      >
-        <div className="flex flex-wrap gap-2">
-          {TONE_OPTIONS.map((tone) => {
-            const selected = selectedTones.includes(tone);
-            const disabled = !selected && selectedTones.length >= MAX_TONE;
-            return (
-              <button
-                key={tone}
-                type="button"
-                onClick={() => toggleTone(tone)}
-                disabled={disabled}
-                className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                  selected
-                    ? "bg-[#1A3A4A] text-white border-[#1A3A4A]"
-                    : disabled
-                      ? "bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed"
-                      : "bg-white text-slate-700 border-slate-300 hover:border-slate-400"
-                }`}
-              >
-                {tone}
-              </button>
-            );
-          })}
-        </div>
-      </Section>
-
-      {/* Voice examples */}
-      <Section
-        title="Voice Examples"
-        hint={`Paste ${MIN_EXAMPLES}-${MAX_EXAMPLES} short passages of writing that sound like your brand. Each example must be at least ${MIN_EXAMPLE_CHARS} characters. The Intelligence Layer embeds these and compares new copy against them. ${validCount} of ${MIN_EXAMPLES} required.`}
-      >
-        <div className="space-y-3">
-          {examples.map((text, idx) => {
-            const chars = text.trim().length;
-            const tooShort = chars > 0 && chars < MIN_EXAMPLE_CHARS;
-            return (
-              <div key={idx} className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-slate-700">Example {idx + 1}</label>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[11px] ${tooShort ? "text-rose-600" : chars >= MIN_EXAMPLE_CHARS ? "text-emerald-600" : "text-slate-500"}`}>
-                      {chars}/{MAX_EXAMPLE_CHARS} chars
-                    </span>
-                    {examples.length > MIN_EXAMPLES && (
-                      <button
-                        type="button"
-                        onClick={() => removeExample(idx)}
-                        className="text-[11px] text-slate-500 hover:text-rose-600 inline-flex items-center gap-1"
-                      >
-                        <Trash2 className="h-3 w-3" /> Remove
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <textarea
-                  value={text}
-                  onChange={(e) => updateExample(idx, e.target.value)}
-                  rows={4}
-                  placeholder={`At least ${MIN_EXAMPLE_CHARS} characters — write the way your brand actually writes.`}
-                  className={`w-full rounded border px-3 py-2 text-sm font-mono leading-snug ${
-                    tooShort ? "border-rose-300 bg-rose-50" : "border-slate-300 bg-white"
-                  }`}
-                />
-              </div>
-            );
-          })}
-          {examples.length < MAX_EXAMPLES && (
+      {profile == null ? (
+        <EmptyCard
+          icon={<Mic2 className="h-7 w-7 text-slate-400" />}
+          title="No voice profile yet"
+          guidance="Capture your tone, sample writing, and brand keywords so the Intelligence Layer can score every surface against your voice."
+          cta={
             <button
               type="button"
-              onClick={addExample}
-              className="text-xs text-slate-600 hover:text-slate-900 inline-flex items-center gap-1 border border-dashed border-slate-300 rounded px-3 py-1.5"
+              onClick={onEdit}
+              className="inline-flex items-center gap-1 rounded-lg bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#d75a25]"
             >
-              <Plus className="h-3 w-3" /> Add example ({examples.length}/{MAX_EXAMPLES})
+              <Pencil className="h-3.5 w-3.5" /> Set up voice profile
             </button>
-          )}
-        </div>
-      </Section>
-
-      {/* Brand keywords */}
-      <Section
-        title="Brand Keywords"
-        hint="Words and phrases that SHOULD appear in your copy — brand name variants, taglines, product names. Stored inside tone_attributes JSON for now (backend pending first-class columns)."
-      >
-        <ChipInput
-          icon={<Tag className="h-3.5 w-3.5 text-emerald-600" />}
-          chips={keywords}
-          draft={keywordDraft}
-          setDraft={setKeywordDraft}
-          onAdd={addKeyword}
-          onRemove={removeKeyword}
-          placeholder="e.g. Acme Corp, AcmeFlow, “Built for trades”"
-          accent="#10b981"
+          }
         />
-      </Section>
+      ) : (
+        <>
+          <div className="text-xs text-slate-500">
+            {profile.updated_at ? (
+              <>Last saved {formatDate(profile.updated_at)}{profile.has_embeddings ? " · embeddings ready" : " · embeddings pending"}</>
+            ) : (
+              "Profile not yet saved"
+            )}
+          </div>
 
-      {/* Avoid list */}
-      <Section
-        title="Avoid List"
-        hint="Words and phrases to NEVER use — competitor names, off-tone phrases, banned jargon."
-      >
-        <ChipInput
-          icon={<Ban className="h-3.5 w-3.5 text-rose-600" />}
-          chips={avoidList}
-          draft={avoidDraft}
-          setDraft={setAvoidDraft}
-          onAdd={addAvoid}
-          onRemove={removeAvoid}
-          placeholder="e.g. cheap, basic, competitor names"
-          accent="#dc2626"
-        />
-      </Section>
+          <Section title="Tone Attributes" hint="How your brand should sound.">
+            {tones.length === 0 ? (
+              <p className="text-xs text-slate-500">No tone attributes yet — use Edit voice profile to pick up to {MAX_TONE}.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {tones.map((tone) => (
+                  <span key={tone} className="text-xs px-3 py-1.5 rounded-full bg-[#1A3A4A] text-white">{tone}</span>
+                ))}
+              </div>
+            )}
+          </Section>
 
-      {/* Save row */}
-      <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-        <div className="text-xs text-slate-500">
-          {profile?.updated_at ? <>Last saved {formatDate(profile.updated_at)}{profile.has_embeddings ? " · embeddings ready" : " · embeddings pending"}</> : "Profile not yet saved"}
-        </div>
-        <div className="flex items-center gap-2">
-          {!canSave && (
-            <span className="text-[11px] text-amber-700 inline-flex items-center gap-1">
-              <AlertTriangle className="h-3 w-3" />
-              Need {MIN_EXAMPLES} examples (≥{MIN_EXAMPLE_CHARS} chars) and at least one tone
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={saveProfile}
-            disabled={!canSave || saving}
-            className="inline-flex items-center gap-1 rounded px-4 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 text-white"
-            style={{ background: "#2563eb" }}
+          <Section
+            title="Voice Examples"
+            hint={`${savedExamples.length} of ${MAX_EXAMPLES} sample passages saved. The Intelligence Layer embeds these and compares new copy against them.`}
           >
-            <Save className="h-3.5 w-3.5" />
-            {saving ? "Saving…" : "Save profile"}
-          </button>
-        </div>
-      </div>
+            {savedExamples.length === 0 ? (
+              <p className="text-xs text-slate-500">No examples saved yet — use Edit voice profile to add some.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {savedExamples.map((ex, i) => (
+                  <li key={i} className="rounded border border-slate-200 bg-white px-3 py-2 text-xs font-mono text-slate-600 truncate">
+                    {ex}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
 
-      {/* Recent 5 voice checks */}
+          <Section
+            title="Brand Keywords"
+            hint="Words and phrases that SHOULD appear in your copy — brand name variants, taglines, product names."
+          >
+            <ReadOnlyChips
+              chips={keywords}
+              icon={<Tag className="h-3.5 w-3.5 text-emerald-600" />}
+              accent="#10b981"
+              emptyLabel="No keywords yet."
+            />
+          </Section>
+
+          <Section
+            title="Avoid List"
+            hint="Words and phrases to NEVER use — competitor names, off-tone phrases, banned jargon."
+          >
+            <ReadOnlyChips
+              chips={avoidList}
+              icon={<Ban className="h-3.5 w-3.5 text-rose-600" />}
+              accent="#dc2626"
+              emptyLabel="No avoid-list entries yet."
+            />
+          </Section>
+        </>
+      )}
+
       <Section
         title="Last 5 Voice Checks"
         hint="Most recent voice scoring activity across every surface. Open Drift Dashboard for the full 30-day picture."
       >
         {recentChecks.length === 0 ? (
-          <div className="rounded border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-xs text-slate-500">
-            No voice checks recorded yet. Scores appear here as soon as ARION, SPARK, or ARGUS surfaces start running content through the Voice scoring endpoint.
-          </div>
+          <EmptyCard
+            icon={<Sparkles className="h-7 w-7 text-slate-400" />}
+            title="No voice checks yet"
+            guidance="Scores appear here as soon as ARION, SPARK, or ARGUS surfaces start running content through the Voice scoring endpoint."
+            cta={
+              <button
+                type="button"
+                onClick={onOpenDrift}
+                className="inline-flex items-center gap-1 rounded-lg bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#d75a25]"
+              >
+                <Sparkles className="h-3.5 w-3.5" /> Open Drift Dashboard
+              </button>
+            }
+          />
         ) : (
-          <div className="overflow-x-auto rounded border border-slate-200">
-            <table className="min-w-full text-xs">
-              <thead className="bg-slate-50 text-slate-600">
-                <tr>
-                  <th className="text-left px-3 py-2">When</th>
-                  <th className="text-left px-3 py-2">Surface</th>
-                  <th className="text-left px-3 py-2">Preview</th>
-                  <th className="text-right px-3 py-2">Score</th>
-                  <th className="text-right px-3 py-2">Drift Reasons</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentChecks.map((c) => {
-                  const pct = Math.round(c.score * 100);
-                  const tier = scoreTier(pct);
-                  return (
-                    <tr key={c.check_id} className="border-t border-slate-200">
-                      <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{formatDate(c.created_at)}</td>
-                      <td className="px-3 py-2 font-mono text-slate-700">{shortSurface(c.surface)}</td>
-                      <td className="px-3 py-2 text-slate-600 max-w-[40ch] truncate">{c.text_preview}</td>
-                      <td className="px-3 py-2 text-right">
-                        <span className="inline-flex items-center gap-1 font-semibold" style={{ color: tier.color }}>
-                          {pct}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-right text-slate-600">{c.drift_reasons.length || "—"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <ChecksTable checks={recentChecks} onInspect={onInspect} />
         )}
       </Section>
     </div>
@@ -755,63 +512,18 @@ function ProfileTab(props: ProfileTabProps) {
 // ── Drift dashboard tab ──────────────────────────────────────────────────────
 
 function DriftTab({
-  summary,
   surfaceBars,
   trendLine,
   worst10,
   onInspect,
 }: {
-  summary: DriftSummary | null;
   surfaceBars: Array<{ surface: string; score: number; check_count: number }>;
   trendLine: Array<{ day: string; score: number }>;
   worst10: VoiceCheck[];
   onInspect: (c: VoiceCheck) => void;
 }) {
-  const overallAvgPct = summary?.overall.avg_score == null ? null : Math.round(summary.overall.avg_score * 100);
-  const overallTier = scoreTier(overallAvgPct);
-  const totalChecks = summary?.overall.check_count || 0;
-
   return (
     <div className="grid grid-cols-1 gap-6">
-      {/* Header gauge */}
-      <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-4 items-stretch">
-        <div className="rounded border border-slate-200 bg-white p-5 flex flex-col items-center justify-center">
-          <ScoreGauge value={overallAvgPct} color={overallTier.color} />
-          <div className="mt-3 text-xs font-medium text-slate-600">30-day average voice score</div>
-          <span
-            className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide rounded-full px-2.5 py-1"
-            style={{ background: `${overallTier.color}1a`, color: overallTier.color }}
-          >
-            {overallTier.label}
-          </span>
-          <div className="mt-2 text-[11px] text-slate-500">{totalChecks} checks in last 30d</div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3">
-          <KPI
-            label="On-brand"
-            value={summary?.overall.on_brand_pct == null ? null : Math.round(summary.overall.on_brand_pct * 100)}
-            suffix="%"
-            color="#10b981"
-            help="Score ≥ 80"
-          />
-          <KPI
-            label="Mild drift"
-            value={summary?.overall.mild_drift_pct == null ? null : Math.round(summary.overall.mild_drift_pct * 100)}
-            suffix="%"
-            color="#eab308"
-            help="Score 60-79"
-          />
-          <KPI
-            label="Strong drift"
-            value={summary?.overall.strong_drift_pct == null ? null : Math.round(summary.overall.strong_drift_pct * 100)}
-            suffix="%"
-            color="#dc2626"
-            help="Score < 60"
-          />
-        </div>
-      </div>
-
       {/* Per-surface bar chart */}
       <ChartCard
         title="Average score by surface"
@@ -869,67 +581,17 @@ function DriftTab({
       {/* Worst-10 list */}
       <Section
         title="Top 10 worst-scoring recent items"
-        hint="Lowest-scoring voice checks in the last 30 days. Click View to see the text, drift reasons, and suggested fixes."
+        hint="Lowest-scoring voice checks in the last 30 days. Click a row to see the text, drift reasons, and suggested fixes."
       >
         {worst10.length === 0 ? (
-          <div className="rounded border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-xs text-slate-500">
-            No voice checks yet — once content starts flowing through scoreText() the worst offenders will surface here.
-          </div>
+          <EmptyCard
+            icon={<Sparkles className="h-7 w-7 text-slate-400" />}
+            title="No voice checks yet"
+            guidance="Once content starts flowing through scoreText() the worst offenders will surface here."
+          />
         ) : (
-          <div className="overflow-x-auto rounded border border-slate-200">
-            <table className="min-w-full text-xs">
-              <thead className="bg-slate-50 text-slate-600">
-                <tr>
-                  <th className="text-left px-3 py-2">When</th>
-                  <th className="text-left px-3 py-2">Surface</th>
-                  <th className="text-left px-3 py-2">Preview</th>
-                  <th className="text-right px-3 py-2">Score</th>
-                  <th className="text-right px-3 py-2">Reasons</th>
-                  <th className="text-right px-3 py-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {worst10.map((c) => {
-                  const pct = Math.round(c.score * 100);
-                  const tier = scoreTier(pct);
-                  return (
-                    <tr key={c.check_id} className="border-t border-slate-200">
-                      <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{formatDate(c.created_at)}</td>
-                      <td className="px-3 py-2 font-mono text-slate-700">{shortSurface(c.surface)}</td>
-                      <td className="px-3 py-2 text-slate-600 max-w-[40ch] truncate">{c.text_preview}</td>
-                      <td className="px-3 py-2 text-right">
-                        <span className="inline-flex items-center gap-1 font-semibold" style={{ color: tier.color }}>
-                          {pct}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-right text-slate-600">{c.drift_reasons.length || 0}</td>
-                      <td className="px-3 py-2 text-right">
-                        <button
-                          type="button"
-                          onClick={() => onInspect(c)}
-                          className="text-[11px] inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 hover:bg-slate-50 text-slate-700"
-                        >
-                          <Eye className="h-3 w-3" /> View
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <ChecksTable checks={worst10} showView onInspect={onInspect} />
         )}
-      </Section>
-
-      {/* Engagement scatter — empty state. Real wiring blocked on the
-          engagement-per-surface backend join (wave-3). */}
-      <Section
-        title="Voice score vs engagement"
-        hint="Future: scatter every check against its surface's engagement metric (open rate, click rate, response rate). Blocked on backend join — see wave-3 follow-up."
-      >
-        <div className="rounded border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-xs text-slate-500">
-          Engagement-per-check data isn't joined yet. Once we have it, this card will plot voice score (x) against engagement rate (y) for every check.
-        </div>
       </Section>
     </div>
   );
@@ -949,78 +611,152 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
-function ChipInput({
-  icon,
-  chips,
-  draft,
-  setDraft,
-  onAdd,
-  onRemove,
-  placeholder,
-  accent,
+/** One shared table for recent-5 (Profile tab) and worst-10 (Drift tab).
+ *  Rows open the inspect modal on click; `showView` adds the explicit
+ *  per-row View button the Drift tab keeps. */
+function ChecksTable({
+  checks,
+  showView,
+  onInspect,
 }: {
-  icon: React.ReactNode;
-  chips: string[];
-  draft: string;
-  setDraft: (v: string) => void;
-  onAdd: () => void;
-  onRemove: (chip: string) => void;
-  placeholder: string;
-  accent: string;
+  checks: VoiceCheck[];
+  showView?: boolean;
+  onInspect: (c: VoiceCheck) => void;
 }) {
   return (
-    <div>
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === ",") {
-              e.preventDefault();
-              onAdd();
-            }
-          }}
-          placeholder={placeholder}
-          className="flex-1 rounded border border-slate-300 px-3 py-1.5 text-sm bg-white"
-        />
-        <button
-          type="button"
-          onClick={onAdd}
-          disabled={!draft.trim()}
-          className="text-xs px-3 py-1.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 inline-flex items-center gap-1"
-        >
-          <Plus className="h-3 w-3" /> Add
-        </button>
-      </div>
-      {chips.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {chips.map((chip) => (
-            <span
-              key={chip}
-              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs"
-              style={{ background: `${accent}1a`, color: accent }}
-            >
-              {icon}
-              <span>{chip}</span>
-              <button
-                type="button"
-                onClick={() => onRemove(chip)}
-                className="ml-1 text-current opacity-60 hover:opacity-100"
-                aria-label={`Remove ${chip}`}
+    <div className="overflow-x-auto rounded border border-slate-200 bg-white">
+      <table className="min-w-full text-xs">
+        <thead className="bg-slate-50 text-slate-600">
+          <tr>
+            <th className="text-left px-3 py-2">When</th>
+            <th className="text-left px-3 py-2">Surface</th>
+            <th className="text-left px-3 py-2">Preview</th>
+            <th className="text-right px-3 py-2">Score</th>
+            <th className="text-right px-3 py-2">Reasons</th>
+            {showView && <th className="text-right px-3 py-2"></th>}
+          </tr>
+        </thead>
+        <tbody>
+          {checks.map((c) => {
+            const pct = Math.round(c.score * 100);
+            const tier = scoreTier(pct);
+            return (
+              <tr
+                key={c.check_id}
+                onClick={() => onInspect(c)}
+                className="border-t border-slate-200 cursor-pointer hover:bg-slate-50"
               >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-      ) : (
-        <div className="mt-2 text-[11px] text-slate-500">No entries yet — press Enter or comma to add.</div>
-      )}
+                <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{formatDate(c.created_at)}</td>
+                <td className="px-3 py-2 font-mono text-slate-700">{shortSurface(c.surface)}</td>
+                <td className="px-3 py-2 text-slate-600 max-w-[40ch] truncate">{c.text_preview}</td>
+                <td className="px-3 py-2 text-right">
+                  <span className="inline-flex items-center gap-1 font-semibold" style={{ color: tier.color }}>
+                    {pct}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-right text-slate-600">{c.drift_reasons.length || "—"}</td>
+                {showView && (
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onInspect(c);
+                      }}
+                      className="text-[11px] inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 hover:bg-slate-50 text-slate-700"
+                    >
+                      <Eye className="h-3 w-3" /> View
+                    </button>
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
 
+/** Canon SPARK empty state — dashed card, icon circle, h3 title, guidance,
+ *  optional CTA (SparkTemplatesPage EmptyState spec). */
+function EmptyCard({
+  icon,
+  title,
+  guidance,
+  cta,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  guidance: string;
+  cta?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border-2 border-dashed border-slate-200 bg-white p-10 text-center">
+      <div className="mx-auto w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mb-3">
+        {icon}
+      </div>
+      <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+      <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">{guidance}</p>
+      {cta && <div className="mt-4">{cta}</div>}
+    </div>
+  );
+}
+
+function ReadOnlyChips({
+  chips,
+  icon,
+  accent,
+  emptyLabel,
+}: {
+  chips: string[];
+  icon: React.ReactNode;
+  accent: string;
+  emptyLabel: string;
+}) {
+  if (chips.length === 0) {
+    return <p className="text-xs text-slate-500">{emptyLabel}</p>;
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      {chips.map((chip) => (
+        <span
+          key={chip}
+          className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs"
+          style={{ background: `${accent}1a`, color: accent }}
+        >
+          {icon}
+          <span>{chip}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** Inline stat-strip item for the shell `stats` slot. */
+function StatItem({
+  label,
+  value,
+  suffix,
+  color,
+}: {
+  label: string;
+  value: number | null;
+  suffix?: string;
+  color: string;
+}) {
+  return (
+    <div className="spark-stat-item">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-0.5 text-xl font-semibold" style={{ color: value == null ? "#94a3b8" : color }}>
+        {value == null ? "—" : value}
+        {value != null && suffix ? suffix : ""}
+      </div>
+    </div>
+  );
+}
+
+/** Small KPI tile — used inside InspectModal's internal grid only. */
 function KPI({
   label,
   value,
@@ -1061,42 +797,6 @@ function EmptyChart({ label }: { label: string }) {
   return (
     <div className="h-[200px] flex items-center justify-center text-xs text-slate-400">{label}</div>
   );
-}
-
-// A pared-down radial gauge — no dependency on the ARION MiniGauge component
-// since this page lives outside the ARION wrapper. SVG arc from 0-100.
-function ScoreGauge({ value, color }: { value: number | null; color: string }) {
-  const v = value == null ? 0 : Math.max(0, Math.min(100, value));
-  const angle = (v / 100) * 180; // half-circle
-  const radius = 80;
-  const cx = 100;
-  const cy = 100;
-  const start = polarToCartesian(cx, cy, radius, 180);
-  const end = polarToCartesian(cx, cy, radius, 180 - angle);
-  const largeArc = angle > 180 ? 1 : 0;
-  const arcPath = `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y}`;
-  const bgEnd = polarToCartesian(cx, cy, radius, 0);
-  const bgPath = `M ${start.x} ${start.y} A ${radius} ${radius} 0 1 1 ${bgEnd.x} ${bgEnd.y}`;
-
-  return (
-    <svg viewBox="0 0 200 120" width="200" height="120">
-      <path d={bgPath} stroke="#e2e8f0" strokeWidth={12} fill="none" strokeLinecap="round" />
-      {value != null && (
-        <path d={arcPath} stroke={color} strokeWidth={12} fill="none" strokeLinecap="round" />
-      )}
-      <text x={cx} y={cy - 8} textAnchor="middle" fontSize={32} fontWeight={700} fill="#0f172a">
-        {value == null ? "—" : value}
-      </text>
-      <text x={cx} y={cy + 14} textAnchor="middle" fontSize={11} fill="#64748b">
-        / 100
-      </text>
-    </svg>
-  );
-}
-
-function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
-  const rad = ((angleDeg - 90) * Math.PI) / 180;
-  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
 }
 
 // ── Inspect modal ────────────────────────────────────────────────────────────
@@ -1142,7 +842,7 @@ function InspectModal({ check, onClose }: { check: VoiceCheck; onClose: () => vo
       footer={
         <>
           <IadmButton variant="ghost" onClick={onClose}>Close</IadmButton>
-          <IadmButton variant="primary" onClick={rescore} disabled={rewriteLoading}>
+          <IadmButton variant="accent" product="spark" onClick={rescore} disabled={rewriteLoading}>
             {rewriteLoading ? "Re-scoring…" : "Re-score now"}
           </IadmButton>
         </>
@@ -1208,7 +908,4 @@ function InspectModal({ check, onClose }: { check: VoiceCheck; onClose: () => vo
   );
 }
 
-// ComingSoonOverlay HOC removed 2026-06-22 — the My Brand top-level slot
-// was pulled from nav (Q4 2026 deferred). This page is no longer routed
-// but the file is kept on disk for the eventual Q4 build.
 export default VoicePage;

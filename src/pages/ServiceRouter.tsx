@@ -471,7 +471,19 @@ export function ServiceRouter() {
       case 'arion_business_services': arionPage = withBusinessProfileBanner(<BusinessServices />); break;
       case 'arion_business_bing_overview': arionPage = withBusinessProfileBanner(<BusinessBingOverview />); break;
       case 'arion_business_apple_overview': arionPage = withBusinessProfileBanner(<BusinessAppleOverview />); break;
-      case 'arion_brand': arionPage = <MyBrandLandingPage />; break; // My Brand hub (was BrandPage "Coming soon" stub) — Item 1 Task 3
+      // My Brand hub — rendered OUTSIDE ArionPageWrapper (conventions audit
+      // 2026-07-21): the wrapper's ArionPageHeader produced a double header, a
+      // broken "ARION › Brand › " breadcrumb (deriveNames has no arion_brand
+      // page key), and an out-of-place WP Admin button. The hub renders its
+      // own SparkPageShell chrome like the my_brand_* sub-pages below.
+      case 'arion_brand':
+        return (
+          <PageErrorBoundary scope="my-brand/hub">
+            <Suspense fallback={<RouteLoading />}>
+              <MyBrandLandingPage />
+            </Suspense>
+          </PageErrorBoundary>
+        );
       // v5.x IA Insights architecture
       case 'arion_ia_insights_health': arionPage = <ArionIAInsightsHealthPage />; break;
       case 'arion_ia_insights_trends': arionPage = <ArionIAInsightsTrendsPage />; break;
