@@ -24,7 +24,6 @@ import {
   BarChart3,
   Palette,
   ArrowRight,
-  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -39,6 +38,11 @@ interface BrandTile {
   badge?: { label: string; color: string };
 }
 
+// IA re-cut 2026-07-21 (Brandon): tiles = FEATURES only — things a tenant
+// does with their brand. Voice profile + channel connections are SETTINGS
+// surfaces (linked below, not tiles); social analytics is a REPORT (ARION IA
+// Insights); the approval queue is the IA↔client project workflow
+// (Consulting domain) and does not appear here at all.
 const TILES: BrandTile[] = [
   {
     key: "my_brand_image_studio",
@@ -46,13 +50,6 @@ const TILES: BrandTile[] = [
     description: "Generate on-brand images from a prompt — uses your brand colors, fonts, and logo.",
     route: "/app/services/my_brand_image_studio",
     icon: ImageIcon,
-  },
-  {
-    key: "my_brand_voice",
-    name: "Brand Voice",
-    description: "Capture your voice profile and check any copy for drift before you publish.",
-    route: "/app/services/my_brand_voice",
-    icon: Mic2,
   },
   {
     key: "my_brand_templates",
@@ -67,14 +64,6 @@ const TILES: BrandTile[] = [
     description: "Central library for logos, photos, generated images, and finished designs.",
     route: "/app/services/my_brand_assets",
     icon: FolderOpen,
-  },
-  {
-    key: "my_brand_social_channels",
-    name: "Social Channels",
-    description: "Connect Facebook, Instagram, LinkedIn, X, TikTok, YouTube, and Google Business.",
-    route: "/app/services/my_brand_social_channels",
-    icon: Share2,
-    badge: { label: "Standard+", color: "#1A3A4A" },
   },
   {
     key: "my_brand_compose",
@@ -92,22 +81,13 @@ const TILES: BrandTile[] = [
     icon: Calendar,
     badge: { label: "Standard+", color: "#1A3A4A" },
   },
-  {
-    key: "my_brand_analytics",
-    name: "Analytics",
-    description: "Per-channel and per-post engagement, reach, and follower trends.",
-    route: "/app/services/my_brand_analytics",
-    icon: BarChart3,
-    badge: { label: "Pro+", color: "#9333EA" },
-  },
-  {
-    key: "my_brand_approvals",
-    name: "Approval Inbox",
-    description: "Founder/admin review queue for team-submitted posts when approval gating is on.",
-    route: "/app/services/my_brand_approvals",
-    icon: ShieldCheck,
-    badge: { label: "Admin", color: "#1A3A4A" },
-  },
+];
+
+// Settings + reporting surfaces that RELATE to My Brand but live elsewhere.
+const ELSEWHERE: { name: string; description: string; route: string; icon: LucideIcon }[] = [
+  { name: "Brand Voice & Identity", description: "Your voice profile, tone, logo, and colors — settings every product reads.", route: "/app/services/my_brand_voice", icon: Mic2 },
+  { name: "Social Channels", description: "Connect Facebook, Instagram, LinkedIn, and X — integration settings.", route: "/app/services/my_brand_social_channels", icon: Share2 },
+  { name: "Social Analytics", description: "Engagement, reach, and follower trends — in ARION IA Insights.", route: "/app/services/arion_ia_insights_trends", icon: BarChart3 },
 ];
 
 export function MyBrandLandingPage() {
@@ -128,10 +108,34 @@ export function MyBrandLandingPage() {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {TILES.map((tile) => (
           <TileCard key={tile.key} tile={tile} />
         ))}
+      </div>
+
+      <div>
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Settings &amp; reports for your brand
+        </h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {ELSEWHERE.map((e) => {
+            const Icon = e.icon;
+            return (
+              <Link
+                key={e.name}
+                to={e.route}
+                className="group flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 transition-colors hover:border-slate-300 hover:bg-white"
+              >
+                <Icon className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "#1A3A4A" }} />
+                <span>
+                  <span className="block text-sm font-medium text-slate-800">{e.name}</span>
+                  <span className="block text-xs text-slate-500">{e.description}</span>
+                </span>
+              </Link>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

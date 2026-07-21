@@ -4,7 +4,7 @@ import {
   Monitor, Server, ShieldCheck, BarChart2, TrendingUp,
   Search as SearchIcon, MapPin, Star, ChevronDown, Settings,
   Users, Megaphone, Briefcase, Heart, Target, Sparkles,
-  Wrench, UserCircle, CreditCard, MessageSquare, LineChart, Zap,
+  Wrench, UserCircle, CreditCard, MessageSquare, LineChart, Zap, Palette,
 } from "lucide-react";
 import type { ProductKey } from "./IconRail";
 
@@ -271,9 +271,26 @@ const ARION_NAV: SubNavConfig = {
       ],
     },
     {
+      // My Brand — ARION's brand-management section (re-cut 2026-07-21 per
+      // Brandon's IA correction). FEATURES only: things a tenant does with
+      // their brand. Voice profile + channel connections are SETTINGS
+      // (Brand Identity / integrations surfaces); social analytics is a
+      // REPORT (ARION IA Insights); the approval queue is the IA↔client
+      // project workflow (Consulting domain) and is not in this nav.
+      label: "My Brand", icon: Palette, collapsible: true, sectionId: "arion_my_brand",
+      landingRoute: "/app/services/arion_brand",
+      items: [
+        { key: "arion_brand", label: "Overview", route: "/app/services/arion_brand" },
+        { key: "my_brand_image_studio", label: "Image Studio", route: "/app/services/my_brand_image_studio" },
+        { key: "my_brand_templates", label: "Template Studio", route: "/app/services/my_brand_templates" },
+        { key: "my_brand_assets", label: "Asset Library", route: "/app/services/my_brand_assets" },
+        { key: "my_brand_compose", label: "Composer", route: "/app/services/my_brand_compose" },
+        { key: "my_brand_calendar", label: "Calendar", route: "/app/services/my_brand_calendar" },
+      ],
+    },
+    {
       label: "", icon: Star,
       items: [
-        { key: "arion_brand", label: "My Brand", route: "/app/services/arion_brand" },
         { key: "arion_plugin_provisioning", label: "Plugin Provisioning", route: "/app/services/arion_plugin_provisioning" },
         { key: "arion_usage", label: "Plan & Pricing", route: "/app/services/arion_usage" },
       ],

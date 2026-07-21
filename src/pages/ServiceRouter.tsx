@@ -156,8 +156,8 @@ const MyBrandAssetLibraryPage = lazyNamed(() => import('./myBrand/AssetLibraryPa
 const MyBrandSocialChannelsPage = lazyNamed(() => import('./myBrand/SocialChannelsPage'), 'SocialChannelsPage');
 const MyBrandSocialComposerPage = lazyNamed(() => import('./myBrand/SocialComposerPage'), 'SocialComposerPage');
 const MyBrandSocialCalendarPage = lazyNamed(() => import('./myBrand/SocialCalendarPage'), 'SocialCalendarPage');
-const MyBrandSocialAnalyticsPage = lazyNamed(() => import('./myBrand/SocialAnalyticsPage'), 'SocialAnalyticsPage');
-const MyBrandSocialApprovalsPage = lazyNamed(() => import('./myBrand/SocialApprovalsPage'), 'SocialApprovalsPage');
+// SocialAnalyticsPage + SocialApprovalsPage intentionally NOT routed (IA
+// re-cut 2026-07-21): analytics → ARION IA Insights; approvals → Consulting.
 
 // SPARK / LUMEN pages — lazy-loaded
 const SparkOverviewPage = lazyNamed(() => import('./spark/SparkOverviewPage'), 'SparkOverviewPage');
@@ -504,8 +504,9 @@ export function ServiceRouter() {
       case 'my_brand_social_channels': page = <MyBrandSocialChannelsPage />; break;
       case 'my_brand_compose': page = <MyBrandSocialComposerPage />; break;
       case 'my_brand_calendar': page = <MyBrandSocialCalendarPage />; break;
-      case 'my_brand_analytics': page = <MyBrandSocialAnalyticsPage />; break;
-      case 'my_brand_approvals': page = <MyBrandSocialApprovalsPage />; break;
+      // IA re-cut 2026-07-21: analytics is a REPORT → ARION IA Insights;
+      // approvals is the IA↔client project workflow → removed from My Brand.
+      case 'my_brand_analytics': return <Navigate to="/app/services/arion_ia_insights_trends" replace />;
       default: break;
     }
     if (page) {
