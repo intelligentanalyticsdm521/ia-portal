@@ -12,6 +12,15 @@ import { useEffect, useState } from "react";
 import { fetchSubscriptions, type ProductSubscription } from "../lib/billingApi";
 import { useAccessToken } from "../auth/useAccessToken";
 import { useAppState } from "../app/AppState";
+import { DEV_AUTH } from "../lib/devAuth";
+
+// Local-dev tier seam (2026-07-21). The tier is resolved from oliver-api's
+// Stripe-backed /billing/subscriptions, which the local dev stack doesn't run
+// — so every tier-gated surface read as below-Standard and the TEST TENANT
+// couldn't test gated features at all. Under VITE_DEV_AUTH=1 the test tenant
+// resolves to VITE_DEV_TIER (default "business") so every feature is
+// walkable. Build-time constant — tree-shaken out of prod builds.
+const DEV_TIER = (String(import.meta.env.VITE_DEV_TIER || "business").toLowerCase() as TierKey);
 
 export type TierKey = "lite" | "standard" | "pro" | "business" | "active" | null;
 // 2026-06-22 — Doc 64 §2 allows Standard-tier Intelligence reports
@@ -48,6 +57,7 @@ export function useProductTier(product: "oliver" | "spark" | "arion"): {
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
+    if (DEV_AUTH) { setTier(DEV_TIER); setReady(true); return; }
     if (!activeTenantId) { setReady(true); return; }
     let cancelled = false;
     (async () => {

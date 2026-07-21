@@ -278,9 +278,11 @@ const ARION_NAV: SubNavConfig = {
       // REPORT (ARION IA Insights); the approval queue is the IA↔client
       // project workflow (Consulting domain) and is not in this nav.
       label: "My Brand", icon: Palette, collapsible: true, sectionId: "arion_my_brand",
-      landingRoute: "/app/services/arion_brand",
+      // No Overview page (Brandon 2026-07-21): the section lands directly on
+      // Image Studio. Call-out surfaces (today's posts, new activity) belong
+      // on the home / ARION dashboard calendars, not a My Brand page.
+      landingRoute: "/app/services/my_brand_image_studio",
       items: [
-        { key: "arion_brand", label: "Overview", route: "/app/services/arion_brand" },
         { key: "my_brand_image_studio", label: "Image Studio", route: "/app/services/my_brand_image_studio" },
         { key: "my_brand_templates", label: "Template Studio", route: "/app/services/my_brand_templates" },
         { key: "my_brand_assets", label: "Asset Library", route: "/app/services/my_brand_assets" },

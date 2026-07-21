@@ -121,7 +121,7 @@ const BusinessServices = lazyNamed(() => import('../arion/pages/business/Busines
 const BusinessBingOverview = lazyNamed(() => import('../arion/pages/business/BusinessBingOverview'), 'BusinessBingOverview');
 const BusinessAppleOverview = lazyNamed(() => import('../arion/pages/business/BusinessAppleOverview'), 'BusinessAppleOverview');
 // Brand — the old BrandPage "Coming soon" stub is retired; arion_brand now
-// routes to MyBrandLandingPage (see MY BRAND pages block below). Item 1 Task 3.
+// redirects to Image Studio (no overview page — Brandon 2026-07-21).
 // v5.x IA Insights architecture — Health, Trends, Intelligence, Cross-Platform (ARGUS)
 const ArionIAInsightsHealthPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsHealthPage'), 'ArionIAInsightsHealthPage');
 const ArionIAInsightsTrendsPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsTrendsPage'), 'ArionIAInsightsTrendsPage');
@@ -148,7 +148,7 @@ const OliverIAInsightsIntelligencePage = lazyNamed(() => import('./oliver/Oliver
 // MY BRAND pages — re-added 2026-07-18 (Item 1 Task 3). The 10 pages under
 // src/pages/myBrand/* were built + merged but unrouted since 2026-06-22;
 // re-registered here + in serviceCatalog + the MY_BRAND dispatch block below.
-const MyBrandLandingPage = lazyNamed(() => import('./myBrand/MyBrandLandingPage'), 'MyBrandLandingPage');
+// (No My Brand overview page — arion_brand redirects to Image Studio. 2026-07-21.)
 const MyBrandImageStudioPage = lazyNamed(() => import('./myBrand/ImageStudioPage'), 'ImageStudioPage');
 const MyBrandVoicePage = lazyNamed(() => import('./myBrand/VoicePage'), 'VoicePage');
 const MyBrandTemplateStudioPage = lazyNamed(() => import('./myBrand/TemplateStudioPage'), 'TemplateStudioPage');
@@ -471,19 +471,11 @@ export function ServiceRouter() {
       case 'arion_business_services': arionPage = withBusinessProfileBanner(<BusinessServices />); break;
       case 'arion_business_bing_overview': arionPage = withBusinessProfileBanner(<BusinessBingOverview />); break;
       case 'arion_business_apple_overview': arionPage = withBusinessProfileBanner(<BusinessAppleOverview />); break;
-      // My Brand hub — rendered OUTSIDE ArionPageWrapper (conventions audit
-      // 2026-07-21): the wrapper's ArionPageHeader produced a double header, a
-      // broken "ARION › Brand › " breadcrumb (deriveNames has no arion_brand
-      // page key), and an out-of-place WP Admin button. The hub renders its
-      // own SparkPageShell chrome like the my_brand_* sub-pages below.
+      // My Brand has NO overview page (Brandon 2026-07-21) — the section
+      // lands on Image Studio. arion_brand kept as a redirect so old links,
+      // the catalog row, and Settings-era bookmarks keep working.
       case 'arion_brand':
-        return (
-          <PageErrorBoundary scope="my-brand/hub">
-            <Suspense fallback={<RouteLoading />}>
-              <MyBrandLandingPage />
-            </Suspense>
-          </PageErrorBoundary>
-        );
+        return <Navigate to="/app/services/my_brand_image_studio" replace />;
       // v5.x IA Insights architecture
       case 'arion_ia_insights_health': arionPage = <ArionIAInsightsHealthPage />; break;
       case 'arion_ia_insights_trends': arionPage = <ArionIAInsightsTrendsPage />; break;
