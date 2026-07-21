@@ -573,11 +573,14 @@ const SETTINGS_NAV: SubNavConfig = {
     {
       label: "ARION", icon: Monitor, collapsible: true, sectionId: "settings_arion",
       items: [
-        // Brand = brand colors/logos config (setting).
         // Service Area = single-value config (setting).
+        // REMOVED 2026-07-21: arion_brand — My Brand is a FEATURE section in
+        //   the ARION main nav (Brandon's IA re-cut). Having it registered
+        //   here put arion_brand in SETTINGS_KEYS, so landing on the My Brand
+        //   hub flipped the whole shell into the Settings panel. Brand
+        //   IDENTITY config remains a GLOBAL (hamburger > Brand Identity).
         // REMOVED: arion_plugin_provisioning (feature → main nav).
         // REMOVED: arion_usage Plan & Pricing (global → hamburger).
-        { key: "arion_brand", label: "Brand", route: "/app/services/arion_brand" },
         { key: "arion_service_area", label: "Service Area", route: "/app/services/arion_service_area" },
       ],
     },
@@ -725,7 +728,10 @@ function getDefaultSection(path: string): string | null {
   // Coupons, Categories, Booking, etc.) are intentionally excluded —
   // they expand their main-nav group instead.
   if (path.includes("/oliver_settings") || path.includes("/oliver_workflow_settings") || path.includes("/oliver_service_categories") || path.includes("/oliver_team_access")) return "settings_oliver";
-  if (path.includes("/arion_brand") || path.includes("/arion_service_area")) return "settings_arion";
+  if (path.includes("/arion_service_area")) return "settings_arion";
+  // My Brand is a FEATURE section in the ARION main nav (IA re-cut 2026-07-21)
+  // — the hub (arion_brand) and every my_brand_* child expand it.
+  if (path.includes("/arion_brand") || path.includes("/my_brand_")) return "arion_my_brand";
   if (
     path.includes("/spark_sender_domains") ||
     path.includes("/spark_senders") ||
