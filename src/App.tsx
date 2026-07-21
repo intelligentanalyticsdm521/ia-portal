@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { AppStateProvider } from './app/AppState';
 
 import { LandingPage } from './pages/LandingPage';
+import { DEV_AUTH } from './lib/devAuth';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 // F3 — Scope Change Revisions public surface (no auth, token IS the auth).
 import { PublicRevisionPage } from './pages/public/PublicRevisionPage';
@@ -142,8 +143,11 @@ export function App() {
     <BrowserRouter>
       <AppStateProvider>
         <Routes>
-          {/* Public routes */}
-          <Route path="/" element={<LandingPage />} />
+          {/* Public routes. Under VITE_DEV_AUTH=1 the bare root goes straight
+              into the app — the sign-in landing must never render in local dev
+              (there is no CIAM locally; its button redirects to prod CIAM and
+              the callback bounces). Build-time constant: prod is unaffected. */}
+          <Route path="/" element={DEV_AUTH ? <Navigate to="/app/overview" replace /> : <LandingPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
           {/* Public pricing / signup flow — unauthenticated end-to-end.
