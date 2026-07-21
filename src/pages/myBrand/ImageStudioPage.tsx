@@ -53,9 +53,17 @@ interface GeneratedAsset {
 interface GenerateResponse {
   jobId: string;
   assets: GeneratedAsset[];
-  totalCostUsd: number | null;
+  /** ARGUS credits charged for the job (count × 8, LOCKED matrix). The API
+   *  never sends USD — provider cost is internal margin data. */
+  credits_charged: number | null;
   errors: Array<{ variant_n: number; message: string }>;
 }
+
+// LOCKED matrix (ARGUS_CREDIT_MATRIX.md): AI image, standard quality = 8
+// credits per image. Keep in lockstep with lumen.argus_action_pricing
+// 'my_brand.image_generate' (migration 146).
+const CREDITS_PER_IMAGE = 8;
+const COUNT_OPTIONS = [1, 2, 3, 4] as const;
 
 interface EditResponse {
   assetId: string;
@@ -80,13 +88,13 @@ interface SizeOption {
   key: SizeKey;
   label: string;
   ratio: string;
-  costUsd: number; // gpt-image-1 published rate card, Jun 2026
 }
 
+// All sizes cost the same 8 credits (standard quality) — no per-size price.
 const SIZE_OPTIONS: SizeOption[] = [
-  { key: "1024x1024", label: "1:1 Square", ratio: "1024 × 1024", costUsd: 0.04 },
-  { key: "1536x1024", label: "16:9 Wide", ratio: "1536 × 1024", costUsd: 0.06 },
-  { key: "1024x1536", label: "9:16 Tall", ratio: "1024 × 1536", costUsd: 0.06 },
+  { key: "1024x1024", label: "1:1 Square", ratio: "1024 × 1024" },
+  { key: "1536x1024", label: "16:9 Wide", ratio: "1536 × 1024" },
+  { key: "1024x1536", label: "9:16 Tall", ratio: "1024 × 1536" },
 ];
 
 const STYLE_OPTIONS: { key: StyleKey; label: string; hint: string }[] = [
@@ -118,9 +126,9 @@ function persistRecentPrompts(prompts: string[]) {
   }
 }
 
-function fmtUsd(n: number | null | undefined): string {
+function fmtCredits(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
-  return `$${n.toFixed(2)}`;
+  return `${n} credit${n === 1 ? "" : "s"}`;
 }
 
 // Map error → user-facing message + tone. The OpenAI errors we care about
@@ -183,7 +191,7 @@ export function ImageStudioPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<{ tone: "warn" | "error"; message: string } | null>(null);
   const [variations, setVariations] = useState<GeneratedAsset[]>([]);
-  const [lastJobCost, setLastJobCost] = useState<number | null>(null);
+  const [lastJobCredits, setLastJobCredits] = useState<number | null>(null);
   const [perVariantErrors, setPerVariantErrors] = useState<Array<{ variant_n: number; message: string }>>([]);
 
   // Per-tile transient state (delete pending, edit pending) — keyed by assetId
@@ -208,11 +216,10 @@ export function ImageStudioPage() {
     () => SIZE_OPTIONS.find((s) => s.key === size) || SIZE_OPTIONS[0],
     [size]
   );
-  const perVariantCost = currentSizeOption.costUsd;
-  // The Generate button always asks for 4 (per spec). Single CTA + visible
-  // cost preview, no "how many?" knob to confuse first-time users.
-  const VARIATION_COUNT = 4;
-  const totalCostPreview = perVariantCost * VARIATION_COUNT;
+  // How many images to generate — the user chooses (1–4); each costs 8
+  // credits, so the choice IS the spend decision (Brandon 2026-07-21).
+  const [count, setCount] = useState<number>(1);
+  const totalCreditsPreview = count * CREDITS_PER_IMAGE;
 
   // ─── Generate ────────────────────────────────────────────────────────────
 
@@ -233,12 +240,12 @@ export function ImageStudioPage() {
     try {
       const res = await api.post<GenerateResponse>("/api/v1/my-brand/image-studio/generate", {
         prompt: trimmed,
-        count: VARIATION_COUNT,
+        count,
         style,
         size,
       });
       setVariations(res.assets || []);
-      setLastJobCost(res.totalCostUsd ?? null);
+      setLastJobCredits(res.credits_charged ?? count * CREDITS_PER_IMAGE);
       setPerVariantErrors(res.errors || []);
       // Update recent prompts — newest first, dedupe (case-insensitive),
       // keep the 5 most recent. Persist to localStorage.
@@ -256,7 +263,7 @@ export function ImageStudioPage() {
     } finally {
       setGenerating(false);
     }
-  }, [prompt, style, size, api]);
+  }, [prompt, style, size, count, api]);
 
   // ─── Tile actions ────────────────────────────────────────────────────────
 
@@ -397,12 +404,12 @@ export function ImageStudioPage() {
     <SparkPageShell
       title="Image Studio"
       subtitle="Generate on-brand variations, edit them, send them to social."
-      help="Describe an image, get four AI variations, then edit or push them to your social composer. Every variation is saved to your Asset Library."
+      help="Describe an image, choose how many variations (each costs 8 AI credits), then edit or push them to your social composer. Every variation is saved to your Asset Library."
       actions={<ArgusBalanceBadge />}
       stats={
         variations.length > 0 ? (
           <SparkStatStrip stats={[
-            { label: "Cost this run", value: fmtUsd(lastJobCost) },
+            { label: "Credits this run", value: fmtCredits(lastJobCredits) },
             { label: "Saved", value: savedAssetIds.size, accent: savedAssetIds.size > 0 ? "emerald" : "default", icon: Save },
           ]} />
         ) : undefined
@@ -419,8 +426,9 @@ export function ImageStudioPage() {
             setStyle={setStyle}
             size={size}
             setSize={setSize}
-            perVariantCost={perVariantCost}
-            totalCostPreview={totalCostPreview}
+            count={count}
+            setCount={setCount}
+            totalCreditsPreview={totalCreditsPreview}
             generating={generating}
             onGenerate={onGenerate}
             recentPrompts={recentPrompts}
@@ -511,8 +519,9 @@ interface PromptPanelProps {
   setStyle: (s: StyleKey) => void;
   size: SizeKey;
   setSize: (s: SizeKey) => void;
-  perVariantCost: number;
-  totalCostPreview: number;
+  count: number;
+  setCount: (n: number) => void;
+  totalCreditsPreview: number;
   generating: boolean;
   onGenerate: () => void;
   recentPrompts: string[];
@@ -521,7 +530,7 @@ interface PromptPanelProps {
 
 function PromptPanel({
   prompt, setPrompt, promptRef, style, setStyle, size, setSize,
-  perVariantCost, totalCostPreview, generating, onGenerate,
+  count, setCount, totalCreditsPreview, generating, onGenerate,
   recentPrompts, onRecentClick,
 }: PromptPanelProps) {
   const promptValid = prompt.trim().length >= 4;
@@ -582,18 +591,37 @@ function PromptPanel({
               >
                 <span className="text-xs font-semibold">{opt.label}</span>
                 <span className="text-[10px] text-slate-500">{opt.ratio}</span>
-                <span className="text-[10px] font-medium text-slate-400">{fmtUsd(opt.costUsd)} ea</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Generate CTA + cost preview */}
+      {/* How many images — the user picks the spend (8 credits each) */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700">How many images?</label>
+        <div className="mt-1.5 flex gap-1 rounded-lg bg-slate-100 p-1">
+          {COUNT_OPTIONS.map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setCount(n)}
+              disabled={generating}
+              className={`flex-1 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors ${
+                count === n ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              } disabled:opacity-50`}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Generate CTA + credit preview */}
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
         <div className="flex items-center justify-between text-[11px] text-slate-600">
-          <span>4 variations × {fmtUsd(perVariantCost)}</span>
-          <span className="font-semibold text-slate-900">≈ {fmtUsd(totalCostPreview)}</span>
+          <span>{count} image{count === 1 ? "" : "s"} × {CREDITS_PER_IMAGE} credits</span>
+          <span className="font-semibold text-slate-900">{totalCreditsPreview} credits</span>
         </div>
         <button
           type="button"
@@ -610,12 +638,12 @@ function PromptPanel({
           {generating ? (
             <>
               <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-              Generating 4 variations…
+              Generating {count} image{count === 1 ? "" : "s"}…
             </>
           ) : (
             <>
               <Sparkles className="h-4 w-4" />
-              Generate 4 variations
+              Generate {count} image{count === 1 ? "" : "s"} · {totalCreditsPreview} credits
             </>
           )}
         </button>
@@ -753,7 +781,7 @@ function VariationsPane({
             type="button"
             onClick={onReroll}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-            title="Generate 4 new variations with the same prompt + settings"
+            title="Generate again with the same prompt + settings"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Re-roll
@@ -913,15 +941,15 @@ function EmptyState({ recentPrompts, onCta }: { recentPrompts: string[]; onCta: 
         {recentPrompts.length === 0 ? "Generate your first image" : "Ready for the next batch"}
       </h3>
       <p className="mt-1 mx-auto max-w-md text-sm text-slate-500">
-        Type a description on the left, pick a style + aspect ratio, then hit Generate. You'll get four variations in
-        ~20 seconds. Every variation lands in your Asset Library so you can come back later.
+        Type a description on the left, pick a style, aspect ratio, and how many images (8 credits each), then hit
+        Generate. Every image lands in your Asset Library so you can come back later.
       </p>
       <button
         type="button"
         onClick={onCta}
         className="mt-4 inline-flex items-center gap-1 rounded-lg bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#d75a25]"
       >
-        <Sparkles className="h-3.5 w-3.5" /> Generate 4 variations
+        <Sparkles className="h-3.5 w-3.5" /> Generate
       </button>
     </div>
   );
