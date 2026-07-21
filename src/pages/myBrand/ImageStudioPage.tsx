@@ -16,7 +16,7 @@
 // Backend:
 //   * POST   /api/v1/my-brand/image-studio/generate
 //             { prompt, count, style, size }
-//             → { jobId, assets[], totalCostUsd, errors[] }
+//             → { jobId, assets[], credits_charged, errors[] }
 //   * POST   /api/v1/my-brand/image-studio/:assetId/edit
 //             { edits: { colors?, text_overlay?, crop?, brightness? } }
 //             → { assetId, blobRef, url, parent_asset_id }
@@ -24,9 +24,9 @@
 //
 // Auth: useLumenApi handles MSAL + x-tenant-id + 503-key-missing surfacing.
 //
-// Cost preview: spec says "$cost / 1 = 1 credit". gpt-image-1 published rate
-// card (Jun 2026) — 1024² = $0.04, 1024×1536 = $0.06. The UI shows the
-// per-variation USD before the user commits.
+// Spend preview (2026-07-21): the UI shows CREDITS only — 8 credits per
+// image (LOCKED matrix), user picks count 1-4. Provider USD never reaches
+// the client; it stays in the job row + ai_call_audit for founder margin.
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
