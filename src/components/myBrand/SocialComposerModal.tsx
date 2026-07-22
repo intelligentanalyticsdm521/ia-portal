@@ -115,7 +115,7 @@ interface VoiceScore {
 
 /** Prefill shape for the "Edit in composer" path from the calendar. */
 export interface ComposerPrefillPost {
-  id: number;
+  id: string; // GUID (API: post_id)
   body: string;
   platforms: string[];
   scheduled_for: string | null;
@@ -646,7 +646,7 @@ export function SocialComposerModal({
       onClose={onClose}
       product="spark"
       eyebrow="MY BRAND · SOCIAL POST"
-      title={initialPost ? `Edit · Post #${initialPost.id}` : "New post"}
+      title={initialPost ? "Edit post" : "New post"}
       subtitle={initialPost
         ? "Saves as a new post — the original stays on the calendar until you cancel it."
         : "Compose once and publish to every connected channel."}

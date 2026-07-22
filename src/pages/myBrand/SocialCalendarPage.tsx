@@ -55,15 +55,43 @@ import {
 type PostStatus = "scheduled" | "published" | "failed" | "draft" | "cancelled" | "pending_approval" | "rejected";
 
 interface SocialPost {
-  id: number;
+  id: string;                     // GUID (API: post_id)
   scheduled_for: string | null;   // ISO timestamp; null = draft
   published_at: string | null;    // ISO timestamp once published
   status: PostStatus;
   body: string;
   platforms: string[];            // ["facebook","instagram",...]
+  content_type?: string;          // post | story | reel
   media_urls?: string[];
   error_reason?: string | null;
   created_at: string;
+}
+
+// The list API speaks post_id / body_default / targets[] — this page (and
+// the composer prefill) speak the id / body / platforms view model above.
+// Normalize at the fetch boundary; before this, every reschedule/cancel hit
+// /posts/undefined/... and chips showed no platform or body (same latent
+// contract-mismatch class as the composer destinations bug, fixed 6a888e6).
+interface ApiTarget { platform: string; status?: string | null; error_class?: string | null }
+function normalizePost(row: Record<string, unknown>): SocialPost {
+  const targets = (row.targets as ApiTarget[] | undefined) || [];
+  const failed = targets.filter((t) => t.status === "failed");
+  return {
+    id: String(row.post_id ?? row.id ?? ""),
+    scheduled_for: (row.scheduled_for as string | null) ?? null,
+    published_at: (row.published_at as string | null) ?? null,
+    status: row.status as PostStatus,
+    body: String(row.body_default ?? row.body ?? ""),
+    platforms: Array.isArray(row.platforms)
+      ? (row.platforms as string[])
+      : targets.map((t) => t.platform),
+    content_type: (row.content_type as string | undefined) || "post",
+    error_reason: (row.error_reason as string | null | undefined)
+      ?? (failed.length
+        ? failed.map((t) => `${platformMeta(t.platform).label}: ${t.error_class || "failed"}`).join(" · ")
+        : null),
+    created_at: String(row.created_at ?? ""),
+  };
 }
 
 // Platform identity — keep colors in lockstep with the IconRail / analytics
@@ -190,7 +218,7 @@ export function SocialCalendarPage({ initialComposerOpen = false, composerDefaul
   const [page, setPage] = useState(1);
   const pageSize = 25;
   // Drag state — { postId, originalDate }. Stores nothing if no drag in progress.
-  const [drag, setDrag] = useState<{ id: number; from: string } | null>(null);
+  const [drag, setDrag] = useState<{ id: string; from: string } | null>(null);
 
   // Default view flip-flop: when tier resolves and we have calendar access,
   // switch default to calendar. Standard stays on list. Don't override if the
@@ -230,9 +258,10 @@ export function SocialCalendarPage({ initialComposerOpen = false, composerDefaul
       });
       // useSparkApi does NOT auto-unwrap the {data:...} envelope — handle
       // both shapes (see memory feedback "oliver_api_envelope_unwrap").
-      const r = await get<SocialPost[] | { data: SocialPost[] }>(`/api/v1/my-brand/social/posts?${qs}`);
+      type ApiRow = Record<string, unknown>;
+      const r = await get<ApiRow[] | { data: ApiRow[] }>(`/api/v1/my-brand/social/posts?${qs}`);
       const arr = Array.isArray(r) ? r : (r?.data || []);
-      setPosts(arr);
+      setPosts(arr.map(normalizePost));
     } catch (e) {
       // Keep the raw error — SparkPageShell renders Error messages and
       // short-circuits tier_gate objects to the upgrade gate.
@@ -286,12 +315,12 @@ export function SocialCalendarPage({ initialComposerOpen = false, composerDefaul
   // ── Mutation handlers ───────────────────────────────────────────────────
   // Both throw on failure — PostDetailModal surfaces errors inline (no
   // window.alert; see the canon inline AlertTriangle banner there).
-  const reschedulePost = useCallback(async (id: number, scheduled_for: string) => {
+  const reschedulePost = useCallback(async (id: string, scheduled_for: string) => {
     // Typical failure is "already published" (server returns 409).
     await patch(`/api/v1/my-brand/social/posts/${id}/reschedule`, { scheduled_for });
     await load();
   }, [patch, load]);
-  const cancelPost = useCallback(async (id: number) => {
+  const cancelPost = useCallback(async (id: string) => {
     await del(`/api/v1/my-brand/social/posts/${id}`);
     await load();
   }, [del, load]);
@@ -424,20 +453,25 @@ export function SocialCalendarPage({ initialComposerOpen = false, composerDefaul
           No posts match the current filters.
         </div>
       ) : view === "calendar" && hasCalendar ? (
-        <CalendarView
-          cursor={cursor}
-          setCursor={setCursor}
-          scope={scope}
-          setScope={setScope}
-          postsByDay={postsByDay}
-          today={today}
-          onChipClick={setOpenPost}
-          onChipDragStart={onChipDragStart}
-          onDayDragOver={onDayDragOver}
-          onDayDrop={onDayDrop}
-          dragActive={!!drag}
-          hasDrag={hasDrag}
-        />
+        <div className="flex flex-col xl:flex-row gap-4">
+          <div className="flex-1 min-w-0">
+            <CalendarView
+              cursor={cursor}
+              setCursor={setCursor}
+              scope={scope}
+              setScope={setScope}
+              postsByDay={postsByDay}
+              today={today}
+              onChipClick={setOpenPost}
+              onChipDragStart={onChipDragStart}
+              onDayDragOver={onDayDragOver}
+              onDayDrop={onDayDrop}
+              dragActive={!!drag}
+              hasDrag={hasDrag}
+            />
+          </div>
+          <UpcomingRail posts={filtered} onOpen={setOpenPost} />
+        </div>
       ) : (
         <ListView
           posts={pagedPosts}
@@ -758,6 +792,71 @@ function CalendarView({
   );
 }
 
+// ── Upcoming rail (re-cut §9 item 5) ──────────────────────────────────────
+// The next scheduled posts in the viewed window, chronological — the "what
+// fires next" list Meta Business Suite pairs with its calendar. Computed
+// from the already-fetched window (respects the active facet filters); a
+// past-due-but-still-scheduled post sorts first, which is exactly where the
+// eye should land (the dispatcher claims it within 5 minutes).
+function UpcomingRail({ posts, onOpen }: {
+  posts: SocialPost[];
+  onOpen: (p: SocialPost) => void;
+}) {
+  const upcoming = useMemo(() => {
+    return posts
+      .filter((p) => p.status === "scheduled" && p.scheduled_for)
+      .sort((a, b) => (a.scheduled_for || "").localeCompare(b.scheduled_for || ""))
+      .slice(0, 10);
+  }, [posts]);
+
+  return (
+    <aside className="xl:w-72 flex-shrink-0">
+      <div className="rounded-xl border border-slate-200 bg-white">
+        <div className="px-3 py-2.5 border-b border-slate-100 flex items-center gap-2">
+          <CalendarIcon className="h-3.5 w-3.5 text-slate-500" />
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">Upcoming</h4>
+          <span className="ml-auto text-[10px] text-slate-400">{upcoming.length ? `next ${upcoming.length}` : ""}</span>
+        </div>
+        {upcoming.length === 0 ? (
+          <div className="px-3 py-6 text-center text-xs text-slate-400">
+            No scheduled posts in this window.
+          </div>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {upcoming.map((p) => (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpen(p)}
+                  className="w-full px-3 py-2 text-left hover:bg-slate-50 transition-colors"
+                >
+                  <div className="text-[11px] font-semibold text-slate-800">
+                    {formatWhen(p)}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1 flex-wrap">
+                    {(p.platforms || []).map((plat) => (
+                      <span
+                        key={plat}
+                        className="inline-flex items-center rounded px-1 py-px text-[9px] font-semibold text-white"
+                        style={{ background: platformMeta(plat).color }}
+                      >
+                        {platformMeta(plat).label}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-slate-500 line-clamp-2">
+                    {p.body || <em className="text-slate-400">(no body)</em>}
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </aside>
+  );
+}
+
 function PostChip({ post, onClick, onDragStart, draggable }: {
   post: SocialPost;
   onClick: () => void;
@@ -842,7 +941,7 @@ function PostDetailModal({
       onClose={onClose}
       product="spark"
       eyebrow="MY BRAND · SOCIAL POST"
-      title={`Post #${post.id}`}
+      title="Social post"
       subtitle={meta?.label || post.status}
       size="info"
       footer={
