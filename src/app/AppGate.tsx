@@ -4,6 +4,7 @@ import { BrowserAuthError } from '@azure/msal-browser';
 import { useAccessToken } from '../auth/useAccessToken';
 import { useAppState } from './AppState';
 import { PlatformApiError, selectTenant, sessionVerify } from '../lib/platformApi';
+import { retryWithBackoff } from '../lib/authRetry';
 import { getCurrentActAsSession } from '../lib/founderApi';
 import { DEV_AUTH } from '../lib/devAuth';
 import {
@@ -43,20 +44,28 @@ function withAuthTimeout<T>(promise: Promise<T>, ms: number, label: string): Pro
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-/** Retry a promise-returning fn once on network-shape errors. */
+/**
+ * Retry a bootstrap step across the platform-api warm-up window. Historically
+ * this retried ONCE on network-shape errors only, so a user who loaded the Portal
+ * in the few-second window after a deploy/restart (API still warming → 5xx or a
+ * timeout) got a hard error and had to Clear State & Retry. Now it retries
+ * transient failures (network / timeout / status-0 / 5xx) a few times with
+ * exponential backoff, and still surfaces a genuine 401/403/400 immediately.
+ * See lib/authRetry.
+ */
 async function retryOnce<T>(fn: () => Promise<T>, label: string): Promise<T> {
-  try {
-    return await fn();
-  } catch (err) {
-    const isRetryable =
-      (err instanceof TypeError && /fetch|network|load failed/i.test(err.message)) ||
-      (err instanceof Error && (err.name === 'AbortError' || (err as any).isAuthTimeout));
-    if (!isRetryable) throw err;
-    console.info('[auth]', { ts: new Date().toISOString(), event: 'bootstrap.retry', step: label, first_error: err instanceof Error ? err.message : String(err) });
-    // Small backoff before retry (jittered)
-    await new Promise((r) => setTimeout(r, 400 + Math.random() * 400));
-    return await fn();
-  }
+  return retryWithBackoff(fn, {
+    label,
+    onRetry: ({ attempt, delayMs, error }) =>
+      console.info('[auth]', {
+        ts: new Date().toISOString(),
+        event: 'bootstrap.retry',
+        step: label,
+        attempt,
+        delayMs,
+        first_error: error instanceof Error ? error.message : String(error),
+      }),
+  });
 }
 
 const BOOTSTRAP_STEP_TIMEOUT_MS = 12_000;
@@ -365,22 +374,29 @@ export function AppGate({ children }: { children: React.ReactNode }) {
             'monitor_window_timeout',
           ]);
           if (recoverableCodes.has(err.errorCode)) {
-            const RECOVERY_FLAG = 'iadm.portal.auth_auto_recovery';
-            const alreadyRecovered = sessionStorage.getItem(RECOVERY_FLAG) === '1';
-            console.warn('[AppGate] recoverable MSAL error:', err.errorCode, 'alreadyRecovered=', alreadyRecovered);
+            // Auto-recover silently up to MAX_AUTO_RECOVERIES times (per tab)
+            // before falling back to the manual UI. A restart-induced timeout
+            // can leave MSAL's interaction lock stuck; clearing the flags + a
+            // clean reload almost always fixes it, and giving it two shots
+            // means the user effectively never has to click Clear & Retry.
+            const RECOVERY_COUNT_KEY = 'iadm.portal.auth_auto_recovery';
+            const MAX_AUTO_RECOVERIES = 2;
+            const priorCount = Number(sessionStorage.getItem(RECOVERY_COUNT_KEY) || '0') || 0;
+            console.warn('[AppGate] recoverable MSAL error:', err.errorCode, 'recoveryCount=', priorCount);
 
             clearMsalInteractionFlags();
 
-            if (!alreadyRecovered) {
-              // First encounter — auto-recover silently. Set the flag so we
-              // don't loop, then reload the page to reinitialize MSAL clean.
-              sessionStorage.setItem(RECOVERY_FLAG, '1');
+            if (priorCount < MAX_AUTO_RECOVERIES) {
+              // Auto-recover silently: bump the counter so we can't loop
+              // forever, then reload to reinitialize MSAL with clean state.
+              sessionStorage.setItem(RECOVERY_COUNT_KEY, String(priorCount + 1));
               setTimeout(() => window.location.reload(), 50);
               return;   // Leave loading state true while reload completes
             }
 
-            // Second encounter in this tab — stop auto-recovery and surface
-            // an actionable message so the user can decide.
+            // Exhausted auto-recovery in this tab — surface an actionable
+            // message. (Flags were already cleared above, so the manual reload
+            // starts from clean state.)
             setError(
               'Sign-in state appears to be stuck. Click "Clear & Retry" to fully reset ' +
               'your session storage and reload the page. Your browser tab may have kept ' +
@@ -401,10 +417,15 @@ export function AppGate({ children }: { children: React.ReactNode }) {
           const name = err instanceof Error ? err.name : 'Error';
 
           if (isTimeout || isNetwork) {
+            // A timeout here (after the backoff retries above) can leave MSAL's
+            // interaction lock stuck from the aborted getToken — clear it so the
+            // user's Retry/reload starts clean and doesn't cascade into a
+            // "sign-in stuck" state.
+            clearMsalInteractionFlags();
             setError(
-              'Network timeout while verifying your session. This usually means the API is ' +
-              'starting up or your connection dropped briefly. Click Retry in a few seconds. ' +
-              'If this keeps happening, check your internet or contact support.'
+              'The API is taking a moment to wake up. This can happen right after an update. ' +
+              'Click Retry — it should connect within a few seconds. If it keeps happening, ' +
+              'check your internet or contact support.'
             );
             console.warn('[AppGate bootstrap network]', { name, msg });
           } else {
