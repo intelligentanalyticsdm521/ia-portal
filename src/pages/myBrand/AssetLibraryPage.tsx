@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Upload, Trash2, Download, Send, ArrowRight, Image as ImageIcon,
-  Loader2, AlertCircle, CheckSquare, Square,
+  Loader2, AlertCircle, CheckSquare, Square, Wand2,
 } from "lucide-react";
 import { useMsal } from "@azure/msal-react";
 import type { AccountInfo, IPublicClientApplication } from "@azure/msal-browser";
@@ -67,6 +67,38 @@ interface BrandAsset {
 interface AssetListResponse {
   items: BrandAsset[];
   total: number;
+}
+
+// The list API actually returns { data: { rows: [...] } } with imageStudio
+// column names (width_px / height_px / bytes / metadata) — NOT the
+// { items, total } view model above, so the library rendered EMPTY for
+// every tenant (same latent contract-mismatch class as the composer
+// destinations and calendar posts bugs). Normalize at the fetch boundary.
+function normalizeAsset(row: Record<string, unknown>): BrandAsset {
+  const metadata = (row.metadata as Record<string, unknown> | null) || null;
+  return {
+    asset_id: String(row.asset_id ?? ""),
+    kind: (row.kind as AssetKind) || "image",
+    filename: (row.filename as string | null) ?? null,
+    title: (row.title as string | null)
+      ?? (typeof metadata?.prompt === "string" ? (metadata.prompt as string).slice(0, 60) : null),
+    thumbnail_url: (row.thumbnail_url as string | null) ?? (row.url as string | null) ?? null,
+    preview_url: (row.preview_url as string | null) ?? (row.url as string | null) ?? null,
+    source: (row.source as string | null) ?? null,
+    prompt: (row.prompt as string | null)
+      ?? (typeof metadata?.prompt === "string" ? (metadata.prompt as string) : null),
+    width: (row.width as number | null) ?? (row.width_px as number | null) ?? null,
+    height: (row.height as number | null) ?? (row.height_px as number | null) ?? null,
+    file_size_bytes: (row.file_size_bytes as number | null) ?? (row.bytes as number | null) ?? null,
+    mime_type: (row.mime_type as string | null) ?? null,
+    tags: (row.tags as string[] | null) ?? null,
+    used_count: (row.used_count as number | null) ?? null,
+    voice_score: (row.voice_score as number | null) ?? null,
+    palette: (row.palette as string[] | null) ?? null,
+    font_pair: (row.font_pair as { heading: string; body: string } | null) ?? null,
+    created_at: (row.created_at as string | null) ?? null,
+    updated_at: (row.updated_at as string | null) ?? null,
+  };
 }
 
 interface AssetUsageEntry {
@@ -178,7 +210,7 @@ function decodeTid(token: string): string {
 // ────────────────────────────────────────────────────────────────────────────
 
 export function AssetLibraryPage() {
-  const { get, del, ready } = useSparkApi();
+  const { get, post, del, ready } = useSparkApi();
   const navigate = useNavigate();
 
   const [kind, setKind] = useState<KindFilter>("all");
@@ -222,8 +254,10 @@ export function AssetLibraryPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await get<AssetListResponse>("/api/v1/my-brand/assets?limit=200&offset=0");
-      setItems(res?.items ?? []);
+      type ApiShape = Partial<AssetListResponse> & { data?: { rows?: Record<string, unknown>[] } };
+      const res = await get<ApiShape>("/api/v1/my-brand/assets?limit=200&offset=0");
+      const rawRows = res?.data?.rows ?? (res?.items as unknown as Record<string, unknown>[]) ?? [];
+      setItems(rawRows.map(normalizeAsset));
     } catch (err) {
       setError(err);
       setItems([]);
@@ -286,6 +320,26 @@ export function AssetLibraryPage() {
       setDeleteBusy(false);
     }
   }, [confirmDelete, del, activeAsset]);
+
+  // §8c background remover — credit-metered Pro+ Smart Tool. Produces a NEW
+  // asset (parent_asset_id chain); the library reloads so it appears first.
+  const [bgBusy, setBgBusy] = useState(false);
+  const [bgError, setBgError] = useState<string | null>(null);
+  const removeBackground = useCallback(async (asset: BrandAsset) => {
+    setBgBusy(true);
+    setBgError(null);
+    try {
+      await post(`/api/v1/my-brand/image-studio/${asset.asset_id}/edit`, {
+        edits: { bg_remove: true },
+      });
+      setActiveAsset(null);
+      await load();
+    } catch (err) {
+      setBgError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBgBusy(false);
+    }
+  }, [post, load]);
 
   const handleDownload = useCallback((asset: BrandAsset) => {
     const url = asset.preview_url || asset.thumbnail_url;
@@ -361,6 +415,9 @@ export function AssetLibraryPage() {
           onSendToSocial={() => { sendOneToSocial(activeAsset); }}
           onDownload={() => handleDownload(activeAsset)}
           onDelete={() => requestDelete(activeAsset)}
+          onRemoveBackground={() => { void removeBackground(activeAsset); }}
+          removeBackgroundBusy={bgBusy}
+          removeBackgroundError={bgError}
         />
       )}
 
@@ -695,8 +752,15 @@ function AssetDetailModal(props: {
   onSendToSocial: () => void;
   onDownload: () => void;
   onDelete: () => void;
+  /** §8c background remover — image assets only; result is a NEW asset. */
+  onRemoveBackground: () => void;
+  removeBackgroundBusy: boolean;
+  removeBackgroundError: string | null;
 }) {
-  const { asset, onClose, onSendToSocial, onDownload, onDelete } = props;
+  const {
+    asset, onClose, onSendToSocial, onDownload, onDelete,
+    onRemoveBackground, removeBackgroundBusy, removeBackgroundError,
+  } = props;
   const { get, ready } = useSparkApi();
   const [usage, setUsage] = useState<AssetUsageResponse | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
@@ -747,6 +811,16 @@ function AssetDetailModal(props: {
             <Trash2 className="h-3 w-3" /> Delete
           </button>
           <IadmButton variant="ghost" onClick={onClose}>Close</IadmButton>
+          {asset.kind === "image" && (
+            <IadmButton
+              variant="ghost"
+              onClick={onRemoveBackground}
+              disabled={removeBackgroundBusy}
+              icon={<Wand2 className="h-3.5 w-3.5" />}
+            >
+              {removeBackgroundBusy ? "Removing…" : "Remove background"}
+            </IadmButton>
+          )}
           <IadmButton variant="primary" onClick={onDownload} icon={<Download className="h-3.5 w-3.5" />}>
             Download
           </IadmButton>
@@ -758,7 +832,12 @@ function AssetDetailModal(props: {
     >
       <div className="grid h-full grid-cols-1 gap-6 p-6 md:grid-cols-[1.4fr_1fr]">
         {/* Preview */}
-        <div className="flex items-center justify-center overflow-hidden rounded-lg bg-slate-50 p-2">
+        <div className="flex flex-col items-center justify-center gap-2 overflow-hidden rounded-lg bg-slate-50 p-2">
+          {removeBackgroundError && (
+            <div className="w-full rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+              Remove background failed: {removeBackgroundError}
+            </div>
+          )}
           <DetailPreview asset={asset} />
         </div>
 
