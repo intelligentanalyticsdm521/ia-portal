@@ -258,6 +258,30 @@ export function SocialComposerModal({
     });
   }
 
+  // ── Content type (re-cut §7, 2026-07-22): post / story / reel ─────────
+  // Platform ground truth: FB + IG publish stories/reels via API; LinkedIn
+  // (Stories killed 2021) and X are FEED-ONLY. Switching to story/reel
+  // drops feed-only platforms from the selection and greys their checkboxes.
+  type ContentType = "post" | "story" | "reel";
+  const STORY_REEL_PLATFORMS: Platform[] = ["facebook", "instagram"];
+  const [contentType, setContentType] = useState<ContentType>(
+    ((initialPost as { content_type?: string } | null | undefined)?.content_type as ContentType) || "post"
+  );
+  const platformAllowsContentType = useCallback(
+    (p: Platform) => contentType === "post" || STORY_REEL_PLATFORMS.includes(p),
+    [contentType]
+  );
+  function changeContentType(ct: ContentType) {
+    setContentType(ct);
+    if (ct !== "post") {
+      setDestinations((prev) => {
+        const next = new Set<Platform>();
+        for (const p of prev) if (STORY_REEL_PLATFORMS.includes(p)) next.add(p);
+        return next.size === prev.size ? prev : next;
+      });
+    }
+  }
+
   // ── Body composer ──────────────────────────────────────────────────────
   const [bodyDefault, setBodyDefault] = useState(initialPost?.body || "");
   const [perPlatform, setPerPlatform] = useState<Record<Platform, string>>({
@@ -569,13 +593,25 @@ export function SocialComposerModal({
         if (v && v !== bodyDefault) perPlatformBody[p] = v;
       }
     }
+    // CONTRACT FIX (2026-07-22): the backend requires connection_ids —
+    // it maps `d.connection_id ?? d` and filters to 36-char UUIDs, so the
+    // platform strings this modal used to send were silently dropped and
+    // every publish attempt 400'd destinations_missing_connection_ids.
+    // Map each selected platform to its ACTIVE connection.
+    const destinationPayload = Array.from(destinations)
+      .map((p) => {
+        const conn = connections.find((c) => c.platform === p && c.status === "active");
+        return conn ? { connection_id: conn.connection_id, platform: p } : null;
+      })
+      .filter((d): d is { connection_id: string; platform: Platform } => d != null);
     const payload = {
       body_default: bodyDefault,
       per_platform_body: customizePerPlatform ? perPlatformBody : undefined,
       asset_ids: realAssetIds,
-      destinations: Array.from(destinations),
+      destinations: destinationPayload,
       scheduled_for: scheduledIso,
       requires_approval: approvalRequired,
+      content_type: contentType,
     };
     try {
       await spark.post("/api/v1/my-brand/social/posts", payload);
@@ -642,6 +678,31 @@ export function SocialComposerModal({
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           {/* Main composer column */}
           <div className="flex flex-col gap-5">
+            {/* Content type — Post / Story / Reel (re-cut §7). Stories +
+                reels are FB+IG only; switching drops feed-only platforms. */}
+            <section>
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Content type</div>
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                {(["post", "story", "reel"] as const).map((ct) => (
+                  <button
+                    key={ct}
+                    type="button"
+                    onClick={() => changeContentType(ct)}
+                    className={`rounded-md px-3.5 py-1.5 text-[12px] font-medium capitalize transition-colors ${
+                      contentType === ct ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    {ct}
+                  </button>
+                ))}
+              </div>
+              {contentType !== "post" && (
+                <div className="mt-1.5 text-[11px] text-slate-500">
+                  {contentType === "story" ? "Stories" : "Reels"} publish to Facebook and Instagram only — LinkedIn and X are feed-post platforms.
+                </div>
+              )}
+            </section>
+
             {/* Destination selector */}
             <section>
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Destinations</div>
@@ -671,35 +732,39 @@ export function SocialComposerModal({
               <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                 {PLATFORMS.map((def) => {
                   const connected = connectedSet.has(def.key);
+                  const typeAllowed = platformAllowsContentType(def.key);
+                  const selectable = connected && typeAllowed;
                   const checked = destinations.has(def.key);
                   return (
                     <label
                       key={def.key}
                       className={`flex items-center gap-2 rounded-lg border p-2 text-sm ${
-                        !connected
+                        !selectable
                           ? "border-dashed border-slate-200 bg-slate-50 text-slate-400"
                           : checked
                             ? "border-[#2563eb] bg-blue-50 text-slate-900"
                             : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                      } ${connected ? "cursor-pointer" : "cursor-not-allowed"}`}
+                      } ${selectable ? "cursor-pointer" : "cursor-not-allowed"}`}
                     >
                       <input
                         type="checkbox"
-                        disabled={!connected}
+                        disabled={!selectable}
                         checked={checked}
                         onChange={() => toggleDestination(def.key)}
                         className="h-4 w-4"
                       />
                       <PlatformGlyph def={def} size={14} />
                       <span className="flex-1 truncate font-medium">{def.name}</span>
-                      {!connected && (
+                      {!connected ? (
                         <Link
                           to="/app/services/my_brand_social_channels"
                           className="text-[10px] font-semibold text-[#2563eb] hover:underline"
                         >
                           Connect →
                         </Link>
-                      )}
+                      ) : !typeAllowed ? (
+                        <span className="text-[10px] font-medium text-slate-400">Feed posts only</span>
+                      ) : null}
                     </label>
                   );
                 })}
@@ -906,7 +971,14 @@ export function SocialComposerModal({
 
           {/* Right rail — live previews */}
           <aside className="flex flex-col gap-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Live Previews</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              Live Previews
+              {contentType !== "post" && (
+                <span className="ml-2 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold normal-case text-violet-700">
+                  {contentType === "story" ? "Story · 9:16" : "Reel · 9:16"}
+                </span>
+              )}
+            </div>
             {PLATFORMS.map((def) => {
               const active = destinations.has(def.key);
               return (

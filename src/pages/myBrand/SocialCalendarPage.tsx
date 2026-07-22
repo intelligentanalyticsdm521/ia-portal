@@ -95,18 +95,18 @@ const STATUS_META: Record<PostStatus, { label: string; className: string }> = {
   rejected:         { label: "Rejected",       className: "bg-rose-100 text-rose-700 line-through" },
 };
 
-// Order for the status segmented control (includes pending_approval/rejected
-// — the old FilterRow selects omitted them even though STATUS_META supports
-// them).
+// Status filter chips — LOCKED 3-lane customer vocabulary (re-cut §2,
+// 2026-07-22): Draft · Scheduled · Published. pending_approval/rejected are
+// leftovers of the approval workflow that moved to Consulting; cancelled
+// posts are just gone from the surfaces; failed is NOT a lane — a failed
+// post stays VISIBLE under All/Published-adjacent slots with its red
+// "didn't publish" marker (STATUS_META keeps the failed treatment), it just
+// isn't a filter chip. The status column itself is untouched.
 const STATUS_FILTERS: Array<{ key: PostStatus | "all"; label: string }> = [
-  { key: "all",              label: "All" },
-  { key: "scheduled",        label: "Scheduled" },
-  { key: "pending_approval", label: "Pending approval" },
-  { key: "published",        label: "Published" },
-  { key: "failed",           label: "Failed" },
-  { key: "draft",            label: "Draft" },
-  { key: "cancelled",        label: "Cancelled" },
-  { key: "rejected",         label: "Rejected" },
+  { key: "all",       label: "All" },
+  { key: "scheduled", label: "Scheduled" },
+  { key: "published", label: "Published" },
+  { key: "draft",     label: "Drafts" },
 ];
 
 // ── Date helpers (local-tz, no library) ───────────────────────────────────
