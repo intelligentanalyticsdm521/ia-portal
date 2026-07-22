@@ -42,10 +42,11 @@ import {
   AlertTriangle, AlignCenter, AlignCenterHorizontal, AlignCenterVertical,
   AlignEndHorizontal, AlignEndVertical, AlignLeft, AlignRight,
   AlignStartHorizontal, AlignStartVertical, BarChart3, Bold,
-  ChevronDown, ChevronUp, Circle, Copy, Download, Eye, EyeOff, FileImage,
-  FlipHorizontal2, FlipVertical2, Image as ImageIcon, Layers, Lock,
-  Maximize, Minus, Plus, Save, Scaling, Send, Square, Star, Trash2,
-  Type as TypeIcon, Unlock, X, ZoomIn, ZoomOut,
+  ChevronDown, ChevronUp, Circle, Contrast, Copy, Download, Eye, EyeOff,
+  FileImage, FlipHorizontal2, FlipVertical2, Image as ImageIcon, Layers,
+  Loader2, Lock, Maximize, Minus, Palette, Plus, Save, Scaling, Send,
+  Square, Star, Trash2, Type as TypeIcon, Unlock, Upload, Wand2, X,
+  ZoomIn, ZoomOut,
 } from "lucide-react";
 import { IadmModal, IadmButton } from "../IadmModal";
 import { useLumenApi } from "../../hooks/useLumenApi";
@@ -86,12 +87,46 @@ export interface TextLayer extends BaseLayer {
   lineHeight?: number;
   letterSpacing?: number;
   shadow?: boolean;
+  /** Outline color (behind-stroke); absent/none = no outline. */
+  outline?: string;
 }
 
 export interface ImageLayer extends BaseLayer {
   kind: "image";
   blob_ref?: string | null;
   src?: string | null;  // local dataURL/URL for in-editor display
+  /** Set when placed from the Media Library — enables Remove background. */
+  asset_id?: string | null;
+}
+
+// ── Color math for Brand Sync + Fix contrast (deterministic, no model) ─────
+function hexToRgb(hex: string): [number, number, number] | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function relLuminance(hex: string): number {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 1;
+  const [r, g, b] = rgb.map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function nearestBrandColor(hex: string, palette: string[]): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  let best = palette[0];
+  let bestD = Infinity;
+  for (const p of palette) {
+    const prgb = hexToRgb(p);
+    if (!prgb) continue;
+    const d = (rgb[0] - prgb[0]) ** 2 + (rgb[1] - prgb[1]) ** 2 + (rgb[2] - prgb[2]) ** 2;
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
 }
 
 export interface ShapeLayer extends BaseLayer {
@@ -202,11 +237,20 @@ function uid(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+// Web-safe stacks only — the server rasterizer (librsvg + fontconfig) and
+// every client must resolve these without webfont loading. First family is
+// the display name.
 const DEFAULT_FONTS = [
   "Inter, Helvetica, Arial, sans-serif",
   "Georgia, serif",
+  "Times New Roman, Times, serif",
+  "Garamond, Palatino, serif",
+  "Trebuchet MS, Verdana, sans-serif",
+  "Verdana, Geneva, sans-serif",
+  "Tahoma, Segoe UI, sans-serif",
   "Courier New, monospace",
-  "Impact, sans-serif",
+  "Impact, Haettenschweiler, sans-serif",
+  "Comic Sans MS, Chalkboard SE, cursive",
 ];
 
 const BLANK_CANVAS_DEFAULTS: CanvasDoc = {
@@ -372,12 +416,24 @@ interface Props {
   designId: string | null;
   /** When creating (designId null), optional template to seed the canvas. */
   templateId?: string | null;
+  /**
+   * When creating from scratch (both ids null), the starting canvas — the
+   * purpose picker passes the right size + transparency (logo/icon mode).
+   */
+  initialCanvas?: CanvasDoc | null;
+  /** Display name seeded alongside initialCanvas (e.g. "New logo"). */
+  initialName?: string;
   /** Called after every successful persist so the parent library refreshes. */
   onChanged?: () => void;
 }
 
+/** True when the canvas has no backdrop (logo/icon mode) — exports keep alpha. */
+function isTransparent(doc: CanvasDoc): boolean {
+  return doc.background_color == null || String(doc.background_color).toLowerCase() === "transparent";
+}
+
 export function TemplateStudioEditorModal({
-  open, onClose, designId, templateId = null, onChanged,
+  open, onClose, designId, templateId = null, initialCanvas = null, initialName, onChanged,
 }: Props) {
   const { get, post, put, ready } = useLumenApi();
   const navigate = useNavigate();
@@ -463,9 +519,9 @@ export function TemplateStudioEditorModal({
     setSaveError(null);
     setExportError(null);
     if (!designId && !templateId) {
-      setCanvasDoc(emptyCanvas());
+      setCanvasDoc(initialCanvas ? JSON.parse(JSON.stringify(initialCanvas)) : emptyCanvas());
       setCurrentDesignId(null);
-      setDesignName("Untitled design");
+      setDesignName(initialName || "Untitled design");
       undoStackRef.current = [];
       return;
     }
@@ -500,6 +556,9 @@ export function TemplateStudioEditorModal({
       }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps — initialCanvas/
+    // initialName are creation-time seeds; re-running on their identity
+    // would wipe in-progress edits.
   }, [open, ready, designId, templateId, get]);
 
   // ── Initialize Fabric canvas when the modal opens ────────────────────────
@@ -638,7 +697,9 @@ export function TemplateStudioEditorModal({
     suppressSyncRef.current = true;
     c.clear();
     c.setDimensions({ width: doc.width, height: doc.height });
-    c.backgroundColor = doc.background_color || "#FFFFFF";
+    // Transparent canvas (logo/icon mode) — the wrapper div shows a
+    // checkerboard behind Fabric's empty background.
+    c.backgroundColor = isTransparent(doc) ? "" : (doc.background_color || "#FFFFFF");
     objectsByIdRef.current.clear();
     idByObjectRef.current = new WeakMap();
     for (const layer of doc.layers) {
@@ -828,6 +889,114 @@ export function TemplateStudioEditorModal({
     setResizeOpen(false);
   }, [mutateCanvas]);
 
+  // Place from Media Library (bucket 1): existing brand assets — including
+  // AI-generated and background-removed ones — straight onto the canvas.
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const addLibraryImageLayer = useCallback((asset: { asset_id: string; blob_ref: string | null; url: string | null; width_px?: number | null; height_px?: number | null }) => {
+    const maxSide = Math.min(canvasDoc.width, canvasDoc.height) * 0.6;
+    const aw = asset.width_px || 800;
+    const ah = asset.height_px || 800;
+    const s = Math.min(maxSide / aw, maxSide / ah, 1);
+    const w = Math.round(aw * s);
+    const h = Math.round(ah * s);
+    const layer: ImageLayer = {
+      id: uid("image"),
+      kind: "image",
+      x: Math.round(canvasDoc.width / 2 - w / 2),
+      y: Math.round(canvasDoc.height / 2 - h / 2),
+      w, h,
+      blob_ref: asset.blob_ref,
+      asset_id: asset.asset_id,
+      src: asset.url,
+      rotation: 0,
+      visible: true,
+    };
+    mutateCanvas((prev) => ({ ...prev, layers: [...prev.layers, layer] }));
+    setSelectedId(layer.id);
+    setLibraryOpen(false);
+  }, [canvasDoc.width, canvasDoc.height, mutateCanvas]);
+
+  // In-editor Remove background (§8c, Pro+, credit-metered server-side) —
+  // available once a layer is library-linked (has asset_id). The result is
+  // a NEW asset; the layer re-points at it.
+  const [bgRemoveBusy, setBgRemoveBusy] = useState(false);
+  const [bgRemoveError, setBgRemoveError] = useState<string | null>(null);
+  const removeLayerBackground = useCallback(async (layerId: string) => {
+    const layer = canvasDoc.layers.find((l) => l.id === layerId) as ImageLayer | undefined;
+    if (!layer?.asset_id) return;
+    setBgRemoveBusy(true);
+    setBgRemoveError(null);
+    try {
+      const out = await post<{ assetId: string; blobRef: string; url: string }>(
+        `/api/v1/my-brand/image-studio/${layer.asset_id}/edit`,
+        { edits: { bg_remove: true } },
+      );
+      if (!out?.assetId) throw new Error("no asset returned");
+      mutateCanvas((prev) => ({
+        ...prev,
+        layers: prev.layers.map((l) =>
+          l.id === layerId
+            ? { ...l, asset_id: out.assetId, blob_ref: out.blobRef, src: out.url } as Layer
+            : l),
+      }));
+    } catch (e) {
+      setBgRemoveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBgRemoveBusy(false);
+    }
+  }, [canvasDoc.layers, post, mutateCanvas]);
+
+  // Brand Sync (Pro+, deterministic): remap every color in the design to
+  // the nearest tenant brand color. One undo step reverses it.
+  const applyBrandSync = useCallback(() => {
+    const swatches = brandPalette
+      ? [brandPalette.primary, brandPalette.secondary, brandPalette.text, brandPalette.background]
+      : ["#1A3A4A", "#FEC82C", "#111827", "#FFFFFF"];
+    const remap = (c: string | undefined | null) =>
+      c && c !== "none" && !c.startsWith("{{") ? nearestBrandColor(c, swatches) : c;
+    mutateCanvas((prev) => ({
+      ...prev,
+      background_color: isTransparent(prev)
+        ? prev.background_color
+        : remap(prev.background_color) ?? prev.background_color,
+      layers: prev.layers.map((l) => {
+        const next = { ...l } as Layer & Record<string, unknown>;
+        for (const key of ["fill", "stroke", "color", "outline"]) {
+          if (typeof next[key] === "string") next[key] = remap(next[key] as string);
+        }
+        if (l.kind === "chart") delete (next as Record<string, unknown>).colors; // brand cycle takes over
+        return next as Layer;
+      }),
+    }));
+  }, [brandPalette, mutateCanvas]);
+
+  // Fix contrast (Standard, deterministic): pick white or near-black for a
+  // text layer based on the luminance of whatever sits behind its center.
+  const fixTextContrast = useCallback((layerId: string) => {
+    const idx = canvasDoc.layers.findIndex((l) => l.id === layerId);
+    const text = canvasDoc.layers[idx] as TextLayer | undefined;
+    if (!text) return;
+    const cx = text.x + text.w / 2;
+    const cy = text.y + text.h / 2;
+    // Topmost filled shape UNDER the text whose box contains its center;
+    // canvas background otherwise.
+    let behind = isTransparent(canvasDoc) ? "#FFFFFF" : (canvasDoc.background_color || "#FFFFFF");
+    for (let i = idx - 1; i >= 0; i--) {
+      const l = canvasDoc.layers[i];
+      if (l.kind !== "shape" && l.kind !== "image") continue;
+      const fill = (l as ShapeLayer).fill;
+      const contains = cx >= l.x && cx <= l.x + l.w && cy >= l.y && cy <= l.y + l.h;
+      if (!contains) continue;
+      if (l.kind === "image") { behind = "#888888"; break; } // photos: assume mid-tone
+      if (fill && fill !== "none") { behind = fill; break; }
+    }
+    const color = relLuminance(behind) < 0.4 ? "#FFFFFF" : "#111827";
+    mutateCanvas((prev) => ({
+      ...prev,
+      layers: prev.layers.map((l) => (l.id === layerId ? { ...l, color } as Layer : l)),
+    }));
+  }, [canvasDoc, mutateCanvas]);
+
   // ── Layer mutators ────────────────────────────────────────────────────────
   const deleteLayer = useCallback((id: string) => {
     mutateCanvas((prev) => ({ ...prev, layers: prev.layers.filter((l) => l.id !== id) }));
@@ -934,6 +1103,9 @@ export function TemplateStudioEditorModal({
       const prevZoom = c.getZoom();
       c.setZoom(1);
       c.setDimensions({ width: canvasDoc.width, height: canvasDoc.height });
+      // JPEG has no alpha; a transparent canvas would composite onto black.
+      const prevBg = c.backgroundColor;
+      if (format === "jpg" && isTransparent(canvasDoc)) c.backgroundColor = "#FFFFFF";
       // Fabric.js v6 uses the MIME-style "jpeg" identifier; we keep the user-
       // facing "jpg" label but translate at the boundary.
       const dataUrl = c.toDataURL({
@@ -942,6 +1114,7 @@ export function TemplateStudioEditorModal({
         multiplier: 1,
       });
       // Restore viewport.
+      c.backgroundColor = prevBg;
       c.setZoom(prevZoom);
       c.setDimensions({ width: canvasDoc.width * prevZoom, height: canvasDoc.height * prevZoom });
       // Trigger browser download.
@@ -1175,6 +1348,7 @@ export function TemplateStudioEditorModal({
             onAddShape={addShapeLayer}
             onAddIcon={addIconLayer}
             onUploadImage={() => fileInputRef.current?.click()}
+            onOpenLibrary={() => setLibraryOpen(true)}
             onAddChart={addChartLayer}
           />
 
@@ -1199,10 +1373,19 @@ export function TemplateStudioEditorModal({
               <label className="text-[10px] uppercase tracking-wide text-slate-500">BG</label>
               <input
                 type="color"
-                value={canvasDoc.background_color || "#FFFFFF"}
+                value={isTransparent(canvasDoc) ? "#FFFFFF" : (canvasDoc.background_color || "#FFFFFF")}
                 onChange={(e) => setBackgroundColor(e.target.value)}
                 className="h-5 w-7 cursor-pointer rounded border border-slate-200"
               />
+              <button
+                type="button"
+                onClick={() => setBackgroundColor(isTransparent(canvasDoc) ? "#FFFFFF" : "transparent")}
+                className={"rounded px-1.5 py-0.5 text-[10px] font-semibold " +
+                  (isTransparent(canvasDoc) ? "bg-slate-800 text-white" : "text-slate-600 hover:bg-slate-100")}
+                title="Transparent background — PNG exports keep alpha (logos, icons)"
+              >
+                None
+              </button>
               <span className="text-[10px] text-slate-500">
                 {canvasDoc.width}×{canvasDoc.height}
               </span>
@@ -1215,14 +1398,35 @@ export function TemplateStudioEditorModal({
               >
                 <Scaling className="h-3 w-3" /> Resize
               </button>
+              <button
+                type="button"
+                onClick={hasSmartResize ? applyBrandSync : undefined}
+                disabled={!hasSmartResize}
+                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
+                title={hasSmartResize
+                  ? "Brand Sync — remap every color in this design to your brand palette (undo with ⌘Z)"
+                  : "Brand Sync is a Pro feature"}
+              >
+                <Palette className="h-3 w-3" /> Brand Sync{!hasSmartResize && " · Pro+"}
+              </button>
             </div>
 
             {/* The canvas itself — auto-fit by default (fitZoom); m-auto
                 centers when smaller than the host, scrolls when zoomed in. */}
             <div ref={canvasHostRef} className="flex flex-1 overflow-auto p-6">
               <div
-                className="relative m-auto flex-shrink-0 bg-white shadow-lg"
-                style={{ width: canvasDoc.width * zoom, height: canvasDoc.height * zoom }}
+                className="relative m-auto flex-shrink-0 shadow-lg"
+                style={{
+                  width: canvasDoc.width * zoom,
+                  height: canvasDoc.height * zoom,
+                  // Checkerboard shows through wherever the design is
+                  // transparent (logo/icon mode); solid canvases cover it.
+                  backgroundColor: "#fff",
+                  backgroundImage: isTransparent(canvasDoc)
+                    ? "conic-gradient(#e2e8f0 90deg, transparent 90deg 180deg, #e2e8f0 180deg 270deg, transparent 270deg)"
+                    : undefined,
+                  backgroundSize: isTransparent(canvasDoc) ? "20px 20px" : undefined,
+                }}
               >
                 <canvas ref={canvasElRef} />
                 {/* Snap guide lines — canvas coords × zoom, drawn over the canvas. */}
@@ -1263,6 +1467,14 @@ export function TemplateStudioEditorModal({
                   onDuplicate={() => duplicateLayer(selectedLayer.id)}
                   onForward={() => reorderLayer(selectedLayer.id, "up")}
                   onBack={() => reorderLayer(selectedLayer.id, "down")}
+                  onFixContrast={() => fixTextContrast(selectedLayer.id)}
+                  onRemoveBackground={
+                    selectedLayer.kind === "image" && (selectedLayer as ImageLayer).asset_id && hasSmartResize
+                      ? () => void removeLayerBackground(selectedLayer.id)
+                      : undefined
+                  }
+                  removeBackgroundBusy={bgRemoveBusy}
+                  removeBackgroundError={bgRemoveError}
                 />
               ) : (
                 <div className="p-4 text-xs text-slate-500">
@@ -1322,6 +1534,14 @@ export function TemplateStudioEditorModal({
           </aside>
         </div>
       </div>
+
+      {/* Media Library picker — place an existing brand asset on the canvas. */}
+      {libraryOpen && (
+        <AssetPickerModal
+          onClose={() => setLibraryOpen(false)}
+          onPick={addLibraryImageLayer}
+        />
+      )}
 
       {/* Smart Resize picker — one design → every platform size (Pro+). */}
       {resizeOpen && (
@@ -1607,12 +1827,13 @@ function LayerRow({
 
 // ── Insert rail (left) — everything you can add, Canva-style ───────────────
 function InsertRail({
-  onAddText, onAddShape, onAddIcon, onUploadImage, onAddChart,
+  onAddText, onAddShape, onAddIcon, onUploadImage, onOpenLibrary, onAddChart,
 }: {
   onAddText: (preset: TextPresetKey) => void;
   onAddShape: (shape: "rect" | "ellipse" | "line") => void;
   onAddIcon: (icon: string) => void;
   onUploadImage: () => void;
+  onOpenLibrary: () => void;
   onAddChart: () => void;
 }) {
   return (
@@ -1666,11 +1887,89 @@ function InsertRail({
       <div className="border-t border-slate-100 p-3">
         <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Media & data</div>
         <div className="grid grid-cols-2 gap-1.5">
-          <AddLayerButton icon={ImageIcon} label="Image" onClick={onUploadImage} />
+          <AddLayerButton icon={Upload} label="Upload" onClick={onUploadImage} />
+          <AddLayerButton icon={ImageIcon} label="Library" onClick={onOpenLibrary} />
           <AddLayerButton icon={BarChart3} label="Chart" onClick={onAddChart} />
         </div>
       </div>
     </aside>
+  );
+}
+
+// ── Media Library asset picker — place an existing brand asset ─────────────
+interface PickerAsset {
+  asset_id: string;
+  blob_ref: string | null;
+  url: string | null;
+  width_px?: number | null;
+  height_px?: number | null;
+  kind?: string;
+}
+
+function AssetPickerModal({ onClose, onPick }: {
+  onClose: () => void;
+  onPick: (asset: PickerAsset) => void;
+}) {
+  const { get, ready } = useLumenApi();
+  const [assets, setAssets] = useState<PickerAsset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        // lumenApi unwraps { data }, leaving { rows } (imageStudio list shape).
+        const r = await get<{ rows?: PickerAsset[] }>("/api/v1/my-brand/assets?kind=image&limit=60");
+        if (!cancelled) setAssets((r?.rows || []).filter((a) => a.url));
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [ready, get]);
+
+  return (
+    <IadmModal
+      open
+      onClose={onClose}
+      product="spark"
+      eyebrow="MY BRAND · DESIGN STUDIO"
+      title="Place from Media Library"
+      subtitle="Your generated, edited, and uploaded images"
+      size="nav"
+    >
+      <div className="max-h-[50vh] overflow-y-auto p-4">
+        {loading ? (
+          <div className="flex items-center justify-center py-8 text-slate-400">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </div>
+        ) : error ? (
+          <div className="rounded border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">{error}</div>
+        ) : assets.length === 0 ? (
+          <div className="py-8 text-center text-xs text-slate-500">
+            No images yet — generate one in Image Studio or upload to the Media Library.
+          </div>
+        ) : (
+          <div className="grid grid-cols-4 gap-2">
+            {assets.map((a) => (
+              <button
+                key={a.asset_id}
+                type="button"
+                onClick={() => onPick(a)}
+                className="group aspect-square overflow-hidden rounded border border-slate-200 bg-slate-50 hover:border-[#EF6C33]"
+                title={`${a.width_px || "?"}×${a.height_px || "?"}`}
+              >
+                <img src={a.url || ""} alt="" className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </IadmModal>
   );
 }
 
@@ -1735,6 +2034,7 @@ function NumField({ label, value, onChange, step = 1, min }: {
 // ── Layer properties panel (right) — full styling for the selection ────────
 function LayerPropertiesPanel({
   layer, canvasW, canvasH, palette, onUpdate, onDelete, onDuplicate, onForward, onBack,
+  onFixContrast, onRemoveBackground, removeBackgroundBusy, removeBackgroundError,
 }: {
   layer: Layer;
   canvasW: number;
@@ -1745,6 +2045,10 @@ function LayerPropertiesPanel({
   onDuplicate: () => void;
   onForward: () => void;
   onBack: () => void;
+  onFixContrast?: () => void;
+  onRemoveBackground?: () => void;
+  removeBackgroundBusy?: boolean;
+  removeBackgroundError?: string | null;
 }) {
   const kindLabel =
     layer.kind === "text" ? "Text"
@@ -1929,6 +2233,59 @@ function LayerPropertiesPanel({
             label="Color" value={(layer as TextLayer).color} fallback="#111827"
             palette={palette} onChange={(c) => onUpdate({ color: c })}
           />
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <ColorField
+                label="Outline" value={(layer as TextLayer).outline || undefined} fallback="#1A3A4A"
+                palette={palette} onChange={(c) => onUpdate({ outline: c } as Partial<Layer>)}
+              />
+            </div>
+            {(layer as TextLayer).outline && (
+              <button
+                type="button"
+                onClick={() => onUpdate({ outline: undefined } as Partial<Layer>)}
+                className="rounded border border-slate-200 px-1.5 py-1 text-[10px] font-semibold text-slate-500 hover:bg-slate-50"
+              >
+                No outline
+              </button>
+            )}
+          </div>
+          {onFixContrast && (
+            <button
+              type="button"
+              onClick={onFixContrast}
+              className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+              title="Flip this text to white or dark based on what's behind it"
+            >
+              <Contrast className="h-3 w-3" /> Fix contrast
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Image tools */}
+      {layer.kind === "image" && (
+        <div className="space-y-2 border-t border-slate-100 pt-2">
+          {onRemoveBackground ? (
+            <button
+              type="button"
+              onClick={onRemoveBackground}
+              disabled={removeBackgroundBusy}
+              className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <Wand2 className="h-3 w-3" />
+              {removeBackgroundBusy ? "Removing…" : "Remove background"}
+            </button>
+          ) : (
+            <div className="text-[10px] text-slate-400">
+              Place images from the Library to unlock Remove background (Pro+).
+            </div>
+          )}
+          {removeBackgroundError && (
+            <div className="rounded border border-red-200 bg-red-50 p-1.5 text-[10px] text-red-700">
+              {removeBackgroundError}
+            </div>
+          )}
         </div>
       )}
 
@@ -2008,6 +2365,11 @@ function layerToFabricObject(
       lineHeight: t.lineHeight || 1.2,
       // Fabric charSpacing is in 1/1000 em; our model stores px.
       charSpacing: t.letterSpacing ? (t.letterSpacing / size) * 1000 : 0,
+      // Outline: stroke painted first so it sits behind the fill — matches
+      // the server's behind-copy technique visually.
+      stroke: t.outline && t.outline !== "none" ? t.outline : undefined,
+      strokeWidth: t.outline && t.outline !== "none" ? Math.max(1, Math.round(size * 0.08)) : 0,
+      paintFirst: "stroke",
       shadow: t.shadow
         ? new fabric.Shadow({
             color: "rgba(0,0,0,0.35)",

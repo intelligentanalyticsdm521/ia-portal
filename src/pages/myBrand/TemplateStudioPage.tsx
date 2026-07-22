@@ -13,7 +13,11 @@
 // (Per-record GET / POST / PUT / export live in the editor modal.)
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, FilePlus, LayoutTemplate, PenTool, Plus } from "lucide-react";
+import {
+  ArrowRight, Award, BadgePercent, FilePlus, Image as ImageIcon,
+  LayoutTemplate, Mail, Megaphone, PenTool, PieChart, Plus, Smartphone,
+  Square, Store,
+} from "lucide-react";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { IadmModal } from "../../components/IadmModal";
 import { MyBrandUpgradeGate } from "../../components/MyBrandUpgradeGate";
@@ -21,9 +25,46 @@ import { useMyBrandTier } from "../../hooks/useMyBrandTier";
 import { useLumenApi } from "../../hooks/useLumenApi";
 import {
   TemplateStudioEditorModal,
+  type CanvasDoc,
   type DesignDto,
   type TemplateDto,
 } from "../../components/myBrand/TemplateStudioEditorModal";
+
+// ── Purpose-first "What are you making?" (Brandon 2026-07-22: the studio
+// exists so a business owner can make social content, flyers, infographics,
+// logos, icons — the front door should ask for the JOB, not a blank file).
+// Each purpose carries its canvas + which template kinds count as starters.
+interface Purpose {
+  key: string;
+  label: string;
+  blurb: string;
+  icon: typeof Megaphone;
+  w: number;
+  h: number;
+  transparent?: boolean;
+  templateKinds: string[];
+}
+const PURPOSES: Purpose[] = [
+  { key: "social",  label: "Social post",   blurb: "Square post for FB / IG / LinkedIn", icon: Megaphone, w: 1080, h: 1080, templateKinds: ["ig_post", "fb_post", "li_post"] },
+  { key: "story",   label: "Story",         blurb: "Full-screen 9:16 story",             icon: Smartphone, w: 1080, h: 1920, templateKinds: ["ig_story"] },
+  { key: "logo",    label: "Logo",          blurb: "Transparent background, brand colors", icon: Award, w: 1024, h: 1024, transparent: true, templateKinds: ["logo"] },
+  { key: "icon",    label: "Icon",          blurb: "App / favicon mark, transparent",    icon: Square, w: 512, h: 512, transparent: true, templateKinds: ["icon"] },
+  { key: "infographic", label: "Infographic", blurb: "Numbers → chart in brand colors",  icon: PieChart, w: 1080, h: 1080, templateKinds: ["ig_post"] },
+  { key: "flyer",   label: "Flyer",         blurb: "Print-ready letter flyer",           icon: BadgePercent, w: 1275, h: 1650, templateKinds: ["flyer"] },
+  { key: "card",    label: "Business card", blurb: "Standard 3.5×2 card",                icon: Store, w: 1050, h: 600, templateKinds: ["business_card"] },
+  { key: "email",   label: "Email header",  blurb: "Newsletter / campaign banner",       icon: Mail, w: 1200, h: 400, templateKinds: ["email_header"] },
+  { key: "banner",  label: "Cover / banner", blurb: "FB cover · LinkedIn banner",        icon: ImageIcon, w: 1584, h: 396, templateKinds: ["fb_cover", "li_banner"] },
+];
+
+function canvasFor(p: Purpose): CanvasDoc {
+  return {
+    version: 1,
+    width: p.w,
+    height: p.h,
+    background_color: p.transparent ? "transparent" : "#FFFFFF",
+    layers: [],
+  };
+}
 
 type GalleryFilter = "all" | "system" | "brand" | "mine";
 
@@ -63,7 +104,14 @@ export function TemplateStudioPage() {
 
   // Modal open-state — plain useState, modals mounted at the bottom.
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [editor, setEditor] = useState<{ designId: string | null; templateId: string | null } | null>(null);
+  // Step 2 of the picker: a chosen purpose showing its starter templates.
+  const [purpose, setPurpose] = useState<Purpose | null>(null);
+  const [editor, setEditor] = useState<{
+    designId: string | null;
+    templateId: string | null;
+    initialCanvas?: CanvasDoc | null;
+    initialName?: string;
+  } | null>(null);
 
   // ── Load gallery once, gated on `ready`. `silent` refreshes (editor
   // onChanged) skip the loading/error flips so the shell never unmounts an
@@ -133,11 +181,11 @@ export function TemplateStudioPage() {
   if (gate.ready && !gate.meets("template_studio")) {
     return (
       <SparkPageShell
-        title="Template Studio"
-        subtitle="Design on-brand graphics from reusable templates"
+        title="Design Studio"
+        subtitle="Create social posts, flyers, infographics, logos, and icons — already in your brand"
       >
         <MyBrandUpgradeGate
-          featureName="Template Studio"
+          featureName="Design Studio"
           requiredTier={gate.requiredTier("template_studio")}
           currentTier={gate.tier}
         />
@@ -147,9 +195,9 @@ export function TemplateStudioPage() {
 
   return (
     <SparkPageShell
-      title="Template Studio"
-      subtitle="Design on-brand graphics from reusable templates"
-      help="Click a template or a saved design to open it in the editor, or click + New design to start from a blank canvas. Finished designs export to the Asset Library or go straight to the social composer."
+      title="Design Studio"
+      subtitle="Create social posts, flyers, infographics, logos, and icons — already in your brand"
+      help="Click + New design and pick what you are making — social post, story, logo, icon, flyer, infographic, business card — and the canvas opens pre-sized in your brand colors. Finished designs export to the Asset Library or go straight to the social composer."
       actions={
         <button
           type="button"
@@ -223,42 +271,100 @@ export function TemplateStudioPage() {
         </div>
       )}
 
-      {/* Step-1 picker — IadmModal size="nav" (F-107: "what do you want to
-          create?" choice modals are nav-sized). */}
+      {/* Purpose-first picker — step 1 asks WHAT you're making, step 2 shows
+          that purpose's starter templates + a right-sized blank canvas. */}
       {pickerOpen && (
         <IadmModal
           open
-          onClose={() => setPickerOpen(false)}
+          onClose={() => { setPickerOpen(false); setPurpose(null); }}
           product="spark"
-          eyebrow="MY BRAND · TEMPLATE STUDIO"
-          title="New design"
-          subtitle="How do you want to start?"
+          eyebrow="MY BRAND · DESIGN STUDIO"
+          title={purpose ? purpose.label : "What are you making?"}
+          subtitle={purpose
+            ? "Start from a template already in your brand — or a blank canvas."
+            : "Pick the job and the canvas comes pre-sized in your brand."}
           size="nav"
         >
-          <div className="grid grid-cols-2 gap-3 p-5">
-            <button
-              type="button"
-              onClick={() => { setPickerOpen(false); setEditor({ designId: null, templateId: null }); }}
-              className="group flex flex-col items-start gap-2 rounded-lg border-2 border-slate-200 bg-white p-4 text-left transition-colors hover:border-[#EF6C33] hover:bg-[#EF6C33]/5"
-            >
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-[#EF6C33]/10 text-[#EF6C33]">
-                <FilePlus className="h-5 w-5" />
+          {!purpose ? (
+            <div className="grid grid-cols-3 gap-2 p-5">
+              {PURPOSES.map((p) => {
+                const Icon = p.icon;
+                return (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => setPurpose(p)}
+                    className="group flex flex-col items-start gap-1.5 rounded-lg border-2 border-slate-200 bg-white p-3 text-left transition-colors hover:border-[#EF6C33] hover:bg-[#EF6C33]/5"
+                  >
+                    <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[#EF6C33]/10 text-[#EF6C33]">
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="text-sm font-semibold text-slate-900">{p.label}</div>
+                    <div className="text-[11px] leading-snug text-slate-500">{p.blurb}</div>
+                    <div className="text-[10px] tabular-nums text-slate-400">
+                      {p.w}×{p.h}{p.transparent ? " · transparent" : ""}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-5">
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPickerOpen(false); setPurpose(null);
+                    setEditor({
+                      designId: null, templateId: null,
+                      initialCanvas: canvasFor(purpose),
+                      initialName: `New ${purpose.label.toLowerCase()}`,
+                    });
+                  }}
+                  className="group flex items-center gap-3 rounded-lg border-2 border-slate-200 bg-white p-3 text-left transition-colors hover:border-[#EF6C33] hover:bg-[#EF6C33]/5"
+                >
+                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-[#EF6C33]/10 text-[#EF6C33]">
+                    <FilePlus className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Blank {purpose.label.toLowerCase()}</div>
+                    <div className="text-[11px] text-slate-500">
+                      {purpose.w}×{purpose.h}{purpose.transparent ? " · transparent background" : ""}
+                    </div>
+                  </div>
+                </button>
+                {templates
+                  .filter((t) => purpose.templateKinds.includes(t.kind))
+                  .map((t) => (
+                    <button
+                      key={t.template_id}
+                      type="button"
+                      onClick={() => {
+                        setPickerOpen(false); setPurpose(null);
+                        setEditor({ designId: null, templateId: t.template_id });
+                      }}
+                      className="group flex items-center gap-3 rounded-lg border-2 border-slate-200 bg-white p-3 text-left transition-colors hover:border-[#EF6C33] hover:bg-[#EF6C33]/5"
+                    >
+                      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-blue-100 text-blue-700">
+                        <LayoutTemplate className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">{t.name}</div>
+                        <div className="text-[11px] text-slate-500">Opens as a new design, already in your brand colors</div>
+                      </div>
+                      <ArrowRight className="ml-auto h-4 w-4 text-slate-300 group-hover:text-[#EF6C33]" />
+                    </button>
+                  ))}
               </div>
-              <div className="font-semibold text-slate-900">Blank canvas</div>
-              <div className="text-xs text-slate-500 leading-snug">Start from an empty 1080×1080 canvas.</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => { setPickerOpen(false); setFilter("system"); }}
-              className="group flex flex-col items-start gap-2 rounded-lg border-2 border-slate-200 bg-white p-4 text-left transition-colors hover:border-[#EF6C33] hover:bg-[#EF6C33]/5"
-            >
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-blue-100 text-blue-700">
-                <LayoutTemplate className="h-5 w-5" />
-              </div>
-              <div className="font-semibold text-slate-900">From a template</div>
-              <div className="text-xs text-slate-500 leading-snug">Browse the templates below and click one to open it.</div>
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => setPurpose(null)}
+                className="mt-3 text-xs font-semibold text-slate-500 hover:text-slate-700"
+              >
+                ← All purposes
+              </button>
+            </div>
+          )}
         </IadmModal>
       )}
 
@@ -270,6 +376,8 @@ export function TemplateStudioPage() {
           open
           designId={editor.designId}
           templateId={editor.templateId}
+          initialCanvas={editor.initialCanvas}
+          initialName={editor.initialName}
           onClose={() => setEditor(null)}
           onChanged={() => { void loadGallery({ silent: true }); }}
         />
