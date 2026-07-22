@@ -397,6 +397,8 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'my_brand_social_channels', displayName: 'Social Channels', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_social_channels', description: 'Connect Facebook, Instagram, LinkedIn, X, TikTok, YouTube, and Google Business.', tierGate: 'Standard' },
   { key: 'my_brand_compose', displayName: 'Composer', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_compose', description: 'Compose once, publish to every connected channel with per-channel preview.', tierGate: 'Standard' },
   { key: 'my_brand_calendar', displayName: 'Social Hub', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_calendar', description: 'Compose, schedule, and re-arrange posts across every connected channel.', tierGate: 'Standard' },
+  { key: 'my_brand_social_content', displayName: 'Social Content', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_social_content', description: 'Every published and scheduled post with per-post metrics, filters, and the full social report.', tierGate: 'Standard' },
+  { key: 'my_brand_social_report', displayName: 'Social Report', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_social_report', description: 'Totals and daily trends across connected platforms. Reached from Social Content, not the nav.', tierGate: 'Standard' },
   // IA re-cut 2026-07-21 (Brandon): my_brand_analytics REMOVED — social
   // reporting lives in ARION IA Insights (Trends/Intelligence); the router
   // redirects the old key. my_brand_approvals REMOVED — the approval queue is

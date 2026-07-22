@@ -286,6 +286,9 @@ const ARION_NAV: SubNavConfig = {
         { key: "my_brand_templates", label: "Design Studio", route: "/app/services/my_brand_templates" },
         { key: "my_brand_assets", label: "Media Library", route: "/app/services/my_brand_assets" },
         { key: "my_brand_calendar", label: "Social Hub", route: "/app/services/my_brand_calendar" },
+        // Re-cut item 5 (2026-07-22): Meta-Business-Suite-style content view —
+        // per-post metrics + filters; "full report" page hangs off it (not nav).
+        { key: "my_brand_social_content", label: "Social Content", route: "/app/services/my_brand_social_content" },
       ],
     },
     // REMOVED 2026-07-21 (Brandon, My Brand verification pass):
