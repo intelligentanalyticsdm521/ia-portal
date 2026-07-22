@@ -2,7 +2,8 @@ import React from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
-import { Card, StatCard, InfoCard, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
+import { Card, StatCard, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
+import { GbpStatusCard } from './GbpStatusCard';
 
 function Stars({ n }: { n: number }) {
   const full = Math.max(0, Math.min(5, Math.round(n)));
@@ -22,7 +23,9 @@ export function BusinessReviews() {
 
   const d = data as any;
   if (!d || d.error || d.connected === false) {
-    return <InfoCard title="Google Business Profile — Not Connected"><p style={{ margin: 0 }}>Connect Google in Settings → Connected Accounts to see live reviews.</p></InfoCard>;
+    // Differentiated failure copy — quota/auth/no-listing are NOT "not
+    // connected" (the backend returns several of these with connected:true).
+    return <GbpStatusCard error={d?.error} surface="reviews" />;
   }
 
   const total = d.totalReviewCount || 0;

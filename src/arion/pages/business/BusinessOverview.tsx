@@ -2,7 +2,8 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
-import { Card, StatCard, InfoCard, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
+import { Card, StatCard, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
+import { GbpStatusCard } from './GbpStatusCard';
 import { MultiLineChart } from '../../components/Charts';
 import PhoneInput from '../../../components/PhoneInput';
 
@@ -71,25 +72,12 @@ export function BusinessOverview() {
   };
 
   if (!connected) {
-    const err = d?.error;
-    const title = err === 'gbp_quota_exceeded' || err === 'gbp_api_disabled'
-      ? 'Google Business Profile — API Access Pending'
-      : 'Google Business Profile — Not Connected';
+    // Shared differentiated explainer (GbpStatusCard) — same copy this page
+    // always had, now also covering gbp_location_not_selected and reused by
+    // Insights + Reviews so the three pages can't drift apart again.
     return (
       <div>
-        <InfoCard title={title}>
-          <p style={{ margin: 0 }}>
-            {err === 'gbp_quota_exceeded'
-              ? 'The Google Business Profile APIs are enabled for this project but have a zero-quota limit. Request quota in Google Cloud Console → APIs & Services → enable quota on My Business Account Management API, My Business Business Information API, and Business Profile Performance API. Google typically approves within minutes.'
-              : err === 'gbp_api_disabled'
-              ? 'The Google Business Profile APIs are not enabled for this Google Cloud project. Enable them in Google Cloud Console → APIs & Services.'
-              : err === 'gbp_auth_expired'
-              ? 'Your Google authentication has expired. Reconnect Google in Settings → Connected Accounts.'
-              : err === 'location_not_found'
-              ? 'No Google Business Profile location found for this Google account.'
-              : 'Connect your Google Business Profile in Settings → Connected Accounts to see live reviews, insights, and manage your listing.'}
-          </p>
-        </InfoCard>
+        <GbpStatusCard error={d?.error} surface="overview" />
       </div>
     );
   }

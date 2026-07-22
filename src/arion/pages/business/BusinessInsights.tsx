@@ -1,8 +1,9 @@
 import React from 'react';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
-import { MetricCard, Card, EmptyPanel, InfoCard, Loading, ConsultingUpsell } from '../../components/Ui';
+import { MetricCard, Card, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
 import { MultiLineChart } from '../../components/Charts';
+import { GbpStatusCard } from './GbpStatusCard';
 
 function fmtNum(n: any): string { return n == null || isNaN(Number(n)) ? '--' : Number(n).toLocaleString(); }
 
@@ -20,7 +21,9 @@ export function BusinessInsights() {
 
   const d = data as any;
   if (!d || d.error || d.connected === false) {
-    return <InfoCard title="Google Business Profile — Not Connected"><p style={{ margin: 0 }}>Connect Google in Settings → Connected Accounts to see live insights.</p></InfoCard>;
+    // Differentiated failure copy — quota/auth/no-listing are NOT "not
+    // connected" (the backend returns several of these with connected:true).
+    return <GbpStatusCard error={d?.error} surface="insights" />;
   }
   const totals = d.totals || {};
   const daily = (d.dailyBreakdown || []) as any[];
