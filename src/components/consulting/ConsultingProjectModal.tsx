@@ -827,12 +827,8 @@ function SendIntakeModal({
       })
       .catch((e) => {
         if (cancelled) return;
-        const msg = (e as Error).message || "Could not load intake templates";
-        if (/404|not.?found/i.test(msg)) {
-          setError("Intake templates API not deployed yet — coming with the F4 backend.");
-        } else {
-          setError(msg);
-        }
+        // FIX-6 (2026-07-22): real error, not the false "not deployed" mask.
+        setError((e as Error).message || "Could not load intake templates");
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -853,12 +849,8 @@ function SendIntakeModal({
       });
       onSent();
     } catch (e) {
-      const msg = (e as Error).message || "Send failed";
-      if (/404|not.?found/i.test(msg)) {
-        setError("Send-intake endpoint not deployed yet — submission record will create once the F4 backend ships.");
-      } else {
-        setError(msg);
-      }
+      // FIX-6 (2026-07-22): real error, not the false "not deployed" mask.
+      setError((e as Error).message || "Send failed");
     } finally {
       setSending(false);
     }
