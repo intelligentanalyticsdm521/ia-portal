@@ -97,7 +97,11 @@ export interface ImageFilters {
   brightness?: number; // 0.5..1.5, 1 = neutral
   saturation?: number; // 0..2, 1 = neutral
   grayscale?: boolean;
+  /** Brand duotone — grayscale + this color (usually the brand primary). */
+  tint?: string;
 }
+
+export type ImageMask = "circle" | "rounded" | "blob1" | "blob2" | "arch";
 
 export interface ImageLayer extends BaseLayer {
   kind: "image";
@@ -107,6 +111,8 @@ export interface ImageLayer extends BaseLayer {
   asset_id?: string | null;
   /** GIMP-style adjustments — previewed via Fabric, baked by sharp at export. */
   filters?: ImageFilters;
+  /** Clip the photo to a shape — raw rectangles are the amateur tell. */
+  mask?: ImageMask;
 }
 
 // ── Color math for Brand Sync + Fix contrast (deterministic, no model) ─────
@@ -323,20 +329,33 @@ function uid(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-// Web-safe stacks only — the server rasterizer (librsvg + fontconfig) and
-// every client must resolve these without webfont loading. First family is
-// the display name.
+// Brand font pack — six bundled OFL faces loaded via @fontsource here and
+// shipped as TTFs in LUMEN assets/fonts for export parity (real typography
+// is most of the distance between amateur and professional output). A few
+// web-safe stacks stay at the bottom. First family is the display name.
+import "@fontsource/poppins/400.css";
+import "@fontsource/poppins/600.css";
+import "@fontsource/poppins/700.css";
+import "@fontsource/montserrat/400.css";
+import "@fontsource/montserrat/700.css";
+import "@fontsource/playfair-display/400.css";
+import "@fontsource/playfair-display/700.css";
+import "@fontsource/bebas-neue/400.css";
+import "@fontsource/lora/400.css";
+import "@fontsource/lora/700.css";
+import "@fontsource/oswald/400.css";
+import "@fontsource/oswald/700.css";
+
 const DEFAULT_FONTS = [
+  "Poppins, Inter, sans-serif",
+  "Montserrat, Verdana, sans-serif",
+  "Playfair Display, Georgia, serif",
+  "Bebas Neue, Impact, sans-serif",
+  "Lora, Georgia, serif",
+  "Oswald, Arial Narrow, sans-serif",
   "Inter, Helvetica, Arial, sans-serif",
   "Georgia, serif",
-  "Times New Roman, Times, serif",
-  "Garamond, Palatino, serif",
-  "Trebuchet MS, Verdana, sans-serif",
-  "Verdana, Geneva, sans-serif",
-  "Tahoma, Segoe UI, sans-serif",
   "Courier New, monospace",
-  "Impact, Haettenschweiler, sans-serif",
-  "Comic Sans MS, Chalkboard SE, cursive",
 ];
 
 const BLANK_CANVAS_DEFAULTS: CanvasDoc = {
@@ -2671,6 +2690,37 @@ function LayerPropertiesPanel({
               {removeBackgroundError}
             </div>
           )}
+          {/* Photo shape + brand tint — the two-click path to "designed". */}
+          <div className="grid grid-cols-2 items-end gap-1.5">
+            <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              Photo shape
+              <select
+                value={(layer as ImageLayer).mask || "none"}
+                onChange={(e) => onUpdate({ mask: e.target.value === "none" ? undefined : e.target.value as ImageMask } as Partial<Layer>)}
+                className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-[11px] font-normal normal-case"
+              >
+                <option value="none">Rectangle</option>
+                <option value="circle">Circle</option>
+                <option value="rounded">Rounded</option>
+                <option value="blob1">Organic 1</option>
+                <option value="blob2">Organic 2</option>
+                <option value="arch">Arch</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              <input
+                type="checkbox"
+                checked={!!(layer as ImageLayer).filters?.tint}
+                onChange={(e) => onUpdate({
+                  filters: {
+                    ...((layer as ImageLayer).filters || {}),
+                    tint: e.target.checked ? (palette?.primary || "#1A3A4A") : undefined,
+                  },
+                } as Partial<Layer>)}
+              />
+              Brand tint
+            </label>
+          </div>
           {/* GIMP-style adjustments — previewed live, baked into the export. */}
           {(() => {
             const f = (layer as ImageLayer).filters || {};
@@ -2861,7 +2911,9 @@ function layerToFabricObject(
   if (layer.kind === "text") {
     const t = layer as TextLayer;
     const size = t.size || 24;
-    const itext = new fabric.IText(t.content || "", {
+    // Textbox (not IText): wraps at the layer width like the export's
+    // soft-wrap, so long copy never silently runs off the canvas.
+    const itext = new fabric.Textbox(t.content || "", {
       ...baseProps,
       width: t.w,
       fontSize: size,
@@ -2941,15 +2993,38 @@ function layerToFabricObject(
         selectable: true,
       });
       // GIMP-style adjustments preview — the export bakes the same values
-      // via sharp, so what you see is what ships.
+      // via sharp, so what you see is what ships. Brand tint previews as
+      // grayscale + multiply blend (≈ sharp's grayscale().tint()).
       const f = il.filters;
-      if (f && (f.grayscale || (f.brightness && f.brightness !== 1) || (f.saturation && f.saturation !== 1))) {
+      if (f && (f.grayscale || f.tint || (f.brightness && f.brightness !== 1) || (f.saturation && f.saturation !== 1))) {
         const fx: fabric.filters.BaseFilter<string, Record<string, unknown>>[] = [];
         if (f.brightness && f.brightness !== 1) fx.push(new fabric.filters.Brightness({ brightness: f.brightness - 1 }));
         if (f.saturation && f.saturation !== 1) fx.push(new fabric.filters.Saturation({ saturation: f.saturation - 1 }));
-        if (f.grayscale) fx.push(new fabric.filters.Grayscale());
+        if (f.grayscale || f.tint) fx.push(new fabric.filters.Grayscale());
+        if (f.tint) fx.push(new fabric.filters.BlendColor({ color: f.tint, mode: "multiply" }));
         img.filters = fx;
         try { img.applyFilters(); } catch { /* filter backend unavailable — export still bakes them */ }
+      }
+      // Photo mask — clip in the image's intrinsic space so it tracks the
+      // object's own scaling; identical geometry to the server clipPath.
+      if (il.mask) {
+        const iw = img.width || 1;
+        const ih = img.height || 1;
+        let clip: fabric.FabricObject | null = null;
+        if (il.mask === "circle") {
+          clip = new fabric.Ellipse({ rx: iw / 2, ry: ih / 2, originX: "center", originY: "center" });
+        } else if (il.mask === "rounded") {
+          const r = Math.min(iw, ih) * 0.12;
+          clip = new fabric.Rect({ width: iw, height: ih, rx: r, ry: r, originX: "center", originY: "center" });
+        } else {
+          const d = ICON_PATHS[il.mask === "arch" ? "arch" : il.mask];
+          if (d) {
+            clip = new fabric.Path(d, { originX: "center", originY: "center" });
+            clip.scaleX = iw / 100;
+            clip.scaleY = ih / 100;
+          }
+        }
+        if (clip) img.clipPath = clip;
       }
       // Scale to fit the layer dimensions.
       const sx = il.w / (img.width || 1);
