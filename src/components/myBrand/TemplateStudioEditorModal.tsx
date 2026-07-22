@@ -39,13 +39,14 @@ import {
 import { useNavigate } from "react-router-dom";
 import * as fabric from "fabric";
 import {
-  AlertTriangle, AlignCenter, AlignLeft, AlignRight, Bold, ChevronDown,
-  ChevronUp, Circle, Copy, Download, Eye, EyeOff, FileImage,
-  Image as ImageIcon, Layers, Maximize, Minus, RotateCw, Save, Send,
-  Square, Trash2, Type as TypeIcon, ZoomIn, ZoomOut,
+  AlertTriangle, AlignCenter, AlignLeft, AlignRight, BarChart3, Bold,
+  ChevronDown, ChevronUp, Circle, Copy, Download, Eye, EyeOff, FileImage,
+  Image as ImageIcon, Layers, Maximize, Minus, Plus, RotateCw, Save,
+  Scaling, Send, Square, Trash2, Type as TypeIcon, X, ZoomIn, ZoomOut,
 } from "lucide-react";
 import { IadmModal, IadmButton } from "../IadmModal";
 import { useLumenApi } from "../../hooks/useLumenApi";
+import { useProductTier, tierMeets } from "../../hooks/useProductTier";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Canvas JSON types — match the backend renderer in
@@ -57,7 +58,7 @@ import { useLumenApi } from "../../hooks/useLumenApi";
 
 export interface BaseLayer {
   id: string;
-  kind: "text" | "image" | "shape";
+  kind: "text" | "image" | "shape" | "chart";
   x: number;
   y: number;
   w: number;
@@ -92,7 +93,18 @@ export interface ShapeLayer extends BaseLayer {
   strokeWidth?: number;
 }
 
-export type Layer = TextLayer | ImageLayer | ShapeLayer;
+// L3 (locked 2026-07-22): chart element for infographics — enter numbers →
+// bar/donut/line rendered in brand colors, pure code (no chart.js). The
+// server renderer (templateStudio.js emitChartLayer) draws the SAME
+// geometry for exports — keep the two in lockstep.
+export interface ChartLayer extends BaseLayer {
+  kind: "chart";
+  chart: "bar" | "donut" | "line";
+  values: Array<{ label?: string; value: number }>;
+  colors?: string[];
+}
+
+export type Layer = TextLayer | ImageLayer | ShapeLayer | ChartLayer;
 
 export interface CanvasDoc {
   version: 1;
@@ -169,6 +181,134 @@ function emptyCanvas(width = 1080, height = 1080): CanvasDoc {
   };
 }
 
+// ── Platform size presets + Smart Resize (re-cut §8b, Pro+) ────────────────
+// One design → every platform size. Deterministic anchor-based relayout:
+// content scales uniformly; layers hugging an edge keep their (scaled)
+// margin to that edge, full-bleed bands re-stretch, everything else keeps
+// its proportional center. No model call — this is a bucket-2 Smart Tool.
+export const SIZE_PRESETS = [
+  { key: "ig_post",       label: "Instagram post",   w: 1080, h: 1080 },
+  { key: "ig_story",      label: "Instagram story",  w: 1080, h: 1920 },
+  { key: "fb_post",       label: "Facebook post",    w: 1200, h: 630 },
+  { key: "fb_cover",      label: "Facebook cover",   w: 820,  h: 312 },
+  { key: "li_post",       label: "LinkedIn post",    w: 1200, h: 627 },
+  { key: "li_banner",     label: "LinkedIn banner",  w: 1584, h: 396 },
+  { key: "flyer",         label: "Flyer (Letter)",   w: 1275, h: 1650 },
+  { key: "business_card", label: "Business card",    w: 1050, h: 600 },
+  { key: "email_header",  label: "Email header",     w: 1200, h: 400 },
+] as const;
+
+const EDGE_ZONE = 0.18; // a layer whose center sits in the outer 18% is edge-anchored
+
+export function smartResize(doc: CanvasDoc, newW: number, newH: number): CanvasDoc {
+  const W = doc.width, H = doc.height;
+  if (W <= 0 || H <= 0 || newW <= 0 || newH <= 0) return doc;
+  const s = Math.min(newW / W, newH / H); // uniform content scale
+  const layers = doc.layers.map((l) => {
+    const w = l.w * s;
+    const h = l.h * s;
+    const cx = l.x + l.w / 2;
+    const cy = l.y + l.h / 2;
+    // Full-bleed bands re-stretch along the axis they span.
+    const spansW = l.w >= W * 0.98;
+    const spansH = l.h >= H * 0.98;
+    // Horizontal placement.
+    let newCx: number;
+    if (spansW) newCx = newW / 2;
+    else if (cx < W * EDGE_ZONE) newCx = cx * s;                    // keep left margin
+    else if (cx > W * (1 - EDGE_ZONE)) newCx = newW - (W - cx) * s; // keep right margin
+    else newCx = (cx / W) * newW;                                   // proportional
+    // Vertical placement.
+    let newCy: number;
+    if (spansH) newCy = newH / 2;
+    else if (cy < H * EDGE_ZONE) newCy = cy * s;
+    else if (cy > H * (1 - EDGE_ZONE)) newCy = newH - (H - cy) * s;
+    else newCy = (cy / H) * newH;
+    const outW = spansW ? newW : w;
+    const outH = spansH ? newH : h;
+    const next: Layer = {
+      ...JSON.parse(JSON.stringify(l)),
+      x: Math.round(newCx - outW / 2),
+      y: Math.round(newCy - outH / 2),
+      w: Math.round(outW),
+      h: Math.round(outH),
+    };
+    if (next.kind === "text") {
+      (next as TextLayer).size = Math.max(6, Math.round(((l as TextLayer).size ?? 24) * s));
+    }
+    if (next.kind === "shape" && (l as ShapeLayer).strokeWidth) {
+      (next as ShapeLayer).strokeWidth = Math.max(1, Math.round((l as ShapeLayer).strokeWidth! * s));
+    }
+    return next;
+  });
+  return { ...doc, width: newW, height: newH, layers };
+}
+
+// ── Client-side chart → SVG (mirror of the server emitChartLayer) ─────────
+// Renders at the layer's own w×h with origin 0,0; Fabric positions the
+// resulting image. New charts default to the IA palette cycle in the
+// editor; the server export resolves the cycle against the tenant's real
+// brand palette, so exports are always brand-true.
+const CHART_DEFAULT_CYCLE = ["#1A3A4A", "#FEC82C", "#64748B", "#94A3B8", "#CBD5E1", "#475569"];
+
+export function chartToSvg(layer: ChartLayer): string {
+  const w = layer.w, h = layer.h;
+  const values = (layer.values || []).map((v) => ({
+    label: String(v.label ?? ""),
+    value: Math.max(0, Number(v.value) || 0),
+  }));
+  const cycle = layer.colors?.length ? layer.colors : CHART_DEFAULT_CYCLE;
+  const color = (i: number) => cycle[i % cycle.length];
+  const labelSize = Math.max(10, Math.round(Math.min(w, h) * 0.055));
+  const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const parts: string[] = [];
+  if (!values.length || w <= 0 || h <= 0) return `<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>`;
+
+  if (layer.chart === "bar") {
+    const labelBand = labelSize * 1.6;
+    const plotH = Math.max(1, h - labelBand);
+    const max = Math.max(...values.map((v) => v.value), 1);
+    const slot = w / values.length;
+    const barW = slot * 0.68;
+    values.forEach((v, i) => {
+      const barH = (v.value / max) * plotH;
+      const bx = i * slot + (slot - barW) / 2;
+      parts.push(`<rect x="${bx}" y="${plotH - barH}" width="${barW}" height="${barH}" rx="${Math.min(6, barW / 6)}" fill="${color(i)}" />`);
+      if (v.label) parts.push(`<text x="${bx + barW / 2}" y="${plotH + labelSize * 1.15}" font-family="sans-serif" font-size="${labelSize}" fill="#111827" text-anchor="middle">${esc(v.label)}</text>`);
+    });
+  } else if (layer.chart === "donut") {
+    const cx = w / 2, cy = h / 2;
+    const r = Math.min(w, h) / 2 * 0.92;
+    const ring = r * 0.38;
+    const rMid = r - ring / 2;
+    const total = values.reduce((a, v) => a + v.value, 0) || 1;
+    const circ = 2 * Math.PI * rMid;
+    let offset = 0;
+    values.forEach((v, i) => {
+      const frac = v.value / total;
+      const dash = Math.max(0, frac * circ - 1.5);
+      parts.push(`<circle cx="${cx}" cy="${cy}" r="${rMid}" fill="none" stroke="${color(i)}" stroke-width="${ring}" stroke-dasharray="${dash} ${circ - dash}" stroke-dashoffset="${-offset * circ}" transform="rotate(-90 ${cx} ${cy})" />`);
+      offset += frac;
+    });
+  } else {
+    const hasLabels = values.some((v) => v.label);
+    const labelBand = hasLabels ? labelSize * 1.6 : 0;
+    const plotH = Math.max(1, h - labelBand);
+    const max = Math.max(...values.map((v) => v.value), 1);
+    const stepX = values.length > 1 ? w / (values.length - 1) : 0;
+    const pts = values.map((v, i) => ({
+      px: values.length > 1 ? i * stepX : w / 2,
+      py: plotH - (v.value / max) * plotH * 0.92,
+    }));
+    parts.push(`<polyline points="${pts.map((p) => `${p.px},${p.py}`).join(" ")}" fill="none" stroke="${color(0)}" stroke-width="${Math.max(2, Math.round(Math.min(w, h) * 0.012))}" stroke-linejoin="round" stroke-linecap="round" />`);
+    pts.forEach((p, i) => {
+      parts.push(`<circle cx="${p.px}" cy="${p.py}" r="${Math.max(3, Math.round(Math.min(w, h) * 0.016))}" fill="${color(0)}" />`);
+      if (values[i].label) parts.push(`<text x="${p.px}" y="${plotH + labelSize * 1.15}" font-family="sans-serif" font-size="${labelSize}" fill="#111827" text-anchor="middle">${esc(values[i].label)}</text>`);
+    });
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${parts.join("")}</svg>`;
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Editor modal
 // ────────────────────────────────────────────────────────────────────────────
@@ -189,6 +329,10 @@ export function TemplateStudioEditorModal({
 }: Props) {
   const { get, post, put, ready } = useLumenApi();
   const navigate = useNavigate();
+  // Smart Resize is a Pro+ Smart Tool (re-cut §8b L2 lock). Same tier
+  // source as the Social Hub calendar grid gate.
+  const { tier } = useProductTier("spark");
+  const hasSmartResize = tierMeets(tier, "pro");
 
   // ── State ─────────────────────────────────────────────────────────────────
   const [currentDesignId, setCurrentDesignId] = useState<string | null>(designId);
@@ -207,6 +351,18 @@ export function TemplateStudioEditorModal({
   const [zoom, setZoom] = useState(1);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Smart Resize picker modal.
+  const [resizeOpen, setResizeOpen] = useState(false);
+
+  // Snap guides — canvas-space coordinates of the active vertical/horizontal
+  // guide line while an object is being dragged, null when not snapping.
+  const [guides, setGuides] = useState<{ v: number | null; h: number | null }>({ v: null, h: null });
+  const guidesRef = useRef(guides);
+  guidesRef.current = guides;
+  // Fabric's object:moving handler is bound once (canvas-init effect) but
+  // needs the CURRENT doc dimensions — a ref avoids re-binding per change.
+  const docDimsRef = useRef({ w: BLANK_CANVAS_DEFAULTS.width, h: BLANK_CANVAS_DEFAULTS.height });
 
   // ── Fabric.js canvas ──────────────────────────────────────────────────────
   const canvasElRef = useRef<HTMLCanvasElement | null>(null);
@@ -313,11 +469,43 @@ export function TemplateStudioEditorModal({
 
     c.on("object:modified", (e) => {
       if (suppressSyncRef.current) return;
+      if (guidesRef.current.v !== null || guidesRef.current.h !== null) {
+        setGuides({ v: null, h: null });
+      }
       const obj = e.target as fabric.FabricObject | undefined;
       if (!obj) return;
       const id = idByObjectRef.current.get(obj);
       if (!id) return;
       syncOneLayerFromFabric(id, obj);
+    });
+
+    // Snap guides (bucket-1, re-cut §8b): while dragging, snap the object's
+    // edges/center to the canvas edges and center lines within an 8px
+    // (canvas-space) threshold, and surface guide lines via React state.
+    const SNAP = 8;
+    c.on("object:moving", (e) => {
+      const obj = e.target as fabric.FabricObject | undefined;
+      if (!obj) return;
+      const { w: W, h: H } = docDimsRef.current;
+      const ow = (obj.width ?? 0) * (obj.scaleX ?? 1);
+      const oh = (obj.height ?? 0) * (obj.scaleY ?? 1);
+      let v: number | null = null;
+      let h: number | null = null;
+      // Horizontal snap: left edge, center, right edge → 0, W/2, W.
+      for (const line of [0, W / 2, W]) {
+        if (Math.abs((obj.left ?? 0) - line) < SNAP) { obj.set({ left: line }); v = line; break; }
+        if (Math.abs((obj.left ?? 0) + ow / 2 - line) < SNAP) { obj.set({ left: line - ow / 2 }); v = line; break; }
+        if (Math.abs((obj.left ?? 0) + ow - line) < SNAP) { obj.set({ left: line - ow }); v = line; break; }
+      }
+      // Vertical snap: top edge, middle, bottom edge → 0, H/2, H.
+      for (const line of [0, H / 2, H]) {
+        if (Math.abs((obj.top ?? 0) - line) < SNAP) { obj.set({ top: line }); h = line; break; }
+        if (Math.abs((obj.top ?? 0) + oh / 2 - line) < SNAP) { obj.set({ top: line - oh / 2 }); h = line; break; }
+        if (Math.abs((obj.top ?? 0) + oh - line) < SNAP) { obj.set({ top: line - oh }); h = line; break; }
+      }
+      if (guidesRef.current.v !== v || guidesRef.current.h !== h) {
+        setGuides({ v, h });
+      }
     });
 
     return () => {
@@ -387,7 +575,14 @@ export function TemplateStudioEditorModal({
     objectsByIdRef.current.clear();
     idByObjectRef.current = new WeakMap();
     for (const layer of doc.layers) {
-      const obj = layerToFabricObject(layer);
+      // onSwap: image/chart layers asynchronously replace their placeholder
+      // with the real FabricImage — re-register the swapped object in the
+      // id maps so selection + object:modified keep syncing to the layer
+      // (without this, dragging an image/chart never persisted).
+      const obj = layerToFabricObject(layer, (swapped) => {
+        objectsByIdRef.current.set(layer.id, swapped);
+        idByObjectRef.current.set(swapped, layer.id);
+      });
       if (!obj) continue;
       objectsByIdRef.current.set(layer.id, obj);
       idByObjectRef.current.set(obj, layer.id);
@@ -405,6 +600,11 @@ export function TemplateStudioEditorModal({
   useEffect(() => {
     renderCanvasDocIntoFabric(canvasDoc);
   }, [canvasDoc, renderCanvasDocIntoFabric]);
+
+  // Keep the snap handler's view of the doc dimensions current.
+  useEffect(() => {
+    docDimsRef.current = { w: canvasDoc.width, h: canvasDoc.height };
+  }, [canvasDoc.width, canvasDoc.height]);
 
   // Apply zoom — Fabric handles this with setZoom, but we also need to
   // scale the wrapper so scrollbars + selection handles stay accurate.
@@ -484,6 +684,34 @@ export function TemplateStudioEditorModal({
     mutateCanvas((prev) => ({ ...prev, layers: [...prev.layers, layer] }));
     setSelectedId(layer.id);
   }, [canvasDoc.width, canvasDoc.height, mutateCanvas]);
+
+  const addChartLayer = useCallback(() => {
+    const layer: ChartLayer = {
+      id: uid("chart"),
+      kind: "chart",
+      chart: "bar",
+      x: Math.round(canvasDoc.width / 2 - Math.min(400, canvasDoc.width * 0.4)),
+      y: Math.round(canvasDoc.height / 2 - Math.min(260, canvasDoc.height * 0.3)),
+      w: Math.round(Math.min(800, canvasDoc.width * 0.8)),
+      h: Math.round(Math.min(520, canvasDoc.height * 0.6)),
+      values: [
+        { label: "Q1", value: 24 },
+        { label: "Q2", value: 38 },
+        { label: "Q3", value: 45 },
+        { label: "Q4", value: 61 },
+      ],
+      rotation: 0,
+      visible: true,
+    };
+    mutateCanvas((prev) => ({ ...prev, layers: [...prev.layers, layer] }));
+    setSelectedId(layer.id);
+  }, [canvasDoc.width, canvasDoc.height, mutateCanvas]);
+
+  // Smart Resize — deterministic anchor relayout (Pro+; re-cut §8b).
+  const applyResize = useCallback((w: number, h: number) => {
+    mutateCanvas((prev) => smartResize(prev, w, h));
+    setResizeOpen(false);
+  }, [mutateCanvas]);
 
   // ── Layer mutators ────────────────────────────────────────────────────────
   const deleteLayer = useCallback((id: string) => {
@@ -854,6 +1082,15 @@ export function TemplateStudioEditorModal({
               <span className="text-[10px] text-slate-500">
                 {canvasDoc.width}×{canvasDoc.height}
               </span>
+              <div className="h-4 w-px bg-slate-200" />
+              <button
+                type="button"
+                onClick={() => setResizeOpen(true)}
+                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-100"
+                title="Smart Resize — one design, every platform size"
+              >
+                <Scaling className="h-3 w-3" /> Resize
+              </button>
             </div>
 
             {/* Selected-layer floating toolbar */}
@@ -873,10 +1110,23 @@ export function TemplateStudioEditorModal({
                 breaking the surrounding chrome. */}
             <div className="flex-1 overflow-auto p-8">
               <div
-                className="mx-auto bg-white shadow-lg"
+                className="relative mx-auto bg-white shadow-lg"
                 style={{ width: canvasDoc.width * zoom, height: canvasDoc.height * zoom }}
               >
                 <canvas ref={canvasElRef} />
+                {/* Snap guide lines — canvas coords × zoom, drawn over the canvas. */}
+                {guides.v !== null && (
+                  <div
+                    className="pointer-events-none absolute top-0 bottom-0 w-px bg-pink-500"
+                    style={{ left: guides.v * zoom }}
+                  />
+                )}
+                {guides.h !== null && (
+                  <div
+                    className="pointer-events-none absolute left-0 right-0 h-px bg-pink-500"
+                    style={{ top: guides.h * zoom }}
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -893,6 +1143,7 @@ export function TemplateStudioEditorModal({
                 <AddLayerButton icon={Square} label="Rect" onClick={() => addShapeLayer("rect")} />
                 <AddLayerButton icon={Circle} label="Ellipse" onClick={() => addShapeLayer("ellipse")} />
                 <AddLayerButton icon={Minus} label="Line" onClick={() => addShapeLayer("line")} />
+                <AddLayerButton icon={BarChart3} label="Chart" onClick={addChartLayer} />
               </div>
               <input
                 ref={fileInputRef}
@@ -902,6 +1153,14 @@ export function TemplateStudioEditorModal({
                 className="hidden"
               />
             </div>
+
+            {/* Chart data editor — shown while a chart layer is selected. */}
+            {selectedLayer?.kind === "chart" && (
+              <ChartDataPanel
+                layer={selectedLayer as ChartLayer}
+                onUpdate={(patch) => updateLayer(selectedLayer.id, patch)}
+              />
+            )}
 
             <div className="border-b border-slate-200 px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
               Layers ({canvasDoc.layers.length})
@@ -945,6 +1204,57 @@ export function TemplateStudioEditorModal({
           </aside>
         </div>
       </div>
+
+      {/* Smart Resize picker — one design → every platform size (Pro+). */}
+      {resizeOpen && (
+        <IadmModal
+          open
+          onClose={() => setResizeOpen(false)}
+          product="spark"
+          eyebrow="MY BRAND · DESIGN STUDIO"
+          title="Smart Resize"
+          subtitle={hasSmartResize
+            ? "Relayout this design for another platform size — text and layers re-anchor automatically."
+            : "Smart Resize is a Pro feature."}
+          size="nav"
+        >
+          <div className="p-5">
+            {!hasSmartResize && (
+              <div className="mb-3 rounded border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
+                Upgrade to Pro to resize a design for every platform in one click.
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              {SIZE_PRESETS.map((p) => {
+                const active = canvasDoc.width === p.w && canvasDoc.height === p.h;
+                return (
+                  <button
+                    key={p.key}
+                    type="button"
+                    disabled={!hasSmartResize || active}
+                    onClick={() => applyResize(p.w, p.h)}
+                    className={`flex items-center justify-between rounded-lg border-2 px-3 py-2 text-left text-xs transition-colors ${
+                      active
+                        ? "border-[#EF6C33] bg-[#EF6C33]/5 text-slate-900"
+                        : hasSmartResize
+                          ? "border-slate-200 bg-white text-slate-700 hover:border-[#EF6C33] hover:bg-[#EF6C33]/5"
+                          : "border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed"
+                    }`}
+                  >
+                    <span className="font-semibold">{p.label}</span>
+                    <span className="tabular-nums text-slate-400">{p.w}×{p.h}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {!hasSmartResize && (
+              <div className="mt-3 text-right text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Pro+
+              </div>
+            )}
+          </div>
+        </IadmModal>
+      )}
 
       {/* Export picker — nested IadmModal size="nav" (F-107: pickers are nav-
           sized choice modals; replaces the old hand-rolled absolute dropdown). */}
@@ -1032,6 +1342,84 @@ function AddLayerButton({
   );
 }
 
+// ── Chart data editor (L3) ──────────────────────────────────────────────────
+// Enter numbers → the chart re-renders in brand colors. Bounded to the same
+// 12-value cap the server enforces.
+const MAX_CHART_VALUES = 12;
+
+function ChartDataPanel({
+  layer, onUpdate,
+}: {
+  layer: ChartLayer;
+  onUpdate: (patch: Partial<ChartLayer>) => void;
+}) {
+  const values = layer.values || [];
+  function setRow(i: number, patch: Partial<{ label: string; value: number }>) {
+    const next = values.map((v, idx) => (idx === i ? { ...v, ...patch } : v));
+    onUpdate({ values: next });
+  }
+  return (
+    <div className="border-b border-slate-200 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Chart data</span>
+        <div className="flex gap-1 rounded bg-slate-100 p-0.5">
+          {(["bar", "donut", "line"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => onUpdate({ chart: t })}
+              className={`rounded px-1.5 py-0.5 text-[10px] font-medium capitalize ${
+                layer.chart === t ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-1">
+        {values.map((v, i) => (
+          <div key={i} className="flex items-center gap-1">
+            <input
+              type="text"
+              value={v.label ?? ""}
+              placeholder="Label"
+              onChange={(e) => setRow(i, { label: e.target.value })}
+              className="w-0 flex-1 rounded border border-slate-200 px-1.5 py-0.5 text-[11px]"
+            />
+            <input
+              type="number"
+              value={v.value}
+              onChange={(e) => setRow(i, { value: Math.max(0, Number(e.target.value) || 0) })}
+              className="w-16 rounded border border-slate-200 px-1.5 py-0.5 text-[11px] tabular-nums"
+            />
+            <button
+              type="button"
+              onClick={() => onUpdate({ values: values.filter((_, idx) => idx !== i) })}
+              disabled={values.length <= 1}
+              className="rounded p-0.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30"
+              title="Remove row"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => onUpdate({ values: [...values, { label: "", value: 0 }] })}
+        disabled={values.length >= MAX_CHART_VALUES}
+        className="mt-2 inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+      >
+        <Plus className="h-3 w-3" /> Add value
+      </button>
+      <div className="mt-1.5 text-[10px] text-slate-400">
+        Exports render in your brand colors automatically.
+      </div>
+    </div>
+  );
+}
+
 function LayerRow({
   layer, selected, onSelect, onToggleVisibility, onForward, onBack,
 }: {
@@ -1046,6 +1434,10 @@ function LayerRow({
   let icon: typeof TypeIcon = TypeIcon;
   let label = "Text";
   if (layer.kind === "image") { icon = ImageIcon; label = "Image"; }
+  else if (layer.kind === "chart") {
+    icon = BarChart3;
+    label = `Chart · ${(layer as ChartLayer).chart}`;
+  }
   else if (layer.kind === "shape") {
     label = (layer as ShapeLayer).shape === "rect"
       ? "Rectangle"
@@ -1227,7 +1619,10 @@ function SelectedLayerToolbar({
 // the renderer above stays small and the unit logic is testable in isolation.
 // ────────────────────────────────────────────────────────────────────────────
 
-function layerToFabricObject(layer: Layer): fabric.FabricObject | null {
+function layerToFabricObject(
+  layer: Layer,
+  onSwap?: (obj: fabric.FabricObject) => void,
+): fabric.FabricObject | null {
   const baseProps = {
     left: layer.x,
     top: layer.y,
@@ -1268,8 +1663,8 @@ function layerToFabricObject(layer: Layer): fabric.FabricObject | null {
       return placeholder;
     }
     // Image is loaded asynchronously — we return a placeholder rect for the
-    // synchronous case and patch the canvas object via setSrc when the load
-    // resolves. Fabric.js v6 returns a promise from FabricImage.fromURL.
+    // synchronous case and swap in the FabricImage when the load resolves.
+    // Fabric.js v6 returns a promise from FabricImage.fromURL.
     const placeholder = new fabric.Rect({
       ...baseProps,
       width: il.w,
@@ -1297,25 +1692,49 @@ function layerToFabricObject(layer: Layer): fabric.FabricObject | null {
       // the live canvas instance from the closure that holds fabricRef.
       const canvas = placeholder.canvas;
       if (canvas) {
-        // Preserve z-order by swapping in place.
-        const idx = canvas.getObjects().indexOf(placeholder);
         canvas.remove(placeholder);
         canvas.add(img);
-        if (idx >= 0) {
-          // Fabric v6 doesn't have moveTo on Canvas; use bringObjectToFront
-          // and a loop to land it back at the original index. Simpler:
-          // re-add at end then iterate moveObjectDown until we hit idx.
-          const objs = canvas.getObjects();
-          // Move the new image to position idx.
-          // Use the array splice trick — but Fabric v6 uses an internal _objects;
-          // safer to just re-render and accept the new top-of-stack.
-          // We'll trust that the layer-list panel re-renders if order matters.
-          void objs;
-          void idx;
-        }
+        onSwap?.(img);
         canvas.requestRenderAll();
       }
     }).catch(() => { /* swallow — placeholder stays visible */ });
+    return placeholder;
+  }
+  if (layer.kind === "chart") {
+    const ch = layer as ChartLayer;
+    // Render the chart SVG to a data URL and swap it in asynchronously —
+    // same placeholder pattern as image layers.
+    const placeholder = new fabric.Rect({
+      ...baseProps,
+      width: ch.w,
+      height: ch.h,
+      fill: "transparent",
+      stroke: "#CBD5E1",
+      strokeWidth: 1,
+      strokeDashArray: [4, 3],
+    });
+    const svg = chartToSvg(ch);
+    const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    fabric.FabricImage.fromURL(dataUrl).then((img) => {
+      if (!img) return;
+      img.set({
+        left: ch.x,
+        top: ch.y,
+        angle: ch.rotation || 0,
+        opacity: ch.opacity ?? 1,
+        visible: ch.visible !== false,
+        selectable: true,
+      });
+      img.scaleX = ch.w / (img.width || 1);
+      img.scaleY = ch.h / (img.height || 1);
+      const canvas = placeholder.canvas;
+      if (canvas) {
+        canvas.remove(placeholder);
+        canvas.add(img);
+        onSwap?.(img);
+        canvas.requestRenderAll();
+      }
+    }).catch(() => { /* placeholder stays visible */ });
     return placeholder;
   }
   if (layer.kind === "shape") {
