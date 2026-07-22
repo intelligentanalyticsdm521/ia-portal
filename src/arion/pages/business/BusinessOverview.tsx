@@ -226,11 +226,15 @@ type GbpDraft = {
   title: string; category: string; phone: string; website: string;
   line1: string; line2: string; city: string; state: string; zip: string;
   serviceArea: boolean;
+  /** Comma-separated areas served (service-area businesses) — Google
+   *  requires at least one place, e.g. "Dallas TX, Plano TX". */
+  serviceAreaPlaces: string;
 };
 
 const EMPTY_GBP_DRAFT: GbpDraft = {
   title: '', category: '', phone: '', website: '',
   line1: '', line2: '', city: '', state: '', zip: '', serviceArea: false,
+  serviceAreaPlaces: '',
 };
 
 function gbpDraftKey(siteId: string) { return `arion.gbpCreateDraft.${siteId}`; }
@@ -249,7 +253,15 @@ function gbpDraftToBody(draft: GbpDraft, accountName?: string) {
     phone: draft.phone.trim(),
   };
   if (draft.website.trim()) body.website_uri = draft.website.trim();
-  if (draft.serviceArea) body.service_area = true;
+  if (draft.serviceArea) {
+    // Google needs the actual served areas (placeInfos server-side) — a
+    // bare boolean 400s with INVALID_ARGUMENT on service_area.places.
+    body.service_area = draft.serviceAreaPlaces
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .slice(0, 20);
+  }
   const lines = [draft.line1, draft.line2].map(s => (s || '').trim()).filter(Boolean);
   if (lines.length > 0) {
     body.address = {
@@ -339,6 +351,10 @@ function GbpConnectChooser({ siteId, connectedNoLocation, onDone }: {
     }
     if (!draft.serviceArea && !draft.line1.trim()) {
       setIntakeError('Enter a street address, or check "customers come to me" below if you serve customers at their locations.');
+      return;
+    }
+    if (draft.serviceArea && !draft.serviceAreaPlaces.split(',').some(s => s.trim())) {
+      setIntakeError('List at least one area you serve — e.g. "Dallas TX, Plano TX". Google requires this for service-area businesses.');
       return;
     }
     setIntakeError(null);
@@ -507,6 +523,17 @@ function GbpIntakeModal({ open, draft, setDraft, error, busy, onClose, onSubmit 
               <input type="checkbox" checked={draft.serviceArea} onChange={e => set({ serviceArea: e.target.checked })} />
               I serve customers at their locations (no storefront address shown on Google)
             </label>
+            {draft.serviceArea && (
+              <div>
+                <div style={fieldLabel}>Areas you serve (comma-separated — Google requires at least one)</div>
+                <input
+                  className="field-input"
+                  value={draft.serviceAreaPlaces}
+                  onChange={e => set({ serviceAreaPlaces: e.target.value })}
+                  placeholder='e.g. Dallas TX, Plano TX, Frisco TX'
+                />
+              </div>
+            )}
           </div>
         </div>
         {error && <div style={{ marginTop: 14, fontSize: 12, color: '#dc2626' }}>{error}</div>}
