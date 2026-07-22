@@ -290,13 +290,12 @@ const ARION_NAV: SubNavConfig = {
         { key: "my_brand_calendar", label: "Calendar", route: "/app/services/my_brand_calendar" },
       ],
     },
-    {
-      label: "", icon: Star,
-      items: [
-        { key: "arion_plugin_provisioning", label: "Plugin Provisioning", route: "/app/services/arion_plugin_provisioning" },
-        { key: "arion_usage", label: "Plan & Pricing", route: "/app/services/arion_usage" },
-      ],
-    },
+    // REMOVED 2026-07-21 (Brandon, My Brand verification pass):
+    //   * arion_usage "Plan & Pricing" — pricing lives ONLY in the global
+    //     hub (hamburger > Plan & Pricing > /app/settings/plan-pricing);
+    //     the arion_usage route stays registered for deep links from there.
+    //   * arion_plugin_provisioning — it's a SETTING, not a daily-work
+    //     feature; moved to Settings > ARION below.
   ],
 };
 
@@ -581,9 +580,12 @@ const SETTINGS_NAV: SubNavConfig = {
         //   here put arion_brand in SETTINGS_KEYS, so landing on the My Brand
         //   hub flipped the whole shell into the Settings panel. Brand
         //   IDENTITY config remains a GLOBAL (hamburger > Brand Identity).
-        // REMOVED: arion_plugin_provisioning (feature → main nav).
-        // REMOVED: arion_usage Plan & Pricing (global → hamburger).
+        // arion_plugin_provisioning RETURNED here 2026-07-21 (Brandon, My
+        //   Brand verification pass): provisioning is a setup/config concern,
+        //   not a daily-work feature — reversing the earlier feature→main-nav
+        //   move. arion_usage stays OUT of both navs (global hamburger hub).
         { key: "arion_service_area", label: "Service Area", route: "/app/services/arion_service_area" },
+        { key: "arion_plugin_provisioning", label: "Plugin Provisioning", route: "/app/services/arion_plugin_provisioning" },
       ],
     },
     {
@@ -730,7 +732,7 @@ function getDefaultSection(path: string): string | null {
   // Coupons, Categories, Booking, etc.) are intentionally excluded —
   // they expand their main-nav group instead.
   if (path.includes("/oliver_settings") || path.includes("/oliver_workflow_settings") || path.includes("/oliver_service_categories") || path.includes("/oliver_team_access")) return "settings_oliver";
-  if (path.includes("/arion_service_area")) return "settings_arion";
+  if (path.includes("/arion_service_area") || path.includes("/arion_plugin_provisioning")) return "settings_arion";
   // My Brand is a FEATURE section in the ARION main nav (IA re-cut 2026-07-21)
   // — the hub (arion_brand) and every my_brand_* child expand it.
   if (path.includes("/arion_brand") || path.includes("/my_brand_")) return "arion_my_brand";
