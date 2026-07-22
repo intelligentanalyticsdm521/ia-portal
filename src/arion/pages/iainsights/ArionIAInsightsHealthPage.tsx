@@ -17,11 +17,15 @@ import { runAllReports, type AllReportScores } from "../../analytics/trendEngine
 import { IAInsightsHeader } from "../../../components/iainsights/IAInsightsHeader";
 import { bandFromScore, type IAInsightsHeaderData } from "../../../components/iainsights/types";
 
-// Weighted Platform Score: 60% Trend + 40% Intelligence when both unlocked;
+// Weighted Platform Score: 50/50 Trend/Intelligence when both unlocked;
 // 100% Trend when Intelligence is locked (Standard tier or insufficient data).
+// 50/50 is Brandon's LOCKED rule (2026-06-21, platformPulse.js header) — this
+// page ran 60/40 and disagreed with the backend Pulse, the shared
+// platformScoreWeights helper, and the ARGUS page (score-weight fix,
+// August plan #3; MODEL.md §12.1).
 function platformScore(trendScore: number, intelligenceScore: number | null, intelligenceLocked: boolean): number {
   if (intelligenceLocked || intelligenceScore == null) return trendScore;
-  return Math.round(trendScore * 0.6 + intelligenceScore * 0.4);
+  return Math.round(trendScore * 0.5 + intelligenceScore * 0.5);
 }
 
 export function ArionIAInsightsHealthPage() {
@@ -172,7 +176,7 @@ export function ArionIAInsightsHealthPage() {
       score: platformScore(trendScore, intelligenceScoreVal, intelligenceLocked),
       previousScore: priorScores.presence, band: bandFromScore(platformScore(trendScore, intelligenceScoreVal, intelligenceLocked)),
       state: "ok",
-      message: intelligenceLocked ? "Equals Trend Score on Standard tier." : "60% Trend + 40% Intelligence weighted.",
+      message: intelligenceLocked ? "Equals Trend Score on Standard tier." : "50/50 Trend + Intelligence weighted.",
     },
     trend: { score: trendScore, previousScore: priorScores.presence, band: bandFromScore(trendScore), state: "ok", drillTo: "/app/services/arion_ia_insights_trends" },
     intelligence: {

@@ -139,7 +139,7 @@ export function ArionIAInsightsIntelligencePage() {
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">IA Insights — Intelligence</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Nine single-source ARION reports. Each runs on one ARION-owned data feed — no cross-platform blends. Cross-platform intelligence lives in ARGUS.</p>
+          <p className="text-sm text-slate-500 mt-0.5">Single-source ARION reports. Each runs on one ARION-owned data feed — no cross-platform blends. Cross-platform intelligence lives in ARGUS. More reports come online as their data history matures.</p>
         </div>
         <button
           onClick={() => void load(true)}
@@ -172,7 +172,10 @@ export function ArionIAInsightsIntelligencePage() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-        {ARION_INTEL_META.map((m) => {
+        {/* R1 brand fix 2026-07-22: render ONLY live reports (ARION_INTEL_KEYS).
+            The 7 pending_implementation stubs showed paying clients
+            "insufficient data" cards — pulled until each calculator ships. */}
+        {ARION_INTEL_META.filter((m) => ARION_INTEL_KEYS.includes(m.key)).map((m) => {
           // For NEW reports without backend data yet, surface a
           // "pending implementation" headline rather than the legacy
           // "Not yet calculated" copy — clearer signal that the

@@ -12,9 +12,11 @@ import { IAInsightsHeader } from "../../components/iainsights/IAInsightsHeader";
 import { bandFromScore, type IAInsightsHeaderData } from "../../components/iainsights/types";
 import { runAllOliverReports, type AllOliverReports, type OliverEngineInput } from "../../oliver/analytics/oliverTrendEngines";
 
+// 50/50 = Brandon's LOCKED weighting (2026-06-21, platformPulse.js) — was 60/40
+// here, disagreeing with the backend Pulse + ARGUS page (score-weight fix).
 function platformScore(trendScore: number, intelligenceScore: number | null, locked: boolean): number {
   if (locked || intelligenceScore == null) return trendScore;
-  return Math.round(trendScore * 0.6 + intelligenceScore * 0.4);
+  return Math.round(trendScore * 0.5 + intelligenceScore * 0.5);
 }
 
 const TREND_LABELS: Record<string, string> = {

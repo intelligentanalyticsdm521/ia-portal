@@ -66,15 +66,19 @@ export type ArionIntelKey =
   | "pagespeed_distribution";
 
 // Order matches the doc-64 §4.2 table.
+//
+// 2026-07-22 — R1 BRAND FIX (August plan "remove the 7 IA Insights stubs"):
+// the shelf renders ONLY the reports whose calculators are LIVE. The other 7
+// doc-64 reports exist as pendingImplementationStub in
+// arion-api/lib/intelligence/index.js and rendered as "insufficient data"
+// cards to paying clients (both gates meant to hide them were OFF —
+// INSIGHTS_GLOBAL_GATE=false, withInsightsComingSoon never invoked). That
+// copy reads as blaming the client's business. Re-add each key here as its
+// calculator ships (Path-C phasing; four forecasters are calendar-blocked on
+// 60-90 days of history regardless). Full key list stays in ARION_INTEL_META
+// below for the migration ribbon + type coverage.
 export const ARION_INTEL_KEYS: ArionIntelKey[] = [
   "visibility_trajectory",
-  "pagespeed_decay_forecast",
-  "site_audit_risk_prediction",
-  "keyword_position_trajectory",
-  "backlink_velocity_anomaly",
-  "content_quality_cluster",
-  "local_pack_visibility_forecast",
-  "crawl_budget_optimization",
   "competitive_presence_gap",
 ];
 
