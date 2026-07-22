@@ -545,6 +545,10 @@ export function TemplateStudioEditorModal({
   const [zoom, setZoom] = useState(1);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The full-rebuild renderer needs the current selection without being
+  // re-created per selection change (it's bound once).
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
 
   // Smart Resize picker modal.
   const [resizeOpen, setResizeOpen] = useState(false);
@@ -590,8 +594,15 @@ export function TemplateStudioEditorModal({
 
   // ── Undo stack — snapshot the canvasDoc before each mutation ─────────────
   const undoStackRef = useRef<CanvasDoc[]>([]);
+  const lastUndoPushRef = useRef(0);
 
   function pushUndoSnapshot(prev: CanvasDoc) {
+    // Coalesce rapid-fire mutations (opacity/brightness slider drags fire
+    // per tick) into ONE undo step — otherwise a single drag floods the
+    // stack and ⌘Z replays it a pixel at a time.
+    const now = Date.now();
+    if (now - lastUndoPushRef.current < 400 && undoStackRef.current.length > 0) return;
+    lastUndoPushRef.current = now;
     undoStackRef.current.push(JSON.parse(JSON.stringify(prev)));
     if (undoStackRef.current.length > 50) undoStackRef.current.shift();
   }
@@ -660,6 +671,10 @@ export function TemplateStudioEditorModal({
       selection: true,
     });
     fabricRef.current = c;
+    if (import.meta.env.DEV) {
+      // Debug seam — lets dev tooling inspect pointer math / targeting.
+      (window as unknown as Record<string, unknown>).__fabricCanvas = c;
+    }
 
     // Selection + modification handlers — keep the React state in sync with
     // Fabric's view of the world. We READ from Fabric only when the user has
@@ -801,6 +816,9 @@ export function TemplateStudioEditorModal({
       const obj = layerToFabricObject(layer, (swapped) => {
         objectsByIdRef.current.set(layer.id, swapped);
         idByObjectRef.current.set(swapped, layer.id);
+        // If the selected layer just swapped in, re-point the selection at
+        // the real object (it was restored onto the placeholder).
+        if (selectedIdRef.current === layer.id) c.setActiveObject(swapped);
       });
       if (!obj) continue;
       objectsByIdRef.current.set(layer.id, obj);
@@ -808,6 +826,16 @@ export function TemplateStudioEditorModal({
       if (layer.visible === false) obj.set({ visible: false });
       c.add(obj);
     }
+    // The rebuild wiped Fabric's selection even though the panel still
+    // shows the layer — restore it so the handles never vanish after an
+    // edit (the single biggest "feels broken" of the first usability walk).
+    const selId = selectedIdRef.current;
+    if (selId) {
+      const obj = objectsByIdRef.current.get(selId);
+      if (obj && obj.selectable !== false) c.setActiveObject(obj);
+    }
+    // Fresh geometry → fresh pointer offset, or click-to-select drifts.
+    c.calcOffset();
     c.requestRenderAll();
     suppressSyncRef.current = false;
   }, []);
@@ -856,7 +884,14 @@ export function TemplateStudioEditorModal({
       width: canvasDoc.width * zoom,
       height: canvasDoc.height * zoom,
     });
+    // Re-measure the canvas position — the resize re-centers the m-auto
+    // wrapper, and Fabric's cached offset otherwise goes stale, which
+    // silently breaks click-to-select (pointer math lands off-target).
+    // Twice: now, and after the layout actually settles.
+    c.calcOffset();
+    const t = setTimeout(() => { try { c.calcOffset(); } catch { /* disposed */ } }, 80);
     c.requestRenderAll();
+    return () => clearTimeout(t);
   }, [zoom, canvasDoc.width, canvasDoc.height]);
 
   // ── Layer add helpers ────────────────────────────────────────────────────
@@ -2496,6 +2531,15 @@ function LayerPropertiesPanel({
       {layer.kind === "text" && (
         <div className="space-y-2 border-t border-slate-100 pt-2">
           <div>
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Text</div>
+            <textarea
+              value={(layer as TextLayer).content}
+              onChange={(e) => onUpdate({ content: e.target.value } as Partial<Layer>)}
+              rows={2}
+              className="w-full resize-y rounded border border-slate-200 px-2 py-1.5 text-[12px] focus:border-[#EF6C33] focus:outline-none"
+            />
+          </div>
+          <div>
             <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Font</div>
             <div className="flex gap-1">
               <select
@@ -2776,6 +2820,27 @@ function LayerPropertiesPanel({
 // the renderer above stays small and the unit logic is testable in isolation.
 // ────────────────────────────────────────────────────────────────────────────
 
+// Swap an async placeholder for its real object AT THE SAME STACK INDEX —
+// plain add() appends on top, which floated background blobs above the
+// headline in the editor (export order was right; clicks and visuals wrong).
+function swapPlaceholder(
+  placeholder: fabric.FabricObject,
+  real: fabric.FabricObject,
+  onSwap?: (obj: fabric.FabricObject) => void,
+) {
+  const canvas = placeholder.canvas;
+  if (!canvas) return;
+  const idx = canvas.getObjects().indexOf(placeholder);
+  canvas.remove(placeholder);
+  canvas.add(real);
+  if (idx >= 0) {
+    (canvas as unknown as { moveObjectTo?: (o: fabric.FabricObject, i: number) => void })
+      .moveObjectTo?.(real, idx);
+  }
+  onSwap?.(real);
+  canvas.requestRenderAll();
+}
+
 function layerToFabricObject(
   layer: Layer,
   onSwap?: (obj: fabric.FabricObject) => void,
@@ -2893,13 +2958,7 @@ function layerToFabricObject(
       img.scaleY = sy;
       // Replace the placeholder in the canvas. We have to do this through
       // the live canvas instance from the closure that holds fabricRef.
-      const canvas = placeholder.canvas;
-      if (canvas) {
-        canvas.remove(placeholder);
-        canvas.add(img);
-        onSwap?.(img);
-        canvas.requestRenderAll();
-      }
+      swapPlaceholder(placeholder, img, onSwap);
     }).catch(() => { /* swallow — placeholder stays visible */ });
     return placeholder;
   }
@@ -2930,13 +2989,7 @@ function layerToFabricObject(
       });
       img.scaleX = ch.w / (img.width || 1);
       img.scaleY = ch.h / (img.height || 1);
-      const canvas = placeholder.canvas;
-      if (canvas) {
-        canvas.remove(placeholder);
-        canvas.add(img);
-        onSwap?.(img);
-        canvas.requestRenderAll();
-      }
+      swapPlaceholder(placeholder, img, onSwap);
     }).catch(() => { /* placeholder stays visible */ });
     return placeholder;
   }
@@ -2963,13 +3016,7 @@ function layerToFabricObject(
         img.set({ ...baseProps });
         img.scaleX = s.w / (img.width || 1);
         img.scaleY = s.h / (img.height || 1);
-        const canvas = placeholder.canvas;
-        if (canvas) {
-          canvas.remove(placeholder);
-          canvas.add(img);
-          onSwap?.(img);
-          canvas.requestRenderAll();
-        }
+        swapPlaceholder(placeholder, img, onSwap);
       }).catch(() => { /* placeholder stays visible */ });
       return placeholder;
     }
