@@ -3,7 +3,7 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recha
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { Card, StatCard, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
-import { GbpStatusCard } from './GbpStatusCard';
+import { GbpPendingVerificationCard, GbpStatusCard } from './GbpStatusCard';
 
 function Stars({ n }: { n: number }) {
   const full = Math.max(0, Math.min(5, Math.round(n)));
@@ -22,6 +22,9 @@ export function BusinessReviews() {
   if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
 
   const d = data as any;
+  if (d?.pendingVerification) {
+    return <GbpPendingVerificationCard what="reviews" />;
+  }
   if (!d || d.error || d.connected === false) {
     // Differentiated failure copy — quota/auth/no-listing are NOT "not
     // connected" (the backend returns several of these with connected:true).

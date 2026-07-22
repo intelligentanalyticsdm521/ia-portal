@@ -2,6 +2,7 @@ import React from 'react';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { Card, InfoCard, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
+import { GbpPendingVerificationCard } from './GbpStatusCard';
 
 type PostType = 'STANDARD' | 'EVENT' | 'OFFER';
 
@@ -25,6 +26,12 @@ export function BusinessPosts() {
   if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
 
   const d = data as any;
+
+  if (d?.pendingVerification) {
+
+    return <GbpPendingVerificationCard what="posts" />;
+
+  }
   if (!d || d.error || d.connected === false) {
     return <InfoCard title="Google Business Profile — Not Connected"><p style={{ margin: 0 }}>Connect Google in Settings → Connected Accounts to create and view posts.</p></InfoCard>;
   }

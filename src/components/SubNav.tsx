@@ -256,7 +256,7 @@ const ARION_NAV: SubNavConfig = {
         { key: "arion_business_overview", label: "Overview", route: "/app/services/arion_business_overview", gated: true },
         { key: "arion_business_locations", label: "Locations", route: "/app/services/arion_business_locations", gated: true },
         { key: "arion_business_reviews", label: "Reviews", route: "/app/services/arion_business_reviews", gated: true },
-        { key: "arion_business_insights", label: "Insights", route: "/app/services/arion_business_insights", gated: true },
+        { key: "arion_business_insights", label: "Performance", route: "/app/services/arion_business_insights", gated: true },
         { key: "arion_business_posts", label: "Posts", route: "/app/services/arion_business_posts", gated: true },
         { key: "arion_business_services", label: "Services", route: "/app/services/arion_business_services", gated: true },
         { key: "arion_business_bing_overview", label: "Bing Places", route: "/app/services/arion_business_bing_overview", gated: true },

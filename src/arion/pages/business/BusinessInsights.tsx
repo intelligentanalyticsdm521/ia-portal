@@ -3,7 +3,7 @@ import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { MetricCard, Card, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
 import { MultiLineChart } from '../../components/Charts';
-import { GbpStatusCard } from './GbpStatusCard';
+import { GbpPendingVerificationCard, GbpStatusCard } from './GbpStatusCard';
 
 function fmtNum(n: any): string { return n == null || isNaN(Number(n)) ? '--' : Number(n).toLocaleString(); }
 
@@ -20,6 +20,9 @@ export function BusinessInsights() {
   if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
 
   const d = data as any;
+  if (d?.pendingVerification) {
+    return <GbpPendingVerificationCard what="performance metrics" />;
+  }
   if (!d || d.error || d.connected === false) {
     // Differentiated failure copy — quota/auth/no-listing are NOT "not
     // connected" (the backend returns several of these with connected:true).

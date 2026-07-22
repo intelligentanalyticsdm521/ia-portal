@@ -51,3 +51,20 @@ export function GbpStatusCard({ error, surface }: { error: string | null | undef
     </InfoCard>
   );
 }
+
+// A just-created listing IS connected — Google simply reports nothing
+// (no performance, reviews, or posts) until verification completes.
+// Telling the user "Not Connected" minutes after a successful create was
+// false and alarming (walkthrough catch 2026-07-22).
+export function GbpPendingVerificationCard({ what }: { what: string }) {
+  return (
+    <InfoCard title="Google Business Profile — Verification Pending">
+      <p style={{ margin: 0 }}>
+        Your listing is created and connected. Google doesn't publish {what} until
+        the business is verified — finish verification on the Overview tab and
+        this page fills in on its own once Google approves (usually within days;
+        instant for some businesses).
+      </p>
+    </InfoCard>
+  );
+}
