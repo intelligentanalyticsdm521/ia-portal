@@ -116,6 +116,14 @@ import {
   listGbpLocations as portalListGbpLocations,
   selectGbpLocation as portalSelectGbpLocation,
   disconnectGbp as portalDisconnectGbp,
+  // GBP Connect Batch B — client-owned listing creation + verification
+  createGbpListing as portalCreateGbpListing,
+  getGbpVerificationOptions as portalGetGbpVerificationOptions,
+  requestGbpVerification as portalRequestGbpVerification,
+  completeGbpVerification as portalCompleteGbpVerification,
+  getGbpVerificationStatus as portalGetGbpVerificationStatus,
+  type GbpCreateListingInput,
+  type GbpVerificationOption,
   // Onboarding V3 Phase 3 — tenant-scoped multi-location store
   listBusinessLocations as portalListBusinessLocations,
   setBusinessLocationPrimary as portalSetBusinessLocationPrimary,
@@ -468,9 +476,17 @@ export function useArionContext() {
       async getPluginLitespeedConfig(siteId: string) { const b = await base(); return portalGetPluginLitespeedConfig({ ...b, siteId }); },
       async setPluginLitespeedConfig(siteId: string, body: { settings?: Record<string, any>; apply_ia_defaults?: boolean }) { const b = await base(); return portalSetPluginLitespeedConfig({ ...b, siteId, body }); },
       async applyPluginIADefaults(siteId: string) { const b = await base(); return portalApplyPluginIADefaults({ ...b, siteId }); },
-      async listGbpLocations(siteId: string) { const b = await base(); return portalListGbpLocations({ ...b, siteId }); },
+      async listGbpLocations(siteId: string, showAll?: boolean) { const b = await base(); return portalListGbpLocations({ ...b, siteId, showAll }); },
       async selectGbpLocation(siteId: string, locationName: string) { const b = await base(); return portalSelectGbpLocation({ ...b, siteId, locationName }); },
       async disconnectGbp(siteId: string) { const b = await base(); return portalDisconnectGbp({ ...b, siteId }); },
+
+      // GBP Connect Batch B — client-owned listing creation + in-ARION
+      // verification (options → request → PIN complete → status poll).
+      async createGbpListing(siteId: string, body: GbpCreateListingInput) { const b = await base(); return portalCreateGbpListing({ ...b, siteId, body }); },
+      async getGbpVerificationOptions(siteId: string) { const b = await base(); return portalGetGbpVerificationOptions({ ...b, siteId }); },
+      async requestGbpVerification(siteId: string, option: GbpVerificationOption | string) { const b = await base(); return portalRequestGbpVerification({ ...b, siteId, option }); },
+      async completeGbpVerification(siteId: string, verificationName: string, pin: string) { const b = await base(); return portalCompleteGbpVerification({ ...b, siteId, verificationName, pin }); },
+      async getGbpVerificationStatus(siteId: string) { const b = await base(); return portalGetGbpVerificationStatus({ ...b, siteId }); },
       // ── Onboarding V3 Phase 3 — tenant-wide multi-location store ──
       async listBusinessLocations() { const b = await base(); return portalListBusinessLocations(b); },
       async setBusinessLocationPrimary(locationId: string) { const b = await base(); return portalSetBusinessLocationPrimary({ ...b, locationId }); },
