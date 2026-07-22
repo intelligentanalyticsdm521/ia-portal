@@ -67,16 +67,16 @@ const PRODUCT_ICONS: Record<ProductKey, React.ReactNode> = {
 
 const PRODUCTS: Omit<ProductDef, "enabled">[] = [
   { key: "overview", label: "Home", tagline: "Portal Overview", icon: PRODUCT_ICONS.overview },
-  { key: "arion", label: "ARION", tagline: "Web & Digital Presence", icon: PRODUCT_ICONS.arion },
-  { key: "oliver", label: "OLIVER", tagline: "Job & Project Lifecycle", icon: PRODUCT_ICONS.oliver },
+  { key: "arion", label: "ARION", tagline: "Digital Presence", icon: PRODUCT_ICONS.arion },
+  { key: "oliver", label: "OLIVER", tagline: "Operations", icon: PRODUCT_ICONS.oliver },
   // 2026-06-22 — My Brand top-level slot REMOVED (Q4 2026 deferred product).
   // The legitimate ARION-internal "My Brand" page is reachable via the
   // ARION SubNav -> My Brand entry (route /app/services/arion_brand).
-  { key: "spark", label: "SPARK", tagline: "Growth Platform", icon: PRODUCT_ICONS.spark },
-  { key: "stella", label: "STELLA", tagline: "Reporting & BI", icon: PRODUCT_ICONS.stella },
-  { key: "forge", label: "FORGE", tagline: "Integrations", icon: PRODUCT_ICONS.forge },
-  { key: "argus", label: "ARGUS", tagline: "Orchestration", icon: PRODUCT_ICONS.argus },
-  { key: "consulting", label: "Consulting", tagline: "IA Work & Deliverables", icon: PRODUCT_ICONS.consulting },
+  { key: "spark", label: "SPARK", tagline: "CRM", icon: PRODUCT_ICONS.spark },
+  { key: "stella", label: "STELLA", tagline: "Expenses & Data", icon: PRODUCT_ICONS.stella },
+  { key: "forge", label: "FORGE", tagline: "Integrations & Software", icon: PRODUCT_ICONS.forge },
+  { key: "argus", label: "ARGUS", tagline: "AI & Agents", icon: PRODUCT_ICONS.argus },
+  { key: "consulting", label: "Consulting", tagline: "Projects", icon: PRODUCT_ICONS.consulting },
 ];
 
 interface IconRailProps {

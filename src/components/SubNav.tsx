@@ -67,7 +67,7 @@ export interface SubNavConfig {
 // ─────────────────────────────────────────────────────────────────────────────
 const OLIVER_NAV: SubNavConfig = {
   productName: "OLIVER",
-  tagline: "Field Service & Job Lifecycle",
+  tagline: "Operations",
   groups: [
     {
       label: "",
@@ -151,6 +151,15 @@ const OLIVER_NAV: SubNavConfig = {
     // routes/page/backend table stay in place (deprecated) so deep links
     // don't 500 if anyone hits them.
     {
+      label: "Reports", icon: BarChart2, collapsible: true, sectionId: "oliver_reporting",
+      items: [
+        { key: "oliver_reports", label: "Reports", route: "/app/services/oliver_reports" },
+        { key: "oliver_activity_log", label: "Activity Log", route: "/app/services/oliver_activity_log" },
+      ],
+    },
+    // Cosmetic pass 2026-07-22 (Brandon): IA Insights is ALWAYS the bottom
+    // section of every platform nav.
+    {
       label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "oliver_ia_insights",
       items: [
         { key: "oliver_ia_insights_health", label: "Health", route: "/app/services/oliver_ia_insights_health" },
@@ -158,19 +167,12 @@ const OLIVER_NAV: SubNavConfig = {
         { key: "oliver_ia_insights_intelligence", label: "Intelligence", route: "/app/services/oliver_ia_insights_intelligence", tag: { label: "OLIVER", color: "#FEC82C" } },
       ],
     },
-    {
-      label: "Reports", icon: BarChart2, collapsible: true, sectionId: "oliver_reporting",
-      items: [
-        { key: "oliver_reports", label: "Reports", route: "/app/services/oliver_reports" },
-        { key: "oliver_activity_log", label: "Activity Log", route: "/app/services/oliver_activity_log" },
-      ],
-    },
   ],
 };
 
 const ARION_NAV: SubNavConfig = {
   productName: "ARION",
-  tagline: "Web & Digital Presence",
+  tagline: "Digital Presence",
   groups: [
     {
       label: "",
@@ -224,15 +226,6 @@ const ARION_NAV: SubNavConfig = {
       ],
     },
     {
-      label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "ia_insights",
-      items: [
-        { key: "arion_ia_insights_health", label: "Health", route: "/app/services/arion_ia_insights_health" },
-        { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends", tag: { label: "ARION", color: "#38BDF8" } },
-        { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#38BDF8" } },
-        { key: "arion_service_area", label: "Service Area Config", route: "/app/services/arion_service_area" },
-      ],
-    },
-    {
       label: "SEO", icon: TrendingUp, collapsible: true, sectionId: "seo",
       items: [
         { key: "arion_seo_overview", label: "Overview", route: "/app/services/arion_seo_overview" },
@@ -281,13 +274,18 @@ const ARION_NAV: SubNavConfig = {
       // No Overview page (Brandon 2026-07-21): the section lands directly on
       // Image Studio. Call-out surfaces (today's posts, new activity) belong
       // on the home / ARION dashboard calendars, not a My Brand page.
+      // RE-CUT 2026-07-22 (MY_BRAND_RECUT doc, locked): Design Studio (was
+      // Template Studio), Media Library (was Asset Library), Social Hub =
+      // Composer + Calendar MERGED (canonical surface is the calendar page,
+      // which hosts the composer modal; my_brand_compose route stays
+      // registered as a redirect shim for old links). Social Content joins
+      // this list when its page lands.
       landingRoute: "/app/services/my_brand_image_studio",
       items: [
         { key: "my_brand_image_studio", label: "Image Studio", route: "/app/services/my_brand_image_studio" },
-        { key: "my_brand_templates", label: "Template Studio", route: "/app/services/my_brand_templates" },
-        { key: "my_brand_assets", label: "Asset Library", route: "/app/services/my_brand_assets" },
-        { key: "my_brand_compose", label: "Composer", route: "/app/services/my_brand_compose" },
-        { key: "my_brand_calendar", label: "Calendar", route: "/app/services/my_brand_calendar" },
+        { key: "my_brand_templates", label: "Design Studio", route: "/app/services/my_brand_templates" },
+        { key: "my_brand_assets", label: "Media Library", route: "/app/services/my_brand_assets" },
+        { key: "my_brand_calendar", label: "Social Hub", route: "/app/services/my_brand_calendar" },
       ],
     },
     // REMOVED 2026-07-21 (Brandon, My Brand verification pass):
@@ -296,6 +294,17 @@ const ARION_NAV: SubNavConfig = {
     //     the arion_usage route stays registered for deep links from there.
     //   * arion_plugin_provisioning — it's a SETTING, not a daily-work
     //     feature; moved to Settings > ARION below.
+    // Cosmetic pass 2026-07-22 (Brandon): IA Insights is ALWAYS the bottom
+    // section of every platform nav; Service Area Config removed from it
+    // (it's a setting — lives in Settings > ARION only).
+    {
+      label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "ia_insights",
+      items: [
+        { key: "arion_ia_insights_health", label: "Health", route: "/app/services/arion_ia_insights_health" },
+        { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends", tag: { label: "ARION", color: "#38BDF8" } },
+        { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#38BDF8" } },
+      ],
+    },
   ],
 };
 
@@ -321,7 +330,7 @@ const ARION_NAV: SubNavConfig = {
 // ─────────────────────────────────────────────────────────────────────────────
 const SPARK_NAV: SubNavConfig = {
   productName: "SPARK",
-  tagline: "Growth Platform",
+  tagline: "CRM",
   groups: [
     {
       // F-87 — "Get Started" removed from nav. Onboarding now lives as a
@@ -447,16 +456,6 @@ const SPARK_NAV: SubNavConfig = {
       ],
     },
     {
-      // IA Insights — pure analytics. Service Category moved to Settings.
-      label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "spark_ia_insights",
-      items: [
-        { key: "spark_ia_insights_health", label: "Health", route: "/app/services/spark_ia_insights_health" },
-        { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends", tag: { label: "SPARK", color: "#EF6C33" } },
-        { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" } },
-        { key: "spark_stella", label: "STELLA Send Intelligence", route: "/app/services/spark_stella", tag: { label: "STELLA", color: "#EF6C33" } },
-      ],
-    },
-    {
       label: "AI Tools", icon: Sparkles, collapsible: true, sectionId: "spark_intelligence",
       items: [
         // D-12 (2026-05-28): AI Writer dropped from nav. It's a 121-LOC
@@ -483,6 +482,18 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_audit_log", label: "Audit Log", route: "/app/services/spark_audit_log" },
       ],
     },
+    // Cosmetic pass 2026-07-22 (Brandon): IA Insights is ALWAYS the bottom
+    // section of every platform nav. Pure analytics; Service Category is in
+    // Settings.
+    {
+      label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "spark_ia_insights",
+      items: [
+        { key: "spark_ia_insights_health", label: "Health", route: "/app/services/spark_ia_insights_health" },
+        { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends", tag: { label: "SPARK", color: "#EF6C33" } },
+        { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" } },
+        { key: "spark_stella", label: "STELLA Send Intelligence", route: "/app/services/spark_stella", tag: { label: "STELLA", color: "#EF6C33" } },
+      ],
+    },
   ],
 };
 
@@ -493,7 +504,7 @@ const SPARK_NAV: SubNavConfig = {
 //           applyConsultingNavFilter (AppShell.tsx)
 const CONSULTING_NAV: SubNavConfig = {
   productName: "Consulting",
-  tagline: "IA Work & Deliverables",
+  tagline: "Projects",
   groups: [
     {
       label: "",
@@ -533,7 +544,7 @@ const PLACEHOLDER_NAV = (name: string, tagline: string): SubNavConfig => ({
 // the product where the next-gen build will land.
 const STELLA_NAV: SubNavConfig = {
   productName: "STELLA",
-  tagline: "Reporting & BI · Coming Soon",
+  tagline: "Expenses & Data · Coming Soon",
   groups: [
     {
       label: "",
@@ -678,7 +689,7 @@ export const SETTINGS_KEYS = new Set<string>(
 // any deep links, but no nav entry surfaces it.
 const ARGUS_NAV: SubNavConfig = {
   productName: "ARGUS",
-  tagline: "Multi-platform Intelligence",
+  tagline: "AI & Agents",
   groups: [
     {
       label: "Workflow & Automations", icon: Zap, collapsible: false, sectionId: "argus_workflow",

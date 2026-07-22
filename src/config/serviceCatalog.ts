@@ -17,16 +17,18 @@ export interface PortalService {
   tierGate?: 'Lite' | 'Standard' | 'Pro' | 'Business';
 }
 
+// Platform descriptors locked by Brandon 2026-07-22 (cosmetic pass) — one or
+// two words per platform, used verbatim in IconRail taglines + SubNav headers.
 export const LAYER_LABELS: Record<PortalService['section'], string> = {
   Shared: 'Overview',
-  ARION: 'ARION — Web & Digital Presence',
-  STELLA: 'STELLA — Reporting & BI',
-  OLIVER: 'OLIVER — Operations & Portals',
-  LUMEN: 'SPARK — Growth Platform',
+  ARION: 'ARION — Digital Presence',
+  STELLA: 'STELLA — Expenses & Data',
+  OLIVER: 'OLIVER — Operations',
+  LUMEN: 'SPARK — CRM',
   MY_BRAND: 'My Brand — Creative Studio',
-  FORGE: 'FORGE — Software & Integrations',
-  ARGUS: 'ARGUS — Orchestration & Automation',
-  CONSULTING: 'CONSULTING — IA Work & Deliverables'
+  FORGE: 'FORGE — Integrations & Software',
+  ARGUS: 'ARGUS — AI & Agents',
+  CONSULTING: 'CONSULTING — Projects'
 };
 
 export const SERVICE_CATALOG: PortalService[] = [
@@ -387,11 +389,14 @@ export const SERVICE_CATALOG: PortalService[] = [
   // fail-closed via MY_BRAND_LAUNCHED (LUMEN lib/myBrand/tierCheck.js) until launch.
   { key: 'my_brand_image_studio', displayName: 'Image Studio', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_image_studio', description: 'Generate on-brand images from a prompt — uses your brand colors, fonts, and logo.', tierGate: 'Standard' },
   { key: 'my_brand_voice', displayName: 'Brand Voice', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_voice', description: 'Capture your voice profile and check any copy for drift before you publish.' },
-  { key: 'my_brand_templates', displayName: 'Template Studio', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_templates', description: 'Mini-canva: design social posts, ads, and email banners from reusable templates.', tierGate: 'Standard' },
-  { key: 'my_brand_assets', displayName: 'Asset Library', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_assets', description: 'Central library for logos, photos, generated images, and finished designs.' },
+  // Renames 2026-07-22 (Brandon's re-cut, MY_BRAND_RECUT doc): Template
+  // Studio → Design Studio, Asset Library → Media Library, Calendar+Composer
+  // → Social Hub. Keys stay stable — routes and deep links are unchanged.
+  { key: 'my_brand_templates', displayName: 'Design Studio', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_templates', description: 'Design social posts, ads, and email banners from brand-locked templates.', tierGate: 'Standard' },
+  { key: 'my_brand_assets', displayName: 'Media Library', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_assets', description: 'Central library for logos, photos, generated images, and finished designs.' },
   { key: 'my_brand_social_channels', displayName: 'Social Channels', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_social_channels', description: 'Connect Facebook, Instagram, LinkedIn, X, TikTok, YouTube, and Google Business.', tierGate: 'Standard' },
   { key: 'my_brand_compose', displayName: 'Composer', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_compose', description: 'Compose once, publish to every connected channel with per-channel preview.', tierGate: 'Standard' },
-  { key: 'my_brand_calendar', displayName: 'Calendar', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_calendar', description: 'Schedule and re-arrange upcoming posts across every connected channel.', tierGate: 'Standard' },
+  { key: 'my_brand_calendar', displayName: 'Social Hub', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_calendar', description: 'Compose, schedule, and re-arrange posts across every connected channel.', tierGate: 'Standard' },
   // IA re-cut 2026-07-21 (Brandon): my_brand_analytics REMOVED — social
   // reporting lives in ARION IA Insights (Trends/Intelligence); the router
   // redirects the old key. my_brand_approvals REMOVED — the approval queue is
