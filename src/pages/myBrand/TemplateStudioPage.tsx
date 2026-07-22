@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowRight, Award, BadgePercent, FilePlus, Image as ImageIcon,
   LayoutTemplate, Mail, Megaphone, PenTool, PieChart, Plus, Smartphone,
-  Square, Store,
+  Square, Store, Trash2,
 } from "lucide-react";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { IadmModal } from "../../components/IadmModal";
@@ -91,7 +91,12 @@ export function TemplateStudioPage() {
   // (The old page returned before ~20 hooks; when gate.ready flipped after
   // mount the hook count changed between renders and React crashed.)
   const gate = useMyBrandTier();
-  const { get, ready } = useLumenApi();
+  const { get, del, ready } = useLumenApi();
+
+  // Design delete — the gallery was un-cleanable (no DELETE existed).
+  const [confirmDelete, setConfirmDelete] = useState<GalleryCard | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [templates, setTemplates] = useState<TemplateDto[]>([]);
   const [designs, setDesigns] = useState<DesignDto[]>([]);
@@ -139,6 +144,21 @@ export function TemplateStudioPage() {
   }, [get, ready]);
 
   useEffect(() => { void loadGallery(); }, [loadGallery]);
+
+  const performDelete = useCallback(async () => {
+    if (!confirmDelete?.designId) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await del(`/api/v1/my-brand/designs/${confirmDelete.designId}`);
+      setConfirmDelete(null);
+      await loadGallery({ silent: true });
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [confirmDelete, del, loadGallery]);
 
   // ── Client-side filtering + sort (canon: one useMemo over the fetched
   // lists, name-search lowercased .includes, updated_at desc). ─────────────
@@ -245,7 +265,7 @@ export function TemplateStudioPage() {
               key={card.key}
               type="button"
               onClick={() => setEditor({ designId: card.designId, templateId: card.templateId })}
-              className="group text-left rounded-lg border border-slate-200 bg-white p-4 hover:border-[#EF6C33] hover:bg-[#EF6C33]/5 transition-colors"
+              className="group relative text-left rounded-lg border border-slate-200 bg-white p-4 hover:border-[#EF6C33] hover:bg-[#EF6C33]/5 transition-colors"
             >
               <div className="flex items-center justify-between gap-2 mb-2">
                 <div
@@ -258,6 +278,18 @@ export function TemplateStudioPage() {
                 </div>
                 {card.isSystem && (
                   <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">System</span>
+                )}
+                {card.kind === "design" && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => { e.stopPropagation(); setConfirmDelete(card); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setConfirmDelete(card); } }}
+                    title="Delete design"
+                    className="invisible rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 group-hover:visible"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </span>
                 )}
               </div>
               <div className="font-semibold text-slate-900 truncate mb-0.5">{card.name}</div>
@@ -371,6 +403,46 @@ export function TemplateStudioPage() {
       {/* Editor modal — CRUD contract { open, onClose, designId, templateId,
           onChanged }. onChanged silently refreshes the gallery; the editor
           stays open because design work is iterative (see modal docblock). */}
+      {/* Delete-design confirm — replaces window.confirm per canon. */}
+      {confirmDelete && (
+        <IadmModal
+          open
+          onClose={() => { if (!deleteBusy) setConfirmDelete(null); }}
+          product="spark"
+          eyebrow="MY BRAND · DESIGN STUDIO"
+          title="Delete this design?"
+          size="confirm"
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(null)}
+                disabled={deleteBusy}
+                className="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Keep design
+              </button>
+              <button
+                type="button"
+                onClick={() => void performDelete()}
+                disabled={deleteBusy}
+                className="rounded bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                {deleteBusy ? "Deleting…" : "Delete design"}
+              </button>
+            </>
+          }
+        >
+          <div className="p-5 text-sm text-slate-700">
+            “{confirmDelete.name}” will be removed permanently. Exports it already
+            produced stay in your Media Library.
+            {deleteError && (
+              <div className="mt-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">{deleteError}</div>
+            )}
+          </div>
+        </IadmModal>
+      )}
+
       {editor && (
         <TemplateStudioEditorModal
           open

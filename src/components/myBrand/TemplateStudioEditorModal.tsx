@@ -571,6 +571,8 @@ export function TemplateStudioEditorModal({
 
   // Smart Resize picker modal.
   const [resizeOpen, setResizeOpen] = useState(false);
+  // "⋯ more" catalog pickers for the rail (elements | icons).
+  const [moreOpen, setMoreOpen] = useState<"elements" | "icons" | null>(null);
 
   // Tenant brand palette for the color swatches — same resolved palette the
   // exporter uses, so what you pick is what ships.
@@ -666,6 +668,13 @@ export function TemplateStudioEditorModal({
           setCurrentDesignId(null);
           setDesignName(tpl.name);
           undoStackRef.current = [];
+          // Select the biggest text layer right away — the properties panel
+          // opens showing something editable instead of a "select a layer"
+          // hint (templates are edited by swapping words first).
+          const headline = canvas.layers
+            .filter((l): l is TextLayer => l.kind === "text")
+            .sort((a, b) => (b.size || 0) - (a.size || 0))[0];
+          if (headline) setSelectedId(headline.id);
         }
       } catch (e) {
         if (!cancelled) setSaveError(e instanceof Error ? e.message : String(e));
@@ -1530,14 +1539,30 @@ export function TemplateStudioEditorModal({
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const dataUrl = reader.result as string;
+      // Upload to the Media Library first so the layer is asset-linked —
+      // that's what unlocks Remove background and real-image exports for
+      // uploads. If the upload fails, fall back to a local-only layer.
+      try {
+        const up = await post<{ assetId: string; blobRef: string; url: string; width: number | null; height: number | null }>(
+          "/api/v1/my-brand/assets/upload",
+          { data: dataUrl, filename: file.name },
+        );
+        if (up?.assetId) {
+          addLibraryImageLayer({
+            asset_id: up.assetId, blob_ref: up.blobRef, url: up.url || dataUrl,
+            width_px: up.width, height_px: up.height,
+          });
+          return;
+        }
+      } catch { /* fall through to local layer */ }
       addImageLayer(dataUrl);
     };
     reader.readAsDataURL(file);
     // Reset so re-uploading the same file fires onchange again.
     e.target.value = "";
-  }, [addImageLayer]);
+  }, [addImageLayer, addLibraryImageLayer, post]);
 
   const selectedLayer = useMemo(
     () => canvasDoc.layers.find((l) => l.id === selectedId) || null,
@@ -1632,6 +1657,7 @@ export function TemplateStudioEditorModal({
             onUploadImage={() => fileInputRef.current?.click()}
             onOpenLibrary={() => setLibraryOpen(true)}
             onAddChart={addChartLayer}
+            onMore={setMoreOpen}
             ai={{
               prompt: aiPrompt, busy: aiBusy, options: aiOptions, error: aiError,
               setPrompt: setAiPrompt, write: () => void aiWrite(),
@@ -1828,6 +1854,61 @@ export function TemplateStudioEditorModal({
           onClose={() => setLibraryOpen(false)}
           onPick={addLibraryImageLayer}
         />
+      )}
+
+      {/* "⋯ more" catalogs — full element/shape/icon grids behind one tap. */}
+      {moreOpen && (
+        <IadmModal
+          open
+          onClose={() => setMoreOpen(null)}
+          product="spark"
+          eyebrow="MY BRAND · DESIGN STUDIO"
+          title={moreOpen === "elements" ? "Elements & shapes" : "Icons"}
+          size="nav"
+        >
+          <div className="max-h-[55vh] overflow-y-auto p-4">
+            {moreOpen === "elements" ? (
+              <>
+                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Ready-made</div>
+                <div className="mb-3 grid grid-cols-3 gap-1.5">
+                  {ELEMENT_PRESETS.map((p) => (
+                    <button key={p.key} type="button"
+                      onClick={() => { addElementPreset(p.key); setMoreOpen(null); }}
+                      className="rounded border border-slate-200 px-2 py-2 text-[11px] font-semibold text-slate-700 hover:border-[#EF6C33] hover:bg-[#EF6C33]/5">
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Basic shapes</div>
+                <div className="mb-3 grid grid-cols-6 gap-1.5">
+                  <AddLayerButton icon={Square} label="Rect" onClick={() => { addShapeLayer("rect"); setMoreOpen(null); }} />
+                  <AddLayerButton icon={Circle} label="Ellipse" onClick={() => { addShapeLayer("ellipse"); setMoreOpen(null); }} />
+                  <AddLayerButton icon={Minus} label="Line" onClick={() => { addShapeLayer("line"); setMoreOpen(null); }} />
+                </div>
+                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Decorative — blobs, waves, arches</div>
+                <div className="grid grid-cols-8 gap-1.5">
+                  {Object.entries(ICON_PATHS).filter(([k]) => DECOR_KEYS.has(k)).map(([key, d]) => (
+                    <button key={key} type="button" title={key}
+                      onClick={() => { addIconLayer(key); setMoreOpen(null); }}
+                      className="flex aspect-square items-center justify-center rounded border border-slate-200 hover:border-[#EF6C33]">
+                      <svg viewBox="0 0 100 100" className="h-7 w-7"><path d={d} fillRule="evenodd" fill="#94A3B8" /></svg>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="grid grid-cols-8 gap-1.5">
+                {Object.entries(ICON_PATHS).filter(([k]) => !DECOR_KEYS.has(k)).map(([key, d]) => (
+                  <button key={key} type="button" title={key}
+                    onClick={() => { addIconLayer(key); setMoreOpen(null); }}
+                    className="flex aspect-square items-center justify-center rounded border border-slate-200 hover:border-[#EF6C33]">
+                    <svg viewBox="0 0 100 100" className="h-7 w-7"><path d={d} fillRule="evenodd" fill="#334155" /></svg>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </IadmModal>
       )}
 
       {/* Smart Resize picker — one design → every platform size (Pro+). */}
@@ -2134,7 +2215,7 @@ interface AiRailState {
 }
 
 function InsertRail({
-  onAddText, onAddShape, onAddIcon, onAddElement, onUploadImage, onOpenLibrary, onAddChart, ai,
+  onAddText, onAddShape, onAddIcon, onAddElement, onUploadImage, onOpenLibrary, onAddChart, onMore, ai,
 }: {
   onAddText: (preset: TextPresetKey) => void;
   onAddShape: (shape: "rect" | "ellipse" | "line") => void;
@@ -2143,9 +2224,9 @@ function InsertRail({
   onUploadImage: () => void;
   onOpenLibrary: () => void;
   onAddChart: () => void;
+  onMore: (kind: "elements" | "icons") => void;
   ai: AiRailState;
 }) {
-  const decorEntries = Object.entries(ICON_PATHS).filter(([k]) => DECOR_KEYS.has(k));
   const iconEntries = Object.entries(ICON_PATHS).filter(([k]) => !DECOR_KEYS.has(k));
   return (
     <aside className="flex w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white">
@@ -2217,46 +2298,35 @@ function InsertRail({
         </div>
       </div>
 
+      {/* Elements — the 4 most-used + More (full catalog in a picker). */}
       <div className="border-t border-slate-100 p-3">
         <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Elements</div>
-        <div className="mb-1.5 grid grid-cols-2 gap-1.5">
-          {ELEMENT_PRESETS.map((p) => (
-            <button
-              key={p.key}
-              type="button"
-              onClick={() => onAddElement(p.key)}
-              className="rounded border border-slate-200 px-1.5 py-1.5 text-[10px] font-semibold text-slate-700 hover:border-[#1A3A4A] hover:bg-slate-50"
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-2 gap-1.5">
+          <button type="button" onClick={() => onAddElement("cta")}
+            className="rounded border border-slate-200 px-1.5 py-1.5 text-[10px] font-semibold text-slate-700 hover:border-[#1A3A4A] hover:bg-slate-50">
+            CTA button
+          </button>
+          <button type="button" onClick={() => onAddElement("grid2x2")}
+            className="rounded border border-slate-200 px-1.5 py-1.5 text-[10px] font-semibold text-slate-700 hover:border-[#1A3A4A] hover:bg-slate-50">
+            Photo grid
+          </button>
           <AddLayerButton icon={Square} label="Rect" onClick={() => onAddShape("rect")} />
           <AddLayerButton icon={Circle} label="Ellipse" onClick={() => onAddShape("ellipse")} />
-          <AddLayerButton icon={Minus} label="Line" onClick={() => onAddShape("line")} />
         </div>
-        <div className="mt-1.5 grid grid-cols-5 gap-1">
-          {decorEntries.map(([key, d]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => onAddIcon(key)}
-              title={key}
-              className="flex aspect-square items-center justify-center rounded border border-slate-200 hover:border-[#1A3A4A] hover:bg-slate-50"
-            >
-              <svg viewBox="0 0 100 100" className="h-5 w-5">
-                <path d={d} fillRule="evenodd" fill="#94A3B8" />
-              </svg>
-            </button>
-          ))}
-        </div>
+        <button
+          type="button"
+          onClick={() => onMore("elements")}
+          className="mt-1.5 w-full rounded border border-dashed border-slate-300 px-2 py-1.5 text-[10px] font-semibold text-slate-500 hover:border-[#1A3A4A] hover:text-slate-700"
+        >
+          ⋯ All elements & shapes
+        </button>
       </div>
 
+      {/* Icons — top 5 + More. */}
       <div className="border-t border-slate-100 p-3">
         <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Icons</div>
         <div className="grid grid-cols-5 gap-1">
-          {iconEntries.map(([key, d]) => (
+          {iconEntries.slice(0, 5).map(([key, d]) => (
             <button
               key={key}
               type="button"
@@ -2270,6 +2340,13 @@ function InsertRail({
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          onClick={() => onMore("icons")}
+          className="mt-1.5 w-full rounded border border-dashed border-slate-300 px-2 py-1.5 text-[10px] font-semibold text-slate-500 hover:border-[#1A3A4A] hover:text-slate-700"
+        >
+          ⋯ All {iconEntries.length} icons
+        </button>
       </div>
 
       <div className="border-t border-slate-100 p-3">

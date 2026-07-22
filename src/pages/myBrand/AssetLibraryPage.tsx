@@ -158,7 +158,7 @@ const LUMEN_API_BASE =
 async function uploadBrandAsset(
   msal: IPublicClientApplication,
   account: AccountInfo,
-  form: FormData,
+  payload: { file: File },
   tenantOverride: string | null
 ): Promise<void> {
   const token = await acquireApiToken(msal, account);
@@ -169,14 +169,25 @@ async function uploadBrandAsset(
     readActiveTenantId() ||
     decodeTid(token);
 
+  // JSON base64 body — the server endpoint is JSON (no multipart parser
+  // in LUMEN); the old FormData version posted to a route that never
+  // existed, so Library uploads 404'd silently since wave 2.
+  const dataUrl: string = await new Promise((resolve, reject) => {
+    const rd = new FileReader();
+    rd.onload = () => resolve(String(rd.result));
+    rd.onerror = () => reject(new Error("could not read file"));
+    rd.readAsDataURL(payload.file);
+  });
+
   const res = await fetch(`${LUMEN_API_BASE}/api/v1/my-brand/assets/upload`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "x-tenant-id": tenantId,
+      "Content-Type": "application/json",
       ...emergencyActAsHeaders(),
     },
-    body: form,
+    body: JSON.stringify({ data: dataUrl, filename: payload.file.name }),
   });
   if (!res.ok) {
     const text = await res.text();
@@ -1047,10 +1058,7 @@ function UploadAssetModal(props: { onClose: () => void; onUploaded: () => void }
     setBusy(true);
     setError(null);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      if (tags.trim()) form.append("tags", tags.trim());
-      await uploadBrandAsset(instance, account, form, tenantOverride);
+      await uploadBrandAsset(instance, account, { file }, tenantOverride);
       onUploaded();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
