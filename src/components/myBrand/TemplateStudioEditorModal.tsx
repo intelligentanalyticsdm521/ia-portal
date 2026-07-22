@@ -39,10 +39,13 @@ import {
 import { useNavigate } from "react-router-dom";
 import * as fabric from "fabric";
 import {
-  AlertTriangle, AlignCenter, AlignLeft, AlignRight, BarChart3, Bold,
+  AlertTriangle, AlignCenter, AlignCenterHorizontal, AlignCenterVertical,
+  AlignEndHorizontal, AlignEndVertical, AlignLeft, AlignRight,
+  AlignStartHorizontal, AlignStartVertical, BarChart3, Bold,
   ChevronDown, ChevronUp, Circle, Copy, Download, Eye, EyeOff, FileImage,
-  Image as ImageIcon, Layers, Maximize, Minus, Plus, RotateCw, Save,
-  Scaling, Send, Square, Trash2, Type as TypeIcon, X, ZoomIn, ZoomOut,
+  FlipHorizontal2, FlipVertical2, Image as ImageIcon, Layers, Lock,
+  Maximize, Minus, Plus, Save, Scaling, Send, Square, Star, Trash2,
+  Type as TypeIcon, Unlock, X, ZoomIn, ZoomOut,
 } from "lucide-react";
 import { IadmModal, IadmButton } from "../IadmModal";
 import { useLumenApi } from "../../hooks/useLumenApi";
@@ -66,6 +69,10 @@ export interface BaseLayer {
   rotation?: number;
   opacity?: number;
   visible?: boolean;
+  flipH?: boolean;
+  flipV?: boolean;
+  /** Locked layers render but can't be selected/moved on the canvas. */
+  locked?: boolean;
 }
 
 export interface TextLayer extends BaseLayer {
@@ -77,6 +84,8 @@ export interface TextLayer extends BaseLayer {
   weight?: string;
   align?: "left" | "center" | "right";
   lineHeight?: number;
+  letterSpacing?: number;
+  shadow?: boolean;
 }
 
 export interface ImageLayer extends BaseLayer {
@@ -87,11 +96,48 @@ export interface ImageLayer extends BaseLayer {
 
 export interface ShapeLayer extends BaseLayer {
   kind: "shape";
-  shape: "rect" | "ellipse" | "line";
+  shape: "rect" | "ellipse" | "line" | "icon";
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
+  /** rect only — corner radius in canvas px. */
+  radius?: number;
+  /** icon only — key into ICON_PATHS (validated server-side by key). */
+  icon?: string;
 }
+
+// Curated icon pack (§8b bucket 1) — IDENTICAL map lives server-side in
+// LUMEN templateStudio.js ICON_PATHS; the server validates by KEY and owns
+// the render, so keep the two in lockstep. 100×100 viewBox.
+export const ICON_PATHS: Record<string, string> = {
+  star:     "M50 5 L61 38 L96 38 L68 59 L79 92 L50 71 L21 92 L32 59 L4 38 L39 38 Z",
+  heart:    "M50 88 C20 62 5 44 5 28 C5 12 18 4 30 4 C39 4 46 9 50 16 C54 9 61 4 70 4 C82 4 95 12 95 28 C95 44 80 62 50 88 Z",
+  arrow:    "M5 42 H60 V22 L95 50 L60 78 V58 H5 Z",
+  check:    "M10 55 L38 83 L90 22 L78 12 L38 60 L22 44 Z",
+  bubble:   "M10 10 H90 Q95 10 95 15 V60 Q95 65 90 65 H45 L25 85 V65 H10 Q5 65 5 60 V15 Q5 10 10 10 Z",
+  seal:     "M50 2 L62 12 L78 8 L82 24 L98 30 L90 45 L98 60 L82 66 L78 82 L62 78 L50 88 L38 78 L22 82 L18 66 L2 60 L10 45 L2 30 L18 24 L22 8 L38 12 Z",
+  bolt:     "M55 2 L15 55 H42 L35 98 L85 40 H55 Z",
+  pin:      "M50 2 C30 2 15 17 15 37 C15 62 50 98 50 98 C50 98 85 62 85 37 C85 17 70 2 50 2 Z M50 50 A13 13 0 1 1 50 24 A13 13 0 1 1 50 50 Z",
+  plus:     "M38 5 H62 V38 H95 V62 H62 V95 H38 V62 H5 V38 H38 Z",
+  triangle: "M50 8 L95 92 H5 Z",
+};
+
+function iconToSvg(layer: ShapeLayer): string {
+  const d = ICON_PATHS[layer.icon || ""] || ICON_PATHS.star;
+  const fill = layer.fill && layer.fill !== "none" ? layer.fill : "#1A3A4A";
+  const stroke = layer.stroke && layer.stroke !== "none" ? layer.stroke : "none";
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${layer.w}" height="${layer.h}" viewBox="0 0 100 100">` +
+    `<path d="${d}" fill-rule="evenodd" fill="${fill}" stroke="${stroke}" stroke-width="${layer.strokeWidth || 0}" /></svg>`;
+}
+
+// Canva-style text presets — sized for a 1080 canvas; addTextLayer scales
+// them relative to the current canvas width.
+const TEXT_PRESETS = {
+  heading:    { label: "Add a heading",    size: 84, weight: "700" },
+  subheading: { label: "Add a subheading", size: 48, weight: "600" },
+  body:       { label: "Add body text",    size: 30, weight: "400" },
+} as const;
+export type TextPresetKey = keyof typeof TEXT_PRESETS;
 
 // L3 (locked 2026-07-22): chart element for infographics — enter numbers →
 // bar/donut/line rendered in brand colors, pure code (no chart.js). The
@@ -235,9 +281,15 @@ export function smartResize(doc: CanvasDoc, newW: number, newH: number): CanvasD
     };
     if (next.kind === "text") {
       (next as TextLayer).size = Math.max(6, Math.round(((l as TextLayer).size ?? 24) * s));
+      if ((l as TextLayer).letterSpacing) {
+        (next as TextLayer).letterSpacing = Math.round((l as TextLayer).letterSpacing! * s * 10) / 10;
+      }
     }
     if (next.kind === "shape" && (l as ShapeLayer).strokeWidth) {
       (next as ShapeLayer).strokeWidth = Math.max(1, Math.round((l as ShapeLayer).strokeWidth! * s));
+    }
+    if (next.kind === "shape" && (l as ShapeLayer).radius) {
+      (next as ShapeLayer).radius = Math.max(0, Math.round((l as ShapeLayer).radius! * s));
     }
     return next;
   });
@@ -354,6 +406,21 @@ export function TemplateStudioEditorModal({
 
   // Smart Resize picker modal.
   const [resizeOpen, setResizeOpen] = useState(false);
+
+  // Tenant brand palette for the color swatches — same resolved palette the
+  // exporter uses, so what you pick is what ships.
+  const [brandPalette, setBrandPalette] = useState<Record<string, string> | null>(null);
+  useEffect(() => {
+    if (!open || !ready || brandPalette) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const p = await get<Record<string, string>>("/api/v1/my-brand/templates/brand-palette");
+        if (!cancelled && p) setBrandPalette(p);
+      } catch { /* swatches degrade to defaults */ }
+    })();
+    return () => { cancelled = true; };
+  }, [open, ready, get, brandPalette]);
 
   // Snap guides — canvas-space coordinates of the active vertical/horizontal
   // guide line while an object is being dragged, null when not snapping.
@@ -606,6 +673,27 @@ export function TemplateStudioEditorModal({
     docDimsRef.current = { w: canvasDoc.width, h: canvasDoc.height };
   }, [canvasDoc.width, canvasDoc.height]);
 
+  // Auto-fit zoom: size the canvas to the visible host so the WHOLE design
+  // is on screen without scrolling (Brandon 2026-07-22 — "you have to
+  // scroll to see the whole thing"). Manual +/- still overrides; the Fit
+  // button re-fits.
+  const canvasHostRef = useRef<HTMLDivElement | null>(null);
+  const fitZoom = useCallback(() => {
+    const host = canvasHostRef.current;
+    if (!host) return;
+    const availW = host.clientWidth - 48;
+    const availH = host.clientHeight - 48;
+    if (availW <= 0 || availH <= 0) return;
+    const z = Math.min(availW / canvasDoc.width, availH / canvasDoc.height, 1);
+    setZoom(Math.max(0.05, Math.round(z * 100) / 100));
+  }, [canvasDoc.width, canvasDoc.height]);
+  useEffect(() => {
+    if (!open) return;
+    // Let the modal lay out first, then fit.
+    const t = setTimeout(fitZoom, 50);
+    return () => clearTimeout(t);
+  }, [open, fitZoom]);
+
   // Apply zoom — Fabric handles this with setZoom, but we also need to
   // scale the wrapper so scrollbars + selection handles stay accurate.
   useEffect(() => {
@@ -627,21 +715,48 @@ export function TemplateStudioEditorModal({
     });
   }, []);
 
-  const addTextLayer = useCallback(() => {
+  const addTextLayer = useCallback((preset: TextPresetKey = "subheading") => {
+    const p = TEXT_PRESETS[preset];
+    // Presets are sized for a 1080 canvas — scale to the current width so a
+    // heading looks like a heading on a business card too.
+    const s = Math.max(0.3, canvasDoc.width / 1080);
+    const size = Math.round(p.size * s);
+    const w = Math.round(Math.min(canvasDoc.width * 0.8, p.label.length * size * 0.62));
     const layer: TextLayer = {
       id: uid("text"),
       kind: "text",
-      x: Math.round(canvasDoc.width / 2 - 200),
-      y: Math.round(canvasDoc.height / 2 - 40),
-      w: 400,
-      h: 80,
-      content: "Your text here",
+      x: Math.round(canvasDoc.width / 2 - w / 2),
+      y: Math.round(canvasDoc.height / 2 - size),
+      w,
+      h: Math.round(size * 1.4),
+      content: p.label,
       font: DEFAULT_FONTS[0],
-      size: 48,
+      size,
       color: "#111827",
-      weight: "600",
+      weight: p.weight,
       align: "center",
       lineHeight: 1.2,
+      rotation: 0,
+      visible: true,
+    };
+    mutateCanvas((prev) => ({ ...prev, layers: [...prev.layers, layer] }));
+    setSelectedId(layer.id);
+  }, [canvasDoc.width, canvasDoc.height, mutateCanvas]);
+
+  const addIconLayer = useCallback((icon: string) => {
+    const side = Math.round(Math.min(canvasDoc.width, canvasDoc.height) * 0.18);
+    const layer: ShapeLayer = {
+      id: uid("icon"),
+      kind: "shape",
+      shape: "icon",
+      icon,
+      x: Math.round(canvasDoc.width / 2 - side / 2),
+      y: Math.round(canvasDoc.height / 2 - side / 2),
+      w: side,
+      h: side,
+      fill: "#1A3A4A",
+      stroke: "none",
+      strokeWidth: 0,
       rotation: 0,
       visible: true,
     };
@@ -991,9 +1106,9 @@ export function TemplateStudioEditorModal({
       open={open}
       onClose={onClose}
       product="spark"
-      eyebrow="MY BRAND · TEMPLATE STUDIO"
+      eyebrow="MY BRAND · DESIGN STUDIO"
       title={isEdit ? "Edit design" : "New design"}
-      size="info"
+      size="xl"
       headerActions={
         <>
           {saving ? (
@@ -1054,6 +1169,15 @@ export function TemplateStudioEditorModal({
         )}
 
         <div className="flex min-h-0 flex-1">
+          {/* LEFT — Insert rail (Canva-style: everything you can add) */}
+          <InsertRail
+            onAddText={addTextLayer}
+            onAddShape={addShapeLayer}
+            onAddIcon={addIconLayer}
+            onUploadImage={() => fileInputRef.current?.click()}
+            onAddChart={addChartLayer}
+          />
+
           {/* CENTER — canvas */}
           <div className="relative flex min-w-0 flex-1 flex-col bg-slate-100">
             {/* Pan/zoom toolbar */}
@@ -1065,7 +1189,7 @@ export function TemplateStudioEditorModal({
               <button type="button" onClick={() => setZoom((z) => Math.min(4, z + 0.1))} className="rounded p-1.5 hover:bg-slate-100" title="Zoom in">
                 <ZoomIn className="h-3.5 w-3.5" />
               </button>
-              <button type="button" onClick={() => setZoom(1)} className="rounded p-1.5 hover:bg-slate-100" title="Fit 100%">
+              <button type="button" onClick={fitZoom} className="rounded p-1.5 hover:bg-slate-100" title="Fit to screen">
                 <Maximize className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -1093,24 +1217,11 @@ export function TemplateStudioEditorModal({
               </button>
             </div>
 
-            {/* Selected-layer floating toolbar */}
-            {selectedLayer && (
-              <SelectedLayerToolbar
-                layer={selectedLayer}
-                onUpdate={(patch) => updateLayer(selectedLayer.id, patch)}
-                onDelete={() => deleteLayer(selectedLayer.id)}
-                onDuplicate={() => duplicateLayer(selectedLayer.id)}
-                onForward={() => reorderLayer(selectedLayer.id, "up")}
-                onBack={() => reorderLayer(selectedLayer.id, "down")}
-              />
-            )}
-
-            {/* The canvas itself — wrapped in an outer scroll region so the
-                zoomed canvas can be larger than the modal body without
-                breaking the surrounding chrome. */}
-            <div className="flex-1 overflow-auto p-8">
+            {/* The canvas itself — auto-fit by default (fitZoom); m-auto
+                centers when smaller than the host, scrolls when zoomed in. */}
+            <div ref={canvasHostRef} className="flex flex-1 overflow-auto p-6">
               <div
-                className="relative mx-auto bg-white shadow-lg"
+                className="relative m-auto flex-shrink-0 bg-white shadow-lg"
                 style={{ width: canvasDoc.width * zoom, height: canvasDoc.height * zoom }}
               >
                 <canvas ref={canvasElRef} />
@@ -1131,36 +1242,43 @@ export function TemplateStudioEditorModal({
             </div>
           </div>
 
-          {/* RIGHT — layers + add buttons */}
-          <aside className="flex w-72 flex-col border-l border-slate-200 bg-white">
-            <div className="border-b border-slate-200 p-3">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                Add layer
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <AddLayerButton icon={TypeIcon} label="Text" onClick={addTextLayer} />
-                <AddLayerButton icon={ImageIcon} label="Image" onClick={() => fileInputRef.current?.click()} />
-                <AddLayerButton icon={Square} label="Rect" onClick={() => addShapeLayer("rect")} />
-                <AddLayerButton icon={Circle} label="Ellipse" onClick={() => addShapeLayer("ellipse")} />
-                <AddLayerButton icon={Minus} label="Line" onClick={() => addShapeLayer("line")} />
-                <AddLayerButton icon={BarChart3} label="Chart" onClick={addChartLayer} />
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={onUploadImage}
-                className="hidden"
-              />
+          {/* RIGHT — properties for the selection + layers */}
+          <aside className="flex w-80 flex-col border-l border-slate-200 bg-white">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={onUploadImage}
+              className="hidden"
+            />
+            <div className="min-h-0 flex-[1.4] overflow-y-auto border-b border-slate-200">
+              {selectedLayer ? (
+                <LayerPropertiesPanel
+                  layer={selectedLayer}
+                  canvasW={canvasDoc.width}
+                  canvasH={canvasDoc.height}
+                  palette={brandPalette}
+                  onUpdate={(patch) => updateLayer(selectedLayer.id, patch)}
+                  onDelete={() => deleteLayer(selectedLayer.id)}
+                  onDuplicate={() => duplicateLayer(selectedLayer.id)}
+                  onForward={() => reorderLayer(selectedLayer.id, "up")}
+                  onBack={() => reorderLayer(selectedLayer.id, "down")}
+                />
+              ) : (
+                <div className="p-4 text-xs text-slate-500">
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Properties</div>
+                  Select a layer on the canvas — or add one from the left rail — to
+                  edit its text, colors, size, and effects here.
+                </div>
+              )}
+              {/* Chart data editor rides under the properties for chart layers. */}
+              {selectedLayer?.kind === "chart" && (
+                <ChartDataPanel
+                  layer={selectedLayer as ChartLayer}
+                  onUpdate={(patch) => updateLayer(selectedLayer.id, patch)}
+                />
+              )}
             </div>
-
-            {/* Chart data editor — shown while a chart layer is selected. */}
-            {selectedLayer?.kind === "chart" && (
-              <ChartDataPanel
-                layer={selectedLayer as ChartLayer}
-                onUpdate={(patch) => updateLayer(selectedLayer.id, patch)}
-              />
-            )}
 
             <div className="border-b border-slate-200 px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
               Layers ({canvasDoc.layers.length})
@@ -1439,12 +1557,12 @@ function LayerRow({
     label = `Chart · ${(layer as ChartLayer).chart}`;
   }
   else if (layer.kind === "shape") {
-    label = (layer as ShapeLayer).shape === "rect"
-      ? "Rectangle"
-      : (layer as ShapeLayer).shape === "ellipse"
-        ? "Ellipse"
-        : "Line";
-    icon = (layer as ShapeLayer).shape === "ellipse" ? Circle : (layer as ShapeLayer).shape === "line" ? Minus : Square;
+    const sh = (layer as ShapeLayer).shape;
+    label = sh === "rect" ? "Rectangle"
+      : sh === "ellipse" ? "Ellipse"
+      : sh === "icon" ? `Icon · ${(layer as ShapeLayer).icon || "?"}`
+      : "Line";
+    icon = sh === "ellipse" ? Circle : sh === "line" ? Minus : sh === "icon" ? Star : Square;
   } else if (layer.kind === "text") {
     label = (layer as TextLayer).content || "Text";
   }
@@ -1487,133 +1605,373 @@ function LayerRow({
   );
 }
 
-function SelectedLayerToolbar({
-  layer, onUpdate, onDelete, onDuplicate, onForward, onBack,
+// ── Insert rail (left) — everything you can add, Canva-style ───────────────
+function InsertRail({
+  onAddText, onAddShape, onAddIcon, onUploadImage, onAddChart,
+}: {
+  onAddText: (preset: TextPresetKey) => void;
+  onAddShape: (shape: "rect" | "ellipse" | "line") => void;
+  onAddIcon: (icon: string) => void;
+  onUploadImage: () => void;
+  onAddChart: () => void;
+}) {
+  return (
+    <aside className="flex w-56 flex-shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white">
+      <div className="p-3">
+        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Text</div>
+        <div className="space-y-1">
+          <button type="button" onClick={() => onAddText("heading")}
+            className="w-full rounded border border-slate-200 px-2 py-1.5 text-left text-base font-bold text-slate-800 hover:border-[#1A3A4A] hover:bg-slate-50">
+            Add a heading
+          </button>
+          <button type="button" onClick={() => onAddText("subheading")}
+            className="w-full rounded border border-slate-200 px-2 py-1.5 text-left text-sm font-semibold text-slate-700 hover:border-[#1A3A4A] hover:bg-slate-50">
+            Add a subheading
+          </button>
+          <button type="button" onClick={() => onAddText("body")}
+            className="w-full rounded border border-slate-200 px-2 py-1.5 text-left text-xs text-slate-600 hover:border-[#1A3A4A] hover:bg-slate-50">
+            Add body text
+          </button>
+        </div>
+      </div>
+
+      <div className="border-t border-slate-100 p-3">
+        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Shapes</div>
+        <div className="grid grid-cols-3 gap-1.5">
+          <AddLayerButton icon={Square} label="Rect" onClick={() => onAddShape("rect")} />
+          <AddLayerButton icon={Circle} label="Ellipse" onClick={() => onAddShape("ellipse")} />
+          <AddLayerButton icon={Minus} label="Line" onClick={() => onAddShape("line")} />
+        </div>
+      </div>
+
+      <div className="border-t border-slate-100 p-3">
+        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Icons</div>
+        <div className="grid grid-cols-5 gap-1">
+          {Object.entries(ICON_PATHS).map(([key, d]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onAddIcon(key)}
+              title={key}
+              className="flex aspect-square items-center justify-center rounded border border-slate-200 hover:border-[#1A3A4A] hover:bg-slate-50"
+            >
+              <svg viewBox="0 0 100 100" className="h-5 w-5">
+                <path d={d} fillRule="evenodd" fill="#334155" />
+              </svg>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="border-t border-slate-100 p-3">
+        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Media & data</div>
+        <div className="grid grid-cols-2 gap-1.5">
+          <AddLayerButton icon={ImageIcon} label="Image" onClick={onUploadImage} />
+          <AddLayerButton icon={BarChart3} label="Chart" onClick={onAddChart} />
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+// ── Color field with brand-palette swatches ────────────────────────────────
+function ColorField({
+  label, value, fallback, palette, onChange,
+}: {
+  label: string;
+  value: string | undefined;
+  fallback: string;
+  palette: Record<string, string> | null;
+  onChange: (color: string) => void;
+}) {
+  const swatches = palette
+    ? [palette.primary, palette.secondary, palette.text, palette.background]
+    : ["#1A3A4A", "#FEC82C", "#111827", "#FFFFFF"];
+  const current = value && value !== "none" ? value : fallback;
+  return (
+    <div>
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="flex items-center gap-1">
+        <input
+          type="color"
+          value={/^#[0-9a-fA-F]{6}$/.test(current) ? current : "#000000"}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-6 w-8 cursor-pointer rounded border border-slate-200"
+        />
+        {swatches.map((c, i) => (
+          <button
+            key={`${c}-${i}`}
+            type="button"
+            onClick={() => onChange(c)}
+            title={["Brand primary", "Brand secondary", "Brand text", "Brand background"][i]}
+            className="h-5 w-5 rounded border border-slate-300 hover:scale-110"
+            style={{ background: c }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Small numeric input for the position/size grid.
+function NumField({ label, value, onChange, step = 1, min }: {
+  label: string; value: number; onChange: (v: number) => void; step?: number; min?: number;
+}) {
+  return (
+    <label className="flex items-center gap-1 text-[11px] text-slate-600">
+      <span className="w-4 text-[10px] font-semibold uppercase text-slate-400">{label}</span>
+      <input
+        type="number"
+        value={Math.round(value * 10) / 10}
+        step={step}
+        min={min}
+        onChange={(e) => onChange(Number(e.target.value) || 0)}
+        className="w-full min-w-0 rounded border border-slate-200 px-1.5 py-0.5 tabular-nums"
+      />
+    </label>
+  );
+}
+
+// ── Layer properties panel (right) — full styling for the selection ────────
+function LayerPropertiesPanel({
+  layer, canvasW, canvasH, palette, onUpdate, onDelete, onDuplicate, onForward, onBack,
 }: {
   layer: Layer;
+  canvasW: number;
+  canvasH: number;
+  palette: Record<string, string> | null;
   onUpdate: (patch: Partial<Layer>) => void;
   onDelete: () => void;
   onDuplicate: () => void;
   onForward: () => void;
   onBack: () => void;
 }) {
+  const kindLabel =
+    layer.kind === "text" ? "Text"
+    : layer.kind === "image" ? "Image"
+    : layer.kind === "chart" ? "Chart"
+    : (layer as ShapeLayer).shape === "icon" ? "Icon"
+    : "Shape";
+  const locked = layer.locked === true;
+
+  // Align the layer's box to the canvas edges/centers (bucket-1 align).
+  function align(which: "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom") {
+    if (which === "left") onUpdate({ x: 0 });
+    if (which === "hcenter") onUpdate({ x: Math.round((canvasW - layer.w) / 2) });
+    if (which === "right") onUpdate({ x: Math.round(canvasW - layer.w) });
+    if (which === "top") onUpdate({ y: 0 });
+    if (which === "vcenter") onUpdate({ y: Math.round((canvasH - layer.h) / 2) });
+    if (which === "bottom") onUpdate({ y: Math.round(canvasH - layer.h) });
+  }
+
   return (
-    <div className="absolute left-1/2 top-3 z-10 -translate-x-1/2 transform">
-      <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-md">
-        {layer.kind === "text" && (
-          <>
-            <select
-              value={(layer as TextLayer).font || DEFAULT_FONTS[0]}
-              onChange={(e) => onUpdate({ font: e.target.value })}
-              className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px]"
-              title="Font"
+    <div className="p-3">
+      {/* Header: kind + quick actions */}
+      <div className="mb-2 flex items-center gap-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{kindLabel}</span>
+        <div className="ml-auto flex items-center">
+          <button type="button" onClick={onForward} className="rounded p-1 hover:bg-slate-100" title="Bring forward">
+            <ChevronUp className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" onClick={onBack} className="rounded p-1 hover:bg-slate-100" title="Send back">
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" onClick={onDuplicate} className="rounded p-1 hover:bg-slate-100" title="Duplicate (⌘D)">
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onUpdate({ locked: !locked })}
+            className={"rounded p-1 " + (locked ? "bg-amber-100 text-amber-700" : "hover:bg-slate-100")}
+            title={locked ? "Unlock layer" : "Lock layer"}
+          >
+            {locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+          </button>
+          <button type="button" onClick={onDelete} className="rounded p-1 hover:bg-rose-100 hover:text-rose-600" title="Delete (Del)">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Position + size */}
+      <div className="mb-2 grid grid-cols-2 gap-1.5">
+        <NumField label="X" value={layer.x} onChange={(v) => onUpdate({ x: Math.round(v) })} />
+        <NumField label="Y" value={layer.y} onChange={(v) => onUpdate({ y: Math.round(v) })} />
+        <NumField label="W" value={layer.w} min={1} onChange={(v) => onUpdate({ w: Math.max(1, Math.round(v)) })} />
+        <NumField label="H" value={layer.h} min={0} onChange={(v) => onUpdate({ h: Math.max(0, Math.round(v)) })} />
+      </div>
+
+      {/* Rotation / opacity / flips */}
+      <div className="mb-2 flex items-center gap-1.5">
+        <NumField label="↻" value={layer.rotation || 0} onChange={(v) => onUpdate({ rotation: ((Math.round(v) % 360) + 360) % 360 })} />
+        <button
+          type="button"
+          onClick={() => onUpdate({ flipH: !layer.flipH })}
+          className={"rounded border px-1.5 py-1 text-[10px] font-semibold " + (layer.flipH ? "border-[#1A3A4A] bg-slate-100" : "border-slate-200 hover:bg-slate-50")}
+          title="Flip horizontal"
+        >
+          <FlipHorizontal2 className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onUpdate({ flipV: !layer.flipV })}
+          className={"rounded border px-1.5 py-1 text-[10px] font-semibold " + (layer.flipV ? "border-[#1A3A4A] bg-slate-100" : "border-slate-200 hover:bg-slate-50")}
+          title="Flip vertical"
+        >
+          <FlipVertical2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="mb-2">
+        <div className="mb-0.5 flex justify-between text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+          <span>Opacity</span><span className="tabular-nums">{Math.round((layer.opacity ?? 1) * 100)}%</span>
+        </div>
+        <input
+          type="range" min={0} max={100}
+          value={Math.round((layer.opacity ?? 1) * 100)}
+          onChange={(e) => onUpdate({ opacity: Number(e.target.value) / 100 })}
+          className="w-full"
+        />
+      </div>
+
+      {/* Align to canvas */}
+      <div className="mb-3">
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Align to canvas</div>
+        <div className="flex gap-1">
+          {([
+            ["left", AlignStartVertical], ["hcenter", AlignCenterVertical], ["right", AlignEndVertical],
+            ["top", AlignStartHorizontal], ["vcenter", AlignCenterHorizontal], ["bottom", AlignEndHorizontal],
+          ] as const).map(([which, Icon]) => (
+            <button
+              key={which}
+              type="button"
+              onClick={() => align(which)}
+              className="rounded border border-slate-200 p-1 hover:border-[#1A3A4A] hover:bg-slate-50"
+              title={`Align ${which}`}
             >
-              {DEFAULT_FONTS.map((f) => (
-                <option key={f} value={f}>{f.split(",")[0]}</option>
-              ))}
-            </select>
-            <input
-              type="number"
-              min={6}
-              max={400}
-              value={(layer as TextLayer).size || 24}
-              onChange={(e) => onUpdate({ size: Math.max(6, Number(e.target.value) || 24) })}
-              className="w-14 rounded border border-slate-200 px-1.5 py-0.5 text-[11px]"
-              title="Size"
-            />
-            <input
-              type="color"
-              value={(layer as TextLayer).color || "#111827"}
-              onChange={(e) => onUpdate({ color: e.target.value })}
-              className="h-6 w-6 cursor-pointer rounded border border-slate-200"
-              title="Color"
-            />
+              <Icon className="h-3.5 w-3.5 text-slate-600" />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Text styling */}
+      {layer.kind === "text" && (
+        <div className="space-y-2 border-t border-slate-100 pt-2">
+          <div>
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Font</div>
+            <div className="flex gap-1">
+              <select
+                value={(layer as TextLayer).font || DEFAULT_FONTS[0]}
+                onChange={(e) => onUpdate({ font: e.target.value })}
+                className="min-w-0 flex-1 rounded border border-slate-200 px-1.5 py-1 text-[11px]"
+              >
+                {DEFAULT_FONTS.map((f) => <option key={f} value={f}>{f.split(",")[0]}</option>)}
+              </select>
+              <input
+                type="number" min={6} max={500}
+                value={(layer as TextLayer).size || 24}
+                onChange={(e) => onUpdate({ size: Math.max(6, Number(e.target.value) || 24) })}
+                className="w-14 rounded border border-slate-200 px-1.5 py-1 text-[11px] tabular-nums"
+                title="Font size"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => onUpdate({ weight: (layer as TextLayer).weight === "700" ? "400" : "700" })}
-              className={
-                "rounded p-1 " +
-                ((layer as TextLayer).weight === "700" ? "bg-slate-200" : "hover:bg-slate-100")
-              }
+              className={"rounded border p-1.5 " + ((layer as TextLayer).weight === "700" ? "border-[#1A3A4A] bg-slate-100" : "border-slate-200 hover:bg-slate-50")}
               title="Bold"
             >
               <Bold className="h-3 w-3" />
             </button>
-            <div className="flex">
-              <button type="button" onClick={() => onUpdate({ align: "left" })} className={
-                "rounded p-1 " + ((layer as TextLayer).align === "left" ? "bg-slate-200" : "hover:bg-slate-100")
-              } title="Align left"><AlignLeft className="h-3 w-3" /></button>
-              <button type="button" onClick={() => onUpdate({ align: "center" })} className={
-                "rounded p-1 " + ((layer as TextLayer).align === "center" ? "bg-slate-200" : "hover:bg-slate-100")
-              } title="Align center"><AlignCenter className="h-3 w-3" /></button>
-              <button type="button" onClick={() => onUpdate({ align: "right" })} className={
-                "rounded p-1 " + ((layer as TextLayer).align === "right" ? "bg-slate-200" : "hover:bg-slate-100")
-              } title="Align right"><AlignRight className="h-3 w-3" /></button>
-            </div>
-            <div className="mx-1 h-4 w-px bg-slate-200" />
-          </>
-        )}
+            {([["left", AlignLeft], ["center", AlignCenter], ["right", AlignRight]] as const).map(([a, Icon]) => (
+              <button
+                key={a}
+                type="button"
+                onClick={() => onUpdate({ align: a })}
+                className={"rounded border p-1.5 " + ((layer as TextLayer).align === a ? "border-[#1A3A4A] bg-slate-100" : "border-slate-200 hover:bg-slate-50")}
+                title={`Align ${a}`}
+              >
+                <Icon className="h-3 w-3" />
+              </button>
+            ))}
+            <label className="ml-auto flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              <input
+                type="checkbox"
+                checked={(layer as TextLayer).shadow === true}
+                onChange={(e) => onUpdate({ shadow: e.target.checked })}
+              />
+              Shadow
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              Line height
+              <input
+                type="number" step={0.05} min={0.7} max={3}
+                value={(layer as TextLayer).lineHeight ?? 1.2}
+                onChange={(e) => onUpdate({ lineHeight: Math.max(0.7, Number(e.target.value) || 1.2) })}
+                className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-[11px] font-normal normal-case tabular-nums"
+              />
+            </label>
+            <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              Letter spacing
+              <input
+                type="number" step={0.5} min={-5} max={60}
+                value={(layer as TextLayer).letterSpacing ?? 0}
+                onChange={(e) => onUpdate({ letterSpacing: Number(e.target.value) || 0 })}
+                className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-[11px] font-normal normal-case tabular-nums"
+              />
+            </label>
+          </div>
+          <ColorField
+            label="Color" value={(layer as TextLayer).color} fallback="#111827"
+            palette={palette} onChange={(c) => onUpdate({ color: c })}
+          />
+        </div>
+      )}
 
-        {layer.kind === "shape" && (layer as ShapeLayer).shape !== "line" && (
-          <>
-            <label className="text-[10px] uppercase tracking-wide text-slate-500">Fill</label>
-            <input
-              type="color"
-              value={(layer as ShapeLayer).fill && (layer as ShapeLayer).fill !== "none" ? (layer as ShapeLayer).fill! : "#FEC82C"}
-              onChange={(e) => onUpdate({ fill: e.target.value })}
-              className="h-6 w-6 cursor-pointer rounded border border-slate-200"
+      {/* Shape / icon styling */}
+      {layer.kind === "shape" && (
+        <div className="space-y-2 border-t border-slate-100 pt-2">
+          {(layer as ShapeLayer).shape !== "line" && (
+            <ColorField
+              label="Fill" value={(layer as ShapeLayer).fill} fallback="#FEC82C"
+              palette={palette} onChange={(c) => onUpdate({ fill: c })}
             />
-            <div className="mx-1 h-4 w-px bg-slate-200" />
-          </>
-        )}
-
-        {layer.kind === "shape" && (
-          <>
-            <label className="text-[10px] uppercase tracking-wide text-slate-500">Stroke</label>
-            <input
-              type="color"
-              value={(layer as ShapeLayer).stroke && (layer as ShapeLayer).stroke !== "none" ? (layer as ShapeLayer).stroke! : "#1A3A4A"}
-              onChange={(e) => onUpdate({ stroke: e.target.value })}
-              className="h-6 w-6 cursor-pointer rounded border border-slate-200"
-            />
-            <input
-              type="number"
-              min={0}
-              max={40}
-              value={(layer as ShapeLayer).strokeWidth ?? 0}
-              onChange={(e) => onUpdate({ strokeWidth: Math.max(0, Number(e.target.value) || 0) })}
-              className="w-12 rounded border border-slate-200 px-1.5 py-0.5 text-[11px]"
-              title="Stroke width"
-            />
-            <div className="mx-1 h-4 w-px bg-slate-200" />
-          </>
-        )}
-
-        <button type="button" onClick={onForward} className="rounded p-1 hover:bg-slate-100" title="Bring forward">
-          <ChevronUp className="h-3.5 w-3.5" />
-        </button>
-        <button type="button" onClick={onBack} className="rounded p-1 hover:bg-slate-100" title="Send back">
-          <ChevronDown className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onUpdate({ rotation: ((layer.rotation || 0) + 15) % 360 })}
-          className="rounded p-1 hover:bg-slate-100"
-          title="Rotate 15°"
-        >
-          <RotateCw className="h-3.5 w-3.5" />
-        </button>
-        <button type="button" onClick={onDuplicate} className="rounded p-1 hover:bg-slate-100" title="Duplicate (⌘D)">
-          <Copy className="h-3.5 w-3.5" />
-        </button>
-        <button type="button" onClick={onDelete} className="rounded p-1 hover:bg-rose-100 hover:text-rose-600" title="Delete (Del)">
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
+          )}
+          <ColorField
+            label="Stroke" value={(layer as ShapeLayer).stroke} fallback="#1A3A4A"
+            palette={palette} onChange={(c) => onUpdate({ stroke: c })}
+          />
+          <div className="grid grid-cols-2 gap-1.5">
+            <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              Stroke width
+              <input
+                type="number" min={0} max={60}
+                value={(layer as ShapeLayer).strokeWidth ?? 0}
+                onChange={(e) => onUpdate({ strokeWidth: Math.max(0, Number(e.target.value) || 0) })}
+                className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-[11px] font-normal normal-case tabular-nums"
+              />
+            </label>
+            {(layer as ShapeLayer).shape === "rect" && (
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Corner radius
+                <input
+                  type="number" min={0} max={400}
+                  value={(layer as ShapeLayer).radius ?? 0}
+                  onChange={(e) => onUpdate({ radius: Math.max(0, Number(e.target.value) || 0) })}
+                  className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-[11px] font-normal normal-case tabular-nums"
+                />
+              </label>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
 // ────────────────────────────────────────────────────────────────────────────
 // CanvasDoc <→> Fabric object converter. Encapsulated in pure functions so
 // the renderer above stays small and the unit logic is testable in isolation.
@@ -1623,26 +1981,41 @@ function layerToFabricObject(
   layer: Layer,
   onSwap?: (obj: fabric.FabricObject) => void,
 ): fabric.FabricObject | null {
+  const locked = layer.locked === true;
   const baseProps = {
     left: layer.x,
     top: layer.y,
     angle: layer.rotation || 0,
     opacity: layer.opacity ?? 1,
     visible: layer.visible !== false,
-    selectable: true,
-    hasControls: true,
+    flipX: layer.flipH === true,
+    flipY: layer.flipV === true,
+    selectable: !locked,
+    evented: !locked,
+    hasControls: !locked,
   };
   if (layer.kind === "text") {
     const t = layer as TextLayer;
+    const size = t.size || 24;
     const itext = new fabric.IText(t.content || "", {
       ...baseProps,
       width: t.w,
-      fontSize: t.size || 24,
+      fontSize: size,
       fontFamily: t.font || DEFAULT_FONTS[0],
       fontWeight: t.weight || "400",
       fill: t.color || "#111827",
       textAlign: t.align || "left",
       lineHeight: t.lineHeight || 1.2,
+      // Fabric charSpacing is in 1/1000 em; our model stores px.
+      charSpacing: t.letterSpacing ? (t.letterSpacing / size) * 1000 : 0,
+      shadow: t.shadow
+        ? new fabric.Shadow({
+            color: "rgba(0,0,0,0.35)",
+            offsetX: Math.max(1, Math.round(size * 0.045)),
+            offsetY: Math.max(1, Math.round(size * 0.045)),
+            blur: 0,
+          })
+        : undefined,
     });
     return itext;
   }
@@ -1742,11 +2115,42 @@ function layerToFabricObject(
     const fill = s.fill && s.fill !== "none" ? s.fill : "transparent";
     const stroke = s.stroke && s.stroke !== "none" ? s.stroke : undefined;
     const strokeWidth = s.strokeWidth ?? 0;
+    if (s.shape === "icon") {
+      // Same SVG the server emits, swapped in as an image — guarantees the
+      // editor and export show the identical glyph.
+      const placeholder = new fabric.Rect({
+        ...baseProps,
+        width: s.w,
+        height: s.h,
+        fill: "transparent",
+        stroke: "#CBD5E1",
+        strokeWidth: 1,
+        strokeDashArray: [4, 3],
+      });
+      const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(iconToSvg(s))}`;
+      fabric.FabricImage.fromURL(dataUrl).then((img) => {
+        if (!img) return;
+        img.set({ ...baseProps });
+        img.scaleX = s.w / (img.width || 1);
+        img.scaleY = s.h / (img.height || 1);
+        const canvas = placeholder.canvas;
+        if (canvas) {
+          canvas.remove(placeholder);
+          canvas.add(img);
+          onSwap?.(img);
+          canvas.requestRenderAll();
+        }
+      }).catch(() => { /* placeholder stays visible */ });
+      return placeholder;
+    }
     if (s.shape === "rect") {
+      const radius = Math.max(0, Number(s.radius) || 0);
       return new fabric.Rect({
         ...baseProps,
         width: s.w,
         height: s.h,
+        rx: radius,
+        ry: radius,
         fill,
         stroke,
         strokeWidth,
