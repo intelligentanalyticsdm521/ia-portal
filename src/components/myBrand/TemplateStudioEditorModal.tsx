@@ -44,7 +44,7 @@ import {
   AlignStartHorizontal, AlignStartVertical, BarChart3, Bold,
   ChevronDown, ChevronUp, Circle, Contrast, Copy, Download, Eye, EyeOff,
   FileImage, FlipHorizontal2, FlipVertical2, Image as ImageIcon, Layers,
-  Loader2, Lock, Maximize, Minus, Palette, Plus, Save, Scaling, Send,
+  Loader2, Lock, Maximize, Minus, Palette, Plus, Save, Scaling, Send, Sparkles,
   Square, Star, Trash2, Type as TypeIcon, Unlock, Upload, Wand2, X,
   ZoomIn, ZoomOut,
 } from "lucide-react";
@@ -89,6 +89,14 @@ export interface TextLayer extends BaseLayer {
   shadow?: boolean;
   /** Outline color (behind-stroke); absent/none = no outline. */
   outline?: string;
+  /** "lift" = soft blurred shadow; "hollow" = stroke-only type. */
+  effect?: "lift" | "hollow";
+}
+
+export interface ImageFilters {
+  brightness?: number; // 0.5..1.5, 1 = neutral
+  saturation?: number; // 0..2, 1 = neutral
+  grayscale?: boolean;
 }
 
 export interface ImageLayer extends BaseLayer {
@@ -97,6 +105,8 @@ export interface ImageLayer extends BaseLayer {
   src?: string | null;  // local dataURL/URL for in-editor display
   /** Set when placed from the Media Library — enables Remove background. */
   asset_id?: string | null;
+  /** GIMP-style adjustments — previewed via Fabric, baked by sharp at export. */
+  filters?: ImageFilters;
 }
 
 // ── Color math for Brand Sync + Fix contrast (deterministic, no model) ─────
@@ -129,6 +139,13 @@ function nearestBrandColor(hex: string, palette: string[]): string {
   return best;
 }
 
+/** Two-stop linear gradient — the depth device (server: linearGradient defs). */
+export interface GradientSpec {
+  from: string;
+  to: string;
+  dir: "h" | "v" | "d1" | "d2";
+}
+
 export interface ShapeLayer extends BaseLayer {
   kind: "shape";
   shape: "rect" | "ellipse" | "line" | "icon";
@@ -139,6 +156,27 @@ export interface ShapeLayer extends BaseLayer {
   radius?: number;
   /** icon only — key into ICON_PATHS (validated server-side by key). */
   icon?: string;
+  /** Overrides fill when present. */
+  gradient?: GradientSpec;
+}
+
+const GRADIENT_COORDS: Record<GradientSpec["dir"], { x1: number; y1: number; x2: number; y2: number }> = {
+  h:  { x1: 0, y1: 0, x2: 1, y2: 0 },
+  v:  { x1: 0, y1: 0, x2: 0, y2: 1 },
+  d1: { x1: 0, y1: 0, x2: 1, y2: 1 },
+  d2: { x1: 0, y1: 1, x2: 1, y2: 0 },
+};
+
+function fabricGradient(g: GradientSpec): fabric.Gradient<"linear"> {
+  return new fabric.Gradient({
+    type: "linear",
+    gradientUnits: "percentage",
+    coords: GRADIENT_COORDS[g.dir] || GRADIENT_COORDS.d1,
+    colorStops: [
+      { offset: 0, color: g.from || "#1A3A4A" },
+      { offset: 1, color: g.to || "#FEC82C" },
+    ],
+  });
 }
 
 // Curated icon pack (§8b bucket 1) — IDENTICAL map lives server-side in
@@ -182,13 +220,32 @@ export const ICON_PATHS: Record<string, string> = {
   crown: "M10 75 L5 30 L32 48 L50 15 L68 48 L95 30 L90 75 Z M10 82 H90 V92 H10 Z",
   shield: "M50 3 L90 18 V50 Q90 82 50 97 Q10 82 10 50 V18 Z",
   gem: "M30 8 H70 L92 35 L50 95 L8 35 Z",
+  blob1: "M83 18 Q97 34 93 55 Q89 76 70 88 Q49 99 30 89 Q10 79 6 57 Q3 36 18 20 Q34 4 57 5 Q72 6 83 18 Z",
+  blob2: "M76 10 Q95 22 96 45 Q97 70 78 84 Q58 97 36 92 Q13 86 6 64 Q0 42 14 24 Q28 6 52 4 Q66 3 76 10 Z",
+  blob3: "M70 6 Q92 12 95 34 Q98 55 86 72 Q73 90 50 94 Q26 97 12 80 Q-1 62 5 40 Q11 18 32 9 Q50 2 70 6 Z",
+  wave: "M0 60 Q12 40 25 55 Q38 70 50 55 Q62 40 75 55 Q88 70 100 55 V100 H0 Z",
+  wave2: "M0 45 Q25 15 50 45 Q75 75 100 45 V100 H0 Z",
+  arch: "M10 100 V50 Q10 5 50 5 Q90 5 90 50 V100 Z",
+  halfcircle: "M0 100 A50 50 0 0 1 100 100 Z",
+  quartercircle: "M0 0 H100 A100 100 0 0 1 0 100 Z",
+  scallop: "M0 100 V20 Q12 6 25 20 Q38 34 50 20 Q62 6 75 20 Q88 34 100 20 V100 Z",
+  dots: "M15 8 A7 7 0 1 0 15 22 A7 7 0 1 0 15 8 Z M50 8 A7 7 0 1 0 50 22 A7 7 0 1 0 50 8 Z M85 8 A7 7 0 1 0 85 22 A7 7 0 1 0 85 8 Z M15 43 A7 7 0 1 0 15 57 A7 7 0 1 0 15 43 Z M50 43 A7 7 0 1 0 50 57 A7 7 0 1 0 50 43 Z M85 43 A7 7 0 1 0 85 57 A7 7 0 1 0 85 43 Z M15 78 A7 7 0 1 0 15 92 A7 7 0 1 0 15 78 Z M50 78 A7 7 0 1 0 50 92 A7 7 0 1 0 50 78 Z M85 78 A7 7 0 1 0 85 92 A7 7 0 1 0 85 78 Z",
 };
+
+export const DECOR_KEYS = new Set(["blob1","blob2","blob3","wave","wave2","arch","halfcircle","quartercircle","scallop","dots"]);
 
 function iconToSvg(layer: ShapeLayer): string {
   const d = ICON_PATHS[layer.icon || ""] || ICON_PATHS.star;
-  const fill = layer.fill && layer.fill !== "none" ? layer.fill : "#1A3A4A";
   const stroke = layer.stroke && layer.stroke !== "none" ? layer.stroke : "none";
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${layer.w}" height="${layer.h}" viewBox="0 0 100 100">` +
+  let defs = "";
+  let fill = layer.fill && layer.fill !== "none" ? layer.fill : "#1A3A4A";
+  if (layer.gradient) {
+    const c = GRADIENT_COORDS[layer.gradient.dir] || GRADIENT_COORDS.d1;
+    defs = `<defs><linearGradient id="g" x1="${c.x1}" y1="${c.y1}" x2="${c.x2}" y2="${c.y2}">` +
+      `<stop offset="0" stop-color="${layer.gradient.from}"/><stop offset="1" stop-color="${layer.gradient.to}"/></linearGradient></defs>`;
+    fill = "url(#g)";
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${layer.w}" height="${layer.h}" viewBox="0 0 100 100">${defs}` +
     `<path d="${d}" fill-rule="evenodd" fill="${fill}" stroke="${stroke}" stroke-width="${layer.strokeWidth || 0}" /></svg>`;
 }
 
@@ -219,6 +276,8 @@ export interface CanvasDoc {
   width: number;
   height: number;
   background_color?: string | null;
+  /** Overrides background_color when present (ignored on transparent). */
+  background_gradient?: GradientSpec | null;
   layers: Layer[];
 }
 
@@ -725,8 +784,13 @@ export function TemplateStudioEditorModal({
     c.clear();
     c.setDimensions({ width: doc.width, height: doc.height });
     // Transparent canvas (logo/icon mode) — the wrapper div shows a
-    // checkerboard behind Fabric's empty background.
-    c.backgroundColor = isTransparent(doc) ? "" : (doc.background_color || "#FFFFFF");
+    // checkerboard behind Fabric's empty background. Gradient backdrop
+    // takes precedence over the flat color, matching the export.
+    c.backgroundColor = isTransparent(doc)
+      ? ""
+      : doc.background_gradient
+        ? (fabricGradient(doc.background_gradient) as unknown as string)
+        : (doc.background_color || "#FFFFFF");
     objectsByIdRef.current.clear();
     idByObjectRef.current = new WeakMap();
     for (const layer of doc.layers) {
@@ -915,6 +979,142 @@ export function TemplateStudioEditorModal({
     mutateCanvas((prev) => smartResize(prev, w, h));
     setResizeOpen(false);
   }, [mutateCanvas]);
+
+  // ── AI Assist ("describe it, credits do it") ──────────────────────────────
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiBusy, setAiBusy] = useState<"write" | "image" | null>(null);
+  const [aiOptions, setAiOptions] = useState<string[]>([]);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  const aiWrite = useCallback(async () => {
+    if (!aiPrompt.trim() || aiBusy) return;
+    setAiBusy("write");
+    setAiError(null);
+    setAiOptions([]);
+    try {
+      const sel = canvasDoc.layers.find((l) => l.id === selectedId);
+      const r = await post<{ options: string[] }>("/api/v1/my-brand/designs/assist/write", {
+        prompt: aiPrompt.trim(),
+        current_text: sel?.kind === "text" ? (sel as TextLayer).content : undefined,
+      });
+      setAiOptions(r?.options || []);
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAiBusy(null);
+    }
+  }, [aiPrompt, aiBusy, canvasDoc.layers, selectedId, post]);
+
+  const aiApplyOption = useCallback((text: string) => {
+    const sel = canvasDoc.layers.find((l) => l.id === selectedId);
+    if (sel?.kind === "text") {
+      mutateCanvas((prev) => ({
+        ...prev,
+        layers: prev.layers.map((l) => (l.id === sel.id ? { ...l, content: text } as Layer : l)),
+      }));
+    } else {
+      const s = Math.max(0.3, canvasDoc.width / 1080);
+      const size = Math.round(48 * s);
+      const w = Math.round(Math.min(canvasDoc.width * 0.85, Math.max(300, text.length * size * 0.55)));
+      const layer: TextLayer = {
+        id: uid("text"), kind: "text",
+        x: Math.round(canvasDoc.width / 2 - w / 2),
+        y: Math.round(canvasDoc.height / 2 - size),
+        w, h: Math.round(size * 1.4),
+        content: text, font: DEFAULT_FONTS[0], size, color: "#111827",
+        weight: "600", align: "center", lineHeight: 1.2, visible: true,
+      };
+      mutateCanvas((prev) => ({ ...prev, layers: [...prev.layers, layer] }));
+      setSelectedId(layer.id);
+    }
+    setAiOptions([]);
+    setAiPrompt("");
+  }, [canvasDoc, selectedId, mutateCanvas]);
+
+  const aiGenerate = useCallback(async () => {
+    if (!aiPrompt.trim() || aiBusy) return;
+    setAiBusy("image");
+    setAiError(null);
+    try {
+      const r = await post<{ assets: Array<{ assetId: string; blobRef: string; url: string }> }>(
+        "/api/v1/my-brand/image-studio/generate",
+        { prompt: aiPrompt.trim(), n: 1, size: "1024x1024" },
+      );
+      const a = r?.assets?.[0];
+      if (!a?.url) throw new Error("no image returned");
+      const side = Math.round(Math.min(canvasDoc.width, canvasDoc.height) * 0.6);
+      const layer: ImageLayer = {
+        id: uid("image"), kind: "image",
+        x: Math.round(canvasDoc.width / 2 - side / 2),
+        y: Math.round(canvasDoc.height / 2 - side / 2),
+        w: side, h: side,
+        asset_id: a.assetId, blob_ref: a.blobRef, src: a.url, visible: true,
+      };
+      mutateCanvas((prev) => ({ ...prev, layers: [...prev.layers, layer] }));
+      setSelectedId(layer.id);
+      setAiPrompt("");
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAiBusy(null);
+    }
+  }, [aiPrompt, aiBusy, post, canvasDoc.width, canvasDoc.height, mutateCanvas]);
+
+  // ── Compound elements — one click inserts a ready-made arrangement ────────
+  const addElementPreset = useCallback((key: string) => {
+    const W = canvasDoc.width, H = canvasDoc.height;
+    const s = Math.max(0.3, Math.min(W, H) / 1080);
+    const cx = W / 2, cy = H / 2;
+    const P = brandPalette || { primary: "#1A3A4A", secondary: "#FEC82C", text: "#111827", background: "#FFFFFF" };
+    const F = DEFAULT_FONTS[0];
+    let layers: Layer[] = [];
+    if (key === "cta") {
+      const w = Math.round(420 * s), h = Math.round(96 * s);
+      layers = [
+        { id: uid("rect"), kind: "shape", shape: "rect", x: Math.round(cx - w / 2), y: Math.round(cy - h / 2), w, h, radius: h / 2, gradient: { from: P.secondary, to: "#F59E0B", dir: "h" }, visible: true } as ShapeLayer,
+        { id: uid("text"), kind: "text", x: Math.round(cx - w / 2), y: Math.round(cy - 24 * s), w, h: Math.round(48 * s), content: "BOOK TODAY", size: Math.round(36 * s), weight: "700", color: P.primary, align: "center", letterSpacing: Math.round(3 * s), font: F, visible: true } as TextLayer,
+      ];
+    } else if (key === "burst") {
+      const d = Math.round(360 * s);
+      layers = [
+        { id: uid("icon"), kind: "shape", shape: "icon", icon: "seal", x: Math.round(cx - d / 2), y: Math.round(cy - d / 2), w: d, h: d, fill: P.secondary, visible: true } as ShapeLayer,
+        { id: uid("text"), kind: "text", x: Math.round(cx - d / 2), y: Math.round(cy - 36 * s), w: d, h: Math.round(72 * s), content: "SALE", size: Math.round(64 * s), weight: "700", color: P.primary, align: "center", font: F, visible: true } as TextLayer,
+      ];
+    } else if (key === "pricetag") {
+      const d = Math.round(340 * s);
+      layers = [
+        { id: uid("icon"), kind: "shape", shape: "icon", icon: "tag", x: Math.round(cx - d / 2), y: Math.round(cy - d / 2), w: d, h: d, fill: P.primary, visible: true } as ShapeLayer,
+        { id: uid("text"), kind: "text", x: Math.round(cx - d / 2), y: Math.round(cy - 30 * s), w: Math.round(d * 0.8), h: Math.round(60 * s), content: "$99", size: Math.round(56 * s), weight: "700", color: P.background, align: "center", font: F, visible: true } as TextLayer,
+      ];
+    } else if (key === "testimonial") {
+      const w = Math.round(Math.min(W * 0.8, 760 * s)), h = Math.round(300 * s);
+      const x = Math.round(cx - w / 2), y = Math.round(cy - h / 2);
+      layers = [
+        { id: uid("rect"), kind: "shape", shape: "rect", x, y, w, h, radius: Math.round(24 * s), fill: "#FFFFFF", stroke: "#E2E8F0", strokeWidth: 2, visible: true } as ShapeLayer,
+        { id: uid("text"), kind: "text", x: x + Math.round(36 * s), y: y + Math.round(36 * s), w: w - Math.round(72 * s), h: Math.round(140 * s), content: "“They did exactly what they promised, on time and on budget. Couldn't recommend them more.”", size: Math.round(30 * s), color: P.text, lineHeight: 1.4, font: "Georgia, serif", visible: true } as TextLayer,
+        { id: uid("text"), kind: "text", x: x + Math.round(36 * s), y: y + h - Math.round(70 * s), w: w - Math.round(72 * s), h: Math.round(40 * s), content: "— Jamie R., Homeowner", size: Math.round(24 * s), weight: "700", color: P.primary, font: F, visible: true } as TextLayer,
+      ];
+    } else if (key === "grid2x2" || key === "strip12") {
+      const pad = Math.round(16 * s);
+      const gw = Math.round(Math.min(W, H) * 0.8);
+      const x0 = Math.round(cx - gw / 2), y0 = Math.round(cy - gw / 2);
+      const half = Math.round((gw - pad) / 2);
+      if (key === "grid2x2") {
+        layers = [
+          [x0, y0], [x0 + half + pad, y0], [x0, y0 + half + pad], [x0 + half + pad, y0 + half + pad],
+        ].map(([x, y]) => ({ id: uid("image"), kind: "image", x, y, w: half, h: half, visible: true } as ImageLayer));
+      } else {
+        layers = [
+          { id: uid("image"), kind: "image", x: x0, y: y0, w: half, h: gw, visible: true } as ImageLayer,
+          { id: uid("image"), kind: "image", x: x0 + half + pad, y: y0, w: half, h: half, visible: true } as ImageLayer,
+          { id: uid("image"), kind: "image", x: x0 + half + pad, y: y0 + half + pad, w: half, h: half, visible: true } as ImageLayer,
+        ];
+      }
+    }
+    if (!layers.length) return;
+    mutateCanvas((prev) => ({ ...prev, layers: [...prev.layers, ...layers] }));
+    setSelectedId(layers[layers.length - 1].id);
+  }, [canvasDoc.width, canvasDoc.height, brandPalette, mutateCanvas]);
 
   // Place from Media Library (bucket 1): existing brand assets — including
   // AI-generated and background-removed ones — straight onto the canvas.
@@ -1374,9 +1574,15 @@ export function TemplateStudioEditorModal({
             onAddText={addTextLayer}
             onAddShape={addShapeLayer}
             onAddIcon={addIconLayer}
+            onAddElement={addElementPreset}
             onUploadImage={() => fileInputRef.current?.click()}
             onOpenLibrary={() => setLibraryOpen(true)}
             onAddChart={addChartLayer}
+            ai={{
+              prompt: aiPrompt, busy: aiBusy, options: aiOptions, error: aiError,
+              setPrompt: setAiPrompt, write: () => void aiWrite(),
+              generate: () => void aiGenerate(), apply: aiApplyOption,
+            }}
           />
 
           {/* CENTER — canvas */}
@@ -1853,18 +2059,92 @@ function LayerRow({
 }
 
 // ── Insert rail (left) — everything you can add, Canva-style ───────────────
+const ELEMENT_PRESETS: Array<{ key: string; label: string }> = [
+  { key: "cta", label: "CTA button" },
+  { key: "burst", label: "SALE burst" },
+  { key: "pricetag", label: "Price tag" },
+  { key: "testimonial", label: "Testimonial" },
+  { key: "grid2x2", label: "Photo grid 2×2" },
+  { key: "strip12", label: "Photo strip 1+2" },
+];
+
+interface AiRailState {
+  prompt: string;
+  busy: "write" | "image" | null;
+  options: string[];
+  error: string | null;
+  setPrompt: (v: string) => void;
+  write: () => void;
+  generate: () => void;
+  apply: (text: string) => void;
+}
+
 function InsertRail({
-  onAddText, onAddShape, onAddIcon, onUploadImage, onOpenLibrary, onAddChart,
+  onAddText, onAddShape, onAddIcon, onAddElement, onUploadImage, onOpenLibrary, onAddChart, ai,
 }: {
   onAddText: (preset: TextPresetKey) => void;
   onAddShape: (shape: "rect" | "ellipse" | "line") => void;
   onAddIcon: (icon: string) => void;
+  onAddElement: (key: string) => void;
   onUploadImage: () => void;
   onOpenLibrary: () => void;
   onAddChart: () => void;
+  ai: AiRailState;
 }) {
+  const decorEntries = Object.entries(ICON_PATHS).filter(([k]) => DECOR_KEYS.has(k));
+  const iconEntries = Object.entries(ICON_PATHS).filter(([k]) => !DECOR_KEYS.has(k));
   return (
-    <aside className="flex w-56 flex-shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white">
+    <aside className="flex w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white">
+      {/* AI Assist — describe it, credits do it. */}
+      <div className="border-b border-slate-100 bg-slate-50 p-3">
+        <div className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+          <Sparkles className="h-3 w-3 text-[#EF6C33]" /> AI Assist
+        </div>
+        <textarea
+          value={ai.prompt}
+          onChange={(e) => ai.setPrompt(e.target.value)}
+          placeholder='Describe it — "punchy headline for our spring special" or "a golden retriever in a hard hat"'
+          rows={3}
+          className="w-full resize-none rounded border border-slate-200 px-2 py-1.5 text-[11px] focus:border-[#EF6C33] focus:outline-none"
+        />
+        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            onClick={ai.write}
+            disabled={!ai.prompt.trim() || !!ai.busy}
+            className="rounded bg-[#1A3A4A] px-2 py-1.5 text-[10px] font-bold text-white hover:bg-[#14303e] disabled:opacity-40"
+          >
+            {ai.busy === "write" ? "Writing…" : "Write copy · 1cr"}
+          </button>
+          <button
+            type="button"
+            onClick={ai.generate}
+            disabled={!ai.prompt.trim() || !!ai.busy}
+            className="rounded bg-[#EF6C33] px-2 py-1.5 text-[10px] font-bold text-white hover:bg-[#d75a25] disabled:opacity-40"
+          >
+            {ai.busy === "image" ? "Generating…" : "Make image · 8cr"}
+          </button>
+        </div>
+        {ai.error && (
+          <div className="mt-1.5 rounded border border-red-200 bg-red-50 p-1.5 text-[10px] text-red-700">{ai.error}</div>
+        )}
+        {ai.options.length > 0 && (
+          <div className="mt-1.5 space-y-1">
+            {ai.options.map((o, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => ai.apply(o)}
+                className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-left text-[11px] text-slate-700 hover:border-[#EF6C33]"
+              >
+                {o}
+              </button>
+            ))}
+            <div className="text-[9px] text-slate-400">Click one — it replaces the selected text or drops in fresh.</div>
+          </div>
+        )}
+      </div>
+
       <div className="p-3">
         <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Text</div>
         <div className="space-y-1">
@@ -1884,18 +2164,45 @@ function InsertRail({
       </div>
 
       <div className="border-t border-slate-100 p-3">
-        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Shapes</div>
+        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Elements</div>
+        <div className="mb-1.5 grid grid-cols-2 gap-1.5">
+          {ELEMENT_PRESETS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => onAddElement(p.key)}
+              className="rounded border border-slate-200 px-1.5 py-1.5 text-[10px] font-semibold text-slate-700 hover:border-[#1A3A4A] hover:bg-slate-50"
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
         <div className="grid grid-cols-3 gap-1.5">
           <AddLayerButton icon={Square} label="Rect" onClick={() => onAddShape("rect")} />
           <AddLayerButton icon={Circle} label="Ellipse" onClick={() => onAddShape("ellipse")} />
           <AddLayerButton icon={Minus} label="Line" onClick={() => onAddShape("line")} />
+        </div>
+        <div className="mt-1.5 grid grid-cols-5 gap-1">
+          {decorEntries.map(([key, d]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onAddIcon(key)}
+              title={key}
+              className="flex aspect-square items-center justify-center rounded border border-slate-200 hover:border-[#1A3A4A] hover:bg-slate-50"
+            >
+              <svg viewBox="0 0 100 100" className="h-5 w-5">
+                <path d={d} fillRule="evenodd" fill="#94A3B8" />
+              </svg>
+            </button>
+          ))}
         </div>
       </div>
 
       <div className="border-t border-slate-100 p-3">
         <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Icons</div>
         <div className="grid grid-cols-5 gap-1">
-          {Object.entries(ICON_PATHS).map(([key, d]) => (
+          {iconEntries.map(([key, d]) => (
             <button
               key={key}
               type="button"
@@ -2227,14 +2534,32 @@ function LayerPropertiesPanel({
                 <Icon className="h-3 w-3" />
               </button>
             ))}
-            <label className="ml-auto flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              <input
-                type="checkbox"
-                checked={(layer as TextLayer).shadow === true}
-                onChange={(e) => onUpdate({ shadow: e.target.checked })}
-              />
-              Shadow
-            </label>
+            <select
+              value={
+                (layer as TextLayer).effect === "lift" ? "lift"
+                : (layer as TextLayer).effect === "hollow" ? "hollow"
+                : (layer as TextLayer).outline ? "outline"
+                : (layer as TextLayer).shadow ? "shadow"
+                : "none"
+              }
+              onChange={(e) => {
+                const v = e.target.value;
+                const reset = { shadow: false, effect: undefined, outline: undefined } as Partial<Layer>;
+                if (v === "shadow") onUpdate({ ...reset, shadow: true } as Partial<Layer>);
+                else if (v === "lift") onUpdate({ ...reset, effect: "lift" } as Partial<Layer>);
+                else if (v === "hollow") onUpdate({ ...reset, effect: "hollow" } as Partial<Layer>);
+                else if (v === "outline") onUpdate({ ...reset, outline: (palette?.primary || "#1A3A4A") } as Partial<Layer>);
+                else onUpdate(reset);
+              }}
+              className="ml-auto rounded border border-slate-200 px-1.5 py-1 text-[11px]"
+              title="Text effect"
+            >
+              <option value="none">No effect</option>
+              <option value="shadow">Shadow</option>
+              <option value="lift">Lift</option>
+              <option value="outline">Outline</option>
+              <option value="hollow">Hollow</option>
+            </select>
           </div>
           <div className="grid grid-cols-2 gap-1.5">
             <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
@@ -2260,23 +2585,12 @@ function LayerPropertiesPanel({
             label="Color" value={(layer as TextLayer).color} fallback="#111827"
             palette={palette} onChange={(c) => onUpdate({ color: c })}
           />
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
-              <ColorField
-                label="Outline" value={(layer as TextLayer).outline || undefined} fallback="#1A3A4A"
-                palette={palette} onChange={(c) => onUpdate({ outline: c } as Partial<Layer>)}
-              />
-            </div>
-            {(layer as TextLayer).outline && (
-              <button
-                type="button"
-                onClick={() => onUpdate({ outline: undefined } as Partial<Layer>)}
-                className="rounded border border-slate-200 px-1.5 py-1 text-[10px] font-semibold text-slate-500 hover:bg-slate-50"
-              >
-                No outline
-              </button>
-            )}
-          </div>
+          {(layer as TextLayer).outline && (
+            <ColorField
+              label="Outline color" value={(layer as TextLayer).outline} fallback="#1A3A4A"
+              palette={palette} onChange={(c) => onUpdate({ outline: c } as Partial<Layer>)}
+            />
+          )}
           {onFixContrast && (
             <button
               type="button"
@@ -2313,6 +2627,57 @@ function LayerPropertiesPanel({
               {removeBackgroundError}
             </div>
           )}
+          {/* GIMP-style adjustments — previewed live, baked into the export. */}
+          {(() => {
+            const f = (layer as ImageLayer).filters || {};
+            const setF = (patch: Partial<ImageFilters>) =>
+              onUpdate({ filters: { ...f, ...patch } } as Partial<Layer>);
+            return (
+              <div className="space-y-1.5">
+                <div>
+                  <div className="mb-0.5 flex justify-between text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    <span>Brightness</span><span className="tabular-nums">{Math.round((f.brightness ?? 1) * 100)}%</span>
+                  </div>
+                  <input
+                    type="range" min={50} max={150}
+                    value={Math.round((f.brightness ?? 1) * 100)}
+                    onChange={(e) => setF({ brightness: Number(e.target.value) / 100 })}
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <div className="mb-0.5 flex justify-between text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    <span>Saturation</span><span className="tabular-nums">{Math.round((f.saturation ?? 1) * 100)}%</span>
+                  </div>
+                  <input
+                    type="range" min={0} max={200}
+                    value={Math.round((f.saturation ?? 1) * 100)}
+                    onChange={(e) => setF({ saturation: Number(e.target.value) / 100 })}
+                    className="w-full"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    <input
+                      type="checkbox"
+                      checked={f.grayscale === true}
+                      onChange={(e) => setF({ grayscale: e.target.checked })}
+                    />
+                    Black & white
+                  </label>
+                  {(f.grayscale || (f.brightness && f.brightness !== 1) || (f.saturation && f.saturation !== 1)) && (
+                    <button
+                      type="button"
+                      onClick={() => onUpdate({ filters: undefined } as Partial<Layer>)}
+                      className="text-[10px] font-semibold text-slate-500 hover:text-slate-700"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -2320,10 +2685,60 @@ function LayerPropertiesPanel({
       {layer.kind === "shape" && (
         <div className="space-y-2 border-t border-slate-100 pt-2">
           {(layer as ShapeLayer).shape !== "line" && (
-            <ColorField
-              label="Fill" value={(layer as ShapeLayer).fill} fallback="#FEC82C"
-              palette={palette} onChange={(c) => onUpdate({ fill: c })}
-            />
+            <>
+              <div className="flex gap-1 rounded bg-slate-100 p-0.5 text-[10px] font-semibold">
+                {(["solid", "gradient"] as const).map((m) => {
+                  const active = ((layer as ShapeLayer).gradient ? "gradient" : "solid") === m;
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => onUpdate(
+                        m === "gradient"
+                          ? { gradient: (layer as ShapeLayer).gradient || { from: palette?.primary || "#1A3A4A", to: palette?.secondary || "#FEC82C", dir: "d1" } } as Partial<Layer>
+                          : { gradient: undefined } as Partial<Layer>,
+                      )}
+                      className={`flex-1 rounded px-1.5 py-0.5 capitalize ${active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+                    >
+                      {m}
+                    </button>
+                  );
+                })}
+              </div>
+              {(layer as ShapeLayer).gradient ? (
+                <>
+                  <ColorField
+                    label="From" value={(layer as ShapeLayer).gradient!.from} fallback="#1A3A4A"
+                    palette={palette}
+                    onChange={(c) => onUpdate({ gradient: { ...(layer as ShapeLayer).gradient!, from: c } } as Partial<Layer>)}
+                  />
+                  <ColorField
+                    label="To" value={(layer as ShapeLayer).gradient!.to} fallback="#FEC82C"
+                    palette={palette}
+                    onChange={(c) => onUpdate({ gradient: { ...(layer as ShapeLayer).gradient!, to: c } } as Partial<Layer>)}
+                  />
+                  <div className="flex gap-1">
+                    {(["h", "v", "d1", "d2"] as const).map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => onUpdate({ gradient: { ...(layer as ShapeLayer).gradient!, dir: d } } as Partial<Layer>)}
+                        className={"rounded border px-2 py-1 text-[11px] " +
+                          ((layer as ShapeLayer).gradient!.dir === d ? "border-[#1A3A4A] bg-slate-100 font-bold" : "border-slate-200 hover:bg-slate-50")}
+                        title={{ h: "Left to right", v: "Top to bottom", d1: "Diagonal down", d2: "Diagonal up" }[d]}
+                      >
+                        {{ h: "→", v: "↓", d1: "↘", d2: "↗" }[d]}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <ColorField
+                  label="Fill" value={(layer as ShapeLayer).fill} fallback="#FEC82C"
+                  palette={palette} onChange={(c) => onUpdate({ fill: c })}
+                />
+              )}
+            </>
           )}
           <ColorField
             label="Stroke" value={(layer as ShapeLayer).stroke} fallback="#1A3A4A"
@@ -2387,24 +2802,39 @@ function layerToFabricObject(
       fontSize: size,
       fontFamily: t.font || DEFAULT_FONTS[0],
       fontWeight: t.weight || "400",
-      fill: t.color || "#111827",
       textAlign: t.align || "left",
       lineHeight: t.lineHeight || 1.2,
       // Fabric charSpacing is in 1/1000 em; our model stores px.
       charSpacing: t.letterSpacing ? (t.letterSpacing / size) * 1000 : 0,
-      // Outline: stroke painted first so it sits behind the fill — matches
-      // the server's behind-copy technique visually.
-      stroke: t.outline && t.outline !== "none" ? t.outline : undefined,
-      strokeWidth: t.outline && t.outline !== "none" ? Math.max(1, Math.round(size * 0.08)) : 0,
+      // Hollow: stroke-only type. Outline: stroke painted behind the fill.
+      ...(t.effect === "hollow"
+        ? {
+            fill: "transparent",
+            stroke: t.color || "#111827",
+            strokeWidth: Math.max(1, Math.round(size * 0.05)),
+          }
+        : {
+            fill: t.color || "#111827",
+            stroke: t.outline && t.outline !== "none" ? t.outline : undefined,
+            strokeWidth: t.outline && t.outline !== "none" ? Math.max(1, Math.round(size * 0.08)) : 0,
+          }),
       paintFirst: "stroke",
-      shadow: t.shadow
+      // Lift = soft blurred shadow; Shadow = hard offset (both match export).
+      shadow: t.effect === "lift"
         ? new fabric.Shadow({
-            color: "rgba(0,0,0,0.35)",
-            offsetX: Math.max(1, Math.round(size * 0.045)),
-            offsetY: Math.max(1, Math.round(size * 0.045)),
-            blur: 0,
+            color: "rgba(0,0,0,0.45)",
+            offsetX: 0,
+            offsetY: Math.max(1, Math.round(size * 0.06)),
+            blur: Math.max(3, Math.round(size * 0.12)),
           })
-        : undefined,
+        : t.shadow
+          ? new fabric.Shadow({
+              color: "rgba(0,0,0,0.35)",
+              offsetX: Math.max(1, Math.round(size * 0.045)),
+              offsetY: Math.max(1, Math.round(size * 0.045)),
+              blur: 0,
+            })
+          : undefined,
     });
     return itext;
   }
@@ -2445,6 +2875,17 @@ function layerToFabricObject(
         visible: il.visible !== false,
         selectable: true,
       });
+      // GIMP-style adjustments preview — the export bakes the same values
+      // via sharp, so what you see is what ships.
+      const f = il.filters;
+      if (f && (f.grayscale || (f.brightness && f.brightness !== 1) || (f.saturation && f.saturation !== 1))) {
+        const fx: fabric.filters.BaseFilter<string, Record<string, unknown>>[] = [];
+        if (f.brightness && f.brightness !== 1) fx.push(new fabric.filters.Brightness({ brightness: f.brightness - 1 }));
+        if (f.saturation && f.saturation !== 1) fx.push(new fabric.filters.Saturation({ saturation: f.saturation - 1 }));
+        if (f.grayscale) fx.push(new fabric.filters.Grayscale());
+        img.filters = fx;
+        try { img.applyFilters(); } catch { /* filter backend unavailable — export still bakes them */ }
+      }
       // Scale to fit the layer dimensions.
       const sx = il.w / (img.width || 1);
       const sy = il.h / (img.height || 1);
@@ -2540,7 +2981,7 @@ function layerToFabricObject(
         height: s.h,
         rx: radius,
         ry: radius,
-        fill,
+        fill: s.gradient ? fabricGradient(s.gradient) : fill,
         stroke,
         strokeWidth,
       });
@@ -2554,7 +2995,7 @@ function layerToFabricObject(
         // bounding rect, not the center.
         originX: "left",
         originY: "top",
-        fill,
+        fill: s.gradient ? fabricGradient(s.gradient) : fill,
         stroke,
         strokeWidth,
       });
