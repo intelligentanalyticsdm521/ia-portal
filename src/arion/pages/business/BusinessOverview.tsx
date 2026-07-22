@@ -483,7 +483,7 @@ function GbpIntakeModal({ open, draft, setDraft, error, busy, onClose, onSubmit 
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: '170px 1fr', rowGap: 12, columnGap: 12, alignItems: 'center' }}>
           <div style={fieldLabel}>Business name *</div>
-          <input className="field-input" value={draft.title} onChange={e => set({ title: e.target.value })} placeholder="e.g. Rolling In It LLC" />
+          <input className="field-input" value={draft.title} onChange={e => set({ title: e.target.value })} placeholder="e.g. Summit Lawn & Landscape LLC" />
 
           <div style={fieldLabel}>Business category *</div>
           <input className="field-input" value={draft.category} onChange={e => set({ category: e.target.value })} placeholder='e.g. "Plumber", "Marketing agency", "Dentist"' />

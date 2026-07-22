@@ -911,7 +911,7 @@ function NewProjectModal({
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Briarwood Dental Spring Brand Refresh"
+                placeholder="e.g. Spring Brand Refresh"
                 className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                 autoFocus
               />
