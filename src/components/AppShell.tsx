@@ -83,11 +83,12 @@ function deriveProduct(pathname: string): ProductKey {
   const keyMatch = pathname.match(/\/app\/services\/([a-z0-9_]+)/);
   if (keyMatch && SETTINGS_KEYS.has(keyMatch[1])) return "settings";
 
-  // My Brand top-level slot REMOVED 2026-06-22 — any lingering my_brand_*
-  // links (from the page files we kept on disk for the Q4 build) fall back
-  // to "overview" through the map below, which is the desired behaviour:
-  // they're no longer reachable from nav and pointing at them shouldn't
-  // try to activate a ProductKey that no longer exists.
+  // IA re-cut 2026-07-21 — My Brand lives INSIDE ARION as a nav section.
+  // Every my_brand_* route must keep the ARION product active (SubNav
+  // mounted + rail icon lit); before this, the generic prefix regex below
+  // extracted "my" → no product → "overview" → the whole SubNav unmounted
+  // the moment you entered Image Studio (Brandon's "nav bar doesn't work").
+  if (keyMatch && keyMatch[1].startsWith("my_brand_")) return "arion";
 
   const match = pathname.match(/\/app\/services\/([a-z]+)_/);
   if (!match) return "overview";
