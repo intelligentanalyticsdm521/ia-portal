@@ -18,8 +18,8 @@ import { IadmModal } from "./IadmModal";
 
 export interface UnifiedEvent {
   id: string;
-  source: "oliver" | "spark" | "arion";
-  kind: "job" | "booking" | "campaign" | "email" | "sms" | string;
+  source: "oliver" | "spark" | "arion" | "consulting";
+  kind: "job" | "booking" | "campaign" | "email" | "sms" | "social_post" | string;
   title: string;
   start: string;     // ISO
   end?: string | null;
@@ -44,6 +44,7 @@ const KIND_LABEL: Record<string, string> = {
   email:   "Email",
   sms:     "SMS",
   campaign:"Campaign",
+  social_post: "Social Post",
 };
 
 function ymd(d: Date) {
@@ -163,7 +164,7 @@ export function UnifiedCalendarGrid({ kinds, className }: Props) {
               loading" / "errored" so Brandon's complaint pattern
               ("calendar is broken") is faster to triage. */}
           {!loading && !error && events.length === 0 && (
-            <span className="text-slate-500">No scheduled jobs, bookings, or campaigns in this view</span>
+            <span className="text-slate-500">No scheduled jobs, bookings, campaigns, or social posts in this view</span>
           )}
           {!loading && events.length > 0 && (
             <span className="text-slate-500">{events.length} events this view</span>
