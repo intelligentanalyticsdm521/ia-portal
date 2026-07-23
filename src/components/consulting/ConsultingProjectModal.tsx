@@ -39,7 +39,7 @@
 // customer-visible copy — schema names like client_tenant_id stay in code
 // only.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IadmModal, CORE_BLUE } from "../IadmModal";
 import { OnboardingWizardModal } from "./OnboardingWizardModal";
 import { useOliverApi } from "../../hooks/useOliverApi";
@@ -578,6 +578,8 @@ export function ConsultingProjectModal({
           {data && tab === "deliverables" && (
             <DeliverablesTab
               deliverables={data.deliverables || []}
+              milestones={milestones}
+              projectId={data.project.project_id}
               viewerRole={viewerRole}
               onChanged={load}
             />
@@ -2219,22 +2221,150 @@ function EditMilestoneModal({
 // ─────────────────────────────────────────────────────────────────────────
 function DeliverablesTab({
   deliverables,
+  milestones,
+  projectId,
   viewerRole,
   onChanged,
 }: {
   deliverables: ConsultingDeliverable[];
+  milestones: ConsultingProjectMilestone[];
+  projectId: string;
   viewerRole: "founder" | "client";
   onChanged: () => void;
 }) {
+  const { uploadFounder, download } = useOliverApi();
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [milestoneId, setMilestoneId] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  async function handleUpload() {
+    if (!file || !milestoneId) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("milestone_id", milestoneId);
+      // Title is optional server-side (it falls back to the file name), but
+      // sending it explicitly keeps the list readable.
+      form.append("title", title.trim() || file.name);
+      await uploadFounder(`/consulting/projects/${projectId}/deliverables`, form);
+      setFile(null);
+      setTitle("");
+      setMilestoneId("");
+      if (fileRef.current) fileRef.current.value = "";
+      onChanged();
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  // The blob container is private, so the file must be streamed through the
+  // API with a bearer token — a direct link to file_url would be denied.
+  async function handleDownload(d: ConsultingDeliverable) {
+    setDownloadingId(d.deliverable_id);
+    try {
+      await download(
+        `/consulting/deliverables/${d.deliverable_id}/download`,
+        d.file_name || d.title || "deliverable"
+      );
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Download failed.");
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
+  const uploader =
+    viewerRole === "founder" ? (
+      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-4">
+        <div className="text-sm font-semibold text-slate-900">Upload a deliverable</div>
+        <div className="mt-0.5 text-xs text-slate-500">
+          Attach an authored file — a growth plan, audit, or deck. Max 50&nbsp;MB.
+        </div>
+        {milestones.length === 0 ? (
+          <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            This project has no milestones yet. Add a milestone first — every deliverable is
+            filed against one.
+          </div>
+        ) : (
+          <>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Milestone
+                </span>
+                <select
+                  value={milestoneId}
+                  onChange={(e) => setMilestoneId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900"
+                >
+                  <option value="">Select a milestone…</option>
+                  {milestones.map((m) => (
+                    <option key={m.milestone_id} value={m.milestone_id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Title <span className="font-normal normal-case text-slate-400">(optional)</span>
+                </span>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder={file?.name || "Defaults to the file name"}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900"
+                />
+              </label>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <input
+                ref={fileRef}
+                type="file"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                className="block w-full max-w-xs text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-slate-700"
+              />
+              <button
+                type="button"
+                onClick={handleUpload}
+                disabled={!file || !milestoneId || uploading}
+                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {uploading ? "Uploading…" : "Upload deliverable"}
+              </button>
+            </div>
+          </>
+        )}
+        {uploadError && (
+          <div className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{uploadError}</div>
+        )}
+      </div>
+    ) : null;
+
   if (!deliverables.length) {
     return (
-      <div className="px-6 py-10 text-center text-sm text-slate-500">
-        No deliverables on this project yet. They appear here once a deliverable is filed to a milestone.
+      <div className="space-y-3 p-4">
+        {uploader}
+        <div className="px-2 py-8 text-center text-sm text-slate-500">
+          No deliverables on this project yet.
+          {viewerRole === "founder"
+            ? " Upload one above, or file one from a milestone."
+            : " They appear here once your consultant files one."}
+        </div>
       </div>
     );
   }
   return (
     <div className="space-y-3 p-4">
+      {uploader}
       {deliverables.map((d) => {
         const panelShape: DeliverableShape = {
           deliverable_id: d.deliverable_id,
@@ -2264,14 +2394,16 @@ function DeliverablesTab({
                 )}
               </div>
               {d.file_url && (
-                <a
-                  href={d.file_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                // NOT an <a href={d.file_url}> — the blob container is private,
+                // so a direct link is denied. Stream it through the API instead.
+                <button
+                  type="button"
+                  onClick={() => handleDownload(d)}
+                  disabled={downloadingId === d.deliverable_id}
+                  className="shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
                 >
-                  {d.file_name ? "Download" : "Open file"}
-                </a>
+                  {downloadingId === d.deliverable_id ? "Downloading…" : "Download"}
+                </button>
               )}
             </div>
             <div className="mt-3 border-t border-slate-100 pt-3">

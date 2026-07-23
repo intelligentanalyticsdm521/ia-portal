@@ -6,7 +6,7 @@
 import { useCallback, useMemo } from "react";
 import { useMsal } from "@azure/msal-react";
 import { useActiveAccount } from "../auth/useAccessToken";
-import { oliverGet, oliverPost, oliverPatch, oliverPut, oliverDelete, BYPASS_TENANT_OVERRIDE } from "../lib/oliverApi";
+import { oliverGet, oliverPost, oliverPatch, oliverPut, oliverDelete, oliverUpload, oliverDownload, BYPASS_TENANT_OVERRIDE } from "../lib/oliverApi";
 import { useClientTenantIdOverride } from "../lib/clientTenantContext";
 import { useIsFounder } from "./useIsFounder";
 
@@ -99,10 +99,31 @@ export function useOliverApi() {
     [instance, account, isFounder]
   );
 
+  // Multipart upload — founder-scoped like postFounder (the upload endpoints
+  // are requireFounder-gated, so an active view-as override would 403 them).
+  const uploadFounder = useCallback(
+    <T>(path: string, form: FormData): Promise<T> => {
+      if (!isFounder) {
+        return Promise.reject(new Error("uploadFounder called by non-founder — backend requireFounder will 403 this request"));
+      }
+      return oliverUpload<T>(instance, account, path, form);
+    },
+    [instance, account, isFounder]
+  );
+
+  // Authenticated binary download. Private-container files are streamed by the
+  // API behind its tenant guard, so a plain <a href> to the blob URL cannot
+  // work — it has no bearer token and the container denies anonymous reads.
+  const download = useCallback(
+    (path: string, filename: string): Promise<void> =>
+      oliverDownload(instance, account, path, filename),
+    [instance, account]
+  );
+
   // Stable object identity — prevents consumers keyed on this hook's result
   // from re-fetching on every render (fetch once per page, not per render).
   return useMemo(
-    () => ({ get, post, patch, put, del, getFounder, postFounder, ready: !!account }),
-    [get, post, patch, put, del, getFounder, postFounder, account]
+    () => ({ get, post, patch, put, del, getFounder, postFounder, uploadFounder, download, ready: !!account }),
+    [get, post, patch, put, del, getFounder, postFounder, uploadFounder, download, account]
   );
 }
