@@ -1392,6 +1392,24 @@ export async function getGbpQanda(p: { baseUrl: string; bearerToken: string; ten
 export async function getGbpServices(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<any>({ ...p, path: `/arion/business/services?siteId=${encodeURIComponent(p.siteId)}` });
 }
+export async function draftGbpReviewReply(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; reviewId: string; reviewerName?: string; starRating?: number; comment?: string | null }) {
+  return requestJson<any>({ ...p, method: 'POST', path: `/arion/business/reviews/${encodeURIComponent(p.reviewId)}/draft-reply?siteId=${encodeURIComponent(p.siteId)}`, body: { reviewerName: p.reviewerName, starRating: p.starRating, comment: p.comment } });
+}
+export async function getGbpAutoReply(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...p, path: `/arion/business/reviews/auto-reply?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function setGbpAutoReply(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; enabled: boolean; minStars: number }) {
+  return requestJson<any>({ ...p, method: 'PUT', path: `/arion/business/reviews/auto-reply?siteId=${encodeURIComponent(p.siteId)}`, body: { enabled: p.enabled, minStars: p.minStars } });
+}
+export async function getGbpMedia(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...p, path: `/arion/business/media?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function addGbpMedia(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; sourceUrl: string; category?: string }) {
+  return requestJson<any>({ ...p, method: 'POST', path: `/arion/business/media?siteId=${encodeURIComponent(p.siteId)}`, body: { sourceUrl: p.sourceUrl, category: p.category } });
+}
+export async function deleteGbpMedia(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; mediaId: string }) {
+  return requestJson<any>({ ...p, method: 'DELETE', path: `/arion/business/media/${encodeURIComponent(p.mediaId)}?siteId=${encodeURIComponent(p.siteId)}` });
+}
 export async function saveGbpServices(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; services: Array<Record<string, any>> }) {
   return requestJson<any>({ ...p, method: 'PUT', path: `/arion/business/services?siteId=${encodeURIComponent(p.siteId)}`, body: { services: p.services } });
 }

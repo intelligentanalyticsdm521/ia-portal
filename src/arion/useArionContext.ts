@@ -55,6 +55,12 @@ import {
   getGbpInsightsLive as portalGetGbpInsightsLive,
   getGbpPostsLive as portalGetGbpPostsLive,
   getGbpServices as portalGetGbpServices,
+  draftGbpReviewReply as portalDraftGbpReviewReply,
+  getGbpAutoReply as portalGetGbpAutoReply,
+  setGbpAutoReply as portalSetGbpAutoReply,
+  getGbpMedia as portalGetGbpMedia,
+  addGbpMedia as portalAddGbpMedia,
+  deleteGbpMedia as portalDeleteGbpMedia,
   saveGbpServices as portalSaveGbpServices,
   getGbpQanda as portalGetGbpQanda,
   updateGbpBusiness as portalUpdateGbpBusiness,
@@ -628,6 +634,30 @@ export function useArionContext() {
       async getGbpServices(siteId: string) {
         const b = await base();
         return portalGetGbpServices({ ...b, siteId });
+      },
+      async draftGbpReviewReply(siteId: string, review: { reviewId: string; reviewerName?: string; starRating?: number; comment?: string | null }) {
+        const b = await base();
+        return portalDraftGbpReviewReply({ ...b, siteId, ...review });
+      },
+      async getGbpAutoReply(siteId: string) {
+        const b = await base();
+        return portalGetGbpAutoReply({ ...b, siteId });
+      },
+      async setGbpAutoReply(siteId: string, enabled: boolean, minStars: number) {
+        const b = await base();
+        return portalSetGbpAutoReply({ ...b, siteId, enabled, minStars });
+      },
+      async getGbpMedia(siteId: string) {
+        const b = await base();
+        return portalGetGbpMedia({ ...b, siteId });
+      },
+      async addGbpMedia(siteId: string, sourceUrl: string, category?: string) {
+        const b = await base();
+        return portalAddGbpMedia({ ...b, siteId, sourceUrl, category });
+      },
+      async deleteGbpMedia(siteId: string, mediaId: string) {
+        const b = await base();
+        return portalDeleteGbpMedia({ ...b, siteId, mediaId });
       },
       async saveGbpServices(siteId: string, services: Array<Record<string, any>>) {
         const b = await base();
