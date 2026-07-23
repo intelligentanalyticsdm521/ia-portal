@@ -1389,6 +1389,12 @@ export async function getGbpPostsLive(p: { baseUrl: string; bearerToken: string;
 export async function getGbpQanda(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<any>({ ...p, path: `/arion/business/qanda?siteId=${encodeURIComponent(p.siteId)}` });
 }
+export async function getGbpServices(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...p, path: `/arion/business/services?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function saveGbpServices(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; services: Array<Record<string, any>> }) {
+  return requestJson<any>({ ...p, method: 'PUT', path: `/arion/business/services?siteId=${encodeURIComponent(p.siteId)}`, body: { services: p.services } });
+}
 export async function updateGbpBusiness(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; body: Record<string, any> }) {
   return requestJson<any>({ ...p, method: 'PATCH', path: `/arion/business/update?siteId=${encodeURIComponent(p.siteId)}`, body: p.body });
 }

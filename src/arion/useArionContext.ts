@@ -54,6 +54,8 @@ import {
   getGbpReviewsLive as portalGetGbpReviewsLive,
   getGbpInsightsLive as portalGetGbpInsightsLive,
   getGbpPostsLive as portalGetGbpPostsLive,
+  getGbpServices as portalGetGbpServices,
+  saveGbpServices as portalSaveGbpServices,
   getGbpQanda as portalGetGbpQanda,
   updateGbpBusiness as portalUpdateGbpBusiness,
   createGbpPost as portalCreateGbpPost,
@@ -622,6 +624,14 @@ export function useArionContext() {
       async getGbpInsightsLive(siteId: string, period?: number) {
         const b = await base();
         return portalGetGbpInsightsLive({ ...b, siteId, period });
+      },
+      async getGbpServices(siteId: string) {
+        const b = await base();
+        return portalGetGbpServices({ ...b, siteId });
+      },
+      async saveGbpServices(siteId: string, services: Array<Record<string, any>>) {
+        const b = await base();
+        return portalSaveGbpServices({ ...b, siteId, services });
       },
       async getGbpPostsLive(siteId: string) {
         const b = await base();
