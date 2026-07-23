@@ -11,7 +11,13 @@ export function BusinessServices() {
     <TierGate currentTier={tier} requiredTier="pro" featureName="Services & products management">
       <Card title="Services & Products">
         <p style={{ color: 'var(--text-muted)' }}>
-          Services management will be available once the GBP Services API integration is configured.
+          Coming soon — manage the services and products shown on your Google
+          Business Profile right from here. In the meantime you can edit them
+          directly in your{' '}
+          <a href="https://business.google.com" target="_blank" rel="noopener noreferrer">
+            Google Business Profile
+          </a>
+          ; everything you set there still appears on Google today.
         </p>
       </Card>
 

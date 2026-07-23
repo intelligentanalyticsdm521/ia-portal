@@ -58,12 +58,14 @@ export function GbpStatusCard({ error, surface }: { error: string | null | undef
 // false and alarming (walkthrough catch 2026-07-22).
 export function GbpPendingVerificationCard({ what }: { what: string }) {
   return (
-    <InfoCard title="Google Business Profile — Verification Pending">
+    <InfoCard title="Google is verifying your business">
       <p style={{ margin: 0 }}>
-        Your listing is created and connected. Google doesn't publish {what} until
-        the business is verified — finish verification on the Overview tab and
-        this page fills in on its own once Google approves (usually within days;
-        instant for some businesses).
+        Your account is connected and your listing has been created. Google is
+        now verifying and activating your business — this usually completes
+        within 24 hours of finishing the verification step on the Overview tab
+        (postcard verification can take up to two weeks). Your {what} will
+        appear here automatically once Google activates the listing — please
+        check back later.
       </p>
     </InfoCard>
   );

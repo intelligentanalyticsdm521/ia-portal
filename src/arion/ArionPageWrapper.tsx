@@ -20,7 +20,7 @@ const PAGE_MAP: Record<string, string> = {
   opportunities: 'Opportunities', performance: 'Performance',
   indexing: 'Search & Indexing', sitemaps: 'Sitemaps',
   core_web_vitals: 'Core Web Vitals', bing_copilot: 'Bing Copilot AI',
-  bing_indexnow: 'Bing IndexNow', reviews: 'Reviews', insights: 'Insights',
+  bing_indexnow: 'Bing IndexNow', reviews: 'Reviews', insights: 'Performance',
   posts: 'Posts', services: 'Services', bing_overview: 'Bing Places',
   apple_overview: 'Apple Maps', settings: 'Settings', support: 'Support',
 };
