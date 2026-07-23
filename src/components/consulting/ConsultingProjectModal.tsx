@@ -117,7 +117,10 @@ export interface ConsultingProjectRow {
   owner_user_id?: string | null;
   owner_display_name?: string | null;
   owner_avatar_url?: string | null;
-  total_budget_cents?: number | null;
+  // Column is `total_billable_cents` (verified against prod 2026-07-22).
+  // This was typed as `total_budget_cents`, which the API never returns — so the
+  // budget rendered "Not set" even when a value existed.
+  total_billable_cents?: number | null;
   currency?: string | null;
   started_at?: string | null;
   target_completion_date?: string | null;
@@ -183,6 +186,11 @@ export function ConsultingProjectModal({
 
   const [tab, setTab] = useState<"overview" | "milestones" | "deliverables" | "notes" | "activity" | "invoices" | "proposals">("overview");
   const [data, setData] = useState<WorkspaceResponse | null>(null);
+  // Editable project details (Category / Owner / Total budget). Picker sources
+  // are loaded once per open, founder-only — clients never edit these.
+  const [savingDetail, setSavingDetail] = useState(false);
+  const [categoryOptions, setCategoryOptions] = useState<Array<{ category_id: string; name: string }>>([]);
+  const [ownerOptions, setOwnerOptions] = useState<Array<{ user_id: string; label: string }>>([]);
   // PB-2 — milestone-anchored onboarding launcher. Opened by the "Start
   // Onboarding" button on the Platform-Provisioning milestone; scoped to the
   // project's linked_tenant_id.
@@ -242,6 +250,33 @@ export function ConsultingProjectModal({
     void load();
   }, [open, projectId, load]);
 
+  // Picker sources for the editable detail fields. Founder-only; failures are
+  // non-fatal (the field just falls back to read-only text rather than breaking
+  // the whole modal).
+  useEffect(() => {
+    if (!open || viewerRole !== "founder") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await get<{ data?: Array<{ category_id: string; name: string }> }>("/consulting/categories");
+        const list = (r as { data?: Array<{ category_id: string; name: string }> })?.data ?? (r as unknown as Array<{ category_id: string; name: string }>);
+        if (!cancelled && Array.isArray(list)) setCategoryOptions(list);
+      } catch { /* leave empty — field renders read-only */ }
+      try {
+        const r = await get<{ data?: Array<Record<string, string>> }>("/tenant-users");
+        const list = (r as { data?: Array<Record<string, string>> })?.data ?? (r as unknown as Array<Record<string, string>>);
+        if (!cancelled && Array.isArray(list)) {
+          setOwnerOptions(
+            list
+              .filter((u) => u.user_id)
+              .map((u) => ({ user_id: u.user_id, label: (u.full_name || "").trim() || u.email || u.user_id }))
+          );
+        }
+      } catch { /* leave empty — field renders read-only */ }
+    })();
+    return () => { cancelled = true; };
+  }, [open, viewerRole, get]);
+
   // NOTE: hooks must run BEFORE the early return below — keep useMemo here.
   const project = data?.project;
   const milestones = useMemo(
@@ -280,6 +315,28 @@ export function ConsultingProjectModal({
       onChanged?.();
     } catch (e) {
       setErr((e as Error).message || "Could not save status");
+    }
+  }
+
+  /**
+   * Save any project detail field. PATCH /consulting/projects/:id previously
+   * accepted ONLY status + name — every other field came back 400 "nothing to
+   * update", which is why Category / Owner / Total budget were unfixable from
+   * the UI. The endpoint now validates and accepts them. Mirrors
+   * handleStatusChange: patch → reload → tell the parent list.
+   */
+  async function handleDetailPatch(fields: Record<string, unknown>) {
+    if (!project) return;
+    setErr(null);
+    setSavingDetail(true);
+    try {
+      await patch(`/consulting/projects/${project.project_id}`, fields);
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setErr((e as Error).message || "Could not save");
+    } finally {
+      setSavingDetail(false);
     }
   }
 
@@ -492,6 +549,10 @@ export function ConsultingProjectModal({
               viewerRole={viewerRole}
               onStatusChange={handleStatusChange}
               onAccessPortal={() => setViewAsOpen(true)}
+              categoryOptions={categoryOptions}
+              ownerOptions={ownerOptions}
+              savingDetail={savingDetail}
+              onDetailPatch={handleDetailPatch}
             />
           )}
           {data && tab === "milestones" && (
@@ -1241,6 +1302,10 @@ function OverviewTab({
   viewerRole,
   onStatusChange,
   onAccessPortal,
+  categoryOptions = [],
+  ownerOptions = [],
+  savingDetail = false,
+  onDetailPatch,
 }: {
   project: ConsultingProjectRow;
   milestoneCount: number;
@@ -1249,6 +1314,12 @@ function OverviewTab({
   viewerRole: "founder" | "client";
   onStatusChange: (s: ProjectStatus) => void;
   onAccessPortal?: () => void;
+  // Editable project details (founder only). Defaults keep the component safe
+  // to render read-only if a caller doesn't supply them.
+  categoryOptions?: Array<{ category_id: string; name: string }>;
+  ownerOptions?: Array<{ user_id: string; label: string }>;
+  savingDetail?: boolean;
+  onDetailPatch?: (fields: Record<string, unknown>) => void | Promise<void>;
 }) {
   const progressPct = milestoneCount > 0
     ? Math.round((milestonesComplete / milestoneCount) * 100)
@@ -1312,9 +1383,22 @@ function OverviewTab({
       {/* Two-column meta */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <MetaCard title="Category">
-          <div className="text-sm font-semibold text-slate-800">
-            {project.category_name || <span className="text-slate-400">Uncategorized</span>}
-          </div>
+          {viewerRole === "founder" && categoryOptions.length ? (
+            <select
+              value={project.category_id || ""}
+              disabled={savingDetail}
+              onChange={(e) => void onDetailPatch?.({ category_id: e.target.value })}
+              className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold disabled:opacity-60"
+            >
+              {categoryOptions.map((c) => (
+                <option key={c.category_id} value={c.category_id}>{c.name}</option>
+              ))}
+            </select>
+          ) : (
+            <div className="text-sm font-semibold text-slate-800">
+              {project.category_name || <span className="text-slate-400">Uncategorized</span>}
+            </div>
+          )}
         </MetaCard>
 
         <MetaCard title="Status">
@@ -1369,9 +1453,23 @@ function OverviewTab({
                 <User className="h-3.5 w-3.5" />
               </span>
             )}
-            <span className="text-sm font-medium text-slate-800">
-              {project.owner_display_name || <span className="text-slate-400">Unassigned</span>}
-            </span>
+            {viewerRole === "founder" && ownerOptions.length ? (
+              <select
+                value={project.owner_user_id || ""}
+                disabled={savingDetail}
+                onChange={(e) => void onDetailPatch?.({ owner_user_id: e.target.value || null })}
+                className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm font-medium disabled:opacity-60"
+              >
+                <option value="">Unassigned</option>
+                {ownerOptions.map((u) => (
+                  <option key={u.user_id} value={u.user_id}>{u.label}</option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-sm font-medium text-slate-800">
+                {project.owner_display_name || <span className="text-slate-400">Unassigned</span>}
+              </span>
+            )}
           </div>
         </MetaCard>
 
@@ -1384,11 +1482,34 @@ function OverviewTab({
         </MetaCard>
 
         <MetaCard title="Total budget">
-          <div className="text-sm font-semibold text-slate-800">
-            {formatMoney(project.total_budget_cents, project.currency) || (
-              <span className="text-slate-400 font-normal">Not set</span>
-            )}
-          </div>
+          {viewerRole === "founder" ? (
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              disabled={savingDetail}
+              defaultValue={
+                project.total_billable_cents == null ? "" : (project.total_billable_cents / 100).toFixed(2)
+              }
+              placeholder="Not set"
+              // Save on blur / Enter — stored in CENTS, entered in dollars.
+              onBlur={(e) => {
+                const raw = e.target.value.trim();
+                const next = raw === "" ? null : Math.round(Number(raw) * 100);
+                if (raw !== "" && (!Number.isFinite(next as number) || (next as number) < 0)) return;
+                if ((project.total_billable_cents ?? null) === next) return;
+                void onDetailPatch?.({ total_billable_cents: next });
+              }}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold disabled:opacity-60"
+            />
+          ) : (
+            <div className="text-sm font-semibold text-slate-800">
+              {formatMoney(project.total_billable_cents, project.currency) || (
+                <span className="text-slate-400 font-normal">Not set</span>
+              )}
+            </div>
+          )}
         </MetaCard>
 
         <MetaCard title="Last updated">
