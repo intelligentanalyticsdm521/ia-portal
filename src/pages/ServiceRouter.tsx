@@ -27,21 +27,9 @@ import { ArionPageWrapper } from '../arion/ArionPageWrapper';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { ComingSoonBanner } from '../components/ComingSoonBanner';
 
-// Business Profile section gated 2026-06-28 — entire section behind Coming Soon
-// pending Google Workspace migration + GBP auto-provision rework (see
-// SCOPE_WORKING.md F-Onb-D3). Wrap each business page so power users (founder)
-// can still poke at it during dev while paying clients see the banner.
-function withBusinessProfileBanner(page: React.ReactNode) {
-  return (
-    <>
-      <ComingSoonBanner
-        feature="Business Profile is coming soon"
-        detail="We're putting the finishing touches on Business Profile management. Your live Google Business Profile is still working — we'll let you know as soon as these tools are ready."
-      />
-      {page}
-    </>
-  );
-}
+// Business Profile un-gated 2026-07-22 — GBP Connect (client-owned OAuth +
+// create + in-portal verification) shipped and walked; the 2026-06-28
+// coming-soon wrapper is retired (Brandon's call during the GBP walk).
 
 // IA Insights gated 2026-06-28 — entire stack behind Coming Soon pending model
 // audit (SCOPE_WORKING.md F-Onb-D8). No tenant has 30+ days of data; model is
@@ -465,14 +453,14 @@ export function ServiceRouter() {
       case 'arion_search_core_web_vitals': return <Navigate to="/app/services/arion_website_performance_cache" replace />;
       case 'arion_search_bing_copilot': arionPage = <SearchBingCopilot />; break;
       case 'arion_search_bing_indexnow': arionPage = <SearchBingIndexNow />; break;
-      case 'arion_business_overview': arionPage = withBusinessProfileBanner(<BusinessOverview />); break;
-      case 'arion_business_locations': arionPage = withBusinessProfileBanner(<BusinessLocations />); break;
-      case 'arion_business_reviews': arionPage = withBusinessProfileBanner(<BusinessReviews />); break;
-      case 'arion_business_insights': arionPage = withBusinessProfileBanner(<BusinessInsights />); break;
-      case 'arion_business_posts': arionPage = withBusinessProfileBanner(<BusinessPosts />); break;
-      case 'arion_business_services': arionPage = withBusinessProfileBanner(<BusinessServices />); break;
-      case 'arion_business_bing_overview': arionPage = withBusinessProfileBanner(<BusinessBingOverview />); break;
-      case 'arion_business_apple_overview': arionPage = withBusinessProfileBanner(<BusinessAppleOverview />); break;
+      case 'arion_business_overview': arionPage = <BusinessOverview />; break;
+      case 'arion_business_locations': arionPage = <BusinessLocations />; break;
+      case 'arion_business_reviews': arionPage = <BusinessReviews />; break;
+      case 'arion_business_insights': arionPage = <BusinessInsights />; break;
+      case 'arion_business_posts': arionPage = <BusinessPosts />; break;
+      case 'arion_business_services': arionPage = <BusinessServices />; break;
+      case 'arion_business_bing_overview': arionPage = <BusinessBingOverview />; break;
+      case 'arion_business_apple_overview': arionPage = <BusinessAppleOverview />; break;
       // My Brand has NO overview page (Brandon 2026-07-21) — the section
       // lands on Image Studio. arion_brand kept as a redirect so old links,
       // the catalog row, and Settings-era bookmarks keep working.

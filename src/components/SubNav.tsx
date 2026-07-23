@@ -247,20 +247,19 @@ const ARION_NAV: SubNavConfig = {
       ],
     },
     {
-      // Business Profile gated 2026-06-28 — entire section behind Coming Soon
-      // pending Google Workspace migration + GBP auto-provision rework
-      // (see SCOPE_WORKING.md F-Onb-D3). All items show the lock icon; routes
-      // still render the underlying pages with a ComingSoonBanner at top.
+      // Business Profile un-gated 2026-07-22 — GBP Connect (client-owned
+      // OAuth + create + verification) shipped and walked; the 2026-06-28
+      // coming-soon locks predated the rework and are retired.
       label: "Business Profile", icon: MapPin, collapsible: true, sectionId: "business",
       items: [
-        { key: "arion_business_overview", label: "Overview", route: "/app/services/arion_business_overview", gated: true },
-        { key: "arion_business_locations", label: "Locations", route: "/app/services/arion_business_locations", gated: true },
-        { key: "arion_business_reviews", label: "Reviews", route: "/app/services/arion_business_reviews", gated: true },
-        { key: "arion_business_insights", label: "Performance", route: "/app/services/arion_business_insights", gated: true },
-        { key: "arion_business_posts", label: "Posts", route: "/app/services/arion_business_posts", gated: true },
-        { key: "arion_business_services", label: "Services", route: "/app/services/arion_business_services", gated: true },
-        { key: "arion_business_bing_overview", label: "Bing Places", route: "/app/services/arion_business_bing_overview", gated: true },
-        { key: "arion_business_apple_overview", label: "Apple Maps", route: "/app/services/arion_business_apple_overview", gated: true },
+        { key: "arion_business_overview", label: "Overview", route: "/app/services/arion_business_overview" },
+        { key: "arion_business_locations", label: "Locations", route: "/app/services/arion_business_locations" },
+        { key: "arion_business_reviews", label: "Reviews", route: "/app/services/arion_business_reviews" },
+        { key: "arion_business_insights", label: "Performance", route: "/app/services/arion_business_insights" },
+        { key: "arion_business_posts", label: "Posts", route: "/app/services/arion_business_posts" },
+        { key: "arion_business_services", label: "Services", route: "/app/services/arion_business_services" },
+        { key: "arion_business_bing_overview", label: "Bing Places", route: "/app/services/arion_business_bing_overview" },
+        { key: "arion_business_apple_overview", label: "Apple Maps", route: "/app/services/arion_business_apple_overview" },
       ],
     },
     {
