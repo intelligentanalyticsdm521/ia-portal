@@ -1062,7 +1062,7 @@ function AddDocumentModal({
   onAdded: () => void;
   onCreateProposal?: (milestoneId: string) => void;
 }) {
-  const { get, post } = useOliverApi();
+  const { get, post, uploadFounder } = useOliverApi();
 
   const [templates, setTemplates] = useState<DocTemplatePickerRow[]>([]);
   const [templateId, setTemplateId] = useState<string>("");
@@ -1072,6 +1072,12 @@ function AddDocumentModal({
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Upload-a-file branch. This picker previously offered ONLY pre-made
+  // templates, so an authored document (a growth plan, an audit) could not be
+  // attached to a step at all — the capability existed on the Deliverables tab
+  // but not here, which is where the founder actually works.
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadTitle, setUploadTitle] = useState("");
 
   useEffect(() => { setRecipient(clientEmail || ""); }, [clientEmail]);
 
@@ -1092,6 +1098,7 @@ function AddDocumentModal({
   }, [get]);
 
   const isProposal = templateId === "__proposal__";
+  const isUpload = templateId === "__upload__";
 
   async function handleAdd() {
     if (!templateId) { setError("Pick a document."); return; }
@@ -1099,6 +1106,27 @@ function AddDocumentModal({
     if (isProposal) {
       if (milestoneId && onCreateProposal) onCreateProposal(milestoneId);
       onClose();
+      return;
+    }
+    // Upload branch — files land in consulting.deliverable, not as an intake
+    // submission. Requires a milestone (CK_deliverable_attached_to_one).
+    if (isUpload) {
+      if (!uploadFile) { setError("Choose a file to upload."); return; }
+      if (!milestoneId) { setError("A file must be attached to a milestone."); return; }
+      setAdding(true);
+      setError(null);
+      try {
+        const form = new FormData();
+        form.append("file", uploadFile);
+        form.append("milestone_id", milestoneId);
+        form.append("title", uploadTitle.trim() || uploadFile.name);
+        await uploadFounder(`/consulting/projects/${projectId}/deliverables`, form);
+        onAdded();
+      } catch (e) {
+        setError((e as Error).message || "Could not upload the file");
+      } finally {
+        setAdding(false);
+      }
       return;
     }
     setAdding(true);
@@ -1146,7 +1174,15 @@ function AddDocumentModal({
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white disabled:opacity-50"
             style={{ background: CORE_BLUE }}
           >
-            {adding ? "Working…" : isProposal ? "Create proposal" : sendNow ? "Add & send" : "Add document"}
+            {adding
+              ? "Working…"
+              : isProposal
+                ? "Create proposal"
+                : isUpload
+                  ? "Upload file"
+                  : sendNow
+                    ? "Add & send"
+                    : "Add document"}
           </button>
         </div>
       }
@@ -1169,6 +1205,7 @@ function AddDocumentModal({
               onChange={(e) => setTemplateId(e.target.value)}
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm bg-white"
             >
+              <option value="__upload__">📎 Upload a file (PDF, DOCX, deck…)</option>
               {onCreateProposal && <option value="__proposal__">Proposal (create in OLIVER)</option>}
               {templates.map((t) => (
                 <option key={t.template_id} value={t.template_id}>
@@ -1182,7 +1219,43 @@ function AddDocumentModal({
           )}
         </div>
 
-        {!isProposal && (
+        {isUpload && (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                File <span className="font-normal normal-case text-slate-400">· max 50 MB</span>
+              </label>
+              <input
+                type="file"
+                onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                className="block w-full text-xs text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-slate-700"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                Title <span className="font-normal normal-case text-slate-400">(optional)</span>
+              </label>
+              <input
+                value={uploadTitle}
+                onChange={(e) => setUploadTitle(e.target.value)}
+                placeholder={uploadFile?.name || "Defaults to the file name"}
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+              />
+            </div>
+            {!milestoneId && (
+              <p className="text-[11px] text-amber-700">
+                Open <strong>+ Add document</strong> from a milestone to upload a file — every file is
+                filed against a step.
+              </p>
+            )}
+            <p className="text-[11px] text-slate-500">
+              The file is filed to this step as a deliverable. Send it to the client from the
+              Deliverables tab once you're ready.
+            </p>
+          </div>
+        )}
+
+        {!isProposal && !isUpload && (
           <>
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" checked={sendNow} onChange={(e) => setSendNow(e.target.checked)} />
