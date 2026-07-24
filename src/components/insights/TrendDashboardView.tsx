@@ -1,0 +1,311 @@
+// TrendDashboardView — the generic Trends renderer, driven by DashboardScore[].
+//
+// The funnel, as three navigable levels (Brandon 2026-07-24 — click goes to the
+// actual detail view, never a dropdown):
+//
+//   OVERVIEW      platform score + the dashboard cards (score · MoM · sections)
+//     → DASHBOARD the dashboard's section cards + insights & recommendations
+//       → SECTION the detail report: each data point, its trend, how it's built
+//
+// ARION/SPARK/OLIVER/ARGUS all render this same component with their own scored
+// dashboards, so the model looks identical everywhere.
+
+import { useMemo, useState } from "react";
+import { ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Minus, ArrowLeft } from "lucide-react";
+import { LineChart, BarChart, Donut, Gauge, StatBlock } from "../iainsights/SectionVisuals";
+import { deriveInsights } from "../../analytics/insightGen";
+import type { DashboardScore, SectionScore, DataPointScore, ValueFormat } from "../../analytics/scoring";
+import { businessPulse } from "../../analytics/scoring";
+
+// ── formatting ──
+export function formatValue(v: number | string | null, format: ValueFormat): string {
+  if (v == null || v === "") return "—";
+  const n = typeof v === "number" ? v : Number(v);
+  if (!isFinite(n)) return String(v);
+  switch (format) {
+    case "percent":  return `${n.toFixed(n < 10 ? 1 : 0)}%`;
+    case "position": return n.toFixed(1);
+    case "rating":   return n.toFixed(2);
+    case "ms":       return n >= 1000 ? `${(n / 1000).toFixed(1)}s` : `${Math.round(n)}ms`;
+    case "score":    return String(Math.round(n));
+    case "count":    return String(Math.round(n));
+    case "currency": return n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${Math.round(n)}`;
+    default:         return n >= 1000 ? n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : String(n);
+  }
+}
+
+function band(score: number | null): { color: string; bg: string; label: string } {
+  if (score == null) return { color: "#94a3b8", bg: "#f1f5f9", label: "—" };
+  if (score >= 80) return { color: "#15803d", bg: "#f0fdf4", label: "Excellent" };
+  if (score >= 65) return { color: "#4d7c0f", bg: "#f7fee7", label: "Good" };
+  if (score >= 45) return { color: "#b45309", bg: "#fffbeb", label: "Fair" };
+  return { color: "#b91c1c", bg: "#fef2f2", label: "Needs work" };
+}
+
+function ScoreRing({ score, size = 56 }: { score: number | null; size?: number }) {
+  const b = band(score);
+  const stroke = 5, r = (size - stroke) / 2, c = 2 * Math.PI * r;
+  const pct = score == null ? 0 : score;
+  return (
+    <svg width={size} height={size} className="flex-shrink-0" aria-hidden="true">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e2e8f0" strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={b.color} strokeWidth={stroke}
+        strokeLinecap="round" strokeDasharray={`${(pct / 100) * c} ${c}`}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central"
+        fontSize={size * 0.32} fontWeight={700} fill={b.color}>{score == null ? "—" : score}</text>
+    </svg>
+  );
+}
+
+function MoMBadge({ pct, small }: { pct: number | null; small?: boolean }) {
+  if (pct == null) return <span className={`text-slate-400 ${small ? "text-[10px]" : "text-xs"}`}>—</span>;
+  const flat = Math.abs(pct) < 1;
+  const Icon = flat ? Minus : pct > 0 ? TrendingUp : TrendingDown;
+  const tone = flat ? "text-slate-500 bg-slate-100" : pct > 0 ? "text-green-700 bg-green-50" : "text-red-700 bg-red-50";
+  return (
+    <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-semibold ${tone} ${small ? "text-[10px]" : "text-xs"}`}>
+      <Icon className={small ? "h-3 w-3" : "h-3.5 w-3.5"} />{pct > 0 ? "+" : ""}{pct.toFixed(0)}%
+    </span>
+  );
+}
+
+/** The data point's chosen visual, degrading gracefully when data is thin. */
+function DataPointVisual({ dp }: { dp: DataPointScore }) {
+  const clean = dp.series.filter((v): v is number => v != null && isFinite(v));
+  const positive = dp.movementPct == null ? true : (dp.higherIsBetter ? dp.movementPct >= 0 : dp.movementPct >= 0);
+  const n = dp.current ?? 0;
+  const bounded = dp.format === "rating" ? (n / 5) * 100 : dp.format === "percent" ? Math.min(100, n) : n;
+  const wants = dp.visual;
+  const hasSeries = clean.length >= 2;
+  if ((wants === "line" || wants === "bar") && hasSeries) {
+    return wants === "line" ? <LineChart points={clean} positive={dp.movementPct == null ? true : dp.movementPct >= 0} />
+                            : <BarChart points={clean} positive={dp.movementPct == null ? true : dp.movementPct >= 0} />;
+  }
+  if (wants === "donut" && isFinite(n)) return <Donut pct={bounded} positive={positive} />;
+  if (wants === "gauge" && isFinite(n)) return <Gauge pct={bounded} positive={positive} />;
+  return <StatBlock display={formatValue(dp.current, dp.format)} positive={positive} />;
+}
+
+// ── breadcrumb ──
+function Crumbs({ trail, onNav }: { trail: string[]; onNav: (level: number) => void }) {
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-3 flex-wrap">
+      {trail.map((t, i) => (
+        <span key={i} className="flex items-center gap-1.5">
+          {i > 0 && <ChevronRight className="h-3 w-3 text-slate-300" />}
+          {i < trail.length - 1
+            ? <button onClick={() => onNav(i)} className="hover:text-slate-800 hover:underline">{t}</button>
+            : <span className="font-semibold text-slate-700">{t}</span>}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ── the view ──
+export function TrendDashboardView({ dashboards, platformLabel }: { dashboards: DashboardScore[]; platformLabel: string }) {
+  const [dashKey, setDashKey] = useState<string | null>(null);
+  const [secKey, setSecKey] = useState<string | null>(null);
+
+  const platformScore = useMemo(
+    () => businessPulse(dashboards.map((d) => d.score)),
+    [dashboards],
+  );
+
+  const dash = dashboards.find((d) => d.key === dashKey) || null;
+  const sec = dash?.sections.find((s) => s.key === secKey) || null;
+
+  // ── SECTION DETAIL REPORT ──
+  if (dash && sec) {
+    return (
+      <div className="max-w-5xl">
+        <Crumbs trail={[platformLabel, dash.label, sec.label]} onNav={(l) => { if (l === 0) { setDashKey(null); setSecKey(null); } else if (l === 1) setSecKey(null); }} />
+        <button onClick={() => setSecKey(null)} className="mb-3 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800">
+          <ArrowLeft className="h-3.5 w-3.5" /> back to {dash.label}
+        </button>
+        <div className="flex items-center gap-3 mb-4">
+          <ScoreRing score={sec.score} />
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">{sec.label}</h2>
+            <div className="flex items-center gap-2 mt-0.5">
+              <MoMBadge pct={sec.movementPct} />
+              <span className="text-xs text-slate-500">{band(sec.score).label} · this month vs last</span>
+            </div>
+          </div>
+        </div>
+        <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">Every data point, trended</div>
+        <div className="space-y-2">
+          {sec.dataPoints.map((dp) => <DataPointDetail key={dp.key} dp={dp} months={dashboards} />)}
+        </div>
+      </div>
+    );
+  }
+
+  // ── DASHBOARD DETAIL (sections + insights) ──
+  if (dash) {
+    const insights = deriveInsights(dash);
+    const priorities = insights.filter((i) => i.priority);
+    const wins = insights.filter((i) => !i.priority);
+    return (
+      <div className="max-w-5xl">
+        <Crumbs trail={[platformLabel, dash.label]} onNav={() => setDashKey(null)} />
+        <button onClick={() => setDashKey(null)} className="mb-3 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800">
+          <ArrowLeft className="h-3.5 w-3.5" /> back to {platformLabel} Trends
+        </button>
+        <div className="flex items-center gap-3 mb-1">
+          <ScoreRing score={dash.score} size={64} />
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">{dash.label}</h2>
+            <p className="text-xs text-slate-500">{(dash as any).question || ""}</p>
+            <div className="flex items-center gap-2 mt-1"><MoMBadge pct={dash.movementPct} /><span className="text-xs text-slate-500">{band(dash.score).label} · vs last month</span></div>
+          </div>
+        </div>
+
+        <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mt-5 mb-2">What's driving this score — click any section for the detail</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {dash.sections.map((s) => (
+            <button key={s.key} onClick={() => setSecKey(s.key)}
+              className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left hover:border-slate-300 hover:bg-slate-50">
+              <ScoreRing score={s.score} size={44} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2"><span className="text-sm font-semibold text-slate-900">{s.label}</span><MoMBadge pct={s.movementPct} small /></div>
+                <div className="text-[11px] text-slate-500 mt-0.5">{s.dataPoints.filter((d) => !d.unmeasured).length} of {s.dataPoints.length} measured{s.score == null ? " · not connected" : ""}</div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-slate-300 flex-shrink-0" />
+            </button>
+          ))}
+        </div>
+
+        {insights.length > 0 && (
+          <div className="mt-6 rounded-lg border border-slate-200 bg-slate-900 p-5">
+            {priorities.length > 0 && (
+              <>
+                <div className="text-[10px] uppercase font-bold tracking-wide text-orange-400 mb-3">{priorities.length === 1 ? "Top priority" : `Top ${priorities.length} priorities`}</div>
+                {priorities.map((p, i) => <InsightRow key={p.id} n={i + 1} insight={p.insight} rec={p.recommendation} accent="#fb923c" />)}
+              </>
+            )}
+            {wins.length > 0 && (
+              <div className={priorities.length ? "mt-4 pt-4 border-t border-white/10" : ""}>
+                <div className="text-[10px] uppercase font-bold tracking-wide text-lime-400 mb-3">Also worth knowing</div>
+                {wins.map((w, i) => <InsightRow key={w.id} n={priorities.length + i + 1} insight={w.insight} rec={w.recommendation} accent="#a3e635" />)}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── OVERVIEW ──
+  return (
+    <div className="max-w-5xl">
+      <div className="flex items-center gap-3 mb-5">
+        <ScoreRing score={platformScore} size={64} />
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">{platformLabel} Trend Score</h2>
+          <p className="text-xs text-slate-500">{dashboards.filter((d) => d.score != null).length} of {dashboards.length} areas measured · click any area to drill in</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {dashboards.map((d) => (
+          <button key={d.key} onClick={() => d.score != null && setDashKey(d.key)}
+            className={`flex flex-col rounded-lg border border-slate-200 bg-white p-4 text-left ${d.score != null ? "hover:border-slate-300 hover:shadow-sm cursor-pointer" : "opacity-70 cursor-default"}`}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-slate-900 leading-tight">{d.label}</h3>
+                <div className="mt-1"><MoMBadge pct={d.movementPct} small /></div>
+              </div>
+              <ScoreRing score={d.score} size={48} />
+            </div>
+            {d.score == null ? (
+              <p className="mt-3 text-[11px] text-amber-700">Not connected yet</p>
+            ) : (
+              <div className="mt-3 space-y-1">
+                {d.sections.map((s) => (
+                  <div key={s.key} className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500 truncate">{s.label}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="font-semibold text-slate-700 tabular-nums">{s.score ?? "—"}</span>
+                      <MoMBadge pct={s.movementPct} small />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── data point detail row (the deepest level) ──
+function DataPointDetail({ dp }: { dp: DataPointScore; months?: any }) {
+  const [open, setOpen] = useState(false);
+  if (dp.unmeasured) {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+        <div className="text-sm font-semibold text-slate-900">{dp.label}</div>
+        <p className="text-[11px] text-amber-700 mt-0.5">{dp.unmeasured.reason}</p>
+      </div>
+    );
+  }
+  const positive = dp.movementPct == null ? true : dp.movementPct >= 0;
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white">
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 rounded-lg">
+        <DataPointVisual dp={dp} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold text-slate-900">{dp.label}</span>
+            <MoMBadge pct={dp.movementPct} small />
+            <span className="text-[10px] text-slate-400">{Math.round(dp.weight * 100)}% of section</span>
+            {dp.levelKind && <span className="text-[10px] text-slate-400">· vs {dp.levelKind}</span>}
+          </div>
+          <div className="mt-0.5 flex items-baseline gap-2">
+            <span className="text-lg font-bold text-slate-900 tabular-nums">{formatValue(dp.current, dp.format)}</span>
+            {dp.priorMonth != null && <span className="text-[11px] text-slate-400">from {formatValue(dp.priorMonth, dp.format)}</span>}
+          </div>
+          {dp.what && <p className="mt-1 text-xs text-slate-500 leading-relaxed">{dp.what}</p>}
+        </div>
+        {open ? <ChevronLeft className="h-4 w-4 text-slate-400 rotate-90" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
+      </button>
+      {open && (
+        <div className="border-t border-slate-100 px-4 py-3 bg-slate-50/60 rounded-b-lg text-[11px] text-slate-600 space-y-2">
+          <div className="flex flex-wrap gap-x-6 gap-y-1">
+            <span>Movement score <b className="text-slate-800">{dp.movementScore}</b></span>
+            {dp.levelScore != null && <span>Level score <b className="text-slate-800">{Math.round(dp.levelScore)}</b> ({dp.levelKind})</span>}
+            <span>Combined <b className="text-slate-800">{dp.score}</b></span>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase font-semibold text-slate-400 mb-1">12-month trend</div>
+            <div className="flex items-end gap-0.5 h-10">
+              {dp.series.map((v, i) => {
+                const clean = dp.series.filter((x): x is number => x != null);
+                const max = Math.max(...clean, 1), min = Math.min(...clean, 0);
+                const h = v == null ? 0 : ((v - min) / (max - min || 1)) * 100;
+                const last = i === dp.series.length - 1;
+                return <div key={i} title={v == null ? "" : formatValue(v, dp.format)} className="flex-1 rounded-sm" style={{ height: `${Math.max(4, h)}%`, background: last ? (positive ? "#16a34a" : "#dc2626") : "#cbd5e1" }} />;
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InsightRow({ n, insight, rec, accent }: { n: number; insight: string; rec: string; accent: string }) {
+  return (
+    <div className="flex gap-3 mb-3 last:mb-0">
+      <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: accent }}>{n}</div>
+      <div className="min-w-0">
+        <p className="text-[12px] text-slate-200 leading-relaxed">{insight}</p>
+        <p className="mt-1 text-[11px] leading-relaxed flex gap-1.5" style={{ color: accent }}>
+          <span className="font-bold flex-shrink-0">→</span><span>{rec}</span>
+        </p>
+      </div>
+    </div>
+  );
+}

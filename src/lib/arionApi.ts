@@ -1292,6 +1292,12 @@ export async function getSiteDetail(params: { baseUrl: string; bearerToken: stri
   return requestJson<any>({ ...params, path: `/arion/sites/${encodeURIComponent(params.siteId)}` });
 }
 
+export async function getInsightsMetrics(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; months?: number }) {
+  const qp = new URLSearchParams({ siteId: params.siteId });
+  if (params.months != null) qp.set('months', String(params.months));
+  return requestJson<{ source: string; months: string[]; metrics: Record<string, Array<number | null>> }>({ ...params, path: `/arion/insights/metrics?${qp.toString()}` });
+}
+
 export async function getSearchPerformance(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; provider: string; period?: number; groupBy?: string; days?: number }) {
   const qp = new URLSearchParams({ provider: params.provider, siteId: params.siteId });
   if (params.period != null) qp.set('period', String(params.period));

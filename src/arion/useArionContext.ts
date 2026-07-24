@@ -32,6 +32,7 @@ import {
   getSeoSummary as portalGetSeoSummary,
   getSiteDetail as portalGetSiteDetail,
   getSearchPerformance as portalGetSearchPerformance,
+  getInsightsMetrics as portalGetInsightsMetrics,
   inspectUrl as portalInspectUrl,
   submitUrlForIndexing as portalSubmitUrlForIndexing,
   getSearchSitemaps as portalGetSearchSitemaps,
@@ -565,6 +566,11 @@ export function useArionContext() {
       async getSearchPerformance(provider: string, siteId: string, opts?: { period?: number; groupBy?: string; days?: number }) {
         const b = await base();
         return portalGetSearchPerformance({ ...b, siteId, provider, period: opts?.period, groupBy: opts?.groupBy, days: opts?.days });
+      },
+
+      async getInsightsMetrics(siteId: string, months?: number) {
+        const b = await base();
+        return portalGetInsightsMetrics({ ...b, siteId, months });
       },
 
       async inspectUrl(siteId: string, url: string) {
