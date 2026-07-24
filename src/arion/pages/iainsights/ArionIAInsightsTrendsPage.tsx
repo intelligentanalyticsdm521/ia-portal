@@ -57,6 +57,7 @@ export function ArionIAInsightsTrendsPage() {
   const { getToken } = useAccessToken();
   const [openReportKey, setOpenReportKey] = useState<string | null>(null);
   const [priorScores, setPriorScores] = useState<Record<string, number>>({});
+  const [priorSections, setPriorSections] = useState<Record<string, Array<{ key: string; value: any; weight: number; note?: string }>>>({});
   const [searchData, setSearchData] = useState<any>(null);
   const [gbpData, setGbpData] = useState<any>(null);
   const [gbpReviews, setGbpReviews] = useState<any>(null);
@@ -210,12 +211,18 @@ export function ArionIAInsightsTrendsPage() {
     const periodEnd = (data?.dateRange?.end || new Date().toISOString().slice(0, 10)).slice(0, 10);
     const periodStart = (data?.dateRange?.start || new Date(Date.now() - 90 * 86400_000).toISOString().slice(0, 10)).slice(0, 10);
     const scoresMap: Record<string, number> = {};
+    // Per-SECTION values travel with the score. Without these persisted there
+    // is no month-over-month movement PER SECTION — only for the report as a
+    // whole — so a client could see the score fell but not which part of the
+    // business caused it.
+    const sectionsMap: Record<string, Array<{ key: string; value: any; weight: number; note?: string }>> = {};
     for (const k of ARION_TREND_REPORTS) {
       // Unmeasured reports are NOT persisted. Writing a 0 for an unconnected
       // source is exactly the defect that made scores reflect integration
       // completeness rather than business performance.
       if (reports[k]?.unmeasured) continue;
       scoresMap[k] = reports[k].score;
+      if (reports[k].scoreInputs?.length) sectionsMap[k] = reports[k].scoreInputs;
     }
     let cancelled = false;
     (async () => {
@@ -230,17 +237,20 @@ export function ArionIAInsightsTrendsPage() {
         // Persist current period (fire-and-forget)
         await globalThis.fetch(`${baseUrl}/arion/ia-insights/scores`, {
           method: "POST", headers,
-          body: JSON.stringify({ siteId: activeSiteId, periodEnd, periodStart, scores: scoresMap }),
+          body: JSON.stringify({ siteId: activeSiteId, periodEnd, periodStart, scores: scoresMap, sections: sectionsMap }),
         }).catch(() => {});
         // Look up prior period scores
         const r = await globalThis.fetch(`${baseUrl}/arion/ia-insights/prior-scores?siteId=${encodeURIComponent(activeSiteId)}&beforeDate=${encodeURIComponent(periodEnd)}`, { headers });
         if (r.ok && !cancelled) {
           const body = await r.json();
           const prior: Record<string, number> = {};
+          const priorSec: Record<string, any[]> = {};
           for (const [k, v] of Object.entries(body?.data || {})) {
             if (v && typeof (v as any).score === "number") prior[k] = (v as any).score;
+            if (v && Array.isArray((v as any).sections)) priorSec[k] = (v as any).sections;
           }
           setPriorScores(prior);
+          setPriorSections(priorSec);
         }
       } catch { /* swallow */ }
     })();
@@ -289,6 +299,8 @@ export function ArionIAInsightsTrendsPage() {
         <ArionReportDetailModal
           reportKey={openReportKey}
           history={scoreHistories[openReportKey as string] || []}
+          scoreInputs={reports[openReportKey as keyof AllReportScores]?.scoreInputs || []}
+          priorSections={priorSections[openReportKey as string] || null}
           data={data}
           searchData={searchData}
           gbpData={gbpData}

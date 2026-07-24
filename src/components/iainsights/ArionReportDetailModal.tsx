@@ -12,6 +12,7 @@
 // until per-product rich content is built out.
 
 import { X } from "lucide-react";
+import { SectionCard } from "./SectionCard";
 import { MonthlyScoreBars, MIN_HISTORY_PERIODS } from "./MonthlyScoreBars";
 import {
   renderModalContent,
@@ -59,11 +60,24 @@ const REPORT_TITLES: Record<string, string> = {
   technical:           "Technical & Site Health",
 };
 
+export interface ScoreInput {
+  key: string;
+  value: number | string | null;
+  weight: number;
+  note?: string;
+}
+
 interface Props {
   /** Engine reportKey: visibility · audience · conversion · search · content · local · technical · presence */
   reportKey: string;
   /** Optional MoM score history for the chart strip at top of modal. */
   history?: Array<{ period_end: string; score: number }>;
+  /** The engine's scoreInputs — the SECTIONS this report is built from. */
+  scoreInputs?: ScoreInput[];
+  /** Same sections last month, for the per-section MoM badge. */
+  priorSections?: ScoreInput[] | null;
+  /** Trailing monthly values per section key, oldest first — drives sparklines. */
+  sectionHistory?: Record<string, number[]>;
   /** All ARION data sources that the rich renderers depend on. */
   data: any;
   searchData?: any;
@@ -85,6 +99,9 @@ interface Props {
 export function ArionReportDetailModal({
   reportKey,
   history = [],
+  scoreInputs = [],
+  priorSections = null,
+  sectionHistory,
   data,
   searchData,
   gbpData,
@@ -100,6 +117,11 @@ export function ArionReportDetailModal({
   onClose,
 }: Props) {
   const sections = legacySections(reportKey);
+  // Prior month's value for one section, matched by key. Returns undefined
+  // when there is no prior month so the card says "first month" rather than
+  // inventing a change.
+  const priorSectionValue = (key: string) =>
+    priorSections?.find((p) => p.key === key)?.value ?? undefined;
   const title = REPORT_TITLES[reportKey] || MODAL_TITLES[sections[0]] || reportKey;
 
   return (
@@ -150,22 +172,56 @@ export function ArionReportDetailModal({
             </div>
           )}
 
-          {/* Legacy rich-content sections (KPI tiles, tables, breakdowns).
-              A merged report renders both of its constituent sections. */}
-          {sections.map((s) => (
-            <div className="report-rich-body" key={s}>
-              {renderModalContent(
-                s,
-                data,
-                searchData,
-                { gbp: gbpData, reviews: gbpReviews, posts: gbpPosts, qanda: gbpQanda },
-                bingData,
-                seoData,
-                seoDecayData,
-                pluginData
-              )}
+          {/* ── SECTIONS — the major contributors to this report's score ──
+              This is the primary body. Each card shows its month-over-month
+              move and a plain-language blurb, and expands into the detail.
+              The old behaviour dumped every KPI tile and table at the reader
+              at once; that detail now lives BEHIND the section that owns it. */}
+          {scoreInputs.length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">
+                What is driving this score
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                {scoreInputs.map((si) => (
+                  <SectionCard
+                    key={si.key}
+                    sectionKey={si.key}
+                    value={si.value as any}
+                    priorValue={priorSectionValue(si.key)}
+                    weight={si.weight}
+                    note={si.note}
+                    history={sectionHistory?.[si.key]}
+                  />
+                ))}
+              </div>
             </div>
-          ))}
+          )}
+
+          {/* Full breakdown — kept, but demoted below the sections and
+              collapsed by default so it is a deep dive rather than the
+              first thing a business owner is hit with. */}
+          <details className="rounded-lg border border-slate-200 bg-white">
+            <summary className="cursor-pointer select-none px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 rounded-lg">
+              Full data breakdown
+            </summary>
+            <div className="border-t border-slate-100 px-4 py-3 space-y-5">
+              {sections.map((s) => (
+                <div className="report-rich-body" key={s}>
+                  {renderModalContent(
+                    s,
+                    data,
+                    searchData,
+                    { gbp: gbpData, reviews: gbpReviews, posts: gbpPosts, qanda: gbpQanda },
+                    bingData,
+                    seoData,
+                    seoDecayData,
+                    pluginData
+                  )}
+                </div>
+              ))}
+            </div>
+          </details>
 
           {/* Insights & Recommendations — an INSIGHT is the finding, the
               RECOMMENDATION is what to do about it. They are one paired unit,
