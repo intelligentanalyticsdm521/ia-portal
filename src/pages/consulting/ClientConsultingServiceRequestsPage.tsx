@@ -17,6 +17,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { IadmModal } from "../../components/IadmModal";
+// Shared with ClientConsultingProjectModal so the client sees ONE review
+// dialog whether they arrive from here or from a project milestone.
+import { ClientTaskDetailModal, type ClientTaskLike } from "../../components/consulting/ClientTaskDetailModal";
 import { MessageCircle, Plus, AlertCircle, Sparkles } from "lucide-react";
 
 interface ServiceRequest {
@@ -199,110 +202,6 @@ function NewRequestModal({
             {busy ? "Submitting…" : "Submit request"}
           </button>
         </div>
-      </div>
-    </IadmModal>
-  );
-}
-
-// ─── Request detail modal (client view) ──────────────────────────────────
-// The full request: description, attached documents (authenticated
-// download), current stage, and the two review actions when it's their turn.
-function ClientRequestModal({
-  request,
-  acting,
-  onAct,
-  onDownload,
-  onClose,
-}: {
-  request: ServiceRequest;
-  acting: boolean;
-  onAct: (r: ServiceRequest, action: "approve" | "request_revision") => void;
-  onDownload: (path: string, filename: string) => Promise<void>;
-  onClose: () => void;
-}) {
-  const sc = STAGE_COLOR[request.stage] || { bg: "#e2e8f0", fg: "#334155" };
-  const yourTurn = NEEDS_CLIENT.has(request.stage);
-  return (
-    <IadmModal
-      open
-      onClose={onClose}
-      product="oliver"
-      eyebrow="SERVICE REQUEST"
-      title={request.title}
-      subtitle={
-        <span className="text-xs">
-          {request.project_name ? `${request.project_name}${request.milestone_name ? ` · ${request.milestone_name}` : ""} · ` : ""}
-          Created {fmtRel(request.created_at)}
-        </span>
-      }
-      size="info"
-    >
-      <div className="space-y-4 p-4">
-        <span
-          className="inline-block rounded px-2 py-0.5 text-[11px] font-bold uppercase"
-          style={{ background: sc.bg, color: sc.fg }}
-        >
-          {STAGE_LABEL[request.stage] || request.stage}
-        </span>
-
-        {request.description?.trim() ? (
-          <div className="whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            {request.description}
-          </div>
-        ) : (
-          <div className="text-xs italic text-slate-400">No description provided.</div>
-        )}
-
-        <div>
-          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Documents
-          </div>
-          {(request.deliverables?.length || 0) === 0 ? (
-            <div className="text-xs italic text-slate-400">No documents attached.</div>
-          ) : (
-            <ul className="space-y-1">
-              {request.deliverables!.map((d) => (
-                <li key={d.deliverable_id} className="flex items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1.5 text-xs">
-                  <span className="min-w-0 flex-1 truncate text-slate-700">📄 {d.title || d.file_name}</span>
-                  {d.file_url && (
-                    <button
-                      type="button"
-                      onClick={() => onDownload(`/consulting/deliverables/${d.deliverable_id}/download`, d.file_name || d.title || "document")}
-                      className="flex-shrink-0 font-semibold text-sky-700 hover:underline"
-                    >
-                      Download
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {yourTurn ? (
-          <div className="flex items-center gap-2 border-t border-slate-200 pt-3">
-            <button
-              type="button"
-              disabled={acting}
-              onClick={() => onAct(request, "approve")}
-              className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-            >
-              {acting ? "Saving…" : "Approve"}
-            </button>
-            <button
-              type="button"
-              disabled={acting}
-              onClick={() => onAct(request, "request_revision")}
-              className="rounded border border-amber-400 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
-            >
-              Request revision
-            </button>
-          </div>
-        ) : (
-          <div className="border-t border-slate-200 pt-3 text-[11px] text-slate-500">
-            No action needed from you right now — we&apos;ll notify you when something is ready for review.
-          </div>
-        )}
       </div>
     </IadmModal>
   );
@@ -547,10 +446,11 @@ export function ClientConsultingServiceRequestsPage() {
         />
       )}
       {openReq && (
-        <ClientRequestModal
-          request={openReq}
+        <ClientTaskDetailModal
+          task={openReq as ClientTaskLike}
+          deliverables={openReq.deliverables || []}
           acting={actingId === openReq.id}
-          onAct={act}
+          onAct={(t, action) => act(t as unknown as ServiceRequest, action)}
           onDownload={download}
           onClose={() => setOpenReq(null)}
         />

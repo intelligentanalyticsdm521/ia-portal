@@ -17,6 +17,9 @@ import { useCallback, useEffect, useState } from "react";
 import { IadmModal } from "../IadmModal";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { DeliverableActionPanel } from "./DeliverableActionPanel";
+// Shared with the Service Requests page so the client gets ONE review
+// dialog, reachable from a milestone without leaving the project.
+import { ClientTaskDetailModal, type ClientTaskLike } from "./ClientTaskDetailModal";
 import { Folder, CheckCircle2, Circle, Loader2 } from "lucide-react";
 
 interface Phase {
@@ -72,6 +75,9 @@ interface Deliverable {
   deliverable_id: string;
   project_id?: string;
   milestone_id?: number | null;
+  /** Set when the document is attached to a task (service request). */
+  service_request_id?: string | null;
+  file_name?: string | null;
   kind?: string;
   title: string;
   description?: string | null;
@@ -113,6 +119,7 @@ interface ClientTask {
   id: string;
   milestone_id?: string | null;
   title: string;
+  description?: string | null;
   stage: string;
   status: string;
 }
@@ -194,13 +201,16 @@ function phaseLabel(status: string): string {
 }
 
 export function ClientConsultingProjectModal({ open, projectId, onClose, onChanged }: Props) {
-  const { get, ready } = useOliverApi();
+  const { get, patch, download, ready } = useOliverApi();
   const [payload, setPayload] = useState<ProjectPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"steps" | "deliverables">("steps");
   // Which milestone is expanded (shows its tasks). Client-side only.
   const [openMilestone, setOpenMilestone] = useState<string | null>(null);
+  // Task the client drilled into from a milestone (review without leaving).
+  const [openTask, setOpenTask] = useState<ClientTask | null>(null);
+  const [actingTaskId, setActingTaskId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!open || !projectId || !ready) return;
@@ -252,6 +262,22 @@ export function ClientConsultingProjectModal({ open, projectId, onClose, onChang
     }
   }, [get, open, projectId, ready]);
 
+  // Client review actions on a task, without leaving the project.
+  const actOnTask = useCallback(async (task: ClientTaskLike, action: "approve" | "request_revision") => {
+    setActingTaskId(task.id);
+    setError(null);
+    try {
+      await patch(`/consulting/requests/${task.id}`, { action });
+      setOpenTask(null);
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setError((e as Error).message || "Action failed.");
+    } finally {
+      setActingTaskId(null);
+    }
+  }, [patch, load, onChanged]);
+
   useEffect(() => {
     if (!open) {
       // Reset internal state when modal closes so re-opening another row
@@ -260,6 +286,7 @@ export function ClientConsultingProjectModal({ open, projectId, onClose, onChang
       setError(null);
       setTab("steps");
       setOpenMilestone(null);
+      setOpenTask(null);
       return;
     }
     load();
@@ -336,6 +363,7 @@ export function ClientConsultingProjectModal({ open, projectId, onClose, onChang
   const stepsTabLabel = payload?.schema === "lumen" ? "Phases" : "Milestones";
 
   return (
+    <>
     <IadmModal
       open={open}
       onClose={onClose}
@@ -466,16 +494,36 @@ export function ClientConsultingProjectModal({ open, projectId, onClose, onChang
                           </div>
                         ) : (
                           <ul className="space-y-1">
-                            {mTasks.map((t) => (
-                              <li key={t.id} className="flex items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1.5 text-xs">
-                                <span className="min-w-0 flex-1 truncate text-slate-700">
-                                  {t.stage === "completed" ? "✅ " : ""}{t.title}
-                                </span>
-                                <span className="flex-shrink-0 text-[10px] uppercase font-bold text-slate-500">
-                                  {CLIENT_TASK_STAGE[t.stage] || t.stage}
-                                </span>
-                              </li>
-                            ))}
+                            {mTasks.map((t) => {
+                              const tDocs = (payload.deliverables || []).filter(
+                                (d) => String(d.service_request_id || "").toUpperCase() === t.id.toUpperCase(),
+                              );
+                              const needsYou = t.stage === "client_review" || t.stage === "client_revision_review";
+                              return (
+                                <li key={t.id}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setOpenTask(t)}
+                                    className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-slate-100 ${
+                                      needsYou ? "bg-amber-50" : "bg-slate-50"
+                                    }`}
+                                    title="Open to review"
+                                  >
+                                    <span className="min-w-0 flex-1 truncate text-slate-700">
+                                      {t.stage === "completed" ? "✅ " : ""}{t.title}
+                                      {tDocs.length > 0 && (
+                                        <span className="ml-1 text-[9px] text-sky-600">📄{tDocs.length}</span>
+                                      )}
+                                    </span>
+                                    <span className={`flex-shrink-0 text-[10px] font-bold uppercase ${
+                                      needsYou ? "text-amber-700" : "text-slate-500"
+                                    }`}>
+                                      {CLIENT_TASK_STAGE[t.stage] || t.stage}
+                                    </span>
+                                  </button>
+                                </li>
+                              );
+                            })}
                           </ul>
                         )}
                         {mDocs.length > 0 && (
@@ -607,6 +655,36 @@ export function ClientConsultingProjectModal({ open, projectId, onClose, onChang
         </div>
       </div>
     </IadmModal>
+    {openTask && (
+      <ClientTaskDetailModal
+        task={{
+          ...openTask,
+          project_name: payload?.project?.title || null,
+          milestone_name:
+            (payload?.schema === "consulting"
+              ? payload.milestones.find((m) => String(m.milestone_id) === String(openTask.milestone_id))?.name
+              : null) || null,
+        }}
+        deliverables={
+          payload?.schema === "consulting"
+            ? payload.deliverables
+                .filter((d) => String(d.service_request_id || "").toUpperCase() === openTask.id.toUpperCase())
+                .map((d) => ({
+                  deliverable_id: d.deliverable_id,
+                  title: d.title,
+                  file_name: d.file_name ?? null,
+                  file_url: d.file_url ?? null,
+                  status: d.status,
+                }))
+            : []
+        }
+        acting={actingTaskId === openTask.id}
+        onAct={actOnTask}
+        onDownload={download}
+        onClose={() => setOpenTask(null)}
+      />
+    )}
+    </>
   );
 }
 
