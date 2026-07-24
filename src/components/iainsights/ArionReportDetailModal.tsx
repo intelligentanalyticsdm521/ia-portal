@@ -19,11 +19,45 @@ import {
   MODAL_TITLES,
 } from "../../arion/pages/analytics/IAInsightsReports";
 
-// Engine reportKeys → legacy renderer keys (one mismatch: engine 'technical' → legacy 'tech').
-function legacyKey(engineKey: string): string {
-  if (engineKey === "technical") return "tech";
-  return engineKey;
+// v11.0 six-report model → legacy renderer sections.
+//
+// The legacy renderModalContent()/ArgusInsightBox switch on the ORIGINAL
+// single-topic keys ('visibility' | 'audience' | 'conversion' | 'search' |
+// 'content' | 'local' | 'tech'). When Trends moved to six merged reports the
+// new keys matched no case, so every modal rendered an empty body — score
+// header and nothing else.
+//
+// A merged report renders BOTH of its constituent sections, in order. That
+// keeps every KPI tile, table and breakdown the legacy renderers already
+// produce instead of reimplementing them behind a new key.
+const LEGACY_SECTIONS: Record<string, string[]> = {
+  search_visibility:   ["visibility", "search"],
+  audience_conversion: ["audience", "conversion"],
+  local_presence:      ["local"],
+  content:             ["content"],
+  technical:           ["tech"],
+  // social_presence has no legacy renderer — it is a new report. It falls
+  // through to [] and renders the engine's own observations/actions only,
+  // until a dedicated social section is built.
+  social_presence:     [],
+};
+
+function legacySections(engineKey: string): string[] {
+  if (LEGACY_SECTIONS[engineKey]) return LEGACY_SECTIONS[engineKey];
+  // Unknown key — fall back to the pre-v11 behaviour so nothing regresses to
+  // a blank modal again.
+  return [engineKey === "technical" ? "tech" : engineKey];
 }
+
+/** Titles for the six-report model (the legacy MODAL_TITLES are per-section). */
+const REPORT_TITLES: Record<string, string> = {
+  search_visibility:   "Search Visibility",
+  local_presence:      "Local Presence",
+  social_presence:     "Social Presence",
+  audience_conversion: "Audience & Conversion",
+  content:             "Content",
+  technical:           "Technical & Site Health",
+};
 
 interface Props {
   /** Engine reportKey: visibility · audience · conversion · search · content · local · technical · presence */
@@ -65,8 +99,8 @@ export function ArionReportDetailModal({
   nextLabel,
   onClose,
 }: Props) {
-  const k = legacyKey(reportKey);
-  const title = MODAL_TITLES[k] || reportKey;
+  const sections = legacySections(reportKey);
+  const title = REPORT_TITLES[reportKey] || MODAL_TITLES[sections[0]] || reportKey;
 
   return (
     <div
@@ -116,34 +150,42 @@ export function ArionReportDetailModal({
             </div>
           )}
 
-          {/* Legacy rich-content sections per report (KPI tiles, tables, breakdowns). */}
-          <div className="report-rich-body">
-            {renderModalContent(
-              k,
-              data,
-              searchData,
-              { gbp: gbpData, reviews: gbpReviews, posts: gbpPosts, qanda: gbpQanda },
-              bingData,
-              seoData,
-              seoDecayData,
-              pluginData
-            )}
-          </div>
+          {/* Legacy rich-content sections (KPI tiles, tables, breakdowns).
+              A merged report renders both of its constituent sections. */}
+          {sections.map((s) => (
+            <div className="report-rich-body" key={s}>
+              {renderModalContent(
+                s,
+                data,
+                searchData,
+                { gbp: gbpData, reviews: gbpReviews, posts: gbpPosts, qanda: gbpQanda },
+                bingData,
+                seoData,
+                seoDecayData,
+                pluginData
+              )}
+            </div>
+          ))}
 
-          {/* ARGUS Intelligence box — dark, data-driven observations + actions. */}
-          <ArgusInsightBox
-            reportKey={k}
-            data={data}
-            searchData={searchData}
-            gbpData={gbpData}
-            gbpReviews={gbpReviews}
-            gbpPosts={gbpPosts}
-            gbpQanda={gbpQanda}
-            bingData={bingData}
-            seoData={seoData}
-            seoDecayData={seoDecayData}
-            pluginData={pluginData}
-          />
+          {/* Insights & Recommendations — an INSIGHT is the finding, the
+              RECOMMENDATION is what to do about it. They are one paired unit,
+              never two separate lists (Brandon, 2026-07-24). */}
+          {sections.map((s) => (
+            <ArgusInsightBox
+              key={`insights-${s}`}
+              reportKey={s}
+              data={data}
+              searchData={searchData}
+              gbpData={gbpData}
+              gbpReviews={gbpReviews}
+              gbpPosts={gbpPosts}
+              gbpQanda={gbpQanda}
+              bingData={bingData}
+              seoData={seoData}
+              seoDecayData={seoDecayData}
+              pluginData={pluginData}
+            />
+          ))}
         </div>
 
         {/* Sticky footer */}
