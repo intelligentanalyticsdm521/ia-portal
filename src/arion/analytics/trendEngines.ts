@@ -611,19 +611,14 @@ export function localPresenceEngine(input: EngineInput): ReportAnalysis {
   if (!(gbpData?.connected === true && !gbpData?.error)) {
     return unmeasured("Connect your Google Business Profile to see how you show up locally.", "connect");
   }
-  const connected = gbpData?.connected === true && !gbpData?.error;
-  if (!connected) {
-    return {
-      score: 0,
-      scoreInputs: [{ key: "gbp_connected", value: 0, weight: 1.0, note: "GBP not connected" }],
-      observations: ["Google Business Profile is not connected. Connect it in Settings → Connected Accounts to see your local trust profile, review velocity, and response rate."],
-      actions: ["Connect Google Business Profile to start tracking your local trust signals."],
-      contextNote: "GBP not connected — local presence cannot be scored.",
-    };
-  }
+  // (The old `if (!connected)` branch here was unreachable once the unmeasured
+  // guard above landed, and it scored `gbp_connected` as a metric — see below
+  // for why a binary/saturating value must not be part of a trend score.)
 
-  // Completeness score
-  const completeness = Number(gbpData?.completeness || gbpData?.completenessScore || 0);
+  // Customer actions + discovery views — the metrics that actually MOVE.
+  const gm = gbpData?.metrics || {};
+  const discoveryViews = Number(gm.impressions || 0);
+  const customerActions = Number(gm.calls || 0) + Number(gm.directions || 0) + Number(gm.websiteClicks || 0);
   // Review signals
   const reviews: any[] = gbpReviews?.reviews || [];
   const totalReviews = Number(gbpReviews?.totalReviewCount || reviews.length || 0);
@@ -647,7 +642,15 @@ export function localPresenceEngine(input: EngineInput): ReportAnalysis {
   const ratingBenchmark = bm(input, "gbp_avg_rating", 4.5);
   const responseBenchmark = bm(input, "gbp_response_rate", 75) / 100;
   const velocityBenchmark = bm(input, "review_velocity_per_month", 4);
-  const completenessScore = clamp(completeness, 0, 100) || (postsCount > 0 ? 70 : 50);
+  // Action rate: of everyone who DISCOVERED you, how many did something —
+  // called, asked for directions, or clicked through. Unlike profile
+  // completeness this never saturates: it keeps moving with the quality of
+  // your listing, photos, reviews and offer.
+  const actionRate = discoveryViews > 0 ? customerActions / discoveryViews : null;
+  const actionRateBenchmark = bm(input, "gbp_action_rate", 5) / 100;
+  const actionScore = actionRate == null
+    ? 50
+    : clamp((actionRate / actionRateBenchmark) * 100, 0, 100);
   const velocityScore = velocityTrend === "accelerating" ? 95
                       : last30 >= velocityBenchmark ? 80
                       : last30 >= velocityBenchmark * 0.5 ? 60 : 30;
@@ -655,7 +658,7 @@ export function localPresenceEngine(input: EngineInput): ReportAnalysis {
   // Rating score: 5★ = 100, ratingBenchmark = 70 baseline, 3★ = 0
   const ratingScore = avgRating > 0 ? clamp(((avgRating - 3) / Math.max(0.1, ratingBenchmark - 3)) * 70 + Math.max(0, avgRating - ratingBenchmark) * 30, 0, 100) : 50;
   const score = Math.round(
-    completenessScore * 0.20 +
+    actionScore * 0.20 +
     velocityScore * 0.25 +
     responseRateScore * 0.25 +
     ratingScore * 0.30
@@ -682,11 +685,19 @@ export function localPresenceEngine(input: EngineInput): ReportAnalysis {
 
   return {
     score: clamp(score, 0, 100),
+    // NO SATURATING METRICS. Brandon, 2026-07-24: "what is profile
+    // completeness? We can't use that as a score here because once they are at
+    // 100% it's a useless report." Correct — completeness is a SETUP measure,
+    // not a performance measure: it stops moving the moment it is finished, so
+    // it contributes a constant and can never explain a change. Same for the
+    // binary `gbp_connected`. Both now live on the COVERAGE side (see
+    // computeTrendComposite) rather than in the score. Every input below keeps
+    // moving for the life of the account.
     scoreInputs: [
-      { key: "completeness", value: completenessScore, weight: 0.20 },
-      { key: "review_velocity_trend", value: velocityTrend, weight: 0.25 },
-      { key: "response_rate", value: Math.round(responseRate * 100), weight: 0.25 },
       { key: "rating", value: avgRating, weight: 0.30 },
+      { key: "review_velocity_30d", value: last30, weight: 0.25, note: `${last60} prior 30d · ${velocityTrend}` },
+      { key: "response_rate", value: Math.round(responseRate * 100), weight: 0.25 },
+      { key: "customer_action_rate", value: actionRate != null ? Number((actionRate * 100).toFixed(2)) : null, weight: 0.20, note: `${fmtNum(customerActions)} actions from ${fmtNum(discoveryViews)} discovery views` },
     ],
     observations,
     actions,

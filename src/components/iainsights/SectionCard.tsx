@@ -11,6 +11,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { LineChart, BarChart, Donut, Gauge, StatBlock } from "./SectionVisuals";
 import {
   sectionMeta,
   formatSectionValue,
@@ -32,41 +33,6 @@ export interface SectionCardProps {
   history?: number[];
   /** Detailed breakdown, rendered when the card is expanded. */
   children?: React.ReactNode;
-}
-
-/** Tiny inline sparkline. No chart library — same approach as MonthlyScoreBars. */
-function Sparkline({ points, positive }: { points: number[]; positive: boolean }) {
-  if (points.length < 2) return null;
-  const w = 108, h = 30, pad = 2;
-  const min = Math.min(...points), max = Math.max(...points);
-  const span = max - min || 1;
-  const step = (w - pad * 2) / (points.length - 1);
-  const d = points
-    .map((p, i) => `${i === 0 ? "M" : "L"} ${pad + i * step} ${h - pad - ((p - min) / span) * (h - pad * 2)}`)
-    .join(" ");
-  const stroke = positive ? "#16a34a" : "#dc2626";
-  return (
-    <svg width={w} height={h} className="flex-shrink-0" aria-hidden="true">
-      <path d={d} fill="none" stroke={stroke} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-/** Radial gauge for 0-100 style metrics. */
-function Gauge({ pct, positive }: { pct: number; positive: boolean }) {
-  const size = 46, stroke = 5, r = (size - stroke) / 2, c = 2 * Math.PI * r;
-  const clamped = Math.max(0, Math.min(100, pct));
-  return (
-    <svg width={size} height={size} className="flex-shrink-0" aria-hidden="true">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e2e8f0" strokeWidth={stroke} />
-      <circle
-        cx={size / 2} cy={size / 2} r={r} fill="none"
-        stroke={positive ? "#16a34a" : "#dc2626"} strokeWidth={stroke} strokeLinecap="round"
-        strokeDasharray={`${(clamped / 100) * c} ${c}`}
-        transform={`rotate(-90 ${size / 2} ${size / 2})`}
-      />
-    </svg>
-  );
 }
 
 function DeltaBadge({ delta }: { delta: SectionDelta | null }) {
@@ -100,11 +66,30 @@ export function SectionCard({
   const positive = delta ? delta.improved : true;
   const numeric = typeof value === "number" ? value : Number(value);
 
-  // Pick the visual the metric's shape actually suits: a gauge for bounded
-  // 0-100 measures, a sparkline once there's enough history, otherwise a plain
-  // stat. Never render an empty chart frame.
-  const showGauge = (meta.visual === "gauge" || meta.visual === "donut") && isFinite(numeric) && meta.format !== "position";
-  const showSpark = !showGauge && history.length >= 2;
+  // The visual follows the metric's SHAPE, declared in sectionMeta. We only
+  // degrade when the data that visual needs genuinely isn't there — a line or
+  // bar with one data point is a lie, so those fall back to a stat until a
+  // second month exists. Never render an empty chart frame.
+  const wants = meta.visual;
+  const hasSeries = history.length >= 2;
+  const kind: "line" | "bar" | "donut" | "gauge" | "stat" =
+    (wants === "line" || wants === "bar") ? (hasSeries ? wants : "stat")
+    : (wants === "donut" || wants === "gauge") ? (isFinite(numeric) ? wants : "stat")
+    : "stat";
+
+  // Gauges and donuts read 0-100. A percentage is already on that scale; a
+  // rating is out of 5; a raw score is assumed 0-100.
+  const bounded =
+    meta.format === "rating" ? (numeric / 5) * 100
+    : meta.format === "percent" ? Math.min(100, numeric)
+    : numeric;
+
+  const visual =
+    kind === "line"  ? <LineChart points={history} positive={positive} />
+    : kind === "bar"   ? <BarChart points={history} positive={positive} />
+    : kind === "donut" ? <Donut pct={bounded} positive={positive} />
+    : kind === "gauge" ? <Gauge pct={bounded} positive={positive} />
+    : <StatBlock display={formatSectionValue(value, meta.format)} positive={positive} />;
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
@@ -114,7 +99,7 @@ export function SectionCard({
         aria-expanded={open}
         className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 rounded-lg"
       >
-        {showGauge && <Gauge pct={meta.format === "percent" ? Math.min(100, numeric) : numeric} positive={positive} />}
+        {(kind === "gauge" || kind === "donut" || kind === "stat") && visual}
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
@@ -144,7 +129,7 @@ export function SectionCard({
           {note && <p className="mt-1 text-[10px] text-slate-400 italic">{note}</p>}
         </div>
 
-        {showSpark && <Sparkline points={history} positive={positive} />}
+        {(kind === "line" || kind === "bar") && visual}
 
         {children
           ? (open ? <ChevronDown className="h-4 w-4 text-slate-400 mt-1 flex-shrink-0" />

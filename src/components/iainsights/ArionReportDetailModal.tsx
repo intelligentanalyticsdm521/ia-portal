@@ -13,6 +13,7 @@
 
 import { X } from "lucide-react";
 import { SectionCard } from "./SectionCard";
+import { SectionDetail } from "./SectionDetail";
 import { MonthlyScoreBars, MIN_HISTORY_PERIODS } from "./MonthlyScoreBars";
 import {
   renderModalContent,
@@ -192,7 +193,24 @@ export function ArionReportDetailModal({
                     weight={si.weight}
                     note={si.note}
                     history={sectionHistory?.[si.key]}
-                  />
+                  >
+                    {/* Detail reports — the level below the key section.
+                        A section is several grouped detail reports, not one
+                        table: dashboard -> key section -> detail report ->
+                        data point, each level trended. */}
+                    <SectionDetail
+                      sectionKey={si.key}
+                      value={si.value as any}
+                      priorValue={priorSectionValue(si.key) as any}
+                      data={data}
+                      searchData={searchData}
+                      gbpData={gbpData}
+                      gbpReviews={gbpReviews}
+                      gbpPosts={gbpPosts}
+                      seoData={seoData}
+                      pluginData={pluginData}
+                    />
+                  </SectionCard>
                 ))}
               </div>
             </div>

@@ -28,7 +28,7 @@ export interface SectionMeta {
   /** One line on what this measures and why it matters, in the owner's language. */
   what: string;
   /** Which visual suits the shape of this metric. */
-  visual: "line" | "gauge" | "donut" | "stat";
+  visual: "line" | "bar" | "gauge" | "donut" | "stat";
 }
 
 const S = (
@@ -44,7 +44,7 @@ export const SECTION_META: Record<string, SectionMeta> = {
   non_brand_impressions: S("Non-Brand Impressions", "number", true, "line", "People finding you who were not already searching your name — real new demand."),
   avg_position:          S("Average Position", "position", false, "line", "Where you typically rank. Lower is better; position 1 is the top result."),
   ctr_vs_benchmark:      S("Click-Through vs Typical", "percent", true, "gauge", "Whether your titles and descriptions earn more clicks than a typical listing at your position."),
-  quick_win_count:       S("Quick-Win Keywords", "count", true, "stat", "Keywords sitting on page 2. Small gains here move them to page 1."),
+  quick_win_count:       S("Quick-Win Keywords", "count", true, "bar", "Keywords sitting on page 2. Small gains here move them to page 1."),
   non_brand_balance:     S("Brand vs Non-Brand Mix", "percent", true, "donut", "Growth should come from people who did not already know your name."),
 
   // ── Audience & Conversion ──
@@ -52,27 +52,30 @@ export const SECTION_META: Record<string, SectionMeta> = {
   bounce_rate:           S("Bounce Rate", "percent", false, "gauge", "Visitors who left without interacting. Lower is better."),
   mobile_share:          S("Mobile Share", "percent", true, "donut", "How much of your audience is on a phone — it changes what to optimise."),
   new_returning_balance: S("New vs Returning", "percent", true, "donut", "A healthy business grows new visitors while keeping the old ones coming back."),
-  session_quality:       S("Session Quality", "score", true, "gauge", "How deeply people engage once they arrive."),
-  visit_to_submit:       S("Visit to Enquiry Rate", "percent", true, "gauge", "Of everyone who visits, how many contact you. The number that becomes revenue."),
-  form_completion:       S("Form Completion", "percent", true, "gauge", "How many people who start your form actually finish it."),
+  session_quality:       S("Session Quality", "score", true, "line", "How deeply people engage once they arrive."),
+  visit_to_submit:       S("Visit to Enquiry Rate", "percent", true, "line", "Of everyone who visits, how many contact you. The number that becomes revenue."),
+  form_completion:       S("Form Completion", "percent", true, "bar", "How many people who start your form actually finish it."),
   form_to_contact:       S("Enquiry to Contact Rate", "percent", true, "gauge", "How many form submissions became a real contact record."),
   cta_placement:         S("Call-to-Action Coverage", "score", true, "stat", "Whether your key pages actually ask the visitor to do something."),
 
   // ── Local Presence ──
-  gbp_connected:         S("Profile Connected", "score", true, "stat", "Whether your Google Business Profile is linked and syncing."),
-  completeness:          S("Profile Completeness", "percent", true, "gauge", "How much of your listing is filled in. Google favours complete profiles."),
+  // NOTE: `completeness` and `gbp_connected` were removed as scored sections.
+  // Both SATURATE — once the profile is complete and connected they contribute
+  // a constant forever and can never explain a month-over-month change. They
+  // belong to setup/coverage, not to a trend score.
   rating:                S("Average Rating", "rating", true, "gauge", "Your star rating — the first thing a local customer looks at."),
-  review_velocity_trend: S("Review Velocity", "number", true, "line", "New reviews per month. A steady flow signals an active business."),
+  review_velocity_30d:   S("Review Velocity", "count", true, "bar", "New reviews in the last 30 days. A steady flow signals an active business."),
   response_rate:         S("Review Response Rate", "percent", true, "gauge", "How many reviews you reply to. Replying visibly affects ranking and trust."),
+  customer_action_rate:  S("Customer Action Rate", "percent", true, "line", "Of everyone who found you on Google, how many called, asked for directions, or visited your site."),
 
   // ── Social Presence ──
-  posts_30d:             S("Posting Cadence", "count", true, "line", "Posts published in the last 30 days. Reach decays fast without cadence."),
+  posts_30d:             S("Posting Cadence", "count", true, "bar", "Posts published in the last 30 days. Reach decays fast without cadence."),
   follower_growth:       S("Audience Growth", "percent", true, "line", "Whether your following is growing, flat, or shrinking."),
 
   // ── Content ──
   content_gap_count:     S("Content Gaps", "count", false, "stat", "Searches you get impressions for with no page that answers them."),
-  thin_content_ratio:    S("Thin Content", "percent", false, "gauge", "Pages too short to rank or convince anyone."),
-  avg_post_depth:        S("Average Content Depth", "number", true, "line", "How substantial your pages are on average."),
+  thin_content_ratio:    S("Thin Content", "percent", false, "donut", "Pages too short to rank or convince anyone."),
+  avg_post_depth:        S("Average Content Depth", "number", true, "bar", "How substantial your pages are on average."),
   engagement_pct:        S("Content Engagement", "percent", true, "gauge", "Whether people actually read what you publish."),
 
   // ── Technical & Site Health ──
