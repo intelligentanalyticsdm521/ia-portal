@@ -39,6 +39,40 @@ interface ClientProject {
   engagement_type?: string | null;
 }
 
+// Row shape returned by the NEW consulting.* list endpoint
+// (GET /consulting/projects). Deliberately separate from ClientProject: the
+// two models name the same concepts differently, and conflating them is what
+// made this card render a blank title and "Current phase: —".
+interface NewModelProject {
+  project_id: string;
+  name?: string | null;
+  status: string;
+  category_name?: string | null;
+  client_name?: string | null;
+  current_milestone_name?: string | null;
+  milestones_total_count?: number;
+  milestones_complete_count?: number;
+  updated_at: string;
+  created_at?: string;
+}
+
+function normalizeProject(p: NewModelProject): ClientProject {
+  return {
+    project_id: p.project_id,
+    project_number: "",
+    title: p.name || "Untitled project",
+    status: p.status,
+    project_type: p.category_name || "",
+    project_type_display: p.category_name || null,
+    project_type_color: null,
+    current_phase_name: p.current_milestone_name || null,
+    phase_count: p.milestones_total_count ?? 0,
+    phases_completed: p.milestones_complete_count ?? 0,
+    updated_at: p.updated_at,
+    created_at: p.created_at,
+  };
+}
+
 // Status → badge color. Mirrors ConsultingProjectsPage helper but trimmed
 // to the lumen.consulting_project status vocabulary (active/on_hold/
 // completed/cancelled — see migration 072).
@@ -97,10 +131,14 @@ export function ClientConsultingProjectsPage() {
         // `{ projects }` read left r.projects undefined and silently fell
         // back to the legacy LUMEN fork, which is why a NEW-model project
         // (e.g. RII "Post AI Website Design Updates") never rendered here.
-        const r = await get<ClientProject[] | { projects?: ClientProject[] }>("/consulting/projects");
+        const r = await get<NewModelProject[] | { projects?: ClientProject[] }>("/consulting/projects");
         const rows = Array.isArray(r) ? r : r?.projects;
         if (Array.isArray(rows)) {
-          setProjects(rows);
+          // The new consulting.* model uses different field names than this
+          // card was written for (name/current_milestone_name/
+          // milestones_*_count vs title/current_phase_name/phase_*). Normalize
+          // here so the card renders a real title and phase instead of blanks.
+          setProjects(rows.map(normalizeProject));
           return;
         }
       } catch (newEndpointErr) {
