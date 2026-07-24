@@ -15,6 +15,9 @@ import {
   TASK_STAGE_LABELS,
   TASK_STATUS_LABELS,
   TASK_ACTIONS,
+  TaskDetailModal,
+  type ConsultingTask,
+  type TaskDeliverable,
 } from "../../components/consulting/ConsultingProjectModal";
 
 interface RequestRow {
@@ -30,6 +33,7 @@ interface RequestRow {
   oliver_job_id?: string | null;
   created_at: string;
   updated_at: string;
+  deliverables?: TaskDeliverable[];
   project_name?: string | null;
   milestone_name?: string | null;
   client_display_name?: string | null;
@@ -151,6 +155,7 @@ export function ConsultingRequestsBoardPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showCancelled, setShowCancelled] = useState(false);
+  const [openRow, setOpenRow] = useState<RequestRow | null>(null);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -220,7 +225,8 @@ export function ConsultingRequestsBoardPage() {
   const columns: string[] = showCancelled ? [...STAGE_ORDER, "cancelled"] : [...STAGE_ORDER];
 
   return (
-    <div className="space-y-4">
+    // Page-width convention: content never runs full-bleed — cap at 80%.
+    <div className="mx-auto space-y-4" style={{ maxWidth: "80%" }}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-lg font-bold text-slate-900">Service Requests</h1>
@@ -278,7 +284,17 @@ export function ConsultingRequestsBoardPage() {
                       items.map((r) => (
                         <div key={r.id} className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
                           <div className="flex items-start justify-between gap-1">
-                            <span className="text-xs font-semibold leading-snug text-slate-900">{r.title}</span>
+                            <button
+                              type="button"
+                              onClick={() => setOpenRow(r)}
+                              className="text-left text-xs font-semibold leading-snug text-slate-900 hover:underline"
+                              title="Open task"
+                            >
+                              {r.title}
+                              {(r.deliverables?.length || 0) > 0 && (
+                                <span className="ml-1 text-[9px] text-sky-600">📄{r.deliverables?.length}</span>
+                              )}
+                            </button>
                             {r.oliver_job_id && (
                               <span className="mt-0.5 flex-shrink-0 rounded bg-amber-100 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide text-amber-700" title="Synced to an OLIVER job">
                                 OLIVER
@@ -328,6 +344,14 @@ export function ConsultingRequestsBoardPage() {
           tenants={tenantOptions}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); load(); }}
+        />
+      )}
+      {openRow && (
+        <TaskDetailModal
+          task={openRow as ConsultingTask}
+          deliverables={openRow.deliverables || []}
+          onClose={() => setOpenRow(null)}
+          onChanged={() => { setOpenRow(null); load(); }}
         />
       )}
     </div>

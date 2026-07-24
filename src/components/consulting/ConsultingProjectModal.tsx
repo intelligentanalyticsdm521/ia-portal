@@ -139,6 +139,8 @@ export interface ConsultingProjectRow {
 // shape uses `revision_notes` (PLURAL) — mapped at the render site below.
 interface ConsultingDeliverable {
   deliverable_id: string;
+  /** Set when the deliverable is attached to a task (service request). */
+  service_request_id?: string | null;
   title?: string | null;
   description?: string | null;
   file_url?: string | null;
@@ -668,6 +670,7 @@ export function ConsultingProjectModal({
               intakes={intakes}
               proposals={projProposals}
               tasks={data.tasks || []}
+              taskDeliverables={data.deliverables || []}
               projectId={data.project.project_id}
               onTasksChanged={load}
               onSendIntake={viewerRole === "founder" ? (mid) => { setIntakeMilestoneId(mid); setShowSendIntake(true); } : undefined}
@@ -1710,6 +1713,155 @@ function MetaCard({ title, children }: { title: string; children: React.ReactNod
 
 // ─── Milestones tab ──────────────────────────────────────────────────────
 
+// ─── Task detail modal (shared: milestone tasks + Service Requests board) ──
+// Open a task to edit title/description, change status, and attach the
+// document the client will review — linked via service_request_id so the
+// client sees ONE review item, not a task plus a floating doc.
+export interface TaskDeliverable {
+  deliverable_id: string;
+  title?: string | null;
+  file_name?: string | null;
+  file_url?: string | null;
+  status: string;
+}
+
+export function TaskDetailModal({
+  task,
+  deliverables,
+  onClose,
+  onChanged,
+}: {
+  task: ConsultingTask;
+  deliverables: TaskDeliverable[];
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const { patchFounder, uploadFounder, download } = useOliverApi();
+  const [title, setTitle] = useState(task.title);
+  const [description, setDescription] = useState(task.description || "");
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(kind: string, fn: () => Promise<unknown>) {
+    setBusy(kind);
+    setError(null);
+    try {
+      await fn();
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Action failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const saveMeta = () =>
+    run("meta", () => patchFounder(`/consulting/requests/${task.id}`, {
+      title: title.trim() || task.title,
+      description: description.trim() || null,
+    }));
+
+  const transition = (value: string) => {
+    const [stage, status] = value.split("|");
+    if (!stage || !status || (stage === task.stage && status === task.status)) return;
+    run("status", () => patchFounder(`/consulting/requests/${task.id}`, { stage, status }));
+  };
+
+  const attach = () => {
+    if (!file) return;
+    run("attach", async () => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("title", file.name);
+      await uploadFounder(`/consulting/requests/${task.id}/deliverables`, form);
+      setFile(null);
+    });
+  };
+
+  return (
+    <IadmModal
+      open
+      onClose={onClose}
+      product="oliver"
+      eyebrow="TASK"
+      title={task.title}
+      subtitle={`${TASK_STAGE_LABELS[task.stage] || task.stage} · ${TASK_STATUS_LABELS[task.status] || task.status}${task.oliver_job_id ? " · synced to OLIVER" : ""}`}
+      size="info"
+    >
+      <div className="space-y-4 p-4">
+        {error && <div className="rounded bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div>}
+
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Status</label>
+          <select
+            value={`${task.stage}|${task.status}`}
+            disabled={busy === "status"}
+            onChange={(e) => transition(e.target.value)}
+            className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+          >
+            <option value={`${task.stage}|${task.status}`}>
+              {busy === "status" ? "Saving…" : `${TASK_STAGE_LABELS[task.stage] || task.stage} — ${TASK_STATUS_LABELS[task.status] || task.status}`}
+            </option>
+            {(TASK_ACTIONS[task.stage] || [])
+              .filter((a) => a.value !== `${task.stage}|${task.status}`)
+              .map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Title</label>
+          <input value={title} onChange={(e) => setTitle(e.target.value)}
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Description</label>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+        </div>
+        <button type="button" onClick={saveMeta} disabled={busy === "meta"}
+          className="rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:bg-slate-300">
+          {busy === "meta" ? "Saving…" : "Save details"}
+        </button>
+
+        <div className="border-t border-slate-100 pt-3">
+          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Documents on this task
+          </div>
+          {deliverables.length === 0 ? (
+            <div className="text-xs italic text-slate-400">No documents attached yet.</div>
+          ) : (
+            <ul className="space-y-1">
+              {deliverables.map((d) => (
+                <li key={d.deliverable_id} className="flex items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1.5 text-xs">
+                  <span className="min-w-0 flex-1 truncate text-slate-700">
+                    📄 {d.title || d.file_name} · {String(d.status).replace(/_/g, " ")}
+                  </span>
+                  {d.file_url && (
+                    <button type="button"
+                      onClick={() => download(`/consulting/deliverables/${d.deliverable_id}/download`, d.file_name || d.title || "document")}
+                      className="flex-shrink-0 font-semibold text-sky-700 hover:underline">
+                      Download
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-2 flex items-center gap-2">
+            <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)}
+              className="min-w-0 flex-1 text-xs text-slate-600 file:mr-2 file:rounded file:border-0 file:bg-slate-900 file:px-2.5 file:py-1 file:text-xs file:font-semibold file:text-white" />
+            <button type="button" onClick={attach} disabled={!file || busy === "attach"}
+              className="rounded bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white disabled:bg-slate-300">
+              {busy === "attach" ? "Attaching…" : "Attach"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </IadmModal>
+  );
+}
+
 // ─── Milestone tasks (consulting.service_request) ─────────────────────────
 // Self-contained like DeliverableActionPanel: POSTs via useOliverApi, then
 // onChanged() → the host re-fetches. Founder gets add + transitions; client
@@ -1719,19 +1871,22 @@ function MilestoneTasksSection({
   projectId,
   milestoneId,
   tasks,
+  deliverables = [],
   viewerRole,
   onChanged,
 }: {
   projectId: string;
   milestoneId: string;
   tasks: ConsultingTask[];
+  deliverables?: ConsultingDeliverable[];
   viewerRole: "founder" | "client";
   onChanged: () => void;
 }) {
-  const { postFounder, patch } = useOliverApi();
+  const { postFounder, patchFounder } = useOliverApi();
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [openTask, setOpenTask] = useState<ConsultingTask | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleAdd() {
@@ -1752,11 +1907,11 @@ function MilestoneTasksSection({
 
   async function handleTransition(task: ConsultingTask, value: string) {
     const [stage, status] = value.split("|");
-    if (!stage || !status) return;
+    if (!stage || !status || (stage === task.stage && status === task.status)) return;
     setBusyId(task.id);
     setError(null);
     try {
-      await patch(`/consulting/requests/${task.id}`, { stage, status });
+      await patchFounder(`/consulting/requests/${task.id}`, { stage, status });
       onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Transition failed");
@@ -1764,6 +1919,9 @@ function MilestoneTasksSection({
       setBusyId(null);
     }
   }
+
+  const docsForTask = (t: ConsultingTask) =>
+    deliverables.filter((d) => String(d.service_request_id || "").toUpperCase() === t.id.toUpperCase());
 
   const done = tasks.filter((t) => t.stage === "completed").length;
   const active = tasks.filter((t) => t.stage !== "cancelled").length;
@@ -1785,34 +1943,46 @@ function MilestoneTasksSection({
         </div>
       ) : (
         <ul className="space-y-1">
-          {tasks.map((t) => (
-            <li key={t.id} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-1.5 text-[11px]">
-              <span className={`min-w-0 flex-1 truncate ${t.stage === "cancelled" ? "text-slate-400 line-through" : "text-slate-700"}`}>
-                {t.stage === "completed" ? "✅ " : ""}{t.title}
-                {t.oliver_job_id && <span className="ml-1 text-[9px] uppercase tracking-wide text-amber-600" title="Synced to an OLIVER job">· OLIVER</span>}
-              </span>
-              <span className="flex flex-shrink-0 items-center gap-2">
-                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
-                  {TASK_STAGE_LABELS[t.stage] || t.stage} · {TASK_STATUS_LABELS[t.status] || t.status}
-                </span>
-                {viewerRole === "founder" && (
+          {tasks.map((t) => {
+            const docs = docsForTask(t);
+            return (
+              <li key={t.id} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-1.5 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setOpenTask(t)}
+                  className={`min-w-0 flex-1 truncate text-left hover:underline ${t.stage === "cancelled" ? "text-slate-400 line-through" : "text-slate-700"}`}
+                  title="Open task"
+                >
+                  {t.stage === "completed" ? "✅ " : ""}{t.title}
+                  {docs.length > 0 && <span className="ml-1 text-[9px] text-sky-600" title={`${docs.length} document(s) attached`}>📄{docs.length}</span>}
+                  {t.oliver_job_id && <span className="ml-1 text-[9px] uppercase tracking-wide text-amber-600" title="Synced to an OLIVER job">· OLIVER</span>}
+                </button>
+                {viewerRole === "founder" ? (
+                  // The select IS the status display — current value shown,
+                  // legal moves as the options.
                   <select
-                    value=""
+                    value={`${t.stage}|${t.status}`}
                     disabled={busyId === t.id}
-                    onChange={(e) => { if (e.target.value) handleTransition(t, e.target.value); }}
-                    className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[10px] text-slate-600"
+                    onChange={(e) => handleTransition(t, e.target.value)}
+                    className="flex-shrink-0 rounded border border-slate-300 bg-white px-1 py-0.5 text-[10px] text-slate-700"
                   >
-                    <option value="">{busyId === t.id ? "Saving…" : "Move…"}</option>
+                    <option value={`${t.stage}|${t.status}`}>
+                      {busyId === t.id ? "Saving…" : `${TASK_STAGE_LABELS[t.stage] || t.stage} — ${TASK_STATUS_LABELS[t.status] || t.status}`}
+                    </option>
                     {(TASK_ACTIONS[t.stage] || [])
                       .filter((a) => a.value !== `${t.stage}|${t.status}`)
                       .map((a) => (
                         <option key={a.value} value={a.value}>{a.label}</option>
                       ))}
                   </select>
+                ) : (
+                  <span className="flex-shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                    {TASK_STAGE_LABELS[t.stage] || t.stage} · {TASK_STATUS_LABELS[t.status] || t.status}
+                  </span>
                 )}
-              </span>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
       {viewerRole === "founder" && (
@@ -1834,6 +2004,14 @@ function MilestoneTasksSection({
           </button>
         </div>
       )}
+      {openTask && (
+        <TaskDetailModal
+          task={openTask}
+          deliverables={docsForTask(openTask)}
+          onClose={() => setOpenTask(null)}
+          onChanged={() => { setOpenTask(null); onChanged(); }}
+        />
+      )}
     </div>
   );
 }
@@ -1851,6 +2029,7 @@ function MilestonesTab({
   intakes = [],
   proposals = [],
   tasks = [],
+  taskDeliverables = [],
   projectId,
   onTasksChanged,
   onSendIntake,
@@ -1871,6 +2050,7 @@ function MilestonesTab({
   intakes?: IntakeSubRow[];
   proposals?: ProposalRow[];
   tasks?: ConsultingTask[];
+  taskDeliverables?: ConsultingDeliverable[];
   projectId: string;
   onTasksChanged: () => void;
   onSendIntake?: (milestoneId: string) => void;
@@ -1908,6 +2088,7 @@ function MilestonesTab({
             intakes={intakes.filter((i) => i.milestone_id === m.milestone_id)}
             proposals={proposals.filter((p) => p.milestone_id === m.milestone_id)}
             tasks={tasks.filter((t) => t.milestone_id === m.milestone_id)}
+            taskDeliverables={taskDeliverables}
             projectId={projectId}
             onTasksChanged={onTasksChanged}
             onSendIntake={onSendIntake}
@@ -1945,6 +2126,7 @@ function MilestoneRow({
   intakes = [],
   proposals = [],
   tasks = [],
+  taskDeliverables = [],
   projectId,
   onTasksChanged,
   onSendIntake,
@@ -1964,6 +2146,7 @@ function MilestoneRow({
   intakes?: IntakeSubRow[];
   proposals?: ProposalRow[];
   tasks?: ConsultingTask[];
+  taskDeliverables?: ConsultingDeliverable[];
   projectId: string;
   onTasksChanged: () => void;
   onSendIntake?: (milestoneId: string) => void;
@@ -2050,6 +2233,7 @@ function MilestoneRow({
             projectId={projectId}
             milestoneId={milestone.milestone_id}
             tasks={tasks}
+            deliverables={taskDeliverables}
             viewerRole={viewerRole}
             onChanged={onTasksChanged}
           />

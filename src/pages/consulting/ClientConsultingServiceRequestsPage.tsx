@@ -30,6 +30,13 @@ interface ServiceRequest {
   milestone_name?: string | null;
   created_at: string;
   updated_at: string;
+  deliverables?: Array<{
+    deliverable_id: string;
+    title?: string | null;
+    file_name?: string | null;
+    file_url?: string | null;
+    status: string;
+  }>;
 }
 
 interface AccessResponse {
@@ -199,7 +206,7 @@ function NewRequestModal({
 
 // ─── Page ────────────────────────────────────────────────────────────────
 export function ClientConsultingServiceRequestsPage() {
-  const { get, patch, ready } = useOliverApi();
+  const { get, patch, download, ready } = useOliverApi();
   const [hasByb, setHasByb] = useState<boolean | null>(null);
   const [accessChecked, setAccessChecked] = useState(false);
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
@@ -343,6 +350,24 @@ export function ClientConsultingServiceRequestsPage() {
                           <span>· Updated {fmtRel(r.updated_at)}</span>
                         )}
                       </div>
+                      {(r.deliverables?.length || 0) > 0 && (
+                        <ul className="mt-1.5 space-y-1">
+                          {r.deliverables!.map((d) => (
+                            <li key={d.deliverable_id} className="flex items-center gap-2 text-[11px]">
+                              <span className="truncate text-slate-600">📄 {d.title || d.file_name}</span>
+                              {d.file_url && (
+                                <button
+                                  type="button"
+                                  onClick={() => download(`/consulting/deliverables/${d.deliverable_id}/download`, d.file_name || d.title || "document")}
+                                  className="flex-shrink-0 font-semibold text-sky-700 hover:underline"
+                                >
+                                  Download
+                                </button>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                       {yourTurn && (
                         <div className="mt-2 flex items-center gap-2">
                           <button
