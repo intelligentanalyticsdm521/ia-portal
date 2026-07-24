@@ -154,11 +154,110 @@ interface ConsultingDeliverable {
   sent_at?: string | null;
 }
 
+// Task ≡ service request (consulting.service_request). A milestone task is a
+// request with project_id + milestone_id set. Stage/status pairs come from the
+// 7-stage pipeline in routes/consultingRequests.js — labels in TASK_STAGES.
+export interface ConsultingTask {
+  id: string;
+  tenant_id: string;
+  project_id?: string | null;
+  milestone_id?: string | null;
+  title: string;
+  description?: string | null;
+  stage: string;
+  status: string;
+  origin: string;
+  oliver_job_id?: string | null;
+  assigned_to_user_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 interface WorkspaceResponse {
   project: ConsultingProjectRow;
   milestones: ConsultingProjectMilestone[];
   deliverables?: ConsultingDeliverable[];
+  tasks?: ConsultingTask[];
 }
+
+// Friendly labels + the founder's quick actions per stage. Mirrors the
+// server's stage machine — the server validates every transition, so a drift
+// here shows as a 400, never silent corruption.
+export const TASK_STAGE_LABELS: Record<string, string> = {
+  new: "New",
+  in_progress: "In Progress",
+  client_review: "Client Review",
+  revision: "Revision",
+  client_revision_review: "Client Revision Review",
+  approved: "Approved",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+export const TASK_STATUS_LABELS: Record<string, string> = {
+  not_reviewed: "Not Reviewed",
+  needs_client_discussion: "Needs Client Discussion",
+  work_approved: "Work Approved",
+  in_progress: "In Progress",
+  blocked: "Blocked",
+  waiting_on_client: "Waiting on Client",
+  ready_for_client_review: "Ready for Client Review",
+  awaiting_client: "Awaiting Client",
+  revision_requested: "Revision Requested",
+  approved_by_client: "Approved by Client",
+  in_revision: "In Revision",
+  ready_for_re_review: "Ready for Re-Review",
+  more_revisions_requested: "More Revisions Requested",
+  revisions_approved: "Revisions Approved",
+  ready_to_deploy: "Ready to Deploy",
+  deploying: "Deploying",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+// value = "stage|status" — parsed at the PATCH call site.
+export const TASK_ACTIONS: Record<string, Array<{ value: string; label: string }>> = {
+  new: [
+    { value: "in_progress|in_progress", label: "Approve work → In Progress" },
+    { value: "new|needs_client_discussion", label: "Needs Client Discussion" },
+    { value: "new|not_reviewed", label: "Not Reviewed" },
+    { value: "cancelled|cancelled", label: "Cancel" },
+  ],
+  in_progress: [
+    { value: "in_progress|in_progress", label: "In Progress" },
+    { value: "in_progress|blocked", label: "Blocked" },
+    { value: "in_progress|waiting_on_client", label: "Waiting on Client" },
+    { value: "client_review|awaiting_client", label: "Send for Client Review" },
+    { value: "cancelled|cancelled", label: "Cancel" },
+  ],
+  client_review: [
+    { value: "client_review|awaiting_client", label: "Awaiting Client" },
+    { value: "approved|ready_to_deploy", label: "Client Approved" },
+    { value: "revision|in_revision", label: "Revision Requested" },
+    { value: "cancelled|cancelled", label: "Cancel" },
+  ],
+  revision: [
+    { value: "revision|in_revision", label: "In Revision" },
+    { value: "revision|blocked", label: "Blocked" },
+    { value: "client_revision_review|awaiting_client", label: "Send for Re-Review" },
+    { value: "cancelled|cancelled", label: "Cancel" },
+  ],
+  client_revision_review: [
+    { value: "client_revision_review|awaiting_client", label: "Awaiting Client" },
+    { value: "approved|ready_to_deploy", label: "Revisions Approved" },
+    { value: "revision|in_revision", label: "More Revisions Requested" },
+    { value: "cancelled|cancelled", label: "Cancel" },
+  ],
+  approved: [
+    { value: "approved|ready_to_deploy", label: "Ready to Deploy" },
+    { value: "approved|deploying", label: "Deploying" },
+    { value: "completed|completed", label: "Mark Completed" },
+    { value: "in_progress|in_progress", label: "Pull back to In Progress" },
+    { value: "cancelled|cancelled", label: "Cancel" },
+  ],
+  completed: [{ value: "in_progress|in_progress", label: "Reopen" }],
+  cancelled: [{ value: "in_progress|in_progress", label: "Revive → In Progress" }],
+};
 
 // ─── Modal props ─────────────────────────────────────────────────────────
 
@@ -568,6 +667,9 @@ export function ConsultingProjectModal({
               onStartOnboarding={() => setOnboardWizardOpen(true)}
               intakes={intakes}
               proposals={projProposals}
+              tasks={data.tasks || []}
+              projectId={data.project.project_id}
+              onTasksChanged={load}
               onSendIntake={viewerRole === "founder" ? (mid) => { setIntakeMilestoneId(mid); setShowSendIntake(true); } : undefined}
               onAddDocument={viewerRole === "founder" ? (mid) => { setAddDocMilestoneId(mid); setShowAddDoc(true); } : undefined}
               onCreateProposal={viewerRole === "founder" ? handleCreateProposal : undefined}
@@ -1608,6 +1710,134 @@ function MetaCard({ title, children }: { title: string; children: React.ReactNod
 
 // ─── Milestones tab ──────────────────────────────────────────────────────
 
+// ─── Milestone tasks (consulting.service_request) ─────────────────────────
+// Self-contained like DeliverableActionPanel: POSTs via useOliverApi, then
+// onChanged() → the host re-fetches. Founder gets add + transitions; client
+// sees a read-only list (their approve/revision actions live on the client
+// Service Requests surface).
+function MilestoneTasksSection({
+  projectId,
+  milestoneId,
+  tasks,
+  viewerRole,
+  onChanged,
+}: {
+  projectId: string;
+  milestoneId: string;
+  tasks: ConsultingTask[];
+  viewerRole: "founder" | "client";
+  onChanged: () => void;
+}) {
+  const { postFounder, patch } = useOliverApi();
+  const [adding, setAdding] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleAdd() {
+    const t = newTitle.trim();
+    if (!t) return;
+    setAdding(true);
+    setError(null);
+    try {
+      await postFounder(`/consulting/projects/${projectId}/milestones/${milestoneId}/tasks`, { title: t });
+      setNewTitle("");
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add the task");
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function handleTransition(task: ConsultingTask, value: string) {
+    const [stage, status] = value.split("|");
+    if (!stage || !status) return;
+    setBusyId(task.id);
+    setError(null);
+    try {
+      await patch(`/consulting/requests/${task.id}`, { stage, status });
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Transition failed");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const done = tasks.filter((t) => t.stage === "completed").length;
+  const active = tasks.filter((t) => t.stage !== "cancelled").length;
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          Tasks{active > 0 ? ` · ${done}/${active} complete` : ""}
+        </span>
+      </div>
+      {error && (
+        <div className="mb-2 rounded bg-rose-50 px-2 py-1 text-[11px] text-rose-700">{error}</div>
+      )}
+      {tasks.length === 0 ? (
+        <div className="text-[11px] italic text-slate-400">
+          No tasks on this milestone yet.
+          {viewerRole === "founder" ? " Tasks must all be complete before the milestone can complete." : ""}
+        </div>
+      ) : (
+        <ul className="space-y-1">
+          {tasks.map((t) => (
+            <li key={t.id} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-1.5 text-[11px]">
+              <span className={`min-w-0 flex-1 truncate ${t.stage === "cancelled" ? "text-slate-400 line-through" : "text-slate-700"}`}>
+                {t.stage === "completed" ? "✅ " : ""}{t.title}
+                {t.oliver_job_id && <span className="ml-1 text-[9px] uppercase tracking-wide text-amber-600" title="Synced to an OLIVER job">· OLIVER</span>}
+              </span>
+              <span className="flex flex-shrink-0 items-center gap-2">
+                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                  {TASK_STAGE_LABELS[t.stage] || t.stage} · {TASK_STATUS_LABELS[t.status] || t.status}
+                </span>
+                {viewerRole === "founder" && (
+                  <select
+                    value=""
+                    disabled={busyId === t.id}
+                    onChange={(e) => { if (e.target.value) handleTransition(t, e.target.value); }}
+                    className="rounded border border-slate-300 bg-white px-1 py-0.5 text-[10px] text-slate-600"
+                  >
+                    <option value="">{busyId === t.id ? "Saving…" : "Move…"}</option>
+                    {(TASK_ACTIONS[t.stage] || [])
+                      .filter((a) => a.value !== `${t.stage}|${t.status}`)
+                      .map((a) => (
+                        <option key={a.value} value={a.value}>{a.label}</option>
+                      ))}
+                  </select>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {viewerRole === "founder" && (
+        <div className="mt-2 flex items-center gap-1.5">
+          <input
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+            placeholder="Add a task…"
+            className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-2 py-1 text-[11px]"
+          />
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={adding || !newTitle.trim()}
+            className="rounded bg-slate-900 px-2 py-1 text-[10px] font-semibold text-white disabled:bg-slate-300"
+          >
+            {adding ? "Adding…" : "+ Add task"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MilestonesTab({
   milestones,
   viewerRole,
@@ -1620,6 +1850,9 @@ function MilestonesTab({
   onStartOnboarding,
   intakes = [],
   proposals = [],
+  tasks = [],
+  projectId,
+  onTasksChanged,
   onSendIntake,
   onAddDocument,
   onCreateProposal,
@@ -1637,6 +1870,9 @@ function MilestonesTab({
   onStartOnboarding?: () => void;
   intakes?: IntakeSubRow[];
   proposals?: ProposalRow[];
+  tasks?: ConsultingTask[];
+  projectId: string;
+  onTasksChanged: () => void;
   onSendIntake?: (milestoneId: string) => void;
   onAddDocument?: (milestoneId: string) => void;
   onCreateProposal?: (milestoneId: string) => void;
@@ -1671,6 +1907,9 @@ function MilestonesTab({
             onStartOnboarding={onStartOnboarding}
             intakes={intakes.filter((i) => i.milestone_id === m.milestone_id)}
             proposals={proposals.filter((p) => p.milestone_id === m.milestone_id)}
+            tasks={tasks.filter((t) => t.milestone_id === m.milestone_id)}
+            projectId={projectId}
+            onTasksChanged={onTasksChanged}
             onSendIntake={onSendIntake}
             onAddDocument={onAddDocument}
             onCreateProposal={onCreateProposal}
@@ -1705,6 +1944,9 @@ function MilestoneRow({
   onStartOnboarding,
   intakes = [],
   proposals = [],
+  tasks = [],
+  projectId,
+  onTasksChanged,
   onSendIntake,
   onAddDocument,
   onCreateProposal,
@@ -1721,6 +1963,9 @@ function MilestoneRow({
   onStartOnboarding?: () => void;
   intakes?: IntakeSubRow[];
   proposals?: ProposalRow[];
+  tasks?: ConsultingTask[];
+  projectId: string;
+  onTasksChanged: () => void;
   onSendIntake?: (milestoneId: string) => void;
   onAddDocument?: (milestoneId: string) => void;
   onCreateProposal?: (milestoneId: string) => void;
@@ -1796,6 +2041,18 @@ function MilestoneRow({
           ) : (
             <div className="text-xs italic text-slate-400">No description.</div>
           )}
+
+          {/* Tasks on this milestone. Task ≡ service request — each one runs
+              the 7-stage pipeline and syncs to an OLIVER job. All tasks must
+              be complete before the milestone can complete (server-enforced),
+              and the milestone auto-completes on the last one. */}
+          <MilestoneTasksSection
+            projectId={projectId}
+            milestoneId={milestone.milestone_id}
+            tasks={tasks}
+            viewerRole={viewerRole}
+            onChanged={onTasksChanged}
+          />
 
           {/* Documents on this milestone. Everything here is a workflow the founder
               controls: attach ANY document (scoping doc, intake, custom), create an

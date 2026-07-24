@@ -1,20 +1,17 @@
-// ClientConsultingServiceRequestsPage — F-Client.Consulting (2026-06-29).
+// ClientConsultingServiceRequestsPage — F-Client.Consulting (2026-06-29,
+// rewired 2026-07-24 onto the consulting.service_request pipeline).
 //
-// CLIENT-facing Service Requests list. Gated on a "Build Your Brand"-family
-// subscription:
+// CLIENT-facing Service Requests list. Reads GET /consulting/requests (the
+// server tenant-scopes to the caller), creates via POST /consulting/requests
+// (lands in New/Not Reviewed — nothing is scheduled until the founder
+// approves it), and surfaces the TWO client actions when it's their turn:
+// approve / request revision (PATCH { action }).
 //
-//   GET /consulting/access            → { has_byb_sub: bool, … }
+// The old /consulting-tickets surface read lumen.consulting_ticket — the
+// abandoned fork, verified 0 rows in prod — and is fully replaced by this.
 //
-// Until the backend ships this endpoint we treat a 404 (or any 4xx) as
-// "permissive" and let the tickets list endpoint do the real authoritative
-// scoping. A client without subscription would still get an empty array
-// from /consulting-tickets because the server tenant-scopes by
-// provider/client tenant id. The upsell card renders ONLY when the access
-// endpoint explicitly responds with has_byb_sub:false.
-//
-// Single-list view (NOT a kanban — clients don't need cross-client board
-// columns). New Request modal mirrors the founder ConsultingTicketsBoardPage
-// CreateTicketModal but without the client picker (caller IS the client).
+// Access gate: GET /consulting/access → { has_byb_sub }. 404/4xx degrade to
+// permissive; the requests endpoint still tenant-scopes server-side.
 
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -22,55 +19,48 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { IadmModal } from "../../components/IadmModal";
 import { MessageCircle, Plus, AlertCircle, Sparkles } from "lucide-react";
 
-interface Ticket {
-  ticket_id: string;
-  ticket_number: string;
-  provider_tenant_id: string;
-  client_tenant_id: string;
-  engagement_type?: string | null;
+interface ServiceRequest {
+  id: string;
   title: string;
   description?: string | null;
+  stage: string;
   status: string;
-  priority: string;
-  hours_estimated?: number | null;
-  hours_actual?: number | null;
-  due_date?: string | null;
+  origin: string;
+  project_name?: string | null;
+  milestone_name?: string | null;
   created_at: string;
   updated_at: string;
-  comment_count?: number;
 }
 
 interface AccessResponse {
   has_byb_sub?: boolean;
-  // Future fields the backend may add (subscription tier, plan name, etc.)
-  // are tolerated — we only read has_byb_sub today.
   [k: string]: unknown;
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  new: "New",
+// Client-perspective labels for the 7-stage pipeline.
+const STAGE_LABEL: Record<string, string> = {
+  new: "Submitted — awaiting review",
+  in_progress: "In progress",
   client_review: "Awaiting your review",
   revision: "In revision",
   client_revision_review: "Awaiting your review",
-  approved: "Approved",
+  approved: "Approved — deploying soon",
   completed: "Completed",
+  cancelled: "Cancelled",
 };
 
-const STATUS_COLOR: Record<string, { bg: string; fg: string }> = {
+const STAGE_COLOR: Record<string, { bg: string; fg: string }> = {
   new:                    { bg: "#e2e8f0", fg: "#475569" },
+  in_progress:            { bg: "#fef9c3", fg: "#854d0e" },
   client_review:          { bg: "#dbeafe", fg: "#1d4ed8" },
   revision:               { bg: "#fef3c7", fg: "#a16207" },
   client_revision_review: { bg: "#dbeafe", fg: "#1d4ed8" },
   approved:               { bg: "#d1fae5", fg: "#047857" },
   completed:              { bg: "#e2e8f0", fg: "#334155" },
+  cancelled:              { bg: "#fee2e2", fg: "#b91c1c" },
 };
 
-const PRIORITY_COLOR: Record<string, string> = {
-  low: "#64748b",
-  normal: "#0EA5E9",
-  high: "#f59e0b",
-  urgent: "#dc2626",
-};
+const NEEDS_CLIENT = new Set(["client_review", "client_revision_review"]);
 
 function fmtRel(iso?: string | null): string {
   if (!iso) return "";
@@ -125,7 +115,6 @@ function NewRequestModal({
   const { post } = useOliverApi();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState("normal");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -133,14 +122,11 @@ function NewRequestModal({
     if (!title.trim()) { setError("Title is required."); return; }
     setBusy(true); setError(null);
     try {
-      // No client_tenant_id — server routes to founder as provider when
-      // caller IS the client (see consultingTickets.js:174). engagement_type
-      // also omitted intentionally; the client surface doesn't ask them to
-      // pick a tag (the founder will assign one if needed).
-      await post("/consulting-tickets", {
+      // Lands in New / Not Reviewed — the founder triages before any work is
+      // scheduled (nothing auto-schedules; Brandon's intake rule).
+      await post("/consulting/requests", {
         title: title.trim(),
         description: description.trim() || undefined,
-        priority,
       });
       onCreated();
     } catch (e) {
@@ -157,7 +143,7 @@ function NewRequestModal({
       product="oliver"
       eyebrow="NEW REQUEST"
       title="Submit a Service Request"
-      subtitle="Tell us what you need; we&apos;ll pick it up."
+      subtitle="Tell us what you need; we&apos;ll review it and get it moving."
       size="info"
     >
       <div className="p-4 space-y-3">
@@ -188,19 +174,6 @@ function NewRequestModal({
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
           />
         </div>
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">Priority</label>
-          <select
-            value={priority}
-            onChange={(e) => setPriority(e.target.value)}
-            className="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white"
-          >
-            <option value="low">Low — whenever you can</option>
-            <option value="normal">Normal</option>
-            <option value="high">High — needed this week</option>
-            <option value="urgent">Urgent — needed today</option>
-          </select>
-        </div>
         <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
           <button
             type="button"
@@ -226,66 +199,64 @@ function NewRequestModal({
 
 // ─── Page ────────────────────────────────────────────────────────────────
 export function ClientConsultingServiceRequestsPage() {
-  const { get, ready } = useOliverApi();
-  // null = unknown (still loading the access check). false = explicit
-  // backend response. true = permissive (either explicit yes or 404 fallback).
+  const { get, patch, ready } = useOliverApi();
   const [hasByb, setHasByb] = useState<boolean | null>(null);
   const [accessChecked, setAccessChecked] = useState(false);
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loadingTickets, setLoadingTickets] = useState(false);
+  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [actingId, setActingId] = useState<string | null>(null);
 
-  // 1) Access check — gracefully degrades to permissive when the endpoint
-  // isn't deployed yet. The /consulting-tickets call still tenant-scopes
-  // server-side so we never leak rows even when we treat 404 as permissive.
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
     get<AccessResponse>("/consulting/access")
       .then((r) => {
         if (cancelled) return;
-        if (r && typeof r.has_byb_sub === "boolean") {
-          setHasByb(r.has_byb_sub);
-        } else {
-          setHasByb(true); // permissive on missing field
-        }
+        setHasByb(r && typeof r.has_byb_sub === "boolean" ? r.has_byb_sub : true);
         setAccessChecked(true);
       })
       .catch(() => {
         if (cancelled) return;
-        // 404 / 401 / 500 — treat as permissive. The backend will still
-        // gate ticket creation if a subscription is truly required.
         setHasByb(true);
         setAccessChecked(true);
       });
     return () => { cancelled = true; };
   }, [get, ready]);
 
-  // 2) Tickets — load only after access check passes. Even when permissive
-  // (hasByb=true via fallback), the call still happens; an empty result
-  // is the natural state for non-subscribers and renders the empty card.
-  const loadTickets = useCallback(async () => {
+  const load = useCallback(async () => {
     if (!ready || !accessChecked || hasByb === false) return;
-    setLoadingTickets(true);
+    setLoading(true);
     setError(null);
     try {
-      const r = await get<{ tickets: Ticket[] }>("/consulting-tickets");
-      setTickets(Array.isArray(r?.tickets) ? r.tickets : []);
+      // useOliverApi auto-unwraps the { data: ... } envelope.
+      const rows = await get<ServiceRequest[]>("/consulting/requests");
+      setRequests(Array.isArray(rows) ? rows : []);
     } catch (e) {
       setError((e as Error).message);
-      setTickets([]);
+      setRequests([]);
     } finally {
-      setLoadingTickets(false);
+      setLoading(false);
     }
   }, [get, ready, accessChecked, hasByb]);
 
-  useEffect(() => { loadTickets(); }, [loadTickets]);
+  useEffect(() => { load(); }, [load]);
 
-  // ── Render branches ─────────────────────────────────────────────────
+  // The two client actions — only offered when it's actually their turn.
+  const act = async (r: ServiceRequest, action: "approve" | "request_revision") => {
+    setActingId(r.id);
+    setError(null);
+    try {
+      await patch(`/consulting/requests/${r.id}`, { action });
+      await load();
+    } catch (e) {
+      setError((e as Error).message || "Action failed.");
+    } finally {
+      setActingId(null);
+    }
+  };
 
-  // Still resolving access — show a tiny placeholder rather than flashing
-  // the upsell or the list incorrectly.
   if (!accessChecked) {
     return (
       <div className="card" style={{ padding: 24, color: "#5A7A8A", fontSize: 13 }}>
@@ -294,12 +265,10 @@ export function ClientConsultingServiceRequestsPage() {
     );
   }
 
-  // Explicit "no Build Your Brand sub" — upsell.
   if (hasByb === false) {
     return <UpsellCard />;
   }
 
-  // Has access — list + New Request.
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -324,11 +293,11 @@ export function ClientConsultingServiceRequestsPage() {
         </div>
       )}
 
-      {loadingTickets ? (
+      {loading ? (
         <div className="card" style={{ padding: 24, color: "#5A7A8A", fontSize: 13 }}>
           Loading requests…
         </div>
-      ) : tickets.length === 0 ? (
+      ) : requests.length === 0 ? (
         <div className="rounded-xl bg-slate-50 border border-slate-200 px-6 py-12 text-center">
           <MessageCircle className="mx-auto h-8 w-8 text-slate-400 mb-2" />
           <div className="text-sm font-semibold text-slate-700">No service requests yet.</div>
@@ -340,50 +309,60 @@ export function ClientConsultingServiceRequestsPage() {
       ) : (
         <div className="card" style={{ padding: 0 }}>
           <ul className="divide-y divide-slate-200">
-            {tickets.map((t) => {
-              const sc = STATUS_COLOR[t.status] || { bg: "#e2e8f0", fg: "#334155" };
-              const prColor = PRIORITY_COLOR[t.priority] || "#64748b";
+            {requests.map((r) => {
+              const sc = STAGE_COLOR[r.stage] || { bg: "#e2e8f0", fg: "#334155" };
+              const yourTurn = NEEDS_CLIENT.has(r.stage);
               return (
-                <li key={t.ticket_id} className="p-3 hover:bg-slate-50">
+                <li key={r.id} className="p-3 hover:bg-slate-50">
                   <div className="flex items-start gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-[11px] font-mono text-slate-400">
-                          {t.ticket_number}
-                        </span>
                         <span
                           className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
                           style={{ background: sc.bg, color: sc.fg }}
                         >
-                          {STATUS_LABEL[t.status] || t.status}
+                          {STAGE_LABEL[r.stage] || r.stage}
                         </span>
-                        <span
-                          className="text-[10px] font-bold uppercase"
-                          style={{ color: prColor }}
-                        >
-                          {t.priority}
-                        </span>
+                        {r.project_name && (
+                          <span className="text-[10px] text-slate-500 truncate">
+                            {r.project_name}{r.milestone_name ? ` · ${r.milestone_name}` : ""}
+                          </span>
+                        )}
                       </div>
                       <div className="text-sm font-semibold text-slate-900 truncate">
-                        {t.title}
+                        {r.title}
                       </div>
-                      {t.description && (
+                      {r.description && (
                         <div className="text-xs text-slate-600 mt-0.5 line-clamp-2 whitespace-pre-wrap">
-                          {t.description}
+                          {r.description}
                         </div>
                       )}
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
-                        <span>Created {fmtRel(t.created_at)}</span>
-                        {t.updated_at && t.updated_at !== t.created_at && (
-                          <span>· Updated {fmtRel(t.updated_at)}</span>
-                        )}
-                        {typeof t.comment_count === "number" && t.comment_count > 0 && (
-                          <span>· {t.comment_count} comment{t.comment_count === 1 ? "" : "s"}</span>
-                        )}
-                        {t.due_date && (
-                          <span>· Due {new Date(t.due_date).toLocaleDateString()}</span>
+                        <span>Created {fmtRel(r.created_at)}</span>
+                        {r.updated_at && r.updated_at !== r.created_at && (
+                          <span>· Updated {fmtRel(r.updated_at)}</span>
                         )}
                       </div>
+                      {yourTurn && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={actingId === r.id}
+                            onClick={() => act(r, "approve")}
+                            className="rounded bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            {actingId === r.id ? "Saving…" : "Approve"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={actingId === r.id}
+                            onClick={() => act(r, "request_revision")}
+                            className="rounded border border-amber-400 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                          >
+                            Request revision
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </li>
@@ -396,7 +375,7 @@ export function ClientConsultingServiceRequestsPage() {
       {showCreate && (
         <NewRequestModal
           onClose={() => setShowCreate(false)}
-          onCreated={() => { setShowCreate(false); loadTickets(); }}
+          onCreated={() => { setShowCreate(false); load(); }}
         />
       )}
     </div>
