@@ -99,6 +99,19 @@ export function useOliverApi() {
     [instance, account, isFounder]
   );
 
+  // Founder-scoped PATCH — same rationale as postFounder: a lingering view-as
+  // override would send a client tenant, requireFounder-family checks would
+  // see a non-founder caller, and a founder transition would 400/403.
+  const patchFounder = useCallback(
+    <T>(path: string, body: unknown): Promise<T> => {
+      if (!isFounder) {
+        return Promise.reject(new Error("patchFounder called by non-founder — backend founder gate will reject this request"));
+      }
+      return oliverPatch<T>(instance, account, path, body, BYPASS_TENANT_OVERRIDE);
+    },
+    [instance, account, isFounder]
+  );
+
   // Multipart upload — founder-scoped like postFounder (the upload endpoints
   // are requireFounder-gated, so an active view-as override would 403 them).
   const uploadFounder = useCallback(
@@ -123,7 +136,7 @@ export function useOliverApi() {
   // Stable object identity — prevents consumers keyed on this hook's result
   // from re-fetching on every render (fetch once per page, not per render).
   return useMemo(
-    () => ({ get, post, patch, put, del, getFounder, postFounder, uploadFounder, download, ready: !!account }),
-    [get, post, patch, put, del, getFounder, postFounder, uploadFounder, download, account]
+    () => ({ get, post, patch, put, del, getFounder, postFounder, patchFounder, uploadFounder, download, ready: !!account }),
+    [get, post, patch, put, del, getFounder, postFounder, patchFounder, uploadFounder, download, account]
   );
 }
