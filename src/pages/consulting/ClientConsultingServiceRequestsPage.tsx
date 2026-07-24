@@ -204,6 +204,110 @@ function NewRequestModal({
   );
 }
 
+// ─── Request detail modal (client view) ──────────────────────────────────
+// The full request: description, attached documents (authenticated
+// download), current stage, and the two review actions when it's their turn.
+function ClientRequestModal({
+  request,
+  acting,
+  onAct,
+  onDownload,
+  onClose,
+}: {
+  request: ServiceRequest;
+  acting: boolean;
+  onAct: (r: ServiceRequest, action: "approve" | "request_revision") => void;
+  onDownload: (path: string, filename: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const sc = STAGE_COLOR[request.stage] || { bg: "#e2e8f0", fg: "#334155" };
+  const yourTurn = NEEDS_CLIENT.has(request.stage);
+  return (
+    <IadmModal
+      open
+      onClose={onClose}
+      product="oliver"
+      eyebrow="SERVICE REQUEST"
+      title={request.title}
+      subtitle={
+        <span className="text-xs">
+          {request.project_name ? `${request.project_name}${request.milestone_name ? ` · ${request.milestone_name}` : ""} · ` : ""}
+          Created {fmtRel(request.created_at)}
+        </span>
+      }
+      size="info"
+    >
+      <div className="space-y-4 p-4">
+        <span
+          className="inline-block rounded px-2 py-0.5 text-[11px] font-bold uppercase"
+          style={{ background: sc.bg, color: sc.fg }}
+        >
+          {STAGE_LABEL[request.stage] || request.stage}
+        </span>
+
+        {request.description?.trim() ? (
+          <div className="whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            {request.description}
+          </div>
+        ) : (
+          <div className="text-xs italic text-slate-400">No description provided.</div>
+        )}
+
+        <div>
+          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Documents
+          </div>
+          {(request.deliverables?.length || 0) === 0 ? (
+            <div className="text-xs italic text-slate-400">No documents attached.</div>
+          ) : (
+            <ul className="space-y-1">
+              {request.deliverables!.map((d) => (
+                <li key={d.deliverable_id} className="flex items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1.5 text-xs">
+                  <span className="min-w-0 flex-1 truncate text-slate-700">📄 {d.title || d.file_name}</span>
+                  {d.file_url && (
+                    <button
+                      type="button"
+                      onClick={() => onDownload(`/consulting/deliverables/${d.deliverable_id}/download`, d.file_name || d.title || "document")}
+                      className="flex-shrink-0 font-semibold text-sky-700 hover:underline"
+                    >
+                      Download
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {yourTurn ? (
+          <div className="flex items-center gap-2 border-t border-slate-200 pt-3">
+            <button
+              type="button"
+              disabled={acting}
+              onClick={() => onAct(request, "approve")}
+              className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {acting ? "Saving…" : "Approve"}
+            </button>
+            <button
+              type="button"
+              disabled={acting}
+              onClick={() => onAct(request, "request_revision")}
+              className="rounded border border-amber-400 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+            >
+              Request revision
+            </button>
+          </div>
+        ) : (
+          <div className="border-t border-slate-200 pt-3 text-[11px] text-slate-500">
+            No action needed from you right now — we&apos;ll notify you when something is ready for review.
+          </div>
+        )}
+      </div>
+    </IadmModal>
+  );
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────
 export function ClientConsultingServiceRequestsPage() {
   const { get, patch, download, ready } = useOliverApi();
@@ -214,6 +318,9 @@ export function ClientConsultingServiceRequestsPage() {
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [actingId, setActingId] = useState<string | null>(null);
+  const [openReq, setOpenReq] = useState<ServiceRequest | null>(null);
+  // Default to ACTIVE work; completed/cancelled stay one click away.
+  const [filter, setFilter] = useState<"active" | "all" | "completed" | "cancelled">("active");
 
   useEffect(() => {
     if (!ready) return;
@@ -256,6 +363,7 @@ export function ClientConsultingServiceRequestsPage() {
     setError(null);
     try {
       await patch(`/consulting/requests/${r.id}`, { action });
+      setOpenReq(null);
       await load();
     } catch (e) {
       setError((e as Error).message || "Action failed.");
@@ -263,6 +371,13 @@ export function ClientConsultingServiceRequestsPage() {
       setActingId(null);
     }
   };
+
+  const shown = requests.filter((r) => {
+    if (filter === "all") return true;
+    if (filter === "completed") return r.stage === "completed";
+    if (filter === "cancelled") return r.stage === "cancelled";
+    return r.stage !== "completed" && r.stage !== "cancelled"; // active
+  });
 
   if (!accessChecked) {
     return (
@@ -287,13 +402,25 @@ export function ClientConsultingServiceRequestsPage() {
             Open requests we&apos;re working on for you, plus completed ones for the record.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowCreate(true)}
-          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-[#EF6C33] text-white text-xs font-semibold hover:bg-[#d95d27]"
-        >
-          <Plus className="h-3.5 w-3.5" /> New Request
-        </button>
+        <div className="flex items-center gap-2">
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as typeof filter)}
+            className="rounded border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+          >
+            <option value="active">Active</option>
+            <option value="all">All</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-[#EF6C33] text-white text-xs font-semibold hover:bg-[#d95d27]"
+          >
+            <Plus className="h-3.5 w-3.5" /> New Request
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -306,25 +433,39 @@ export function ClientConsultingServiceRequestsPage() {
         <div className="card" style={{ padding: 24, color: "#5A7A8A", fontSize: 13 }}>
           Loading requests…
         </div>
-      ) : requests.length === 0 ? (
+      ) : shown.length === 0 ? (
         <div className="rounded-xl bg-slate-50 border border-slate-200 px-6 py-12 text-center">
           <MessageCircle className="mx-auto h-8 w-8 text-slate-400 mb-2" />
-          <div className="text-sm font-semibold text-slate-700">No service requests yet.</div>
+          <div className="text-sm font-semibold text-slate-700">
+            {requests.length === 0 ? "No service requests yet." : `No ${filter} requests.`}
+          </div>
           <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-            Need a design, copy edit, or a quick consulting question? Click <strong>New Request</strong>
-            {" "}to file one — we&apos;ll pick it up and keep you posted here.
+            {requests.length === 0 ? (
+              <>Need a design, copy edit, or a quick consulting question? Click <strong>New Request</strong>
+              {" "}to file one — we&apos;ll pick it up and keep you posted here.</>
+            ) : (
+              <>Switch the filter above to see other requests.</>
+            )}
           </p>
         </div>
       ) : (
         <div className="card" style={{ padding: 0 }}>
           <ul className="divide-y divide-slate-200">
-            {requests.map((r) => {
+            {shown.map((r) => {
               const sc = STAGE_COLOR[r.stage] || { bg: "#e2e8f0", fg: "#334155" };
               const yourTurn = NEEDS_CLIENT.has(r.stage);
               return (
                 <li key={r.id} className="p-3 hover:bg-slate-50">
                   <div className="flex items-start gap-3">
-                    <div className="flex-1 min-w-0">
+                    {/* The whole summary is clickable — opens the request detail
+                        (description, documents, review actions). */}
+                    <div
+                      className="flex-1 min-w-0 cursor-pointer"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setOpenReq(r)}
+                      onKeyDown={(e) => { if (e.key === "Enter") setOpenReq(r); }}
+                    >
                       <div className="flex items-center gap-2 mb-0.5">
                         <span
                           className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
@@ -360,7 +501,7 @@ export function ClientConsultingServiceRequestsPage() {
                               {d.file_url && (
                                 <button
                                   type="button"
-                                  onClick={() => download(`/consulting/deliverables/${d.deliverable_id}/download`, d.file_name || d.title || "document")}
+                                  onClick={(e) => { e.stopPropagation(); download(`/consulting/deliverables/${d.deliverable_id}/download`, d.file_name || d.title || "document"); }}
                                   className="flex-shrink-0 font-semibold text-sky-700 hover:underline"
                                 >
                                   Download
@@ -375,7 +516,7 @@ export function ClientConsultingServiceRequestsPage() {
                           <button
                             type="button"
                             disabled={actingId === r.id}
-                            onClick={() => act(r, "approve")}
+                            onClick={(e) => { e.stopPropagation(); act(r, "approve"); }}
                             className="rounded bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                           >
                             {actingId === r.id ? "Saving…" : "Approve"}
@@ -383,7 +524,7 @@ export function ClientConsultingServiceRequestsPage() {
                           <button
                             type="button"
                             disabled={actingId === r.id}
-                            onClick={() => act(r, "request_revision")}
+                            onClick={(e) => { e.stopPropagation(); act(r, "request_revision"); }}
                             className="rounded border border-amber-400 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
                           >
                             Request revision
@@ -403,6 +544,15 @@ export function ClientConsultingServiceRequestsPage() {
         <NewRequestModal
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); load(); }}
+        />
+      )}
+      {openReq && (
+        <ClientRequestModal
+          request={openReq}
+          acting={actingId === openReq.id}
+          onAct={act}
+          onDownload={download}
+          onClose={() => setOpenReq(null)}
         />
       )}
     </div>

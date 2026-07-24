@@ -79,6 +79,8 @@ export function ClientConsultingProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  // Default to ACTIVE projects; completed/cancelled one click away.
+  const [filter, setFilter] = useState<"active" | "all" | "completed" | "cancelled">("active");
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -165,10 +167,36 @@ export function ClientConsultingProjectsPage() {
     );
   }
 
+  const shown = sorted.filter((p) => {
+    const s = String(p.status).toLowerCase();
+    if (filter === "all") return true;
+    if (filter === "completed") return s === "completed";
+    if (filter === "cancelled") return s === "cancelled";
+    return s !== "completed" && s !== "cancelled"; // active (incl. on_hold)
+  });
+
   return (
     <>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-base font-bold text-slate-900">Your projects</h2>
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as typeof filter)}
+          className="rounded border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+        >
+          <option value="active">Active</option>
+          <option value="all">All</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      {shown.length === 0 && (
+        <div className="rounded-xl bg-slate-50 border border-slate-200 px-6 py-8 text-center text-xs text-slate-500">
+          No {filter} projects — switch the filter above to see others.
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {sorted.map((p) => {
+        {shown.map((p) => {
           const badge = statusBadge(p.status);
           const phaseTotal = p.phase_count ?? 0;
           const phaseDone = p.phases_completed ?? 0;
