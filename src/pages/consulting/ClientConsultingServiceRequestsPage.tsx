@@ -209,7 +209,7 @@ function NewRequestModal({
 
 // ─── Page ────────────────────────────────────────────────────────────────
 export function ClientConsultingServiceRequestsPage() {
-  const { get, patch, download, ready } = useOliverApi();
+  const { get, patch, download, uploadClient, ready } = useOliverApi();
   const [hasByb, setHasByb] = useState<boolean | null>(null);
   const [accessChecked, setAccessChecked] = useState(false);
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
@@ -257,11 +257,11 @@ export function ClientConsultingServiceRequestsPage() {
   useEffect(() => { load(); }, [load]);
 
   // The two client actions — only offered when it's actually their turn.
-  const act = async (r: ServiceRequest, action: "approve" | "request_revision") => {
+  const act = async (r: ServiceRequest, action: "approve" | "request_revision", note?: string) => {
     setActingId(r.id);
     setError(null);
     try {
-      await patch(`/consulting/requests/${r.id}`, { action });
+      await patch(`/consulting/requests/${r.id}`, { action, note });
       setOpenReq(null);
       await load();
     } catch (e) {
@@ -450,8 +450,15 @@ export function ClientConsultingServiceRequestsPage() {
           task={openReq as ClientTaskLike}
           deliverables={openReq.deliverables || []}
           acting={actingId === openReq.id}
-          onAct={(t, action) => act(t as unknown as ServiceRequest, action)}
+          onAct={(t, action, note) => act(t as unknown as ServiceRequest, action, note)}
           onDownload={download}
+          onAttach={async (t, f) => {
+            const form = new FormData();
+            form.append("file", f);
+            form.append("title", f.name);
+            await uploadClient(`/consulting/requests/${t.id}/client-deliverables`, form);
+            await load();
+          }}
           onClose={() => setOpenReq(null)}
         />
       )}

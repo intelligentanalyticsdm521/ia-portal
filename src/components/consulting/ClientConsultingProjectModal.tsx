@@ -201,7 +201,7 @@ function phaseLabel(status: string): string {
 }
 
 export function ClientConsultingProjectModal({ open, projectId, onClose, onChanged }: Props) {
-  const { get, patch, download, ready } = useOliverApi();
+  const { get, patch, download, uploadClient, ready } = useOliverApi();
   const [payload, setPayload] = useState<ProjectPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -263,11 +263,11 @@ export function ClientConsultingProjectModal({ open, projectId, onClose, onChang
   }, [get, open, projectId, ready]);
 
   // Client review actions on a task, without leaving the project.
-  const actOnTask = useCallback(async (task: ClientTaskLike, action: "approve" | "request_revision") => {
+  const actOnTask = useCallback(async (task: ClientTaskLike, action: "approve" | "request_revision", note?: string) => {
     setActingTaskId(task.id);
     setError(null);
     try {
-      await patch(`/consulting/requests/${task.id}`, { action });
+      await patch(`/consulting/requests/${task.id}`, { action, note });
       setOpenTask(null);
       await load();
       onChanged?.();
@@ -681,6 +681,13 @@ export function ClientConsultingProjectModal({ open, projectId, onClose, onChang
         acting={actingTaskId === openTask.id}
         onAct={actOnTask}
         onDownload={download}
+        onAttach={async (t, f) => {
+          const form = new FormData();
+          form.append("file", f);
+          form.append("title", f.name);
+          await uploadClient(`/consulting/requests/${t.id}/client-deliverables`, form);
+          await load();
+        }}
         onClose={() => setOpenTask(null)}
       />
     )}

@@ -173,6 +173,8 @@ export interface ConsultingTask {
   assigned_to_user_id?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  /** Newest OPEN client revision request — what they asked to be changed. */
+  open_revision_note?: string | null;
 }
 
 interface WorkspaceResponse {
@@ -1824,6 +1826,20 @@ export function TaskDetailModal({
           {busy === "meta" ? "Saving…" : "Save details"}
         </button>
 
+        {task.open_revision_note && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-amber-800">
+              Client requested changes
+            </div>
+            <div className="mt-1 whitespace-pre-wrap text-sm text-amber-900">
+              {task.open_revision_note}
+            </div>
+            <div className="mt-1.5 text-[10px] text-amber-700">
+              Closes automatically when you move this past Revision.
+            </div>
+          </div>
+        )}
+
         <div className="border-t border-slate-100 pt-3">
           <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             Documents on this task
@@ -1836,6 +1852,11 @@ export function TaskDetailModal({
                 <li key={d.deliverable_id} className="flex items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1.5 text-xs">
                   <span className="min-w-0 flex-1 truncate text-slate-700">
                     📄 {d.title || d.file_name} · {String(d.status).replace(/_/g, " ")}
+                    {(d as ConsultingDeliverable & { is_client_supplied?: boolean | number }).is_client_supplied ? (
+                      <span className="ml-1 rounded bg-violet-100 px-1 py-0.5 text-[9px] font-bold uppercase text-violet-700">
+                        client markup
+                      </span>
+                    ) : null}
                   </span>
                   {d.file_url && (
                     <button type="button"
@@ -1955,6 +1976,7 @@ function MilestoneTasksSection({
                 >
                   {t.stage === "completed" ? "✅ " : ""}{t.title}
                   {docs.length > 0 && <span className="ml-1 text-[9px] text-sky-600" title={`${docs.length} document(s) attached`}>📄{docs.length}</span>}
+                  {t.open_revision_note && <span className="ml-1 text-[9px] font-bold text-amber-600" title="Client requested changes">⟲ revision</span>}
                   {t.oliver_job_id && <span className="ml-1 text-[9px] uppercase tracking-wide text-amber-600" title="Synced to an OLIVER job">· OLIVER</span>}
                 </button>
                 {viewerRole === "founder" ? (

@@ -8,6 +8,7 @@
 // Shows description, the documents attached to the task (private container,
 // so downloads stream through the API), and the ONLY two client actions —
 // Approve / Request revision — and only while it is actually their turn.
+import { useRef, useState } from "react";
 import { IadmModal } from "../IadmModal";
 
 export interface ClientTaskLike {
@@ -27,6 +28,8 @@ export interface ClientTaskDoc {
   file_name?: string | null;
   file_url?: string | null;
   status: string;
+  /** 1 when the CLIENT sent this back as markup (not our authored version). */
+  is_client_supplied?: boolean | number | null;
 }
 
 // Client-facing stage wording + colors. Kept here so both hosts agree.
@@ -60,15 +63,41 @@ export function ClientTaskDetailModal({
   acting,
   onAct,
   onDownload,
+  onAttach,
   onClose,
 }: {
   task: ClientTaskLike;
   deliverables: ClientTaskDoc[];
   acting: boolean;
-  onAct: (task: ClientTaskLike, action: "approve" | "request_revision") => void;
+  onAct: (task: ClientTaskLike, action: "approve" | "request_revision", note?: string) => void;
   onDownload: (path: string, filename: string) => Promise<void> | void;
+  /** Attach the client's marked-up file to this task. Omit to hide the control. */
+  onAttach?: (task: ClientTaskLike, file: File) => Promise<void>;
   onClose: () => void;
 }) {
+  // Revision mode: the note is REQUIRED — a revision with no explanation
+  // leaves the founder guessing, which is the whole point of this loop.
+  const [mode, setMode] = useState<"idle" | "revision">("idle");
+  const [note, setNote] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [attaching, setAttaching] = useState(false);
+  const [attachErr, setAttachErr] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  async function handleAttach() {
+    if (!file || !onAttach) return;
+    setAttaching(true);
+    setAttachErr(null);
+    try {
+      await onAttach(task, file);
+      setFile(null);
+      if (fileRef.current) fileRef.current.value = "";
+    } catch (e) {
+      setAttachErr(e instanceof Error ? e.message : "Upload failed.");
+    } finally {
+      setAttaching(false);
+    }
+  }
   const sc = CLIENT_STAGE_COLOR[task.stage] || { bg: "#e2e8f0", fg: "#334155" };
   const yourTurn = CLIENT_NEEDS_REVIEW.has(task.stage);
   const context = [task.project_name, task.milestone_name].filter(Boolean).join(" · ");
@@ -114,6 +143,11 @@ export function ClientTaskDetailModal({
                 >
                   <span className="min-w-0 flex-1 truncate text-slate-700">
                     📄 {d.title || d.file_name}
+                    {d.is_client_supplied ? (
+                      <span className="ml-1 rounded bg-violet-100 px-1 py-0.5 text-[9px] font-bold uppercase text-violet-700">
+                        your markup
+                      </span>
+                    ) : null}
                   </span>
                   {d.file_url && (
                     <button
@@ -136,23 +170,93 @@ export function ClientTaskDetailModal({
         </div>
 
         {yourTurn ? (
-          <div className="flex items-center gap-2 border-t border-slate-200 pt-3">
-            <button
-              type="button"
-              disabled={acting}
-              onClick={() => onAct(task, "approve")}
-              className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-            >
-              {acting ? "Saving…" : "Approve"}
-            </button>
-            <button
-              type="button"
-              disabled={acting}
-              onClick={() => onAct(task, "request_revision")}
-              className="rounded border border-amber-400 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
-            >
-              Request revision
-            </button>
+          <div className="border-t border-slate-200 pt-3">
+            {mode === "idle" ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={acting}
+                  onClick={() => onAct(task, "approve")}
+                  className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {acting ? "Saving…" : "Approve"}
+                </button>
+                <button
+                  type="button"
+                  disabled={acting}
+                  onClick={() => setMode("revision")}
+                  className="rounded border border-amber-400 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                >
+                  Request revision
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                <div>
+                  <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    What needs to change? <span className="text-rose-600">*</span>
+                  </label>
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    rows={4}
+                    autoFocus
+                    placeholder="Tell us exactly what to revise — sections, wording, numbers, anything."
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  />
+                </div>
+
+                {onAttach && (
+                  <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60 p-2.5">
+                    <div className="text-[11px] font-semibold text-slate-700">
+                      Marked up the document yourself? (optional)
+                    </div>
+                    <div className="mt-0.5 text-[10px] text-slate-500">
+                      Attach your version and we&apos;ll work from it. It&apos;s added alongside
+                      ours — your original copy is never replaced.
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <input
+                        ref={fileRef}
+                        type="file"
+                        onChange={(e) => setFile(e.target.files?.[0] || null)}
+                        className="min-w-0 flex-1 text-[11px] text-slate-600 file:mr-2 file:rounded file:border-0 file:bg-slate-900 file:px-2 file:py-1 file:text-[11px] file:font-semibold file:text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAttach}
+                        disabled={!file || attaching}
+                        className="rounded bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white disabled:bg-slate-300"
+                      >
+                        {attaching ? "Attaching…" : "Attach"}
+                      </button>
+                    </div>
+                    {attachErr && (
+                      <div className="mt-1.5 rounded bg-rose-50 px-2 py-1 text-[10px] text-rose-700">{attachErr}</div>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={acting || !note.trim()}
+                    onClick={() => onAct(task, "request_revision", note.trim())}
+                    className="rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:bg-slate-300"
+                  >
+                    {acting ? "Sending…" : "Send revision request"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={acting}
+                    onClick={() => { setMode("idle"); setNote(""); }}
+                    className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="border-t border-slate-200 pt-3 text-[11px] text-slate-500">

@@ -112,6 +112,15 @@ export function useOliverApi() {
     [instance, account, isFounder]
   );
 
+  // Client-scoped multipart upload. Distinct from uploadFounder: the client
+  // markup endpoint is NOT founder-gated (it is the one upload a client may
+  // do), so this must NOT reject non-founders. Tenant scoping still comes
+  // from the caller's own JWT via oliverFetchRaw.
+  const uploadClient = useCallback(
+    <T>(path: string, form: FormData): Promise<T> => oliverUpload<T>(instance, account, path, form),
+    [instance, account]
+  );
+
   // Multipart upload — founder-scoped like postFounder (the upload endpoints
   // are requireFounder-gated, so an active view-as override would 403 them).
   const uploadFounder = useCallback(
@@ -136,7 +145,7 @@ export function useOliverApi() {
   // Stable object identity — prevents consumers keyed on this hook's result
   // from re-fetching on every render (fetch once per page, not per render).
   return useMemo(
-    () => ({ get, post, patch, put, del, getFounder, postFounder, patchFounder, uploadFounder, download, ready: !!account }),
-    [get, post, patch, put, del, getFounder, postFounder, patchFounder, uploadFounder, download, account]
+    () => ({ get, post, patch, put, del, getFounder, postFounder, patchFounder, uploadFounder, uploadClient, download, ready: !!account }),
+    [get, post, patch, put, del, getFounder, postFounder, patchFounder, uploadFounder, uploadClient, download, account]
   );
 }
