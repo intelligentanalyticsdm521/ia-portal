@@ -90,9 +90,15 @@ export function ClientConsultingProjectsPage() {
       // LUMEN /consulting-projects list on any error to keep tenants on
       // the old schema rendering during rollout.
       try {
-        const r = await get<{ projects: ClientProject[] }>("/consulting/projects");
-        if (r && Array.isArray(r.projects)) {
-          setProjects(r.projects);
+        // GET /consulting/projects returns { data: [...] } — useOliverApi
+        // auto-unwraps `data`, so the result IS the array. The old
+        // `{ projects }` read left r.projects undefined and silently fell
+        // back to the legacy LUMEN fork, which is why a NEW-model project
+        // (e.g. RII "Post AI Website Design Updates") never rendered here.
+        const r = await get<ClientProject[] | { projects?: ClientProject[] }>("/consulting/projects");
+        const rows = Array.isArray(r) ? r : r?.projects;
+        if (Array.isArray(rows)) {
+          setProjects(rows);
           return;
         }
       } catch (newEndpointErr) {

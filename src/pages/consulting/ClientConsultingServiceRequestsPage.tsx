@@ -277,7 +277,9 @@ export function ClientConsultingServiceRequestsPage() {
   }
 
   return (
-    <div className="space-y-3">
+    // Same layout convention as the founder surfaces: centered, never
+    // full-bleed.
+    <div className="mx-auto space-y-3" style={{ maxWidth: "min(80%, 56rem)" }}>
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h2 className="text-base font-bold text-slate-900">Your service requests</h2>
