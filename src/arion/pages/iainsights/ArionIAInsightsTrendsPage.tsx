@@ -265,10 +265,11 @@ export function ArionIAInsightsTrendsPage() {
           arion_ia_insights_health for the gauges/bars, and the Command
           Dashboard for the cross-product onboarding card. */}
 
-      {/* v7.3 — 8 trend reports in a 2x4 grid (matches legacy IA Insights
-          design). Each card shows MoM score bars + "View report" button
-          that opens the deep-dive modal. */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+      {/* v11.0 — 6 trend reports in a 3-across / 2-row grid. Row 1 is the three
+          CHANNEL reports, row 2 the three QUALITY reports, so the grouping is
+          legible without needing headers. Each card shows MoM score bars +
+          "View report" opening the deep-dive modal. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {REPORT_META.map((m) => {
           const report = reports[m.key];
           return (
