@@ -45,6 +45,18 @@ export interface EngineInput {
    *  Keyed by metric_key — e.g. benchmarks.impression_to_visit = 1.5 means
    *  the home-services typical impression-to-visit is 1.5%. */
   benchmarks?: Record<string, number>;
+  /** My Brand social rollup — feeds the Social Presence report.
+   *  Social is a PEER discovery channel to search, not a sub-metric of it. */
+  socialData?: {
+    connected?: boolean;
+    accounts?: Array<{ platform: string; followers?: number }>;
+    posts_30d?: number;
+    reach_30d?: number;
+    engagements_30d?: number;
+    followers?: number;
+    /** Followers at the start of the comparison window — drives momentum. */
+    followers_prev?: number;
+  } | null;
 }
 
 /** Look up a benchmark with a sensible fallback. */
@@ -56,6 +68,10 @@ function bm(input: EngineInput, key: string, fallback: number): number {
 export interface ReportAnalysis {
   /** 0-100 trend score for this report — used in the 4-gauge header. */
   score: number;
+  /** Set when this report CANNOT be scored because its source isn't
+   *  connected or isn't in the tenant's plan. Callers MUST exclude these
+   *  from any average — an unmeasured report is not a zero. */
+  unmeasured?: UnmeasurableInfo;
   /** Score breakdown — the inputs that drove the score. */
   scoreInputs: Array<{ key: string; value: number | string | null; weight: number; note?: string }>;
   /** 3-5 observations specific to this report's analytical question. */
@@ -510,6 +526,10 @@ export function searchIntelligenceEngine(input: EngineInput): ReportAnalysis {
 export function contentIntelligenceEngine(input: EngineInput): ReportAnalysis {
   const { d, pluginData, searchData } = input;
   const pages: any[] = d?.breakdowns?.pages || [];
+  // No page-level traffic AND no plugin content data => nothing to judge.
+  if (!pages.length && !pluginData?.age && !pluginData?.wordCount) {
+    return unmeasured("Connect Google Analytics or install the IA plugin to measure content performance.", "connect");
+  }
   const totalPages = pages.length;
   const totalViews = pages.reduce((s, p) => s + Number(p.pageviews || p.views || 0), 0);
   const engagingPages = pages.filter((p) => Number(p.engagementRate || 0) > 0.4 || Number(p.engagedSessions || 0) > 5);
@@ -585,6 +605,12 @@ export function contentIntelligenceEngine(input: EngineInput): ReportAnalysis {
 // Business question: "Do I look trustworthy to someone who finds me locally?"
 export function localPresenceEngine(input: EngineInput): ReportAnalysis {
   const { gbpData, gbpReviews, gbpPosts, gbpQanda } = input;
+  // GBP not connected => UNMEASURED, never 0. Brandon's `local` sat at 0 for
+  // months purely because GBP wasn't connected, which is what made his ARION
+  // score reflect integration completeness instead of business performance.
+  if (!(gbpData?.connected === true && !gbpData?.error)) {
+    return unmeasured("Connect your Google Business Profile to see how you show up locally.", "connect");
+  }
   const connected = gbpData?.connected === true && !gbpData?.error;
   if (!connected) {
     return {
@@ -671,6 +697,10 @@ export function localPresenceEngine(input: EngineInput): ReportAnalysis {
 // Business question: "Is the foundation solid and what is the business cost of current issues?"
 export function technicalHealthEngine(input: EngineInput): ReportAnalysis {
   const { pluginData } = input;
+  // No plugin and no PageSpeed history => nothing to measure. Do not score 0.
+  if (!pluginData || (!pluginData.wfFull && !(pluginData.psi || []).length)) {
+    return unmeasured("Install the IA plugin on your site to track performance, accessibility and security.", "connect");
+  }
   const psi = pluginData?.psi || [];
   const latest = psi.length > 0 ? psi[psi.length - 1] : null;
   const mobilePerf = Number(latest?.mobileScore ?? latest?.mobile?.performance ?? 0);
@@ -753,7 +783,200 @@ export function technicalHealthEngine(input: EngineInput): ReportAnalysis {
   };
 }
 
-// ── Engine 8 — Business Presence Score (synthesis) ───────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// v11.0 — SIX-REPORT MODEL (Brandon, 2026-07-24)
+//
+// Three CHANNEL reports (where you show up) + three QUALITY reports (how
+// well it works). Six is a ceiling, not a target.
+//
+//   1. search_visibility    ← visibility + search merged
+//   2. local_presence       ← local
+//   3. social_presence      ← NEW (My Brand)
+//   4. audience_conversion  ← audience + conversion merged
+//   5. content
+//   6. technical
+//
+// `presence` is NOT a report — it is the composite of the other six. It was
+// previously also persisted as a report row and then averaged in alongside
+// its own components (a double-count, and the "math that doesn't reconcile"
+// the 2026-06-28 insights gate was raised for). It no longer has a key.
+//
+// The merged engines DELEGATE to the original single-topic engines rather
+// than reimplementing them — that keeps all 164 ARION rule-library rules,
+// the benchmark lookups and the observation text intact, and means a future
+// quarterly review still edits one rule in one place.
+// ═══════════════════════════════════════════════════════════════════════
+
+/** Canonical order — this is the render order in the Portal. */
+export const ARION_TREND_REPORTS = [
+  "search_visibility",
+  "local_presence",
+  "social_presence",
+  "audience_conversion",
+  "content",
+  "technical",
+] as const;
+export type ArionTrendKey = (typeof ARION_TREND_REPORTS)[number];
+
+/**
+ * A report whose data source isn't connected (or isn't included in the
+ * tenant's plan) is UNMEASURED — not zero.
+ *
+ * Brandon, 2026-07-24: "It's not a default you lose 50 points. It's an
+ * 'add SEO to get even more insights'."
+ *
+ * Unmeasured reports are excluded from the composite and the remaining
+ * weights renormalise, so a tenant is never penalised for a capability
+ * they haven't bought or connected yet. This is the same mechanism that
+ * stops a brand-new tenant seeing a wall of failing grades.
+ */
+export interface UnmeasurableInfo {
+  /** What to connect / buy, in the client's language. */
+  reason: string;
+  /** 'connect' = integration missing · 'plan' = tier-gated upsell. */
+  kind: "connect" | "plan";
+}
+
+function unmeasured(reason: string, kind: "connect" | "plan" = "connect"): ReportAnalysis {
+  return {
+    score: 0,
+    unmeasured: { reason, kind },
+    scoreInputs: [],
+    observations: [reason],
+    actions: [],
+  };
+}
+
+/** Merge N sub-reports into one, blending scores by weight. */
+function mergeReports(
+  parts: Array<{ report: ReportAnalysis; weight: number; prefix: string }>,
+): ReportAnalysis {
+  const live = parts.filter((p) => !p.report.unmeasured);
+  if (!live.length) {
+    // Every constituent is unmeasured → the merged report is too.
+    return unmeasured(parts[0]?.report.unmeasured?.reason || "Not connected yet.",
+                      parts[0]?.report.unmeasured?.kind || "connect");
+  }
+  const totalWeight = live.reduce((s, p) => s + p.weight, 0) || 1;
+  const score = live.reduce((s, p) => s + p.report.score * (p.weight / totalWeight), 0);
+  return {
+    score: clamp(Math.round(score), 0, 100),
+    // Sub-report weights are renormalised so the displayed weights sum to 1.
+    scoreInputs: live.flatMap((p) =>
+      p.report.scoreInputs.map((si) => ({
+        ...si,
+        key: `${p.prefix}.${si.key}`,
+        weight: Number((si.weight * (p.weight / totalWeight)).toFixed(3)),
+      })),
+    ),
+    observations: live.flatMap((p) => p.report.observations),
+    actions: live.flatMap((p) => p.report.actions),
+    contextNote: live.map((p) => p.report.contextNote).filter(Boolean).join(" ") || undefined,
+  };
+}
+
+/** 1. Search Visibility — GSC reach + GSC/SE Ranking performance.
+ *  "Am I found in search, and am I winning the searches that matter?"
+ *  Equal weight: both halves are GSC-led and neither dominates. */
+export function searchVisibilityEngine(input: EngineInput): ReportAnalysis {
+  const gscConnected = !!(input.searchData && !input.searchData.error);
+  if (!gscConnected) {
+    return unmeasured("Connect Google Search Console to see how people find you in search.", "connect");
+  }
+  return mergeReports([
+    { report: visibilityReachEngine(input),    weight: 0.5, prefix: "reach" },
+    { report: searchIntelligenceEngine(input), weight: 0.5, prefix: "search" },
+  ]);
+}
+
+/** 4. Audience & Conversion — who arrives, and do they act.
+ *  Merged because audience quality only means something in terms of whether
+ *  it converts. Conversion carries more weight: it is the outcome. */
+export function audienceConversionEngine(input: EngineInput): ReportAnalysis {
+  const ga4Connected = !!(input.d && !input.d.error);
+  if (!ga4Connected) {
+    return unmeasured("Connect Google Analytics to see who visits and what they do.", "connect");
+  }
+  return mergeReports([
+    { report: audienceIntelligenceEngine(input),   weight: 0.4, prefix: "audience" },
+    { report: conversionIntelligenceEngine(input), weight: 0.6, prefix: "conversion" },
+  ]);
+}
+
+/** 3. Social Presence — My Brand social as a peer discovery channel.
+ *
+ *  Brandon, 2026-07-24: digital presence is more than website scores. Social
+ *  is a brand growth channel in its own right; website search is simply where
+ *  we started because it mattered most.
+ *
+ *  Social reach and search impressions are NEVER summed — different units,
+ *  different meaning. They are peer channels scored independently.
+ */
+export function socialPresenceEngine(input: EngineInput): ReportAnalysis {
+  const s = input.socialData;
+  const connected = !!(s && s.connected && (s.accounts?.length || 0) > 0);
+  if (!connected) {
+    return unmeasured("Connect your social accounts in My Brand to track brand reach and engagement.", "connect");
+  }
+
+  const observations: string[] = [];
+  const actions: string[] = [];
+
+  const posts30 = Number(s.posts_30d ?? 0);
+  const reach30 = Number(s.reach_30d ?? 0);
+  const engagements30 = Number(s.engagements_30d ?? 0);
+  const followers = Number(s.followers ?? 0);
+  const followersPrev = Number(s.followers_prev ?? 0);
+
+  // Cadence — the single strongest predictor of social growth for an SMB.
+  const targetPosts = bm(input, "social_posts_per_month", 8);
+  const cadenceScore = clamp((posts30 / targetPosts) * 100, 0, 100);
+  observations.push(
+    posts30 === 0
+      ? `No posts published in the last 30 days. Social reach decays fast without cadence.`
+      : `${posts30} post${posts30 === 1 ? "" : "s"} published in the last 30 days (target ${targetPosts}).`,
+  );
+  if (posts30 < targetPosts) {
+    actions.push(`Publish ${Math.max(1, Math.ceil(targetPosts - posts30))} more post${targetPosts - posts30 === 1 ? "" : "s"} this month to hit a healthy cadence.`);
+  }
+
+  // Engagement rate against reach — quality of the audience, not its size.
+  const engagementRate = reach30 > 0 ? engagements30 / reach30 : null;
+  const targetEngagement = bm(input, "social_engagement_rate", 2.0) / 100;
+  const engagementScore = engagementRate == null ? 50 : clamp((engagementRate / targetEngagement) * 100, 0, 100);
+  if (engagementRate != null) {
+    observations.push(`${fmtPct(engagementRate)} engagement rate across ${reach30.toLocaleString()} reach (typical is ${(targetEngagement * 100).toFixed(1)}%).`);
+  }
+
+  // Follower momentum — self-relative, so market size is irrelevant.
+  const followerGrowth = followersPrev > 0 ? (followers - followersPrev) / followersPrev : null;
+  const growthScore = followerGrowth == null ? 50 : clamp(50 + followerGrowth * 500, 0, 100);
+  if (followerGrowth != null) {
+    observations.push(
+      followerGrowth >= 0
+        ? `Audience up ${fmtPct(followerGrowth)} to ${followers.toLocaleString()} followers.`
+        : `Audience down ${fmtPct(Math.abs(followerGrowth))} to ${followers.toLocaleString()} followers.`,
+    );
+  }
+
+  const score = cadenceScore * 0.45 + engagementScore * 0.35 + growthScore * 0.20;
+  if (!actions.length && score >= 70) {
+    actions.push(`Social presence is healthy — keep the cadence and start testing post formats.`);
+  }
+
+  return {
+    score: clamp(Math.round(score), 0, 100),
+    scoreInputs: [
+      { key: "posts_30d", value: posts30, weight: 0.45, note: `target ${targetPosts}/month` },
+      { key: "engagement_rate", value: engagementRate != null ? Number((engagementRate * 100).toFixed(2)) : null, weight: 0.35 },
+      { key: "follower_growth", value: followerGrowth != null ? Number((followerGrowth * 100).toFixed(1)) : null, weight: 0.20 },
+    ],
+    observations,
+    actions,
+  };
+}
+
+// ── Composite — Business Presence Score (NOT a report) ────────────────
 // Business question: "What does my complete online presence look like as a whole?"
 // This is the ARION Trend Score composite shown in the 4-gauge header.
 export function businessPresenceEngine(scores: Record<string, number>): ReportAnalysis {
@@ -817,33 +1040,63 @@ export function businessPresenceEngine(scores: Record<string, number>): ReportAn
 
 // ── Convenience export — run all 8 engines and assemble header data ──
 
-export interface AllReportScores {
-  visibility: ReportAnalysis;
-  audience: ReportAnalysis;
-  conversion: ReportAnalysis;
-  search: ReportAnalysis;
-  content: ReportAnalysis;
-  local: ReportAnalysis;
-  technical: ReportAnalysis;
-  presence: ReportAnalysis;
+export type AllReportScores = Record<ArionTrendKey, ReportAnalysis>;
+
+/** Composite weights across the six reports. Renormalised over whatever is
+ *  actually measured — see computeTrendComposite(). */
+export const TREND_WEIGHTS: Record<ArionTrendKey, number> = {
+  search_visibility: 0.25,
+  local_presence: 0.20,
+  social_presence: 0.10,
+  audience_conversion: 0.20,
+  content: 0.15,
+  technical: 0.10,
+};
+
+export interface TrendComposite {
+  /** 0-100 across MEASURED reports only, or null when nothing is measurable. */
+  score: number | null;
+  /** How much of the picture we can actually see, 0-100. Drives setup guidance
+   *  and is displayed SEPARATELY from the score — never blended into it. */
+  coverage: number;
+  measured: ArionTrendKey[];
+  unmeasured: Array<{ key: ArionTrendKey; info: UnmeasurableInfo }>;
+}
+
+/**
+ * Composite over the six reports, excluding unmeasured ones and
+ * renormalising the remaining weights.
+ *
+ * This is the fix for the defect that opened the 2026-07 insights audit: an
+ * unconnected integration was scoring 0 and dragging the average down, so a
+ * tenant's score reflected how much they had *connected* rather than how
+ * their business was *doing* — and it could never improve through work, only
+ * through integration. Brandon's ARION `local` sat at 0 for months purely
+ * because GBP wasn't connected.
+ */
+export function computeTrendComposite(reports: AllReportScores): TrendComposite {
+  const measured: ArionTrendKey[] = [];
+  const unmeasuredList: Array<{ key: ArionTrendKey; info: UnmeasurableInfo }> = [];
+  for (const key of ARION_TREND_REPORTS) {
+    const r = reports[key];
+    if (r?.unmeasured) unmeasuredList.push({ key, info: r.unmeasured });
+    else if (r) measured.push(key);
+  }
+  const coverage = Math.round((measured.length / ARION_TREND_REPORTS.length) * 100);
+  if (!measured.length) return { score: null, coverage, measured, unmeasured: unmeasuredList };
+
+  const totalWeight = measured.reduce((s, k) => s + TREND_WEIGHTS[k], 0) || 1;
+  const score = measured.reduce((s, k) => s + reports[k].score * (TREND_WEIGHTS[k] / totalWeight), 0);
+  return { score: clamp(Math.round(score), 0, 100), coverage, measured, unmeasured: unmeasuredList };
 }
 
 export function runAllReports(input: EngineInput): AllReportScores {
-  const visibility = visibilityReachEngine(input);
-  const audience = audienceIntelligenceEngine(input);
-  const conversion = conversionIntelligenceEngine(input);
-  const search = searchIntelligenceEngine(input);
-  const content = contentIntelligenceEngine(input);
-  const local = localPresenceEngine(input);
-  const technical = technicalHealthEngine(input);
-  const presence = businessPresenceEngine({
-    visibility: visibility.score,
-    conversion: conversion.score,
-    search: search.score,
-    local: local.score,
-    content: content.score,
-    audience: audience.score,
-    technical: technical.score,
-  });
-  return { visibility, audience, conversion, search, content, local, technical, presence };
+  return {
+    search_visibility:   searchVisibilityEngine(input),
+    local_presence:      localPresenceEngine(input),
+    social_presence:     socialPresenceEngine(input),
+    audience_conversion: audienceConversionEngine(input),
+    content:             contentIntelligenceEngine(input),
+    technical:           technicalHealthEngine(input),
+  };
 }

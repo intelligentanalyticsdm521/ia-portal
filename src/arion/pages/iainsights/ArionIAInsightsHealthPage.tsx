@@ -13,7 +13,17 @@ import { useArionContext } from "../../useArionContext";
 import { useAnalyticsData } from "../../analytics/useAnalyticsData";
 import { useAccessToken } from "../../../auth/useAccessToken";
 import { useAppState } from "../../../app/AppState";
-import { runAllReports, type AllReportScores } from "../../analytics/trendEngines";
+import { runAllReports, computeTrendComposite, ARION_TREND_REPORTS, type AllReportScores, type ArionTrendKey } from "../../analytics/trendEngines";
+
+/** Display labels for the six trend reports — matches ArionIAInsightsTrendsPage. */
+const REPORT_LABELS: Array<{ key: ArionTrendKey; label: string }> = [
+  { key: "search_visibility",   label: "Search Visibility" },
+  { key: "local_presence",      label: "Local Presence" },
+  { key: "social_presence",     label: "Social Presence" },
+  { key: "audience_conversion", label: "Audience & Conversion" },
+  { key: "content",             label: "Content" },
+  { key: "technical",           label: "Technical & Site Health" },
+];
 import { IAInsightsHeader } from "../../../components/iainsights/IAInsightsHeader";
 import { bandFromScore, type IAInsightsHeaderData } from "../../../components/iainsights/types";
 
@@ -157,7 +167,12 @@ export function ArionIAInsightsHealthPage() {
     d: data || {}, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, pluginData, serviceArea, benchmarks,
   }), [data, searchData, gbpData, gbpReviews, gbpPosts, gbpQanda, bingData, pluginData, serviceArea, benchmarks, selectedSite?.primaryDomain]);
 
-  const trendScore = reports.presence.score;
+  // v11.0 — `presence` is no longer a report; the composite comes from
+  // computeTrendComposite(), which EXCLUDES unmeasured reports and
+  // renormalises the remaining weights. `coverage` is reported separately
+  // and is never blended into the score.
+  const composite = useMemo(() => computeTrendComposite(reports), [reports]);
+  const trendScore = composite.score ?? 0;
   const intelligenceScoreVal = intelligenceLocked ? null : 0; // TODO when Intelligence engines wired
 
   const headerData: IAInsightsHeaderData = useMemo(() => ({
@@ -174,26 +189,25 @@ export function ArionIAInsightsHealthPage() {
     },
     platform: {
       score: platformScore(trendScore, intelligenceScoreVal, intelligenceLocked),
-      previousScore: priorScores.presence, band: bandFromScore(platformScore(trendScore, intelligenceScoreVal, intelligenceLocked)),
+      previousScore: priorScores.__composite, band: bandFromScore(platformScore(trendScore, intelligenceScoreVal, intelligenceLocked)),
       state: "ok",
       message: intelligenceLocked ? "Equals Trend Score on Standard tier." : "50/50 Trend + Intelligence weighted.",
     },
-    trend: { score: trendScore, previousScore: priorScores.presence, band: bandFromScore(trendScore), state: "ok", drillTo: "/app/services/arion_ia_insights_trends" },
+    trend: { score: trendScore, previousScore: priorScores.__composite, band: bandFromScore(trendScore), state: "ok", drillTo: "/app/services/arion_ia_insights_trends" },
     intelligence: {
       score: intelligenceScoreVal ?? 0, band: "unknown",
       state: intelligenceLocked ? "locked" : "insufficient_data",
       message: intelligenceLocked ? "Upgrade to Pro to unlock modelled insights." : "Collecting data — Intelligence reports populate ~90 days post-launch.",
       drillTo: "/app/services/arion_ia_insights_intelligence",
     },
-    trendBreakdown: [
-      { key: "visibility", label: "Visibility & Reach", score: reports.visibility.score, previousScore: priorScores.visibility, band: bandFromScore(reports.visibility.score), reportRoute: "/app/services/arion_ia_insights_trends" },
-      { key: "audience", label: "Audience Intelligence", score: reports.audience.score, previousScore: priorScores.audience, band: bandFromScore(reports.audience.score), reportRoute: "/app/services/arion_ia_insights_trends" },
-      { key: "conversion", label: "Conversion Intelligence", score: reports.conversion.score, previousScore: priorScores.conversion, band: bandFromScore(reports.conversion.score), reportRoute: "/app/services/arion_ia_insights_trends" },
-      { key: "search", label: "Search Intelligence", score: reports.search.score, previousScore: priorScores.search, band: bandFromScore(reports.search.score), reportRoute: "/app/services/arion_ia_insights_trends" },
-      { key: "content", label: "Content Intelligence", score: reports.content.score, previousScore: priorScores.content, band: bandFromScore(reports.content.score), reportRoute: "/app/services/arion_ia_insights_trends" },
-      { key: "local", label: "Local Presence", score: reports.local.score, previousScore: priorScores.local, band: bandFromScore(reports.local.score), reportRoute: "/app/services/arion_ia_insights_trends" },
-      { key: "technical", label: "Technical Health", score: reports.technical.score, previousScore: priorScores.technical, band: bandFromScore(reports.technical.score), reportRoute: "/app/services/arion_ia_insights_trends" },
-    ],
+    trendBreakdown: REPORT_LABELS.filter((r) => !reports[r.key]?.unmeasured).map((r) => ({
+      key: r.key,
+      label: r.label,
+      score: reports[r.key].score,
+      previousScore: priorScores[r.key],
+      band: bandFromScore(reports[r.key].score),
+      reportRoute: "/app/services/arion_ia_insights_trends",
+    })),
     intelligenceBreakdown: ["acquisition", "lead_source", "content_roi", "rep_revenue", "visibility_traj", "competitive"].map((k) => ({
       key: k,
       label: ({ acquisition: "Acquisition Efficiency", lead_source: "Lead Source Quality", content_roi: "Content ROI", rep_revenue: "Reputation → Revenue", visibility_traj: "Visibility Trajectory", competitive: "Competitive Gap" } as any)[k],

@@ -1,20 +1,33 @@
-// ArionIAInsightsTrendsPage — v5.x rebuild of ARION Trends.
+// ArionIAInsightsTrendsPage — v11.0 SIX-REPORT model (Brandon, 2026-07-24).
 //
-// Replaces the shared insight template with 8 dedicated analytical
-// engines per IA_Intelligence_Insights_Architecture_Handoff_v1_0.docx.
-// Each engine reads its own data and emits a scored ReportAnalysis.
-// The page renders the 4-gauge + 2 bar-chart header at top, then the
-// 8 reports as cards below.
+// Three CHANNEL reports (where you show up) + three QUALITY reports (how
+// well it works). Six is a ceiling, not a target — each must earn its place.
+//
+// Changed from the previous 8:
+//   · visibility + search   → search_visibility
+//   · audience + conversion → audience_conversion
+//   · local                 → local_presence (absorbs GBP signals that were
+//                             previously split across Visibility)
+//   · social_presence       → NEW; social is a peer discovery channel, not a
+//                             sub-metric of search
+//   · presence              → REMOVED as a report. It was the composite of
+//                             the others and was ALSO being persisted as a
+//                             report row, so it got averaged in alongside its
+//                             own components — a double count.
+//
+// Unmeasured reports (source not connected, or not in the plan) are excluded
+// from the composite and the remaining weights renormalise. They are never
+// scored 0. See computeTrendComposite().
 import { useEffect, useMemo, useState } from "react";
 import { useArionContext } from "../../useArionContext";
 import { useAnalyticsData } from "../../analytics/useAnalyticsData";
 import { useAccessToken } from "../../../auth/useAccessToken";
 import { useAppState } from "../../../app/AppState";
-import { runAllReports, type AllReportScores, type ReportAnalysis } from "../../analytics/trendEngines";
+import { runAllReports, computeTrendComposite, ARION_TREND_REPORTS, TREND_WEIGHTS, type AllReportScores, type ReportAnalysis } from "../../analytics/trendEngines";
 // IAInsightsHeader moved to the dedicated Health page (arion_ia_insights_health) in v7.0.
 // IAInsightsEmptyState moved to GetStartedCard on the Command Dashboard (v7.0).
 import { bandFromScore } from "../../../components/iainsights/types";
-import { Eye, Users, Target, Search as SearchIcon, FileText, MapPin, ShieldCheck, Award } from "lucide-react";
+import { Eye, Target, Search as SearchIcon, FileText, MapPin, ShieldCheck, Share2 } from "lucide-react";
 import { MonthlyScoreBars, MIN_HISTORY_PERIODS } from "../../../components/iainsights/MonthlyScoreBars";
 import { ArionReportDetailModal } from "../../../components/iainsights/ArionReportDetailModal";
 
@@ -26,14 +39,14 @@ const REPORT_META: Array<{
   weight: number;
   route?: string;
 }> = [
-  { key: "visibility",  label: "Visibility & Reach",          question: "Are people finding me?",                                                  icon: Eye,         weight: 0.20 },
-  { key: "audience",    label: "Audience Intelligence",       question: "Who is actually visiting and are they the right people?",                icon: Users,       weight: 0.10 },
-  { key: "conversion",  label: "Conversion Intelligence",     question: "Where does my funnel break?",                                             icon: Target,      weight: 0.20 },
-  { key: "search",      label: "Search Intelligence",         question: "Am I winning the searches that matter?",                                  icon: SearchIcon,  weight: 0.15 },
-  { key: "content",     label: "Content Intelligence",        question: "Is my content earning its place?",                                        icon: FileText,    weight: 0.12 },
-  { key: "local",       label: "Local Presence & Reputation", question: "Do I look trustworthy to someone who finds me locally?",                 icon: MapPin,      weight: 0.15 },
-  { key: "technical",   label: "Technical & Site Health",     question: "Is the foundation solid and what is the business cost of issues?",        icon: ShieldCheck, weight: 0.08 },
-  { key: "presence",    label: "Business Presence Score",     question: "What does my complete online presence look like as a whole?",            icon: Award,       weight: 0 },
+  // ── Channel reports — where you show up ──
+  { key: "search_visibility",   label: "Search Visibility",       question: "Am I found in search, and winning the searches that matter?",   icon: SearchIcon,  weight: TREND_WEIGHTS.search_visibility },
+  { key: "local_presence",      label: "Local Presence",          question: "Am I found and trusted locally?",                               icon: MapPin,      weight: TREND_WEIGHTS.local_presence },
+  { key: "social_presence",     label: "Social Presence",         question: "Is my brand growing socially?",                                 icon: Share2,      weight: TREND_WEIGHTS.social_presence },
+  // ── Quality reports — how well it works ──
+  { key: "audience_conversion", label: "Audience & Conversion",   question: "Do the right people arrive, and do they act?",                  icon: Target,      weight: TREND_WEIGHTS.audience_conversion },
+  { key: "content",             label: "Content",                 question: "Is my content earning its place?",                              icon: FileText,    weight: TREND_WEIGHTS.content },
+  { key: "technical",           label: "Technical & Site Health", question: "Is the foundation solid, and what's it costing me?",             icon: ShieldCheck, weight: TREND_WEIGHTS.technical },
 ];
 
 export function ArionIAInsightsTrendsPage() {
@@ -176,7 +189,7 @@ export function ArionIAInsightsTrendsPage() {
         const token = await getToken();
         const baseUrl = import.meta.env.VITE_ARION_API_BASE_URL as string;
         const headers = { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId };
-        const keys = ["visibility", "audience", "conversion", "search", "content", "local", "technical", "presence"];
+        const keys = [...ARION_TREND_REPORTS];
         const results = await Promise.all(keys.map((k) =>
           globalThis.fetch(`${baseUrl}/arion/ia-insights/score-history?siteId=${encodeURIComponent(activeSiteId)}&reportKey=${k}&limit=12`, { headers })
             .then(async (r) => r.ok ? { k, rows: ((await r.json()).data || []) as Array<{ period_end: string; score: number }> } : { k, rows: [] })
@@ -197,7 +210,11 @@ export function ArionIAInsightsTrendsPage() {
     const periodEnd = (data?.dateRange?.end || new Date().toISOString().slice(0, 10)).slice(0, 10);
     const periodStart = (data?.dateRange?.start || new Date(Date.now() - 90 * 86400_000).toISOString().slice(0, 10)).slice(0, 10);
     const scoresMap: Record<string, number> = {};
-    for (const k of ["visibility", "audience", "conversion", "search", "content", "local", "technical", "presence"] as const) {
+    for (const k of ARION_TREND_REPORTS) {
+      // Unmeasured reports are NOT persisted. Writing a 0 for an unconnected
+      // source is exactly the defect that made scores reflect integration
+      // completeness rather than business performance.
+      if (reports[k]?.unmeasured) continue;
       scoresMap[k] = reports[k].score;
     }
     let cancelled = false;
@@ -241,7 +258,7 @@ export function ArionIAInsightsTrendsPage() {
     <div className="p-4 max-w-7xl mx-auto">
       <div className="mb-3">
         <h1 className="text-2xl font-bold text-slate-900">IA Insights — Trends</h1>
-        <p className="text-sm text-slate-500 mt-0.5">8 reports analysing how your online presence is performing across visibility, conversion, search, content, local, technical, and audience signals.</p>
+        <p className="text-sm text-slate-500 mt-0.5">Six monthly reports — three channels (search, local, social) and three quality measures (audience &amp; conversion, content, technical).</p>
       </div>
 
       {/* IAInsightsHeader + Get Started checklist removed in v7.0 — see
