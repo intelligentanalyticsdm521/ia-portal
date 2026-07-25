@@ -20,6 +20,7 @@ import { buildSparkDashboards, demoSparkMetrics } from "../../analytics/sparkDas
 import { buildIntelligenceMirror, SPARK_MIRROR } from "../../analytics/intelligenceMirror";
 import { platformHealth, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
 import { useArionInsightsPayload } from "../../hooks/useArionInsightsPayload";
+import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 
 const TRENDS_ROUTE = "/app/services/spark_ia_insights_trends";
 const INTEL_ROUTE = "/app/services/spark_ia_insights_intelligence";
@@ -27,14 +28,16 @@ const INTEL_ROUTE = "/app/services/spark_ia_insights_intelligence";
 export function SparkIAInsightsHealthPage() {
   const { activeTenantId } = useAppState();
   const arionPayload = useArionInsightsPayload();
+  const sparkPayload = useProductInsightsPayload("spark");
+  const oliverPayload = useProductInsightsPayload("oliver");
 
   const headerData: IAInsightsHeaderData = useMemo(() => {
     const seed = activeTenantId || "spark";
-    const payload = demoSparkMetrics(seed);
+    const payload = sparkPayload || demoSparkMetrics(seed);
     const trendDs = buildSparkDashboards(payload);
     const intelDs = buildIntelligenceMirror(payload, SPARK_MIRROR).dashboards;
     const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE);
-    const bp = demoBusinessPulse(seed, { arionPayload });
+    const bp = demoBusinessPulse(seed, { arionPayload, sparkPayload, oliverPayload });
     return {
       product: "spark",
       overall: gaugeOf(bp.pulse, bp.prior, {
@@ -56,7 +59,7 @@ export function SparkIAInsightsHealthPage() {
       banners: [],
       meta: { generatedAt: new Date().toISOString(), tier: "pro" },
     };
-  }, [activeTenantId, arionPayload]);
+  }, [activeTenantId, arionPayload, sparkPayload, oliverPayload]);
 
   return (
     <div className="p-4 max-w-7xl mx-auto">

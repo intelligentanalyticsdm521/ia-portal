@@ -1,23 +1,25 @@
-// SparkIAInsightsTrendsPage — v12.0 (Brandon 2026-07-24 model).
+// SparkIAInsightsTrendsPage — v13.1 (Brandon 2026-07-25).
 //
-// Same funnel as ARION: monthly metrics → scored dashboards → TrendDashboardView.
-// SPARK's production metrics endpoint isn't built yet, so the series are
-// client-generated (demoSparkMetrics) keyed to the active tenant, deterministic
-// per tenant. When the SPARK /insights/metrics endpoint ships this swaps to a
-// fetch; nothing else changes.
+// Same funnel as ARION. Series come from the REAL metrics endpoint
+// (GET /api/v1/ia-insights/metrics?product=spark — live SQL over
+// lumen.contact/campaign); the seeded demo generator is only the fallback
+// while the fetch is in flight or the tenant has no rows. Line-item detail
+// stays demo until dimensioned capture lands.
 
 import { useMemo } from "react";
 import { useAppState } from "../../app/AppState";
 import { buildSparkDashboards, demoSparkMetrics } from "../../analytics/sparkDashboards";
 import { demoSparkDetail } from "../../analytics/sparkDetail";
+import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 import { TrendDashboardView } from "../../components/insights/TrendDashboardView";
 
 export function SparkIAInsightsTrendsPage() {
   const { activeTenantId } = useAppState();
-  const dashboards = useMemo(() => {
-    const payload = demoSparkMetrics(activeTenantId || "spark");
-    return buildSparkDashboards(payload);
-  }, [activeTenantId]);
+  const payload = useProductInsightsPayload("spark");
+  const dashboards = useMemo(
+    () => buildSparkDashboards(payload || demoSparkMetrics(activeTenantId || "spark")),
+    [payload, activeTenantId],
+  );
 
   return (
     <div className="p-1">

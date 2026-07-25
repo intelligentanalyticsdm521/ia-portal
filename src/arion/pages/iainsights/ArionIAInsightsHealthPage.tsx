@@ -20,6 +20,7 @@ import type { IAInsightsHeaderData } from "../../../components/iainsights/types"
 import { buildArionDashboards, type MetricsPayload } from "../../../analytics/arionDashboards";
 import { buildIntelligenceMirror, ARION_MIRROR } from "../../../analytics/intelligenceMirror";
 import { platformHealth, demoBusinessPulse, gaugeOf } from "../../../analytics/healthSummary";
+import { useProductInsightsPayload } from "../../../hooks/useProductInsightsPayload";
 
 const TRENDS_ROUTE = "/app/services/arion_ia_insights_trends";
 const INTEL_ROUTE = "/app/services/arion_ia_insights_intelligence";
@@ -31,6 +32,8 @@ export function ArionIAInsightsHealthPage() {
 
   const [payload, setPayload] = useState<MetricsPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const sparkPayload = useProductInsightsPayload("spark");
+  const oliverPayload = useProductInsightsPayload("oliver");
 
   useEffect(() => {
     if (!activeSiteId) return;
@@ -48,7 +51,7 @@ export function ArionIAInsightsHealthPage() {
     const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE);
     // Feed this page's own server payload into the pulse so its ARION
     // component matches the gauges above it exactly.
-    const bp = demoBusinessPulse(activeTenantId || "arion", { arionPayload: payload });
+    const bp = demoBusinessPulse(activeTenantId || "arion", { arionPayload: payload, sparkPayload, oliverPayload });
     return {
       product: "arion",
       overall: gaugeOf(bp.pulse, bp.prior, {
@@ -72,7 +75,7 @@ export function ArionIAInsightsHealthPage() {
         : [],
       meta: { generatedAt: new Date().toISOString(), tier },
     };
-  }, [payload, loading, tier, activeTenantId]);
+  }, [payload, loading, tier, activeTenantId, sparkPayload, oliverPayload]);
 
   if (loading && !payload) return <div className="p-4 text-sm text-slate-500">Loading IA Insights…</div>;
 

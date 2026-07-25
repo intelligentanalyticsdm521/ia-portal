@@ -8,14 +8,19 @@ import { useAppState } from "../../app/AppState";
 import { demoOliverMetrics } from "../../analytics/oliverDashboards";
 import { demoOliverDetail } from "../../analytics/oliverDetail";
 import { buildIntelligenceMirror, OLIVER_MIRROR } from "../../analytics/intelligenceMirror";
+import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 import { TrendDashboardView } from "../../components/insights/TrendDashboardView";
 
 export function OliverIAInsightsIntelligencePage() {
   const { activeTenantId } = useAppState();
+  // Real monthly series when the tenant has rows (same endpoint as Trends);
+  // line-item detail stays demo until dimensioned capture lands.
+  const payload = useProductInsightsPayload("oliver");
   const built = useMemo(() => {
     const seed = activeTenantId || "oliver";
-    return buildIntelligenceMirror({ ...demoOliverMetrics(seed), detail: demoOliverDetail(seed) }, OLIVER_MIRROR);
-  }, [activeTenantId]);
+    const metrics = payload || demoOliverMetrics(seed);
+    return buildIntelligenceMirror({ ...metrics, detail: demoOliverDetail(seed) }, OLIVER_MIRROR);
+  }, [payload, activeTenantId]);
   return (
     <div className="p-1">
       <div className="max-w-5xl mx-auto mb-4">

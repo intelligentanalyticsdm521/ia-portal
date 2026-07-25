@@ -17,17 +17,20 @@ import { buildArgusDashboards, demoArgusMetrics, type PlatformRollup } from "../
 import { demoArgusDetail } from "../../analytics/argusDetail";
 import { businessPulse, type DashboardScore } from "../../analytics/scoring";
 import { useArionInsightsPayload } from "../../hooks/useArionInsightsPayload";
+import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 
 export function ArgusTrendsPage() {
   const { activeTenantId } = useAppState();
-  // Server ARION payload so the ARION roll-up matches the ARION pages exactly.
+  // Real payloads so every roll-up matches the product pages exactly.
   const arionPayload = useArionInsightsPayload();
+  const sparkPayload = useProductInsightsPayload("spark");
+  const oliverPayload = useProductInsightsPayload("oliver");
 
   const dashboards = useMemo(() => {
     const seed = activeTenantId || "argus";
     const arion = buildArionDashboards(arionPayload || demoArionMetricsClient(seed));
-    const spark = buildSparkDashboards(demoSparkMetrics(seed));
-    const oliver = buildOliverDashboards(demoOliverMetrics(seed));
+    const spark = buildSparkDashboards(sparkPayload || demoSparkMetrics(seed));
+    const oliver = buildOliverDashboards(oliverPayload || demoOliverMetrics(seed));
 
     const rollup = (label: string, key: string, ds: DashboardScore[]): PlatformRollup => {
       const moves = ds.map((d) => d.movementPct).filter((v): v is number => v != null);
@@ -44,7 +47,7 @@ export function ArgusTrendsPage() {
       rollup("OLIVER", "oliver", oliver),
     ];
     return buildArgusDashboards(demoArgusMetrics(seed), platforms);
-  }, [activeTenantId, arionPayload]);
+  }, [activeTenantId, arionPayload, sparkPayload, oliverPayload]);
 
   return (
     <div className="p-1">

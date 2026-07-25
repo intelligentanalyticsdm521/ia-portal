@@ -1,18 +1,23 @@
-// OliverIAInsightsTrendsPage — v12.0 (Brandon 2026-07-24 model).
-// Same funnel as ARION; OLIVER metrics endpoint is a documented follow-up, so
-// series are client-generated per tenant for review.
+// OliverIAInsightsTrendsPage — v13.1 (Brandon 2026-07-25).
+// Same funnel as ARION. Series come from the REAL metrics endpoint
+// (GET /api/v1/ia-insights/metrics?product=oliver — live SQL over
+// oliver.invoice/job/quote); the seeded demo generator is only the fallback
+// while the fetch is in flight or the tenant has no rows. Line-item detail
+// stays demo until dimensioned capture lands.
 
 import { useMemo } from "react";
 import { useAppState } from "../../app/AppState";
 import { buildOliverDashboards, demoOliverMetrics } from "../../analytics/oliverDashboards";
 import { demoOliverDetail } from "../../analytics/oliverDetail";
+import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 import { TrendDashboardView } from "../../components/insights/TrendDashboardView";
 
 export function OliverIAInsightsTrendsPage() {
   const { activeTenantId } = useAppState();
+  const payload = useProductInsightsPayload("oliver");
   const dashboards = useMemo(
-    () => buildOliverDashboards(demoOliverMetrics(activeTenantId || "oliver")),
-    [activeTenantId],
+    () => buildOliverDashboards(payload || demoOliverMetrics(activeTenantId || "oliver")),
+    [payload, activeTenantId],
   );
   return (
     <div className="p-1">

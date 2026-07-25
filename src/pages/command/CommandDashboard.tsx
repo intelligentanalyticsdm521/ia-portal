@@ -7,6 +7,7 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { Sparkline } from "../../components/iainsights/Sparkline";
 import { demoBusinessPulse } from "../../analytics/healthSummary";
 import { useArionInsightsPayload } from "../../hooks/useArionInsightsPayload";
+import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 import { GetStartedCard } from "../../components/command/GetStartedCard";
 import { UnifiedSetupCard } from "../../components/command/UnifiedSetupCard";
 // Onboarding V3 Phase 3 — personalized "do your first X" task list. NEW
@@ -77,9 +78,11 @@ export function CommandDashboard() {
   // the platform-api /argus/business-pulse endpoint once the monthly snapshot
   // jobs land. Sparkline history returns with the snapshot jobs too.
   const arionPayload = useArionInsightsPayload();
+  const sparkPayload = useProductInsightsPayload("spark");
+  const oliverPayload = useProductInsightsPayload("oliver");
   const pulse = useMemo<PulseData | null>(() => {
     if (!activeTenantId) return null;
-    const bp = demoBusinessPulse(activeTenantId, { arionPayload });
+    const bp = demoBusinessPulse(activeTenantId, { arionPayload, sparkPayload, oliverPayload });
     return {
       pulse: bp.pulse,
       previous_pulse: bp.prior,
@@ -88,7 +91,7 @@ export function CommandDashboard() {
         argus: bp.argus.score, stella: null, forge: null,
       },
     };
-  }, [activeTenantId, arionPayload]);
+  }, [activeTenantId, arionPayload, sparkPayload, oliverPayload]);
 
   const load = useCallback(async () => {
     if (hasOliver && oliver.ready) {

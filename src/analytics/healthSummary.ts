@@ -117,7 +117,11 @@ export interface DemoPulse {
  * exactly — the client generator is only the fallback when the server payload
  * isn't available (Brandon caught home 69 vs ARION Health 68).
  */
-export function demoBusinessPulse(seed: string, opts?: { arionPayload?: import("./arionDashboards").MetricsPayload | null }): DemoPulse {
+export function demoBusinessPulse(seed: string, opts?: {
+  arionPayload?: import("./arionDashboards").MetricsPayload | null;
+  sparkPayload?: import("./arionDashboards").MetricsPayload | null;
+  oliverPayload?: import("./arionDashboards").MetricsPayload | null;
+}): DemoPulse {
   const platform = (trendDs: DashboardScore[], intelDs: DashboardScore[]) => {
     const t = rollupScore(trendDs);
     const i = rollupScore(intelDs);
@@ -125,8 +129,8 @@ export function demoBusinessPulse(seed: string, opts?: { arionPayload?: import("
   };
 
   const arionPayload = opts?.arionPayload || demoArionMetricsClient(seed);
-  const sparkPayload = demoSparkMetrics(seed);
-  const oliverPayload = demoOliverMetrics(seed);
+  const sparkPayload = opts?.sparkPayload || demoSparkMetrics(seed);
+  const oliverPayload = opts?.oliverPayload || demoOliverMetrics(seed);
 
   const arionDs = buildArionDashboards(arionPayload);
   const sparkDs = buildSparkDashboards(sparkPayload);

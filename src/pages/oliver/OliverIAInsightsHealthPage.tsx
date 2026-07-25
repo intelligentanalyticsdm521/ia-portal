@@ -20,6 +20,7 @@ import { buildOliverDashboards, demoOliverMetrics } from "../../analytics/oliver
 import { buildIntelligenceMirror, OLIVER_MIRROR } from "../../analytics/intelligenceMirror";
 import { platformHealth, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
 import { useArionInsightsPayload } from "../../hooks/useArionInsightsPayload";
+import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 
 const TRENDS_ROUTE = "/app/services/oliver_ia_insights_trends";
 const INTEL_ROUTE = "/app/services/oliver_ia_insights_intelligence";
@@ -27,14 +28,16 @@ const INTEL_ROUTE = "/app/services/oliver_ia_insights_intelligence";
 export function OliverIAInsightsHealthPage() {
   const { activeTenantId } = useAppState();
   const arionPayload = useArionInsightsPayload();
+  const oliverPayload = useProductInsightsPayload("oliver");
+  const sparkPayload = useProductInsightsPayload("spark");
 
   const headerData: IAInsightsHeaderData = useMemo(() => {
     const seed = activeTenantId || "oliver";
-    const payload = demoOliverMetrics(seed);
+    const payload = oliverPayload || demoOliverMetrics(seed);
     const trendDs = buildOliverDashboards(payload);
     const intelDs = buildIntelligenceMirror(payload, OLIVER_MIRROR).dashboards;
     const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE);
-    const bp = demoBusinessPulse(seed, { arionPayload });
+    const bp = demoBusinessPulse(seed, { arionPayload, sparkPayload, oliverPayload });
     return {
       product: "oliver",
       overall: gaugeOf(bp.pulse, bp.prior, {
@@ -56,7 +59,7 @@ export function OliverIAInsightsHealthPage() {
       banners: [],
       meta: { generatedAt: new Date().toISOString(), tier: "pro" },
     };
-  }, [activeTenantId, arionPayload]);
+  }, [activeTenantId, arionPayload, oliverPayload, sparkPayload]);
 
   return (
     <div className="p-4 max-w-7xl mx-auto">

@@ -8,14 +8,19 @@ import { useAppState } from "../../app/AppState";
 import { demoSparkMetrics } from "../../analytics/sparkDashboards";
 import { demoSparkDetail } from "../../analytics/sparkDetail";
 import { buildIntelligenceMirror, SPARK_MIRROR } from "../../analytics/intelligenceMirror";
+import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 import { TrendDashboardView } from "../../components/insights/TrendDashboardView";
 
 export function SparkIAInsightsIntelligencePage() {
   const { activeTenantId } = useAppState();
+  // Real monthly series when the tenant has rows (same endpoint as Trends);
+  // line-item detail stays demo until dimensioned capture lands.
+  const payload = useProductInsightsPayload("spark");
   const built = useMemo(() => {
     const seed = activeTenantId || "spark";
-    return buildIntelligenceMirror({ ...demoSparkMetrics(seed), detail: demoSparkDetail(seed) }, SPARK_MIRROR);
-  }, [activeTenantId]);
+    const metrics = payload || demoSparkMetrics(seed);
+    return buildIntelligenceMirror({ ...metrics, detail: demoSparkDetail(seed) }, SPARK_MIRROR);
+  }, [payload, activeTenantId]);
   return (
     <div className="p-1">
       <div className="max-w-5xl mx-auto mb-4">

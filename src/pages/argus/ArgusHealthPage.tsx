@@ -24,6 +24,7 @@ import { buildIntelligenceMirror, ARGUS_MIRROR } from "../../analytics/intellige
 import { businessPulse, type DashboardScore } from "../../analytics/scoring";
 import { platformHealth, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
 import { useArionInsightsPayload } from "../../hooks/useArionInsightsPayload";
+import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 
 const TRENDS_ROUTE = "/app/services/argus_trends";
 const INTEL_ROUTE = "/app/services/argus_cross_platform";
@@ -31,6 +32,8 @@ const INTEL_ROUTE = "/app/services/argus_cross_platform";
 export function ArgusHealthPage() {
   const { activeTenantId } = useAppState();
   const arionPayload = useArionInsightsPayload();
+  const sparkPayload = useProductInsightsPayload("spark");
+  const oliverPayload = useProductInsightsPayload("oliver");
 
   const { headerData, activeProducts } = useMemo(() => {
     const seed = activeTenantId || "argus";
@@ -46,15 +49,15 @@ export function ArgusHealthPage() {
     };
     const platforms: PlatformRollup[] = [
       rollup("ARION", "arion", buildArionDashboards(arionPayload || demoArionMetricsClient(seed))),
-      rollup("SPARK", "spark", buildSparkDashboards(demoSparkMetrics(seed))),
-      rollup("OLIVER", "oliver", buildOliverDashboards(demoOliverMetrics(seed))),
+      rollup("SPARK", "spark", buildSparkDashboards(sparkPayload || demoSparkMetrics(seed))),
+      rollup("OLIVER", "oliver", buildOliverDashboards(oliverPayload || demoOliverMetrics(seed))),
     ];
 
     const argusPayload = demoArgusMetrics(seed);
     const trendDs = buildArgusDashboards(argusPayload, platforms);
     const intelDs = buildIntelligenceMirror(argusPayload, ARGUS_MIRROR).dashboards;
     const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE);
-    const bp = demoBusinessPulse(seed, { arionPayload });
+    const bp = demoBusinessPulse(seed, { arionPayload, sparkPayload, oliverPayload });
 
     const headerData: IAInsightsHeaderData = {
       product: "argus",
@@ -87,7 +90,7 @@ export function ArgusHealthPage() {
     ];
 
     return { headerData, activeProducts };
-  }, [activeTenantId, arionPayload]);
+  }, [activeTenantId, arionPayload, sparkPayload, oliverPayload]);
 
   return (
     <div className="p-4 max-w-7xl mx-auto">
