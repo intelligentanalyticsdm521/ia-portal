@@ -5,6 +5,7 @@
 import { useMemo } from "react";
 import { useAppState } from "../../app/AppState";
 import { buildOliverDashboards, demoOliverMetrics } from "../../analytics/oliverDashboards";
+import { demoOliverDetail } from "../../analytics/oliverDetail";
 import { TrendDashboardView } from "../../components/insights/TrendDashboardView";
 
 export function OliverIAInsightsTrendsPage() {
@@ -22,7 +23,7 @@ export function OliverIAInsightsTrendsPage() {
           Click any area, then any section, to see every data point trended month over month.
         </p>
       </div>
-      <TrendDashboardView dashboards={dashboards} platformLabel="OLIVER" />
+      <TrendDashboardView dashboards={dashboards} platformLabel="OLIVER" detail={demoOliverDetail(activeTenantId || "oliver")} />
     </div>
   );
 }

@@ -9,6 +9,7 @@
 import { useMemo } from "react";
 import { useAppState } from "../../app/AppState";
 import { buildSparkDashboards, demoSparkMetrics } from "../../analytics/sparkDashboards";
+import { demoSparkDetail } from "../../analytics/sparkDetail";
 import { TrendDashboardView } from "../../components/insights/TrendDashboardView";
 
 export function SparkIAInsightsTrendsPage() {
@@ -27,7 +28,7 @@ export function SparkIAInsightsTrendsPage() {
           Click any area, then any section, to see every data point trended month over month.
         </p>
       </div>
-      <TrendDashboardView dashboards={dashboards} platformLabel="SPARK" />
+      <TrendDashboardView dashboards={dashboards} platformLabel="SPARK" detail={demoSparkDetail(activeTenantId || "spark")} />
     </div>
   );
 }

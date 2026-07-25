@@ -14,6 +14,7 @@ import { demoArionMetricsClient } from "../../analytics/arionDemoClient";
 import { buildSparkDashboards, demoSparkMetrics } from "../../analytics/sparkDashboards";
 import { buildOliverDashboards, demoOliverMetrics } from "../../analytics/oliverDashboards";
 import { buildArgusDashboards, demoArgusMetrics, type PlatformRollup } from "../../analytics/argusDashboards";
+import { demoArgusDetail } from "../../analytics/argusDetail";
 import { businessPulse, type DashboardScore } from "../../analytics/scoring";
 
 export function ArgusTrendsPage() {
@@ -51,7 +52,7 @@ export function ArgusTrendsPage() {
           automation health that connects them. Click any area to drill in.
         </p>
       </div>
-      <TrendDashboardView dashboards={dashboards} platformLabel="ARGUS" />
+      <TrendDashboardView dashboards={dashboards} platformLabel="ARGUS" detail={demoArgusDetail(activeTenantId || "argus")} />
     </div>
   );
 }

@@ -1,29 +1,31 @@
-// OliverIAInsightsIntelligencePage — v12.0 (Brandon 2026-07-24 model).
-// Intelligence = forecasting / anomaly / opportunity modeling on the same
-// monthly series Trends counts, via the generic intelligence builder.
+// OliverIAInsightsIntelligencePage — v13.0 (Brandon 2026-07-25 — mirror model).
+// Intelligence MIRRORS Trends: scored dashboards → clickable sections → deep
+// detail reports, rendered through the same TrendDashboardView. Content is
+// modeled: per-line-item forecasts, anomaly z-scores, impact rankings.
 
 import { useMemo } from "react";
 import { useAppState } from "../../app/AppState";
 import { demoOliverMetrics } from "../../analytics/oliverDashboards";
-import { buildIntelligence, OLIVER_INTEL } from "../../analytics/intelligenceBuilder";
-import { IntelligenceView } from "../../components/insights/IntelligenceView";
+import { demoOliverDetail } from "../../analytics/oliverDetail";
+import { buildIntelligenceMirror, OLIVER_MIRROR } from "../../analytics/intelligenceMirror";
+import { TrendDashboardView } from "../../components/insights/TrendDashboardView";
 
 export function OliverIAInsightsIntelligencePage() {
   const { activeTenantId } = useAppState();
-  const intel = useMemo(
-    () => buildIntelligence(demoOliverMetrics(activeTenantId || "OLIVER".toLowerCase()), OLIVER_INTEL),
-    [activeTenantId],
-  );
+  const built = useMemo(() => {
+    const seed = activeTenantId || "oliver";
+    return buildIntelligenceMirror({ ...demoOliverMetrics(seed), detail: demoOliverDetail(seed) }, OLIVER_MIRROR);
+  }, [activeTenantId]);
   return (
     <div className="p-1">
       <div className="mb-4">
         <h1 className="text-lg font-bold text-slate-900">OLIVER Insights — Intelligence</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Where your trends are heading, what's unusual, and where focus pays off most —
-          modelled from 12 months of your own data, with confidence stated.
+          The same structure as Trends, but modelled: where every trend is heading, what's
+          unusual, and where focus pays off — down to the individual line item.
         </p>
       </div>
-      <IntelligenceView intel={intel} platformLabel="OLIVER" />
+      <TrendDashboardView dashboards={built.dashboards} platformLabel="OLIVER" detail={built.detail} scoreNoun="Intelligence" />
     </div>
   );
 }

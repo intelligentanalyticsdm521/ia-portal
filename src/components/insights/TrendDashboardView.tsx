@@ -16,8 +16,10 @@ import { LineChart, BarChart, Donut, Gauge, StatBlock } from "../iainsights/Sect
 import { deriveInsights } from "../../analytics/insightGen";
 import type { DashboardScore, SectionScore, DataPointScore, ValueFormat } from "../../analytics/scoring";
 import { businessPulse } from "../../analytics/scoring";
-import { reportsForSection, type DetailPayload } from "../../analytics/detail";
-import { DetailReportTable } from "./DetailReportTable";
+import { reportsForSection, itemMom, type DetailPayload } from "../../analytics/detail";
+import { deriveDeepReport } from "../../analytics/deepReport";
+import { deepConfigFor } from "../../analytics/deepConfigs";
+import { DeepReportView } from "./DeepReportView";
 
 // ── formatting ──
 export function formatValue(v: number | string | null, format: ValueFormat): string {
@@ -110,6 +112,7 @@ function Crumbs({ trail, onNav }: { trail: string[]; onNav: (level: number) => v
 export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNoun = "Trend" }: { dashboards: DashboardScore[]; platformLabel: string; detail?: DetailPayload; scoreNoun?: string }) {
   const [dashKey, setDashKey] = useState<string | null>(null);
   const [secKey, setSecKey] = useState<string | null>(null);
+  const [repKey, setRepKey] = useState<string | null>(null);
 
   const platformScore = useMemo(
     () => businessPulse(dashboards.map((d) => d.score)),
@@ -118,6 +121,27 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
 
   const dash = dashboards.find((d) => d.key === dashKey) || null;
   const sec = dash?.sections.find((s) => s.key === secKey) || null;
+
+  // ── FULL DETAIL REPORT (deepest level — the actual business report) ──
+  if (dash && sec && repKey) {
+    const rep = reportsForSection(detail, dash.key, sec.key).find((r) => r.id === repKey);
+    if (rep) {
+      const deep = deriveDeepReport(rep, deepConfigFor(rep.id));
+      return (
+        <div className="max-w-5xl">
+          <Crumbs
+            trail={[platformLabel, dash.label, sec.label, rep.label]}
+            onNav={(l) => { if (l === 0) { setDashKey(null); setSecKey(null); setRepKey(null); } else if (l === 1) { setSecKey(null); setRepKey(null); } else if (l === 2) setRepKey(null); }}
+          />
+          <button onClick={() => setRepKey(null)} className="mb-3 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800">
+            <ArrowLeft className="h-3.5 w-3.5" /> back to {sec.label}
+          </button>
+          <h2 className="text-lg font-bold text-slate-900 mb-3">{rep.label}</h2>
+          <DeepReportView deep={deep} />
+        </div>
+      );
+    }
+  }
 
   // ── SECTION DETAIL REPORT ──
   if (dash && sec) {
@@ -146,9 +170,29 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
           if (!reports.length) return null;
           return (
             <>
-              <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">In-depth reports — exactly what moved</div>
-              <div className="space-y-2">
-                {reports.map((r, i) => <DetailReportTable key={r.id} report={r} defaultOpen={i === 0} />)}
+              <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">In-depth reports — click one to open the full report</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {reports.map((r) => {
+                  // Headline for the card: the biggest single mover in the report.
+                  const movers = r.items
+                    .map((it) => ({ name: it.name, m: itemMom(it) }))
+                    .filter((x): x is { name: string; m: number } => x.m != null)
+                    .sort((a, b) => Math.abs(b.m) - Math.abs(a.m));
+                  const top = movers[0];
+                  return (
+                    <button key={r.id} onClick={() => setRepKey(r.id)}
+                      className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left hover:border-slate-300 hover:bg-slate-50">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-semibold text-slate-900">{r.label}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          {r.items.length} {r.itemLabel.toLowerCase()}{r.items.length === 1 ? "" : "s"}
+                          {top && <> · biggest move: <span className={`font-semibold ${(r.higherIsBetter ? top.m >= 0 : top.m < 0) ? "text-green-600" : "text-red-600"}`}>{top.name} {top.m > 0 ? "+" : ""}{top.m.toFixed(0)}%</span></>}
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-slate-300 flex-shrink-0" />
+                    </button>
+                  );
+                })}
               </div>
             </>
           );
@@ -180,7 +224,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
         <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mt-5 mb-2">What's driving this score — click any section for the detail</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {dash.sections.map((s) => (
-            <button key={s.key} onClick={() => setSecKey(s.key)}
+            <button key={s.key} onClick={() => { setSecKey(s.key); setRepKey(null); }}
               className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left hover:border-slate-300 hover:bg-slate-50">
               <ScoreRing score={s.score} size={44} />
               <div className="min-w-0 flex-1">
@@ -224,7 +268,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {dashboards.map((d) => (
-          <button key={d.key} onClick={() => d.score != null && setDashKey(d.key)}
+          <button key={d.key} onClick={() => { if (d.score != null) { setDashKey(d.key); setSecKey(null); setRepKey(null); } }}
             className={`flex flex-col rounded-lg border border-slate-200 bg-white p-4 text-left ${d.score != null ? "hover:border-slate-300 hover:shadow-sm cursor-pointer" : "opacity-70 cursor-default"}`}>
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
