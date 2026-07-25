@@ -50,7 +50,7 @@ export function ArionIAInsightsTrendsPage() {
       ) : !payload || !dashboards.length ? (
         <div className="text-sm text-slate-400 py-12 text-center">No trend data available for this site yet.</div>
       ) : (
-        <TrendDashboardView dashboards={dashboards} platformLabel="ARION" />
+        <TrendDashboardView dashboards={dashboards} platformLabel="ARION" detail={payload.detail} />
       )}
     </div>
   );

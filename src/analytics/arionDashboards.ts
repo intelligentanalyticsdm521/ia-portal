@@ -197,6 +197,7 @@ export interface MetricsPayload {
   source: "demo" | "prod";
   months: string[];
   metrics: Record<string, Array<number | null>>;
+  detail?: import("./detail").DetailPayload;
 }
 
 /** Build all six scored dashboards from the monthly-series payload. */

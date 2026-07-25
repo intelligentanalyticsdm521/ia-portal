@@ -16,6 +16,8 @@ import { LineChart, BarChart, Donut, Gauge, StatBlock } from "../iainsights/Sect
 import { deriveInsights } from "../../analytics/insightGen";
 import type { DashboardScore, SectionScore, DataPointScore, ValueFormat } from "../../analytics/scoring";
 import { businessPulse } from "../../analytics/scoring";
+import { reportsForSection, type DetailPayload } from "../../analytics/detail";
+import { DetailReportTable } from "./DetailReportTable";
 
 // ── formatting ──
 export function formatValue(v: number | string | null, format: ValueFormat): string {
@@ -104,7 +106,7 @@ function Crumbs({ trail, onNav }: { trail: string[]; onNav: (level: number) => v
 }
 
 // ── the view ──
-export function TrendDashboardView({ dashboards, platformLabel }: { dashboards: DashboardScore[]; platformLabel: string }) {
+export function TrendDashboardView({ dashboards, platformLabel, detail }: { dashboards: DashboardScore[]; platformLabel: string; detail?: DetailPayload }) {
   const [dashKey, setDashKey] = useState<string | null>(null);
   const [secKey, setSecKey] = useState<string | null>(null);
 
@@ -134,10 +136,22 @@ export function TrendDashboardView({ dashboards, platformLabel }: { dashboards: 
             </div>
           </div>
         </div>
-        <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">Every data point, trended</div>
-        <div className="space-y-2">
+        <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">Score contributors</div>
+        <div className="space-y-2 mb-6">
           {sec.dataPoints.map((dp) => <DataPointDetail key={dp.key} dp={dp} months={dashboards} />)}
         </div>
+        {(() => {
+          const reports = reportsForSection(detail, dash.key, sec.key);
+          if (!reports.length) return null;
+          return (
+            <>
+              <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">In-depth reports — exactly what moved</div>
+              <div className="space-y-2">
+                {reports.map((r, i) => <DetailReportTable key={r.id} report={r} defaultOpen={i === 0} />)}
+              </div>
+            </>
+          );
+        })()}
       </div>
     );
   }
