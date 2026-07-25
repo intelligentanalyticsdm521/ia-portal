@@ -86,11 +86,19 @@ export function fmtV(v: number | string | null | undefined, format: ValueFormat 
   }
 }
 
+/**
+ * Month labels for a series of length n. The first 12 points are the trailing
+ * year ending at the CURRENT month; anything beyond 12 is a FUTURE month —
+ * intelligence forecast series append their 3-month projection, and labelling
+ * those as past months would silently misdate the projection.
+ */
 export function monthLabels(n: number): string[] {
+  const past = Math.min(n, 12);
   const out: string[] = [];
   const now = new Date();
-  for (let m = n - 1; m >= 0; m--) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - m, 1));
+  for (let i = 0; i < n; i++) {
+    const offset = i - (past - 1); // ≤0 = past months, >0 = projected future
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offset, 1));
     out.push(d.toLocaleString("en-US", { month: "short", timeZone: "UTC" }));
   }
   return out;

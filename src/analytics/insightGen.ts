@@ -73,14 +73,24 @@ export function deriveInsights(dash: DashboardScore, opts: { maxPriorities?: num
     }
   }
 
-  const drops = cands.filter((c) => c.dp.movementPct! < 0).sort((a, b) => b.impact - a.impact);
-  const gains = cands.filter((c) => c.dp.movementPct! > 0).sort((a, b) => b.impact - a.impact);
+  // Intelligence mirrors reuse a metric across sections (forecast + anomaly +
+  // opportunity all model the same series) — keep only the highest-impact
+  // mention of each data point so the insight list never repeats itself.
+  const byKey = new Map<string, Cand>();
+  for (const c of cands) {
+    const prev = byKey.get(c.dp.key);
+    if (!prev || c.impact > prev.impact) byKey.set(c.dp.key, c);
+  }
+  const unique = [...byKey.values()];
+
+  const drops = unique.filter((c) => c.dp.movementPct! < 0).sort((a, b) => b.impact - a.impact);
+  const gains = unique.filter((c) => c.dp.movementPct! > 0).sort((a, b) => b.impact - a.impact);
 
   const out: InsightPair[] = [];
 
   for (const c of drops.slice(0, maxPriorities)) {
     out.push({
-      id: `drop:${c.dp.key}`,
+      id: `drop:${c.sec.key}:${c.dp.key}`,
       severity: c.impact,
       priority: true,
       insight: `${c.dp.label} fell ${fmtPct(c.dp.movementPct!)} this month (${c.sec.label}). This is one of the biggest drags on your ${dash.label} score.`,
@@ -92,7 +102,7 @@ export function deriveInsights(dash: DashboardScore, opts: { maxPriorities?: num
   const remaining = max - out.length;
   for (const c of gains.slice(0, remaining)) {
     out.push({
-      id: `gain:${c.dp.key}`,
+      id: `gain:${c.sec.key}:${c.dp.key}`,
       severity: c.impact,
       priority: false,
       insight: `${c.dp.label} rose ${fmtPct(c.dp.movementPct!)} this month — the work in ${c.sec.label} is showing.`,

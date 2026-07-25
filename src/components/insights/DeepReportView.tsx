@@ -11,9 +11,10 @@
 //      month-by-month year, best/worst/avg, volatility, metadata, warnings.
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
+import { ChevronDown, ChevronRight, TrendingUp, TrendingDown, Minus, AlertTriangle, Info } from "lucide-react";
 import { fmtV, type DeepReportData, type DeepDistribution } from "../../analytics/deepReport";
 import { itemMom, pluralize, type DetailItem, type DetailColumn } from "../../analytics/detail";
+import { reportNotesFor } from "../../analytics/reportNotes";
 
 function Mom({ pct, lowerBetter, small }: { pct: number | null | undefined; lowerBetter?: boolean; small?: boolean }) {
   if (pct == null) return <span className="text-slate-300 text-[11px]">—</span>;
@@ -160,8 +161,23 @@ export function DeepReportView({ deep }: { deep: DeepReportData }) {
   // Trend items sorted biggest mover first; feeds keep order.
   const rows = isFeed ? report.items : [...report.items].sort((a, b) => Math.abs(itemMom(b) ?? 0) - Math.abs(itemMom(a) ?? 0));
 
+  const notes = reportNotesFor(report.id);
+
   return (
     <div className="space-y-5">
+      {/* 0 — what this report is, in plain business language */}
+      {notes && (
+        <div className="rounded-lg border border-sky-100 bg-sky-50/60 px-4 py-3">
+          <div className="flex items-start gap-2">
+            <Info className="h-4 w-4 text-sky-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <div className="space-y-1.5">
+              <p className="text-[12px] leading-relaxed text-slate-700">{notes.about}</p>
+              <p className="text-[11px] leading-relaxed text-slate-500"><b className="text-slate-600 font-semibold">How to read it:</b> {notes.reading}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 1 — summary */}
       <div>
         <p className="text-sm text-slate-600">{narrative}</p>

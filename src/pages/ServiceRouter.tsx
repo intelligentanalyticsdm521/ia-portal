@@ -120,12 +120,10 @@ const ArgusHealthPage = lazyNamed(() => import('./argus/ArgusHealthPage'), 'Argu
 const ArgusTrendsPage = lazyNamed(() => import('./argus/ArgusTrendsPage'), 'ArgusTrendsPage');
 const ArgusIntelligencePage = lazyNamed(() => import('./argus/ArgusIntelligencePage'), 'ArgusIntelligencePage');
 const ArgusWorkflowAutomationsPage = lazyNamed(() => import('./argus/ArgusWorkflowAutomationsPage'), 'ArgusWorkflowAutomationsPage');
-// 2026-06-21: ArgusCrossChannelPage renamed to ArgusIAInsightsIntelligencePage
-// to align with the per-platform Insights pattern.
-// 2026-06-22: canonical service key renamed to `argus_cross_platform`;
-// legacy `argus_cross_channel` is retained as a back-compat alias and resolves
-// to the same page.
-const ArgusIAInsightsIntelligencePage = lazyNamed(() => import('./argus/ArgusIAInsightsIntelligencePage'), 'ArgusIAInsightsIntelligencePage');
+// 2026-07-25 v13.0: the old platform-api grid page
+// (ArgusIAInsightsIntelligencePage) is no longer routed — all ARGUS
+// Intelligence keys (argus_intelligence / argus_cross_platform /
+// argus_cross_channel) resolve to the mirror-model ArgusIntelligencePage.
 const SparkIAInsightsHealthPage = lazyNamed(() => import('./spark/SparkIAInsightsHealthPage'), 'SparkIAInsightsHealthPage');
 const SparkIAInsightsTrendsPage = lazyNamed(() => import('./spark/SparkIAInsightsTrendsPage'), 'SparkIAInsightsTrendsPage');
 const SparkIAInsightsIntelligencePage = lazyNamed(() => import('./spark/SparkIAInsightsIntelligencePage'), 'SparkIAInsightsIntelligencePage');
@@ -605,11 +603,13 @@ export function ServiceRouter() {
   if (service.key === 'argus_trends') {
     return <Suspense fallback={<RouteLoading />}><ArgusTrendsPage /></Suspense>;
   }
-  if (service.key === 'argus_intelligence') {
+  // v13.0 (2026-07-25) — every ARGUS Intelligence key routes to the mirror
+  // page (business-question dashboards → sections → modeled deep detail).
+  // The old platform-api grid page (ArgusIAInsightsIntelligencePage) is
+  // unrouted; the nav's canonical "Cross-Platform Intelligence" entry must
+  // show the new model, not the legacy 6-card grid.
+  if (service.key === 'argus_intelligence' || service.key === 'argus_cross_platform' || service.key === 'argus_cross_channel') {
     return <Suspense fallback={<RouteLoading />}><ArgusIntelligencePage /></Suspense>;
-  }
-  if (service.key === 'argus_cross_platform' || service.key === 'argus_cross_channel') {
-    return <Suspense fallback={<RouteLoading />}><ArgusIAInsightsIntelligencePage /></Suspense>;
   }
   // P0-7 (Agency Foundation) — ARGUS Workflow & Automations observe surface.
   if (service.key === 'argus_workflows' || service.key === 'argus_workflow_automations') {
