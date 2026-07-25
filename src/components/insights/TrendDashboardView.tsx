@@ -128,7 +128,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
     if (rep) {
       const deep = deriveDeepReport(rep, deepConfigFor(rep.id));
       return (
-        <div className="max-w-5xl">
+        <div className="max-w-5xl mx-auto">
           <Crumbs
             trail={[platformLabel, dash.label, sec.label, rep.label]}
             onNav={(l) => { if (l === 0) { setDashKey(null); setSecKey(null); setRepKey(null); } else if (l === 1) { setSecKey(null); setRepKey(null); } else if (l === 2) setRepKey(null); }}
@@ -146,7 +146,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
   // ── SECTION DETAIL REPORT ──
   if (dash && sec) {
     return (
-      <div className="max-w-5xl">
+      <div className="max-w-5xl mx-auto">
         <Crumbs trail={[platformLabel, dash.label, sec.label]} onNav={(l) => { if (l === 0) { setDashKey(null); setSecKey(null); } else if (l === 1) setSecKey(null); }} />
         <button onClick={() => setSecKey(null)} className="mb-3 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800">
           <ArrowLeft className="h-3.5 w-3.5" /> back to {dash.label}
@@ -207,7 +207,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
     const priorities = insights.filter((i) => i.priority);
     const wins = insights.filter((i) => !i.priority);
     return (
-      <div className="max-w-5xl">
+      <div className="max-w-5xl mx-auto">
         <Crumbs trail={[platformLabel, dash.label]} onNav={() => setDashKey(null)} />
         <button onClick={() => setDashKey(null)} className="mb-3 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800">
           <ArrowLeft className="h-3.5 w-3.5" /> back to {platformLabel} {scoreNoun}s
@@ -258,7 +258,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
 
   // ── OVERVIEW ──
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-5xl mx-auto">
       <div className="flex items-center gap-3 mb-5">
         <ScoreRing score={platformScore} size={64} />
         <div>

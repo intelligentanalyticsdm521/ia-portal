@@ -19,12 +19,14 @@ import type { IAInsightsHeaderData } from "../../components/iainsights/types";
 import { buildSparkDashboards, demoSparkMetrics } from "../../analytics/sparkDashboards";
 import { buildIntelligenceMirror, SPARK_MIRROR } from "../../analytics/intelligenceMirror";
 import { platformHealth, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
+import { useArionInsightsPayload } from "../../hooks/useArionInsightsPayload";
 
 const TRENDS_ROUTE = "/app/services/spark_ia_insights_trends";
 const INTEL_ROUTE = "/app/services/spark_ia_insights_intelligence";
 
 export function SparkIAInsightsHealthPage() {
   const { activeTenantId } = useAppState();
+  const arionPayload = useArionInsightsPayload();
 
   const headerData: IAInsightsHeaderData = useMemo(() => {
     const seed = activeTenantId || "spark";
@@ -32,7 +34,7 @@ export function SparkIAInsightsHealthPage() {
     const trendDs = buildSparkDashboards(payload);
     const intelDs = buildIntelligenceMirror(payload, SPARK_MIRROR).dashboards;
     const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE);
-    const bp = demoBusinessPulse(seed);
+    const bp = demoBusinessPulse(seed, { arionPayload });
     return {
       product: "spark",
       overall: gaugeOf(bp.pulse, bp.prior, {
@@ -54,7 +56,7 @@ export function SparkIAInsightsHealthPage() {
       banners: [],
       meta: { generatedAt: new Date().toISOString(), tier: "pro" },
     };
-  }, [activeTenantId]);
+  }, [activeTenantId, arionPayload]);
 
   return (
     <div className="p-4 max-w-7xl mx-auto">

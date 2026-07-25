@@ -23,12 +23,14 @@ import { buildArgusDashboards, demoArgusMetrics, type PlatformRollup } from "../
 import { buildIntelligenceMirror, ARGUS_MIRROR } from "../../analytics/intelligenceMirror";
 import { businessPulse, type DashboardScore } from "../../analytics/scoring";
 import { platformHealth, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
+import { useArionInsightsPayload } from "../../hooks/useArionInsightsPayload";
 
 const TRENDS_ROUTE = "/app/services/argus_trends";
 const INTEL_ROUTE = "/app/services/argus_cross_platform";
 
 export function ArgusHealthPage() {
   const { activeTenantId } = useAppState();
+  const arionPayload = useArionInsightsPayload();
 
   const { headerData, activeProducts } = useMemo(() => {
     const seed = activeTenantId || "argus";
@@ -43,7 +45,7 @@ export function ArgusHealthPage() {
       };
     };
     const platforms: PlatformRollup[] = [
-      rollup("ARION", "arion", buildArionDashboards(demoArionMetricsClient(seed))),
+      rollup("ARION", "arion", buildArionDashboards(arionPayload || demoArionMetricsClient(seed))),
       rollup("SPARK", "spark", buildSparkDashboards(demoSparkMetrics(seed))),
       rollup("OLIVER", "oliver", buildOliverDashboards(demoOliverMetrics(seed))),
     ];
@@ -52,7 +54,7 @@ export function ArgusHealthPage() {
     const trendDs = buildArgusDashboards(argusPayload, platforms);
     const intelDs = buildIntelligenceMirror(argusPayload, ARGUS_MIRROR).dashboards;
     const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE);
-    const bp = demoBusinessPulse(seed);
+    const bp = demoBusinessPulse(seed, { arionPayload });
 
     const headerData: IAInsightsHeaderData = {
       product: "argus",
@@ -85,7 +87,7 @@ export function ArgusHealthPage() {
     ];
 
     return { headerData, activeProducts };
-  }, [activeTenantId]);
+  }, [activeTenantId, arionPayload]);
 
   return (
     <div className="p-4 max-w-7xl mx-auto">

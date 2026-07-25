@@ -1,11 +1,12 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Sparkles, ArrowUpRight } from "lucide-react";
 import { useAppState } from "../../app/AppState";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { useAccessToken } from "../../auth/useAccessToken";
 import { Sparkline } from "../../components/iainsights/Sparkline";
+import { demoBusinessPulse } from "../../analytics/healthSummary";
+import { useArionInsightsPayload } from "../../hooks/useArionInsightsPayload";
 import { GetStartedCard } from "../../components/command/GetStartedCard";
 import { UnifiedSetupCard } from "../../components/command/UnifiedSetupCard";
 // Onboarding V3 Phase 3 — personalized "do your first X" task list. NEW
@@ -61,7 +62,6 @@ export function CommandDashboard() {
   const { enabledServices, activeTenantId } = useAppState();
   const oliver = useOliverApi();
   const spark = useSparkApi();
-  const { getToken } = useAccessToken();
 
   const hasOliver = enabledServices.has("oliver_dashboard") || enabledServices.has("oliver_jobs");
   const hasSpark = enabledServices.has("spark_overview") || enabledServices.has("spark_contacts");
@@ -70,11 +70,25 @@ export function CommandDashboard() {
   const [oliverStats, setOliverStats] = useState<OliverDashboardStats | null>(null);
   const [sparkNps, setSparkNps] = useState<SparkNpsSummary | null>(null);
   const [sparkGrowth, setSparkGrowth] = useState<SparkGrowth | null>(null);
-  const [pulse, setPulse] = useState<PulseData | null>(null);
-  const [pulseBanners, setPulseBanners] = useState<PulseBanner[]>([]);
-  const [arionHist, setArionHist] = useState<Array<{ period_end: string; score: number }>>([]);
-  const [sparkHist, setSparkHist] = useState<Array<{ period_end: string; score: number }>>([]);
-  const [oliverHist, setOliverHist] = useState<Array<{ period_end: string; score: number }>>([]);
+
+  // v13.0 (2026-07-25) — scores come from the SAME client-side roll-up the
+  // Health pages compute (healthSummary.demoBusinessPulse), so the home strip
+  // can never disagree with the Health/Trends pages it links to. Reverts to
+  // the platform-api /argus/business-pulse endpoint once the monthly snapshot
+  // jobs land. Sparkline history returns with the snapshot jobs too.
+  const arionPayload = useArionInsightsPayload();
+  const pulse = useMemo<PulseData | null>(() => {
+    if (!activeTenantId) return null;
+    const bp = demoBusinessPulse(activeTenantId, { arionPayload });
+    return {
+      pulse: bp.pulse,
+      previous_pulse: bp.prior,
+      components: {
+        arion: bp.components.arion, spark: bp.components.spark, oliver: bp.components.oliver,
+        argus: bp.argus.score, stella: null, forge: null,
+      },
+    };
+  }, [activeTenantId, arionPayload]);
 
   const load = useCallback(async () => {
     if (hasOliver && oliver.ready) {
@@ -95,50 +109,6 @@ export function CommandDashboard() {
 
   useEffect(() => { load(); }, [load]);
 
-  // v6.10 — IA Insights composite scores across products + per-product
-  // 12-period history for the sparkline cards. Business Pulse from
-  // platform-api, per-product history from LUMEN-API.
-  useEffect(() => {
-    if (!activeTenantId || !spark.ready) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const token = await getToken();
-        const platformBase = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string).replace(/\/$/, "");
-        const headers: HeadersInit = {
-          Authorization: `Bearer ${token.accessToken}`,
-          "x-tenant-key": activeTenantId,
-        };
-        // Force a refresh on first sign-in load so the cache populates even
-        // when no other surface has called the per-platform calculators yet.
-        const pulseRes = await globalThis.fetch(
-          `${platformBase}/argus/business-pulse?refresh=true`,
-          { headers }
-        );
-        if (pulseRes.ok && !cancelled) {
-          const body = await pulseRes.json();
-          setPulse(body?.data || null);
-          setPulseBanners(Array.isArray(body?.banners) ? body.banners : []);
-        }
-        // Per-product histories — SPARK + OLIVER live in LUMEN-API; ARION
-        // lives in arion-api. All three accept the same shape.
-        const [sH, oH] = await Promise.all([
-          spark.get<{ data: Array<{ period_end: string; score: number }> }>("/api/v1/ia-insights/score-history?product=spark&reportKey=presence&limit=12").catch(() => null),
-          spark.get<{ data: Array<{ period_end: string; score: number }> }>("/api/v1/ia-insights/score-history?product=oliver&reportKey=presence&limit=12").catch(() => null),
-        ]);
-        if (!cancelled) {
-          setSparkHist((sH?.data || []).filter((r) => r && r.period_end));
-          setOliverHist((oH?.data || []).filter((r) => r && r.period_end));
-        }
-        // ARION history requires a siteId we don't have at the platform level;
-        // skip for now — the score card still shows the composite value from
-        // pulse.components.arion.
-        setArionHist([]);
-      } catch { /* swallow */ }
-    })();
-    return () => { cancelled = true; };
-  }, [activeTenantId, spark, getToken]);
-
   return (
     <div className="space-y-4">
       {/* Onboarding — ONE unified card opens the unified ClientTenantModal.
@@ -152,13 +122,7 @@ export function CommandDashboard() {
       <WalkthroughPanel variant="dashboard" />
 
       {/* v6.10 — IA Insights cross-product strip */}
-      <IAInsightsStrip
-        pulse={pulse}
-        banners={pulseBanners}
-        arionHist={arionHist}
-        sparkHist={sparkHist}
-        oliverHist={oliverHist}
-      />
+      <IAInsightsStrip pulse={pulse} banners={[]} arionHist={[]} sparkHist={[]} oliverHist={[]} />
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
         {/* OLIVER cards */}
@@ -170,7 +134,7 @@ export function CommandDashboard() {
             <Card label="Disputes open" value={oliverToday?.disputes_open ?? "—"} accent={oliverToday?.disputes_open ? "rose" : "gray"} href="/app/services/oliver_disputes" />
             <Card label="Active jobs" value={oliverStats?.activeJobs ?? "—"} href="/app/services/oliver_job_board" />
             <Card label="Revenue today" value={oliverToday ? `$${Number(oliverToday.revenue_today).toLocaleString()}` : "—"} accent="emerald" href="/app/services/oliver_billing_overview" />
-            <Card label="MTD revenue" value={oliverStats ? `$${Number(oliverStats.revenue).toLocaleString()}` : "—"} accent="emerald" href="/app/services/oliver_reports" />
+            <Card label="MTD revenue" value={oliverStats ? `$${Number(oliverStats.revenue).toLocaleString()}` : "—"} accent="emerald" href="/app/services/oliver_billing_overview" />
             <Card label="Workers active" value={oliverStats?.workers ?? "—"} accent="blue" href="/app/services/oliver_workers" />
           </>
         )}
@@ -290,31 +254,33 @@ function IAInsightsStrip({
             </div>
             <div className="text-[9px] text-slate-400 mt-0.5">ARGUS composite across active products</div>
           </Link>
+          {/* v13.0 — these are the PLATFORM scores (50/50 Trend + Intelligence),
+              the same numbers the Health pages show. */}
           <ProductScoreCard
-            label="ARION Trend"
+            label="ARION Score"
             score={pulse?.components.arion ?? null}
             history={arionHist}
             bandColor={bandColor(pulse?.components.arion ?? null)}
-            href="/app/services/arion_ia_insights_trends"
+            href="/app/services/arion_ia_insights_health"
           />
           <ProductScoreCard
-            label="SPARK Trend"
+            label="SPARK Score"
             score={pulse?.components.spark ?? null}
             history={sparkHist}
             bandColor={bandColor(pulse?.components.spark ?? null)}
-            href="/app/services/spark_ia_insights_trends"
+            href="/app/services/spark_ia_insights_health"
           />
           <ProductScoreCard
-            label="OLIVER Trend"
+            label="OLIVER Score"
             score={pulse?.components.oliver ?? null}
             history={oliverHist}
             bandColor={bandColor(pulse?.components.oliver ?? null)}
-            href="/app/services/oliver_ia_insights_trends"
+            href="/app/services/oliver_ia_insights_health"
           />
           {/* v7 — ARGUS card. STELLA/FORGE intentionally hidden when null
               to avoid clutter; render when scoring lands. */}
           <ProductScoreCard
-            label="ARGUS Trend"
+            label="ARGUS Score"
             score={pulse?.components.argus ?? null}
             history={[]}
             bandColor={bandColor(pulse?.components.argus ?? null)}
@@ -357,7 +323,7 @@ function ProductScoreCard({
         )}
       </div>
       <div className="text-[9px] text-slate-400 mt-0.5">
-        {score != null ? "Last computed period" : "Connect product to populate"}
+        {score != null ? "This month · matches the Health page" : "Connect product to populate"}
       </div>
     </Link>
   );

@@ -11,10 +11,14 @@
 //      month-by-month year, best/worst/avg, volatility, metadata, warnings.
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, TrendingUp, TrendingDown, Minus, AlertTriangle, Info } from "lucide-react";
-import { fmtV, type DeepReportData, type DeepDistribution } from "../../analytics/deepReport";
+import { ChevronDown, ChevronRight, TrendingUp, TrendingDown, Minus, AlertTriangle, Info, Lightbulb } from "lucide-react";
+import { fmtV, type DeepReportData, type DeepDistribution, type MeaningItem } from "../../analytics/deepReport";
 import { itemMom, pluralize, type DetailItem, type DetailColumn } from "../../analytics/detail";
 import { reportNotesFor } from "../../analytics/reportNotes";
+
+const MEANING_TONES: Record<MeaningItem["tone"], string> = {
+  good: "#16a34a", bad: "#dc2626", watch: "#d97706", info: "#64748b",
+};
 
 function Mom({ pct, lowerBetter, small }: { pct: number | null | undefined; lowerBetter?: boolean; small?: boolean }) {
   if (pct == null) return <span className="text-slate-300 text-[11px]">—</span>;
@@ -153,7 +157,7 @@ function MiniMovementTable({ title, rows, format, lowerBetter }: { title: string
 }
 
 export function DeepReportView({ deep }: { deep: DeepReportData }) {
-  const { report, months, narrative, stats, distribution, movements, segments, opportunities } = deep;
+  const { report, months, narrative, stats, distribution, movements, segments, opportunities, meaning } = deep;
   const cols = report.columns || [];
   const isFeed = report.kind === "feed" || !report.items.some((it) => it.series?.length);
   const lowerBetter = !report.higherIsBetter;
@@ -194,6 +198,23 @@ export function DeepReportView({ deep }: { deep: DeepReportData }) {
           ))}
         </div>
       </div>
+
+      {/* 1b — what this means, in plain business language */}
+      {meaning.length > 0 && (
+        <div className="rounded-lg border border-amber-200/70 bg-amber-50/50 p-4">
+          <div className="flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-wide text-amber-700 mb-3">
+            <Lightbulb className="h-3.5 w-3.5" /> What this means for you
+          </div>
+          <div className="space-y-2.5">
+            {meaning.map((m, i) => (
+              <div key={i} className="flex gap-2.5">
+                <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full" style={{ background: MEANING_TONES[m.tone] }} aria-hidden="true" />
+                <p className="text-[12px] leading-relaxed text-slate-700">{m.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 2 — distribution over time */}
       {distribution && (

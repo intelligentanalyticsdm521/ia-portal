@@ -111,15 +111,20 @@ export interface DemoPulse {
  * Business Pulse across the three product platforms, from the same seeded
  * demo builders every Trends/Intelligence page renders. Deterministic per
  * tenant, so every Health page shows the same Pulse for the same tenant.
+ *
+ * Pass `arionPayload` (the tenant's GET /arion/insights/metrics payload, via
+ * useArionInsightsPayload) so the ARION component matches the ARION pages
+ * exactly — the client generator is only the fallback when the server payload
+ * isn't available (Brandon caught home 69 vs ARION Health 68).
  */
-export function demoBusinessPulse(seed: string): DemoPulse {
+export function demoBusinessPulse(seed: string, opts?: { arionPayload?: import("./arionDashboards").MetricsPayload | null }): DemoPulse {
   const platform = (trendDs: DashboardScore[], intelDs: DashboardScore[]) => {
     const t = rollupScore(trendDs);
     const i = rollupScore(intelDs);
     return { score: blend5050(t.score, i.score), prior: blend5050(t.prior, i.prior) };
   };
 
-  const arionPayload = demoArionMetricsClient(seed);
+  const arionPayload = opts?.arionPayload || demoArionMetricsClient(seed);
   const sparkPayload = demoSparkMetrics(seed);
   const oliverPayload = demoOliverMetrics(seed);
 

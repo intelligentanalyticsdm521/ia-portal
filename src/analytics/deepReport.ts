@@ -21,6 +21,7 @@
 import type { DetailReport, DetailItem } from "./detail";
 import { itemMom, pluralize } from "./detail";
 import type { ValueFormat } from "./scoring";
+import { mirrorKindOf } from "./reportNotes";
 
 // ── config ────────────────────────────────────────────────────────────────
 export interface DeepBand { label: string; color: string; test: (v: number) => boolean }
@@ -52,6 +53,9 @@ export interface DeepSegmentTable { title: string; rows: Array<{ name: string; c
 export interface DeepDistribution { kind: "bands" | "composition"; series: Array<{ label: string; color: string; values: number[] }> }
 export interface DeepItemStats { best: number; worst: number; avg: number; volatilityPct: number }
 
+/** One plain-English takeaway: what the numbers actually mean for the business. */
+export interface MeaningItem { text: string; tone: "good" | "bad" | "watch" | "info" }
+
 export interface DeepReportData {
   report: DetailReport;
   months: string[];
@@ -63,6 +67,8 @@ export interface DeepReportData {
   opportunities: Array<{ title: string; note?: string; items: DetailItem[] }>;
   flags: Record<string, string>;
   itemStats: Record<string, DeepItemStats>;
+  /** "What this means" — friendly interpretation derived from the same data. */
+  meaning: MeaningItem[];
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
@@ -188,10 +194,10 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
   // C — movement tables
   const row = (it: DetailItem) => ({ name: it.name, current: lastVal(it.series || []), momPct: itemMom(it) });
   const movements: DeepMovementTable[] = [];
+  const entered: DetailItem[] = [], dropped: DetailItem[] = [];
   if (cfg?.bands) {
     const topBand = cfg.bands[0];
     const backIdx = Math.max(0, seriesLen - 4); // ~3 months ago
-    const entered: DetailItem[] = [], dropped: DetailItem[] = [];
     for (const it of trendItems) {
       const nowIn = bandIndex(cfg.bands, lastVal(it.series || [])) === 0;
       const wasIn = bandIndex(cfg.bands, it.series?.[backIdx] ?? null) === 0;
@@ -281,5 +287,235 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
   if (gainers.length || losers.length) stats.push({ label: "Movers", value: `${gainers.length}▲ ${losers.length}▼` });
   if (flagged) stats.push({ label: "Flagged", value: String(flagged) });
 
-  return { report, months, narrative, stats, distribution, movements, segments, opportunities, flags, itemStats };
+  // "What this means" — friendly interpretation, derived from the same data.
+  const meaning = buildMeaning({
+    report, cfg, noun, trendItems, gainers, losers, entered, dropped,
+    distribution, opportunities, flags, itemStats, seriesLen,
+  });
+
+  return { report, months, narrative, stats, distribution, movements, segments, opportunities, flags, itemStats, meaning };
+}
+
+// ── "What this means" ─────────────────────────────────────────────────────
+// Every takeaway is derived mechanically from the numbers above and written
+// for a business owner: what happened, why it matters, what to do with it.
+// No σ, no r², no analyst-speak — those stay in the tables for people who
+// want them.
+function buildMeaning(ctx: {
+  report: DetailReport;
+  cfg?: DeepConfig;
+  noun: string;
+  trendItems: DetailItem[];
+  gainers: Array<{ it: DetailItem; imp: number; w: number }>;
+  losers: Array<{ it: DetailItem; imp: number; w: number }>;
+  entered: DetailItem[];
+  dropped: DetailItem[];
+  distribution?: DeepDistribution;
+  opportunities: Array<{ title: string; note?: string; items: DetailItem[] }>;
+  flags: Record<string, string>;
+  itemStats: Record<string, DeepItemStats>;
+  seriesLen: number;
+}): MeaningItem[] {
+  const { report, cfg, noun, trendItems, gainers, losers, entered, dropped, distribution, opportunities, flags, itemStats, seriesLen } = ctx;
+  const out: MeaningItem[] = [];
+  const nouns = pluralize(report.itemLabel, 2);
+  const hib = report.higherIsBetter;
+  const kind = mirrorKindOf(report.id);
+  const total = trendItems.length;
+  const pctOf = (n: number) => `${Math.abs(n).toFixed(0)}%`;
+
+  // ── Intelligence mirrors get model-specific interpretation ──
+  if (kind === "forecast") {
+    const up = trendItems.filter((it) => (it.momPct ?? 0) > 1).length;
+    const down = trendItems.filter((it) => (it.momPct ?? 0) < -1).length;
+    const goodN = hib ? up : down, badN = hib ? down : up;
+    if (total) {
+      out.push({
+        tone: badN > goodN ? "watch" : "good",
+        text: `If current trends hold, ${goodN} of your ${total} ${nouns} will be in better shape three months from now and ${badN} will be worse. Nothing here is fate — the projection just shows where today's momentum leads.`,
+      });
+    }
+    const low = trendItems.filter((it) => it.extra?.confidence === "low").length;
+    const high = trendItems.filter((it) => it.extra?.confidence === "high").length;
+    if (total) {
+      out.push({
+        tone: "info",
+        text: high && low
+          ? `The model is confident about ${high} of these (their history is steady). The ${low} marked "low" bounce around too much to pin down — read those as a rough direction, not a number to bank on.`
+          : high
+          ? `The history behind these is steady, so the projections are worth taking seriously — "high" confidence means the pattern has held for months.`
+          : `None of these have a steady enough history for a confident number yet — treat every projection here as a rough direction, not a promise.`,
+      });
+    }
+    const worst = [...losers].sort((a, b) => a.imp * a.w - b.imp * b.w)[0];
+    if (worst) {
+      out.push({
+        tone: "bad",
+        text: `Biggest projected slide: ${worst.it.name} (${pctOf(worst.imp)} the wrong way). Getting ahead of it this month is cheaper than reacting after the drop has happened.`,
+      });
+    }
+    const best = [...gainers].sort((a, b) => b.imp * b.w - a.imp * a.w)[0];
+    if (best) {
+      out.push({
+        tone: "good",
+        text: `Best trajectory: ${best.it.name}, on track to improve ${pctOf(best.imp)}. Whatever is driving it is working — protect it.`,
+      });
+    }
+    return out.slice(0, 4);
+  }
+
+  if (kind === "anomaly") {
+    const alerts = trendItems.filter((it) => it.extra?.status === "Alert");
+    const watches = trendItems.filter((it) => it.extra?.status === "Watch");
+    if (!alerts.length && !watches.length) {
+      out.push({ tone: "good", text: `Nothing broke its normal pattern this month — every ${noun} behaved the way its own history says it should. That's exactly what you want from this page.` });
+    } else {
+      const names = [...alerts, ...watches].slice(0, 2).map((i) => i.name).join(" and ");
+      out.push({
+        tone: alerts.length ? "bad" : "watch",
+        text: `${alerts.length + watches.length} of your ${total} ${nouns} behaved unusually this month — most notably ${names}. Unusual isn't automatically bad: check whether YOU caused it (a campaign, a price change, a season) before treating it as a problem.`,
+      });
+      const top = alerts[0] || watches[0];
+      const z = Number(top?.extra?.z ?? 0);
+      if (top) {
+        out.push({
+          tone: "info",
+          text: z >= 0
+            ? `${top.name} came in well ABOVE its usual range. If you know what caused the spike, that's a recipe worth repeating; if you don't, it's worth five minutes to find out.`
+            : `${top.name} came in well BELOW its usual range. One odd month isn't a trend — but if next month looks the same, act on it.`,
+        });
+      }
+    }
+    out.push({ tone: "info", text: `"Watch" means unusual, "Alert" means very unusual. The value of this page is speed: it spots pattern breaks months before they'd show up in your totals.` });
+    return out.slice(0, 4);
+  }
+
+  if (kind === "opportunity") {
+    const top = trendItems[0];
+    if (top) {
+      const slipping = (top.momPct ?? 0) < 0;
+      out.push({
+        tone: "info",
+        text: `This list is sorted by what moves your business most — not by the biggest percentage. A small change in a heavyweight ${noun} beats a big change in a lightweight one, so work strictly top-down.`,
+      });
+      out.push({
+        tone: slipping ? "bad" : "good",
+        text: slipping
+          ? `${top.name} is your #1 lever right now: it carries real weight and it's slipping (${pctOf(top.momPct ?? 0)}). Recovering it is likely the fastest single win available to you this month.`
+          : `${top.name} is your #1 lever and it's already gaining (${pctOf(top.momPct ?? 0)}). Feed it — momentum plus weight is where growth compounds.`,
+      });
+    }
+    const slippers = trendItems.filter((it) => (it.momPct ?? 0) < -1).length;
+    if (total) {
+      out.push({
+        tone: slippers > total / 2 ? "watch" : "info",
+        text: `${slippers} of the ${total} ${nouns} here are losing ground. Don't try to fix all of them — the top two or three rows cover most of the impact.`,
+      });
+    }
+    return out.slice(0, 4);
+  }
+
+  // ── Trend reports ──
+  // 1. The headline: is this area winning or losing overall?
+  if (total >= 3 && (gainers.length || losers.length)) {
+    if (gainers.length >= losers.length * 2) {
+      out.push({ tone: "good", text: `Momentum is on your side: ${gainers.length} of your ${total} ${nouns} improved this month, only ${losers.length} slipped. Whatever you're doing here, keep doing it.` });
+    } else if (losers.length >= gainers.length * 2) {
+      out.push({ tone: "bad", text: `This area needs attention: ${losers.length} of your ${total} ${nouns} lost ground this month against ${gainers.length} that improved. The movement table below shows exactly where the slide is.` });
+    } else {
+      out.push({ tone: "info", text: `A mixed month: ${gainers.length} ${nouns} up, ${losers.length} down. The wins and losses roughly balance — the details below show which side deserves your energy.` });
+    }
+  }
+
+  // 2. Band story: the count that matters, in plain terms.
+  if (distribution?.kind === "bands" && cfg?.bands?.length) {
+    const top = distribution.series[0];
+    const nowN = top.values[seriesLen - 1] ?? 0;
+    const yearN = top.values[0] ?? 0;
+    const d = nowN - yearN;
+    out.push({
+      tone: d > 0 ? "good" : d < 0 ? "bad" : "info",
+      text: d > 0
+        ? `You now have ${nowN} ${pluralize(report.itemLabel, nowN)} in "${top.label}" — ${d} more than a year ago. That top group does most of the work, so this is the single number to keep growing.`
+        : d < 0
+        ? `You're down to ${nowN} ${pluralize(report.itemLabel, nowN)} in "${top.label}" — ${Math.abs(d)} fewer than a year ago. The top group does most of the work, so winning those back matters more than anything else on this page.`
+        : `You have ${nowN} ${pluralize(report.itemLabel, nowN)} in "${top.label}" — the same as a year ago. Holding position isn't failure, but the fastest growth comes from moving more ${nouns} into that top group.`,
+    });
+    if (entered.length) {
+      out.push({ tone: "good", text: `Fresh wins: ${entered.slice(0, 2).map((i) => i.name).join(" and ")} just moved into "${cfg.bands[0].label}" in the last three months. New arrivals are fragile — a little reinforcement now locks them in.` });
+    } else if (dropped.length) {
+      out.push({ tone: "watch", text: `${dropped.slice(0, 2).map((i) => i.name).join(" and ")} recently fell out of "${cfg.bands[0].label}". Recent drops are usually the easiest to reverse — they were there a few weeks ago.` });
+    }
+  }
+
+  // 3. Composition story: dependence and drift.
+  if (distribution?.kind === "composition" && distribution.series.length >= 2) {
+    const last = seriesLen - 1;
+    const totalNow = distribution.series.reduce((s, b) => s + (b.values[last] || 0), 0);
+    const totalYear = distribution.series.reduce((s, b) => s + (b.values[0] || 0), 0);
+    if (totalNow > 0) {
+      const topSlice = [...distribution.series].sort((a, b) => (b.values[last] || 0) - (a.values[last] || 0))[0];
+      const share = ((topSlice.values[last] || 0) / totalNow) * 100;
+      if (share >= 45 && topSlice.label !== "Other") {
+        out.push({ tone: "watch", text: `${topSlice.label} makes up ${share.toFixed(0)}% of the total here. Great while it performs — but that much riding on one ${noun} means a bad month there is a bad month everywhere. Growing a second strong source is the hedge.` });
+      } else if (topSlice.label !== "Other") {
+        out.push({ tone: "info", text: `${topSlice.label} is your biggest contributor at ${share.toFixed(0)}% of the total, with the rest reasonably spread out — a healthy mix that doesn't depend on any single source.` });
+      }
+      if (totalYear > 0) {
+        let bestShift: { label: string; from: number; to: number } | null = null;
+        for (const s of distribution.series) {
+          if (s.label === "Other") continue;
+          const from = ((s.values[0] || 0) / totalYear) * 100;
+          const to = ((s.values[last] || 0) / totalNow) * 100;
+          if (!bestShift || Math.abs(to - from) > Math.abs(bestShift.to - bestShift.from)) bestShift = { label: s.label, from, to };
+        }
+        if (bestShift && Math.abs(bestShift.to - bestShift.from) >= 6) {
+          out.push({
+            tone: "info",
+            text: `The mix is quietly shifting: ${bestShift.label} went from ${bestShift.from.toFixed(0)}% to ${bestShift.to.toFixed(0)}% of the total over the year. Shifts like this usually deserve budget and attention before they finish happening.`,
+          });
+        }
+      }
+    }
+  }
+
+  // 4. The single most valuable fix (weight × decline).
+  if (losers.length) {
+    const worst = losers[0];
+    out.push({
+      tone: "bad",
+      text: `If you fix one thing, fix ${worst.it.name}: it moved the wrong way by ${pctOf(worst.imp)} and it carries more weight than anything else that declined. A small recovery there is worth more than big wins on minor ${nouns}.`,
+    });
+  } else if (gainers.length && out.length < 3) {
+    const best = gainers[0];
+    out.push({ tone: "good", text: `Your strongest mover is ${best.it.name}, improving ${pctOf(best.imp)} — and it's one of the heavyweights, so that gain shows up in your real results, not just this table.` });
+  }
+
+  // 5. Opportunities: name the low-hanging fruit.
+  const opp = opportunities[0];
+  if (opp?.items.length) {
+    out.push({
+      tone: "good",
+      text: `${opp.items.length} ${pluralize(report.itemLabel, opp.items.length)} qualify as "${opp.title}" — already close enough that a small push gets them over the line. These are usually the cheapest wins on this page.`,
+    });
+  }
+
+  // 6. Flags, translated.
+  const flagNames = Object.keys(flags);
+  if (flagNames.length) {
+    out.push({
+      tone: "watch",
+      text: `${flagNames.length} ${pluralize(report.itemLabel, flagNames.length)} carry a warning (look for the ⚠ in the table). For example ${flagNames[0]}: ${flags[flagNames[0]].toLowerCase()}`,
+    });
+  }
+
+  // 7. Volatility, so one bad month doesn't cause panic.
+  if (out.length < 5) {
+    const volatile = Object.entries(itemStats).sort((a, b) => b[1].volatilityPct - a[1].volatilityPct)[0];
+    if (volatile && volatile[1].volatilityPct >= 50) {
+      out.push({ tone: "info", text: `${volatile[0]} swings about ±${volatile[1].volatilityPct.toFixed(0)}% month to month — that's its normal personality. Judge it on the three-month picture, not any single month.` });
+    }
+  }
+
+  return out.slice(0, 5);
 }

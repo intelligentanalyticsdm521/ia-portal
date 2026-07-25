@@ -16,13 +16,16 @@ import { buildOliverDashboards, demoOliverMetrics } from "../../analytics/oliver
 import { buildArgusDashboards, demoArgusMetrics, type PlatformRollup } from "../../analytics/argusDashboards";
 import { demoArgusDetail } from "../../analytics/argusDetail";
 import { businessPulse, type DashboardScore } from "../../analytics/scoring";
+import { useArionInsightsPayload } from "../../hooks/useArionInsightsPayload";
 
 export function ArgusTrendsPage() {
   const { activeTenantId } = useAppState();
+  // Server ARION payload so the ARION roll-up matches the ARION pages exactly.
+  const arionPayload = useArionInsightsPayload();
 
   const dashboards = useMemo(() => {
     const seed = activeTenantId || "argus";
-    const arion = buildArionDashboards(demoArionMetricsClient(seed));
+    const arion = buildArionDashboards(arionPayload || demoArionMetricsClient(seed));
     const spark = buildSparkDashboards(demoSparkMetrics(seed));
     const oliver = buildOliverDashboards(demoOliverMetrics(seed));
 
@@ -41,11 +44,11 @@ export function ArgusTrendsPage() {
       rollup("OLIVER", "oliver", oliver),
     ];
     return buildArgusDashboards(demoArgusMetrics(seed), platforms);
-  }, [activeTenantId]);
+  }, [activeTenantId, arionPayload]);
 
   return (
     <div className="p-1">
-      <div className="mb-4">
+      <div className="max-w-5xl mx-auto mb-4">
         <h1 className="text-lg font-bold text-slate-900">ARGUS Insights — Trends</h1>
         <p className="text-sm text-slate-500 mt-0.5">
           The whole business across every product, plus the customer journey and the

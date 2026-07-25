@@ -318,7 +318,8 @@ const MIRROR_BASE: Record<string, string> = {
   argus_events_fc: "argus_events_by_product", argus_events_anom: "argus_events_by_product",
 };
 
-function kindOf(id: string): "forecast" | "anomaly" | "opportunity" | null {
+/** Which intelligence model a mirror report id encodes — null for plain trend reports. */
+export function mirrorKindOf(id: string): "forecast" | "anomaly" | "opportunity" | null {
   if (/(_fc|_forecast)$/i.test(id) || /forecast/i.test(id)) return "forecast";
   if (/(_anom|_anomaly)$/i.test(id) || /anomal/i.test(id)) return "anomaly";
   if (/(_opp|_opportunity)$/i.test(id) || /opportunit/i.test(id)) return "opportunity";
@@ -327,7 +328,7 @@ function kindOf(id: string): "forecast" | "anomaly" | "opportunity" | null {
 
 export function reportNotesFor(id: string): ReportNote | null {
   if (REPORT_NOTES[id]) return REPORT_NOTES[id];
-  const kind = kindOf(id);
+  const kind = mirrorKindOf(id);
   if (!kind) return null;
   const baseId = MIRROR_BASE[id] || id.replace(/_(fc|forecast|anom|anomaly|opp|opportunity)$/i, "");
   return TEMPLATES[kind](REPORT_NOTES[baseId]);

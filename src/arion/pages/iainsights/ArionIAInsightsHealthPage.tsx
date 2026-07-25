@@ -46,7 +46,9 @@ export function ArionIAInsightsHealthPage() {
     const trendDs = payload ? buildArionDashboards(payload) : [];
     const intelDs = payload ? buildIntelligenceMirror(payload, ARION_MIRROR).dashboards : [];
     const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE);
-    const bp = demoBusinessPulse(activeTenantId || "arion");
+    // Feed this page's own server payload into the pulse so its ARION
+    // component matches the gauges above it exactly.
+    const bp = demoBusinessPulse(activeTenantId || "arion", { arionPayload: payload });
     return {
       product: "arion",
       overall: gaugeOf(bp.pulse, bp.prior, {

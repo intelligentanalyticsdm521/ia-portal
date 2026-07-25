@@ -150,10 +150,12 @@ const OLIVER_NAV: SubNavConfig = {
     // F-116 — Expenses removed from OLIVER nav; rebuilds in STELLA. The
     // routes/page/backend table stay in place (deprecated) so deep links
     // don't 500 if anyone hits them.
+    // 2026-07-25 (Brandon): the "Reports" nav item removed — dead navigation,
+    // the page never had a working backend ("Failed to fetch"). Reporting is
+    // the IA Insights funnel now. Route/page stay so deep links don't 500.
     {
-      label: "Reports", icon: BarChart2, collapsible: true, sectionId: "oliver_reporting",
+      label: "Activity", icon: BarChart2, collapsible: true, sectionId: "oliver_reporting",
       items: [
-        { key: "oliver_reports", label: "Reports", route: "/app/services/oliver_reports" },
         { key: "oliver_activity_log", label: "Activity Log", route: "/app/services/oliver_activity_log" },
       ],
     },
@@ -474,9 +476,11 @@ const SPARK_NAV: SubNavConfig = {
       // Plan & Pricing left to Settings (it's a tenant admin concern, not a report).
       label: "Reporting", icon: BarChart2, collapsible: true, sectionId: "spark_reporting",
       items: [
-        { key: "spark_dashboards", label: "Dashboards", route: "/app/services/spark_dashboards" },
-        { key: "spark_analytics_reports", label: "Analytics Reports", route: "/app/services/spark_analytics_reports" },
-        { key: "spark_scheduled_reports", label: "Scheduled Reports", route: "/app/services/spark_scheduled_reports" },
+        // 2026-07-25 (Brandon): Dashboards / Analytics Reports / Scheduled
+        // Reports removed from nav — pre-insights report builders that were
+        // never built out (Dashboards widgets are stubbed "coming soon"; the
+        // other two had zero saved reports). Reporting is the IA Insights
+        // funnel now. Routes/pages stay so deep links don't 500.
         { key: "spark_realtime_metrics", label: "Real-Time Activity", route: "/app/services/spark_realtime_metrics" },
         { key: "spark_usage_report", label: "Usage", route: "/app/services/spark_usage_report" },
         // F-93 — Audit Log moved here from Settings. It's a viewer feature

@@ -21,7 +21,7 @@ export function SparkIAInsightsTrendsPage() {
 
   return (
     <div className="p-1">
-      <div className="mb-4">
+      <div className="max-w-5xl mx-auto mb-4">
         <h1 className="text-lg font-bold text-slate-900">SPARK Insights — Trends</h1>
         <p className="text-sm text-slate-500 mt-0.5">
           Your CRM and marketing, scored on where you are and which way you're moving.

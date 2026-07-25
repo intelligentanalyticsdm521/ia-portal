@@ -465,13 +465,9 @@ export const OLIVER_QUICK_TOUR: TourDef = {
       targetSelector: "a[href='/app/services/oliver_ia_insights_trends']",
       placement: "right",
     },
-    // ── Reports ─────────────────────────────────────────────────────────────
-    {
-      title: "Reports",
-      body: "Pre-built reports across jobs, revenue, workers, and customers. Export to CSV or schedule by email.",
-      targetSelector: "a[href='/app/services/oliver_reports']",
-      placement: "right",
-    },
+    // ── Activity ────────────────────────────────────────────────────────────
+    // 2026-07-25: the old "Reports" nav item was removed (dead navigation —
+    // the page never had a working backend). Reporting lives in IA Insights.
     {
       title: "Activity Log",
       body: "Every meaningful action by every user — audit trail for compliance and troubleshooting.",
