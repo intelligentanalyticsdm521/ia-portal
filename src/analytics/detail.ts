@@ -46,6 +46,15 @@ export function itemMom(item: DetailItem): number | null {
   return prev === 0 ? null : ((cur - prev) / Math.abs(prev)) * 100;
 }
 
+/** Pluralize an item label: query → queries, crew → crews, business → businesses. */
+export function pluralize(label: string, n: number): string {
+  const l = label.toLowerCase();
+  if (n === 1) return l;
+  if (/[sxz]$|[cs]h$/.test(l)) return l + "es";
+  if (/[^aeiou]y$/.test(l)) return l.slice(0, -1) + "ies";
+  return l + "s";
+}
+
 /** The detail reports that belong to one section, in a stable order. */
 export function reportsForSection(detail: DetailPayload | undefined, dashKey: string, secKey: string): DetailReport[] {
   if (!detail) return [];

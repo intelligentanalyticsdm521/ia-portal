@@ -242,6 +242,7 @@ export const SPARK_MIRROR: MirrorConfig = {
   forecastDetail: [
     { from: "spark_lead_sources", id: "spark_lead_sources_fc", section: "forecast.pipeline_trajectory", label: "Lead Source Trajectory — 3-month projection" },
     { from: "spark_contact_sources", id: "spark_contact_sources_fc", section: "forecast.list_trajectory", label: "Contact Source Trajectory" },
+    { from: "spark_sends_by_type", id: "spark_sends_fc", section: "forecast.engagement_trajectory", label: "Send Volume Trajectory by Type" },
   ],
   anomalyDetail: [
     { from: "spark_lead_sources", id: "spark_lead_sources_anom", section: "anomaly.pipeline_anomalies", label: "Lead Source Anomalies" },
@@ -275,6 +276,7 @@ export const OLIVER_MIRROR: MirrorConfig = {
   forecastDetail: [
     { from: "oliver_revenue_by_service", id: "oliver_revenue_fc", section: "forecast.revenue_trajectory", label: "Revenue by Service — 3-month projection" },
     { from: "oliver_jobs_by_service", id: "oliver_jobs_fc", section: "forecast.operations_trajectory", label: "Jobs by Service Trajectory" },
+    { from: "oliver_quotes_by_service", id: "oliver_quotes_fc", section: "forecast.pipeline_trajectory", label: "Quotes by Service Trajectory" },
   ],
   anomalyDetail: [
     { from: "oliver_revenue_by_service", id: "oliver_revenue_anom", section: "anomaly.revenue_anomalies", label: "Service Line Anomalies" },
@@ -306,6 +308,7 @@ export const ARGUS_MIRROR: MirrorConfig = {
   forecastDetail: [
     { from: "argus_leads_by_source", id: "argus_leads_fc", section: "forecast.funnel_trajectory", label: "Lead Sources — 3-month projection" },
     { from: "argus_revenue_by_source", id: "argus_revenue_fc", section: "forecast.funnel_trajectory", label: "Revenue by Source Trajectory" },
+    { from: "argus_impressions_by_channel", id: "argus_impr_fc", section: "forecast.reach_trajectory", label: "Impressions by Channel Trajectory" },
   ],
   anomalyDetail: [
     { from: "argus_impressions_by_channel", id: "argus_impr_anom", section: "anomaly.funnel_anomalies", label: "Channel Anomalies" },

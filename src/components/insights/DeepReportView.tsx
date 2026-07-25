@@ -13,7 +13,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
 import { fmtV, type DeepReportData, type DeepDistribution } from "../../analytics/deepReport";
-import { itemMom, type DetailItem, type DetailColumn } from "../../analytics/detail";
+import { itemMom, pluralize, type DetailItem, type DetailColumn } from "../../analytics/detail";
 
 function Mom({ pct, lowerBetter, small }: { pct: number | null | undefined; lowerBetter?: boolean; small?: boolean }) {
   if (pct == null) return <span className="text-slate-300 text-[11px]">—</span>;
@@ -246,7 +246,7 @@ export function DeepReportView({ deep }: { deep: DeepReportData }) {
       {/* 6 — the full item table */}
       <div className="rounded-lg border border-slate-200 bg-white">
         <div className="px-4 py-2.5 border-b border-slate-100 text-[10px] uppercase font-semibold tracking-wide text-slate-500">
-          Every {report.itemLabel.toLowerCase()} — click a row for its full year
+          Every {pluralize(report.itemLabel, 1)} — click a row for its full year
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-[11px]">

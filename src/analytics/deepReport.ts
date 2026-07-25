@@ -19,7 +19,7 @@
 // that make sense for that report; with no config a report still gets A, C, D.
 
 import type { DetailReport, DetailItem } from "./detail";
-import { itemMom } from "./detail";
+import { itemMom, pluralize } from "./detail";
 import type { ValueFormat } from "./scoring";
 
 // ── config ────────────────────────────────────────────────────────────────
@@ -247,7 +247,7 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
 
   // Narrative + headline stats
   const flagged = Object.keys(flags).length;
-  let narrative = `${items.length} ${noun}${items.length === 1 ? "" : "s"} tracked`;
+  let narrative = `${items.length} ${pluralize(report.itemLabel, items.length)} tracked`;
   if (trendItems.length) narrative += ` — ${gainers.length} improving, ${losers.length} declining this month`;
   if (distribution?.kind === "bands" && cfg?.bands) {
     const top = distribution.series[0];
@@ -258,7 +258,7 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
   if (flagged) narrative += `. ${flagged} flagged for attention`;
   narrative += ".";
 
-  const stats: DeepStat[] = [{ label: report.itemLabel + "s", value: String(items.length) }];
+  const stats: DeepStat[] = [{ label: pluralize(report.itemLabel, 2), value: String(items.length) }];
   if (aggCur != null) {
     stats.push({
       label: `${isAvgFormat(report.format) ? "Avg" : "Total"} ${report.primaryLabel || "value"}`,

@@ -57,6 +57,16 @@ export function demoOliverDetail(seed: string): DetailPayload {
     { name: "INV-2149", series: [], extra: { customer: "Gallagher Residence", amount: 410, overdue: 18 } },
   ]);
 
+  add("oliver_invoice_size", {
+    section: "revenue_cash.deal_size", label: "Invoices by Size",
+    itemLabel: "Size band", primaryLabel: "Invoices", format: "count", higherIsBetter: true,
+  }, [
+    { name: "Under $250", series: S("sz0", 34, { drift: 0.01, integer: true, noise: 0.1 }) },
+    { name: "$250 – $500", series: S("sz1", 28, { drift: 0.015, integer: true, noise: 0.1 }) },
+    { name: "$500 – $1,000", series: S("sz2", 17, { drift: 0.02, dir: 1, integer: true, noise: 0.12 }) },
+    { name: "$1,000+", series: S("sz3", 9, { drift: 0.03, dir: 1, integer: true, noise: 0.15 }) },
+  ]);
+
   add("oliver_jobs_by_service", {
     section: "jobs_operations.throughput", label: "Jobs by Service Line",
     itemLabel: "Service", primaryLabel: "Jobs", format: "count", higherIsBetter: true,
@@ -75,6 +85,32 @@ export function demoOliverDetail(seed: string): DetailPayload {
     { name: "Equipment issue", series: [], extra: { count: 1, prev: 2 } },
   ]);
 
+  add("oliver_backlog_age", {
+    section: "jobs_operations.backlog", label: "Open Jobs by Age",
+    itemLabel: "Age band", primaryLabel: "Jobs", format: "count", higherIsBetter: false,
+  }, [
+    { name: "Booked 0–7 days out", series: S("bk0", 11, { drift: 0.01, integer: true, noise: 0.15 }) },
+    { name: "8–14 days out", series: S("bk1", 7, { drift: 0.01, integer: true, noise: 0.2 }) },
+    { name: "15–30 days out", series: S("bk2", 4, { drift: 0.02, dir: 1, integer: true, noise: 0.25 }) },
+    { name: "Waiting 30+ days (stale)", series: S("bk3", 2, { drift: -0.02, integer: true, noise: 0.3, min: 0 }) },
+  ]);
+
+  add("oliver_pending_quotes", {
+    section: "sales_pipeline.quoting", label: "Quotes Awaiting a Response", kind: "feed",
+    itemLabel: "Quote", format: "currency", higherIsBetter: false,
+    columns: [
+      { key: "customer", label: "Customer", format: "text" },
+      { key: "value", label: "Value", format: "currency" },
+      { key: "waiting", label: "Days waiting", format: "number" },
+    ],
+  }, [
+    { name: "Q-2214", series: [], extra: { customer: "Keating Estates", value: 2400, waiting: 12 } },
+    { name: "Q-2221", series: [], extra: { customer: "Marsh Residence", value: 1150, waiting: 8 } },
+    { name: "Q-2228", series: [], extra: { customer: "Novak Commercial", value: 3600, waiting: 6 } },
+    { name: "Q-2233", series: [], extra: { customer: "Pratt Residence", value: 480, waiting: 3 } },
+    { name: "Q-2236", series: [], extra: { customer: "Ellison HOA", value: 5200, waiting: 1 } },
+  ]);
+
   add("oliver_quotes_by_service", {
     section: "sales_pipeline.winning", label: "Quote Win Rate by Service",
     itemLabel: "Service", primaryLabel: "Quotes Sent", format: "count", higherIsBetter: true,
@@ -84,6 +120,17 @@ export function demoOliverDetail(seed: string): DetailPayload {
     extra: { winRate: [52, 34, 46, 38][i], avgValue: [420, 1650, 380, 720][i] },
   })));
 
+  add("oliver_quote_size", {
+    section: "sales_pipeline.quote_value", label: "Quotes by Size",
+    itemLabel: "Size band", primaryLabel: "Quotes", format: "count", higherIsBetter: true,
+    columns: [{ key: "winRate", label: "Win %", format: "percent" }],
+  }, [
+    { name: "Under $500", series: S("qs0", 18, { drift: 0.01, integer: true, noise: 0.15 }), extra: { winRate: 54 } },
+    { name: "$500 – $1,500", series: S("qs1", 14, { drift: 0.02, dir: 1, integer: true, noise: 0.15 }), extra: { winRate: 41 } },
+    { name: "$1,500 – $5,000", series: S("qs2", 8, { drift: 0.025, dir: 1, integer: true, noise: 0.2 }), extra: { winRate: 32 } },
+    { name: "$5,000+", series: S("qs3", 3, { drift: 0.03, integer: true, noise: 0.3 }), extra: { winRate: 21 } },
+  ]);
+
   add("oliver_crew_performance", {
     section: "crew_capacity.utilization", label: "Crew Performance",
     itemLabel: "Crew", primaryLabel: "Utilization", format: "percent", higherIsBetter: true,
@@ -92,6 +139,28 @@ export function demoOliverDetail(seed: string): DetailPayload {
     { name: "Crew A", series: S("cr0", 82, { drift: 0.004, dir: 1, noise: 0.04, max: 100 }), extra: { jobs: 46, onTime: 94 } },
     { name: "Crew B", series: S("cr1", 74, { drift: 0.006, noise: 0.05, max: 100 }), extra: { jobs: 41, onTime: 88 } },
     { name: "Crew C", series: S("cr2", 63, { drift: 0.01, dir: -1, noise: 0.06, max: 100 }), extra: { jobs: 31, onTime: 81 } },
+  ]);
+
+  add("oliver_booked_ahead", {
+    section: "crew_capacity.capacity", label: "Bookings by Week Out",
+    itemLabel: "Window", primaryLabel: "Jobs Booked", format: "count", higherIsBetter: true,
+  }, [
+    { name: "This week", series: S("ba0", 28, { drift: 0.01, integer: true, noise: 0.1 }) },
+    { name: "Next week", series: S("ba1", 21, { drift: 0.015, dir: 1, integer: true, noise: 0.12 }) },
+    { name: "2–3 weeks out", series: S("ba2", 14, { drift: 0.02, dir: 1, integer: true, noise: 0.15 }) },
+    { name: "4+ weeks out", series: S("ba3", 6, { drift: 0.03, integer: true, noise: 0.25 }) },
+  ]);
+
+  add("oliver_recurring_contracts", {
+    section: "customer_retention.recurring", label: "Recurring Contracts",
+    itemLabel: "Contract", primaryLabel: "Monthly Value", format: "currency", higherIsBetter: true,
+    columns: [{ key: "cadence", label: "Cadence", format: "text" }, { key: "since", label: "Since", format: "text" }],
+  }, [
+    { name: "Whitfield HOA — grounds", series: S("rc0", 1800, { drift: 0.01, integer: true, noise: 0.05 }), extra: { cadence: "Weekly", since: "2022" } },
+    { name: "Rasmussen PM — 12 properties", series: S("rc1", 1450, { drift: 0.02, dir: 1, integer: true, noise: 0.06 }), extra: { cadence: "Weekly", since: "2023" } },
+    { name: "Thorne Commercial — campus", series: S("rc2", 1100, { drift: 0.005, integer: true, noise: 0.06 }), extra: { cadence: "Bi-weekly", since: "2021" } },
+    { name: "Keating Estates — seasonal", series: S("rc3", 640, { drift: 0.03, dir: 1, integer: true, noise: 0.1 }), extra: { cadence: "Monthly", since: "2025" } },
+    { name: "Sandoval Rentals — 6 units", series: S("rc4", 520, { drift: -0.01, dir: -1, integer: true, noise: 0.1 }), extra: { cadence: "Bi-weekly", since: "2022" } },
   ]);
 
   add("oliver_top_customers", {

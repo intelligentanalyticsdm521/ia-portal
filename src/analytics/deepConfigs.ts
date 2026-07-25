@@ -94,6 +94,8 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
     segments: [{ label: "By engagement", of: (it) => Number(it.extra?.engagement || 0) >= 60 ? "Engaging (60%+)" : Number(it.extra?.engagement || 0) >= 40 ? "Average" : "Weak (<40%)" }],
   },
   content_age: { composition: true },
+  content_gap_keywords: { weightKey: "volume" },
+  engagement_by_channel: { composition: false },
   pagespeed_history: { bands: [
     { label: "Good (90+)",   color: "#15803d", test: (v) => v >= 90 },
     { label: "Fair (50–89)", color: "#f59e0b", test: (v) => v >= 50 },
@@ -109,6 +111,8 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
 
   // ══ SPARK ══
   spark_contact_sources: { composition: true },
+  spark_sends_by_type: { composition: true },
+  spark_conversion_by_source: { weightKey: "convRate" },
   spark_lead_sources: { composition: true },
   spark_stage_flow: { composition: true },
   spark_list_hygiene: { composition: true },
@@ -120,6 +124,10 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
 
   // ══ OLIVER ══
   oliver_revenue_by_service: { composition: true },
+  oliver_invoice_size: { composition: true },
+  oliver_backlog_age: { composition: true },
+  oliver_quote_size: { composition: true },
+  oliver_booked_ahead: { composition: true },
   oliver_invoice_aging: { composition: true },
   oliver_jobs_by_service: { composition: true },
   oliver_quotes_by_service: {

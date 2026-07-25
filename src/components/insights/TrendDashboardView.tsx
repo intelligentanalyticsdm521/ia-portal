@@ -16,7 +16,7 @@ import { LineChart, BarChart, Donut, Gauge, StatBlock } from "../iainsights/Sect
 import { deriveInsights } from "../../analytics/insightGen";
 import type { DashboardScore, SectionScore, DataPointScore, ValueFormat } from "../../analytics/scoring";
 import { businessPulse } from "../../analytics/scoring";
-import { reportsForSection, itemMom, type DetailPayload } from "../../analytics/detail";
+import { reportsForSection, itemMom, pluralize, type DetailPayload } from "../../analytics/detail";
 import { deriveDeepReport } from "../../analytics/deepReport";
 import { deepConfigFor } from "../../analytics/deepConfigs";
 import { DeepReportView } from "./DeepReportView";
@@ -185,7 +185,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-semibold text-slate-900">{r.label}</div>
                         <div className="text-[11px] text-slate-500 mt-0.5">
-                          {r.items.length} {r.itemLabel.toLowerCase()}{r.items.length === 1 ? "" : "s"}
+                          {r.items.length} {pluralize(r.itemLabel, r.items.length)}
                           {top && <> · biggest move: <span className={`font-semibold ${(r.higherIsBetter ? top.m >= 0 : top.m < 0) ? "text-green-600" : "text-red-600"}`}>{top.name} {top.m > 0 ? "+" : ""}{top.m.toFixed(0)}%</span></>}
                         </div>
                       </div>
