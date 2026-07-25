@@ -32,7 +32,8 @@ export function formatValue(v: number | string | null, format: ValueFormat): str
     case "score":    return String(Math.round(n));
     case "count":    return String(Math.round(n));
     case "currency": return n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${Math.round(n)}`;
-    default:         return n >= 1000 ? n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : String(n);
+    default:         return n >= 1000 ? n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+                            : Number.isInteger(n) ? String(n) : n.toFixed(1);
   }
 }
 
@@ -106,7 +107,7 @@ function Crumbs({ trail, onNav }: { trail: string[]; onNav: (level: number) => v
 }
 
 // ── the view ──
-export function TrendDashboardView({ dashboards, platformLabel, detail }: { dashboards: DashboardScore[]; platformLabel: string; detail?: DetailPayload }) {
+export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNoun = "Trend" }: { dashboards: DashboardScore[]; platformLabel: string; detail?: DetailPayload; scoreNoun?: string }) {
   const [dashKey, setDashKey] = useState<string | null>(null);
   const [secKey, setSecKey] = useState<string | null>(null);
 
@@ -165,7 +166,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail }: { dash
       <div className="max-w-5xl">
         <Crumbs trail={[platformLabel, dash.label]} onNav={() => setDashKey(null)} />
         <button onClick={() => setDashKey(null)} className="mb-3 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800">
-          <ArrowLeft className="h-3.5 w-3.5" /> back to {platformLabel} Trends
+          <ArrowLeft className="h-3.5 w-3.5" /> back to {platformLabel} {scoreNoun}s
         </button>
         <div className="flex items-center gap-3 mb-1">
           <ScoreRing score={dash.score} size={64} />
@@ -217,7 +218,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail }: { dash
       <div className="flex items-center gap-3 mb-5">
         <ScoreRing score={platformScore} size={64} />
         <div>
-          <h2 className="text-xl font-bold text-slate-900">{platformLabel} Trend Score</h2>
+          <h2 className="text-xl font-bold text-slate-900">{platformLabel} {scoreNoun} Score</h2>
           <p className="text-xs text-slate-500">{dashboards.filter((d) => d.score != null).length} of {dashboards.length} areas measured · click any area to drill in</p>
         </div>
       </div>

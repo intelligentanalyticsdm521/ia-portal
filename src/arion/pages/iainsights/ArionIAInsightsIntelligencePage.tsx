@@ -1,15 +1,15 @@
-// ArionIAInsightsIntelligencePage — v12.0 (Brandon 2026-07-24 model).
+// ArionIAInsightsIntelligencePage — v13.0 (Brandon 2026-07-24 — mirror model).
 //
-// Intelligence = modeling on the same monthly series Trends counts. Real
-// techniques the 12-month data supports: linear-regression forecasts with
-// confidence bands, anomaly detection vs the tenant's own baseline, and an
-// opportunity model ranking movers by modelled impact (movement × value).
-// See analytics/intelligence.ts + arionIntelligence.ts.
+// Intelligence now MIRRORS Trends: scored dashboards → clickable sections →
+// detail reports, rendered through the SAME TrendDashboardView. The scores and
+// detail are model outputs (forecast health, anomaly severity, weighted-impact
+// opportunity) instead of movement counts, and the detail reports are per-line-
+// item models (each keyword's projected position, each referral's anomaly).
 
 import { useEffect, useMemo, useState } from "react";
 import { useArionContext } from "../../useArionContext";
-import { buildArionIntelligence } from "../../../analytics/arionIntelligence";
-import { IntelligenceView } from "../../../components/insights/IntelligenceView";
+import { buildArionIntelligenceDashboards } from "../../../analytics/arionIntelligenceDashboards";
+import { TrendDashboardView } from "../../../components/insights/TrendDashboardView";
 import type { MetricsPayload } from "../../../analytics/arionDashboards";
 
 export function ArionIAInsightsIntelligencePage() {
@@ -27,23 +27,23 @@ export function ArionIAInsightsIntelligencePage() {
     return () => { cancelled = true; };
   }, [activeSiteId, arionApi]);
 
-  const intel = useMemo(() => (payload ? buildArionIntelligence(payload) : null), [payload]);
+  const built = useMemo(() => (payload ? buildArionIntelligenceDashboards(payload) : null), [payload]);
 
   return (
     <div className="p-1">
       <div className="mb-4">
         <h1 className="text-lg font-bold text-slate-900">IA Insights — Intelligence</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Where your trends are heading, what's unusual, and where focus pays off most —
-          modelled from 12 months of your own data, with confidence stated.
+          The same structure as Trends, but modelled: where every trend is heading, what's
+          unusual, and where focus pays off — down to the individual keyword and referral.
         </p>
       </div>
       {loading ? (
         <div className="text-sm text-slate-400 py-12 text-center">Modelling your data…</div>
-      ) : !intel ? (
+      ) : !built ? (
         <div className="text-sm text-slate-400 py-12 text-center">Not enough history to model yet.</div>
       ) : (
-        <IntelligenceView intel={intel} platformLabel="ARION" />
+        <TrendDashboardView dashboards={built.dashboards} platformLabel="ARION" detail={built.detail} scoreNoun="Intelligence" />
       )}
     </div>
   );
