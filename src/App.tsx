@@ -9,6 +9,7 @@ import { PublicFormPage } from './pages/public/PublicFormPage';
 import { BusinessCardPublicPage } from './pages/public/BusinessCardPublicPage';
 
 import { AppGate } from './app/AppGate';
+import { IdleLogout } from './components/IdleLogout';
 import { AppLayout } from './components/AppLayout';
 
 import { OverviewPage } from './pages/OverviewPage';
@@ -194,6 +195,8 @@ export function App() {
             path="/app"
             element={
               <AppGate>
+                {/* Auto sign-out after 2h idle — authenticated area only. */}
+                <IdleLogout />
                 <AppLayout />
               </AppGate>
             }

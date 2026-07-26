@@ -15,6 +15,8 @@
 
 // ── Shared input shape ────────────────────────────────────────────────
 
+import { GBP_ENABLED } from "../../config/featureFlags";
+
 export interface EngineInput {
   domain?: string;
   /** GA4 data — analytics overview shape. */
@@ -590,8 +592,12 @@ export function localPresenceEngine(input: EngineInput): ReportAnalysis {
     return {
       score: 0,
       scoreInputs: [{ key: "gbp_connected", value: 0, weight: 1.0, note: "GBP not connected" }],
-      observations: ["Google Business Profile is not connected. Connect it in Settings → Connected Accounts to see your local trust profile, review velocity, and response rate."],
-      actions: ["Connect Google Business Profile to start tracking your local trust signals."],
+      observations: GBP_ENABLED
+        ? ["Google Business Profile is not connected. Connect it in Settings → Connected Accounts to see your local trust profile, review velocity, and response rate."]
+        : ["Local presence reporting isn’t available for this account yet."],
+      actions: GBP_ENABLED
+        ? ["Connect Google Business Profile to start tracking your local trust signals."]
+        : [],
       contextNote: "GBP not connected — local presence cannot be scored.",
     };
   }
