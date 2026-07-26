@@ -36,7 +36,7 @@ export function useArionInsightsPayload(): MetricsPayload | null {
         const s = await listArionSites(auth);
         const site = s?.sites?.[0];
         if (!site || cancelled) return;
-        const p = await getInsightsMetrics({ ...auth, siteId: site.siteId, months: 12 });
+        const p = await getInsightsMetrics({ ...auth, siteId: site.siteId, months: 13 });
         if (!cancelled && p && (p as any).metrics) setPayload(p as MetricsPayload);
       } catch { /* composite falls back to the client generator */ }
     })();

@@ -21,7 +21,10 @@ export const WEIGHTS = {
 } as const;
 
 /** Improvement% → movement score. flat=50; +25%→~90; −25%→~10. */
-export const MOVEMENT_SLOPE = 1.6;
+// Calibration 2026-07-25 (real-client autopsy): 1.6 → 1.2. At 1.6 a -31%
+// month hit the floor; at 1.2 the same month scores 20-ish and a ±10% swing
+// moves the score ±12 — still decisive, no longer a cliff.
+export const MOVEMENT_SLOPE = 1.2;
 
 /** Level curve anchors: at the benchmark you are "solid" = this score. */
 export const LEVEL_AT_BENCHMARK = 70;
@@ -139,7 +142,10 @@ export function movement(dp: DataPointInput, smoothMonths = 3): { pct: number | 
 
   const rawPct = ((current - baseline) / Math.abs(baseline)) * 100;
   const improvementPct = dp.higherIsBetter ? rawPct : -rawPct;
-  return { pct: improvementPct, score: clamp(50 + improvementPct * MOVEMENT_SLOPE) };
+  // Calibration (Brandon 2026-07-25, real-client autopsy): declines floor at
+  // 20 instead of 0 — a bad month is bad, not annihilation. One -31% metric
+  // was zeroing 30% of its data point's score.
+  return { pct: improvementPct, score: clamp(50 + improvementPct * MOVEMENT_SLOPE, 20) };
 }
 
 // ── Level ────────────────────────────────────────────────────────────────
@@ -160,14 +166,28 @@ export function level(dp: DataPointInput, smoothMonths = 3): { score: number | n
   let ref: number | null = dp.benchmark?.value ?? null;
   let kind: BenchmarkKind | null = dp.benchmark?.kind ?? null;
   if (ref == null || ref === 0) {
-    ref = trailingAvg(dp.series, smoothMonths);
+    // Self benchmark — calibration 2026-07-25 (real-client autopsy). This
+    // used the SAME 3-month trailing average movement uses, so one decline
+    // was punished twice. Now: prefer the SAME MONTH LAST YEAR (real
+    // seasonality — needs a 13+ month series, which the prod readers serve),
+    // else the FULL-YEAR average ("your normal"), never movement's window.
+    const yoy = dp.series.length >= 13 ? dp.series[dp.series.length - 13] : null;
+    ref = yoy != null && isFinite(yoy) && yoy !== 0 ? yoy : trailingAvg(dp.series, 12);
     kind = "self";
   }
   if (ref == null || ref === 0) return { score: null, kind: null };
 
   const ratio = dp.higherIsBetter ? current / ref : ref / current;
+  // Below-benchmark slope: against COHORT/ABSOLUTE benchmarks the full
+  // proportional penalty applies. Against SELF (your own last year), being
+  // 25% below your best-ever year is caution, not failure — calibration
+  // 2026-07-25: self-below decays at 45/unit instead of 70 (ratio 0.75 →
+  // ~59 instead of 52.5), so a softening business reads "watch this," while
+  // industry shortfalls still bite.
   const score = ratio <= 1
-    ? LEVEL_AT_BENCHMARK * ratio
+    ? (kind === "self"
+        ? LEVEL_AT_BENCHMARK - (1 - ratio) * 45
+        : LEVEL_AT_BENCHMARK * ratio)
     : LEVEL_AT_BENCHMARK + (ratio - 1) * LEVEL_ABOVE_SLOPE;
   return { score: clamp(score), kind };
 }

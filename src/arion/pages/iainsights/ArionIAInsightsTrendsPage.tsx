@@ -24,7 +24,7 @@ export function ArionIAInsightsTrendsPage() {
     if (!activeSiteId) return;
     let cancelled = false;
     setLoading(true);
-    (arionApi as any).getInsightsMetrics?.(activeSiteId, 12)
+    (arionApi as any).getInsightsMetrics?.(activeSiteId, 13)
       .then((r: any) => { if (!cancelled) { setPayload(r); setLoading(false); } })
       .catch(() => { if (!cancelled) { setPayload(null); setLoading(false); } });
     return () => { cancelled = true; };

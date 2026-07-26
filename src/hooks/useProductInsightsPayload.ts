@@ -22,7 +22,7 @@ export function useProductInsightsPayload(product: "spark" | "oliver"): MetricsP
     setPayload(null); // tenant switch — never show the previous tenant's series
     (async () => {
       try {
-        const p = await get<any>(`/api/v1/ia-insights/metrics?product=${product}&months=12`);
+        const p = await get<any>(`/api/v1/ia-insights/metrics?product=${product}&months=13`);
         const metrics = p?.metrics && Object.keys(p.metrics).length ? p.metrics : null;
         if (!cancelled && metrics) setPayload({ metrics } as MetricsPayload);
       } catch { /* fall back to the demo generator */ }
