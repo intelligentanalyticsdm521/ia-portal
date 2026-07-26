@@ -11,7 +11,9 @@ export function OverviewPage() {
   const [tab, setTab] = useState<Tab>("dashboard");
 
   return (
-    <div className="space-y-4 px-2 sm:px-4">
+    // insights-shell (2026-07-26): home matches the insights surfaces —
+    // 80% of the content area, max 1600px, centered.
+    <div className="insights-shell space-y-4 px-2 lg:px-0">
       <section className="iadm-card">
         <div className="iadm-card-body flex items-center justify-between gap-4">
           <div>

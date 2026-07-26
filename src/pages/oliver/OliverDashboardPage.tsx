@@ -8,6 +8,7 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button, StatusBadge } from "../../components/oliver/ui";
+import { EngagementAlertCallout } from "../../components/insights/EngagementAlertCallout";
 import { Sparkline } from "../../components/iainsights/Sparkline";
 // OliverSetupCard removed 2026-06-17 — single onboarding nag lives on
 // Command Center (UnifiedSetupCard). Don't add it back here.
@@ -379,6 +380,10 @@ export function OliverDashboardPage() {
           </>
         }
       />
+
+      {/* Engagement alerts call-out (2026-07-26) — the platform's open
+          alerts lead the dashboard, not just the home Alerts tab. */}
+      <EngagementAlertCallout platform="oliver" />
 
       {/* F-Stripe-Client-Side (2026-06-23) — return-from-Stripe toast.
           Cleared on next mount once the URL params are scrubbed. */}

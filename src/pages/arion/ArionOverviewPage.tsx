@@ -10,6 +10,7 @@ import { useArionSites } from './useArionSites';
 import { Sparkline } from '../../components/iainsights/Sparkline';
 import { SetupHints } from '../../components/SetupHints';
 import { BrandActivityCallout } from '../../components/myBrand/BrandActivityCallout';
+import { EngagementAlertCallout } from '../../components/insights/EngagementAlertCallout';
 import { Globe, Search as SearchIcon, MapPin, Layout, Apple as AppleIcon } from 'lucide-react';
 // Task #173 — dashboard onboarding banner that replaced the removed
 // "Get Started" nav entry. Self-gating (checks checklist + localStorage dismiss).
@@ -113,6 +114,9 @@ export function ArionOverviewPage({ service, status }: Props) {
           call-outs relocated here (scope 2026-07-21, locked 2026-07-22).
           Site-independent (My Brand is tenant-scoped, not site-scoped), so it
           renders above the site conditional. Self-hiding when empty. */}
+      {/* Engagement alerts call-out (2026-07-26) — the platform's open
+          alerts lead the dashboard, not just the home Alerts tab. */}
+      <EngagementAlertCallout platform="arion" />
       <BrandActivityCallout variant="week" className="mb-4" />
       {!selectedSite ? (
         <EmptyPanel title="No ARION sites found" body="Create your first ARION website to begin tracking analytics, console, hosting, maps, and SEO data." />
