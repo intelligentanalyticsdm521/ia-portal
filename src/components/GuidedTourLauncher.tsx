@@ -26,6 +26,7 @@ import {
   resetInteractive,
   type InteractiveFlow,
 } from "./walkthroughs/InteractiveWalkthroughRunner";
+import { onWalkthroughLaunch } from "./walkthroughs/walkthroughLaunchBus";
 
 const PRODUCT_ACCENTS: Record<string, string> = {
   oliver: "#FEC82C",
@@ -41,6 +42,26 @@ export function GuidedTourLauncher() {
   const [activeFlow, setActiveFlow] = useState<InteractiveFlow | null>(null);
   const [expandedTourId, setExpandedTourId] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+
+  // Engagement alerts (2026-07-26): any surface can launch a walkthrough via
+  // launchWalkthrough(flowId) — the Alerts tab's "Show me how" buttons use
+  // this. Module bus + window-event fallback.
+  useEffect(() => {
+    function start(flowId: string) {
+      const flow = INTERACTIVE_FLOWS.find((f) => f.id === flowId);
+      if (!flow) return;
+      if (isInteractiveCompleted(flow.id)) resetInteractive(flow.id);
+      setOpen(false);
+      setActiveFlow(flow);
+    }
+    const unsub = onWalkthroughLaunch(start);
+    function onEvt(e: Event) {
+      const flowId = (e as CustomEvent<{ flowId?: string }>).detail?.flowId;
+      if (flowId) start(flowId);
+    }
+    window.addEventListener("iadm:launch-walkthrough", onEvt);
+    return () => { unsub(); window.removeEventListener("iadm:launch-walkthrough", onEvt); };
+  }, []);
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
