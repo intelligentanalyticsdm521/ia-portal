@@ -258,6 +258,10 @@ export const ARION_MIRROR: MirrorConfig = {
 };
 
 export const SPARK_MIRROR: MirrorConfig = {
+  // Real-data model reports computed by the LUMEN endpoint. spark_send_times
+  // replaces the standalone "STELLA Send Intelligence" page (Brandon
+  // 2026-07-26: intelligence reporting lives IN Intelligence).
+  passthrough: ["spark_send_times"],
   labels: {
     leads_new: "New Leads", leads_qualified: "Qualified Leads", customers_new: "New Customers",
     open_rate: "Open Rate", click_rate: "Click Rate", emails_sent: "Emails Sent",

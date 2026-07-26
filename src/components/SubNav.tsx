@@ -153,12 +153,8 @@ const OLIVER_NAV: SubNavConfig = {
     // 2026-07-25 (Brandon): the "Reports" nav item removed — dead navigation,
     // the page never had a working backend ("Failed to fetch"). Reporting is
     // the IA Insights funnel now. Route/page stay so deep links don't 500.
-    {
-      label: "Activity", icon: BarChart2, collapsible: true, sectionId: "oliver_reporting",
-      items: [
-        { key: "oliver_activity_log", label: "Activity Log", route: "/app/services/oliver_activity_log" },
-      ],
-    },
+    // 2026-07-26 (Brandon): the leftover "Activity" group dissolved too —
+    // Activity Log is reachable from IA Insights → Reports (route unchanged).
     // Cosmetic pass 2026-07-22 (Brandon): IA Insights is ALWAYS the bottom
     // section of every platform nav.
     {
@@ -167,6 +163,7 @@ const OLIVER_NAV: SubNavConfig = {
         { key: "oliver_ia_insights_health", label: "Health", route: "/app/services/oliver_ia_insights_health" },
         { key: "oliver_ia_insights_trends", label: "Trends", route: "/app/services/oliver_ia_insights_trends", tag: { label: "OLIVER", color: "#FEC82C" } },
         { key: "oliver_ia_insights_intelligence", label: "Intelligence", route: "/app/services/oliver_ia_insights_intelligence", tag: { label: "OLIVER", color: "#FEC82C" } },
+        { key: "oliver_ia_insights_reports", label: "Reports", route: "/app/services/oliver_ia_insights_reports" },
       ],
     },
   ],
@@ -471,23 +468,13 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_activity_stream", label: "Activity Stream", route: "/app/services/spark_activity_stream" },
       ],
     },
-    {
-      // Reporting absorbed the formerly-standalone Real-Time Activity + Usage.
-      // Plan & Pricing left to Settings (it's a tenant admin concern, not a report).
-      label: "Reporting", icon: BarChart2, collapsible: true, sectionId: "spark_reporting",
-      items: [
-        // 2026-07-25 (Brandon): Dashboards / Analytics Reports / Scheduled
-        // Reports removed from nav — pre-insights report builders that were
-        // never built out (Dashboards widgets are stubbed "coming soon"; the
-        // other two had zero saved reports). Reporting is the IA Insights
-        // funnel now. Routes/pages stay so deep links don't 500.
-        { key: "spark_realtime_metrics", label: "Real-Time Activity", route: "/app/services/spark_realtime_metrics" },
-        { key: "spark_usage_report", label: "Usage", route: "/app/services/spark_usage_report" },
-        // F-93 — Audit Log moved here from Settings. It's a viewer feature
-        // (you READ the log), not a configuration toggle.
-        { key: "spark_audit_log", label: "Audit Log", route: "/app/services/spark_audit_log" },
-      ],
-    },
+    // 2026-07-26 (Brandon): the standalone "Reporting" nav group removed —
+    // general/operational reporting lives under IA Insights → Reports now
+    // (Real-Time Activity / Usage / Audit Log reachable from that hub; their
+    // routes/pages stay so deep links don't 500). "STELLA Send Intelligence"
+    // removed from nav too: its best-time-to-send analysis now ships as the
+    // real spark_send_times report inside SPARK Intelligence (Campaign ROI →
+    // Campaign Opportunities).
     // Cosmetic pass 2026-07-22 (Brandon): IA Insights is ALWAYS the bottom
     // section of every platform nav. Pure analytics; Service Category is in
     // Settings.
@@ -497,7 +484,7 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_ia_insights_health", label: "Health", route: "/app/services/spark_ia_insights_health" },
         { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends", tag: { label: "SPARK", color: "#EF6C33" } },
         { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" } },
-        { key: "spark_stella", label: "STELLA Send Intelligence", route: "/app/services/spark_stella", tag: { label: "STELLA", color: "#EF6C33" } },
+        { key: "spark_ia_insights_reports", label: "Reports", route: "/app/services/spark_ia_insights_reports" },
       ],
     },
   ],
@@ -796,7 +783,8 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/spark_ai_writer") || path.includes("/spark_intelligence") || path.includes("/spark_activity_stream")) return "spark_intelligence";
   if (path.includes("/spark_ia_insights_") || path.includes("/spark_stella")) return "spark_ia_insights";
   // F-93 — Audit Log moved from Settings → Reporting.
-  if (path.includes("/spark_dashboards") || path.includes("/spark_analytics_reports") || path.includes("/spark_scheduled_reports") || path.includes("/spark_realtime_metrics") || path.includes("/spark_usage_report") || path.includes("/spark_audit_log")) return "spark_reporting";
+  // Operational report pages live under IA Insights → Reports now (2026-07-26).
+  if (path.includes("/spark_dashboards") || path.includes("/spark_analytics_reports") || path.includes("/spark_scheduled_reports") || path.includes("/spark_realtime_metrics") || path.includes("/spark_usage_report") || path.includes("/spark_audit_log")) return "spark_ia_insights";
   // OLIVER sections (simplified nav 2026-05-25 — see OLIVER_NAV comment)
   //   - Removed entries for retired nav items (Projects, Schedule, Dispatch,
   //     Quotes-page, Billing Overview, Template Library, Operations *, Comms)
@@ -815,7 +803,7 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/oliver_ia_insights")) return "oliver_ia_insights";
   // ARGUS — single IA Insights group; expand it on any ARGUS Insights route.
   if (path.includes("/argus_health") || path.includes("/argus_trends") || path.includes("/argus_cross_platform") || path.includes("/argus_cross_channel") || path.includes("/argus_intelligence") || path.includes("/argus_ia_insights")) return "argus_ia_insights";
-  if (path.includes("/oliver_reports") || path.includes("/oliver_activity_log")) return "oliver_reporting";
+  if (path.includes("/oliver_reports") || path.includes("/oliver_activity_log")) return "oliver_ia_insights";
   // MY BRAND sections REMOVED 2026-06-22 — top-level slot pulled from
   // IconRail/SubNav (Q4 2026 deferred product). ARION's internal arion_brand
   // is handled by the settings_arion auto-expand above.

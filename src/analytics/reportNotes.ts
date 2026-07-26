@@ -20,6 +20,10 @@ export const REPORT_NOTES: Record<string, ReportNote> = {
     "Where your website ranks on Google for the search terms that matter to your business, tracked every month.",
     "Position 1–3 gets most of the clicks; page one (top 10) is where you're genuinely visible. Watch the movement tables: a keyword climbing into the top 10 is new business walking in the door, and one sliding out is worth defending before the traffic goes with it.",
   ),
+  spark_send_times: N(
+    "When your audience actually opens email — every hour-of-week send window with at least 20 real sends, ranked by open rate.",
+    "Send your next campaign in the top window listed here. Windows are only shown once they have 20+ sends, so every rate is statistically meaningful — as your send volume grows, more windows appear and the recommendation sharpens.",
+  ),
   striking_distance: N(
     "Keywords ranked 11–20 — sitting on page two of Google, one push away from page one. Ranked by how many people search each term every month.",
     "These are the cheapest wins in SEO: the page already ranks, it just needs a nudge — refreshed content, a few internal links, or a better title. Start from the top of the list (highest search volume) and work down; a move from position 12 to 8 can be the difference between invisible and found.",
