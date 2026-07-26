@@ -15,7 +15,7 @@ import { ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Minus, ArrowLeft }
 import { LineChart, BarChart, Donut, Gauge, StatBlock } from "../iainsights/SectionVisuals";
 import { deriveInsights } from "../../analytics/insightGen";
 import type { DashboardScore, SectionScore, DataPointScore, ValueFormat } from "../../analytics/scoring";
-import { businessPulse } from "../../analytics/scoring";
+import { businessPulse, scoreDataPoint } from "../../analytics/scoring";
 import { reportsForSection, itemMom, pluralize, type DetailPayload, type DetailReport } from "../../analytics/detail";
 import { deriveDeepReport } from "../../analytics/deepReport";
 import { deepConfigFor } from "../../analytics/deepConfigs";
@@ -98,9 +98,40 @@ function DataPointVisual({ dp }: { dp: DataPointScore }) {
 // percent/rating/score) average across items; counts/currency sum. Feed
 // reports preview their top rows instead.
 const AVG_FORMATS = new Set(["percent", "position", "rating", "score"]);
-function MiniReportChart({ report }: { report: DetailReport }) {
+
+/** The report's one honest monthly series: average across items for rate-like
+ *  formats (position/percent/rating/score), sum for counts and currency. */
+function aggregateReportSeries(report: DetailReport): Array<number | null> | null {
   const trendItems = report.items.filter((it) => (it.series?.filter((v) => v != null).length ?? 0) >= 2);
-  if (!trendItems.length) {
+  if (!trendItems.length) return null;
+  const len = Math.max(...trendItems.map((it) => it.series.length));
+  const isAvg = AVG_FORMATS.has(report.format);
+  const agg: Array<number | null> = [];
+  for (let m = 0; m < len; m++) {
+    const vals = trendItems.map((it) => it.series[m]).filter((v): v is number => v != null && isFinite(v));
+    agg.push(vals.length ? (isAvg ? vals.reduce((s, v) => s + v, 0) / vals.length : vals.reduce((s, v) => s + v, 0)) : null);
+  }
+  return agg;
+}
+
+/** Overall report score — the report's aggregate series through the SAME
+ *  Movement+Level engine that scores every data point, so report, section,
+ *  and area scores all reconcile (Brandon 2026-07-26: every detail report
+ *  listed with its overall score). Null for feed reports with no series. */
+function scoreReport(report: DetailReport): { score: number | null; momPct: number | null } {
+  const agg = aggregateReportSeries(report);
+  if (!agg || agg.filter((v) => v != null).length < 2) return { score: null, momPct: null };
+  const s = scoreDataPoint({
+    key: report.id, label: report.label, what: "",
+    series: agg, higherIsBetter: report.higherIsBetter,
+    format: report.format as ValueFormat, visual: "line", weight: 1,
+  } as any);
+  return { score: s.score, momPct: s.movementPct };
+}
+
+function MiniReportChart({ report }: { report: DetailReport }) {
+  const agg = aggregateReportSeries(report);
+  if (!agg) {
     return (
       <div className="space-y-0.5">
         {report.items.slice(0, 3).map((it, i) => (
@@ -111,13 +142,6 @@ function MiniReportChart({ report }: { report: DetailReport }) {
         ))}
       </div>
     );
-  }
-  const len = Math.max(...trendItems.map((it) => it.series.length));
-  const isAvg = AVG_FORMATS.has(report.format);
-  const agg: Array<number | null> = [];
-  for (let m = 0; m < len; m++) {
-    const vals = trendItems.map((it) => it.series[m]).filter((v): v is number => v != null && isFinite(v));
-    agg.push(vals.length ? (isAvg ? vals.reduce((s, v) => s + v, 0) / vals.length : vals.reduce((s, v) => s + v, 0)) : null);
   }
   const shown = agg.slice(-12);
   const clean = shown.filter((v): v is number => v != null);
@@ -210,18 +234,29 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
             </div>
           </div>
         </div>
-        <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">Score contributors</div>
-        <div className="space-y-2 mb-6">
-          {sec.dataPoints.map((dp) => <DataPointDetail key={dp.key} dp={dp} months={dashboards} />)}
-        </div>
+        {/* DETAIL REPORTS lead (Brandon 2026-07-26): click a section → its
+            reports, each with an overall score, click one → the full report.
+            The data-point tiles are the score's inputs and render BELOW. */}
         {(() => {
           const reports = reportsForSection(detail, dash.key, sec.key);
-          if (!reports.length) return null;
+          if (!reports.length) {
+            return (
+              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 mb-6">
+                <div className="text-sm font-semibold text-slate-700">No in-depth reports here yet</div>
+                <div className="text-xs text-slate-500 mt-1">
+                  This section is scored from the data points below, but none of your connected
+                  sources provide line-item detail for it yet. Reports appear automatically once
+                  the source behind this section has dimensional data.
+                </div>
+              </div>
+            );
+          }
           return (
             <>
-              <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">In-depth reports — click one to open the full report</div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">Detail reports — click one to open the full report</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
                 {reports.map((r) => {
+                  const rs = scoreReport(r);
                   // Headline for the card: the biggest single mover in the report.
                   const movers = r.items
                     .map((it) => ({ name: it.name, m: itemMom(it) }))
@@ -230,16 +265,20 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
                   const top = movers[0];
                   return (
                     <button key={r.id} onClick={() => setRepKey(r.id)}
-                      className="flex flex-col rounded-lg border border-slate-200 bg-white px-4 py-3 text-left hover:border-slate-300 hover:shadow-sm">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-sm font-semibold text-slate-900 truncate">{r.label}</div>
-                        <ChevronRight className="h-4 w-4 text-slate-300 flex-shrink-0" />
+                      className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left hover:border-slate-300 hover:shadow-sm">
+                      {rs.score != null && <ScoreRing score={rs.score} size={44} />}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-900 truncate">{r.label}</span>
+                          {rs.momPct != null && <MoMBadge pct={rs.momPct} small />}
+                        </div>
+                        <div className="mt-2"><MiniReportChart report={r} /></div>
+                        <div className="text-[11px] text-slate-500 mt-2">
+                          {r.items.length} {pluralize(r.itemLabel, r.items.length)}
+                          {top && <> · biggest move: <span className={`font-semibold ${(r.higherIsBetter ? top.m >= 0 : top.m < 0) ? "text-green-600" : "text-red-600"}`}>{top.name} {top.m > 0 ? "+" : ""}{top.m.toFixed(0)}%</span></>}
+                        </div>
                       </div>
-                      <div className="mt-2"><MiniReportChart report={r} /></div>
-                      <div className="text-[11px] text-slate-500 mt-2">
-                        {r.items.length} {pluralize(r.itemLabel, r.items.length)}
-                        {top && <> · biggest move: <span className={`font-semibold ${(r.higherIsBetter ? top.m >= 0 : top.m < 0) ? "text-green-600" : "text-red-600"}`}>{top.name} {top.m > 0 ? "+" : ""}{top.m.toFixed(0)}%</span></>}
-                      </div>
+                      <ChevronRight className="h-4 w-4 text-slate-300 flex-shrink-0 mt-1" />
                     </button>
                   );
                 })}
@@ -247,6 +286,10 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
             </>
           );
         })()}
+        <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">Score inputs — the data points behind the {sec.label} score</div>
+        <div className="space-y-2 mb-6">
+          {sec.dataPoints.map((dp) => <DataPointDetail key={dp.key} dp={dp} months={dashboards} />)}
+        </div>
       </div>
     );
   }

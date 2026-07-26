@@ -210,12 +210,20 @@ export function buildArionDashboards(payload: MetricsPayload): DashboardScore[] 
   return ARION_DASHBOARDS.map((dash): DashboardScore => {
     const input: DashboardInput = {
       key: dash.key, label: dash.label,
-      sections: dash.sections.map((sec) => ({
+      sections: dash.sections.map((sec) => {
+        // If ANY sibling in this section has data, the source IS connected —
+        // an unmeasured point then means "no history for this metric yet",
+        // not "connect X" (Briarwood showed "Connect GSC" on Visibility Score
+        // while GSC was live in the same section — Brandon 2026-07-26).
+        const sectionHasData = sec.metrics.some((mm) => (M[mm.key] || []).some((v) => v != null));
+        return {
         key: sec.key, label: sec.label, weight: sec.weight,
         dataPoints: sec.metrics.map((mm): DataPointInput => {
           const series = M[mm.key];
           const unmeasured = !series || series.every((v) => v == null)
-            ? unmeasuredFor(dash.key)
+            ? (sectionHasData
+                ? { reason: "No history for this data point yet — it fills in as monthly snapshots accumulate.", kind: "connect" as const }
+                : unmeasuredFor(dash.key))
             : undefined;
           return {
             key: mm.key, label: mm.label, what: mm.what,
@@ -226,7 +234,8 @@ export function buildArionDashboards(payload: MetricsPayload): DashboardScore[] 
             unmeasured,
           };
         }),
-      })),
+        };
+      }),
     };
     return scoreDashboard(input);
   });

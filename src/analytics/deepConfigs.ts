@@ -81,6 +81,7 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
     }],
   },
   page_search_performance: { weightKey: "impressions" },
+  striking_distance: { weightKey: "volume" },
   ctr_by_query: { weightKey: "position" },
   channel_breakdown: { composition: true },
   referral_sources: { composition: true },
