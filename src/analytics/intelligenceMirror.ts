@@ -208,7 +208,7 @@ export function buildIntelligenceMirror(
 export const ARION_MIRROR: MirrorConfig = {
   // Purpose-built model reports computed by the arion-api reader
   // (sections already point into these dashboards).
-  passthrough: ["ctr_opportunity"],
+  passthrough: ["ctr_opportunity", "trend_breaks"],
   labels: {
     gsc_clicks: "Search Clicks", gsc_impressions: "Search Impressions", kw_visibility: "Visibility Score",
     gsc_avg_position: "Average Position", kw_top10: "Keywords in Top 10", ga_sessions: "Sessions",
@@ -302,6 +302,8 @@ export const SPARK_MIRROR: MirrorConfig = {
 };
 
 export const OLIVER_MIRROR: MirrorConfig = {
+  // Purpose-built model reports computed by the LUMEN metrics endpoint.
+  passthrough: ["oliver_win_drivers"],
   labels: {
     revenue_collected: "Revenue Collected", recurring_revenue: "Recurring Revenue", jobs_completed: "Jobs Completed",
     jobs_scheduled: "Jobs Scheduled", on_time_rate: "On-Time Rate", quotes_sent: "Quotes Sent",
