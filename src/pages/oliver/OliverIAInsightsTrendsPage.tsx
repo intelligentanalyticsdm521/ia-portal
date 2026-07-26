@@ -19,6 +19,11 @@ export function OliverIAInsightsTrendsPage() {
     () => buildOliverDashboards(payload || demoOliverMetrics(activeTenantId || "oliver")),
     [payload, activeTenantId],
   );
+  // Real tenants get ONLY real line items (missing reports simply don't
+  // appear); the demo detail set renders only when metrics fell back to demo.
+  const detail = payload
+    ? (payload.detail && Object.keys(payload.detail).length ? payload.detail : undefined)
+    : demoOliverDetail(activeTenantId || "oliver");
   return (
     <div className="p-1">
       <div className="max-w-5xl mx-auto mb-4">
@@ -28,7 +33,7 @@ export function OliverIAInsightsTrendsPage() {
           Click any area, then any section, to see every data point trended month over month.
         </p>
       </div>
-      <TrendDashboardView dashboards={dashboards} platformLabel="OLIVER" detail={demoOliverDetail(activeTenantId || "oliver")} />
+      <TrendDashboardView dashboards={dashboards} platformLabel="OLIVER" detail={detail} />
     </div>
   );
 }

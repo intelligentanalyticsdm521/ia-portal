@@ -19,7 +19,11 @@ export function SparkIAInsightsIntelligencePage() {
   const built = useMemo(() => {
     const seed = activeTenantId || "spark";
     const metrics = payload || demoSparkMetrics(seed);
-    return buildIntelligenceMirror({ ...metrics, detail: demoSparkDetail(seed) }, SPARK_MIRROR);
+    // Real detail when the tenant has rows; demo only when metrics did too.
+    const detail = payload
+      ? ((payload as any).detail && Object.keys((payload as any).detail).length ? (payload as any).detail : {})
+      : demoSparkDetail(seed);
+    return buildIntelligenceMirror({ ...metrics, detail }, SPARK_MIRROR);
   }, [payload, activeTenantId]);
   return (
     <div className="p-1">

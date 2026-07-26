@@ -19,7 +19,11 @@ export function OliverIAInsightsIntelligencePage() {
   const built = useMemo(() => {
     const seed = activeTenantId || "oliver";
     const metrics = payload || demoOliverMetrics(seed);
-    return buildIntelligenceMirror({ ...metrics, detail: demoOliverDetail(seed) }, OLIVER_MIRROR);
+    // Real detail when the tenant has rows; demo only when metrics did too.
+    const detail = payload
+      ? ((payload as any).detail && Object.keys((payload as any).detail).length ? (payload as any).detail : {})
+      : demoOliverDetail(seed);
+    return buildIntelligenceMirror({ ...metrics, detail }, OLIVER_MIRROR);
   }, [payload, activeTenantId]);
   return (
     <div className="p-1">

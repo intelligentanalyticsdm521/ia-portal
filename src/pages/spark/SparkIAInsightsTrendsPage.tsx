@@ -20,6 +20,11 @@ export function SparkIAInsightsTrendsPage() {
     () => buildSparkDashboards(payload || demoSparkMetrics(activeTenantId || "spark")),
     [payload, activeTenantId],
   );
+  // Real tenants get ONLY real line items (missing reports simply don't
+  // appear); the demo detail set renders only when metrics fell back to demo.
+  const detail = payload
+    ? (payload.detail && Object.keys(payload.detail).length ? payload.detail : undefined)
+    : demoSparkDetail(activeTenantId || "spark");
 
   return (
     <div className="p-1">
@@ -30,7 +35,7 @@ export function SparkIAInsightsTrendsPage() {
           Click any area, then any section, to see every data point trended month over month.
         </p>
       </div>
-      <TrendDashboardView dashboards={dashboards} platformLabel="SPARK" detail={demoSparkDetail(activeTenantId || "spark")} />
+      <TrendDashboardView dashboards={dashboards} platformLabel="SPARK" detail={detail} />
     </div>
   );
 }
