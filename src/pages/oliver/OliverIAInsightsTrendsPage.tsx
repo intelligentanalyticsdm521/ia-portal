@@ -26,7 +26,7 @@ export function OliverIAInsightsTrendsPage() {
     : demoOliverDetail(activeTenantId || "oliver");
   return (
     <div className="p-1">
-      <div className="max-w-5xl mx-auto mb-4">
+      <div className="insights-shell mb-4">
         <h1 className="text-lg font-bold text-slate-900">OLIVER Insights — Trends</h1>
         <p className="text-sm text-slate-500 mt-0.5">
           Your operations, scored on where you are and which way you're moving.

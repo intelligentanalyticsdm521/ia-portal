@@ -174,7 +174,11 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
         if (bi >= 0) distribution.series[bi].values[m]++;
       }
     }
-  } else if (cfg?.composition && trendItems.length) {
+  } else if ((cfg?.composition ?? !isAvgFormat(report.format)) && trendItems.length >= 2) {
+    // Auto-composition (Brandon 2026-07-26): any summable report with 2+
+    // trend items gets the stacked 12-month chart even without a hand-tuned
+    // config — no report renders chartless just because nobody configured it.
+    // An explicit `composition: false` still opts a report out.
     const sorted = [...trendItems].sort((a, b) => (lastVal(b.series) ?? 0) - (lastVal(a.series) ?? 0));
     const top = sorted.slice(0, 8);
     const rest = sorted.slice(8);

@@ -16,7 +16,7 @@ import { LineChart, BarChart, Donut, Gauge, StatBlock } from "../iainsights/Sect
 import { deriveInsights } from "../../analytics/insightGen";
 import type { DashboardScore, SectionScore, DataPointScore, ValueFormat } from "../../analytics/scoring";
 import { businessPulse } from "../../analytics/scoring";
-import { reportsForSection, itemMom, pluralize, type DetailPayload } from "../../analytics/detail";
+import { reportsForSection, itemMom, pluralize, type DetailPayload, type DetailReport } from "../../analytics/detail";
 import { deriveDeepReport } from "../../analytics/deepReport";
 import { deepConfigFor } from "../../analytics/deepConfigs";
 import { DeepReportView } from "./DeepReportView";
@@ -92,6 +92,55 @@ function DataPointVisual({ dp }: { dp: DataPointScore }) {
   return <StatBlock display={formatValue(dp.current, dp.format)} positive={positive} />;
 }
 
+// ── report-card mini chart: the REAL aggregate series, visible before the
+// click (Brandon 2026-07-26 — "should show like Keyword Movement with a bar
+// or line graph showing the real metrics"). Averaged formats (position/
+// percent/rating/score) average across items; counts/currency sum. Feed
+// reports preview their top rows instead.
+const AVG_FORMATS = new Set(["percent", "position", "rating", "score"]);
+function MiniReportChart({ report }: { report: DetailReport }) {
+  const trendItems = report.items.filter((it) => (it.series?.filter((v) => v != null).length ?? 0) >= 2);
+  if (!trendItems.length) {
+    return (
+      <div className="space-y-0.5">
+        {report.items.slice(0, 3).map((it, i) => (
+          <div key={i} className="flex items-center justify-between text-[11px] text-slate-600">
+            <span className="truncate">{it.name}</span>
+            {it.extra && <span className="text-slate-400 flex-shrink-0 ml-2">{String(Object.values(it.extra)[0] ?? "")}</span>}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  const len = Math.max(...trendItems.map((it) => it.series.length));
+  const isAvg = AVG_FORMATS.has(report.format);
+  const agg: Array<number | null> = [];
+  for (let m = 0; m < len; m++) {
+    const vals = trendItems.map((it) => it.series[m]).filter((v): v is number => v != null && isFinite(v));
+    agg.push(vals.length ? (isAvg ? vals.reduce((s, v) => s + v, 0) / vals.length : vals.reduce((s, v) => s + v, 0)) : null);
+  }
+  const shown = agg.slice(-12);
+  const clean = shown.filter((v): v is number => v != null);
+  if (clean.length < 2) return null;
+  const first = clean[0], last = clean[clean.length - 1];
+  const improving = report.higherIsBetter ? last >= first : last <= first;
+  const color = improving ? "#16a34a" : "#dc2626";
+  const max = Math.max(...clean), min = Math.min(...clean, 0);
+  const H = 56, W = 240, gap = 2;
+  const bw = (W - gap * (shown.length - 1)) / shown.length;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }} preserveAspectRatio="none" aria-hidden="true">
+      {shown.map((v, i) => {
+        if (v == null) return null;
+        const h = Math.max(2, ((v - min) / (max - min || 1)) * (H - 4));
+        const isLast = i === shown.length - 1;
+        return <rect key={i} x={i * (bw + gap)} y={H - h} width={bw} height={h} rx={1.5}
+          fill={isLast ? color : "#cbd5e1"} opacity={isLast ? 1 : 0.85} />;
+      })}
+    </svg>
+  );
+}
+
 // ── breadcrumb ──
 function Crumbs({ trail, onNav }: { trail: string[]; onNav: (level: number) => void }) {
   return (
@@ -128,7 +177,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
     if (rep) {
       const deep = deriveDeepReport(rep, deepConfigFor(rep.id));
       return (
-        <div className="max-w-5xl mx-auto">
+        <div className="insights-shell">
           <Crumbs
             trail={[platformLabel, dash.label, sec.label, rep.label]}
             onNav={(l) => { if (l === 0) { setDashKey(null); setSecKey(null); setRepKey(null); } else if (l === 1) { setSecKey(null); setRepKey(null); } else if (l === 2) setRepKey(null); }}
@@ -146,7 +195,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
   // ── SECTION DETAIL REPORT ──
   if (dash && sec) {
     return (
-      <div className="max-w-5xl mx-auto">
+      <div className="insights-shell">
         <Crumbs trail={[platformLabel, dash.label, sec.label]} onNav={(l) => { if (l === 0) { setDashKey(null); setSecKey(null); } else if (l === 1) setSecKey(null); }} />
         <button onClick={() => setSecKey(null)} className="mb-3 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800">
           <ArrowLeft className="h-3.5 w-3.5" /> back to {dash.label}
@@ -171,7 +220,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
           return (
             <>
               <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">In-depth reports — click one to open the full report</div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {reports.map((r) => {
                   // Headline for the card: the biggest single mover in the report.
                   const movers = r.items
@@ -181,15 +230,16 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
                   const top = movers[0];
                   return (
                     <button key={r.id} onClick={() => setRepKey(r.id)}
-                      className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left hover:border-slate-300 hover:bg-slate-50">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-semibold text-slate-900">{r.label}</div>
-                        <div className="text-[11px] text-slate-500 mt-0.5">
-                          {r.items.length} {pluralize(r.itemLabel, r.items.length)}
-                          {top && <> · biggest move: <span className={`font-semibold ${(r.higherIsBetter ? top.m >= 0 : top.m < 0) ? "text-green-600" : "text-red-600"}`}>{top.name} {top.m > 0 ? "+" : ""}{top.m.toFixed(0)}%</span></>}
-                        </div>
+                      className="flex flex-col rounded-lg border border-slate-200 bg-white px-4 py-3 text-left hover:border-slate-300 hover:shadow-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-semibold text-slate-900 truncate">{r.label}</div>
+                        <ChevronRight className="h-4 w-4 text-slate-300 flex-shrink-0" />
                       </div>
-                      <ChevronRight className="h-4 w-4 text-slate-300 flex-shrink-0" />
+                      <div className="mt-2"><MiniReportChart report={r} /></div>
+                      <div className="text-[11px] text-slate-500 mt-2">
+                        {r.items.length} {pluralize(r.itemLabel, r.items.length)}
+                        {top && <> · biggest move: <span className={`font-semibold ${(r.higherIsBetter ? top.m >= 0 : top.m < 0) ? "text-green-600" : "text-red-600"}`}>{top.name} {top.m > 0 ? "+" : ""}{top.m.toFixed(0)}%</span></>}
+                      </div>
                     </button>
                   );
                 })}
@@ -207,7 +257,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
     const priorities = insights.filter((i) => i.priority);
     const wins = insights.filter((i) => !i.priority);
     return (
-      <div className="max-w-5xl mx-auto">
+      <div className="insights-shell">
         <Crumbs trail={[platformLabel, dash.label]} onNav={() => setDashKey(null)} />
         <button onClick={() => setDashKey(null)} className="mb-3 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800">
           <ArrowLeft className="h-3.5 w-3.5" /> back to {platformLabel} {scoreNoun}s
@@ -258,7 +308,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
 
   // ── OVERVIEW ──
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="insights-shell">
       <div className="flex items-center gap-3 mb-5">
         <ScoreRing score={platformScore} size={64} />
         <div>

@@ -51,7 +51,7 @@ export function ArgusTrendsPage() {
 
   return (
     <div className="p-1">
-      <div className="max-w-5xl mx-auto mb-4">
+      <div className="insights-shell mb-4">
         <h1 className="text-lg font-bold text-slate-900">ARGUS Insights — Trends</h1>
         <p className="text-sm text-slate-500 mt-0.5">
           The whole business across every product, plus the customer journey and the

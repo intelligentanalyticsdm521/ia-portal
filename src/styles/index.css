@@ -226,6 +226,14 @@ body {
   margin: 0 auto;
 }
 
+/* IA Insights shell — reports render at 80% of the content area (Brandon
+   2026-07-26: "make the reporting section an 80% screen width"). Inside
+   .arion-page the 80% cap is already applied by the page shell, so the
+   insights shell must fill it rather than compound to 64%. */
+.insights-shell { width: 100%; max-width: 1600px; margin-left: auto; margin-right: auto; }
+@media (min-width: 1024px) { .insights-shell { width: 80%; } }
+.arion-page .insights-shell { width: 100%; }
+
 /* Stat row + cards */
 /* OLIVER pages reuse the ARION design system — same look across products. */
 .arion-page .stat-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 14px; }
