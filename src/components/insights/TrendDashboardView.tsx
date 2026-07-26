@@ -129,6 +129,62 @@ function scoreReport(report: DetailReport): { score: number | null; momPct: numb
   return { score: s.score, momPct: s.movementPct };
 }
 
+/** Last two real values of a series — for "7 → 15" mover copy. */
+function lastTwo(series: Array<number | null> | undefined): [number, number] | null {
+  if (!series) return null;
+  const real: number[] = [];
+  for (let i = series.length - 1; i >= 0 && real.length < 2; i--) {
+    const v = series[i];
+    if (v != null && isFinite(v)) real.unshift(v);
+  }
+  return real.length === 2 ? [real[0], real[1]] : null;
+}
+
+/** Human mover copy: positions read as "#7 → #15", everything else as ±%.
+ *  A percent on a ranking position means nothing to a business owner. */
+function moverText(it: { name: string; series?: Array<number | null> }, report: DetailReport): { text: string; good: boolean } | null {
+  const m = itemMom(it as any);
+  if (m == null) return null;
+  const good = report.higherIsBetter ? m >= 0 : m < 0;
+  if (report.format === "position") {
+    const lt = lastTwo(it.series);
+    if (lt) return { text: `${it.name} #${Math.round(lt[0])} → #${Math.round(lt[1])}`, good };
+  }
+  return { text: `${it.name} ${m > 0 ? "+" : ""}${m.toFixed(0)}%`, good };
+}
+
+/** "Why this score" — the section page has to read like a report you'd hand
+ *  a client (Brandon 2026-07-26): name the number, name what dragged it,
+ *  name what held it up, in plain English with the real values. */
+function sectionStory(sec: SectionScore): Array<{ tone: "good" | "bad" | "info"; text: string }> {
+  const out: Array<{ tone: "good" | "bad" | "info"; text: string }> = [];
+  if (sec.score == null) return out;
+  const measured = sec.dataPoints.filter((dp) => !dp.unmeasured && dp.movementPct != null);
+  const isBad = (dp: DataPointScore) => (dp.higherIsBetter ? dp.movementPct! < 0 : dp.movementPct! > 0);
+  const drag = measured.filter(isBad).sort((a, b) => Math.abs(b.movementPct!) * b.weight - Math.abs(a.movementPct!) * a.weight)[0];
+  const lift = measured.filter((dp) => !isBad(dp)).sort((a, b) => Math.abs(b.movementPct!) * b.weight - Math.abs(a.movementPct!) * a.weight)[0];
+
+  const dir = sec.movementPct == null ? "" : sec.movementPct < -0.5 ? ` and slipped ${Math.abs(sec.movementPct).toFixed(0)}% vs last month` : sec.movementPct > 0.5 ? ` and gained ${sec.movementPct.toFixed(0)}% vs last month` : ` and is flat vs last month`;
+  out.push({ tone: "info", text: `${sec.label} scores ${sec.score} — ${band(sec.score).label.toLowerCase()}${dir}.` });
+
+  if (drag) {
+    const from = drag.priorMonth != null ? formatValue(drag.priorMonth, drag.format) : null;
+    const to = drag.current != null ? formatValue(drag.current, drag.format) : null;
+    // Movement is 3-month smoothed; when last month's literal value matches
+    // the current one, "(10,438 → 10,438)" reads absurd — drop it.
+    const vals = from && to && from !== to ? ` (${from} → ${to})` : "";
+    out.push({ tone: "bad", text: `The biggest drag is ${drag.label}, ${drag.higherIsBetter ? "down" : "up"} ${Math.abs(drag.movementPct!).toFixed(0)}% this month${vals} — it carries ${Math.round(drag.weight * 100)}% of this score.` });
+  }
+  if (lift) {
+    const flat = Math.abs(lift.movementPct!) < 1;
+    const vals = lift.current != null ? ` at ${formatValue(lift.current, lift.format)}` : "";
+    out.push({ tone: "good", text: `${flat ? "Holding steady" : "Working in your favor"}: ${lift.label}${vals}${flat ? "" : ` (${lift.higherIsBetter ? "up" : "improved"} ${Math.abs(lift.movementPct!).toFixed(0)}%)`}.` });
+  } else if (drag) {
+    out.push({ tone: "bad", text: `Nothing in this section improved this month — the reports below show exactly which items are sliding.` });
+  }
+  return out;
+}
+
 function MiniReportChart({ report }: { report: DetailReport }) {
   const agg = aggregateReportSeries(report);
   if (!agg) {
@@ -234,6 +290,24 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
             </div>
           </div>
         </div>
+        {/* WHY THIS SCORE — the client-readable story before any tiles. */}
+        {(() => {
+          const story = sectionStory(sec);
+          if (!story.length) return null;
+          return (
+            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 mb-5">
+              <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-1.5">Why this score</div>
+              <div className="space-y-1">
+                {story.map((s, i) => (
+                  <div key={i} className="flex items-start gap-2 text-[13px] leading-snug text-slate-700">
+                    <span className={`mt-1.5 h-1.5 w-1.5 rounded-full flex-shrink-0 ${s.tone === "bad" ? "bg-red-500" : s.tone === "good" ? "bg-green-500" : "bg-slate-400"}`} />
+                    <span>{s.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
         {/* DETAIL REPORTS lead (Brandon 2026-07-26): click a section → its
             reports, each with an overall score, click one → the full report.
             The data-point tiles are the score's inputs and render BELOW. */}
@@ -257,12 +331,16 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
                 {reports.map((r) => {
                   const rs = scoreReport(r);
-                  // Headline for the card: the biggest single mover in the report.
-                  const movers = r.items
-                    .map((it) => ({ name: it.name, m: itemMom(it) }))
-                    .filter((x): x is { name: string; m: number } => x.m != null)
+                  const agg = aggregateReportSeries(r);
+                  const aggFirst = agg?.find((v) => v != null) ?? null;
+                  const aggLast = agg ? [...agg].reverse().find((v) => v != null) ?? null : null;
+                  const aggGood = aggFirst != null && aggLast != null ? (r.higherIsBetter ? aggLast >= aggFirst : aggLast <= aggFirst) : null;
+                  // Headline movers: best gain + worst loss, in human units.
+                  const ranked = r.items
+                    .map((it) => ({ it, m: itemMom(it) }))
+                    .filter((x): x is { it: typeof x.it; m: number } => x.m != null)
                     .sort((a, b) => Math.abs(b.m) - Math.abs(a.m));
-                  const top = movers[0];
+                  const top = ranked[0] ? moverText(ranked[0].it as any, r) : null;
                   return (
                     <button key={r.id} onClick={() => setRepKey(r.id)}
                       className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left hover:border-slate-300 hover:shadow-sm">
@@ -272,10 +350,18 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
                           <span className="text-sm font-semibold text-slate-900 truncate">{r.label}</span>
                           {rs.momPct != null && <MoMBadge pct={rs.momPct} small />}
                         </div>
-                        <div className="mt-2"><MiniReportChart report={r} /></div>
+                        {agg && (
+                          <div className="flex items-center justify-between mt-1.5 text-[10px] uppercase tracking-wide text-slate-400">
+                            <span>{AVG_FORMATS.has(r.format) ? "Avg" : "Total"} {(r as any).primaryLabel || r.itemLabel} · 12 months</span>
+                            <span className="normal-case tracking-normal text-[11px]">
+                              {formatValue(aggFirst, r.format as ValueFormat)} → <span className={`font-semibold ${aggGood ? "text-green-600" : "text-red-600"}`}>{formatValue(aggLast, r.format as ValueFormat)}</span>
+                            </span>
+                          </div>
+                        )}
+                        <div className="mt-1"><MiniReportChart report={r} /></div>
                         <div className="text-[11px] text-slate-500 mt-2">
                           {r.items.length} {pluralize(r.itemLabel, r.items.length)}
-                          {top && <> · biggest move: <span className={`font-semibold ${(r.higherIsBetter ? top.m >= 0 : top.m < 0) ? "text-green-600" : "text-red-600"}`}>{top.name} {top.m > 0 ? "+" : ""}{top.m.toFixed(0)}%</span></>}
+                          {top && <> · biggest move: <span className={`font-semibold ${top.good ? "text-green-600" : "text-red-600"}`}>{top.text}</span></>}
                         </div>
                       </div>
                       <ChevronRight className="h-4 w-4 text-slate-300 flex-shrink-0 mt-1" />
