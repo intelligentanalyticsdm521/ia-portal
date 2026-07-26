@@ -33,6 +33,11 @@ export interface MirrorConfig {
   labels: Record<string, string>;
   dashboards: MirrorDashCfg[];
   detail?: MirrorDetailMap[];
+  /** Report ids taken AS-IS from payload.detail into the Intelligence detail
+   *  set — purpose-built model reports computed server-side (e.g. the CTR
+   *  Opportunity title/meta rewrite list), not transforms of trend reports.
+   *  Their `section` field must name an intelligence dashboard.section. */
+  passthrough?: string[];
 }
 
 // ── model → data-point builders ───────────────────────────────────────────
@@ -177,6 +182,11 @@ export function buildIntelligenceMirror(
   });
 
   const detail: DetailPayload = {};
+  // Purpose-built model reports pass through untouched (already computed
+  // server-side with their intelligence section set).
+  for (const id of cfg.passthrough || []) {
+    if (D[id]) detail[id] = D[id];
+  }
   for (const map of cfg.detail || []) {
     const src = D[map.from];
     if (!src) continue;
@@ -196,6 +206,9 @@ export function buildIntelligenceMirror(
 // ══ Platform configs — business-question dashboards ══════════════════════
 
 export const ARION_MIRROR: MirrorConfig = {
+  // Purpose-built model reports computed by the arion-api reader
+  // (sections already point into these dashboards).
+  passthrough: ["ctr_opportunity"],
   labels: {
     gsc_clicks: "Search Clicks", gsc_impressions: "Search Impressions", kw_visibility: "Visibility Score",
     gsc_avg_position: "Average Position", kw_top10: "Keywords in Top 10", ga_sessions: "Sessions",
