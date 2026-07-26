@@ -24,7 +24,8 @@ export function useProductInsightsPayload(product: "spark" | "oliver"): MetricsP
       try {
         const p = await get<any>(`/api/v1/ia-insights/metrics?product=${product}&months=13`);
         const metrics = p?.metrics && Object.keys(p.metrics).length ? p.metrics : null;
-        if (!cancelled && metrics) setPayload({ metrics } as MetricsPayload);
+        // benchmarks ride along — the catalog overrides its defaults with them
+        if (!cancelled && metrics) setPayload({ metrics, benchmarks: p.benchmarks } as unknown as MetricsPayload);
       } catch { /* fall back to the demo generator */ }
     })();
     return () => { cancelled = true; };

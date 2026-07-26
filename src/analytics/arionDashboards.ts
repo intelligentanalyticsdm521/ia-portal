@@ -198,6 +198,10 @@ export interface MetricsPayload {
   months: string[];
   metrics: Record<string, Array<number | null>>;
   detail?: import("./detail").DetailPayload;
+  /** Researched industry benchmarks (metric_key → p50), resolved server-side
+   *  through the detail→medium→high→default ladder. Overrides catalog
+   *  defaults in buildDashboards. */
+  benchmarks?: Record<string, number>;
 }
 
 /** Build all six scored dashboards from the monthly-series payload. */
