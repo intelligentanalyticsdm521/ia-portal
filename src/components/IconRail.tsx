@@ -65,17 +65,20 @@ const PRODUCT_ICONS: Record<ProductKey, React.ReactNode> = {
   ),
 };
 
+// Nav labels (2026-07-27, Brandon): plain-English names in the icon rail —
+// "no one understands ARION/SPARK/ARGUS". Cosmetic, scoped to this rail only;
+// the product codenames stay everywhere else (SubNav headers, routes, docs).
 const PRODUCTS: Omit<ProductDef, "enabled">[] = [
   { key: "overview", label: "Home", tagline: "Portal Overview", icon: PRODUCT_ICONS.overview },
-  { key: "arion", label: "ARION", tagline: "Digital Presence", icon: PRODUCT_ICONS.arion },
-  { key: "oliver", label: "OLIVER", tagline: "Operations", icon: PRODUCT_ICONS.oliver },
+  { key: "arion", label: "Digital Presence", tagline: "ARION", icon: PRODUCT_ICONS.arion },
+  { key: "oliver", label: "Invoicing & Administration", tagline: "OLIVER", icon: PRODUCT_ICONS.oliver },
   // 2026-06-22 — My Brand top-level slot REMOVED (Q4 2026 deferred product).
   // The legitimate ARION-internal "My Brand" page is reachable via the
   // ARION SubNav -> My Brand entry (route /app/services/arion_brand).
-  { key: "spark", label: "SPARK", tagline: "CRM", icon: PRODUCT_ICONS.spark },
-  { key: "stella", label: "STELLA", tagline: "Expenses & Data", icon: PRODUCT_ICONS.stella },
-  { key: "forge", label: "FORGE", tagline: "Integrations & Software", icon: PRODUCT_ICONS.forge },
-  { key: "argus", label: "ARGUS", tagline: "AI & Agents", icon: PRODUCT_ICONS.argus },
+  { key: "spark", label: "CRM & Marketing", tagline: "SPARK", icon: PRODUCT_ICONS.spark },
+  { key: "stella", label: "Ledger & Data Management", tagline: "STELLA", icon: PRODUCT_ICONS.stella },
+  { key: "forge", label: "Integrations & Software", tagline: "FORGE", icon: PRODUCT_ICONS.forge },
+  { key: "argus", label: "Agents & Automations", tagline: "ARGUS", icon: PRODUCT_ICONS.argus },
   { key: "consulting", label: "Consulting", tagline: "Projects", icon: PRODUCT_ICONS.consulting },
 ];
 
