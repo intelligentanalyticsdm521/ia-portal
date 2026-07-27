@@ -43,8 +43,11 @@ export function IdleLogout() {
     if (loggingOut.current) return;
     loggingOut.current = true;
     try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
-    // Redirect to the hosted sign-out; MSAL clears its cache on the way.
-    instance.logoutRedirect().catch(() => {
+    // Hard logout of the CURRENT account — pass the account so Entra doesn't
+    // show the "pick an account to sign out of" chooser (which, if the user
+    // walks away, leaves interaction_in_progress and wedges the next sign-in).
+    const account = instance.getActiveAccount() ?? instance.getAllAccounts()[0] ?? undefined;
+    instance.logoutRedirect({ account, postLogoutRedirectUri: window.location.origin }).catch(() => {
       // Fallback: at least drop local state and bounce to root.
       try { instance.clearCache?.(); } catch { /* ignore */ }
       window.location.assign("/");
