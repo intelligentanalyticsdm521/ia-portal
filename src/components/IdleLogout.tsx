@@ -1,9 +1,9 @@
 // IdleLogout — auto sign-out after a fixed idle window.
 //
-// Brandon 2026-07-24: sessions never expired; log a user out after 2h idle.
-// This is IDLE timeout (resets on activity), not an absolute session cap — a
-// user actively working is never kicked mid-task; only a truly inactive tab
-// times out.
+// Brandon 2026-07-27: sessions never expired; log a user out after 90 min idle
+// (was 2h). This is IDLE timeout (resets on activity), not an absolute session
+// cap — a user actively working is never kicked mid-task; only a truly
+// inactive tab times out, and then must sign back in through CIAM.
 //
 // Cross-tab: last-activity is written to localStorage, so activity in ANY tab
 // keeps ALL tabs alive, and the countdown is shared. A 60s warning overlay
@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMsal } from "@azure/msal-react";
 
-const IDLE_MS = 2 * 60 * 60 * 1000; // 2 hours
+const IDLE_MS = 90 * 60 * 1000; // 90 minutes
 const WARN_MS = 60 * 1000; // warn 60s before logout
 const CHECK_MS = 15 * 1000; // poll cadence
 const LS_KEY = "iadm.lastActivityAt";
