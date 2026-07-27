@@ -119,6 +119,8 @@ const ConsultingDocumentLibraryPageAdmin = lazy(() => import('./pages/consulting
 // gating at this layer; each page does its own subscription/upsell checks
 // where needed (Service Requests gates on Build Your Brand sub).
 import { ClientConsultingLayout } from './components/consulting/ClientConsultingLayout';
+import { LEADGEN_ENABLED } from './config/featureFlags';
+import { FeatureUnavailable } from './components/FeatureUnavailable';
 const ClientConsultingProjectsPage = lazy(() => import('./pages/consulting/ClientConsultingProjectsPage'));
 const ClientConsultingDeliverablesPage = lazy(() => import('./pages/consulting/ClientConsultingDeliverablesPage'));
 const ClientConsultingServiceRequestsPage = lazy(() => import('./pages/consulting/ClientConsultingServiceRequestsPage'));
@@ -238,7 +240,7 @@ export function App() {
                 cleanup, schema migrations, etc. */}
             <Route path="admin" element={<PlatformAdminPage />} />
             <Route path="admin/onboard-arion-existing" element={<ArionOnboardExistingPage />} />
-            <Route path="admin/leadgen" element={<AdminLeadgenPage />} />
+            <Route path="admin/leadgen" element={LEADGEN_ENABLED ? <AdminLeadgenPage /> : <FeatureUnavailable name="Lead Gen admin" />} />
             <Route path="admin/infra-health" element={<InfraHealthPage />} />
 
             {/* 2026-06-29 — Founder-side Consulting relocated to /app/admin/consulting/*.
@@ -305,9 +307,12 @@ export function App() {
             {/* SPARK Lead Gen V1 (F-150/F-163) — search form, job progress,
                 saved searches. The job page needs an :id path param so these
                 live here instead of the service-key router. */}
-            <Route path="spark/leadgen/new" element={<SparkLeadGenNewPage />} />
-            <Route path="spark/leadgen/jobs/:id" element={<SparkLeadGenJobPage />} />
-            <Route path="spark/leadgen/saved" element={<SparkLeadGenSavedPage />} />
+            {/* Lead Gen LOCKED 2026-07-27 (LEADGEN_ENABLED=false) — taxonomy
+                produces garbage keyword expansions. Direct-URL access shows a
+                paused notice; nav entries are filtered in serviceCatalog. */}
+            <Route path="spark/leadgen/new" element={LEADGEN_ENABLED ? <SparkLeadGenNewPage /> : <FeatureUnavailable name="Lead Gen" />} />
+            <Route path="spark/leadgen/jobs/:id" element={LEADGEN_ENABLED ? <SparkLeadGenJobPage /> : <FeatureUnavailable name="Lead Gen" />} />
+            <Route path="spark/leadgen/saved" element={LEADGEN_ENABLED ? <SparkLeadGenSavedPage /> : <FeatureUnavailable name="Lead Gen" />} />
             <Route path="spark/customer-flow" element={<SparkCustomerFlowPage />} />
             <Route path="spark/lifecycle" element={<SparkLifecyclePage />} />
             <Route path="spark/sync-issues" element={<SparkSyncIssuesPage />} />
