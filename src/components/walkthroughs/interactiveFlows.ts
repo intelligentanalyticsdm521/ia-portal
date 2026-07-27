@@ -22,7 +22,11 @@ export const SPARK_CREATE_FIRST_CONTACT: InteractiveFlow = {
   estimatedMinutes: 2,
   steps: [
     {
-      route: "/app/spark/contacts",
+      // Route bug (found 2026-07-27): was "/app/spark/contacts" — a route
+      // scheme that never existed. The router 404-bounced, the header
+      // remounted, and the runner died silently. THE reason every launch
+      // path (Tours menu + alerts) appeared broken.
+      route: "/app/services/spark_contacts",
       targetSelector: 'button[data-tour="new-contact"]',
       advance: "click",
       title: "Add your first contact",
