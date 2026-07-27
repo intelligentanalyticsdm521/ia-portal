@@ -119,7 +119,10 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
     // h-full breaks on some browsers when the parent height is flex-derived rather than
     // explicit. `min-h-0` on the inner list lets it scroll rather than pushing Settings
     // off-screen when many products are enabled.
-    <div className="flex w-16 flex-col items-center bg-[#0B1C24] py-3">
+    // Widened 64px -> 96px (2026-07-27, Brandon): the plain-English labels
+    // ("Invoicing & Administration", "Ledger & Data Management") were
+    // clipping/cramped at the old width. Buttons follow at 56px -> 88px.
+    <div className="flex w-24 flex-col items-center bg-[#0B1C24] py-3">
       <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
         {products.map((p) => {
           const isActive = activeProduct === p.key;
@@ -128,7 +131,7 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
               key={p.key}
               onClick={() => onSelect(p.key)}
               title={`${p.label} - ${p.tagline}`}
-              className={`relative flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
+              className={`relative flex w-[88px] flex-col items-center gap-1 rounded-md px-1 py-2 transition-colors ${
                 isActive
                   ? "bg-white/10 text-white"
                   : "text-white/50 hover:bg-white/5 hover:text-white/80"
@@ -141,7 +144,7 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
               <span className="relative flex h-6 w-6 items-center justify-center">
                 {p.icon}
               </span>
-              <span className="text-[9px] font-medium leading-tight">{p.label}</span>
+              <span className="text-[10px] font-medium leading-tight text-center">{p.label}</span>
             </button>
           );
         })}
@@ -155,14 +158,14 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
       <button
         onClick={() => onSelect("settings")}
         title="Settings"
-        className={`mt-auto flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
+        className={`mt-auto flex w-[88px] flex-col items-center gap-1 rounded-md px-1 py-2 transition-colors ${
           activeProduct === "settings" ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white/80"
         }`}
       >
         <span className="flex h-6 w-6 items-center justify-center">
           <Settings className="h-5 w-5" />
         </span>
-        <span className="text-[9px] font-medium leading-tight">Settings</span>
+        <span className="text-[10px] font-medium leading-tight text-center">Settings</span>
       </button>
 
       {/* Platform Admin gear — pinned at bottom. SUPER_ADMIN-only.
@@ -172,14 +175,14 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
         <button
           onClick={() => navigate("/admin")}
           title="Platform Admin (SUPER_ADMIN)"
-          className={`flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
+          className={`flex w-[88px] flex-col items-center gap-1 rounded-md px-1 py-2 transition-colors ${
             isAdminActive ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white/80"
           }`}
         >
           <span className="flex h-6 w-6 items-center justify-center">
             <Shield className="h-5 w-5" />
           </span>
-          <span className="text-[9px] font-medium leading-tight">Admin</span>
+          <span className="text-[10px] font-medium leading-tight text-center">Admin</span>
         </button>
       )}
     </div>
