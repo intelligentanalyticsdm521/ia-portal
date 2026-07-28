@@ -84,6 +84,8 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
   const [stepIdx, setStepIdx] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const [ready, setReady] = useState(false);
+  /** For input steps: they've typed something, so Next is available. */
+  const [typedOk, setTypedOk] = useState(false);
 
   const step = flow.steps[stepIdx];
 
@@ -103,6 +105,7 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
     if (!open || !step) return;
     setReady(false);
     setTargetRect(null);
+    setTypedOk(false);
 
     // If we still need to navigate, wait for the URL to match before
     // looking for the target.
@@ -163,13 +166,36 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
         el.addEventListener("click", onClick, { once: true });
         advanceListenerCleanup = () => el.removeEventListener("click", onClick);
       } else if (advance === "input") {
+        // Brandon 2026-07-28: "as soon as I hit a space or a character it
+        // moves on instead of waiting for a tab or enter or me to click
+        // next." The old handler fired on the FIRST input event, so the step
+        // vanished mid-word. Now the user signals they're DONE: Enter or Tab,
+        // or clicking out of the field. Typing alone never advances — it just
+        // enables the Next button (see footer).
+        const isDone = () => (el as HTMLInputElement).value?.trim().length > 0;
         const onInput = () => {
           if (cancelled) return;
-          // Don't advance immediately — let user finish typing
-          setTimeout(nextOrFinish, 600);
+          setTypedOk(isDone()); // lights up Next; does NOT advance
         };
-        el.addEventListener("input", onInput, { once: true });
-        advanceListenerCleanup = () => el.removeEventListener("input", onInput);
+        const onKey = (e: KeyboardEvent) => {
+          if (cancelled) return;
+          if ((e.key === "Enter" || e.key === "Tab") && isDone()) {
+            e.preventDefault();
+            setTimeout(nextOrFinish, 120);
+          }
+        };
+        const onBlur = () => {
+          if (cancelled) return;
+          if (isDone()) setTimeout(nextOrFinish, 200);
+        };
+        el.addEventListener("input", onInput);
+        el.addEventListener("keydown", onKey as EventListener);
+        el.addEventListener("blur", onBlur);
+        advanceListenerCleanup = () => {
+          el.removeEventListener("input", onInput);
+          el.removeEventListener("keydown", onKey as EventListener);
+          el.removeEventListener("blur", onBlur);
+        };
       } else if (advance === "route") {
         // Handled via location.pathname change effect below
         advanceListenerCleanup = null;
@@ -187,9 +213,26 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
     window.addEventListener("resize", onResize);
     window.addEventListener("scroll", onResize, true);
 
+    // Keep tracking the target while the step is open (Brandon 2026-07-28:
+    // the highlight sat in empty space above the New-campaign button). Pages
+    // finish loading async content AFTER we measure — a chart or table
+    // renders, everything below shifts down, and a one-shot rect leaves the
+    // spotlight stranded where the element USED to be. Resize/scroll handlers
+    // don't fire for that. Cheap poll; stops with the step.
+    const track = window.setInterval(() => {
+      if (cancelled) return;
+      const el = document.querySelector(step.targetSelector) as HTMLElement | null;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setTargetRect((prev) =>
+        !prev || Math.abs(prev.top - r.top) > 1 || Math.abs(prev.left - r.left) > 1 ||
+        Math.abs(prev.width - r.width) > 1 || Math.abs(prev.height - r.height) > 1 ? r : prev);
+    }, 250);
+
     return () => {
       cancelled = true;
       clearTimeout(raf);
+      clearInterval(track);
       advanceListenerCleanup?.();
       window.removeEventListener("resize", onResize);
       window.removeEventListener("scroll", onResize, true);
@@ -272,7 +315,7 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
   const advanceCopy = (() => {
     switch (step.advance ?? "click") {
       case "click": return "Click the highlighted element";
-      case "input": return "Type into the highlighted field";
+      case "input": return "Type your answer, then press Enter (or click Next)";
       case "route": return "Follow the highlighted link";
       case "next": return null;
     }
@@ -342,10 +385,14 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
                   <ChevronLeft className="h-3 w-3" /> Back
                 </button>
               )}
-              {step.advance === "next" && (
+              {/* Input steps get a Next button too, enabled once they've
+                  actually typed something — so nobody is trapped in a field
+                  wondering what the magic keystroke is. */}
+              {(step.advance === "next" || step.advance === "input") && (
                 <button
                   onClick={nextOrFinish}
-                  className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white"
+                  disabled={step.advance === "input" && !typedOk}
+                  className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40"
                   style={{ background: accent }}
                 >
                   {stepIdx + 1 === flow.steps.length ? "Finish" : "Next"}

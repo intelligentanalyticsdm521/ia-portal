@@ -475,6 +475,7 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
             return (
               <button
                 key={t.key}
+                data-tour={t.key === "danger" ? "contact-tab-delete" : undefined}
                 onClick={() => setTab(t.key)}
                 className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                   tab === t.key
@@ -875,6 +876,7 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
                   Soft-deletes the contact. Reversible from the trash for 30 days, then permanently purged.
                 </p>
                 <button
+                  data-tour="contact-delete-confirm"
                   onClick={softDelete}
                   className="text-xs px-3 py-1.5 rounded bg-rose-600 text-white hover:bg-rose-700 inline-flex items-center gap-1"
                 >

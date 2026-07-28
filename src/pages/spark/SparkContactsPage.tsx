@@ -606,7 +606,7 @@ export function SparkContactsPage() {
           columns={columns}
           totalCount={filtered.length}
           rowActions={c => (
-            <button onClick={() => { setDetail(c); setDrawer("detail"); }} className="spark-btn-icon" title="View details">
+            <button data-tour="contact-open" onClick={() => { setDetail(c); setDrawer("detail"); }} className="spark-btn-icon" title="View details">
               <MoreHorizontal className="h-4 w-4" />
             </button>
           )}
