@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Monitor, Server, ShieldCheck, BarChart2, TrendingUp,
@@ -823,6 +823,23 @@ export function SubNav({ config }: SubNavProps) {
     return getDefaultSection(location.pathname);
   });
 
+  // Keep the open section in sync with the URL (2026-07-27).
+  //
+  // activeSection was seeded ONCE at mount and only changed on a header
+  // click, so any navigation the user didn't perform by clicking that header
+  // — a deep link, an alert "Open →", a guided tour stepping between
+  // sections — left the wrong group open and the destination group COLLAPSED.
+  // Collapsed means its <a> isn't in the DOM at all, which is why the tour
+  // had nothing to highlight and fell back to a bare centred box.
+  //
+  // Only forces a section when the path maps to one, so a user who collapses
+  // everything on the page they're already on keeps that state.
+  useEffect(() => {
+    if (!hasSectionIds) return;
+    const target = getDefaultSection(location.pathname);
+    if (target) setActiveSection((prev) => (prev === target ? prev : target));
+  }, [location.pathname, hasSectionIds]);
+
   // Legacy expanded set for non-ARION products
   const [expanded, setExpanded] = useState<Set<number>>(() => {
     const initial = new Set<number>();
@@ -895,6 +912,10 @@ export function SubNav({ config }: SubNavProps) {
               {group.label && group.collapsible ? (
                 <button
                   type="button"
+                  // Tours spotlight this to teach the nav itself ("click
+                  // Website — that's where your pages live") before drilling
+                  // into an item inside it.
+                  data-subnav-header={sid || group.label || undefined}
                   onClick={() => {
                     const landingRoute = group.landingRoute ?? group.items[0]?.route;
                     if (sid) toggleSection(sid, landingRoute);

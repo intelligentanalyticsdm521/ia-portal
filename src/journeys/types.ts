@@ -100,6 +100,7 @@ export function journeyToTour(journey: Journey, fromStepId?: string): TourDef {
     steps: slice.map((s): TourStep => ({
       title: s.explain.title,
       body: s.explain.body,
+      sectionLabel: s.sectionLabel,
       targetSelector: s.explain.targetSelector,
       placement: s.explain.placement,
       route: s.route,

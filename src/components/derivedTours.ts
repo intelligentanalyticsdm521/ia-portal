@@ -196,8 +196,7 @@ export function indexSections(tour: TourDef): TourSection[] {
     const key = s.section as string | undefined;
     if (!key) return;
     if (!map.has(key)) {
-      // @ts-expect-error sectionLabel is appended dynamically
-      const label = (s.sectionLabel as string) || key;
+      const label = s.sectionLabel || key;
       map.set(key, { key, label, firstStepIdx: i, lastStepIdx: i, stepCount: 1 });
       order.push(key);
     } else {
