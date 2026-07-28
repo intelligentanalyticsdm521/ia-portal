@@ -279,12 +279,30 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
   })();
 
   return (
-    <div className="fixed inset-0 z-[9997]" role="dialog" aria-modal="true" aria-label={flow.title}>
+    // pointer-events NONE on the root (Brandon 2026-07-28: "it says to add a
+    // new contact but I can't actually click the button").
+    //
+    // This overlay is fixed inset-0, so with default pointer-events it sat on
+    // top of the entire page and swallowed every click — including the click
+    // on the highlighted element that the step is literally waiting for. The
+    // walkthrough could never advance by real interaction. It escaped notice
+    // because verification dispatched synthetic events, which bypass
+    // hit-testing entirely; only a real cursor (or elementFromPoint) reveals it.
+    //
+    // The spotlight is already pointer-events:none; the tooltip re-enables
+    // them so its own Skip/Back/Next stay clickable.
+    <div
+      className="fixed inset-0 z-[9997]"
+      style={{ pointerEvents: "none" }}
+      role="dialog"
+      aria-modal="false"
+      aria-label={flow.title}
+    >
       <div style={spotlightStyle} />
       {ready && (
         <div
           className="fixed z-[9999] rounded-xl bg-white shadow-2xl border-2"
-          style={{ ...tooltipStyle, borderColor: accent }}
+          style={{ ...tooltipStyle, borderColor: accent, pointerEvents: "auto" }}
         >
           <div
             className="flex items-center justify-between rounded-t-lg px-3 py-2"
