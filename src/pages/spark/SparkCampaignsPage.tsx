@@ -4,6 +4,14 @@ import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { EmbeddedReportChart, type ReportSeriesResponse } from "../../components/reporting/EmbeddedReportChart";
 import { SparkCampaignComposerModal } from "../../components/spark/SparkCampaignComposerModal";
 
+/** Open rate from the campaign's own counters. Shows "—" only when nothing
+ *  has actually been sent yet, rather than for every row. */
+function openRate(c: { total_sent?: number; total_opened?: number }): string {
+  const sent = c.total_sent ?? 0;
+  if (!sent) return "—";
+  return `${Math.round(((c.total_opened ?? 0) / sent) * 100)}%`;
+}
+
 interface Campaign {
   id: number;
   name: string;
@@ -12,10 +20,14 @@ interface Campaign {
   // worked.
   type: "email" | "sms";
   status: string;
-  // List endpoint returns recipient_count only; opens/sent come from
-  // /campaigns/:id/stats. Don't reference total_recipients / total_sent /
-  // total_opened on a list row — those are undefined and would crash render.
+  // The list endpoint SELECTs c.*, so the campaign counters DO come back on
+  // every row (verified 2026-07-28 against the live endpoint). An older
+  // comment here claimed otherwise, which is why the Open Rate column was
+  // hardcoded to an em-dash and never showed a number.
   recipient_count?: number;
+  total_sent?: number;
+  total_opened?: number;
+  total_clicked?: number;
   sent_at: string | null;
   created_at: string;
 }
@@ -141,7 +153,7 @@ export function SparkCampaignsPage() {
                   <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
                   <td className="px-4 py-3">{statusBadge(c.status)}</td>
                   <td className="px-4 py-3 text-slate-600">{(c.recipient_count ?? 0).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-slate-600">—</td>
+                  <td className="px-4 py-3 text-slate-600" data-tour="campaign-open-rate">{openRate(c)}</td>
                   <td className="px-4 py-3 text-slate-400 text-xs">{c.sent_at ? new Date(c.sent_at).toLocaleDateString() : "—"}</td>
                 </tr>
               ))}

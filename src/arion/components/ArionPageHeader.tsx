@@ -86,6 +86,7 @@ export function ArionPageHeader({ section, page }: ArionPageHeaderProps) {
               </select>
             ) : domain ? (
               <a href={`https://${domain}`} target="_blank" rel="noopener noreferrer"
+                data-tour="site-domain"
                 style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', textDecoration: 'none' }}>
                 {domain}
               </a>
@@ -113,6 +114,7 @@ export function ArionPageHeader({ section, page }: ArionPageHeaderProps) {
 
       {/* RIGHT: WP Admin button */}
       <button
+        data-tour="wp-admin"
         onClick={handleWpAdmin}
         style={{
           background: '#0C4A60', color: '#fff', border: 'none',

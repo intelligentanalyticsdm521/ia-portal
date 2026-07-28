@@ -191,6 +191,26 @@ export const SPARK_JOURNEY: Journey = {
         targetSelector: "a[href='/app/services/spark_campaigns']",
         placement: "right",
       },
+      onPage: [
+        {
+          title: "Every campaign you've sent, with how it did",
+          body: "One row per campaign. Status tells you whether it's a draft, scheduled, or already gone out — drafts are safe to open and edit, nothing sends until you press send.",
+          targetSelector: "table",
+          placement: "top",
+        },
+        {
+          title: "This is your open rate — the number that matters most",
+          body: "The share of people who actually opened it. For most small businesses 20–30% is healthy; under 15% usually means the subject line didn't earn the click, or you're landing in spam. Watch the trend across campaigns more than any single number — one bad subject line is noise, three in a row is a pattern.",
+          targetSelector: '[data-tour="campaign-open-rate"]',
+          placement: "left",
+        },
+        {
+          title: "Start a new one here",
+          body: "New campaign opens the composer: pick who it goes to, write it, preview it, then send or schedule. You can leave at any point and it stays a draft.",
+          targetSelector: 'button[data-tour="new-campaign"]',
+          placement: "bottom",
+        },
+      ],
       doIt: [
         {
           targetSelector: 'button[data-tour="new-campaign"]',

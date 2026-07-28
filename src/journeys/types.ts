@@ -51,6 +51,25 @@ export interface JourneyStep {
     placement?: TourStep["placement"];
     waitMs?: number;
   };
+  /**
+   * TOUR mode, continued — extra stops ON THE PAGE after landing there.
+   *
+   * Brandon 2026-07-28: "if we don't show them things like click this button
+   * (WP Admin) to log into your website admin, or for SPARK this is your
+   * email campaign open rate, then it's not good enough."
+   *
+   * The `explain` stop above orients you in the NAV; these teach the actual
+   * screen — what each number means, which button does what. They inherit
+   * the step's route, so they never navigate away mid-explanation.
+   */
+  onPage?: Array<{
+    title: string;
+    body: string;
+    targetSelector?: string;
+    placement?: TourStep["placement"];
+    waitMs?: number;
+  }>;
+
   /** INTERACTIVE mode — the click-by-click the user performs themselves.
    *  Omit for steps that are understanding, not doing. */
   doIt?: InteractiveStep[];
@@ -97,15 +116,29 @@ export function journeyToTour(journey: Journey, fromStepId?: string): TourDef {
     id: fromStepId ? `${journey.tourId}:${fromStepId}` : journey.tourId,
     title: journey.tourTitle,
     accent: journey.accent,
-    steps: slice.map((s): TourStep => ({
-      title: s.explain.title,
-      body: s.explain.body,
-      sectionLabel: s.sectionLabel,
-      targetSelector: s.explain.targetSelector,
-      placement: s.explain.placement,
-      route: s.route,
-      waitMs: s.explain.waitMs,
-    })),
+    // Each journey step contributes its nav-level stop, then any on-page
+    // stops — which is what turns a 12-stop skim into a real 5-8 minute
+    // walkthrough of the actual screens.
+    steps: slice.flatMap((s): TourStep[] => [
+      {
+        title: s.explain.title,
+        body: s.explain.body,
+        sectionLabel: s.sectionLabel,
+        targetSelector: s.explain.targetSelector,
+        placement: s.explain.placement,
+        route: s.route,
+        waitMs: s.explain.waitMs,
+      },
+      ...(s.onPage || []).map((o): TourStep => ({
+        title: o.title,
+        body: o.body,
+        sectionLabel: s.sectionLabel,
+        targetSelector: o.targetSelector,
+        placement: o.placement,
+        route: s.route,
+        waitMs: o.waitMs,
+      })),
+    ]),
   };
 }
 

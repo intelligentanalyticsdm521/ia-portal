@@ -34,9 +34,23 @@ export const ARION_JOURNEY: Journey = {
       explain: {
         title: "Your website, your listings, and how people find you",
         body:
-          "Most people stop maintaining their own site for one reason: they're afraid of breaking something they can't undo. So we'll do this in the order that removes the fear first — make it safe to change, then make it findable, then learn what's actually working. Nothing here requires you to be technical. About 10 minutes.",
+          "Most people stop maintaining their own site for one reason: they're afraid of breaking something they can't undo. So we'll do this in the order that removes the fear first — make it safe to change, then make it findable, then learn what's actually working. Nothing here requires you to be technical. About 8 minutes.",
         placement: "center",
       },
+      onPage: [
+        {
+          title: "This bar follows you everywhere in ARION",
+          body: "The site you're managing, when it was created, and when it last changed. If you run more than one site this is where you switch between them — everything on screen then refers to that site.",
+          targetSelector: '[data-tour="site-domain"]',
+          placement: "bottom",
+        },
+        {
+          title: "WP Admin — the door into your actual website",
+          body: "This button logs you straight into your WordPress admin, already signed in, in a new tab. That's where you edit page text, upload images and publish posts. ARION handles the measuring and the safety net; WP Admin is where the hands-on editing happens. If you only remember one button on this page, remember this one.",
+          targetSelector: '[data-tour="wp-admin"]',
+          placement: "left",
+        },
+      ],
     },
 
     // ══ Make it safe to touch ══════════════════════════════════════════════
