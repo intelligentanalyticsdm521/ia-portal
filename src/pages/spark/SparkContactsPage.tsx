@@ -606,7 +606,12 @@ export function SparkContactsPage() {
           columns={columns}
           totalCount={filtered.length}
           rowActions={c => (
-            <button data-tour="contact-open" onClick={() => { setDetail(c); setDrawer("detail"); }} className="spark-btn-icon" title="View details">
+            // data-contact-email lets the walkthrough target the exact record
+            // it just created rather than "whatever is in the first row". If
+            // the create failed (duplicate email, say), the row simply isn't
+            // there and the runner stops — instead of walking the user into
+            // deleting a real customer.
+            <button data-tour="contact-open" data-contact-email={c.email || undefined} onClick={() => { setDetail(c); setDrawer("detail"); }} className="spark-btn-icon" title="View details">
               <MoreHorizontal className="h-4 w-4" />
             </button>
           )}

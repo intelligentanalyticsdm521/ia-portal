@@ -938,6 +938,7 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
                 </IadmButton>
                 <IadmButton
                   variant="primary"
+                  data-tour="contact-delete-final"
                   onClick={confirmCascadeDelete}
                   disabled={cascadeDeleting || cascadePreviewLoading}
                 >

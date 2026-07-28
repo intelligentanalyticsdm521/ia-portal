@@ -146,6 +146,13 @@ export function SparkCampaignsPage() {
               {filtered.map((c) => (
                 <tr
                   key={c.id}
+                  // Walkthrough hook on DRAFT rows only, plus the name so the
+                  // exercise can target the exact draft it just created. If
+                  // the save failed, the row isn't there and the runner stops
+                  // rather than deleting some other draft. A sent campaign can
+                  // never be the target either way.
+                  data-tour={c.status === "draft" ? "campaign-open" : undefined}
+                  data-campaign-name={c.name || undefined}
                   onClick={() => { setEditCampaignId(c.id); setComposerOpen(true); }}
                   className="hover:bg-gray-50 cursor-pointer"
                   title={c.status === "draft" ? "Open to edit + send" : "Open to view"}

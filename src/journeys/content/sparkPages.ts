@@ -50,11 +50,14 @@ export const SPARK_PAGES: PageContentMap = {
         placement: "top",
       },
       {
-        targetSelector: 'button[data-tour="contact-open"]',
+        // Pinned to the practice email, NOT the first row. If the create
+        // failed, this target doesn't exist and the runner stops — rather
+        // than opening a stranger's record and walking them into deleting it.
+        targetSelector: 'button[data-tour="contact-open"][data-contact-email="test@email.com"]',
         advance: "click",
         waitForMs: 2500,
         title: "Now open it back up",
-        body: "Every contact opens into a full record — activity, notes, lists, tags. Click the view button on any row to go in. (Yours is the newest one.)",
+        body: "Every contact opens into a full record — activity, notes, lists, tags. That's your new Test row highlighted; click the view button to go in.",
         placement: "left",
       },
       {
@@ -70,7 +73,20 @@ export const SPARK_PAGES: PageContentMap = {
         advance: "click",
         waitForMs: 1500,
         title: "Remove the test record",
-        body: "Click Delete contact. If a real customer had invoices or jobs attached, SPARK warns you first and shows exactly what's linked before anything goes.",
+        body: "Click Delete contact. SPARK won't take your word for it — it checks what's linked to this person first and shows you before anything happens.",
+        placement: "top",
+      },
+      {
+        // Contact delete is TWO clicks: "Delete contact" only opens the
+        // cascade-preview overlay. Without this step the exercise stopped on
+        // that overlay, the contact was never actually deleted, and the copy
+        // claiming "nothing is left behind" was untrue. Verified against the
+        // DB: is_deleted stayed false until this step existed.
+        targetSelector: 'button[data-tour="contact-delete-final"]',
+        advance: "click",
+        waitForMs: 2000,
+        title: "Confirm, and it's gone",
+        body: "This is the real delete. For a customer with jobs or invoices attached you'd see exactly what's linked right here before confirming — that check is why it's two clicks and not one. It's reversible from the trash for 30 days.",
         placement: "top",
       },
     ],
@@ -141,8 +157,8 @@ export const SPARK_PAGES: PageContentMap = {
         targetSelector: 'input[data-tour="campaign-name"]',
         advance: "input",
         waitForMs: 2500,
-        title: "Name it (internal only)",
-        body: "Recipients never see this. Something you'll recognise in six months.",
+        title: "Name it — type: Test campaign",
+        body: "Recipients never see this; it's how you'll recognise it in six months. Type Test campaign for now — we'll delete this one at the end, so give it the name I can find again.",
         placement: "right",
       },
       {
@@ -157,6 +173,32 @@ export const SPARK_PAGES: PageContentMap = {
         advance: "click",
         title: "Save as a draft",
         body: "Saved, not sent. Re-open any time to choose recipients, preview and send when you're ready.",
+        placement: "top",
+      },
+      {
+        // Pinned to the prescribed name, so a failed save can't point this at
+        // a different draft. Same fail-safe as the contact exercise.
+        targetSelector: 'tr[data-tour="campaign-open"][data-campaign-name="Test campaign"]',
+        advance: "click",
+        waitForMs: 2500,
+        title: "There it is — open it back up",
+        body: "Drafts sit at the top of the list. Click Test campaign to go back in. Everything stays editable right up until you send.",
+        placement: "bottom",
+      },
+      {
+        targetSelector: 'button[data-tour="campaign-delete"]',
+        advance: "click",
+        waitForMs: 2000,
+        title: "And tidy it away",
+        body: "Delete draft sits bottom-left, away from Send now on purpose. It only ever appears on drafts — once a campaign has gone out you can't delete it, because its results are part of your reporting.",
+        placement: "top",
+      },
+      {
+        targetSelector: 'button[data-tour="campaign-delete-confirm"]',
+        advance: "click",
+        waitForMs: 1500,
+        title: "Confirm, and we're done",
+        body: "Click Delete draft. That's the full loop — created, saved, reopened and removed, with nothing left behind and nothing ever sent.",
         placement: "top",
       },
     ],

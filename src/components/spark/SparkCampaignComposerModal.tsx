@@ -6,7 +6,7 @@
 // campaigns list. Matches the modal-driven creation pattern: one entry
 // point, no navigation between pages to start a new campaign.
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Mail, MessageSquare, ArrowRight, ArrowLeft, Sparkles } from "lucide-react";
+import { Mail, MessageSquare, ArrowRight, ArrowLeft, Sparkles, Trash2, AlertTriangle } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useAppState } from "../../app/AppState";
@@ -111,10 +111,11 @@ interface Props {
 }
 
 export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampaignId = null, contactId = null, presetListId = null }: Props) {
-  const { get, post, put, ready } = useSparkApi() as {
+  const { get, post, put, del, ready } = useSparkApi() as {
     get: <T>(p: string) => Promise<T>;
     post: <T>(p: string, body?: unknown) => Promise<T>;
     put: <T>(p: string, body: unknown) => Promise<T>;
+    del: <T>(p: string) => Promise<T>;
     ready: boolean;
   };
   const oliverApi = useOliverApi() as { get: <T>(p: string) => Promise<T> };
@@ -176,6 +177,9 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Draft delete — confirm overlay open, and the request in flight. */
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   // Edit mode: the existing campaign row. Status drives what actions are
   // allowed (only 'draft' can be edited or sent; sent/sending/failed render
   // a read-only summary so the user can see what was queued without
@@ -403,6 +407,36 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     }
   }
 
+  // Delete a DRAFT. Drafts were previously un-removable from anywhere in the
+  // UI, so every abandoned or practice campaign stayed in the list forever —
+  // including the one the interactive walkthrough has you create.
+  //
+  // Draft-only, deliberately. A sent campaign's history feeds Campaign
+  // Performance and the metric_monthly series, so deleting one would silently
+  // rewrite past reporting. DELETE /campaigns/:id enforces the same rule
+  // server-side (400 on any non-draft), so this isn't a UI-only guard.
+  //
+  // Unlike a contact, this is a HARD delete — there is no campaign trash — so
+  // the confirm copy says so plainly rather than implying it's recoverable.
+  async function deleteDraft() {
+    if (!isEditMode || !editCampaignId || editStatus !== "draft") return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await del(`/api/v1/campaigns/${editCampaignId}`);
+      setDeleteConfirmOpen(false);
+      onCreated?.(editCampaignId); // parent reloads the list
+      onClose();
+    } catch (err) {
+      // Surface it and stay put. Reporting a failed delete as success would
+      // leave the row on screen with no explanation.
+      setDeleteConfirmOpen(false);
+      setError(String((err as Error)?.message || err));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   // Send a draft NOW — saves any pending edits first, then fires POST
   // /campaigns/:id/send. Only meaningful in edit mode for status='draft'.
   // The button is hidden otherwise.
@@ -496,6 +530,21 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
               <ArrowLeft className="h-3 w-3" /> Back
             </button>
           )}
+          {/* Danger zone, footer-left and away from the primary actions — the
+              composer has no persistent tab strip to hang a Delete tab off,
+              so this is the equivalent of SparkContactModal's last-position
+              Delete tab. Draft-only; never shown for a sent campaign. */}
+          {step === "compose" && composeTab === "compose" && isEditMode && editStatus === "draft" && (
+            <button
+              type="button"
+              data-tour="campaign-delete"
+              onClick={() => setDeleteConfirmOpen(true)}
+              disabled={saving || sending || deleting}
+              className="mr-auto inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40"
+            >
+              <Trash2 className="h-3 w-3" /> Delete draft
+            </button>
+          )}
           <IadmButton variant="ghost" onClick={onClose}>
             {isEditMode && editStatus !== "draft" ? "Close" : "Cancel"}
           </IadmButton>
@@ -524,7 +573,48 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
         </>
       }
     >
-      <div className="p-5">
+      <div className="relative p-5">
+          {/* Delete confirm — inline overlay on top of the modal body, same
+              pattern as SparkContactModal's cascade-delete confirm. A campaign
+              has no trash to restore from, so the copy says "permanently"
+              rather than borrowing the contact modal's 30-day wording. */}
+          {deleteConfirmOpen && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+              <div className="w-full max-w-md rounded-lg bg-white shadow-xl ring-1 ring-slate-200">
+                <div className="border-b border-slate-200 px-4 py-3">
+                  <div className="flex items-center gap-2 text-rose-700">
+                    <AlertTriangle className="h-4 w-4" />
+                    <h3 className="text-sm font-semibold">Delete “{name || "Untitled"}”?</h3>
+                  </div>
+                </div>
+                <div className="px-4 py-3 text-xs text-slate-600 leading-relaxed">
+                  This draft is deleted permanently — there's no trash to
+                  restore it from. It was never sent, so no reporting or
+                  campaign history changes.
+                </div>
+                <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirmOpen(false)}
+                    disabled={deleting}
+                    className="rounded px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+                  >
+                    Keep it
+                  </button>
+                  <button
+                    type="button"
+                    data-tour="campaign-delete-confirm"
+                    onClick={deleteDraft}
+                    disabled={deleting}
+                    className="inline-flex items-center gap-1 rounded bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-40"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    {deleting ? "Deleting…" : "Delete draft"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {error && (
             <div className="mb-3 rounded border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">{error}</div>
           )}
