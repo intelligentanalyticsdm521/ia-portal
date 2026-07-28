@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { X } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { launchWalkthrough } from "../walkthroughs/walkthroughLaunchBus";
+import { launchJourneyStep } from "../walkthroughs/walkthroughLaunchBus";
 
 interface EngagementAlert {
   id: number;
@@ -62,7 +62,7 @@ export function EngagementAlertCallout({ platform }: { platform: "spark" | "oliv
                 <div className="text-xs text-slate-600 mt-0.5">{a.description}</div>
                 <div className="mt-2 flex items-center gap-3">
                   {a.walkthroughId && (
-                    <button onClick={() => launchWalkthrough(a.walkthroughId!)}
+                    <button onClick={() => launchJourneyStep(a.walkthroughId!, "explain")}
                       className="rounded bg-[#0B1C24] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#123246]">
                       Show me how
                     </button>

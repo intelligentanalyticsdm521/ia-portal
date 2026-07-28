@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useAppState } from "../../app/AppState";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { launchWalkthrough } from "../../components/walkthroughs/walkthroughLaunchBus";
+import { launchJourneyStep } from "../../components/walkthroughs/walkthroughLaunchBus";
 
 interface Alert {
   id: string;
@@ -59,8 +59,11 @@ export function CommandAlerts() {
     } catch { /* leave it visible */ }
   }
 
+  // Alerts now point at journey steps, so "Show me how" opens the actual
+  // lesson for that task (and the runner offers the hands-on mode where one
+  // exists) rather than a bare interactive flow.
   function showMeHow(a: EngagementAlert) {
-    if (a.walkthroughId) launchWalkthrough(a.walkthroughId);
+    if (a.walkthroughId) launchJourneyStep(a.walkthroughId, "explain");
   }
 
   const load = useCallback(async () => {
