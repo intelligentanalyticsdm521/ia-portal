@@ -127,9 +127,20 @@ export const SPARK_PAGES: PageContentMap = {
         placement: "bottom",
       },
       {
+        // The composer opens on a channel picker, and the compose fields don't
+        // render until a channel is chosen — so this step is load-bearing, not
+        // decorative. Skipping it stalled the whole exercise.
+        targetSelector: 'button[data-tour="campaign-channel-email"]',
+        advance: "click",
+        waitForMs: 2500,
+        title: "Email or text message?",
+        body: "Pick Email. The choice changes what you write next — email gets a subject line and a full layout, SMS is one short message. You can't switch a campaign's channel later, so this is the one decision to make deliberately.",
+        placement: "bottom",
+      },
+      {
         targetSelector: 'input[data-tour="campaign-name"]',
         advance: "input",
-        waitForMs: 1500,
+        waitForMs: 2500,
         title: "Name it (internal only)",
         body: "Recipients never see this. Something you'll recognise in six months.",
         placement: "right",

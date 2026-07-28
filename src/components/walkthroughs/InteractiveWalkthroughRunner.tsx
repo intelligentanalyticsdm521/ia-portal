@@ -86,6 +86,8 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
   const [ready, setReady] = useState(false);
   /** For input steps: they've typed something, so Next is available. */
   const [typedOk, setTypedOk] = useState(false);
+  /** Target never appeared. We SHOW this rather than skipping past it. */
+  const [notFound, setNotFound] = useState(false);
 
   const step = flow.steps[stepIdx];
 
@@ -106,6 +108,7 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
     setReady(false);
     setTargetRect(null);
     setTypedOk(false);
+    setNotFound(false);
 
     // If we still need to navigate, wait for the URL to match before
     // looking for the target.
@@ -129,15 +132,29 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
           raf = window.setTimeout(findAndWire, 16);
           return;
         }
-        // Target never appeared — auto-advance to next step so the user
-        // isn't stuck. Same bug pattern as GuidedTour #256 fix.
+        // Target never appeared.
+        //
+        // Brandon 2026-07-28: "we got to the start a campaign and then nothing
+        // popped up afterwards."
+        //
+        // This used to AUTO-ADVANCE, and that turned one bad selector into a
+        // silent detonation of the whole rest of the flow: the campaign step
+        // opened the composer on its channel picker, so the next three targets
+        // (name, subject, save) were all unrendered, each waited its timeout,
+        // each skipped — and ~9s later the walkthrough "completed" and
+        // vanished. From the user's seat the thing simply died, with the only
+        // evidence in a console nobody has open.
+        //
+        // Auto-advancing is fail-open: it hides our bug and strands the user.
+        // Now we STOP and say so. The step's own teaching text still shows —
+        // so the explanation lands even when the button doesn't — and Next is
+        // always available, so a missing hook costs one manual click instead
+        // of the remainder of the walkthrough.
         console.warn(
-          `[InteractiveWalkthrough] Target "${step.targetSelector}" not found within ${maxWait}ms for flow "${flow.id}" step ${stepIdx + 1}/${flow.steps.length}. Auto-advancing.`,
+          `[InteractiveWalkthrough] Target "${step.targetSelector}" not found within ${maxWait}ms for flow "${flow.id}" step ${stepIdx + 1}/${flow.steps.length}.`,
         );
-        setTimeout(() => {
-          if (cancelled) return;
-          nextOrFinish();
-        }, 0);
+        setNotFound(true);
+        setReady(true);
         return;
       }
 
@@ -157,14 +174,27 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
         setReady(true);
       }
 
-      // Wire the advance listener
+      // Wire the advance listener.
+      //
+      // DELEGATED, not bound to `el`. Binding to the node we happened to find
+      // looks right and fails silently: saving a contact refetches the list,
+      // React swaps the row nodes, and our listener is stranded on a detached
+      // element. The user then clicks the button they can see, the modal
+      // opens — and the walkthrough sits on the same step forever, with no
+      // Next button to escape (click steps don't render one). Verified: the
+      // create→delete exercise stalled dead at "Now open it back up".
+      //
+      // Listening on the document and matching with closest() means we react
+      // to whatever node is live at click time, so re-renders can't break it.
       if (advance === "click") {
-        const onClick = () => {
+        const onClick = (e: MouseEvent) => {
           if (cancelled) return;
-          setTimeout(nextOrFinish, 250); // small delay so the click's own handler fires first
+          const hit = (e.target as HTMLElement | null)?.closest?.(step.targetSelector);
+          if (!hit) return;
+          setTimeout(nextOrFinish, 250); // let the button's own handler run first
         };
-        el.addEventListener("click", onClick, { once: true });
-        advanceListenerCleanup = () => el.removeEventListener("click", onClick);
+        document.addEventListener("click", onClick, true); // capture: fires even if a handler stops propagation
+        advanceListenerCleanup = () => document.removeEventListener("click", onClick, true);
       } else if (advance === "input") {
         // Brandon 2026-07-28: "as soon as I hit a space or a character it
         // moves on instead of waiting for a tab or enter or me to click
@@ -172,29 +202,40 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
         // vanished mid-word. Now the user signals they're DONE: Enter or Tab,
         // or clicking out of the field. Typing alone never advances — it just
         // enables the Next button (see footer).
-        const isDone = () => (el as HTMLInputElement).value?.trim().length > 0;
-        const onInput = () => {
-          if (cancelled) return;
-          setTypedOk(isDone()); // lights up Next; does NOT advance
+        //
+        // Delegated for the same reason as click, above — resolve the field
+        // from the event so a re-render can't strand us. `focusout` rather
+        // than `blur`, because blur doesn't bubble.
+        const field = (e: Event) =>
+          (e.target as HTMLElement | null)?.closest?.(step.targetSelector) as
+            | HTMLInputElement
+            | null;
+        const isDone = (f: HTMLInputElement | null) => !!f?.value?.trim().length;
+        const onInput = (e: Event) => {
+          const f = field(e);
+          if (cancelled || !f) return;
+          setTypedOk(isDone(f)); // lights up Next; does NOT advance
         };
         const onKey = (e: KeyboardEvent) => {
-          if (cancelled) return;
-          if ((e.key === "Enter" || e.key === "Tab") && isDone()) {
+          const f = field(e);
+          if (cancelled || !f) return;
+          if ((e.key === "Enter" || e.key === "Tab") && isDone(f)) {
             e.preventDefault();
             setTimeout(nextOrFinish, 120);
           }
         };
-        const onBlur = () => {
-          if (cancelled) return;
-          if (isDone()) setTimeout(nextOrFinish, 200);
+        const onFocusOut = (e: Event) => {
+          const f = field(e);
+          if (cancelled || !f) return;
+          if (isDone(f)) setTimeout(nextOrFinish, 200);
         };
-        el.addEventListener("input", onInput);
-        el.addEventListener("keydown", onKey as EventListener);
-        el.addEventListener("blur", onBlur);
+        document.addEventListener("input", onInput, true);
+        document.addEventListener("keydown", onKey as EventListener, true);
+        document.addEventListener("focusout", onFocusOut, true);
         advanceListenerCleanup = () => {
-          el.removeEventListener("input", onInput);
-          el.removeEventListener("keydown", onKey as EventListener);
-          el.removeEventListener("blur", onBlur);
+          document.removeEventListener("input", onInput, true);
+          document.removeEventListener("keydown", onKey as EventListener, true);
+          document.removeEventListener("focusout", onFocusOut, true);
         };
       } else if (advance === "route") {
         // Handled via location.pathname change effect below
@@ -313,6 +354,7 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
   })();
 
   const advanceCopy = (() => {
+    if (notFound) return null; // nothing to click — see the note instead
     switch (step.advance ?? "click") {
       case "click": return "Click the highlighted element";
       case "input": return "Type your answer, then press Enter (or click Next)";
@@ -371,6 +413,14 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
                 {advanceCopy} to continue
               </div>
             )}
+            {notFound && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] leading-relaxed text-amber-900">
+                I can't find that control on this screen — it may not be
+                available on your plan, or it may have moved. Click{" "}
+                <span className="font-semibold">Next</span> to carry on with the
+                walkthrough.
+              </div>
+            )}
           </div>
           <div className="flex items-center justify-between border-t border-slate-100 px-3 py-2">
             <button onClick={finish} className="text-[11px] text-slate-500 hover:text-slate-700">
@@ -388,10 +438,10 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
               {/* Input steps get a Next button too, enabled once they've
                   actually typed something — so nobody is trapped in a field
                   wondering what the magic keystroke is. */}
-              {(step.advance === "next" || step.advance === "input") && (
+              {(notFound || step.advance === "next" || step.advance === "input") && (
                 <button
                   onClick={nextOrFinish}
-                  disabled={step.advance === "input" && !typedOk}
+                  disabled={!notFound && step.advance === "input" && !typedOk}
                   className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40"
                   style={{ background: accent }}
                 >
