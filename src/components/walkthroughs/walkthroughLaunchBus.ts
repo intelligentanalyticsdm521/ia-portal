@@ -1,11 +1,28 @@
-// walkthroughLaunchBus — lets any surface (engagement alerts, insights CTAs)
-// start an interactive walkthrough without importing the launcher's state.
+// walkthroughLaunchBus — lets any surface (engagement alerts, insights CTAs,
+// ARGUS chat) start help without importing the launcher's state.
+//
 // Module singleton beats a DOM CustomEvent here: HMR keeps both sides on the
 // same module instance, and there's nothing to mistype.
-type Listener = (flowId: string) => void;
+//
+// Two shapes (2026-07-27):
+//   { flowId }                     — a raw InteractiveFlow id (legacy)
+//   { journeyStepId, mode }        — a journey step in either mode:
+//                                    "explain" (tour) or "doIt" (interactive)
+export type HelpMode = "explain" | "doIt";
 
-// STACK, not a single slot: the header renders more than one launcher
-// instance (desktop/mobile variants, StrictMode remounts). Launch targets the
+export interface LaunchRequest {
+  /** Legacy: a registered InteractiveFlow id. */
+  flowId?: string;
+  /** Journey step id, e.g. "spark.contacts". */
+  journeyStepId?: string;
+  /** Which mode to open the journey step in. Default "explain". */
+  mode?: HelpMode;
+}
+
+type Listener = (req: LaunchRequest) => void;
+
+// STACK, not a single slot: the header can render more than one launcher
+// instance (StrictMode remounts, mobile/desktop variants). Launch targets the
 // most recently mounted LIVE subscriber; unmounts remove only themselves.
 const listeners: Listener[] = [];
 
@@ -17,17 +34,25 @@ export function onWalkthroughLaunch(l: Listener): () => void {
   };
 }
 
-export function launchWalkthrough(flowId: string): void {
-  console.info(`[walkthroughLaunchBus] launch ${flowId} → ${listeners.length} subscriber(s)`);
+function dispatch(req: LaunchRequest): void {
   const top = listeners[listeners.length - 1];
-  if (top) top(flowId);
+  if (top) top(req);
 }
 
-// Dev-only probe so the state of THIS module instance (the one the app
-// actually imports, HMR queries and all) is inspectable from the console.
+/** Legacy entry point — launch a raw interactive flow by id. */
+export function launchWalkthrough(flowId: string): void {
+  dispatch({ flowId });
+}
+
+/** Launch a journey step in either mode. This is the one new code should use. */
+export function launchJourneyStep(journeyStepId: string, mode: HelpMode = "explain"): void {
+  dispatch({ journeyStepId, mode });
+}
+
 if (import.meta.env.DEV) {
   (window as any).__iadmWalkthroughBus = {
     count: () => listeners.length,
     launch: launchWalkthrough,
+    launchStep: launchJourneyStep,
   };
 }

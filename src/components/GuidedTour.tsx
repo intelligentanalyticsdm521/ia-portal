@@ -104,6 +104,10 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
     if (inferredRoute && location.pathname !== inferredRoute) return;
 
     let cancelled = false;
+    // Poll with setTimeout, not requestAnimationFrame: rAF does not fire at
+    // all while the tab is hidden, so a tour opened and then backgrounded
+    // would freeze mid-measure and never render its tooltip. setTimeout is
+    // throttled when hidden but still fires, so the tour survives a tab switch.
     let raf = 0;
     let reMeasureTimer = 0;
     const start = performance.now();
@@ -127,7 +131,7 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
       if (!el) {
         // Lazy-loaded chunks can take a moment; keep trying up to 4s.
         if (elapsed < 4000) {
-          raf = requestAnimationFrame(measure);
+          raf = window.setTimeout(measure, 16);
           return;
         }
         // #256 2026-07-04 FIX: When target selector fails to appear, render
@@ -143,7 +147,7 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
         return;
       }
       if (elapsed < minWait) {
-        raf = requestAnimationFrame(measure);
+        raf = window.setTimeout(measure, 16);
         return;
       }
       const initialRect = el.getBoundingClientRect();
@@ -179,7 +183,7 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
     window.addEventListener("scroll", onResize, true);
     return () => {
       cancelled = true;
-      cancelAnimationFrame(raf);
+      clearTimeout(raf);
       clearTimeout(reMeasureTimer);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("scroll", onResize, true);

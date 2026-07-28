@@ -109,6 +109,8 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
     if (step.route && location.pathname !== step.route) return;
 
     let cancelled = false;
+    // setTimeout, not rAF — rAF is suspended entirely while the tab is
+    // hidden, which would freeze the walkthrough mid-step. See GuidedTour.
     let raf = 0;
     let advanceListenerCleanup: (() => void) | null = null;
     const start = performance.now();
@@ -121,7 +123,7 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
       const elapsed = performance.now() - start;
       if (!el) {
         if (elapsed < maxWait) {
-          raf = requestAnimationFrame(findAndWire);
+          raf = window.setTimeout(findAndWire, 16);
           return;
         }
         // Target never appeared — auto-advance to next step so the user
@@ -187,7 +189,7 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
 
     return () => {
       cancelled = true;
-      cancelAnimationFrame(raf);
+      clearTimeout(raf);
       advanceListenerCleanup?.();
       window.removeEventListener("resize", onResize);
       window.removeEventListener("scroll", onResize, true);
