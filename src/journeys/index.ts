@@ -64,8 +64,11 @@ export function searchJourneySteps(
     return { journey, step, score };
   });
 
-  return scored
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+  const ranked = scored.filter((s) => s.score > 0).sort((a, b) => b.score - a.score);
+  if (!ranked.length) return [];
+  // Only keep runners-up that are genuinely close to the winner. Without this
+  // a query like "create a new email list" drags in "add your first customer"
+  // purely on the shared tokens create/new/list, which reads as noise.
+  const cutoff = ranked[0].score * 0.4;
+  return ranked.filter((s, i) => i === 0 || s.score >= cutoff).slice(0, limit);
 }
