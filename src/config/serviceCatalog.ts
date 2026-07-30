@@ -157,6 +157,11 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'stella_ue_margins', displayName: 'Margins', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ue_margins', description: 'Profitability per job, per customer, per employee, and per service line.' },
   { key: 'stella_ue_allocations', displayName: 'Allocations', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ue_allocations', description: 'Allocation rules (seven methods) and batch run history, together on one page.' },
   { key: 'stella_ue_reconciliation', displayName: 'Reconciliation', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ue_reconciliation', description: 'Reconcile allocated costs against OLIVER, SPARK, and ARION source data.' },
+  // STELLA IA Insights (2026-07-30) — reports + insights follow the platform
+  // IA Insights pattern. Trends/Intelligence build AFTER the Aug-6 insights
+  // redesign lands, following THAT structure (founder direction).
+  { key: 'stella_ia_insights_trends', displayName: 'Trends', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_ia_insights_trends', description: 'Income vs expenses, spend trajectory, and margin trends over time. Follows the platform insights redesign.', tierGate: 'Standard' },
+  { key: 'stella_ia_insights_intelligence', displayName: 'Intelligence', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_ia_insights_intelligence', description: 'IL-generated financial insights — anomalies, cost variance, and cash-flow signals. Follows the platform insights redesign.', tierGate: 'Standard' },
   // DATABASE MANAGER (Layer 3a — LOCKED / Coming Soon)
   { key: 'stella_db_registry', displayName: 'View Registry', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_db_registry', description: 'Data catalog of every reportable view, filterable by product and access role.', tierGate: 'Standard' },
   { key: 'stella_db_entry', displayName: 'Manual Entry', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_db_entry', description: 'Structured manual data entry from view metadata.', tierGate: 'Standard' },

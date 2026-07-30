@@ -561,6 +561,11 @@ export function ServiceRouter() {
       // pages themselves stay STELLA-branded.
       case 'stella_settings_bank': stellaPage = <StellaBankPage />; break;
       case 'stella_settings_period_close': stellaPage = <StellaPeriodClosePage />; break;
+      // IA Insights — Trends + Intelligence build AFTER the Aug-6 insights
+      // redesign, following that structure (founder direction 2026-07-30).
+      // Reports (stella_ledger_reports) is the live financial-statements page.
+      case 'stella_ia_insights_trends':
+      case 'stella_ia_insights_intelligence':
       // Database Manager + Custom Reporting (Layer 3 — locked / coming soon).
       // Every db_/report_ key renders the STELLA coming-soon sheet (padlock +
       // tier badge driven by the catalog row).

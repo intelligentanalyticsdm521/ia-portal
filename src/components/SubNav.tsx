@@ -537,7 +537,6 @@ const STELLA_NAV: SubNavConfig = {
         { key: "stella_ledger_vendors", label: "Vendors & Customers", route: "/app/services/stella_ledger_vendors" },
         { key: "stella_ledger_coa", label: "Chart of Accounts", route: "/app/services/stella_ledger_coa" },
         { key: "stella_ledger_mileage_materials", label: "Mileage & Materials", route: "/app/services/stella_ledger_mileage_materials" },
-        { key: "stella_ledger_reports", label: "Reports", route: "/app/services/stella_ledger_reports" },
       ],
     },
     {
@@ -546,6 +545,19 @@ const STELLA_NAV: SubNavConfig = {
         { key: "stella_ue_margins", label: "Margins", route: "/app/services/stella_ue_margins" },
         { key: "stella_ue_allocations", label: "Allocations", route: "/app/services/stella_ue_allocations" },
         { key: "stella_ue_reconciliation", label: "Reconciliation", route: "/app/services/stella_ue_reconciliation" },
+      ],
+    },
+    {
+      // 2026-07-30 founder decision — STELLA reports live under the platform
+      // IA Insights pattern (same family as ARION/OLIVER/SPARK), NOT in the
+      // Ledger nav. Reports (the financial-statements page) is live today;
+      // Trends + Intelligence follow the post-Aug-6 insights REDESIGN
+      // structure — do not build them against the current insights pages.
+      label: "IA Insights", icon: TrendingUp, collapsible: true, sectionId: "stella_insights",
+      items: [
+        { key: "stella_ia_insights_trends", label: "Trends", route: "/app/services/stella_ia_insights_trends", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_ia_insights_intelligence", label: "Intelligence", route: "/app/services/stella_ia_insights_intelligence", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_ledger_reports", label: "Reports", route: "/app/services/stella_ledger_reports" },
       ],
     },
     {
@@ -783,7 +795,10 @@ function getDefaultSection(path: string): string | null {
   ) return "settings_spark";
   if (path.includes("/stella_settings_bank") || path.includes("/stella_settings_period_close")) return "settings_stella";
 
-  // STELLA sections (Ledger / Unit Economics / Database Manager / Custom Reporting)
+  // STELLA sections (Ledger / Unit Economics / IA Insights / Database Manager / Custom Reporting)
+  // Reports moved under IA Insights (2026-07-30) — check it BEFORE the
+  // stella_ledger_ prefix match or the key would expand the Ledger group.
+  if (path.includes("/stella_ledger_reports") || path.includes("/stella_ia_insights_")) return "stella_insights";
   if (path.includes("/stella_ledger_")) return "stella_ledger";
   if (path.includes("/stella_ue_")) return "stella_ue";
   if (path.includes("/stella_db_")) return "stella_db";
