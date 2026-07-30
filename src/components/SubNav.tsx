@@ -387,7 +387,7 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter", minTier: "pro" },
         { key: "spark_social", label: "Social & Calendar", route: "/app/services/spark_social", hidden: true /* cut: moved to ARION -> My Brand */ },
         { key: "spark_sms_inbox", label: "SMS Inbox", route: "/app/services/spark_sms_inbox", minTier: "pro", hidden: true },
-        { key: "spark_deliverability", label: "Deliverability", route: "/app/services/spark_deliverability" },
+        { key: "spark_deliverability", label: "Deliverability", route: "/app/services/spark_deliverability", hidden: true /* merged: status indicator on Settings -> Senders links to the full dashboard */ },
       ],
     },
     {

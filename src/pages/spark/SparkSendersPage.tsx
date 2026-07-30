@@ -9,6 +9,7 @@
 // IA default sender; this is the first place a tenant can name multiple
 // "From" identities (welcome@, hello@, support@, etc.).
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
@@ -163,14 +164,34 @@ export function SparkSendersPage() {
         </>
       }
       actions={
-        <button
-          onClick={openAdd}
-          disabled={noVerifiedDomain}
-          title={noVerifiedDomain ? "Verify a sender domain first" : ""}
-          className="text-sm px-3 py-1.5 rounded bg-[#EF6C33] text-white flex items-center gap-1 disabled:opacity-50"
-        >
-          <Plus className="h-4 w-4" /> Add sender
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Deliverability stops being a nav section and becomes a status you
+              glance at from where you manage senders — which is where you'd
+              act on it anyway. The full dashboard (suppression list, SPF /
+              DKIM / DMARC verifier, bounce trend) is one click away rather
+              than deleted. */}
+          <Link
+            to="/app/services/spark_deliverability"
+            data-tour="senders-deliverability"
+            className={`inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 text-xs font-medium ${
+              noVerifiedDomain
+                ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                : "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+            }`}
+            title="Deliverability — bounces, suppressions and DNS checks"
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${noVerifiedDomain ? "bg-amber-500" : "bg-emerald-500"}`} />
+            Deliverability{noVerifiedDomain ? " — needs setup" : " — OK"}
+          </Link>
+          <button
+            onClick={openAdd}
+            disabled={noVerifiedDomain}
+            title={noVerifiedDomain ? "Verify a sender domain first" : ""}
+            className="text-sm px-3 py-1.5 rounded bg-[#EF6C33] text-white flex items-center gap-1 disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" /> Add sender
+          </button>
+        </div>
       }
       loading={loading}
       error={error}
