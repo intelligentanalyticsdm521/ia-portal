@@ -1,6 +1,9 @@
 import { lazy, Suspense, useMemo } from 'react';
 import { useParams, useLocation, Navigate } from 'react-router-dom';
 import { useIsFounder } from '../hooks/useIsFounder';
+import { SERVICE_VISIBILITY } from '../components/SubNav';
+import { activeAddons, isVisible } from '../components/navVisibility';
+import { useProductTier } from '../hooks/useProductTier';
 
 // Lazy-load a named React export so it's compatible with React.lazy
 // (which expects { default: Component }). Lets each service section
@@ -384,11 +387,38 @@ export function ServiceRouter() {
     [serviceKey]
   );
 
+  // Resolve the feature wall for this route. Hooks run unconditionally, so the
+  // tier is always fetched; only the verdict is conditional.
+  const { tier: sparkTier } = useProductTier("spark");
+  const navVisible = isVisible(serviceKey ? SERVICE_VISIBILITY[serviceKey] : undefined, {
+    tier: sparkTier,
+    addons: activeAddons(),
+    gatingActive: true,
+  });
+
   if (!service) {
     return (
       <div className="p-6">
         <h1 className="text-xl font-semibold text-slate-900">Service not found</h1>
         <p className="mt-2 text-sm text-slate-600">We couldn&apos;t find that service in your portal.</p>
+      </div>
+    );
+  }
+
+  // ── Feature wall (SPARK simplification, 2026-07-30) ──────────────────────
+  // The nav hides these, but hiding a LINK doesn't stop a URL. Bookmarks, old
+  // deep links and the engagement alerts all navigate by route, so the route
+  // has to enforce the same rules or the "cut" surfaces stay reachable.
+  // Same declarations the nav reads (SERVICE_VISIBILITY), so the two can't
+  // disagree about what a tenant is allowed to see.
+  if (!navVisible) {
+    return (
+      <div className="p-6">
+        <h1 className="text-xl font-semibold text-slate-900">Not available on your plan</h1>
+        <p className="mt-2 max-w-prose text-sm text-slate-600">
+          This feature isn&apos;t part of your current plan. If you need it, get in touch —
+          it can be switched on for your account.
+        </p>
       </div>
     );
   }

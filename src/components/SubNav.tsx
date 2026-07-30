@@ -7,11 +7,19 @@ import {
   Wrench, UserCircle, CreditCard, MessageSquare, LineChart, Zap, Palette,
 } from "lucide-react";
 import type { ProductKey } from "./IconRail";
+import {
+  activeAddons,
+  isGatedProduct,
+  isVisible,
+  type VisibilityRules,
+} from "./navVisibility";
+import { useProductTier } from "../hooks/useProductTier";
 
-export interface SubNavItem {
+export interface SubNavItem extends VisibilityRules {
   key: string;
   label: string;
   route: string;
+  /** Renders a padlock ICON only — see navVisibility.ts for actual gating. */
   gated?: boolean;
   intelligence?: boolean; // (legacy) — no longer changes the label color; harmless if set.
   crossPlatform?: boolean; // (legacy) — no longer changes the label color; harmless if set.
@@ -351,7 +359,7 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_contact_import", label: "Import (CSV)", route: "/app/services/spark_contact_import" },
         { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts" },
         { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
-        { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments" },
+        { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments", minTier: "pro" },
         { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags" },
         { key: "spark_contact_360", label: "Contact 360°", route: "/app/services/spark_contact_360", intelligence: true },
         { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true },
@@ -369,9 +377,9 @@ const SPARK_NAV: SubNavConfig = {
         // per founder decision. Library is configuration-like, used BY
         // campaigns rather than alongside them. Keeping reference here so
         // the move is documented.
-        { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter" },
-        { key: "spark_social", label: "Social & Calendar", route: "/app/services/spark_social" },
-        { key: "spark_sms_inbox", label: "SMS Inbox", route: "/app/services/spark_sms_inbox" },
+        { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter", minTier: "pro" },
+        { key: "spark_social", label: "Social & Calendar", route: "/app/services/spark_social", hidden: true /* cut: moved to ARION -> My Brand */ },
+        { key: "spark_sms_inbox", label: "SMS Inbox", route: "/app/services/spark_sms_inbox", minTier: "pro", hidden: true },
         { key: "spark_deliverability", label: "Deliverability", route: "/app/services/spark_deliverability" },
       ],
     },
@@ -380,7 +388,7 @@ const SPARK_NAV: SubNavConfig = {
       items: [
         { key: "spark_forms", label: "Forms", route: "/app/services/spark_forms" },
         { key: "spark_form_builder", label: "Form Builder", route: "/app/services/spark_form_builder" },
-        { key: "spark_landing_pages", label: "Landing Pages", route: "/app/services/spark_landing_pages" },
+        { key: "spark_landing_pages", label: "Landing Pages", route: "/app/services/spark_landing_pages", hidden: true /* cut: stub, block editor never shipped */ },
         { key: "spark_qr_codes", label: "QR Codes", route: "/app/services/spark_qr_codes" },
       ],
     },
@@ -413,18 +421,18 @@ const SPARK_NAV: SubNavConfig = {
         // steps reference. Sits next to Workflows & Automations because
         // tasks ARE workflow building blocks — same mental model, same
         // group home.
-        { key: "spark_tasks", label: "Tasks", route: "/app/services/spark_tasks" },
-        { key: "spark_journey_builder", label: "Journeys", route: "/app/services/spark_journey_builder" },
+        { key: "spark_tasks", label: "Tasks", route: "/app/services/spark_tasks", hidden: true /* cut: four-builder over-engineering */ },
+        { key: "spark_journey_builder", label: "Journeys", route: "/app/services/spark_journey_builder", hidden: true /* cut: four-builder over-engineering */ },
         { key: "spark_ab_tests", label: "A/B Tests", route: "/app/services/spark_ab_tests" },
-        { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals" },
-        { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts" },
+        { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals", hidden: true /* cut: four-builder over-engineering */ },
+        { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts", hidden: true /* cut: four-builder over-engineering */ },
         // Templates moved here from Outreach (2026-05-28 founder decision).
         // It's a library used by other features — configuration-like, not
         // an active send surface.
         { key: "spark_templates", label: "Templates", route: "/app/services/spark_templates" },
         // Phase 3A (2026-06-16) — Webhooks pulled from nav until our own
         // implementation ships in SPARK v1.5 (page shows Coming Soon banner).
-        { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync" },
+        { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync", hidden: true /* cut: platform plumbing */ },
         // Lead Suppression + Lead Territories used to live here as separate
         // entries; both were absorbed into the unified Lead Inbox page
         // (Sales group) as tabs on 2026-06-25.
@@ -441,19 +449,19 @@ const SPARK_NAV: SubNavConfig = {
         // (Lead Inbox, Suppressed Domains, Territories). Legacy routes
         // /spark_leads, /spark_lead_suppression, /spark_lead_territories
         // still resolve and pre-select the correct tab.
-        { key: "spark_lead_inbox", label: "Lead Inbox", route: "/app/services/spark_lead_inbox" },
-        { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines" },
-        { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals" },
-        { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution" },
+        { key: "spark_lead_inbox", label: "Lead Inbox", route: "/app/services/spark_lead_inbox", addon: "leadgen" },
+        { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines", addon: "leadgen" },
+        { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals", hidden: true /* cut: sales-CRM job, wrong buyer */ },
+        { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution", addon: "leadgen" },
       ],
     },
     {
       label: "Customer Success", icon: Heart, collapsible: true, sectionId: "spark_customer_success",
       items: [
-        { key: "spark_nps", label: "NPS", route: "/app/services/spark_nps" },
-        { key: "spark_nps_schedules", label: "NPS Schedules", route: "/app/services/spark_nps_schedules" },
-        { key: "spark_reviews", label: "Reputation Hub", route: "/app/services/spark_reviews" },
-        { key: "spark_referrals", label: "Referrals", route: "/app/services/spark_referrals" },
+        { key: "spark_nps", label: "NPS", route: "/app/services/spark_nps", hidden: true /* cut: deferred, not core CRM+email */ },
+        { key: "spark_nps_schedules", label: "NPS Schedules", route: "/app/services/spark_nps_schedules", hidden: true /* cut: deferred, not core CRM+email */ },
+        { key: "spark_reviews", label: "Reputation Hub", route: "/app/services/spark_reviews", hidden: true /* cut: reviews live in ARION My Business/GBP */ },
+        { key: "spark_referrals", label: "Referrals", route: "/app/services/spark_referrals", hidden: true /* cut: deferred, not core CRM+email */ },
       ],
     },
     {
@@ -628,14 +636,14 @@ const SETTINGS_NAV: SubNavConfig = {
         { key: "spark_sender_domains", label: "Sender Setup", route: "/app/services/spark_sender_domains" },
         { key: "spark_senders", label: "Senders", route: "/app/services/spark_senders" },
         { key: "spark_signatures", label: "Signatures", route: "/app/services/spark_signatures" },
-        { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys" },
-        { key: "spark_secrets", label: "Tenant Secrets", route: "/app/services/spark_secrets" },
+        { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys", hidden: true /* cut: platform plumbing */ },
+        { key: "spark_secrets", label: "Tenant Secrets", route: "/app/services/spark_secrets", hidden: true /* cut: platform plumbing */ },
         { key: "spark_custom_fields", label: "Custom Fields", route: "/app/services/spark_custom_fields" },
-        { key: "spark_quiet_hours", label: "Quiet Hours", route: "/app/services/spark_quiet_hours" },
-        { key: "spark_tracking", label: "Tracking Pixels", route: "/app/services/spark_tracking" },
-        { key: "spark_calendar_sync", label: "Calendar Sync", route: "/app/services/spark_calendar_sync" },
+        { key: "spark_quiet_hours", label: "Quiet Hours", route: "/app/services/spark_quiet_hours", hidden: true /* cut: niche */ },
+        { key: "spark_tracking", label: "Tracking Pixels", route: "/app/services/spark_tracking", hidden: true /* cut: visitor tracking, niche */ },
+        { key: "spark_calendar_sync", label: "Calendar Sync", route: "/app/services/spark_calendar_sync", hidden: true /* cut: niche */ },
         { key: "spark_service_category", label: "Service Category", route: "/app/services/spark_service_category" },
-        { key: "spark_config_backup", label: "Config Backup", route: "/app/services/spark_config_backup" },
+        { key: "spark_config_backup", label: "Config Backup", route: "/app/services/spark_config_backup", hidden: true /* cut: platform plumbing */ },
       ],
     },
     {
@@ -852,9 +860,54 @@ function getDefaultSection(path: string): string | null {
   return null;
 }
 
+/**
+ * serviceKey → its visibility declaration, derived from the nav configs.
+ *
+ * Exported so ServiceRouter can enforce the SAME rules on the route as the nav
+ * does on the link. Hiding a link without guarding its route just makes the
+ * page reachable by URL — from a bookmark, an old deep link, or one of the
+ * engagement alerts, which navigate by route.
+ */
+export const SERVICE_VISIBILITY: Record<string, VisibilityRules> = (() => {
+  const map: Record<string, VisibilityRules> = {};
+  for (const config of Object.values(SUB_NAV_CONFIGS)) {
+    if (!config) continue;
+    for (const group of config.groups) {
+      for (const item of group.items) {
+        if (item.hidden || item.addon || item.minTier) {
+          map[item.key] = { hidden: item.hidden, addon: item.addon, minTier: item.minTier };
+        }
+      }
+    }
+  }
+  return map;
+})();
+
+/** Which product a config belongs to — configs are singletons, so identity works. */
+export function productOfConfig(config: SubNavConfig): ProductKey | undefined {
+  return (Object.keys(SUB_NAV_CONFIGS) as ProductKey[])
+    .find((k) => SUB_NAV_CONFIGS[k] === config);
+}
+
 export function SubNav({ config }: SubNavProps) {
   const location = useLocation();
   const navigate = useNavigate();
+
+  // ── Feature wall ────────────────────────────────────────────────────────
+  // Hooks must run unconditionally, so always resolve a tier; whether it's
+  // APPLIED depends on the product (STELLA/FORGE/ARGUS placeholders, Settings
+  // and Consulting are not gated).
+  const productKey = productOfConfig(config);
+  const gatingActive = isGatedProduct(productKey);
+  const { tier } = useProductTier(gatingActive ? productKey : "spark");
+  const visCtx = { tier, addons: activeAddons(), gatingActive };
+
+  // Filter items, then drop any group left with nothing in it — an empty
+  // "Sales" header with no links under it is worse than no header.
+  const visibleGroups = config.groups
+    .map((g) => ({ ...g, items: g.items.filter((it) => isVisible(it, visCtx)) }))
+    .filter((g) => g.items.length > 0);
+  config = { ...config, groups: visibleGroups };
   // Single-section-expanded mode for products that opt in via sectionId on groups.
   // ARION, SPARK, OLIVER all have sectionIds; STELLA/FORGE/ARGUS placeholders don't.
   const hasSectionIds = config.groups.some(g => !!g.sectionId);
