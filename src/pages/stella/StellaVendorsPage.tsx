@@ -126,6 +126,7 @@ export function StellaVendorsPage() {
     <StellaShell
       title="Vendors & Customers"
       subtitle="Everyone you pay and everyone who pays you — with W-9, 1099, and TIN tracking."
+      showRecord
       error={error}
       loading={loading && !rows.length}
     >

@@ -138,6 +138,7 @@ export function StellaCoaPage() {
     <StellaShell
       title="Chart of Accounts"
       subtitle="Your seeded, customizable service-business chart of accounts — the backbone of every report."
+      showRecord
       error={error}
       loading={loading && !rows.length}
     >

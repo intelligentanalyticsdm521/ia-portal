@@ -1,0 +1,310 @@
+// TransactionDetailModal — row-click detail for Ledger transactions.
+//
+// Founder edict: all detail opens in the IadmModal standard — this calls
+// IadmModal directly with the semantic "info" size (1200 × 80vh fixed canvas,
+// the OLIVER CustomerModal pattern; see IadmModal docblock) with the STELLA
+// product accent. Used by StellaTransactionsPage and StellaLedgerInboxPage.
+//
+// Editable: account (COA select), memo, date, reimbursable designation.
+// Actions: Mark reimbursed (PATCH reimbursed_at=now), Void (confirm() then
+// PATCH status:'void'), Save (PATCH the edited fields). The caller reloads
+// its list when onClose(changed=true) fires.
+import { useEffect, useRef, useState } from "react";
+import { useStellaApi } from "../../hooks/useStellaApi";
+import { IadmModal, IadmButton } from "../../components/IadmModal";
+import { STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./StellaShell";
+import type { CoaAccount } from "./RecordTransactionModal";
+
+/** Minimal row shape the modal needs — Transactions rows satisfy it directly;
+ *  Inbox items are mapped into it by the caller. */
+export interface DetailTxn {
+  transaction_id: string;
+  posted_date: string | null;
+  counterparty_name?: string | null;
+  description?: string | null;
+  memo?: string | null;
+  amount_signed: number | string;
+  coa_account_id?: string | null;
+  status?: string | null;
+  raw_source?: string | null;
+  is_reimbursable?: boolean | number | null;
+  reimbursed_at?: string | null;
+}
+
+const STATUS_PILL: Record<string, { bg: string; color: string }> = {
+  categorized: { bg: "#D1FAE5", color: "#047857" },
+  needs_categorization: { bg: "#FEF3C7", color: "#92400E" },
+  flagged: { bg: "#FEE2E2", color: "#991B1B" },
+  reconciled: { bg: "#E0E7FF", color: "#3730A3" },
+  void: { bg: "#F1F5F9", color: "#64748B" },
+};
+
+function toNum(v: number | string | null | undefined): number {
+  const n = typeof v === "string" ? Number(v) : v ?? 0;
+  return Number.isFinite(n as number) ? (n as number) : 0;
+}
+
+function fmtDate(d?: string | null) {
+  if (!d) return "—";
+  const [y, mo, day] = String(d).slice(0, 10).split("-").map(Number);
+  if (y && mo && day) return new Date(y, mo - 1, day).toLocaleDateString();
+  return new Date(d).toLocaleDateString();
+}
+
+export function TransactionDetailModal({
+  txn,
+  coa,
+  onClose,
+}: {
+  txn: DetailTxn;
+  /** Optional pre-fetched COA (Transactions passes its own); fetched when omitted. */
+  coa?: CoaAccount[];
+  onClose: (changed: boolean) => void;
+}) {
+  const { get, patch, ready } = useStellaApi();
+
+  // COA for the account select — caller's list when given, else one fetch on open.
+  const [fetchedCoa, setFetchedCoa] = useState<CoaAccount[] | null>(null);
+  useEffect(() => {
+    if (coa || !ready) return;
+    let cancelled = false;
+    get<CoaAccount[]>("/ledger/coa")
+      .then((rows) => { if (!cancelled) setFetchedCoa(rows || []); })
+      .catch(() => { if (!cancelled) setFetchedCoa([]); });
+    return () => { cancelled = true; };
+  }, [coa, get, ready]);
+  const accounts = coa ?? fetchedCoa ?? [];
+
+  // Editable state, seeded from the row.
+  const [coaAccountId, setCoaAccountId] = useState(txn.coa_account_id || "");
+  const [memo, setMemo] = useState(txn.memo || "");
+  const [postedDate, setPostedDate] = useState(() => (txn.posted_date ? String(txn.posted_date).slice(0, 10) : ""));
+  const [isReimbursable, setIsReimbursable] = useState(!!txn.is_reimbursable);
+  const [reimbursedAt, setReimbursedAt] = useState<string | null>(txn.reimbursed_at || null);
+  const [status, setStatus] = useState(txn.status || "needs_categorization");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  // Track "did anything PATCH" so backdrop/Esc close still reloads the list.
+  const changedRef = useRef(false);
+
+  const amount = toNum(txn.amount_signed);
+  const isExpense = amount < 0;
+  const isVoid = status === "void";
+  const dirty =
+    coaAccountId !== (txn.coa_account_id || "") ||
+    memo !== (txn.memo || "") ||
+    postedDate !== (txn.posted_date ? String(txn.posted_date).slice(0, 10) : "") ||
+    isReimbursable !== !!txn.is_reimbursable;
+
+  const close = () => onClose(changedRef.current);
+
+  async function save() {
+    setBusy("save");
+    setErr(null);
+    try {
+      await patch(`/ledger/transactions/${txn.transaction_id}`, {
+        coa_account_id: coaAccountId || null,
+        memo: memo.trim() || null,
+        posted_date: postedDate || null,
+        is_reimbursable: isReimbursable,
+      });
+      changedRef.current = true;
+      onClose(true);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Save failed. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function markReimbursed() {
+    setBusy("reimburse");
+    setErr(null);
+    try {
+      const now = new Date().toISOString();
+      // Include is_reimbursable so marking works even when the designation was
+      // just toggled in this modal and not separately saved yet.
+      await patch(`/ledger/transactions/${txn.transaction_id}`, { is_reimbursable: true, reimbursed_at: now });
+      setReimbursedAt(now);
+      changedRef.current = true;
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not mark this reimbursed. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function undoReimbursed() {
+    setBusy("reimburse");
+    setErr(null);
+    try {
+      await patch(`/ledger/transactions/${txn.transaction_id}`, { reimbursed_at: null });
+      setReimbursedAt(null);
+      changedRef.current = true;
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not update the reimbursement. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function voidTxn() {
+    if (!confirm("Void this transaction? It stays in the ledger for audit but drops out of every report.")) return;
+    setBusy("void");
+    setErr(null);
+    try {
+      await patch(`/ledger/transactions/${txn.transaction_id}`, { status: "void" });
+      setStatus("void");
+      changedRef.current = true;
+      onClose(true);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Void failed. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const pill = STATUS_PILL[status] || STATUS_PILL.needs_categorization;
+  const optionFor = (a: CoaAccount) => (
+    <option key={a.coa_account_id} value={a.coa_account_id}>
+      {a.code ? `${a.code} — ${a.name}` : a.name}
+    </option>
+  );
+  const activeAccounts = accounts.filter((a) => a.is_active !== false && a.is_active !== 0);
+
+  return (
+    <IadmModal
+      open
+      onClose={close}
+      product="stella"
+      size="info"
+      title={txn.counterparty_name || txn.description || "Transaction"}
+      subtitle={`${fmtDate(txn.posted_date)} · ${amount >= 0 ? "+" : "−"}${fmtMoney(Math.abs(amount))}`}
+      footer={
+        <>
+          {!isVoid && (
+            <button
+              type="button"
+              onClick={voidTxn}
+              disabled={busy != null}
+              className="inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50"
+              style={{ background: "#fff", color: "#B91C1C", border: "1px solid #FECACA", marginRight: "auto" }}
+            >
+              {busy === "void" ? "Voiding…" : "Void"}
+            </button>
+          )}
+          <IadmButton variant="primary" onClick={close} disabled={busy != null}>Close</IadmButton>
+          <IadmButton variant="accent" product="stella" onClick={save} disabled={busy != null || !dirty || isVoid}>
+            {busy === "save" ? "Saving…" : "Save changes"}
+          </IadmButton>
+        </>
+      }
+    >
+      <div style={{ padding: "20px 24px", display: "grid", gap: 16, maxWidth: 720 }}>
+        {/* Headline strip — amount + status */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 26, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: amount >= 0 ? "#047857" : "#0B1C24" }}>
+            {amount >= 0 ? "+" : "−"}{fmtMoney(Math.abs(amount))}
+          </div>
+          <span style={{ display: "inline-block", padding: "4px 10px", borderRadius: 99, background: pill.bg, color: pill.color, fontSize: 11, fontWeight: 600 }}>
+            {status.replace(/_/g, " ")}
+          </span>
+        </div>
+
+        {/* Fields */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div>
+            <div style={fLabel}>Counterparty</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#0B1C24", padding: "7px 0" }}>
+              {txn.counterparty_name || txn.description || "—"}
+            </div>
+          </div>
+          <label>
+            <span style={fLabel}>Date</span>
+            <input type="date" style={fInput} value={postedDate} onChange={(e) => setPostedDate(e.target.value)} disabled={isVoid} />
+          </label>
+          <label>
+            <span style={fLabel}>Account</span>
+            <select style={fInput} value={coaAccountId} onChange={(e) => setCoaAccountId(e.target.value)} disabled={isVoid}>
+              <option value="">Uncategorized</option>
+              {activeAccounts.map(optionFor)}
+            </select>
+          </label>
+          <div>
+            <div style={fLabel}>Source</div>
+            <div style={{ fontSize: 12, color: "#5A7A8A", padding: "7px 0", textTransform: "capitalize" }}>
+              {(txn.raw_source || "manual").replace(/_/g, " ")}
+            </div>
+          </div>
+        </div>
+        <label>
+          <span style={fLabel}>Memo</span>
+          <textarea rows={2} style={{ ...fInput, resize: "vertical" }} placeholder="Optional note" value={memo} onChange={(e) => setMemo(e.target.value)} disabled={isVoid} />
+        </label>
+
+        {/* Reimbursement — expense rows only */}
+        {isExpense && !isVoid && (
+          <div
+            style={{
+              border: `1px solid ${isReimbursable ? STELLA_INDIGO : STELLA_LAVENDER}`,
+              background: isReimbursable ? "#EEF0FB" : "#fff",
+              borderRadius: 8,
+              padding: "12px 14px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer", flex: 1, minWidth: 240 }}>
+              <input
+                type="checkbox"
+                checked={isReimbursable}
+                onChange={(e) => setIsReimbursable(e.target.checked)}
+                style={{ marginTop: 2 }}
+                disabled={!!reimbursedAt}
+              />
+              <span>
+                <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>Needs reimbursement</span>
+                <span style={{ display: "block", fontSize: 11, color: "#5A7A8A", marginTop: 2, lineHeight: 1.45 }}>
+                  {reimbursedAt
+                    ? `Reimbursed ${fmtDate(reimbursedAt)}.`
+                    : isReimbursable
+                      ? "Paid personally — counts toward the Owed to you total until marked reimbursed."
+                      : "Turn on if this was paid with a personal card or cash."}
+                </span>
+              </span>
+            </label>
+            {isReimbursable && (
+              reimbursedAt ? (
+                <button type="button" onClick={undoReimbursed} disabled={busy != null} style={ghostBtn}>
+                  {busy === "reimburse" ? "Updating…" : "Undo reimbursed"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={markReimbursed}
+                  disabled={busy != null}
+                  style={{ ...ghostBtn, background: STELLA_INDIGO, color: "#fff", border: `1px solid ${STELLA_INDIGO}` }}
+                >
+                  {busy === "reimburse" ? "Updating…" : "Mark reimbursed"}
+                </button>
+              )
+            )}
+          </div>
+        )}
+
+        {err && (
+          <div style={{ padding: 10, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 6 }}>
+            {err}
+          </div>
+        )}
+      </div>
+    </IadmModal>
+  );
+}
+
+const fLabel: React.CSSProperties = { display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.4 };
+const fInput: React.CSSProperties = { width: "100%", padding: "7px 10px", fontSize: 12, border: "1px solid #E8E9FA", borderRadius: 6, background: "#fff", color: "#0B1C24" };
+const ghostBtn: React.CSSProperties = { padding: "6px 12px", fontSize: 12, fontWeight: 600, borderRadius: 6, border: "1px solid #E8E9FA", background: "#fff", color: "#0B1C24", cursor: "pointer" };

@@ -131,6 +131,8 @@ export function StellaReportsPage() {
     <StellaShell
       title="Reports"
       subtitle="Your financial statements in one place — P&L live today, the rest land in P2."
+      showRecord
+      onRecorded={() => reload()}
       actions={
         report === "pnl" ? (
           <input

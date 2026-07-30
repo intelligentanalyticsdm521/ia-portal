@@ -2,14 +2,24 @@
 //
 // The canonical ledger, consolidated per the 8-item nav cap: in-page tabs
 // [All | Income | Expenses | Recurring] replace the separate Income /
-// Recurring nav pages, and "Record income" / "Record expense" open an inline
-// modal (house pattern: OliverSlaPoliciesPage.CreatePolicyModal) that POSTs
-// /ledger/transactions. Receipts have no page — the modal carries a disabled
-// "Attach receipt" hint until OCR lands in the Ingestion phase.
+// Recurring nav pages. Recording now rides the shell-level "+ Record"
+// split-menu (StellaShell showRecord → shared RecordTransactionModal).
+//
+// 2026-07-30 design pass (QuickBooks-replacement look):
+//   - Money-bar KPI tiles (Money in / Money out / Net, this month, from
+//     /ledger/overview) that act as filters — in→Income tab, out→Expenses tab.
+//   - Reimbursable filter pill (GET /ledger/transactions?reimbursable=open)
+//     with an "owed" badge; deep-linkable via ?reimbursable=open (the Overview
+//     hero links here).
+//   - Amount column carries a "Personal card" indigo tag on is_reimbursable
+//     rows; row click opens the TransactionDetailModal (IadmModal standard).
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useStellaApi } from "../../hooks/useStellaApi";
-import { Button, DataTable, EmptyState, type Column } from "../../components/oliver/ui";
+import { DataTable, EmptyState, type Column } from "../../components/oliver/ui";
 import { StellaShell, StellaTabs, STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./StellaShell";
+import type { CoaAccount } from "./RecordTransactionModal";
+import { TransactionDetailModal } from "./TransactionDetailModal";
 
 // GET /ledger/transactions returns stella.[transaction] rows (t.*).
 interface StellaTransaction {
@@ -23,14 +33,16 @@ interface StellaTransaction {
   memo: string | null;
   status: string | null;
   raw_source: string | null;
+  is_reimbursable?: boolean | number | null;
+  reimbursed_at?: string | null;
 }
 
-interface CoaAccount {
-  coa_account_id: string;
-  code: string | null;
-  name: string;
-  type: string | null; // asset | liability | equity | revenue | expense
-  is_active: boolean | number | null;
+// Month money-bar slice of GET /ledger/overview (envelope unwrapped).
+interface OverviewMoney {
+  income: number;
+  expenses: number;
+  net: number;
+  owedToYou: number;
 }
 
 // /ledger/recurring ships in the Ingestion phase — shape is best-effort.
@@ -74,37 +86,46 @@ function toNum(v: number | string | null | undefined): number {
 export function StellaTransactionsPage() {
   const api = useStellaApi();
   const { get, ready } = api;
+  const location = useLocation();
   const [tab, setTab] = useState("all");
   const [rows, setRows] = useState<StellaTransaction[]>([]);
   const [coa, setCoa] = useState<CoaAccount[]>([]);
+  const [money, setMoney] = useState<OverviewMoney | null>(null);
   // recurring: undefined = not loaded, null = endpoint not live yet (404)
   const [recurring, setRecurring] = useState<RecurringRow[] | null | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [search, setSearch] = useState("");
-  const [modal, setModal] = useState<"inflow" | "outflow" | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const [detail, setDetail] = useState<StellaTransaction | null>(null);
+  // Reimbursable filter — deep-linkable: the Overview hero links to
+  // ?reimbursable=open. Toggled by the pill next to the search box.
+  const [reimbOnly, setReimbOnly] = useState(() => new URLSearchParams(location.search).has("reimbursable"));
 
-  // One fetch per page (house rule): transactions + COA together; recurring is
-  // allowed to 404 until the Ingestion phase and must NOT poison the page.
+  // One fetch per page (house rule): transactions + COA + overview money-bar
+  // together; recurring is allowed to 404 until the Ingestion phase and the
+  // overview soft-fails (money bar simply hides) — neither poisons the page.
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [txns, accounts, rec] = await Promise.all([
-        get<StellaTransaction[]>("/ledger/transactions"),
+      const month = new Date().toISOString().slice(0, 7);
+      const [txns, accounts, ovw, rec] = await Promise.all([
+        get<StellaTransaction[]>(`/ledger/transactions${reimbOnly ? "?reimbursable=open" : ""}`),
         get<CoaAccount[]>("/ledger/coa").catch(() => [] as CoaAccount[]),
+        get<OverviewMoney>(`/ledger/overview?month=${month}`).catch(() => null),
         get<RecurringRow[]>("/ledger/recurring").catch(() => null),
       ]);
       setRows(txns || []);
       setCoa(accounts || []);
+      setMoney(ovw);
       setRecurring(rec);
     } catch (e) {
       setError(e);
     } finally {
       setLoading(false);
     }
-  }, [get]);
+  }, [get, reimbOnly]);
 
   useEffect(() => {
     if (ready) reload();
@@ -132,6 +153,11 @@ export function StellaTransactionsPage() {
     }
     return out;
   }, [rows, tab, search, coaNameById]);
+
+  function flashMsg(msg: string) {
+    setFlash(msg);
+    setTimeout(() => setFlash(null), 3000);
+  }
 
   const columns: Column<StellaTransaction>[] = [
     {
@@ -168,9 +194,24 @@ export function StellaTransactionsPage() {
       render: (r) => {
         const n = toNum(r.amount_signed);
         return (
-          <span style={{ fontSize: 12, fontWeight: 600, color: n >= 0 ? "#047857" : "#0B1C24", fontVariantNumeric: "tabular-nums" }}>
-            {n >= 0 ? "+" : "−"}
-            {fmtMoney(Math.abs(n))}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+            {!!r.is_reimbursable && (
+              <span
+                title={r.reimbursed_at ? `Personal card — reimbursed ${fmtDate(r.reimbursed_at)}` : "Personal card — needs reimbursement"}
+                style={{
+                  fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 99,
+                  background: r.reimbursed_at ? "#F1F5F9" : `${STELLA_INDIGO}14`,
+                  color: r.reimbursed_at ? "#64748B" : STELLA_INDIGO,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Personal card
+              </span>
+            )}
+            <span style={{ fontSize: 12, fontWeight: 600, color: n >= 0 ? "#047857" : "#0B1C24", fontVariantNumeric: "tabular-nums" }}>
+              {n >= 0 ? "+" : "−"}
+              {fmtMoney(Math.abs(n))}
+            </span>
           </span>
         );
       },
@@ -197,24 +238,54 @@ export function StellaTransactionsPage() {
     { key: "next_date", header: "Next", render: (r) => <span style={{ fontSize: 11, color: "#5A7A8A" }}>{fmtDate(r.next_date)}</span> },
   ];
 
+  const moneyTile = (label: string, value: number, targetTab: string, color?: string) => {
+    const active = tab === targetTab;
+    return (
+      <button
+        onClick={() => setTab(targetTab)}
+        style={{
+          background: "#fff",
+          border: `1px solid ${active ? STELLA_INDIGO : STELLA_LAVENDER}`,
+          boxShadow: active ? `0 0 0 1px ${STELLA_INDIGO}` : undefined,
+          borderRadius: 12,
+          padding: "12px 16px",
+          textAlign: "left",
+          cursor: "pointer",
+        }}
+      >
+        <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: color || "#0B1C24", marginTop: 3, fontVariantNumeric: "tabular-nums" }}>
+          {fmtMoney(value)}
+        </div>
+        <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 2 }}>this month · click to filter</div>
+      </button>
+    );
+  };
+
   return (
     <StellaShell
       title="Transactions"
       subtitle="Your canonical ledger — every money-in and money-out line, cash-basis by default."
-      actions={
-        <>
-          <Button variant="secondary" onClick={() => setModal("inflow")}>Record income</Button>
-          <Button variant="primary" style={{ background: STELLA_INDIGO }} onClick={() => setModal("outflow")}>
-            Record expense
-          </Button>
-        </>
-      }
+      showRecord
+      onRecorded={(msg) => {
+        reload();
+        flashMsg(msg);
+      }}
       error={error}
       loading={loading && !rows.length}
     >
       {flash && (
         <div style={{ marginBottom: 12, padding: "8px 12px", fontSize: 12, background: "#D1FAE5", color: "#047857", border: "1px solid #A7F3D0", borderRadius: 8 }}>
           {flash}
+        </div>
+      )}
+
+      {/* Money bar — this month's totals, click to filter */}
+      {money && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 14 }}>
+          {moneyTile("Money in", toNum(money.income), "income", "#047857")}
+          {moneyTile("Money out", Math.abs(toNum(money.expenses)), "expenses")}
+          {moneyTile("Net", toNum(money.net), "all", toNum(money.net) >= 0 ? "#047857" : "#B91C1C")}
         </div>
       )}
 
@@ -234,174 +305,82 @@ export function StellaTransactionsPage() {
             emptyMessage="No recurring templates yet."
           />
         )
-      ) : !rows.length && !loading ? (
+      ) : !rows.length && !loading && !reimbOnly && !search ? (
         <EmptyState
           title="No transactions yet"
-          description="Transactions land here from bank feeds, receipts, recurring templates, and manual entry. Record your first income or expense with the buttons above."
+          description="Transactions land here from bank feeds, receipts, recurring templates, and manual entry. Record your first income or expense with the + Record button above."
         />
       ) : (
         <>
-          <div style={{ marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by counterparty, account, or memo…"
               style={{ width: 320, maxWidth: "100%", padding: "7px 10px", fontSize: 12, border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 6, color: "#0B1C24" }}
             />
+            <button
+              onClick={() => setReimbOnly((v) => !v)}
+              title="Show only personal-card expenses awaiting reimbursement"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "6px 12px",
+                fontSize: 11,
+                fontWeight: 600,
+                borderRadius: 99,
+                border: `1px solid ${reimbOnly ? STELLA_INDIGO : STELLA_LAVENDER}`,
+                background: reimbOnly ? STELLA_INDIGO : "#fff",
+                color: reimbOnly ? "#fff" : "#0B1C24",
+                cursor: "pointer",
+              }}
+            >
+              Reimbursable
+              {money != null && toNum(money.owedToYou) > 0 && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: "1px 7px",
+                    borderRadius: 99,
+                    background: reimbOnly ? "rgba(255,255,255,0.22)" : `${STELLA_INDIGO}14`,
+                    color: reimbOnly ? "#fff" : STELLA_INDIGO,
+                  }}
+                >
+                  {fmtMoney(toNum(money.owedToYou))} owed
+                </span>
+              )}
+            </button>
           </div>
-          <DataTable
-            rows={filtered}
-            columns={columns}
-            rowKey={(r) => r.transaction_id}
-            initialSort={{ key: "posted_date", direction: "desc" }}
-            emptyMessage="No transactions match these filters."
-          />
+          {filtered.length === 0 && reimbOnly ? (
+            <EmptyState
+              title="Nothing awaiting reimbursement"
+              description="Personal-card expenses show up here until they're marked reimbursed. Record one with + Record → Record expense → Paid personally."
+            />
+          ) : (
+            <DataTable
+              rows={filtered}
+              columns={columns}
+              rowKey={(r) => r.transaction_id}
+              onRowClick={(r) => setDetail(r)}
+              initialSort={{ key: "posted_date", direction: "desc" }}
+              emptyMessage="No transactions match these filters."
+            />
+          )}
         </>
       )}
 
-      {modal && (
-        <RecordTransactionModal
-          direction={modal}
+      {detail && (
+        <TransactionDetailModal
+          txn={detail}
           coa={coa}
-          post={api.post}
-          onClose={() => setModal(null)}
-          onCreated={(msg) => {
-            setModal(null);
-            reload();
-            setFlash(msg);
-            setTimeout(() => setFlash(null), 3000);
+          onClose={(changed) => {
+            setDetail(null);
+            if (changed) reload();
           }}
         />
       )}
     </StellaShell>
   );
 }
-
-// ── Record income / expense modal ────────────────────────────────────────────
-
-function RecordTransactionModal({
-  direction,
-  coa,
-  post,
-  onClose,
-  onCreated,
-}: {
-  direction: "inflow" | "outflow";
-  coa: CoaAccount[];
-  post: <T>(path: string, body?: unknown) => Promise<T>;
-  onClose: () => void;
-  onCreated: (msg: string) => void;
-}) {
-  const isIncome = direction === "inflow";
-  // Income posts to revenue accounts, expenses to expense accounts — but keep
-  // the full COA reachable under an "Other accounts" group for edge cases.
-  const preferredType = isIncome ? "revenue" : "expense";
-  const preferred = coa.filter((a) => a.type === preferredType && a.is_active !== false && a.is_active !== 0);
-  const others = coa.filter((a) => a.type !== preferredType && a.is_active !== false && a.is_active !== 0);
-
-  const [counterparty, setCounterparty] = useState("");
-  const [coaAccountId, setCoaAccountId] = useState("");
-  const [amount, setAmount] = useState("");
-  const [postedDate, setPostedDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [memo, setMemo] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const amountNum = Number(amount);
-  const valid = counterparty.trim().length > 0 && coaAccountId && Number.isFinite(amountNum) && amountNum > 0 && !!postedDate;
-
-  async function submit() {
-    if (!valid) return;
-    setErr(null);
-    setSaving(true);
-    try {
-      await post("/ledger/transactions", {
-        direction,
-        coa_account_id: coaAccountId,
-        counterparty_name: counterparty.trim(),
-        amount: amountNum,
-        posted_date: postedDate,
-        memo: memo.trim() || null,
-      });
-      onCreated(`Recorded ${isIncome ? "income" : "expense"} of ${fmtMoney(amountNum)}.`);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to record the transaction. Please try again.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const optionFor = (a: CoaAccount) => (
-    <option key={a.coa_account_id} value={a.coa_account_id}>
-      {a.code ? `${a.code} — ${a.name}` : a.name}
-    </option>
-  );
-
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(11,28,36,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ width: 460, maxWidth: "calc(100vw - 32px)", background: "#fff", borderRadius: 8 }}>
-        <div style={{ padding: 18, borderBottom: `1px solid ${STELLA_LAVENDER}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#0B1C24" }}>
-            {isIncome ? "Record income" : "Record expense"}
-          </h2>
-          <button onClick={onClose} style={{ background: "transparent", border: 0, fontSize: 22, color: "#5A7A8A", cursor: "pointer" }}>×</button>
-        </div>
-        <div style={{ padding: 18, display: "grid", gap: 12 }}>
-          <label>
-            <span style={mLabel}>{isIncome ? "Customer" : "Vendor"}</span>
-            <input
-              style={mInput}
-              placeholder={isIncome ? "e.g. Johnson Residence" : "e.g. Home Depot"}
-              value={counterparty}
-              onChange={(e) => setCounterparty(e.target.value)}
-              autoFocus
-            />
-          </label>
-          <label>
-            <span style={mLabel}>Account</span>
-            <select style={mInput} value={coaAccountId} onChange={(e) => setCoaAccountId(e.target.value)}>
-              <option value="">Select an account…</option>
-              {preferred.length > 0 && <optgroup label={isIncome ? "Revenue" : "Expenses"}>{preferred.map(optionFor)}</optgroup>}
-              {others.length > 0 && <optgroup label="Other accounts">{others.map(optionFor)}</optgroup>}
-            </select>
-          </label>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <label>
-              <span style={mLabel}>Amount</span>
-              <input type="number" min="0.01" step="0.01" style={mInput} placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
-            </label>
-            <label>
-              <span style={mLabel}>Date</span>
-              <input type="date" style={mInput} value={postedDate} onChange={(e) => setPostedDate(e.target.value)} />
-            </label>
-          </div>
-          <label>
-            <span style={mLabel}>Memo</span>
-            <textarea rows={2} style={{ ...mInput, resize: "vertical" }} placeholder="Optional note" value={memo} onChange={(e) => setMemo(e.target.value)} />
-          </label>
-          <button
-            disabled
-            title="Receipt OCR lands in the Ingestion phase"
-            style={{ ...mInput, textAlign: "left", color: "#94A3B8", background: "#F8FAFC", cursor: "not-allowed", border: `1px dashed ${STELLA_LAVENDER}` }}
-          >
-            Attach receipt (OCR lands in the Ingestion phase)
-          </button>
-          {err && (
-            <div style={{ padding: 10, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 6 }}>
-              {err}
-            </div>
-          )}
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
-            <Button variant="primary" style={{ background: STELLA_INDIGO }} onClick={submit} disabled={saving || !valid}>
-              {saving ? "Saving…" : isIncome ? "Record income" : "Record expense"}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const mLabel: React.CSSProperties = { display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 };
-const mInput: React.CSSProperties = { width: "100%", padding: "7px 10px", fontSize: 12, border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 6, background: "#fff", color: "#0B1C24" };

@@ -528,6 +528,10 @@ const STELLA_NAV: SubNavConfig = {
       // and Bank Connections + Period Close moved to the SETTINGS hub.
       label: "Ledger", icon: CreditCard, collapsible: true, sectionId: "stella_ledger",
       items: [
+        // Overview FIRST (2026-07-30 design pass) — it is both the Ledger
+        // landing and, via first-item-wins in AppShell.defaultRouteFor,
+        // STELLA's default landing. Group sits at 7 items — under the 8 cap.
+        { key: "stella_ledger_overview", label: "Overview", route: "/app/services/stella_ledger_overview" },
         { key: "stella_ledger_inbox", label: "Inbox", route: "/app/services/stella_ledger_inbox" },
         { key: "stella_ledger_transactions", label: "Transactions", route: "/app/services/stella_ledger_transactions" },
         { key: "stella_ledger_vendors", label: "Vendors & Customers", route: "/app/services/stella_ledger_vendors" },
@@ -667,7 +671,7 @@ const SETTINGS_NAV: SubNavConfig = {
         // Ledger group (keys renamed stella_ledger_* → stella_settings_* so
         // SETTINGS_KEYS/deriveProduct routes them to Settings mode WITHOUT
         // hijacking the STELLA SubNav — the stella_settings_coming trap).
-        { key: "stella_settings_bank", label: "Bank Connections", route: "/app/services/stella_settings_bank" },
+        { key: "stella_settings_bank", label: "Bank and card accounts", route: "/app/services/stella_settings_bank" },
         { key: "stella_settings_period_close", label: "Period Close", route: "/app/services/stella_settings_period_close" },
       ],
     },

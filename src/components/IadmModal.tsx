@@ -91,7 +91,9 @@ export const PRODUCT_ACCENT: Record<IadmModalProduct, string> = {
   oliver: "#FEC82C",
   arion:  "#38BDF8",
   argus:  "#84CC16",
-  stella: "#EF6C33", // shares SPARK family
+  // 2026-07-30 — STELLA has its own locked identity (Indigo #4C5BD4, matching
+  // IconRail/SubNav tags); it no longer borrows the SPARK orange.
+  stella: "#4C5BD4",
 };
 
 /** Tailwind blue-600 — the "Core Blue" primary across the platform. */

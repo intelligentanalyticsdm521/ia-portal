@@ -3,11 +3,14 @@
 // The needs-review queue (uncategorized / flagged / duplicate / OCR-pending) —
 // the core bookkeeping UX. QBO-inspired one-tap accept/reject, but reviewable.
 // Reads GET /ledger/inbox; accept/reject POST to /ledger/inbox/:id/accept|reject.
+// Row click opens the TransactionDetailModal (IadmModal standard) so a line
+// can be recategorized / memo'd / voided without leaving the queue.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useStellaApi } from "../../hooks/useStellaApi";
 import { DataTable, EmptyState, Button, FilterBar, type Column } from "../../components/oliver/ui";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { StellaShell, STELLA_INDIGO, fmtMoney } from "./StellaShell";
+import { TransactionDetailModal, type DetailTxn } from "./TransactionDetailModal";
 
 interface InboxItem {
   transaction_id: string;
@@ -18,6 +21,8 @@ interface InboxItem {
   amount: number | string;
   review_reason: string | null; // uncategorized | flagged | duplicate | ocr_pending
   trust_flags?: string[] | null;
+  is_reimbursable?: boolean | number | null;
+  reimbursed_at?: string | null;
 }
 
 const REASON_PILL: Record<string, { bg: string; color: string; label: string }> = {
@@ -55,6 +60,7 @@ export function StellaLedgerInboxPage() {
   const [filter, setFilter] = useState("all");
   const [busy, setBusy] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const [detail, setDetail] = useState<InboxItem | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -147,8 +153,10 @@ export function StellaLedgerInboxPage() {
       key: "actions",
       header: "",
       align: "right",
+      // stopPropagation so the one-tap buttons don't ALSO open the row's
+      // detail modal (rows are clickable — see onRowClick below).
       render: (r) => (
-        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
           <Button variant="secondary" size="sm" onClick={() => act(r.transaction_id, "accept")} disabled={busy === r.transaction_id}>
             <CheckCircle2 size={11} color="#059669" /> Accept
           </Button>
@@ -160,10 +168,30 @@ export function StellaLedgerInboxPage() {
     },
   ];
 
+  // Map an inbox item onto the DetailTxn shape the shared modal expects.
+  function toDetailTxn(r: InboxItem): DetailTxn {
+    return {
+      transaction_id: r.transaction_id,
+      posted_date: r.txn_date,
+      counterparty_name: r.counterparty_name,
+      memo: r.memo,
+      amount_signed: r.amount,
+      coa_account_id: null,
+      status: r.review_reason === "flagged" ? "flagged" : "needs_categorization",
+      is_reimbursable: r.is_reimbursable,
+      reimbursed_at: r.reimbursed_at,
+    };
+  }
+
   return (
     <StellaShell
       title="Inbox"
       subtitle="Review new transactions — accept them into the ledger or reject the noise. One tap, always reviewable."
+      showRecord
+      onRecorded={() => {
+        reload();
+        flashMsg("Recorded.");
+      }}
       error={error}
       loading={loading && !rows.length}
     >
@@ -181,8 +209,24 @@ export function StellaLedgerInboxPage() {
       ) : (
         <>
           <FilterBar pills={FILTER_PILLS} activePill={filter} onPillChange={setFilter} />
-          <DataTable rows={filtered} columns={columns} rowKey={(r) => r.transaction_id} emptyMessage="Nothing to review in this filter." />
+          <DataTable
+            rows={filtered}
+            columns={columns}
+            rowKey={(r) => r.transaction_id}
+            onRowClick={(r) => setDetail(r)}
+            emptyMessage="Nothing to review in this filter."
+          />
         </>
+      )}
+
+      {detail && (
+        <TransactionDetailModal
+          txn={toDetailTxn(detail)}
+          onClose={(changed) => {
+            setDetail(null);
+            if (changed) reload();
+          }}
+        />
       )}
     </StellaShell>
   );

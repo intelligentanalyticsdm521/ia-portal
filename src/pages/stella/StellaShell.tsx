@@ -5,7 +5,16 @@
 // SPARK"), but with STELLA's own identity: Indigo #4C5BD4 / Lavender #E8E9FA.
 // (The shared OLIVER PageHeader is intentionally NOT used — it hardcodes an
 // "OLIVER" label.)
-import type { ReactNode } from "react";
+//
+// showRecord (2026-07-30, QuickBooks-replacement design pass): every LIVE
+// Ledger page passes showRecord so the "+ Record" split-menu button rides in
+// the shell header — record income/expense from anywhere in the Ledger, no
+// hunting for the Transactions page (menu also lists Mileage/Material,
+// disabled until P3). onRecorded fires after a successful POST so pages that
+// show transactions can reload.
+import { useState, type ReactNode } from "react";
+import { ChevronDown, Plus } from "lucide-react";
+import { RecordTransactionModal } from "./RecordTransactionModal";
 
 export const STELLA_INDIGO = "#4C5BD4";
 export const STELLA_LAVENDER = "#E8E9FA";
@@ -22,6 +31,8 @@ export function StellaShell({
   actions,
   error,
   loading,
+  showRecord,
+  onRecorded,
   children,
 }: {
   title: string;
@@ -29,6 +40,10 @@ export function StellaShell({
   actions?: ReactNode;
   error?: unknown;
   loading?: boolean;
+  /** Render the global "+ Record" split-menu button in the shell header. */
+  showRecord?: boolean;
+  /** Fires after a successful record; pages showing transactions reload here. */
+  onRecorded?: (msg: string) => void;
   children: ReactNode;
 }) {
   return (
@@ -50,7 +65,12 @@ export function StellaShell({
           <div style={{ fontSize: 18, fontWeight: 700, color: "#0B1C24", marginTop: 2 }}>{title}</div>
           {subtitle && <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>{subtitle}</div>}
         </div>
-        {actions && <div style={{ display: "flex", gap: 8, alignItems: "center" }}>{actions}</div>}
+        {(actions || showRecord) && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {actions}
+            {showRecord && <RecordSplitButton onRecorded={onRecorded} />}
+          </div>
+        )}
       </div>
 
       {error ? (
@@ -70,6 +90,113 @@ export function StellaShell({
         <div style={{ padding: 24, fontSize: 13, color: "#5A7A8A" }}>Loading…</div>
       ) : (
         children
+      )}
+    </div>
+  );
+}
+
+/**
+ * RecordSplitButton — the global "+ Record" split-menu button (indigo).
+ * Menu: Record income · Record expense · Mileage (P3) · Material (P3).
+ * Opens the shared RecordTransactionModal; the modal fetches COA itself.
+ */
+function RecordSplitButton({ onRecorded }: { onRecorded?: (msg: string) => void }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [modal, setModal] = useState<"inflow" | "outflow" | null>(null);
+
+  const item = (label: string, onClick?: () => void, disabledTag?: string) => (
+    <button
+      key={label}
+      onClick={onClick}
+      disabled={!onClick}
+      title={disabledTag ? `Lands in ${disabledTag} with mileage & materials capture` : undefined}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        width: "100%",
+        padding: "8px 12px",
+        fontSize: 12,
+        fontWeight: 600,
+        color: onClick ? "#0B1C24" : "#94A3B8",
+        background: "transparent",
+        border: 0,
+        textAlign: "left",
+        cursor: onClick ? "pointer" : "not-allowed",
+        borderRadius: 6,
+      }}
+      onMouseEnter={(e) => { if (onClick) e.currentTarget.style.background = "#F1F2FC"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+    >
+      <span>{label}</span>
+      {disabledTag && (
+        <span style={{ fontSize: 10, fontWeight: 700, color: STELLA_INDIGO, background: `${STELLA_INDIGO}14`, padding: "1px 7px", borderRadius: 99 }}>
+          {disabledTag}
+        </span>
+      )}
+    </button>
+  );
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={() => setMenuOpen((v) => !v)}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "7px 13px",
+          fontSize: 12,
+          fontWeight: 600,
+          color: "#fff",
+          background: STELLA_INDIGO,
+          border: 0,
+          borderRadius: 6,
+          cursor: "pointer",
+        }}
+      >
+        <Plus size={13} /> Record <ChevronDown size={12} style={{ opacity: 0.8 }} />
+      </button>
+
+      {menuOpen && (
+        <>
+          {/* click-away layer */}
+          <div style={{ position: "fixed", inset: 0, zIndex: 900 }} onClick={() => setMenuOpen(false)} />
+          <div
+            style={{
+              position: "absolute",
+              top: "calc(100% + 6px)",
+              right: 0,
+              zIndex: 901,
+              width: 210,
+              background: "#fff",
+              border: `1px solid ${STELLA_LAVENDER}`,
+              borderRadius: 8,
+              boxShadow: "0 8px 24px rgba(11,28,36,0.12)",
+              padding: 6,
+              display: "grid",
+              gap: 2,
+            }}
+          >
+            {item("Record income", () => { setMenuOpen(false); setModal("inflow"); })}
+            {item("Record expense", () => { setMenuOpen(false); setModal("outflow"); })}
+            <div style={{ height: 1, background: STELLA_LAVENDER, margin: "4px 6px" }} />
+            {item("Mileage", undefined, "P3")}
+            {item("Material", undefined, "P3")}
+          </div>
+        </>
+      )}
+
+      {modal && (
+        <RecordTransactionModal
+          direction={modal}
+          onClose={() => setModal(null)}
+          onCreated={(msg) => {
+            setModal(null);
+            onRecorded?.(msg);
+          }}
+        />
       )}
     </div>
   );
