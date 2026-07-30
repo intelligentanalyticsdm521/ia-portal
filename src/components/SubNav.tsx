@@ -363,13 +363,13 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts", hidden: true /* merged: Companies is now a view on Contacts (List | Kanban | Companies) — same component, not a copy */ },
         { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
         { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments", minTier: "pro" },
-        { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags" },
+        { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags", hidden: true /* merged: apply/create tags inline on Contacts; 'Manage all tags' link opens the taxonomy */ },
         // MERGED into the contact record's Activity tab 2026-07-30 (phase 4).
         // Brandon: "Contact 360 - no clue what this is." Its only unique
         // content was email/SMS history + OLIVER jobs, which now render on the
         // record itself — one screen per person instead of two places to look.
         { key: "spark_contact_360", label: "Contact 360°", route: "/app/services/spark_contact_360", intelligence: true, hidden: true },
-        { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true },
+        { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true, hidden: true /* merged: linked from IA Insights -> Health (contact scoring) */ },
       ],
     },
     {
@@ -480,7 +480,7 @@ const SPARK_NAV: SubNavConfig = {
         // works. Page route remains so deep-links don't 404 and the
         // marketing/coming-soon preview is still reachable.
         { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence" },
-        { key: "spark_activity_stream", label: "Activity Stream", route: "/app/services/spark_activity_stream" },
+        { key: "spark_activity_stream", label: "Activity Stream", route: "/app/services/spark_activity_stream", hidden: true /* merged: linked from IA Insights -> Health (activity stream) */ },
       ],
     },
     // 2026-07-26 (Brandon): the standalone "Reporting" nav group removed —

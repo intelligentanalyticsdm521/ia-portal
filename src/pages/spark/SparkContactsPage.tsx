@@ -625,6 +625,18 @@ export function SparkContactsPage() {
                       Create
                     </button>
                   </div>
+                  {/* Renaming/removing tags is rare enough to live one click
+                      away rather than in the nav — but it has to be reachable
+                      from here, or hiding the Tags page would strand the
+                      taxonomy. */}
+                  <button
+                    type="button"
+                    data-tour="manage-tags"
+                    onClick={() => { setTagMenuOpen(false); navigate("/app/services/spark_tags"); }}
+                    className="mt-2 w-full rounded px-2 py-1 text-left text-[11px] text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                  >
+                    Manage all tags →
+                  </button>
                 </div>
               </div>
             )}

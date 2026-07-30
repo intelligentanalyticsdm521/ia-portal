@@ -13,6 +13,7 @@
 // Series are client-generated per tenant for review (the SPARK metrics
 // endpoint is the documented follow-up, same as the Trends page).
 import { useMemo } from "react";
+import { Link } from "react-router-dom";
 import { useAppState } from "../../app/AppState";
 import { IAInsightsHeader } from "../../components/iainsights/IAInsightsHeader";
 import type { IAInsightsHeaderData } from "../../components/iainsights/types";
@@ -68,6 +69,27 @@ export function SparkIAInsightsHealthPage() {
         <p className="text-sm text-slate-500 mt-0.5">Composite snapshot of your SPARK marketing platform. Drill into Trends or Intelligence for the full dashboards and detail reports.</p>
       </div>
       <IAInsightsHeader data={headerData} />
+
+      {/* Contact scoring + the raw activity feed used to be their own nav
+          items. The feature map folds them in here ("Health/Contact Scoring ·
+          Activity Stream → one analytics home"), so they live as links off
+          Insights rather than two more things to scan past in the menu. */}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Link
+          to="/app/services/spark_health_score"
+          data-tour="insights-contact-scoring"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Contact scoring — tier distribution &amp; per-contact lookup →
+        </Link>
+        <Link
+          to="/app/services/spark_activity_stream"
+          data-tour="insights-activity-stream"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Activity stream — every event, unfiltered →
+        </Link>
+      </div>
     </div>
   );
 }
