@@ -34,8 +34,23 @@ export type NavAddon = "leadgen";
 
 /** The visibility declaration a nav item may carry. */
 export interface VisibilityRules {
-  /** Cut from the client-visible product (code retained, flag off). */
+  /**
+   * CUT from the client-visible product: no nav entry, and the route is
+   * blocked too. For things we decided clients shouldn't see at all (Social
+   * Scheduler, Deals, NPS, the extra automation builders).
+   */
   hidden?: boolean;
+  /**
+   * MERGED into another surface: no nav entry, but the route STILL WORKS.
+   *
+   * This distinction matters and I got it wrong first time. Merged pages are
+   * reached from their new parent — "Manage all tags →" on Contacts, the
+   * Deliverability pill on Senders, "Templates" on Campaigns, "Contact
+   * scoring →" on Insights. Treating them as `hidden` blocked those very
+   * links, so every merge shipped a dead end. Merged means "you don't need it
+   * in the menu", not "you can't go there".
+   */
+  merged?: boolean;
   /** Requires a purchased add-on, at any tier. */
   addon?: NavAddon;
   /** Requires this subscription tier or higher. */
@@ -76,11 +91,23 @@ export function activeAddons(): NavAddon[] {
  */
 export function isVisible(rules: VisibilityRules | undefined, ctx: VisibilityContext): boolean {
   if (!rules) return true;
-  if (rules.hidden) return false;           // hidden applies to everyone, always
+  if (rules.hidden || rules.merged) return false;  // neither belongs in the menu
   if (!ctx.gatingActive) return true;       // non-gated product: tier/add-on don't apply
   if (rules.addon && !ctx.addons.includes(rules.addon)) return false;
   if (rules.minTier && !tierMeets(ctx.tier, rules.minTier)) return false;
   return true;
+}
+
+/**
+ * Can this surface be OPENED, whatever the nav shows?
+ *
+ * Merged pages are deliberately routable — their parent links to them. Cut
+ * pages and unearned tiers/add-ons are not.
+ */
+export function isRoutable(rules: VisibilityRules | undefined, ctx: VisibilityContext): boolean {
+  if (!rules) return true;
+  if (rules.merged) return true;            // reached from its new home
+  return isVisible(rules, ctx);
 }
 
 /** Products whose nav is subject to the feature wall. */

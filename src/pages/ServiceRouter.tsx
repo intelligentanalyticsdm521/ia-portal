@@ -2,7 +2,7 @@ import { lazy, Suspense, useMemo } from 'react';
 import { useParams, useLocation, Navigate } from 'react-router-dom';
 import { useIsFounder } from '../hooks/useIsFounder';
 import { SERVICE_VISIBILITY } from '../components/SubNav';
-import { activeAddons, isVisible } from '../components/navVisibility';
+import { activeAddons, isRoutable } from '../components/navVisibility';
 import { useProductTier } from '../hooks/useProductTier';
 
 // Lazy-load a named React export so it's compatible with React.lazy
@@ -390,7 +390,7 @@ export function ServiceRouter() {
   // Resolve the feature wall for this route. Hooks run unconditionally, so the
   // tier is always fetched; only the verdict is conditional.
   const { tier: sparkTier } = useProductTier("spark");
-  const navVisible = isVisible(serviceKey ? SERVICE_VISIBILITY[serviceKey] : undefined, {
+  const navVisible = isRoutable(serviceKey ? SERVICE_VISIBILITY[serviceKey] : undefined, {
     tier: sparkTier,
     addons: activeAddons(),
     gatingActive: true,

@@ -359,17 +359,17 @@ const SPARK_NAV: SubNavConfig = {
         // MERGED into the Contacts import modal 2026-07-30 (phase 4). The modal
         // now does everything this page did (file picker) plus xlsx, so hiding
         // it removes a nav item without removing a capability.
-        { key: "spark_contact_import", label: "Import (CSV)", route: "/app/services/spark_contact_import", hidden: true },
-        { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts", hidden: true /* merged: Companies is now a view on Contacts (List | Kanban | Companies) — same component, not a copy */ },
+        { key: "spark_contact_import", label: "Import (CSV)", route: "/app/services/spark_contact_import", merged: true },
+        { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts", merged: true /* merged: Companies is now a view on Contacts (List | Kanban | Companies) — same component, not a copy */ },
         { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
         { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments", minTier: "pro" },
-        { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags", hidden: true /* merged: apply/create tags inline on Contacts; 'Manage all tags' link opens the taxonomy */ },
+        { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags", merged: true /* merged: apply/create tags inline on Contacts; 'Manage all tags' link opens the taxonomy */ },
         // MERGED into the contact record's Activity tab 2026-07-30 (phase 4).
         // Brandon: "Contact 360 - no clue what this is." Its only unique
         // content was email/SMS history + OLIVER jobs, which now render on the
         // record itself — one screen per person instead of two places to look.
-        { key: "spark_contact_360", label: "Contact 360°", route: "/app/services/spark_contact_360", intelligence: true, hidden: true },
-        { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true, hidden: true /* merged: linked from IA Insights -> Health (contact scoring) */ },
+        { key: "spark_contact_360", label: "Contact 360°", route: "/app/services/spark_contact_360", intelligence: true, merged: true },
+        { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true, merged: true /* merged: linked from IA Insights -> Health (contact scoring) */ },
       ],
     },
     {
@@ -387,14 +387,14 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter", minTier: "pro" },
         { key: "spark_social", label: "Social & Calendar", route: "/app/services/spark_social", hidden: true /* cut: moved to ARION -> My Brand */ },
         { key: "spark_sms_inbox", label: "SMS Inbox", route: "/app/services/spark_sms_inbox", minTier: "pro", hidden: true },
-        { key: "spark_deliverability", label: "Deliverability", route: "/app/services/spark_deliverability", hidden: true /* merged: status indicator on Settings -> Senders links to the full dashboard */ },
+        { key: "spark_deliverability", label: "Deliverability", route: "/app/services/spark_deliverability", merged: true /* merged: status indicator on Settings -> Senders links to the full dashboard */ },
       ],
     },
     {
       label: "Capture", icon: Target, collapsible: true, sectionId: "spark_capture",
       items: [
         { key: "spark_forms", label: "Forms", route: "/app/services/spark_forms" },
-        { key: "spark_form_builder", label: "Form Builder", route: "/app/services/spark_form_builder", hidden: true /* merged: Forms opens the builder as a modal (F-104, 2026-05-28); this page is only a back-compat route for old deep links */ },
+        { key: "spark_form_builder", label: "Form Builder", route: "/app/services/spark_form_builder", merged: true /* merged: Forms opens the builder as a modal (F-104, 2026-05-28); this page is only a back-compat route for old deep links */ },
         { key: "spark_landing_pages", label: "Landing Pages", route: "/app/services/spark_landing_pages", hidden: true /* cut: stub, block editor never shipped */ },
         { key: "spark_qr_codes", label: "QR Codes", route: "/app/services/spark_qr_codes" },
       ],
@@ -436,7 +436,7 @@ const SPARK_NAV: SubNavConfig = {
         // Templates moved here from Outreach (2026-05-28 founder decision).
         // It's a library used by other features — configuration-like, not
         // an active send surface.
-        { key: "spark_templates", label: "Templates", route: "/app/services/spark_templates", hidden: true /* merged: reachable from Campaigns -> Templates. Already unified Email+SMS+Translations into one library (F-91) */ },
+        { key: "spark_templates", label: "Templates", route: "/app/services/spark_templates", merged: true /* merged: reachable from Campaigns -> Templates. Already unified Email+SMS+Translations into one library (F-91) */ },
         // Phase 3A (2026-06-16) — Webhooks pulled from nav until our own
         // implementation ships in SPARK v1.5 (page shows Coming Soon banner).
         { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync", hidden: true /* cut: platform plumbing */ },
@@ -480,7 +480,7 @@ const SPARK_NAV: SubNavConfig = {
         // works. Page route remains so deep-links don't 404 and the
         // marketing/coming-soon preview is still reachable.
         { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence" },
-        { key: "spark_activity_stream", label: "Activity Stream", route: "/app/services/spark_activity_stream", hidden: true /* merged: linked from IA Insights -> Health (activity stream) */ },
+        { key: "spark_activity_stream", label: "Activity Stream", route: "/app/services/spark_activity_stream", merged: true /* merged: linked from IA Insights -> Health (activity stream) */ },
       ],
     },
     // 2026-07-26 (Brandon): the standalone "Reporting" nav group removed —
@@ -881,8 +881,8 @@ export const SERVICE_VISIBILITY: Record<string, VisibilityRules> = (() => {
     if (!config) continue;
     for (const group of config.groups) {
       for (const item of group.items) {
-        if (item.hidden || item.addon || item.minTier) {
-          map[item.key] = { hidden: item.hidden, addon: item.addon, minTier: item.minTier };
+        if (item.hidden || item.merged || item.addon || item.minTier) {
+          map[item.key] = { hidden: item.hidden, merged: item.merged, addon: item.addon, minTier: item.minTier };
         }
       }
     }

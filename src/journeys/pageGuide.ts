@@ -77,7 +77,7 @@ export function buildPageSteps(
       // `hidden` and `addon` are static facts, so they're filtered here.
       // (Tier-gated items still appear; a Standard user on a Pro step gets the
       // runner's honest "can't find that control" rather than a dead end.)
-      if (item.hidden || item.addon) continue;
+      if (item.hidden || item.merged || item.addon) continue;
       const c = content[item.key];
       if (!c) continue; // unauthored pages are reported, never filled with noise
       steps.push({
