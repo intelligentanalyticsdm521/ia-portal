@@ -510,17 +510,67 @@ const PLACEHOLDER_NAV = (name: string, tagline: string): SubNavConfig => ({
   ],
 });
 
-// STELLA 0.1.0 — live nav: Overview (monthly P&L) + Expenses. Was the F-116
-// coming-soon placeholder; the next-gen build has landed.
+// STELLA — Ledger + Unit Economics 4-nav shell (August build). Two live layers
+// (Ledger, Unit Economics) + two locked/coming-soon layers (Database Manager,
+// Custom Reporting) that render a padlock + tier badge. Supersedes the parked
+// 0.1.0 MLP (Overview P&L + Expenses over oliver.expense).
+// STELLA Indigo #4C5BD4 drives the tier/lock badges.
+const STELLA_TAG = "#4C5BD4";
 const STELLA_NAV: SubNavConfig = {
   productName: "STELLA",
-  tagline: "Reporting & BI",
+  tagline: "Ledger & Unit Economics",
   groups: [
     {
-      label: "",
+      // 2026-07-30 consolidation — founder capped every sub-nav at 8 items.
+      // 18 → 6: Income/Recurring are Transactions tabs, Receipts is a modal
+      // hint on Transactions, Mileage + Materials merged (two tabs), the
+      // seven reports collapsed into ONE Reports page (P&L live, rest P2),
+      // and Bank Connections + Period Close moved to the SETTINGS hub.
+      label: "Ledger", icon: CreditCard, collapsible: true, sectionId: "stella_ledger",
       items: [
-        { key: "stella_coming", label: "Overview", route: "/app/services/stella_coming" },
-        { key: "stella_expenses_coming", label: "Expenses", route: "/app/services/stella_expenses_coming" },
+        { key: "stella_ledger_inbox", label: "Inbox", route: "/app/services/stella_ledger_inbox" },
+        { key: "stella_ledger_transactions", label: "Transactions", route: "/app/services/stella_ledger_transactions" },
+        { key: "stella_ledger_vendors", label: "Vendors & Customers", route: "/app/services/stella_ledger_vendors" },
+        { key: "stella_ledger_coa", label: "Chart of Accounts", route: "/app/services/stella_ledger_coa" },
+        { key: "stella_ledger_mileage_materials", label: "Mileage & Materials", route: "/app/services/stella_ledger_mileage_materials" },
+        { key: "stella_ledger_reports", label: "Reports", route: "/app/services/stella_ledger_reports" },
+      ],
+    },
+    {
+      label: "Unit Economics", icon: LineChart, collapsible: true, sectionId: "stella_ue",
+      items: [
+        { key: "stella_ue_margins", label: "Margins", route: "/app/services/stella_ue_margins" },
+        { key: "stella_ue_allocations", label: "Allocations", route: "/app/services/stella_ue_allocations" },
+        { key: "stella_ue_reconciliation", label: "Reconciliation", route: "/app/services/stella_ue_reconciliation" },
+      ],
+    },
+    {
+      // Layer 3a — LOCKED. Every item shows a padlock + Standard tier badge and
+      // opens the STELLA coming-soon sheet (StellaComingSoonPage).
+      label: "Database Manager", icon: Server, collapsible: true, sectionId: "stella_db",
+      items: [
+        { key: "stella_db_registry", label: "View Registry", route: "/app/services/stella_db_registry", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_entry", label: "Manual Entry", route: "/app/services/stella_db_entry", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        // Import History folded into the Upload surface (batch list + rollback
+        // live on the same page per master §5.3) — keeps this group at the 8 cap.
+        { key: "stella_db_upload", label: "Uploads & Import History", route: "/app/services/stella_db_upload", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_tags", label: "Tags", route: "/app/services/stella_db_tags", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_custom_fields", label: "Custom Fields", route: "/app/services/stella_db_custom_fields", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_documents", label: "Documents", route: "/app/services/stella_db_documents", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_compliance", label: "Compliance Reminders", route: "/app/services/stella_db_compliance", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_warnings", label: "Data Engineer Warnings", route: "/app/services/stella_db_warnings", gated: true, tag: { label: "S", color: STELLA_TAG } },
+      ],
+    },
+    {
+      // Layer 3b — LOCKED.
+      label: "Custom Reporting", icon: BarChart2, collapsible: true, sectionId: "stella_report",
+      items: [
+        { key: "stella_report_library", label: "Report Library", route: "/app/services/stella_report_library", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_builder", label: "Report Builder", route: "/app/services/stella_report_builder", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_dashboards", label: "Dashboards", route: "/app/services/stella_report_dashboards", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_scheduled", label: "Scheduled Reports", route: "/app/services/stella_report_scheduled", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_sql", label: "SQL Editor", route: "/app/services/stella_report_sql", gated: true, tag: { label: "Pro", color: STELLA_TAG } },
+        { key: "stella_report_exports", label: "Exports", route: "/app/services/stella_report_exports", gated: true, tag: { label: "S", color: STELLA_TAG } },
       ],
     },
   ],
@@ -612,7 +662,13 @@ const SETTINGS_NAV: SubNavConfig = {
     {
       label: "STELLA", icon: BarChart2, collapsible: true, sectionId: "settings_stella",
       items: [
-        { key: "stella_coming", label: "Coming Soon", route: "/app/services/stella_coming" },
+        // 2026-07-30 — founder's call: Bank Connections + Period Close are
+        // configuration, not daily-work nav. They moved here from the STELLA
+        // Ledger group (keys renamed stella_ledger_* → stella_settings_* so
+        // SETTINGS_KEYS/deriveProduct routes them to Settings mode WITHOUT
+        // hijacking the STELLA SubNav — the stella_settings_coming trap).
+        { key: "stella_settings_bank", label: "Bank Connections", route: "/app/services/stella_settings_bank" },
+        { key: "stella_settings_period_close", label: "Period Close", route: "/app/services/stella_settings_period_close" },
       ],
     },
     {
@@ -721,6 +777,13 @@ function getDefaultSection(path: string): string | null {
     path.includes("/spark_service_category") ||
     path.includes("/spark_config_backup")
   ) return "settings_spark";
+  if (path.includes("/stella_settings_bank") || path.includes("/stella_settings_period_close")) return "settings_stella";
+
+  // STELLA sections (Ledger / Unit Economics / Database Manager / Custom Reporting)
+  if (path.includes("/stella_ledger_")) return "stella_ledger";
+  if (path.includes("/stella_ue_")) return "stella_ue";
+  if (path.includes("/stella_db_")) return "stella_db";
+  if (path.includes("/stella_report_")) return "stella_report";
 
   // ARION sections
   if (path.includes("arion_website_security") || path.includes("arion_website_performance") || path.includes("arion_website_updates")) return "security";

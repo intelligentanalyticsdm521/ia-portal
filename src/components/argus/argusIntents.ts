@@ -204,10 +204,10 @@ export const ARGUS_INTENTS: ArgusIntent[] = [
     reply: "Search Indexing shows which pages are indexed across Google + Bing, plus coverage issues and your sitemap submission history.",
     cta: { label: "Open Search Indexing", to: "/app/services/arion_search_indexing" } },
 
-  // ── STELLA (coming soon) ─────────────────────────────────────────────────
-  { id: "stella_view", keywords: ["view stella", "open stella", "what is stella", "stella overview", "stella reporting"],
-    reply: "STELLA is the cross-product reporting + business-intelligence layer — coming soon. The placeholder page has the rebuild scope and you'll see it light up during STELLA build sessions. Stay tuned.",
-    cta: { label: "Open STELLA Overview", to: "/app/services/stella_coming" } },
+  // ── STELLA (Ledger + Unit Economics — live) ──────────────────────────────
+  { id: "stella_view", keywords: ["view stella", "open stella", "what is stella", "stella overview", "stella reporting", "stella ledger", "profit and loss", "p&l"],
+    reply: "STELLA is your ledger + unit-economics layer — real bookkeeping (Chart of Accounts, transactions, cash-basis P&L, AR/AP aging, sales tax, 1099) plus per-job/customer margins. Open the Profit & Loss to see the month at a glance.",
+    cta: { label: "Open STELLA Reports", to: "/app/services/stella_ledger_reports" } },
 
   // ── CONSULTING ───────────────────────────────────────────────────────────
   { id: "consulting_service_request", keywords: ["submit service request", "new service request", "request consulting", "submit consulting ticket", "consulting ticket", "request work"],

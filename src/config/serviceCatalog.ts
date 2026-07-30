@@ -129,14 +129,59 @@ export const SERVICE_CATALOG: PortalService[] = [
   // duplicates here.)
   { key: 'arion_usage', displayName: 'Plan & Pricing', section: 'ARION', defaultStatus: 'not_subscribed', route: '/app/services/arion_usage', description: 'ARION hosting tier comparison + SEO add-on picker with live total.' },
   { key: 'arion_plugin_provisioning', displayName: 'Plugin Provisioning', section: 'ARION', defaultStatus: 'not_subscribed', route: '/app/services/arion_plugin_provisioning', description: 'Mint plugin provisioning codes — WP-CLI zero-touch, magic link, or manual paste install paths.' },
-  {
-    key: 'stella_dashboards',
-    displayName: 'Dashboards',
-    section: 'STELLA',
-    defaultStatus: 'coming_soon',
-    route: '/app/services/stella_dashboards',
-    description: 'KPI dashboards and operational performance panels (placeholder).'
-  },
+  // ── STELLA — Ledger + Unit Economics 4-nav shell (August build) ────────────
+  // Supersedes the parked 0.1.0 MLP (stella_coming Overview + stella_expenses_coming
+  // Expenses), which read oliver-api /expenses + /stella/pnl. This is the full
+  // product shape: Ledger + Unit Economics LIVE, Database Manager + Custom
+  // Reporting LOCKED (coming-soon). See STELLA_Ledger_And_UnitEconomics_Scope_v1_0.
+  //
+  // LEDGER (Layer 1 — LIVE)
+  // 2026-07-30 consolidation — founder capped every sub-nav at 8 items.
+  // Ledger collapsed 18 → 6: Income + Recurring became Transactions tabs,
+  // Receipts became a modal hint on Transactions (OCR ships in the Ingestion
+  // phase), Mileage + Materials merged into one two-tab page, the seven
+  // reports collapsed into ONE Reports page (P&L live, rest land P2), and
+  // Bank Connections + Period Close moved to the SETTINGS hub — they are
+  // settings, not daily-work nav (see stella_settings_* below).
+  { key: 'stella_ledger_inbox', displayName: 'Inbox', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_inbox', description: 'Needs-review queue — uncategorized, flagged, duplicate, and OCR-pending transactions with one-tap accept/reject.' },
+  { key: 'stella_ledger_transactions', displayName: 'Transactions', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_transactions', description: 'The canonical ledger — every money-in and money-out line with income, expense, and recurring views plus manual record entry.' },
+  { key: 'stella_ledger_vendors', displayName: 'Vendors & Customers', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_vendors', description: 'Counterparties — vendors, subcontractors, customers, and employees with W-9 / 1099 tracking.' },
+  { key: 'stella_ledger_coa', displayName: 'Chart of Accounts', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_coa', description: 'Your seeded, customizable service-business chart of accounts.' },
+  { key: 'stella_ledger_mileage_materials', displayName: 'Mileage & Materials', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_mileage_materials', description: 'Job-cost capture — business miles at the IRS deduction rate, and job materials that feed per-job margin.' },
+  { key: 'stella_ledger_reports', displayName: 'Reports', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_reports', description: 'Financial statements in one place — P&L (live), Balance Sheet, Cash Flow, AR/AP Aging, Sales Tax, and the 1099 worksheet.' },
+  // UNIT ECONOMICS (Layer 2 — LIVE). Allocation Rules + Runs merged into one
+  // two-tab Allocations page in the same consolidation.
+  { key: 'stella_ue_margins', displayName: 'Margins', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ue_margins', description: 'Profitability per job, per customer, per employee, and per service line.' },
+  { key: 'stella_ue_allocations', displayName: 'Allocations', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ue_allocations', description: 'Allocation rules (seven methods) and batch run history, together on one page.' },
+  { key: 'stella_ue_reconciliation', displayName: 'Reconciliation', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ue_reconciliation', description: 'Reconcile allocated costs against OLIVER, SPARK, and ARION source data.' },
+  // DATABASE MANAGER (Layer 3a — LOCKED / Coming Soon)
+  { key: 'stella_db_registry', displayName: 'View Registry', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_db_registry', description: 'Data catalog of every reportable view, filterable by product and access role.', tierGate: 'Standard' },
+  { key: 'stella_db_entry', displayName: 'Manual Entry', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_db_entry', description: 'Structured manual data entry from view metadata.', tierGate: 'Standard' },
+  { key: 'stella_db_upload', displayName: 'CSV / XLSX Upload', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_db_upload', description: 'Bulk import via CSV/XLSX with validation, commit, and rollback.', tierGate: 'Standard' },
+  { key: 'stella_db_tags', displayName: 'Tags', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_db_tags', description: 'Tag CRUD and assignment across your data.', tierGate: 'Standard' },
+  { key: 'stella_db_custom_fields', displayName: 'Custom Fields', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_db_custom_fields', description: 'Per-entity custom-field definitions.', tierGate: 'Standard' },
+  { key: 'stella_db_import_history', displayName: 'Import History', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_db_import_history', description: 'Import batch history with status, row counts, and rollback.', tierGate: 'Standard' },
+  { key: 'stella_db_documents', displayName: 'Documents', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_db_documents', description: 'Document library — folders, upload, tag, and link-to-entity.', tierGate: 'Standard' },
+  { key: 'stella_db_compliance', displayName: 'Compliance Reminders', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_db_compliance', description: 'Compliance and renewal reminders on a calendar + list.', tierGate: 'Standard' },
+  { key: 'stella_db_warnings', displayName: 'Data Engineer Warnings', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_db_warnings', description: 'Review queue for trust-flag warnings raised during ingestion.', tierGate: 'Standard' },
+  // CUSTOM REPORTING (Layer 3b — LOCKED / Coming Soon)
+  { key: 'stella_report_library', displayName: 'Report Library', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_report_library', description: 'Saved reports you can re-run and share.', tierGate: 'Standard' },
+  { key: 'stella_report_builder', displayName: 'Report Builder', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_report_builder', description: 'Field-picker report builder on top of the view registry.', tierGate: 'Standard' },
+  { key: 'stella_report_dashboards', displayName: 'Dashboards', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_report_dashboards', description: 'Composable dashboard grid with view and edit modes.', tierGate: 'Standard' },
+  { key: 'stella_report_scheduled', displayName: 'Scheduled Reports', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_report_scheduled', description: 'Schedule reports to run and deliver on a cadence.', tierGate: 'Standard' },
+  { key: 'stella_report_sql', displayName: 'SQL Editor', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_report_sql', description: 'Sandboxed SQL editor with a daily counter and syntax help.', tierGate: 'Pro' },
+  { key: 'stella_report_exports', displayName: 'Exports', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_report_exports', description: 'Export history and downloads.', tierGate: 'Standard' },
+  // STELLA settings (Settings hub only — NEVER add these keys to STELLA_NAV:
+  // SETTINGS_KEYS membership flips deriveProduct into Settings mode, so a key
+  // listed in both navs would hijack the STELLA SubNav. Replaces the old
+  // stella_settings_coming placeholder.)
+  { key: 'stella_settings_bank', displayName: 'Bank Connections', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_settings_bank', description: 'Connect, reconnect, and manage your bank & card feeds.' },
+  { key: 'stella_settings_period_close', displayName: 'Period Close', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_settings_period_close', description: 'Close a month, lock prior periods, and post adjusting entries.' },
+  // Back-compat aliases for the retired 0.1.0 MLP deep links. Not shown in any
+  // nav (coming_soon keeps them out of GlobalSearch); ServiceRouter redirects
+  // them to the live Ledger equivalents so old bookmarks / email CTAs don't 404.
+  { key: 'stella_coming', displayName: 'STELLA', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_coming', description: 'Legacy alias — redirects to STELLA Transactions.' },
+  { key: 'stella_expenses_coming', displayName: 'STELLA', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_expenses_coming', description: 'Legacy alias — redirects to STELLA Transactions.' },
   // OLIVER — Full FSM suite (16 pages)
   { key: 'oliver_dashboard', displayName: 'Dashboard', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_dashboard', description: 'KPI overview: active jobs, revenue, open invoices, and recent activity.' },
   { key: 'oliver_job_board', displayName: 'Job Board', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_job_board', description: 'List and Kanban views of all jobs with status filtering.' },
@@ -194,8 +239,8 @@ export const SERVICE_CATALOG: PortalService[] = [
   // deep-link safety but page redirects to STELLA placeholder (see
   // ServiceRouter).
   { key: 'oliver_expenses', displayName: 'Expenses (moved to STELLA)', section: 'OLIVER', defaultStatus: 'coming_soon', route: '/app/services/oliver_expenses', description: 'Deprecated — Expenses moves to STELLA for the expanded build. Existing data preserved.' },
-  // F-116 — STELLA Expenses placeholder for the future rebuild.
-  { key: 'stella_expenses_coming', displayName: 'Expenses', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_expenses_coming', description: 'STELLA 0.1.0 — record, categorize, and approve business expenses.' },
+  // F-116 — the STELLA 0.1.0 Expenses MLP (stella_expenses_coming) is retired;
+  // superseded by the STELLA Ledger (Transactions + Inbox) rows above.
   { key: 'oliver_reschedule_requests', displayName: 'Reschedule Queue', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_reschedule_requests', description: 'Customer self-service reschedule requests with admin approval (Pro).' },
   { key: 'oliver_quote_options', displayName: 'Quote Options', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_quote_options', description: 'Multi-option (good/better/best) pricing tiers on a quote (Pro). Open from a quote.' },
   { key: 'oliver_territories', displayName: 'Territories', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_territories', description: 'Service area rules + primary/backup workers (Business).' },
@@ -322,12 +367,12 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_nps_schedules', displayName: 'NPS Schedules', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_nps_schedules', description: 'Recurring NPS or CSAT surveys on a once/weekly/monthly/quarterly cadence with fire-now and pause controls.' },
   { key: 'spark_custom_fields', displayName: 'Custom Fields', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_custom_fields', description: 'Tenant-defined extra fields on contacts, deals, and accounts with string/number/date/boolean/enum types.' },
 
-  // ── Coming-Soon placeholders for STELLA / FORGE / ARGUS ────────────────────
-  // These keys are referenced from SubNav and from in-page links (STELLA
-  // overview from StellaExpensesComingPage, IA Insights header sub-routes,
-  // etc.). They render the generic "Coming soon" placeholder in
-  // ServiceRouter — no dedicated page component needed.
-  { key: 'stella_coming', displayName: 'Overview', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_coming', description: 'STELLA 0.1.0 — your monthly profit & loss over real invoices and expenses.' },
+  // ── Coming-Soon placeholders for FORGE / ARGUS ─────────────────────────────
+  // These keys are referenced from SubNav and from in-page links (IA Insights
+  // header sub-routes, etc.). They render the generic "Coming soon" placeholder
+  // in ServiceRouter — no dedicated page component needed.
+  // (STELLA's old stella_coming Overview MLP is retired — see the STELLA block
+  // above; legacy /app/services/stella_coming links redirect to Transactions.)
   { key: 'forge_coming', displayName: 'FORGE Overview', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_coming', description: 'FORGE integration hub — coming soon. The home for cross-product integrations and data plumbing.' },
   { key: 'argus_coming', displayName: 'ARGUS Overview', section: 'ARGUS', defaultStatus: 'coming_soon', route: '/app/services/argus_coming', description: 'ARGUS AI agents — coming soon. Autonomous AI doing work on your behalf under your guardrails.' },
   { key: 'spark_workflow_triggers', displayName: 'Workflow Triggers', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_workflow_triggers', description: 'Per-contact triggers (health tier change / lead score threshold / activity silence / tag added) that fire an action.' },

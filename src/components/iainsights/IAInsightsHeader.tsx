@@ -191,9 +191,9 @@ function ActiveProductsIndicator({ products }: { products: Array<{ key: "arion" 
     arion: "/app/services/arion_ia_insights_health",
     spark: "/app/services/spark_ia_insights_health",
     oliver: "/app/services/oliver_ia_insights_health",
-    // STELLA insights pages don't exist yet — route to the STELLA Coming Soon
-    // placeholder so the click doesn't 404. Will be updated when STELLA ships.
-    stella: "/app/services/stella_coming",
+    // STELLA has no IA-Insights health page yet — route to the live STELLA
+    // Reports page (P&L report) so the click lands on a real surface.
+    stella: "/app/services/stella_ledger_reports",
   };
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3">

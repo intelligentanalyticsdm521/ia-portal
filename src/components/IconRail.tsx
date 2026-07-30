@@ -131,9 +131,13 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
                   : "text-white/50 hover:bg-white/5 hover:text-white/80"
               }`}
             >
-              {/* Active indicator bar */}
+              {/* Active indicator bar — STELLA gets its own Indigo (#4C5BD4);
+                  every other product keeps the platform orange (#EF6C33). */}
               {isActive && (
-                <span className="absolute left-0 top-1/2 h-6 w-[2.5px] -translate-y-1/2 rounded-r-sm bg-[#EF6C33]" />
+                <span
+                  className="absolute left-0 top-1/2 h-6 w-[2.5px] -translate-y-1/2 rounded-r-sm"
+                  style={{ background: p.key === "stella" ? "#4C5BD4" : "#EF6C33" }}
+                />
               )}
               <span className="relative flex h-6 w-6 items-center justify-center">
                 {p.icon}

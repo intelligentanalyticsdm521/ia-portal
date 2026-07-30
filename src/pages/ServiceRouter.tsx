@@ -319,9 +319,26 @@ const OliverWorkflowTemplatesPage = lazyNamed(() => import('./oliver/OliverWorkf
 const OliverJobOffersPage = lazyNamed(() => import('./oliver/OliverJobOffersPage'), 'OliverJobOffersPage');
 const OliverSupportTicketsPage = lazyNamed(() => import('./oliver/OliverSupportTicketsPage'), 'OliverSupportTicketsPage');
 const OliverTimeTrackingPage = lazyNamed(() => import('./oliver/OliverTimeTrackingPage'), 'OliverTimeTrackingPage');
-// STELLA 0.1.0 — live Expenses + P&L Overview (replace the F-116 coming-soon placeholder)
-const StellaExpensesPage = lazyNamed(() => import('./stella/StellaExpensesPage'), 'StellaExpensesPage');
-const StellaOverviewPage = lazyNamed(() => import('./stella/StellaOverviewPage'), 'StellaOverviewPage');
+// STELLA — Ledger + Unit Economics 4-nav shell (supersedes the 0.1.0 MLP).
+// Five most-complete Ledger surfaces are their own chunks; the remaining live
+// shells + Unit Economics share a chunk each; locked Layer-3 keys render the
+// STELLA coming-soon sheet.
+const StellaLedgerInboxPage = lazyNamed(() => import('./stella/StellaLedgerInboxPage'), 'StellaLedgerInboxPage');
+const StellaTransactionsPage = lazyNamed(() => import('./stella/StellaTransactionsPage'), 'StellaTransactionsPage');
+const StellaCoaPage = lazyNamed(() => import('./stella/StellaCoaPage'), 'StellaCoaPage');
+const StellaVendorsPage = lazyNamed(() => import('./stella/StellaVendorsPage'), 'StellaVendorsPage');
+const StellaReportsPage = lazyNamed(() => import('./stella/StellaReportsPage'), 'StellaReportsPage');
+const StellaComingSoonPage = lazyNamed(() => import('./stella/StellaComingSoonPage'), 'StellaComingSoonPage');
+// Live Ledger shells (2026-07-30 consolidation — 8-item nav cap): Mileage &
+// Materials is one two-tab page; Bank + Period Close are Settings-hub pages.
+const StellaMileageMaterialsPage = lazyNamed(() => import('./stella/StellaLedgerShellPages'), 'StellaMileageMaterialsPage');
+const StellaBankPage = lazyNamed(() => import('./stella/StellaLedgerShellPages'), 'StellaBankPage');
+const StellaPeriodClosePage = lazyNamed(() => import('./stella/StellaLedgerShellPages'), 'StellaPeriodClosePage');
+// Unit Economics (Layer 2 — live, scaffolded). Rules + Runs merged into one
+// two-tab Allocations page.
+const StellaAllocationsPage = lazyNamed(() => import('./stella/StellaUnitEconomicsPages'), 'StellaAllocationsPage');
+const StellaMarginsPage = lazyNamed(() => import('./stella/StellaUnitEconomicsPages'), 'StellaMarginsPage');
+const StellaReconciliationPage = lazyNamed(() => import('./stella/StellaUnitEconomicsPages'), 'StellaReconciliationPage');
 const OliverRescheduleRequestsPage = lazyNamed(() => import('./oliver/OliverRescheduleRequestsPage'), 'OliverRescheduleRequestsPage');
 const OliverQuoteOptionsPage = lazyNamed(() => import('./oliver/OliverQuoteOptionsPage'), 'OliverQuoteOptionsPage');
 const OliverTerritoriesPage = lazyNamed(() => import('./oliver/OliverTerritoriesPage'), 'OliverTerritoriesPage');
@@ -519,11 +536,48 @@ export function ServiceRouter() {
   }
 
   if (service.section === 'STELLA') {
+    // Legacy 0.1.0 MLP routes — the Overview P&L + Expenses pages are retired.
+    // Redirect old deep links to the live Ledger equivalents so nothing 404s.
+    if (service.key === 'stella_coming') return <Navigate to="/app/services/stella_ledger_transactions" replace />;
+    if (service.key === 'stella_expenses_coming') return <Navigate to="/app/services/stella_ledger_transactions" replace />;
+
     let stellaPage: React.ReactNode = null;
     switch (service.key) {
-      // STELLA 0.1.0 — live surfaces (Overview P&L + Expenses).
-      case 'stella_coming': stellaPage = <StellaOverviewPage />; break;
-      case 'stella_expenses_coming': stellaPage = <StellaExpensesPage />; break;
+      // Ledger (Layer 1 — live; 2026-07-30 consolidation, 8-item nav cap)
+      case 'stella_ledger_inbox': stellaPage = <StellaLedgerInboxPage />; break;
+      case 'stella_ledger_transactions': stellaPage = <StellaTransactionsPage />; break;
+      case 'stella_ledger_vendors': stellaPage = <StellaVendorsPage />; break;
+      case 'stella_ledger_coa': stellaPage = <StellaCoaPage />; break;
+      case 'stella_ledger_mileage_materials': stellaPage = <StellaMileageMaterialsPage />; break;
+      case 'stella_ledger_reports': stellaPage = <StellaReportsPage />; break;
+      // Unit Economics (Layer 2 — live)
+      case 'stella_ue_margins': stellaPage = <StellaMarginsPage />; break;
+      case 'stella_ue_allocations': stellaPage = <StellaAllocationsPage />; break;
+      case 'stella_ue_reconciliation': stellaPage = <StellaReconciliationPage />; break;
+      // Settings hub (SETTINGS_NAV → STELLA group). These keys live in
+      // SETTINGS_KEYS so deriveProduct renders them in Settings mode; the
+      // pages themselves stay STELLA-branded.
+      case 'stella_settings_bank': stellaPage = <StellaBankPage />; break;
+      case 'stella_settings_period_close': stellaPage = <StellaPeriodClosePage />; break;
+      // Database Manager + Custom Reporting (Layer 3 — locked / coming soon).
+      // Every db_/report_ key renders the STELLA coming-soon sheet (padlock +
+      // tier badge driven by the catalog row).
+      case 'stella_db_registry':
+      case 'stella_db_entry':
+      case 'stella_db_upload':
+      case 'stella_db_tags':
+      case 'stella_db_custom_fields':
+      case 'stella_db_import_history':
+      case 'stella_db_documents':
+      case 'stella_db_compliance':
+      case 'stella_db_warnings':
+      case 'stella_report_library':
+      case 'stella_report_builder':
+      case 'stella_report_dashboards':
+      case 'stella_report_scheduled':
+      case 'stella_report_sql':
+      case 'stella_report_exports':
+        stellaPage = <StellaComingSoonPage service={service} />; break;
       default: break;
     }
     if (stellaPage) {
@@ -586,9 +640,10 @@ export function ServiceRouter() {
       case 'oliver_job_offers': oliverPage = <OliverJobOffersPage />; break;
       case 'oliver_support_tickets': oliverPage = <OliverSupportTicketsPage />; break;
       case 'oliver_time_tracking': oliverPage = <OliverTimeTrackingPage />; break;
-      // F-116 — Expenses moved to STELLA. Deep links to the deprecated
-      // oliver_expenses route now render the live STELLA Expenses page.
-      case 'oliver_expenses': oliverPage = <StellaExpensesPage />; break;
+      // F-116 — Expenses moved to STELLA and rebuilt as the Ledger. The 0.1.0
+      // Expenses MLP is retired; deep links to the deprecated oliver_expenses
+      // route redirect to the STELLA Transactions ledger.
+      case 'oliver_expenses': return <Navigate to="/app/services/stella_ledger_transactions" replace />;
       case 'oliver_reschedule_requests': oliverPage = <OliverRescheduleRequestsPage />; break;
       case 'oliver_quote_options': oliverPage = <OliverQuoteOptionsPage />; break;
       case 'oliver_territories': oliverPage = <OliverTerritoriesPage />; break;

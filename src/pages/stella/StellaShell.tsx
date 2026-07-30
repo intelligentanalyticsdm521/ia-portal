@@ -74,3 +74,153 @@ export function StellaShell({
     </div>
   );
 }
+
+/**
+ * StellaTabs — the STELLA in-page tab switcher (house pattern: fewer nav
+ * items, tabs inside the page — mirrors OliverRecurringPage / SparkLeadInbox).
+ */
+export function StellaTabs({
+  tabs,
+  active,
+  onChange,
+}: {
+  tabs: { key: string; label: string }[];
+  active: string;
+  onChange: (key: string) => void;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 4, marginBottom: 14, borderBottom: `1px solid ${STELLA_LAVENDER}` }}>
+      {tabs.map((t) => {
+        const isActive = t.key === active;
+        return (
+          <button
+            key={t.key}
+            onClick={() => onChange(t.key)}
+            style={{
+              padding: "8px 14px",
+              fontSize: 12,
+              fontWeight: isActive ? 700 : 500,
+              color: isActive ? STELLA_INDIGO : "#5A7A8A",
+              background: "transparent",
+              border: 0,
+              borderBottom: isActive ? `2px solid ${STELLA_INDIGO}` : "2px solid transparent",
+              marginBottom: -1,
+              cursor: "pointer",
+            }}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * StellaScaffoldCard — the body-only "landing in P1+" card, usable inside a
+ * tabbed page. StellaScaffoldPage wraps it in a StellaShell for standalone use.
+ */
+export function StellaScaffoldCard({
+  note,
+  bullets,
+  phase = "P1",
+  tier,
+  children,
+}: {
+  note?: string;
+  bullets?: string[];
+  phase?: string;
+  tier?: "Standard" | "Pro" | "Business";
+  children?: ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        background: "#fff",
+        border: `1px solid ${STELLA_LAVENDER}`,
+        borderRadius: 12,
+        padding: "22px 24px",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span
+          style={{
+            display: "inline-block",
+            padding: "3px 9px",
+            borderRadius: 99,
+            background: `${STELLA_INDIGO}18`,
+            color: STELLA_INDIGO,
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: 0.4,
+          }}
+        >
+          {phase} · Building
+        </span>
+        {tier && (
+          <span
+            style={{
+              display: "inline-block",
+              padding: "3px 9px",
+              borderRadius: 99,
+              background: "#EEF2FF",
+              color: "#3730A3",
+              fontSize: 11,
+              fontWeight: 700,
+            }}
+          >
+            {tier}+
+          </span>
+        )}
+      </div>
+      <div style={{ fontSize: 13, color: "#334155", marginTop: 12, lineHeight: 1.55, maxWidth: 640 }}>
+        {note ||
+          "This surface is scaffolded and wired into STELLA navigation. Its data view lands in an upcoming build phase."}
+      </div>
+      {bullets && bullets.length > 0 && (
+        <ul style={{ margin: "12px 0 0", padding: 0, listStyle: "none", display: "grid", gap: 6 }}>
+          {bullets.map((b) => (
+            <li key={b} style={{ fontSize: 12, color: "#5A7A8A", display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <span style={{ color: STELLA_INDIGO, fontWeight: 700, lineHeight: 1.4 }}>•</span>
+              <span style={{ lineHeight: 1.5 }}>{b}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/**
+ * StellaScaffoldPage — a real StellaShell page whose data view is scaffolded
+ * for a later build phase. The nav + route are fully wired; the body is an
+ * honest "landing in P1+" notice rather than a fake table.
+ */
+export function StellaScaffoldPage({
+  title,
+  subtitle,
+  note,
+  bullets,
+  phase = "P1",
+  tier,
+  actions,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  note?: string;
+  bullets?: string[];
+  phase?: string;
+  tier?: "Standard" | "Pro" | "Business";
+  actions?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <StellaShell title={title} subtitle={subtitle} actions={actions}>
+      <StellaScaffoldCard note={note} bullets={bullets} phase={phase} tier={tier}>
+        {children}
+      </StellaScaffoldCard>
+    </StellaShell>
+  );
+}
