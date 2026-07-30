@@ -18,6 +18,7 @@ import {
 // lifecycle_stage. Columns rendered from the tenant's lifecycle_preset
 // (simplified=3, moderate=5, advanced=10) via GET /api/v1/lifecycle/preset.
 import { SparkLifecycleKanban } from "../../components/spark/SparkLifecycleKanban";
+import { readSpreadsheet, parseDelimited, gridToRows, toContact } from "../../lib/sheetImport";
 import { PhoneInput } from "../../components/PhoneInput";
 
 interface Contact {
@@ -125,6 +126,10 @@ export function SparkContactsPage() {
    */
   const [justCreatedId, setJustCreatedId] = useState<number | null>(null);
   const [importText, setImportText] = useState("");
+  /** Rows parsed from an uploaded .csv/.xlsx, ready to send. */
+  const [importFileRows, setImportFileRows] = useState<ReturnType<typeof toContact>[] | null>(null);
+  const [importFileName, setImportFileName] = useState("");
+  const [importFileError, setImportFileError] = useState<string | null>(null);
 
   // ─ Load ─────────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -337,36 +342,67 @@ export function SparkContactsPage() {
     finally { setSaving(false); }
   }
 
+  /** Read the chosen file and show what we found BEFORE anything is sent. */
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    setImportFileError(null);
+    setImportFileRows(null);
+    setImportFileName("");
+    if (!file) return;
+    try {
+      const grid = await readSpreadsheet(file);
+      const rows = gridToRows(grid)
+        .map(toContact)
+        .filter((c) => c.email || c.first_name);   // skip blank/filler rows
+      if (!rows.length) {
+        setImportFileError(
+          "No contacts found. Check the first row holds column names like First Name and Email.",
+        );
+        return;
+      }
+      setImportFileRows(rows);
+      setImportFileName(file.name);
+    } catch (err) {
+      // SheetImportError messages are written for the user; anything else is
+      // surfaced verbatim rather than swallowed into a generic failure.
+      setImportFileError(String((err as Error)?.message || err));
+    }
+  }
+
   async function handleImport() {
-    // Parse CSV-style paste: one row per line, headers in first line
-    if (!importText.trim()) return;
+    // File wins when one is loaded; otherwise parse the pasted text.
+    //
+    // The paste path used to be `line.split(",")`, which corrupted any row
+    // containing a quoted comma — "Smith, Jane" became two columns and shifted
+    // every field after it. Both paths now share the RFC4180 parser in
+    // lib/sheetImport.ts.
+    const rows = importFileRows
+      ?? gridToRows(parseDelimited(importText)).map(toContact).filter((c) => c.email || c.first_name);
+    if (!rows.length) return;
+
     setSaving(true);
     try {
-      const lines = importText.trim().split(/\r?\n/);
-      const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
-      const rows = lines.slice(1).map(line => {
-        const cells = line.split(",").map(c => c.trim());
-        const obj: Record<string, string> = {};
-        headers.forEach((h, i) => { obj[h] = cells[i] || ""; });
-        return obj;
-      });
       let count = 0;
+      const failures: string[] = [];
       for (const r of rows) {
-        if (!r.email && !r.first_name) continue;
-        await post("/api/v1/contacts", {
-          first_name: r.first_name || r["first name"] || "",
-          last_name: r.last_name || r["last name"] || "",
-          email: r.email || "",
-          phone: r.phone || "",
-          company: r.company || "",
-          title: r.title || "",
-        });
-        count++;
+        try {
+          await post("/api/v1/contacts", r);
+          count++;
+        } catch (err) {
+          // Don't let one bad row abort the whole import — collect and report.
+          failures.push(`${r.email || r.first_name}: ${String((err as Error)?.message || err).slice(0, 80)}`);
+        }
       }
       setDrawer(null);
       setImportText("");
-      alert(`Imported ${count} contacts`);
+      setImportFileRows(null);
+      setImportFileName("");
       await load();
+      alert(
+        failures.length
+          ? `Imported ${count} of ${rows.length} contacts.\n\n${failures.length} didn't import:\n${failures.slice(0, 5).join("\n")}`
+          : `Imported ${count} contact${count === 1 ? "" : "s"}`,
+      );
     } catch (err) { setError(err); }
     finally { setSaving(false); }
   }
@@ -679,22 +715,68 @@ export function SparkContactsPage() {
         </div>
       </SparkDrawer>
 
-      {/* Import CSV drawer */}
+      {/* Import drawer — replaces the standalone Import (CSV) nav page.
+          Brandon 2026-07-27: "no longer needed this is a feature already
+          available in the contacts section. Also, need to expand to xlsx
+          file format in the contacts button." The old page's one advantage
+          was a file picker; that's here now, plus xlsx. */}
       <SparkDrawer
         open={drawer === "import"}
         onClose={() => setDrawer(null)}
         title="Import contacts"
-        subtitle="Paste CSV with headers, or download the template"
+        subtitle="Upload a spreadsheet, or paste your rows"
         width="wide"
         footer={
           <>
             <button onClick={() => setDrawer(null)} className="spark-btn spark-btn-secondary">Cancel</button>
-            <button onClick={handleImport} disabled={saving || !importText.trim()} className="spark-btn spark-btn-primary">
-              {saving ? "Importing…" : "Import"}
+            <button
+              onClick={handleImport}
+              disabled={saving || (!importText.trim() && !importFileRows)}
+              className="spark-btn spark-btn-primary"
+            >
+              {saving ? "Importing…" : importFileRows ? `Import ${importFileRows.length}` : "Import"}
             </button>
           </>
         }
       >
+        {/* File upload — the primary path. Most people have a file, not text. */}
+        <div className="spark-field">
+          <label className="spark-field-label">Upload a file</label>
+          <p className="text-[11px] text-slate-500 mb-2">
+            Excel (<code className="bg-slate-100 px-1 rounded text-[10px]">.xlsx</code>) or
+            <code className="bg-slate-100 px-1 rounded text-[10px] ml-1">.csv</code>. We read the first
+            sheet and match your column names automatically — "First Name", "E-mail" and
+            "Given Name" all work.
+          </p>
+          <input
+            data-tour="contact-import-file"
+            type="file"
+            accept=".csv,.tsv,.xlsx,text/csv"
+            onChange={handleImportFile}
+            className="block w-full text-xs text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-[#EF6C33] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-[#d95f2b]"
+          />
+          {importFileError && (
+            <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1.5 text-[11px] text-rose-700">
+              {importFileError}
+            </p>
+          )}
+          {importFileRows && (
+            <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-[11px] text-emerald-800">
+              <strong>{importFileRows.length}</strong> contact{importFileRows.length === 1 ? "" : "s"} ready
+              from <strong>{importFileName}</strong>
+              {importFileRows[0] && (
+                <span className="block mt-0.5 text-emerald-700">
+                  First row: {importFileRows[0].first_name || "—"} {importFileRows[0].last_name || ""} · {importFileRows[0].email || "no email"}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="my-4 flex items-center gap-3 text-[10px] uppercase tracking-wide text-slate-400">
+          <span className="h-px flex-1 bg-slate-200" /> or paste <span className="h-px flex-1 bg-slate-200" />
+        </div>
+
         <div className="spark-field">
           <label className="spark-field-label">CSV data</label>
           <p className="text-[11px] text-slate-500 mb-2">

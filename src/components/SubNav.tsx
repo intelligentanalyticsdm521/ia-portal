@@ -356,7 +356,10 @@ const SPARK_NAV: SubNavConfig = {
       label: "CRM", icon: Users, collapsible: true, sectionId: "spark_crm",
       items: [
         { key: "spark_contacts", label: "Contacts", route: "/app/services/spark_contacts" },
-        { key: "spark_contact_import", label: "Import (CSV)", route: "/app/services/spark_contact_import" },
+        // MERGED into the Contacts import modal 2026-07-30 (phase 4). The modal
+        // now does everything this page did (file picker) plus xlsx, so hiding
+        // it removes a nav item without removing a capability.
+        { key: "spark_contact_import", label: "Import (CSV)", route: "/app/services/spark_contact_import", hidden: true },
         { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts" },
         { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
         { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments", minTier: "pro" },
