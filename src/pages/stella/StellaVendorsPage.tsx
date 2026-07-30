@@ -8,13 +8,15 @@ import { useStellaApi } from "../../hooks/useStellaApi";
 import { DataTable, EmptyState, FilterBar, type Column } from "../../components/oliver/ui";
 import { StellaShell } from "./StellaShell";
 
+// Field names match the API payload (stella.counterparty columns) — the
+// exhaustive UI test caught this page reading a nonexistent `name`/`kind`.
 interface Counterparty {
   counterparty_id: string;
-  name: string;
-  kind: string | null; // vendor | customer | subcontractor | employee
+  display_name: string;
+  type: string | null; // vendor | customer | subcontractor | employee
   w9_on_file: boolean | null;
   is_1099: boolean | null;
-  tin_last4: string | null;
+  tin: string | null;
   email: string | null;
 }
 
@@ -60,30 +62,30 @@ export function StellaVendorsPage() {
 
   const filtered = useMemo(() => {
     let out = rows;
-    if (filter !== "all") out = out.filter((r) => (r.kind || "vendor") === filter);
+    if (filter !== "all") out = out.filter((r) => (r.type || "vendor") === filter);
     const q = search.trim().toLowerCase();
-    if (q) out = out.filter((r) => r.name.toLowerCase().includes(q) || (r.email || "").toLowerCase().includes(q));
+    if (q) out = out.filter((r) => (r.display_name || "").toLowerCase().includes(q) || (r.email || "").toLowerCase().includes(q));
     return out;
   }, [rows, filter, search]);
 
   const columns: Column<Counterparty>[] = [
     {
-      key: "name",
+      key: "display_name",
       header: "Name",
       sortable: true,
-      sortAccessor: (r) => r.name.toLowerCase(),
+      sortAccessor: (r) => (r.display_name || "").toLowerCase(),
       render: (r) => (
         <div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>{r.name}</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>{r.display_name}</div>
           {r.email && <div style={{ fontSize: 10, color: "#94A3B8" }}>{r.email}</div>}
         </div>
       ),
     },
     {
-      key: "kind",
+      key: "type",
       header: "Type",
       render: (r) => {
-        const p = KIND_PILL[r.kind || "vendor"] || KIND_PILL.vendor;
+        const p = KIND_PILL[r.type || "vendor"] || KIND_PILL.vendor;
         return (
           <span style={{ display: "inline-block", padding: "3px 9px", borderRadius: 99, background: p.bg, color: p.color, fontSize: 11, fontWeight: 600 }}>
             {p.label}
@@ -116,9 +118,9 @@ export function StellaVendorsPage() {
         ),
     },
     {
-      key: "tin_last4",
+      key: "tin",
       header: "TIN",
-      render: (r) => <span style={{ fontSize: 11, color: "#5A7A8A", fontVariantNumeric: "tabular-nums" }}>{r.tin_last4 ? `•••••${r.tin_last4}` : "—"}</span>,
+      render: (r) => <span style={{ fontSize: 11, color: "#5A7A8A", fontVariantNumeric: "tabular-nums" }}>{r.tin ? `•••••${String(r.tin).slice(-4)}` : "—"}</span>,
     },
   ];
 

@@ -99,8 +99,17 @@ export function StellaTransactionsPage() {
   const [flash, setFlash] = useState<string | null>(null);
   const [detail, setDetail] = useState<StellaTransaction | null>(null);
   // Reimbursable filter — deep-linkable: the Overview hero links to
-  // ?reimbursable=open. Toggled by the pill next to the search box.
-  const [reimbOnly, setReimbOnly] = useState(() => new URLSearchParams(location.search).has("reimbursable"));
+  // ?reimbursable=open. Toggled by the pill next to the search box. The URL
+  // is kept in sync on toggle so a copied link always matches what's shown
+  // (test finding: toggling off used to leave a stale ?reimbursable=open).
+  const [reimbOnly, setReimbOnlyState] = useState(() => new URLSearchParams(location.search).has("reimbursable"));
+  const setReimbOnly = useCallback((on: boolean) => {
+    setReimbOnlyState(on);
+    const url = new URL(window.location.href);
+    if (on) url.searchParams.set("reimbursable", "open");
+    else url.searchParams.delete("reimbursable");
+    window.history.replaceState(null, "", url.pathname + url.search);
+  }, []);
 
   // One fetch per page (house rule): transactions + COA + overview money-bar
   // together; recurring is allowed to 404 until the Ingestion phase and the
@@ -320,7 +329,7 @@ export function StellaTransactionsPage() {
               style={{ width: 320, maxWidth: "100%", padding: "7px 10px", fontSize: 12, border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 6, color: "#0B1C24" }}
             />
             <button
-              onClick={() => setReimbOnly((v) => !v)}
+              onClick={() => setReimbOnly(!reimbOnly)}
               title="Show only personal-card expenses awaiting reimbursement"
               style={{
                 display: "inline-flex",
