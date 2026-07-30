@@ -123,20 +123,34 @@ export const ARION_PAGES: PageContentMap = {
     body:
       "The classic mistake is tracking your own brand name and industry jargon. Real customers search plainly — \"emergency plumber near me\", not \"hydronic services\". Add ten honest terms including your town.",
     doIt: [
+      // ORDER MATTERS. This used to say "click Add" first and type second —
+      // but the Add button is disabled until the box has text, so the exercise
+      // opened by telling you to click a dead control. Type first, then add.
+      // The SEO page fetches ranking data on mount, so give the first target
+      // room to appear rather than stalling on a slow load.
+      //
+      // CAVEAT (2026-07-28, verified in dev): this panel only renders when the
+      // SEO add-on is active AND the site has a linked SE Ranking project.
+      // Without both, SeoKeywords.tsx returns an upsell or an empty state and
+      // there is nothing to type into — so the copy says so up front instead
+      // of leaving the user staring at "I can't find that control". ARION has
+      // no other hands-on exercise yet; picking one that every tenant can run
+      // regardless of add-ons is a content decision for Brandon.
       {
-        targetSelector: '[data-tour="add-keyword"]',
-        advance: "click",
-        title: "Add your first keywords",
-        body: "Click to add keywords. Think like a customer who doesn't know your company name.",
-        placement: "bottom",
+        targetSelector: 'textarea[data-tour="keyword-paste"]',
+        advance: "input",
+        waitForMs: 6000,
+        title: "Type a few real searches",
+        body: "This one needs the SEO add-on and a linked SE Ranking project — if you don't have both yet, skip ahead. Otherwise find \"Add Keywords Directly\" and put one search per line. Include your town: \"dentist ankeny\" tells you far more than \"dentist\" ever will.",
+        placement: "top",
       },
       {
-        targetSelector: '[data-tour="keyword-paste"]',
-        advance: "input",
-        waitForMs: 1500,
-        title: "Type a few real searches",
-        body: "One per line, and include your town — \"dentist ankeny\" tells you far more than \"dentist\" ever will.",
-        placement: "right",
+        targetSelector: 'button[data-tour="add-keyword"]',
+        advance: "click",
+        waitForMs: 2000,
+        title: "Now add them",
+        body: "The Add button wakes up once there's something to add. Duplicates and terms you already track are filtered out automatically, so you can paste freely.",
+        placement: "top",
       },
     ],
   },

@@ -21,6 +21,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { X, ChevronLeft } from "lucide-react";
+import { placeTooltip, type Placement } from "./placeTooltip";
 
 export type InteractiveAdvanceMode = "click" | "input" | "route" | "next";
 
@@ -377,52 +378,16 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
   // root cause as the stranded spotlight and "I can't actually click the
   // button": trusting an assumed size instead of measuring the real one.
   const tipH = tooltipH || 200;
-  const tooltipStyle: React.CSSProperties = (() => {
-    if (!targetRect) {
-      return { left: `calc(50% - ${tooltipW / 2}px)`, top: `calc(50% - ${tipH / 2}px)`, width: tooltipW };
-    }
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const clampL = (l: number) => Math.max(8, Math.min(l, vw - tooltipW - 8));
-    const clampT = (t: number) => Math.max(8, Math.min(t, vh - tipH - 8));
-
-    const candidates: Record<string, { top: number; left: number }> = {
-      bottom: { top: targetRect.bottom + pad, left: clampL(targetRect.left) },
-      top: { top: targetRect.top - tipH - pad, left: clampL(targetRect.left) },
-      right: { top: clampT(targetRect.top), left: targetRect.right + pad },
-      left: { top: clampT(targetRect.top), left: targetRect.left - tooltipW - pad },
-    };
-
-    const preferred = step.placement && step.placement !== "auto"
-      ? step.placement
-      : targetRect.top > vh / 2 ? "top" : "bottom";
-    // Try the author's choice first, then the others — so a step's placement
-    // is a preference, never a way to bury the target.
-    const order = [preferred, "bottom", "top", "right", "left"]
-      .filter((p, i, a) => a.indexOf(p) === i);
-
-    const onScreen = (c: { top: number; left: number }) =>
-      c.top >= 8 && c.left >= 8 && c.top + tipH <= vh - 8 && c.left + tooltipW <= vw - 8;
-    const coversTarget = (c: { top: number; left: number }) =>
-      !(c.left + tooltipW < targetRect.left
-        || c.left > targetRect.right
-        || c.top + tipH < targetRect.top
-        || c.top > targetRect.bottom);
-
-    for (const p of order) {
-      const c = candidates[p];
-      if (c && onScreen(c) && !coversTarget(c)) return { ...c, width: tooltipW };
-    }
-    // No placement is both fully on-screen and clear of the target (tiny
-    // viewport, or a target that fills it). Prefer staying on-screen — the
-    // spotlight still shows what to click.
-    for (const p of order) {
-      const c = candidates[p];
-      if (c && onScreen(c)) return { ...c, width: tooltipW };
-    }
-    const f = candidates[preferred] || candidates.bottom;
-    return { top: clampT(f.top), left: clampL(f.left), width: tooltipW };
-  })();
+  const tooltipStyle: React.CSSProperties =
+    placeTooltip({
+      targetRect,
+      width: tooltipW,
+      height: tipH,
+      placement: step.placement as Placement | undefined,
+      pad,
+    })
+    // No target yet — centre it.
+    ?? { left: `calc(50% - ${tooltipW / 2}px)`, top: `calc(50% - ${tipH / 2}px)`, width: tooltipW };
 
   const advanceCopy = (() => {
     if (notFound) return null; // nothing to click — see the note instead

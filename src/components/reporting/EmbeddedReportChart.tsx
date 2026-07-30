@@ -56,6 +56,20 @@ export interface EmbeddedReportChartProps {
   enabledRanges?: RangeKey[];
   /** Initial range. Defaults to "last30". */
   initialRange?: RangeKey;
+  /**
+   * COMPACT mode — for pages where the chart is context, not the point.
+   *
+   * Brandon 2026-07-28, on Outreach → Campaigns: "the graph is too big.
+   * Honestly this should be a much smaller graph at the top so you can get to
+   * your list of email campaigns much easier." Full size stacks a header, two
+   * rows of range pills, four totals tiles and a 160px plot — about 360px
+   * before the campaigns table even starts, so the list you came for is
+   * below the fold.
+   *
+   * Compact keeps every number but shrinks the footprint: short range set,
+   * totals inline on one line, and a shorter plot.
+   */
+  compact?: boolean;
 }
 
 const RANGE_OPTIONS: Array<{ key: RangeKey; label: string; days: number }> = [
@@ -78,6 +92,7 @@ export function EmbeddedReportChart({
   accent = "#1A7DB5",
   enabledRanges,
   initialRange = "last30",
+  compact = false,
 }: EmbeddedReportChartProps) {
   const [range, setRange] = useState<RangeKey>(initialRange);
   const [data, setData] = useState<ReportSeriesResponse | null>(null);
@@ -85,10 +100,15 @@ export function EmbeddedReportChart({
   const [err, setErr] = useState<string | null>(null);
 
   const visibleRanges = useMemo(() => {
-    if (!enabledRanges) return RANGE_OPTIONS;
+    // Compact shows the three ranges people actually use, so the pills stay on
+    // one line instead of wrapping to two. The full report has all eight.
+    const base = compact
+      ? RANGE_OPTIONS.filter((r) => r.key === "last7" || r.key === "last30" || r.key === "last90")
+      : RANGE_OPTIONS;
+    if (!enabledRanges) return base;
     const set = new Set(enabledRanges);
-    return RANGE_OPTIONS.filter((r) => set.has(r.key));
-  }, [enabledRanges]);
+    return base.filter((r) => set.has(r.key));
+  }, [enabledRanges, compact]);
 
   useEffect(() => {
     const days = RANGE_OPTIONS.find((r) => r.key === range)?.days ?? 30;
@@ -103,8 +123,8 @@ export function EmbeddedReportChart({
   }, [range, fetcher]);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+    <div className={`rounded-lg border border-slate-200 bg-white ${compact ? "p-3" : "p-4"}`}>
+      <div className={`flex flex-wrap items-start justify-between gap-3 ${compact ? "mb-2" : "mb-3"}`}>
         <div className="flex items-center gap-2 min-w-0">
           <div className="flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center" style={{ background: `${accent}1A`, color: accent }}>
             <BarChart3 className="h-4 w-4" />
@@ -124,7 +144,7 @@ export function EmbeddedReportChart({
       </div>
 
       {/* Range toggle pills */}
-      <div className="flex flex-wrap gap-1 mb-3">
+      <div className={`flex flex-wrap gap-1 ${compact ? "mb-2" : "mb-3"}`}>
         {visibleRanges.map((r) => (
           <button
             key={r.key}
@@ -140,8 +160,23 @@ export function EmbeddedReportChart({
         ))}
       </div>
 
-      {/* Totals row */}
-      {data && (
+      {/* Totals — four stacked tiles at full size; one inline row when compact,
+          which keeps every number but saves ~40px of vertical space. */}
+      {data && (compact ? (
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-2">
+          {metrics.map((m) => {
+            const v = data.totals[m.key] ?? 0;
+            return (
+              <div key={m.key} className="flex items-baseline gap-1.5">
+                <span className="text-[10px] uppercase font-semibold tracking-wide text-slate-500">{m.label}</span>
+                <span className="text-sm font-semibold text-slate-900 tabular-nums">
+                  {m.format ? m.format(v) : Number(v).toLocaleString()}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
           {metrics.map((m) => {
             const v = data.totals[m.key] ?? 0;
@@ -154,13 +189,13 @@ export function EmbeddedReportChart({
             );
           })}
         </div>
-      )}
+      ))}
 
       {/* Chart */}
       {loading && !data && <div className="text-xs text-slate-400 py-8 text-center">Loading…</div>}
       {err && !loading && <div className="text-xs text-rose-600 py-2">Failed to load: {err}</div>}
       {data && data.series.length > 0 && (
-        <SeriesChart series={data.series} metrics={metrics} accent={accent} />
+        <SeriesChart series={data.series} metrics={metrics} accent={accent} height={compact ? 84 : 160} />
       )}
       {data && data.series.length === 0 && !loading && (
         <div className="text-xs text-slate-400 py-6 text-center">No data in this range.</div>
@@ -171,14 +206,16 @@ export function EmbeddedReportChart({
 
 // ── Lightweight stacked area+bar SVG chart ────────────────────────────────
 function SeriesChart({
-  series, metrics, accent,
+  series, metrics, accent, height = 160,
 }: {
   series: SeriesPoint[];
   metrics: MetricSpec[];
   accent: string;
+  /** Plot height in SVG units; callers pass a shorter one for compact mode. */
+  height?: number;
 }) {
   const width = 720;
-  const height = 160;
+  // height now comes from props (compact mode passes a shorter plot).
   const padL = 24;
   const padR = 8;
   const padT = 8;

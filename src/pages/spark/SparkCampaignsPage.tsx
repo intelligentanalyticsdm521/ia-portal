@@ -45,6 +45,17 @@ export function SparkCampaignsPage() {
   // re-opened to refine or send. editCampaignId drives the modal — null
   // when creating, set when editing/viewing an existing campaign.
   const [editCampaignId, setEditCampaignId] = useState<number | null>(null);
+  /**
+   * Id of the campaign created in this session, used to mark its row for the
+   * walkthrough.
+   *
+   * The first attempt pinned the walkthrough to a campaign NAMED "Test
+   * campaign", which broke the moment Brandon typed a different name — the
+   * step just reported "I can't find that control". Keying on the id the
+   * composer hands back works whatever the user calls it, and still can't
+   * point at a record they didn't just make.
+   */
+  const [justCreatedId, setJustCreatedId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -100,14 +111,17 @@ export function SparkCampaignsPage() {
         {/* v7.2 — Embedded Campaign Performance from the IA Insights Trends
             engine. Date toggles + "View full report" link to the full
             Campaign Performance trend on the SPARK Trends page. */}
+        {/* compact: this page exists to work your campaign LIST — the chart is
+            context. Full size pushed the table below the fold. */}
         <EmbeddedReportChart
           title="Campaign performance"
-          subtitle={`Daily engagement for ${tab.toUpperCase()} campaigns. Toggle date range or open the full IA Insights report.`}
+          subtitle={`Daily engagement for ${tab.toUpperCase()} campaigns`}
           fetcher={fetchPerf}
           metrics={perfMetrics}
           fullReportRoute="/app/services/spark_ia_insights_trends"
           accent="#EF6C33"
           initialRange="last30"
+          compact
         />
 
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -146,13 +160,12 @@ export function SparkCampaignsPage() {
               {filtered.map((c) => (
                 <tr
                   key={c.id}
-                  // Walkthrough hook on DRAFT rows only, plus the name so the
-                  // exercise can target the exact draft it just created. If
-                  // the save failed, the row isn't there and the runner stops
-                  // rather than deleting some other draft. A sent campaign can
-                  // never be the target either way.
-                  data-tour={c.status === "draft" ? "campaign-open" : undefined}
-                  data-campaign-name={c.name || undefined}
+                  // Walkthrough hook: ONLY the draft this session just created.
+                  // Not "the first draft" (which could be someone else's work)
+                  // and not name-matched (which broke when the user typed their
+                  // own name). If the save failed there's no marked row, so the
+                  // runner stops rather than pointing at the wrong campaign.
+                  data-tour={c.status === "draft" && c.id === justCreatedId ? "campaign-open" : undefined}
                   onClick={() => { setEditCampaignId(c.id); setComposerOpen(true); }}
                   className="hover:bg-gray-50 cursor-pointer"
                   title={c.status === "draft" ? "Open to edit + send" : "Open to view"}
@@ -179,7 +192,15 @@ export function SparkCampaignsPage() {
       <SparkCampaignComposerModal
         open={composerOpen}
         onClose={() => { setComposerOpen(false); setEditCampaignId(null); }}
-        onCreated={() => { setComposerOpen(false); setEditCampaignId(null); load(); }}
+        onCreated={(id) => {
+          // Remember the new draft's id so its row carries the walkthrough
+          // hook. Deleting it clears the mark (the row is gone), and editing
+          // an existing draft passes its own id, which is harmless.
+          if (id) setJustCreatedId(id);
+          setComposerOpen(false);
+          setEditCampaignId(null);
+          load();
+        }}
         editCampaignId={editCampaignId}
       />
     </SparkPageShell>

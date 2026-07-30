@@ -115,6 +115,15 @@ export function SparkContactsPage() {
   const [detail, setDetail] = useState<Contact | null>(null);
   const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", company: "", title: "" });
   const [saving, setSaving] = useState(false);
+  /**
+   * Id of the contact created in this session — marks its row for the
+   * walkthrough's "open it back up" step.
+   *
+   * Replaces matching on email "test@email.com", which only worked if the user
+   * typed exactly that. Keying on the returned id works whatever they type and
+   * still can't point at a record they didn't just create.
+   */
+  const [justCreatedId, setJustCreatedId] = useState<number | null>(null);
   const [importText, setImportText] = useState("");
 
   // ─ Load ─────────────────────────────────────────────────────────────────
@@ -315,7 +324,12 @@ export function SparkContactsPage() {
     if (!form.first_name && !form.email) return;
     setSaving(true);
     try {
-      await post("/api/v1/contacts", form);
+      // Keep the new id so its row can carry the walkthrough hook — see
+      // justCreatedId. If the response has no id we simply mark nothing,
+      // which is the safe direction: no hook beats the wrong hook.
+      const created = await post<{ data?: { id?: number } }>("/api/v1/contacts", form);
+      const newId = created?.data?.id;
+      if (newId) setJustCreatedId(newId);
       setDrawer(null);
       setForm({ first_name: "", last_name: "", email: "", phone: "", company: "", title: "" });
       await load();
@@ -606,12 +620,11 @@ export function SparkContactsPage() {
           columns={columns}
           totalCount={filtered.length}
           rowActions={c => (
-            // data-contact-email lets the walkthrough target the exact record
-            // it just created rather than "whatever is in the first row". If
-            // the create failed (duplicate email, say), the row simply isn't
-            // there and the runner stops — instead of walking the user into
-            // deleting a real customer.
-            <button data-tour="contact-open" data-contact-email={c.email || undefined} onClick={() => { setDetail(c); setDrawer("detail"); }} className="spark-btn-icon" title="View details">
+            // The hook goes ONLY on the contact created in this session, so the
+            // walkthrough opens the record it just made — never "whatever is in
+            // the first row", which would walk the user into deleting a real
+            // customer if the create had failed.
+            <button data-tour={c.id === justCreatedId ? "contact-open" : undefined} onClick={() => { setDetail(c); setDrawer("detail"); }} className="spark-btn-icon" title="View details">
               <MoreHorizontal className="h-4 w-4" />
             </button>
           )}

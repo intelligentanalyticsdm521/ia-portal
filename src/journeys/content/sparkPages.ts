@@ -50,14 +50,15 @@ export const SPARK_PAGES: PageContentMap = {
         placement: "top",
       },
       {
-        // Pinned to the practice email, NOT the first row. If the create
-        // failed, this target doesn't exist and the runner stops — rather
-        // than opening a stranger's record and walking them into deleting it.
-        targetSelector: 'button[data-tour="contact-open"][data-contact-email="test@email.com"]',
+        // The page marks ONLY the contact this session just created, so this
+        // resolves whatever they typed. If the create failed there's no marked
+        // row and the runner stops — it never opens a stranger's record and
+        // walks them into deleting it.
+        targetSelector: 'button[data-tour="contact-open"]',
         advance: "click",
         waitForMs: 2500,
         title: "Now open it back up",
-        body: "Every contact opens into a full record — activity, notes, lists, tags. That's your new Test row highlighted; click the view button to go in.",
+        body: "Every contact opens into a full record — activity, notes, lists, tags. Your new row is highlighted; click the view button to go in.",
         placement: "left",
       },
       {
@@ -157,8 +158,8 @@ export const SPARK_PAGES: PageContentMap = {
         targetSelector: 'input[data-tour="campaign-name"]',
         advance: "input",
         waitForMs: 2500,
-        title: "Name it — type: Test campaign",
-        body: "Recipients never see this; it's how you'll recognise it in six months. Type Test campaign for now — we'll delete this one at the end, so give it the name I can find again.",
+        title: "Name it (internal only)",
+        body: "Recipients never see this; it's how you'll recognise it in six months. Call it anything — we're deleting this one at the end.",
         placement: "right",
       },
       {
@@ -176,13 +177,15 @@ export const SPARK_PAGES: PageContentMap = {
         placement: "top",
       },
       {
-        // Pinned to the prescribed name, so a failed save can't point this at
-        // a different draft. Same fail-safe as the contact exercise.
-        targetSelector: 'tr[data-tour="campaign-open"][data-campaign-name="Test campaign"]',
+        // The page marks ONLY the draft this session just created, so this
+        // resolves whatever the user named it and can never point at another
+        // campaign. If the save failed there's no marked row and the runner
+        // stops instead of guessing.
+        targetSelector: 'tr[data-tour="campaign-open"]',
         advance: "click",
         waitForMs: 2500,
         title: "There it is — open it back up",
-        body: "Drafts sit at the top of the list. Click Test campaign to go back in. Everything stays editable right up until you send.",
+        body: "Your new draft is highlighted in the list. Click it to go back in — everything stays editable right up until you send.",
         placement: "bottom",
       },
       {

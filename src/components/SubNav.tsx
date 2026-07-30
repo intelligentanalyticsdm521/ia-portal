@@ -729,7 +729,49 @@ interface SubNavProps {
 
 // Determine which section should auto-expand based on current path.
 // Each entry maps a path predicate to a sectionId (which must match a group's sectionId).
+/**
+ * route → sectionId, DERIVED from the nav config itself.
+ *
+ * The hand-written `path.includes(...)` chain below has drifted from the nav
+ * three times, because moving an item between groups doesn't touch it. Found
+ * 2026-07-28 while walking the tours:
+ *   - /spark_templates returned "spark_outreach" but the item now lives in
+ *     Workflow & Automations
+ *   - /spark_lead_inbox matched nothing at all (the Sales test is
+ *     "/spark_leads", which "spark_lead_inbox" does not contain)
+ *   - arion_ia_insights_* had no mapping whatsoever
+ * In each case the wrong group expanded (or none did), so the page you were
+ * looking at stayed hidden inside a collapsed group.
+ *
+ * Every nav item already knows its group, so read it from there. Built once,
+ * and it cannot go stale — moving an item updates this automatically.
+ */
+const ROUTE_TO_SECTION: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  for (const config of Object.values(SUB_NAV_CONFIGS)) {
+    if (!config) continue;
+    for (const group of config.groups) {
+      const sid = (group as { sectionId?: string }).sectionId;
+      if (!sid) continue;
+      for (const item of group.items) {
+        // FIRST claim wins. Three routes appear in both a main-nav group and
+        // the Settings hub (oliver_service_categories, oliver_workflow_settings,
+        // stella_coming); main nav is declared first and is where users expect
+        // to be shown, so don't let the settings entry overwrite it.
+        if (item.route && !map[item.route]) map[item.route] = sid;
+      }
+    }
+  }
+  return map;
+})();
+
 function getDefaultSection(path: string): string | null {
+  // Exact nav route wins — this is the authoritative answer whenever the
+  // path IS a nav destination. The legacy chain below still handles retired
+  // routes and deep links that aren't in the nav any more.
+  const exact = ROUTE_TO_SECTION[path];
+  if (exact) return exact;
+
   // F-93 — Settings auto-expand. ONLY the routes that are CURRENTLY in
   // Settings should expand a settings group. Routes that moved OUT to
   // main nav (Templates, Webhooks, Audience Sync, Audit Log, Review Widget,

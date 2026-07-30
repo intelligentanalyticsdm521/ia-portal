@@ -15,10 +15,11 @@
 // Persistence: localStorage["tour:completed:${tourId}"] = "1". A tour that
 // has been completed (or skipped) won't auto-launch again, but the user can
 // re-launch from the header "?" menu.
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { X, ChevronRight, ChevronLeft, Play } from "lucide-react";
 import { useSparkApi } from "../hooks/useSparkApi";
+import { placeTooltip, type Placement } from "./walkthroughs/placeTooltip";
 
 export interface TourStep {
   targetSelector?: string;             // CSS selector; omit for centered hero step
@@ -70,6 +71,9 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
   const [stepIdx, setStepIdx] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const [ready, setReady] = useState(false);
+  /** Measured card height — see tooltipStyle; an assumed one was the bug. */
+  const cardEl = useRef<HTMLDivElement | null>(null);
+  const [cardH, setCardH] = useState(0);
   const accent = tour.accent || "#1A3A4A";
 
   const step = tour.steps[stepIdx];
@@ -223,26 +227,31 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
 
   if (!open || !step) return null;
 
-  // Tooltip position
-  const tooltipStyle: React.CSSProperties = (() => {
-    const pad = 12;
-    const w = 320;
-    const h = 180; // approx
-    if (!targetRect || step.placement === "center") {
-      return { left: `calc(50% - ${w / 2}px)`, top: `calc(50% - ${h / 2}px)`, width: w };
-    }
-    const placement = step.placement || (targetRect.top > window.innerHeight / 2 ? "top" : "bottom");
-    let top = targetRect.top;
-    let left = targetRect.left;
-    if (placement === "bottom") { top = targetRect.bottom + pad; left = targetRect.left; }
-    else if (placement === "top") { top = targetRect.top - h - pad; left = targetRect.left; }
-    else if (placement === "right") { top = targetRect.top; left = targetRect.right + pad; }
-    else if (placement === "left") { top = targetRect.top; left = targetRect.left - w - pad; }
-    // Keep on screen
-    left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
-    top = Math.max(8, Math.min(top, window.innerHeight - h - 8));
-    return { top, left, width: w };
-  })();
+  // Measure the rendered card, then let the placement maths re-run with the
+  // real height. Without this the card can sit on top of what it explains.
+  useLayoutEffect(() => {
+    if (!ready) return;
+    const h = cardEl.current?.offsetHeight;
+    if (h && Math.abs(h - cardH) > 1) setCardH(h);
+  }, [ready, stepIdx, cardH, step?.title, step?.body]);
+
+  // Tooltip position.
+  //
+  // The height used to be `180; // approx`, and the approximation was the bug:
+  // real tour cards run 220-300px with a title, two to four sentences of
+  // teaching copy and a footer, so placement:"top" put the card's top 180px
+  // above the target and the surplus hung down over it — hiding the exact
+  // control the step was explaining. Now we measure the card (see cardH) and
+  // let placeTooltip pick a side that stays clear of the target.
+  const w = 320;
+  const tooltipStyle: React.CSSProperties =
+    placeTooltip({
+      targetRect,
+      width: w,
+      height: cardH || 200,
+      placement: step.placement as Placement | undefined,
+    })
+    ?? { left: `calc(50% - ${w / 2}px)`, top: `calc(50% - ${(cardH || 200) / 2}px)`, width: w };
 
   // Spotlight cut-out via box-shadow (covers entire viewport with a hole).
   const spotlightStyle: React.CSSProperties = targetRect ? {
@@ -270,6 +279,7 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
       {ready && (
         <div
           className="fixed z-[9999] rounded-xl bg-white shadow-2xl border-2"
+          ref={cardEl}
           style={{ ...tooltipStyle, borderColor: accent }}
         >
           {/* Header — Brandon 2026-07-27: "a small box is fine as long as we
