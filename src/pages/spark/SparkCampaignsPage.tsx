@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { EmbeddedReportChart, type ReportSeriesResponse } from "../../components/reporting/EmbeddedReportChart";
@@ -136,13 +137,25 @@ export function SparkCampaignsPage() {
               </button>
             ))}
           </div>
-          <button
-            data-tour="new-campaign"
-            onClick={() => { setEditCampaignId(null); setComposerOpen(true); }}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            + New campaign
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Templates is a campaign tool, not a top-level destination — the
+                map moves it out of nav and opens it from here. Without this
+                link, hiding the nav item would strand the library. */}
+            <Link
+              to="/app/services/spark_templates"
+              data-tour="campaign-templates"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Templates
+            </Link>
+            <button
+              data-tour="new-campaign"
+              onClick={() => { setEditCampaignId(null); setComposerOpen(true); }}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              + New campaign
+            </button>
+          </div>
         </div>
 
         <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">

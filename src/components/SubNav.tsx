@@ -394,7 +394,7 @@ const SPARK_NAV: SubNavConfig = {
       label: "Capture", icon: Target, collapsible: true, sectionId: "spark_capture",
       items: [
         { key: "spark_forms", label: "Forms", route: "/app/services/spark_forms" },
-        { key: "spark_form_builder", label: "Form Builder", route: "/app/services/spark_form_builder" },
+        { key: "spark_form_builder", label: "Form Builder", route: "/app/services/spark_form_builder", hidden: true /* merged: Forms opens the builder as a modal (F-104, 2026-05-28); this page is only a back-compat route for old deep links */ },
         { key: "spark_landing_pages", label: "Landing Pages", route: "/app/services/spark_landing_pages", hidden: true /* cut: stub, block editor never shipped */ },
         { key: "spark_qr_codes", label: "QR Codes", route: "/app/services/spark_qr_codes" },
       ],
@@ -436,7 +436,7 @@ const SPARK_NAV: SubNavConfig = {
         // Templates moved here from Outreach (2026-05-28 founder decision).
         // It's a library used by other features — configuration-like, not
         // an active send surface.
-        { key: "spark_templates", label: "Templates", route: "/app/services/spark_templates" },
+        { key: "spark_templates", label: "Templates", route: "/app/services/spark_templates", hidden: true /* merged: reachable from Campaigns -> Templates. Already unified Email+SMS+Translations into one library (F-91) */ },
         // Phase 3A (2026-06-16) — Webhooks pulled from nav until our own
         // implementation ships in SPARK v1.5 (page shows Coming Soon banner).
         { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync", hidden: true /* cut: platform plumbing */ },
