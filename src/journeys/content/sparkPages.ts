@@ -19,6 +19,26 @@ export const SPARK_PAGES: PageContentMap = {
     title: "Contacts — the foundation everything keys off",
     body:
       "One row per human. Every campaign, automation, deal and score points back to a contact. CRMs don't die from missing features — they die when people stop trusting the data. Fifty contacts you trust beat five thousand you don't.",
+    onPage: [
+      {
+        // D4 (Brandon 2026-07-30): "Make sure the tours walk through the
+        // company tab and explains the difference there." Companies stopped
+        // being its own nav page and became a view here, so the tour has to
+        // teach the distinction rather than assume it's obvious.
+        title: "Contacts, and the companies behind them",
+        body:
+          "These three buttons show the same people three ways. LIST is everyone, one row per person. KANBAN is those people by how far along they are with you. COMPANIES rolls them up by the business they work for — so a firm with four people you deal with is one row, not four. A contact is a person you can email; a company is who signs the cheque. If you sell to households, you can ignore Companies entirely.",
+        targetSelector: 'button[data-tour="contacts-companies-tab"]',
+        placement: "bottom",
+      },
+      {
+        title: "Import brings your list in",
+        body:
+          "A spreadsheet, your phone, an old system — Import takes .csv or Excel .xlsx, matches your column names automatically (\"First Name\", \"Given Name\" and \"E-mail\" all work) and shows you what it found before anything is saved. Duplicates merge into the existing contact instead of creating twins. This one button is usually the difference between a CRM that gets used and one that doesn't.",
+        targetSelector: 'button[data-tour="contact-import"]',
+        placement: "bottom",
+      },
+    ],
     doIt: [
       {
         targetSelector: 'button[data-tour="new-contact"]',

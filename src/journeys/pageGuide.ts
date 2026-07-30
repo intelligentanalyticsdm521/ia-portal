@@ -67,6 +67,17 @@ export function buildPageSteps(
   for (const group of config.groups) {
     const sectionLabel = group.label || "Overview";
     for (const item of group.items) {
+      // Never teach a page the user can't see.
+      //
+      // The tour is generated from the nav so coverage can't drift — but that
+      // cuts both ways: once the SPARK feature wall hid ~20 surfaces, the tour
+      // would happily walk someone to Contact 360 or Social Scheduler and then
+      // stall, because the nav link it wants to highlight isn't rendered.
+      //
+      // `hidden` and `addon` are static facts, so they're filtered here.
+      // (Tier-gated items still appear; a Standard user on a Pro step gets the
+      // runner's honest "can't find that control" rather than a dead end.)
+      if (item.hidden || item.addon) continue;
       const c = content[item.key];
       if (!c) continue; // unauthored pages are reported, never filled with noise
       steps.push({

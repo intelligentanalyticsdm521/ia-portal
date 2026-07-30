@@ -360,7 +360,7 @@ const SPARK_NAV: SubNavConfig = {
         // now does everything this page did (file picker) plus xlsx, so hiding
         // it removes a nav item without removing a capability.
         { key: "spark_contact_import", label: "Import (CSV)", route: "/app/services/spark_contact_import", hidden: true },
-        { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts" },
+        { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts", hidden: true /* merged: Companies is now a view on Contacts (List | Kanban | Companies) — same component, not a copy */ },
         { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
         { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments", minTier: "pro" },
         { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags" },

@@ -38,7 +38,55 @@ const HEALTH_COLORS: Record<string, string> = {
   churning: "bg-rose-100 text-rose-700",
 };
 
-export function SparkAccountsPage() {
+
+/**
+ * Page chrome that steps aside when embedded.
+ *
+ * Standalone this is a full SparkPageShell; inside Contacts the surrounding
+ * page already supplies the title, search and stats, so a second shell would
+ * nest two headers. Embedded keeps the parts that DO work (the New company
+ * action, the stat strip) and drops the duplicated chrome.
+ */
+function Frame({
+  embedded, title, subtitle, actions, stats, filters, error, loading, children,
+}: {
+  embedded: boolean; title: string; subtitle?: string;
+  actions?: React.ReactNode; stats?: React.ReactNode; filters?: React.ReactNode;
+  error?: unknown; loading?: boolean; children: React.ReactNode;
+}) {
+  if (!embedded) {
+    return (
+      <SparkPageShell title={title} subtitle={subtitle} actions={actions} stats={stats} filters={filters} error={error} loading={loading}>
+        {children}
+      </SparkPageShell>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-slate-500">{subtitle}</p>
+        {actions}
+      </div>
+      {stats}
+      {filters}
+      {children}
+    </div>
+  );
+}
+
+interface SparkAccountsPageProps {
+  /**
+   * Render WITHOUT its own page shell, for use inside another page.
+   *
+   * Companies moved from a top-level nav item to a view on Contacts (feature
+   * map 2026-07-27: "Companies -> tab/filter under Contacts"). Rendering this
+   * same component there — rather than copying its table — means one
+   * implementation, so the two can never drift apart.
+   */
+  embedded?: boolean;
+}
+
+export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps = {}) {
   const { get, post, put, del, ready } = useSparkApi();
 
   // List state
@@ -182,7 +230,7 @@ export function SparkAccountsPage() {
   // ─ Render: DETAIL view when an account is selected ──────────────────────
   if (selected) {
     return (
-      <SparkPageShell
+      <Frame embedded={embedded}
         title={selected.name}
         subtitle={selected.domain || selected.industry || "Company detail"}
         actions={
@@ -318,7 +366,7 @@ export function SparkAccountsPage() {
             />
           )}
         </div>
-      </SparkPageShell>
+      </Frame>
     );
   }
 
@@ -362,7 +410,7 @@ export function SparkAccountsPage() {
   ];
 
   return (
-    <SparkPageShell
+    <Frame embedded={embedded}
       title="Companies"
       subtitle="Group contacts by company — auto-matched by email domain"
       actions={
@@ -441,7 +489,7 @@ export function SparkAccountsPage() {
           <input className="spark-field-input" value={form.website} onChange={e => setForm({ ...form, website: e.target.value })} placeholder="https://acme.com" />
         </div>
       </SparkDrawer>
-    </SparkPageShell>
+    </Frame>
   );
 }
 
