@@ -39,6 +39,18 @@ export const OLIVER_PAGES: PageContentMap = {
         placement: "right",
       },
       {
+        // REQUIRED FIELD — omitting this dead-ended the exercise. OliverContacts
+        // Page gates Create customer on `!first.trim() || !last.trim()`, so with
+        // only a first name the button stays disabled forever and the
+        // walkthrough sat on "Save it" with nothing the user could do. Verified
+        // in dev: saveDisabled was true with First name + Email filled.
+        targetSelector: 'input[data-tour="customer-last-name"]',
+        advance: "input",
+        title: "Last name",
+        body: "Both names are required here — OLIVER won't let you save a half-named customer, because these records end up on quotes and invoices where a missing surname looks careless.",
+        placement: "right",
+      },
+      {
         targetSelector: 'input[data-tour="customer-email"]',
         advance: "input",
         title: "Email",
