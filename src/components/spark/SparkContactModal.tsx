@@ -94,6 +94,13 @@ interface ActivityEvent {
 
 type Tab = "overview" | "activity" | "notes" | "lists" | "tags" | "danger";
 
+/** The cross-product slice of GET /contacts/:id/360 that the record shows. */
+interface Cross360 {
+  email_events?: Array<{ id: number; event_type: string; campaign_name: string | null; occurred_at: string }>;
+  sms_sends?: Array<{ id: number; campaign_name: string | null; status: string; sent_at: string }>;
+  oliver_jobs?: Array<{ id: number; status: string; title?: string }>;
+}
+
 interface Props {
   contactId: number | null;
   open: boolean;
@@ -120,6 +127,14 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
   const [tab, setTab] = useState<Tab>("overview");
   const [contact, setContact] = useState<ContactFull | null>(null);
   const [activity, setActivity] = useState<ActivityEvent[] | null>(null);
+  /**
+   * Cross-product history, from GET /contacts/:id/360 — the endpoint that used
+   * to back the standalone Contact 360 page. Only the parts the record doesn't
+   * already show: email/SMS history and OLIVER jobs. Profile/tags/lists/notes
+   * are already tabs here, so re-rendering them would just be the duplication
+   * that made Contact 360 confusing in the first place.
+   */
+  const [x360, setX360] = useState<Cross360 | null>(null);
   const [lists, setLists] = useState<ListMembership[] | null>(null);
   const [availableLists, setAvailableLists] = useState<AvailableList[]>([]);
   const [pickerListId, setPickerListId] = useState<number | "">("");
@@ -189,6 +204,18 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
     }
   }, [get, contactId, ready]);
 
+  const loadX360 = useCallback(async () => {
+    if (!ready || !contactId) return;
+    try {
+      const r = await get<{ data: Cross360 }>(`/api/v1/contacts/${contactId}/360`);
+      setX360(r.data || {});
+    } catch {
+      // Cross-product history is supplementary — if the 360 endpoint is
+      // unavailable the record still works, it just shows no history block.
+      setX360({});
+    }
+  }, [get, contactId, ready]);
+
   const loadLists = useCallback(async () => {
     if (!ready || !contactId) return;
     try {
@@ -211,6 +238,7 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
     } else {
       setContact(null);
       setActivity(null);
+      setX360(null);   // else the previous contact's history shows on the next
       setLists(null);
       setAvailableLists([]);
     }
@@ -250,8 +278,9 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
 
   useEffect(() => {
     if (open && tab === "activity" && activity === null) loadActivity();
+    if (open && tab === "activity" && x360 === null) loadX360();
     if (open && tab === "lists" && lists === null) loadLists();
-  }, [open, tab, activity, lists, loadActivity, loadLists]);
+  }, [open, tab, activity, x360, lists, loadActivity, loadX360, loadLists]);
 
   async function addToList() {
     if (!contactId || pickerListId === "") return;
@@ -660,6 +689,80 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
                     );
                   })}
                 </ul>
+              )}
+
+              {/* ── Cross-product history (absorbs the Contact 360 page) ──────
+                  Brandon 2026-07-27 on the standalone page: "Contact 360 - no
+                  clue what this is." It was a second place to look at the same
+                  person, whose only unique content was their email/SMS history
+                  and their OLIVER jobs. That belongs on the record itself, so
+                  "everything about this person" is one screen and not a nav
+                  item you have to know about. */}
+              {x360 && (
+                <div className="mt-5 space-y-4 border-t border-slate-200 pt-4">
+                  {!!x360.email_events?.length && (
+                    <div>
+                      <h3 className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-1.5">
+                        Email history
+                      </h3>
+                      <ul className="space-y-1">
+                        {x360.email_events.slice(0, 8).map((e) => (
+                          <li key={e.id} className="flex items-baseline justify-between gap-3 text-xs">
+                            <span className="min-w-0 truncate text-slate-700">
+                              <span className="font-medium">{e.event_type}</span>
+                              {e.campaign_name ? ` · ${e.campaign_name}` : ""}
+                            </span>
+                            <span className="whitespace-nowrap text-[10px] tabular-nums text-slate-400">
+                              {new Date(e.occurred_at).toLocaleDateString()}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {!!x360.sms_sends?.length && (
+                    <div>
+                      <h3 className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-1.5">
+                        SMS history
+                      </h3>
+                      <ul className="space-y-1">
+                        {x360.sms_sends.slice(0, 6).map((s) => (
+                          <li key={s.id} className="flex items-baseline justify-between gap-3 text-xs">
+                            <span className="min-w-0 truncate text-slate-700">
+                              {s.campaign_name || "Direct message"} · {s.status}
+                            </span>
+                            <span className="whitespace-nowrap text-[10px] tabular-nums text-slate-400">
+                              {s.sent_at ? new Date(s.sent_at).toLocaleDateString() : ""}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {!!x360.oliver_jobs?.length && (
+                    <div>
+                      <h3 className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-1.5">
+                        Jobs in Invoicing &amp; Administration
+                      </h3>
+                      <ul className="space-y-1">
+                        {x360.oliver_jobs.slice(0, 6).map((j) => (
+                          <li key={j.id} className="flex items-baseline justify-between gap-3 text-xs">
+                            <span className="min-w-0 truncate text-slate-700">{j.title || `Job #${j.id}`}</span>
+                            <span className="whitespace-nowrap text-[10px] uppercase text-slate-500">{j.status}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {!x360.email_events?.length && !x360.sms_sends?.length && !x360.oliver_jobs?.length && (
+                    <p className="text-xs italic text-slate-500">
+                      Nothing sent to this person yet, and no jobs on their record.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           )}

@@ -364,7 +364,11 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
         { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments", minTier: "pro" },
         { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags" },
-        { key: "spark_contact_360", label: "Contact 360°", route: "/app/services/spark_contact_360", intelligence: true },
+        // MERGED into the contact record's Activity tab 2026-07-30 (phase 4).
+        // Brandon: "Contact 360 - no clue what this is." Its only unique
+        // content was email/SMS history + OLIVER jobs, which now render on the
+        // record itself — one screen per person instead of two places to look.
+        { key: "spark_contact_360", label: "Contact 360°", route: "/app/services/spark_contact_360", intelligence: true, hidden: true },
         { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true },
       ],
     },
