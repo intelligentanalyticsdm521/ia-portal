@@ -265,9 +265,43 @@ export const SPARK_PAGES: PageContentMap = {
 
   // ── Workflow & Automations ──────────────────────────────────────────────
   spark_workflows_automations: {
-    title: "Automations — the highest-leverage ten minutes in SPARK",
+    title: "Automations — four switches, no building",
     body:
-      "A welcome email firing at 2am to someone who just filled in your form is worth more than a campaign you send when you remember. If you build exactly one, make it the welcome — it lands at peak interest, which is when replies actually happen.",
+      "A welcome email firing at 2am to someone who just filled in your form is worth more than a campaign you send when you remember. There's nothing to design here: four automations that earn their keep, each either on or off.",
+    onPage: [
+      {
+        title: "Start with Welcome",
+        body:
+          "If you switch on exactly one, make it this. It goes out within an hour of someone landing in your CRM — from a form, an import, or typed in by hand — which is the moment they're most interested in you. It's the highest-open email you'll ever send. Every switch tells you WHEN it fires and WHY it's worth it, so you're never guessing what's about to go out in your name.",
+        targetSelector: '[data-tour="automation-welcome"]',
+        placement: "bottom",
+      },
+      {
+        title: "Off is not delete",
+        body:
+          "Switch one off and it stops immediately — but the automation and everything it's already done stay put, so turning it back on picks up where it left off. That's why it's safe to try one for a month and change your mind.",
+        targetSelector: '[data-tour="automation-birthday"]',
+        placement: "top",
+      },
+    ],
+    doIt: [
+      {
+        targetSelector: '[data-tour="automation-welcome"] [role="switch"]',
+        advance: "click",
+        waitForMs: 3000,
+        title: "Switch on the welcome",
+        body: "Click the toggle. It starts working immediately — and you can switch it straight back off, which we'll do next so nothing goes out unexpectedly.",
+        placement: "left",
+      },
+      {
+        targetSelector: '[data-tour="automation-welcome"] [role="switch"]',
+        advance: "click",
+        waitForMs: 2500,
+        title: "And back off again",
+        body: "Click it once more. That's the whole interface — no canvas, no branches, no rules to maintain. Turn it on for real when you've written the email you want it to send.",
+        placement: "left",
+      },
+    ],
   },
   spark_tasks: {
     body:

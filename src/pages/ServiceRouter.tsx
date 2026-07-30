@@ -227,6 +227,7 @@ const SparkTemplatesPage = lazyNamed(() => import('./spark/SparkTemplatesPage'),
 const SparkRulesPage = lazyNamed(() => import('./spark/SparkRulesPage'), 'SparkRulesPage');
 // Phase 3A merger — unified Workflows + Rules list page.
 const SparkWorkflowsAutomationsPage = lazyNamed(() => import('./spark/SparkWorkflowsAutomationsPage'), 'SparkWorkflowsAutomationsPage');
+const SparkAutomationsSimplePage = lazyNamed(() => import('./spark/SparkAutomationsSimplePage'), 'SparkAutomationsSimplePage');
 // F-CS.6 Phase 1 admin surface for lumen.spark_task rows (named sub-automations
 // invoked via task_call). Backs the F-CS.3 dropdown in the IL Customize editor.
 const SparkTasksPage = lazyNamed(() => import('./spark/SparkTasksPage'), 'SparkTasksPage');
@@ -660,10 +661,15 @@ export function ServiceRouter() {
       case 'spark_forms': sparkPage = <SparkFormsPage />; break;
       // Phase 3A — unified Workflows & Automations list page. The old
       // automation/rules/workflow-triggers keys redirect here for back-compat.
+      // 2026-07-30 — the four builders collapse into ONE page of prebuilt
+      // toggles (feature map: "ONE page: ~4 prebuilt toggle-on automations").
+      // The old builder is still imported and reachable at
+      // /spark_automation_builder for anything already wired up; it is no
+      // longer what a client meets when they click Automations.
       case 'spark_workflows_automations':
       case 'spark_automations':
       case 'spark_workflow_triggers':
-        sparkPage = <SparkWorkflowsAutomationsPage />; break;
+        sparkPage = <SparkAutomationsSimplePage />; break;
       // F-CS.6 — named-task admin (lumen.spark_task)
       case 'spark_tasks': sparkPage = <SparkTasksPage />; break;
       // Unified Lead Inbox (2026-06-25). `spark_lead_inbox` is the new canonical
