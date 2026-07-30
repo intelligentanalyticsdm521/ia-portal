@@ -395,7 +395,7 @@ const SPARK_NAV: SubNavConfig = {
       items: [
         { key: "spark_forms", label: "Forms", route: "/app/services/spark_forms" },
         { key: "spark_form_builder", label: "Form Builder", route: "/app/services/spark_form_builder", merged: true /* merged: Forms opens the builder as a modal (F-104, 2026-05-28); this page is only a back-compat route for old deep links */ },
-        { key: "spark_landing_pages", label: "Landing Pages", route: "/app/services/spark_landing_pages", hidden: true /* cut: stub, block editor never shipped */ },
+        { key: "spark_landing_pages", label: "Landing Pages", route: "/app/services/spark_landing_pages", minTier: "pro" /* PRO */},
         { key: "spark_qr_codes", label: "QR Codes", route: "/app/services/spark_qr_codes" },
       ],
     },
@@ -428,18 +428,18 @@ const SPARK_NAV: SubNavConfig = {
         // steps reference. Sits next to Workflows & Automations because
         // tasks ARE workflow building blocks — same mental model, same
         // group home.
-        { key: "spark_tasks", label: "Tasks", route: "/app/services/spark_tasks", hidden: true /* cut: four-builder over-engineering */ },
-        { key: "spark_journey_builder", label: "Journeys", route: "/app/services/spark_journey_builder", hidden: true /* cut: four-builder over-engineering */ },
-        { key: "spark_ab_tests", label: "A/B Tests", route: "/app/services/spark_ab_tests" },
-        { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals", hidden: true /* cut: four-builder over-engineering */ },
-        { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts", hidden: true /* cut: four-builder over-engineering */ },
+        { key: "spark_tasks", label: "Tasks", route: "/app/services/spark_tasks", minTier: "pro" /* PRO: follow-up tasks are core CRM */},
+        { key: "spark_journey_builder", label: "Journeys", route: "/app/services/spark_journey_builder", minTier: "pro" /* PRO: multi-step branching journeys — the classic Pro unlock */},
+        { key: "spark_ab_tests", label: "A/B Tests", route: "/app/services/spark_ab_tests", minTier: "pro" /* PRO */},
+        { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals", minTier: "business" /* BUSINESS: matters at 2+ marketers */},
+        { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts", minTier: "business" /* BUSINESS */},
         // Templates moved here from Outreach (2026-05-28 founder decision).
         // It's a library used by other features — configuration-like, not
         // an active send surface.
         { key: "spark_templates", label: "Templates", route: "/app/services/spark_templates", merged: true /* merged: reachable from Campaigns -> Templates. Already unified Email+SMS+Translations into one library (F-91) */ },
         // Phase 3A (2026-06-16) — Webhooks pulled from nav until our own
         // implementation ships in SPARK v1.5 (page shows Coming Soon banner).
-        { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync", hidden: true /* cut: platform plumbing */ },
+        { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync", minTier: "business" /* BUSINESS: ad-platform audience push */},
         // Lead Suppression + Lead Territories used to live here as separate
         // entries; both were absorbed into the unified Lead Inbox page
         // (Sales group) as tabs on 2026-06-25.
@@ -457,18 +457,18 @@ const SPARK_NAV: SubNavConfig = {
         // /spark_leads, /spark_lead_suppression, /spark_lead_territories
         // still resolve and pre-select the correct tab.
         { key: "spark_lead_inbox", label: "Lead Inbox", route: "/app/services/spark_lead_inbox", addon: "leadgen" },
-        { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines", addon: "leadgen" },
-        { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals", hidden: true /* cut: sales-CRM job, wrong buyer */ },
-        { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution", addon: "leadgen" },
+        { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines", minTier: "pro" /* PRO: moved out of the Lead Gen add-on into the package */},
+        { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals", minTier: "pro" /* PRO: deals + pipelines are what ActiveCampaign gates too */},
+        { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution", minTier: "pro" /* PRO */},
       ],
     },
     {
       label: "Customer Success", icon: Heart, collapsible: true, sectionId: "spark_customer_success",
       items: [
-        { key: "spark_nps", label: "NPS", route: "/app/services/spark_nps", hidden: true /* cut: deferred, not core CRM+email */ },
-        { key: "spark_nps_schedules", label: "NPS Schedules", route: "/app/services/spark_nps_schedules", hidden: true /* cut: deferred, not core CRM+email */ },
+        { key: "spark_nps", label: "NPS", route: "/app/services/spark_nps", minTier: "business" /* BUSINESS: customer-success suite */},
+        { key: "spark_nps_schedules", label: "NPS Schedules", route: "/app/services/spark_nps_schedules", minTier: "business" /* BUSINESS: customer-success suite */},
         { key: "spark_reviews", label: "Reputation Hub", route: "/app/services/spark_reviews", hidden: true /* cut: reviews live in ARION My Business/GBP */ },
-        { key: "spark_referrals", label: "Referrals", route: "/app/services/spark_referrals", hidden: true /* cut: deferred, not core CRM+email */ },
+        { key: "spark_referrals", label: "Referrals", route: "/app/services/spark_referrals", minTier: "business" /* BUSINESS: customer-success suite */},
       ],
     },
     {
