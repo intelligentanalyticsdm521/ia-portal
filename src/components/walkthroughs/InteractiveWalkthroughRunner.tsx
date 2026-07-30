@@ -18,7 +18,7 @@
 // box-shadow, tooltip beside target) but wires interaction listeners
 // instead of Next-button-only.
 
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { X, ChevronLeft } from "lucide-react";
 
@@ -88,11 +88,20 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
   const [typedOk, setTypedOk] = useState(false);
   /** Target never appeared. We SHOW this rather than skipping past it. */
   const [notFound, setNotFound] = useState(false);
+  /** Step index we've already advanced from — see nextOrFinish. */
+  const advancedForStep = useRef<number | null>(null);
+  /** The tooltip's real rendered height, so placement can't cover the target. */
+  const tooltipEl = useRef<HTMLDivElement | null>(null);
+  const [tooltipH, setTooltipH] = useState(0);
 
   const step = flow.steps[stepIdx];
 
   // Reset when opening
-  useEffect(() => { if (open) setStepIdx(0); }, [open, flow.id]);
+  useEffect(() => {
+    if (!open) return;
+    advancedForStep.current = null;
+    setStepIdx(0);
+  }, [open, flow.id]);
 
   // Navigate to step.route if we're not already there
   useEffect(() => {
@@ -196,16 +205,23 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
         document.addEventListener("click", onClick, true); // capture: fires even if a handler stops propagation
         advanceListenerCleanup = () => document.removeEventListener("click", onClick, true);
       } else if (advance === "input") {
-        // Brandon 2026-07-28: "as soon as I hit a space or a character it
-        // moves on instead of waiting for a tab or enter or me to click
-        // next." The old handler fired on the FIRST input event, so the step
-        // vanished mid-word. Now the user signals they're DONE: Enter or Tab,
-        // or clicking out of the field. Typing alone never advances — it just
-        // enables the Next button (see footer).
+        // Typing NEVER advances — it only enables Next. The user signals
+        // they're done with Enter, Tab, or the Next button.
         //
-        // Delegated for the same reason as click, above — resolve the field
-        // from the event so a re-render can't strand us. `focusout` rather
-        // than `blur`, because blur doesn't bubble.
+        // Brandon 2026-07-28, twice: first "as soon as I hit a space or a
+        // character it moves on", then "if I click on something and then click
+        // off it just immediately goes to the next step... things are being
+        // skipped." Both were auto-advance guesses about intent, and both were
+        // wrong.
+        //
+        // There used to be a `focusout` handler here that advanced on blur.
+        // It caused BOTH complaints' second half: clicking away from a filled
+        // field jumped forward unbidden, and pressing Tab fired keydown AND
+        // focusout — two advances from one keypress, which silently skipped
+        // the next step. Blur is not a "done" signal; it's just leaving.
+        //
+        // Delegated (like click above) so a re-render can't strand the
+        // listener on a detached node.
         const field = (e: Event) =>
           (e.target as HTMLElement | null)?.closest?.(step.targetSelector) as
             | HTMLInputElement
@@ -220,22 +236,15 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
           const f = field(e);
           if (cancelled || !f) return;
           if ((e.key === "Enter" || e.key === "Tab") && isDone(f)) {
-            e.preventDefault();
+            e.preventDefault(); // don't let Tab move focus as well as advance
             setTimeout(nextOrFinish, 120);
           }
         };
-        const onFocusOut = (e: Event) => {
-          const f = field(e);
-          if (cancelled || !f) return;
-          if (isDone(f)) setTimeout(nextOrFinish, 200);
-        };
         document.addEventListener("input", onInput, true);
         document.addEventListener("keydown", onKey as EventListener, true);
-        document.addEventListener("focusout", onFocusOut, true);
         advanceListenerCleanup = () => {
           document.removeEventListener("input", onInput, true);
           document.removeEventListener("keydown", onKey as EventListener, true);
-          document.removeEventListener("focusout", onFocusOut, true);
         };
       } else if (advance === "route") {
         // Handled via location.pathname change effect below
@@ -293,7 +302,29 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, step, location.pathname]);
 
+  /**
+   * Advance at most ONCE per step.
+   *
+   * Brandon 2026-07-28: "things are being skipped." Several things can race to
+   * advance the same step — a keydown and a blur from one Tab press, a click
+   * plus its own re-render, a stale setTimeout that survives a re-wire. Each
+   * extra call ate a step silently. Latching on the step index makes every
+   * advance idempotent, so a double-fire is harmless instead of invisible.
+   *
+   * Back/Skip reset the latch (see `back`), and each new step effect clears it.
+   */
+  // Measure the card once it's on screen, then let the placement maths re-run
+  // with the true height. One extra render per step, and it's what stops the
+  // card from landing on top of its own target.
+  useLayoutEffect(() => {
+    if (!ready) return;
+    const h = tooltipEl.current?.offsetHeight;
+    if (h && Math.abs(h - tooltipH) > 1) setTooltipH(h);
+  }, [ready, stepIdx, notFound, step?.title, step?.body, tooltipH]);
+
   function nextOrFinish() {
+    if (advancedForStep.current === stepIdx) return;
+    advancedForStep.current = stepIdx;
     if (stepIdx + 1 >= flow.steps.length) {
       finish();
     } else {
@@ -307,6 +338,7 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
   }
 
   function back() {
+    advancedForStep.current = null; // going back re-arms the step we return to
     setStepIdx((i) => Math.max(0, i - 1));
   }
 
@@ -333,31 +365,70 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
   };
 
   const tooltipW = 320;
-  const tooltipH = 200;
   const pad = 12;
+  // MEASURED height, not a guess.
+  //
+  // Brandon 2026-07-28: "it's very hard to use." The card's height was
+  // hardcoded at 200px while the real thing is often taller (longer body
+  // copy, the amber not-found note, a wrapped title). With placement:"top"
+  // the maths put its TOP 200px above the target — so a 260px card hung
+  // down over the very button the step tells you to click, and because the
+  // card has pointer-events:auto it swallowed the click. That's the same
+  // root cause as the stranded spotlight and "I can't actually click the
+  // button": trusting an assumed size instead of measuring the real one.
+  const tipH = tooltipH || 200;
   const tooltipStyle: React.CSSProperties = (() => {
     if (!targetRect) {
-      return { left: `calc(50% - ${tooltipW / 2}px)`, top: `calc(50% - ${tooltipH / 2}px)`, width: tooltipW };
+      return { left: `calc(50% - ${tooltipW / 2}px)`, top: `calc(50% - ${tipH / 2}px)`, width: tooltipW };
     }
-    const placement = step.placement === "auto" || !step.placement
-      ? (targetRect.top > window.innerHeight / 2 ? "top" : "bottom")
-      : step.placement;
-    let top = targetRect.top;
-    let left = targetRect.left;
-    if (placement === "bottom") { top = targetRect.bottom + pad; }
-    else if (placement === "top") { top = targetRect.top - tooltipH - pad; }
-    else if (placement === "right") { left = targetRect.right + pad; }
-    else if (placement === "left") { left = targetRect.left - tooltipW - pad; }
-    left = Math.max(8, Math.min(left, window.innerWidth - tooltipW - 8));
-    top = Math.max(8, Math.min(top, window.innerHeight - tooltipH - 8));
-    return { top, left, width: tooltipW };
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const clampL = (l: number) => Math.max(8, Math.min(l, vw - tooltipW - 8));
+    const clampT = (t: number) => Math.max(8, Math.min(t, vh - tipH - 8));
+
+    const candidates: Record<string, { top: number; left: number }> = {
+      bottom: { top: targetRect.bottom + pad, left: clampL(targetRect.left) },
+      top: { top: targetRect.top - tipH - pad, left: clampL(targetRect.left) },
+      right: { top: clampT(targetRect.top), left: targetRect.right + pad },
+      left: { top: clampT(targetRect.top), left: targetRect.left - tooltipW - pad },
+    };
+
+    const preferred = step.placement && step.placement !== "auto"
+      ? step.placement
+      : targetRect.top > vh / 2 ? "top" : "bottom";
+    // Try the author's choice first, then the others — so a step's placement
+    // is a preference, never a way to bury the target.
+    const order = [preferred, "bottom", "top", "right", "left"]
+      .filter((p, i, a) => a.indexOf(p) === i);
+
+    const onScreen = (c: { top: number; left: number }) =>
+      c.top >= 8 && c.left >= 8 && c.top + tipH <= vh - 8 && c.left + tooltipW <= vw - 8;
+    const coversTarget = (c: { top: number; left: number }) =>
+      !(c.left + tooltipW < targetRect.left
+        || c.left > targetRect.right
+        || c.top + tipH < targetRect.top
+        || c.top > targetRect.bottom);
+
+    for (const p of order) {
+      const c = candidates[p];
+      if (c && onScreen(c) && !coversTarget(c)) return { ...c, width: tooltipW };
+    }
+    // No placement is both fully on-screen and clear of the target (tiny
+    // viewport, or a target that fills it). Prefer staying on-screen — the
+    // spotlight still shows what to click.
+    for (const p of order) {
+      const c = candidates[p];
+      if (c && onScreen(c)) return { ...c, width: tooltipW };
+    }
+    const f = candidates[preferred] || candidates.bottom;
+    return { top: clampT(f.top), left: clampL(f.left), width: tooltipW };
   })();
 
   const advanceCopy = (() => {
     if (notFound) return null; // nothing to click — see the note instead
     switch (step.advance ?? "click") {
       case "click": return "Click the highlighted element";
-      case "input": return "Type your answer, then press Enter (or click Next)";
+      case "input": return "Type your answer, then press Enter";
       case "route": return "Follow the highlighted link";
       case "next": return null;
     }
@@ -386,6 +457,7 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
       <div style={spotlightStyle} />
       {ready && (
         <div
+          ref={tooltipEl}
           className="fixed z-[9999] rounded-xl bg-white shadow-2xl border-2"
           style={{ ...tooltipStyle, borderColor: accent, pointerEvents: "auto" }}
         >
@@ -435,19 +507,22 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
                   <ChevronLeft className="h-3 w-3" /> Back
                 </button>
               )}
-              {/* Input steps get a Next button too, enabled once they've
-                  actually typed something — so nobody is trapped in a field
-                  wondering what the magic keystroke is. */}
-              {(notFound || step.advance === "next" || step.advance === "input") && (
-                <button
-                  onClick={nextOrFinish}
-                  disabled={!notFound && step.advance === "input" && !typedOk}
-                  className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40"
-                  style={{ background: accent }}
-                >
-                  {stepIdx + 1 === flow.steps.length ? "Finish" : "Next"}
-                </button>
-              )}
+              {/* EVERY step gets a Next button.
+                  Brandon 2026-07-28: "it's very hard to use." Click steps used
+                  to render no Next at all, so if the click didn't register for
+                  any reason the step was a dead end. Doing the real action
+                  still advances; this is the always-available way out, so the
+                  user is never stuck hunting for the magic gesture. Input
+                  steps keep it disabled until something's typed, so Next never
+                  skips past a field the next step depends on. */}
+              <button
+                onClick={nextOrFinish}
+                disabled={!notFound && step.advance === "input" && !typedOk}
+                className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40"
+                style={{ background: accent }}
+              >
+                {stepIdx + 1 === flow.steps.length ? "Finish" : "Next"}
+              </button>
             </div>
           </div>
         </div>
