@@ -53,8 +53,33 @@ export function WelcomePage() {
     return () => { try { document.head.removeChild(meta); } catch { /* ignore */ } };
   }, []);
 
+  // 2026-07-31 — SELF-HEAL. The welcome_token is 48h + single-use, and for
+  // months clients clicked dead links (expired, already-consumed, or a token
+  // that was never persisted) and hit an error page with nowhere to go.
+  //
+  // The token was never load-bearing: /onboarding/activate's only output is a
+  // signup_url pointing at exactly the URL below. Tenant access comes from the
+  // PENDING core.tenant_invitations row (scoped to this email + tenant), and
+  // Entra requires an emailed one-time code before creating the account — so
+  // mailbox control, not the token, is the real gate.
+  //
+  // Therefore: on ANY token failure (missing / expired / used / mismatch), send
+  // them to the durable registration URL instead of a dead end. Every link we
+  // have ever emailed now works. `location.replace` (not navigate) forces a
+  // fresh load so AppGate reads `welcome=1` cleanly, and drops the token URL
+  // from history. See overnight-report/CLIENT_PORTAL_LOGIN_SOP.md.
+  const goToRegistration = (reason: string) => {
+    if (!email) return false;
+    console.info(`[welcome] falling through to registration (${reason})`);
+    window.location.replace(`/app?welcome=1&prefill_email=${encodeURIComponent(email)}`);
+    return true;
+  };
+
   useEffect(() => {
-    if (!email || !setupToken || !tenantId) {
+    // New-style link (no token) or a partial legacy link — go straight to
+    // the CIAM registration page with the email pre-filled.
+    if (!setupToken || !tenantId) {
+      if (goToRegistration('no_token')) return;
       setStatus('invalid');
       setErrorMsg('Missing parameters in the activation link.');
       return;
@@ -107,10 +132,10 @@ export function WelcomePage() {
             }
           }, 1800);
         } else if (res.status === 409) {
-          // 2026-06-27 — Two flavors of 409: TOKEN_ALREADY_USED (just "sign
-          // in") and TOKEN_EXPIRED with `can_resend: true` (mint new token).
-          // The server flagged can_resend; surface the resend UI instead of
-          // the dead-end "already used" message.
+          // Expired OR already-used: both self-heal to registration. If they
+          // already have an account, Entra's create-account page tells them so
+          // and offers sign-in — still a better dead end than an error page.
+          if (goToRegistration(`409_${body?.error?.code || 'conflict'}`)) return;
           const code = body?.error?.code || '';
           if (code === 'TOKEN_EXPIRED' && body?.error?.can_resend) {
             setStatus('expired');
@@ -118,9 +143,13 @@ export function WelcomePage() {
             setStatus('used');
           }
         } else if (res.status === 404 || res.status === 422) {
+          // Token mismatch / no site row. Tenant access comes from the
+          // invitation, not the site record — so still send them to register.
+          if (goToRegistration(`${res.status}`)) return;
           setStatus('invalid');
           setErrorMsg(body?.error?.code || `HTTP ${res.status}`);
         } else {
+          if (goToRegistration(`http_${res.status}`)) return;
           setStatus('error');
           setErrorMsg(body?.error?.message || `HTTP ${res.status}`);
         }
