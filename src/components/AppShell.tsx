@@ -205,16 +205,32 @@ export function AppShell() {
     [navigate, mobileNavOpen, effectiveIsFounder]
   );
 
-  // F-Client.Consulting (2026-06-29) — the CLIENT-facing /app/consulting/*
-  // surface supplies its own three-tab pill nav inside ClientConsultingLayout.
-  // Suppress the founder SubNav there so we don't double up on navigation
-  // chrome. Founder /app/admin/consulting/* still gets the founder SubNav.
+  // F-Client.Consulting — 2026-07-24 (Brandon): the client consulting surface
+  // gets THREE INDEPENDENT PAGES in the portal's own left SubNav — Service
+  // Requests / Deliverables / Projects — not a pill-tab strip on one page.
+  // (Replaces the 2026-06-29 pattern that suppressed the SubNav here and let
+  // ClientConsultingLayout render tabs.) Founder /app/admin/consulting/* still
+  // gets the founder SubNav.
   const onClientConsultingSurface = /^\/app\/consulting(\/|$)/.test(location.pathname);
   const rawSubNavConfig =
     activeProduct !== "overview" ? SUB_NAV_CONFIGS[activeProduct] : null;
+  const clientConsultingSubNav = useMemo<SubNavConfig>(() => ({
+    productName: "Consulting",
+    tagline: "Your work with Intelligent Analytics",
+    groups: [
+      {
+        label: "Consulting",
+        items: [
+          { key: "client_consulting_requests", label: "Service Requests", route: "/app/consulting/requests" },
+          { key: "client_consulting_deliverables", label: "Deliverables", route: "/app/consulting/deliverables" },
+          { key: "client_consulting_projects", label: "Projects", route: "/app/consulting/projects" },
+        ],
+      },
+    ],
+  }), []);
   const subNavConfig = useMemo(() => {
+    if (onClientConsultingSurface) return clientConsultingSubNav;
     if (!rawSubNavConfig) return null;
-    if (onClientConsultingSurface) return null;
     if (activeProduct === "oliver") {
       return applyOliverNavFilter(rawSubNavConfig, roleInfo.allowedServiceKeys);
     }

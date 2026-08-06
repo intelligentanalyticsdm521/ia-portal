@@ -39,6 +39,40 @@ interface ClientProject {
   engagement_type?: string | null;
 }
 
+// Row shape returned by the NEW consulting.* list endpoint
+// (GET /consulting/projects). Deliberately separate from ClientProject: the
+// two models name the same concepts differently, and conflating them is what
+// made this card render a blank title and "Current phase: —".
+interface NewModelProject {
+  project_id: string;
+  name?: string | null;
+  status: string;
+  category_name?: string | null;
+  client_name?: string | null;
+  current_milestone_name?: string | null;
+  milestones_total_count?: number;
+  milestones_complete_count?: number;
+  updated_at: string;
+  created_at?: string;
+}
+
+function normalizeProject(p: NewModelProject): ClientProject {
+  return {
+    project_id: p.project_id,
+    project_number: "",
+    title: p.name || "Untitled project",
+    status: p.status,
+    project_type: p.category_name || "",
+    project_type_display: p.category_name || null,
+    project_type_color: null,
+    current_phase_name: p.current_milestone_name || null,
+    phase_count: p.milestones_total_count ?? 0,
+    phases_completed: p.milestones_complete_count ?? 0,
+    updated_at: p.updated_at,
+    created_at: p.created_at,
+  };
+}
+
 // Status → badge color. Mirrors ConsultingProjectsPage helper but trimmed
 // to the lumen.consulting_project status vocabulary (active/on_hold/
 // completed/cancelled — see migration 072).
@@ -79,6 +113,8 @@ export function ClientConsultingProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  // Default to ACTIVE projects; completed/cancelled one click away.
+  const [filter, setFilter] = useState<"active" | "all" | "completed" | "cancelled">("active");
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -90,9 +126,19 @@ export function ClientConsultingProjectsPage() {
       // LUMEN /consulting-projects list on any error to keep tenants on
       // the old schema rendering during rollout.
       try {
-        const r = await get<{ projects: ClientProject[] }>("/consulting/projects");
-        if (r && Array.isArray(r.projects)) {
-          setProjects(r.projects);
+        // GET /consulting/projects returns { data: [...] } — useOliverApi
+        // auto-unwraps `data`, so the result IS the array. The old
+        // `{ projects }` read left r.projects undefined and silently fell
+        // back to the legacy LUMEN fork, which is why a NEW-model project
+        // (e.g. RII "Post AI Website Design Updates") never rendered here.
+        const r = await get<NewModelProject[] | { projects?: ClientProject[] }>("/consulting/projects");
+        const rows = Array.isArray(r) ? r : r?.projects;
+        if (Array.isArray(rows)) {
+          // The new consulting.* model uses different field names than this
+          // card was written for (name/current_milestone_name/
+          // milestones_*_count vs title/current_phase_name/phase_*). Normalize
+          // here so the card renders a real title and phase instead of blanks.
+          setProjects(rows.map(normalizeProject));
           return;
         }
       } catch (newEndpointErr) {
@@ -159,10 +205,36 @@ export function ClientConsultingProjectsPage() {
     );
   }
 
+  const shown = sorted.filter((p) => {
+    const s = String(p.status).toLowerCase();
+    if (filter === "all") return true;
+    if (filter === "completed") return s === "completed";
+    if (filter === "cancelled") return s === "cancelled";
+    return s !== "completed" && s !== "cancelled"; // active (incl. on_hold)
+  });
+
   return (
     <>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-base font-bold text-slate-900">Your projects</h2>
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as typeof filter)}
+          className="rounded border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+        >
+          <option value="active">Active</option>
+          <option value="all">All</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      {shown.length === 0 && (
+        <div className="rounded-xl bg-slate-50 border border-slate-200 px-6 py-8 text-center text-xs text-slate-500">
+          No {filter} projects — switch the filter above to see others.
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {sorted.map((p) => {
+        {shown.map((p) => {
           const badge = statusBadge(p.status);
           const phaseTotal = p.phase_count ?? 0;
           const phaseDone = p.phases_completed ?? 0;

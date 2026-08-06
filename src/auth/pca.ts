@@ -100,7 +100,7 @@ async function ensureActiveAccount(msal: IPublicClientApplication, result?: Auth
  *
  * Only clears the interaction-tracking keys; real token cache is untouched.
  */
-function clearStaleInteractionFlags(): void {
+export function clearStaleInteractionFlags(): void {
   try {
     // MSAL tracks interaction state under keys like
     // `msal.<clientId>.interaction.status` and `msal.interaction.status`.

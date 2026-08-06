@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { GBP_ENABLED } from "../../config/featureFlags";
 import { Link } from 'react-router-dom';
 import { Sparkles, ArrowUpRight, AlertCircle } from 'lucide-react';
 import type { PortalService, ServiceStatus } from '../../config/serviceCatalog';
@@ -164,7 +165,7 @@ export function ArionOverviewPage({ service, status }: Props) {
               cta: { label: "Open Business Profile", to: "/app/services/arion_business_overview" },
               // FIX B2 — was `show: true` (nagged everyone forever). Read
               // the live googleBusinessProfile flag from /arion/overview.
-              show: data ? !data.integrations.googleBusinessProfile : false,
+              show: GBP_ENABLED && data ? !data.integrations.googleBusinessProfile : false,
               accent: "#16A34A",
             },
             {

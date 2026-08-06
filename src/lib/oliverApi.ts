@@ -181,6 +181,33 @@ export async function oliverFetchRaw(
   });
 }
 
+// Multipart upload (deliverable files, etc.).
+//
+// Built on oliverFetchRaw rather than oliverFetch on purpose: oliverFetch
+// hard-sets `Content-Type: application/json`, which would clobber the
+// multipart boundary the browser generates for a FormData body and leave the
+// server unable to parse the request. Raw sets no Content-Type, so the browser
+// supplies the correct one.
+//
+// Tenant scoping matches BYPASS_TENANT_OVERRIDE (the JWT's own tid), which is
+// what founder-gated endpoints require — an active view-as override would
+// otherwise send the client's tenant and trip requireFounder.
+export async function oliverUpload<T>(
+  msal: IPublicClientApplication,
+  account: AccountInfo,
+  path: string,
+  form: FormData
+): Promise<T> {
+  const res = await oliverFetchRaw(msal, account, path, { method: "POST", body: form });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`OLIVER API ${res.status}: ${text}`);
+  }
+  if (res.status === 204) return undefined as T;
+  const json = await res.json();
+  return (json && typeof json === "object" && "data" in json ? json.data : json) as T;
+}
+
 // Download a file (CSV, PDF, etc.) from the OLIVER API by triggering a
 // browser download. `filename` becomes the suggested name on disk.
 // Throws on non-2xx so callers can surface the error.

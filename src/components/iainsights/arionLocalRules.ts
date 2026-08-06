@@ -6,6 +6,7 @@
 // actual local search performance.
 
 import { type InsightRule, fmt, pct } from "./insightRules";
+import { GBP_ENABLED } from "../../config/featureFlags";
 
 export const LOCAL_RULES: InsightRule[] = [
   // ─── GBP Connection + Core Volume ─────────────────────────────────
@@ -15,7 +16,7 @@ export const LOCAL_RULES: InsightRule[] = [
     kind: ["observation", "action"],
     dataSources: ["gbp"],
     priority: 10,
-    appliesWhen: (c) => c.gbp?.connected !== true,
+    appliesWhen: (c) => GBP_ENABLED && c.gbp?.connected !== true,
     observation: () => `Google Business Profile is not connected. For a local-service business this is the single biggest local-presence blind spot — GBP often delivers more impressions than organic search, and Maps discovery is invisible without it.`,
     action: () => `Connect Google Business Profile in Settings → Connected Accounts. Once connected, ARION pulls impressions, calls, website clicks, photos viewed, direction requests, and review velocity into the Local Presence + Visibility & Reach engines.`,
   },

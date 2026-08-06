@@ -1,11 +1,13 @@
 import {
   InteractionRequiredAuthError,
+  BrowserAuthError,
   type AccountInfo,
   type AuthenticationResult
 } from '@azure/msal-browser';
 import { useMsal } from '@azure/msal-react';
 import { useCallback, useMemo } from 'react';
 import { authScopes } from './msalConfig';
+import { clearStaleInteractionFlags } from './pca';
 import { DEV_AUTH, DEV_TOKEN_RESULT } from '../lib/devAuth';
 
 /**
@@ -88,12 +90,30 @@ export function useAccessToken() {
       req.prompt = 'create';
       if (loginHint) req.loginHint = loginHint;
     }
-    return instance.loginRedirect(req);
+    // Self-heal a stuck session: if a PRIOR interaction (e.g. an aborted
+    // logout where the user closed the "pick an account" page) left
+    // `interaction_in_progress` in localStorage, loginRedirect throws and the
+    // button appears dead. Clear the stale flag and retry once so the user is
+    // never wedged out of signing in.
+    return instance.loginRedirect(req).catch((err) => {
+      if (err instanceof BrowserAuthError && err.errorCode === 'interaction_in_progress') {
+        clearStaleInteractionFlags();
+        return instance.loginRedirect(req);
+      }
+      throw err;
+    });
   }, [instance]);
 
   const logout = useCallback(() => {
-    return instance.logoutRedirect();
-  }, [instance]);
+    // Hard logout of the CURRENT account only — pass the account so Entra
+    // doesn't show the "pick an account to sign out of" chooser (users have
+    // exactly one portal login). Return to the landing page afterward.
+    const account = activeAccount ?? instance.getActiveAccount() ?? accounts[0] ?? undefined;
+    return instance.logoutRedirect({
+      account,
+      postLogoutRedirectUri: window.location.origin,
+    });
+  }, [instance, activeAccount, accounts]);
 
   return { activeAccount, getToken, login, logout };
 }

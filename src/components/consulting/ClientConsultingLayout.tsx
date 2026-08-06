@@ -22,23 +22,10 @@
 // }
 
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Folder, Inbox, MessageCircle, Loader2 } from "lucide-react";
+import { Outlet, useNavigate } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { BookConsultationCTA } from "./BookConsultationCTA";
-
-interface TabDef {
-  key: "projects" | "deliverables" | "requests";
-  to: string;
-  label: string;
-  icon: typeof Folder;
-}
-
-const ALL_TABS: TabDef[] = [
-  { key: "projects",     to: "/app/consulting/projects",     label: "Projects",         icon: Folder },
-  { key: "deliverables", to: "/app/consulting/deliverables", label: "Deliverables",     icon: Inbox },
-  { key: "requests",     to: "/app/consulting/requests",     label: "Service Requests", icon: MessageCircle },
-];
 
 interface NavVisibility {
   has_byb_sub: boolean;
@@ -129,47 +116,13 @@ export function ClientConsultingLayout() {
     return <BookConsultationCTA variant="full" bookUrl={vis.book_cta_url} />;
   }
 
-  const tabs = ALL_TABS.filter((t) => {
-    if (!vis) return true;
-    if (t.key === "projects")     return vis.unlock_projects;
-    if (t.key === "requests")     return vis.unlock_service_requests;
-    if (t.key === "deliverables") return vis.unlock_deliverables;
-    return false;
-  });
-
+  // 2026-07-24 (Brandon): NO pill/tab bar. Service Requests, Deliverables,
+  // and Projects are three INDEPENDENT pages reached from the portal's own
+  // left SubNav (AppShell supplies the client consulting SubNav config). This
+  // shell keeps only the gate logic (redirects + CTA) and the Outlet.
   return (
     <div className="arion-page">
       <div className="space-y-4 max-w-7xl">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">Consulting</h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Your projects, deliverables, and service requests with Intelligent Analytics.
-            </p>
-          </div>
-          <nav className="flex flex-wrap gap-1 rounded-full bg-slate-100 p-1">
-            {tabs.map((t) => {
-              const Icon = t.icon;
-              return (
-                <NavLink
-                  key={t.to}
-                  to={t.to}
-                  className={({ isActive }) =>
-                    `inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      isActive
-                        ? "bg-white text-slate-900 shadow-sm"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`
-                  }
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {t.label}
-                </NavLink>
-              );
-            })}
-          </nav>
-        </div>
-
         <Outlet />
 
         {/* Rule C — deliverables-only clients: surface the CTA at the bottom

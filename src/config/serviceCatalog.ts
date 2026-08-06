@@ -1,3 +1,5 @@
+import { LEADGEN_ENABLED, LEADGEN_LOCKED_KEYS } from './featureFlags';
+
 export type ServiceStatus = 'enabled' | 'not_subscribed' | 'coming_soon';
 
 export interface PortalService {
@@ -31,7 +33,7 @@ export const LAYER_LABELS: Record<PortalService['section'], string> = {
   CONSULTING: 'CONSULTING — Projects'
 };
 
-export const SERVICE_CATALOG: PortalService[] = [
+const RAW_SERVICE_CATALOG: PortalService[] = [
   {
     key: 'portal_overview',
     displayName: 'Overview',
@@ -412,6 +414,14 @@ export const SERVICE_CATALOG: PortalService[] = [
   // resolve — they are settings surfaces linked from Brand Identity /
   // integrations, not nav features).
 ];
+
+// Feature-flag filter: while LEADGEN_ENABLED is false, the Lead Gen search
+// keys are removed from the catalog entirely, so SidebarNav and any catalog
+// consumer stop surfacing them. Dedicated Lead Gen routes are additionally
+// gated in App.tsx for direct-URL access. See featureFlags.ts.
+export const SERVICE_CATALOG: PortalService[] = LEADGEN_ENABLED
+  ? RAW_SERVICE_CATALOG
+  : RAW_SERVICE_CATALOG.filter((s) => !LEADGEN_LOCKED_KEYS.includes(s.key));
 
 export function resolveServiceStatus(service: PortalService, enabledKeys: Set<string>): ServiceStatus {
   if (service.defaultStatus === 'enabled') return 'enabled';

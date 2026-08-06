@@ -1,4 +1,5 @@
 import React from 'react';
+import { GBP_ENABLED } from "../../../config/featureFlags";
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip } from 'chart.js';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import {
@@ -1369,9 +1370,9 @@ export function renderModalContent(reportKey: string, d: any, searchData?: any, 
     return (
       <div>
         <div style={{ background: '#FFF8E1', borderLeft: '3px solid #D4A800', borderRadius: 4, padding: '14px 18px', marginBottom: 18 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 4 }}>Report locked — connect Google Business Profile</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 4 }}>{GBP_ENABLED ? 'Report locked — connect Google Business Profile' : 'Report not available'}</div>
           <p style={{ fontSize: 12, color: '#5A7A8A', lineHeight: 1.6, margin: 0 }}>
-            Connect Google in Settings → Connected Accounts to generate this report from live GBP data.
+            {GBP_ENABLED ? 'Connect Google in Settings → Connected Accounts to generate this report from live GBP data.' : 'This report isn’t available for your account yet.'}
           </p>
         </div>
       </div>
