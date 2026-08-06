@@ -83,6 +83,13 @@ export function SparkIAInsightsHealthPage() {
           Contact scoring — tier distribution &amp; per-contact lookup →
         </Link>
         <Link
+          to="/app/services/spark_intelligence"
+          data-tour="insights-score-distribution"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Score distribution — how your list splits by tier &rarr;
+        </Link>
+        <Link
           to="/app/services/spark_activity_stream"
           data-tour="insights-activity-stream"
           className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"

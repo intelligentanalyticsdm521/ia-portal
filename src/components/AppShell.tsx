@@ -77,6 +77,15 @@ function deriveProduct(pathname: string): ProductKey {
   // intake form player), which conceptually belongs to the same surface.
   if (/^\/app\/consulting(\/|$)/.test(pathname)) return "consulting";
 
+  // Product sub-routes that AREN'T /app/services/<key>.
+  //
+  // Brandon 2026-08-06: "OLIVER templates is working but for some reason it's
+  // closing the nav page." Quotes & Proposals templates live at
+  // /app/oliver/quotes/templates, which doesn't match the /app/services/<key>
+  // pattern below — so this function fell through to "overview" and the whole
+  // OLIVER SubNav disappeared while you were still inside OLIVER.
+  if (/^\/app\/oliver(\/|$)/.test(pathname)) return "oliver";
+
   // F-86 — Settings-class URLs share the product prefix (oliver_settings,
   // spark_account_profile, etc.) but should activate the Settings SubNav,
   // not the product's daily-work SubNav. Check the SETTINGS_KEYS set first.

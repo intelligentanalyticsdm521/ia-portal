@@ -110,7 +110,6 @@ const OLIVER_NAV: SubNavConfig = {
         // F-74 — separate taxonomy for crew skills (Plumbing, Electrical, etc.).
         // Distinct from product categories; drives auto-assign + customer
         // worker preferences.
-        { key: "oliver_service_categories", label: "Service Categories", route: "/app/services/oliver_service_categories" },
         { key: "oliver_coupons", label: "Coupons", route: "/app/services/oliver_coupons" },
       ],
     },
@@ -152,7 +151,6 @@ const OLIVER_NAV: SubNavConfig = {
         // the old page stays reachable by URL but no longer surfaces in nav.
         { key: "oliver_portals_hub", label: "Customer & Crew Portals", route: "/app/services/oliver_portals_hub" },
         // F-70 + F-72 + F-63 — reschedule policy, post-booking actions, signup form
-        { key: "oliver_workflow_settings", label: "Workflow Settings", route: "/app/services/oliver_workflow_settings" },
       ],
     },
     // F-116 — Expenses removed from OLIVER nav; rebuilds in STELLA. The
@@ -479,7 +477,7 @@ const SPARK_NAV: SubNavConfig = {
         // Surfacing it as a nav item misleads users into thinking it
         // works. Page route remains so deep-links don't 404 and the
         // marketing/coming-soon preview is still reachable.
-        { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence" },
+        { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence", merged: true /* merged: per-contact score is on the Contacts list (tier + score columns, Tier X/Y/Z filters); the trend lives in IA Insights. A third page showing the same distribution is the duplication Brandon flagged 2026-08-06 */ },
         { key: "spark_activity_stream", label: "Activity Stream", route: "/app/services/spark_activity_stream", merged: true /* merged: linked from IA Insights -> Health (activity stream) */ },
       ],
     },
