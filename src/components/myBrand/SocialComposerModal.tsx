@@ -190,7 +190,11 @@ export function SocialComposerModal({
   const [connectionsLoaded, setConnectionsLoaded] = useState(false);
   const [connectionsError, setConnectionsError] = useState(false);
 
-  const platformBase = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string || "").replace(/\/$/, "");
+  // social-oauth mounts ONLY at /api/v1/social-oauth in platform-api (the
+  // prefix is baked into the provider redirect URIs). Bare host + bare path
+  // 404s — see the same note in pages/myBrand/SocialChannelsPage.tsx.
+  const platformHost = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string || "").replace(/\/$/, "");
+  const platformBase = platformHost ? `${platformHost}/api/v1` : "";
 
   const loadConnections = useCallback(async () => {
     if (!activeTenantId || !platformBase) { setConnectionsLoaded(true); return; }

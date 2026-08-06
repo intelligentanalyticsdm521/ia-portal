@@ -146,7 +146,16 @@ export function SocialChannelsPage() {
   // Per-platform disconnect spinner. Reset on success/failure.
   const [disconnectBusy, setDisconnectBusy] = useState<string | null>(null);
 
-  const platformBase = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string || "").replace(/\/$/, "");
+  // VITE_PLATFORM_API_BASE_URL is the bare host (both .env.local and
+  // .env.production) — most platform-api routers mount at the root. The
+  // social-oauth router is the exception: it is mounted ONLY at
+  // /api/v1/social-oauth, because that prefix is baked into the redirect
+  // URIs registered with Meta/LinkedIn (lib/socialOAuth/providers.js).
+  // Without the prefix every call here 404s — including the Connect button.
+  // Stays "" when the env var is unset so the existing !platformBase guards
+  // below still short-circuit instead of firing at a relative "/api/v1".
+  const platformHost = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string || "").replace(/\/$/, "");
+  const platformBase = platformHost ? `${platformHost}/api/v1` : "";
 
   // ── Data loaders ────────────────────────────────────────────────────────
   const load = useCallback(async () => {
