@@ -63,7 +63,7 @@ export function SparkLandingPagesPage() {
   return (
     <SparkPageShell
       title="Landing Pages"
-      subtitle="Hosted landing pages with submission capture"
+      subtitle="Hosted landing pages with submission capture — click any page to build it"
       actions={
         <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
           <Plus className="h-3.5 w-3.5" /> New page
@@ -138,7 +138,7 @@ export function SparkLandingPagesPage() {
         onClose={() => setDrawerOpen(false)}
         product="spark"
         title="New landing page"
-        subtitle="Create a draft. Block editor coming in v2 — for now, the page is a placeholder you can publish + capture submissions on."
+        subtitle="Name it first — then you'll build the page itself (headline, copy, image, button, contact form)."
         size="info"
         footer={
           <>

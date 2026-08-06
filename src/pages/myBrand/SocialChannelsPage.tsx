@@ -61,11 +61,33 @@ interface PlatformDef {
 // LUMEN-API src/lib/myBrand/tierCheck.js FEATURE_MIN_TIER:
 //   social_connect_facebook  / instagram → standard
 //   social_connect_x         / linkedin  → pro
-const PLATFORMS: Array<PlatformDef & { featureKey: keyof typeof MY_BRAND_FEATURE_TIERS }> = [
+// LAUNCH STATE (Brandon 2026-08-06). A network only appears here once we can
+// actually connect it — a Connect button that errors is worse than no button.
+//
+//   facebook / instagram  LIVE once META-APP-ID + META-APP-SECRET are in Key
+//                         Vault. A Meta app in development mode can post to
+//                         Pages/IG accounts its own admins own, so IA's
+//                         channels work before App Review; CLIENT channels
+//                         need Business Verification + App Review.
+//   linkedin              COMING SOON — LinkedIn has no usable sandbox. Even
+//                         their Development tier needs an approved application
+//                         (registered company, verified Page, two-tier review,
+//                         screencast), so it cannot be connected at all yet.
+//   x                     HIDDEN — deprioritised. Write access is a paid API
+//                         tier, and it's behind TikTok in value. Revisit with
+//                         TikTok later.
+const PLATFORMS: Array<PlatformDef & {
+  featureKey: keyof typeof MY_BRAND_FEATURE_TIERS;
+  /** Shown but not connectable, with a reason. */
+  comingSoon?: string;
+  /** Not shown at all. */
+  hidden?: boolean;
+}> = [
   { key: "facebook",  name: "Facebook",  brand: "#1877F2", initials: "f",  featureKey: "social_connect_facebook" },
   { key: "instagram", name: "Instagram", brand: "#E4405F", initials: "IG", featureKey: "social_connect_instagram" },
-  { key: "x",         name: "X",         brand: "#0F1419", initials: "X",  featureKey: "social_connect_x" },
-  { key: "linkedin",  name: "LinkedIn",  brand: "#0A66C2", initials: "in", featureKey: "social_connect_linkedin" },
+  { key: "x",         name: "X",         brand: "#0F1419", initials: "X",  featureKey: "social_connect_x", hidden: true },
+  { key: "linkedin",  name: "LinkedIn",  brand: "#0A66C2", initials: "in", featureKey: "social_connect_linkedin",
+    comingSoon: "Coming soon — we're completing LinkedIn's partner approval." },
 ];
 
 function PlatformGlyph({ def, size = 20 }: { def: PlatformDef; size?: number }) {
@@ -292,9 +314,11 @@ export function SocialChannelsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {PLATFORMS.map((def) => {
+          {PLATFORMS.filter((d) => !d.hidden).map((def) => {
             const conn = byPlatform.get(def.key) ?? null;
-            const locked = gate.ready && !gate.meets(def.featureKey);
+            // Coming-soon networks render the card (so people can see it's
+            // planned) but can't be connected — the OAuth would fail anyway.
+            const locked = !!def.comingSoon || (gate.ready && !gate.meets(def.featureKey));
             const requiredTier = gate.requiredTier(def.featureKey);
             return (
               <ChannelCard
@@ -306,6 +330,7 @@ export function SocialChannelsPage() {
                 onConnect={() => openOAuthPopup(def.key)}
                 onDisconnect={() => conn && disconnectConnection(conn)}
                 locked={locked}
+                comingSoon={def.comingSoon}
                 requiredTier={requiredTier}
               />
             );
@@ -447,10 +472,12 @@ interface ChannelCardProps {
   onConnect: () => void;
   onDisconnect: () => void;
   locked?: boolean;
+  /** Reason this network can't be connected yet (shown instead of Upgrade). */
+  comingSoon?: string;
   requiredTier?: string;
 }
 
-function ChannelCard({ def, connection, busy, disconnectBusy, onConnect, onDisconnect, locked = false, requiredTier = "standard" }: ChannelCardProps) {
+function ChannelCard({ def, connection, busy, disconnectBusy, onConnect, onDisconnect, locked = false, comingSoon, requiredTier = "standard" }: ChannelCardProps) {
   const state: "none" | "active" | "expired" =
     !connection ? "none" :
     connection.status === "active" ? "active" :
@@ -494,7 +521,12 @@ function ChannelCard({ def, connection, busy, disconnectBusy, onConnect, onDisco
       )}
 
       <div className="mt-auto flex items-center gap-2">
-        {locked && state === "none" && (
+        {comingSoon && state === "none" && (
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600">
+            <Lock className="h-3.5 w-3.5" /> {comingSoon}
+          </span>
+        )}
+        {!comingSoon && locked && state === "none" && (
           <a
             href={`/pricing?platform=my_brand&required=${encodeURIComponent(requiredTier)}`}
             className="inline-flex items-center gap-1.5 rounded-md bg-[#1A3A4A] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0B1C24]"
