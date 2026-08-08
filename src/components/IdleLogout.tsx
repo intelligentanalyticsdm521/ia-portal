@@ -12,6 +12,7 @@
 // Mounted inside AppGate (authenticated area only) — never runs pre-login.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMsal } from "@azure/msal-react";
+import { hardLogout } from "../auth/pca";
 
 const IDLE_MS = 90 * 60 * 1000; // 90 minutes
 const WARN_MS = 60 * 1000; // warn 60s before logout
@@ -43,15 +44,12 @@ export function IdleLogout() {
     if (loggingOut.current) return;
     loggingOut.current = true;
     try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
-    // Hard logout of the CURRENT account — pass the account so Entra doesn't
-    // show the "pick an account to sign out of" chooser (which, if the user
-    // walks away, leaves interaction_in_progress and wedges the next sign-in).
-    const account = instance.getActiveAccount() ?? instance.getAllAccounts()[0] ?? undefined;
-    instance.logoutRedirect({ account, postLogoutRedirectUri: window.location.origin }).catch(() => {
-      // Fallback: at least drop local state and bounce to root.
-      try { instance.clearCache?.(); } catch { /* ignore */ }
-      window.location.assign("/");
-    });
+    // Idle timeout signs the user straight out — no "pick an account to sign
+    // out of" chooser (which, if the user has walked away, leaves
+    // interaction_in_progress and wedges the next sign-in). hardLogout() sends
+    // `logoutHint`, which is what actually suppresses Entra's picker, and is
+    // shared with the account-menu Sign out so both behave identically.
+    hardLogout(instance);
   }, [instance]);
 
   const staySignedIn = useCallback(() => {

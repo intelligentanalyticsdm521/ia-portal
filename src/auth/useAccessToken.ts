@@ -7,7 +7,7 @@ import {
 import { useMsal } from '@azure/msal-react';
 import { useCallback, useMemo } from 'react';
 import { authScopes } from './msalConfig';
-import { clearStaleInteractionFlags } from './pca';
+import { clearStaleInteractionFlags, hardLogout } from './pca';
 import { DEV_AUTH, DEV_TOKEN_RESULT } from '../lib/devAuth';
 
 /**
@@ -105,15 +105,12 @@ export function useAccessToken() {
   }, [instance]);
 
   const logout = useCallback(() => {
-    // Hard logout of the CURRENT account only — pass the account so Entra
-    // doesn't show the "pick an account to sign out of" chooser (users have
-    // exactly one portal login). Return to the landing page afterward.
-    const account = activeAccount ?? instance.getActiveAccount() ?? accounts[0] ?? undefined;
-    return instance.logoutRedirect({
-      account,
-      postLogoutRedirectUri: window.location.origin,
-    });
-  }, [instance, activeAccount, accounts]);
+    // Sign out means sign out — no "pick an account" chooser. Shared with the
+    // idle auto-logout via hardLogout() so the two paths can never diverge.
+    // It sends `logoutHint` (not just `account`), which is what actually tells
+    // Entra to skip the server-side account picker. See pca.ts.
+    return hardLogout(instance);
+  }, [instance]);
 
   return { activeAccount, getToken, login, logout };
 }
