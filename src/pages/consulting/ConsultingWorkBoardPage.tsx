@@ -501,9 +501,12 @@ export function ConsultingWorkBoardPage() {
           onClose={() => setShowNewTask(false)} onCreated={() => { setShowNewTask(false); load(); }} />
       )}
       {showReleaseSettings && (
+        // saving must NOT close the modal: the confirmation it returns ("12
+        // created · 24 scheduled through …") is the only proof the cadence did
+        // anything, and closing on save destroyed it before it could be read.
         <ReleaseSettingsModal releases={releases}
           onClose={() => setShowReleaseSettings(false)}
-          onSaved={() => { setShowReleaseSettings(false); loadRefs(); }} />
+          onSaved={loadRefs} />
       )}
     </div>
   );
@@ -613,8 +616,20 @@ function NewTaskModal({ releases, workers, meta, projects, onClose, onCreated }:
 // bi-monthly I should be able to pick a day of the week — 1st and 3rd Thursday
 // of every month, 1st and the 15th, or monthly maybe just the 15th. Then
 // releases should automatically build lets say out to 1 year."
+// Brandon: "I need the releases to be customizable. Not just Thursdays. I use
+// Thursday's but maybe some people do a Sunday night, etc."
+//
+// So this is a RULE BUILDER, not one ordinal set sharing a single weekday. Each
+// rule is its own (occurrence, weekday) pair, so "1st Monday AND 3rd Thursday"
+// is expressible — and Last is an option, because "last Friday of the month"
+// cannot be written as a fixed ordinal when months vary in length.
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const ORDINALS = ["1st", "2nd", "3rd", "4th"];
+const OCCURRENCES = [
+  { v: 1, label: "1st" }, { v: 2, label: "2nd" }, { v: 3, label: "3rd" },
+  { v: 4, label: "4th" }, { v: 5, label: "5th" }, { v: -1, label: "Last" },
+];
+
+interface WeekdayRule { n: number; weekday: number }
 
 function ReleaseSettingsModal({ releases, onClose, onSaved }: {
   releases: ReleaseRow[]; onClose: () => void; onSaved: () => void;
@@ -624,8 +639,7 @@ function ReleaseSettingsModal({ releases, onClose, onSaved }: {
   // would have thrown at runtime.
   const { getFounder, patchFounder, postFounder } = useOliverApi();
   const [kind, setKind] = useState<"none" | "nth_weekday" | "days_of_month">("none");
-  const [weekday, setWeekday] = useState(4);                 // Thursday
-  const [nths, setNths] = useState<number[]>([1, 3]);        // 1st & 3rd
+  const [rules, setRules] = useState<WeekdayRule[]>([{ n: 1, weekday: 4 }, { n: 3, weekday: 4 }]);
   const [days, setDays] = useState<number[]>([1, 15]);
   const [horizon, setHorizon] = useState(12);
   const [busy, setBusy] = useState(false);
@@ -638,26 +652,40 @@ function ReleaseSettingsModal({ releases, onClose, onSaved }: {
         if (!d) return;
         setKind((d.kind as typeof kind) || "none");
         setHorizon(d.horizon_months || 12);
-        const cfg = d.config as Array<{ n: number; weekday: number }> | number[];
+        const cfg = d.config;
         if (d.kind === "nth_weekday" && Array.isArray(cfg) && cfg.length) {
-          const c = cfg as Array<{ n: number; weekday: number }>;
-          setWeekday(c[0]?.weekday ?? 4);
-          setNths(c.map((x) => x.n));
+          setRules(cfg as WeekdayRule[]);
         } else if (d.kind === "days_of_month" && Array.isArray(cfg)) {
           setDays(cfg as number[]);
         }
       })
-      .catch(() => {});
+      .catch(() => { /* no cadence yet is a normal first-run state */ });
   }, [getFounder]);
 
-  const toggle = (arr: number[], v: number, set: (a: number[]) => void) =>
-    set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v].sort((a, b) => a - b));
+  const setRule = (i: number, patch: Partial<WeekdayRule>) =>
+    setRules((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const addRule = () => setRules((rs) => [...rs, { n: 1, weekday: 4 }]);
+  const removeRule = (i: number) => setRules((rs) => rs.filter((_, j) => j !== i));
+  const toggleDay = (d: number) =>
+    setDays((ds) => (ds.includes(d) ? ds.filter((x) => x !== d) : [...ds, d].sort((a, b) => a - b)));
+
+  // Plain-English echo of the rules, so the schedule is verifiable before saving
+  // a year of dates against it.
+  const describe = () => {
+    if (kind === "none") return "No automatic releases.";
+    if (kind === "days_of_month") {
+      return days.length ? `The ${days.join(", ")} of every month.` : "Pick at least one day.";
+    }
+    if (!rules.length) return "Add at least one rule.";
+    return rules
+      .map((r) => `${OCCURRENCES.find((o) => o.v === r.n)?.label || r.n} ${WEEKDAYS[r.weekday]}`)
+      .join(" and ") + " of every month.";
+  };
 
   const save = async () => {
     setBusy(true); setErr(null); setResult(null);
     try {
-      const config = kind === "nth_weekday" ? nths.map((n) => ({ n, weekday }))
-        : kind === "days_of_month" ? days : [];
+      const config = kind === "nth_weekday" ? rules : kind === "days_of_month" ? days : [];
       const r = await patchFounder<{ generated?: { created: number; planned: number; through: string | null } }>(
         "/consulting/release-cadence", { kind, config, horizon_months: horizon });
       const g = r?.generated;
@@ -696,22 +724,35 @@ function ReleaseSettingsModal({ releases, onClose, onSaved }: {
         </div>
 
         {kind === "nth_weekday" && (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={l}>Which</label>
-              <div className="flex flex-wrap gap-1">
-                {ORDINALS.map((o, i) => (
-                  <button key={o} type="button" className={chip(nths.includes(i + 1))}
-                    onClick={() => toggle(nths, i + 1, setNths)}>{o}</button>
-                ))}
-              </div>
+          <div>
+            <label className={l}>Rules</label>
+            <div className="space-y-2">
+              {rules.map((r, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <select value={r.n} onChange={(e) => setRule(i, { n: Number(e.target.value) })}
+                    className="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+                    {OCCURRENCES.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+                  </select>
+                  <select value={r.weekday} onChange={(e) => setRule(i, { weekday: Number(e.target.value) })}
+                    className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+                    {WEEKDAYS.map((w, wi) => <option key={w} value={wi}>{w}</option>)}
+                  </select>
+                  <button type="button" onClick={() => removeRule(i)} disabled={rules.length === 1}
+                    title={rules.length === 1 ? "Keep at least one rule" : "Remove this rule"}
+                    className="rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-500 disabled:opacity-30">
+                    Remove
+                  </button>
+                </div>
+              ))}
             </div>
-            <div>
-              <label className={l}>Weekday</label>
-              <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} className={f}>
-                {WEEKDAYS.map((w, i) => <option key={w} value={i}>{w}</option>)}
-              </select>
-            </div>
+            <button type="button" onClick={addRule}
+              className="mt-2 rounded-md border border-dashed border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">
+              + Add another
+            </button>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Every rule carries its own weekday, so you can mix — 1st Monday and 3rd Thursday.
+              A 5th occurrence is skipped in months that do not have one; Last never is.
+            </p>
           </div>
         )}
 
@@ -721,12 +762,18 @@ function ReleaseSettingsModal({ releases, onClose, onSaved }: {
             <div className="flex flex-wrap gap-1">
               {[1, 5, 10, 15, 20, 25, 28, 31].map((d) => (
                 <button key={d} type="button" className={chip(days.includes(d))}
-                  onClick={() => toggle(days, d, setDays)}>{d}</button>
+                  onClick={() => toggleDay(d)}>{d}</button>
               ))}
             </div>
             <p className="mt-1 text-[11px] text-slate-500">
               31 lands on the last day in shorter months rather than rolling into the next one.
             </p>
+          </div>
+        )}
+
+        {kind !== "none" && (
+          <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+            <span className="font-semibold">Schedule:</span> {describe()}
           </div>
         )}
 
