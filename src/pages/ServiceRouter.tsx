@@ -330,6 +330,9 @@ const ArionPluginProvisioningPage = lazyNamed(() => import('./arion/ArionPluginP
 // /app/admin/consulting/* and are imported by App.tsx directly. Only the
 // shared/client-readable consulting surfaces remain in this dispatcher.
 const ConsultingOverviewPage = lazyNamed(() => import('./consulting/ConsultingOverviewPage'), 'ConsultingOverviewPage');
+// Founder-only agency Overview. The shared page above still serves CLIENTS
+// unchanged — this is a branch, not a replacement.
+const ConsultingWorkOverviewPage = lazyNamed(() => import('./consulting/ConsultingWorkOverviewPage'), 'ConsultingWorkOverviewPage');
 const ConsultingCalendarPage = lazyNamed(() => import('./consulting/ConsultingCalendarPage'), 'ConsultingCalendarPage');
 const ConsultingAccessLogPage = lazyNamed(() => import('./consulting/ConsultingAccessLogPage'), 'ConsultingAccessLogPage');
 const ConsultingDeliverablesPage = lazyNamed(() => import('./consulting/ConsultingDeliverablesPage'), 'ConsultingDeliverablesPage');
@@ -798,7 +801,11 @@ export function ServiceRouter() {
       // CONSULTING_FOUNDER_RELOCATIONS table at the top of this component
       // (founders → /app/admin/consulting/*; non-founders → /overview),
       // so they never reach this switch.
-      case 'consulting_overview':         consultingPage = <ConsultingOverviewPage />; break;
+      case 'consulting_overview':
+        // Founders get the agency Overview (needs-you / waiting-on-client /
+        // capacity); clients keep the existing shared summary untouched.
+        consultingPage = effectiveIsFounder ? <ConsultingWorkOverviewPage /> : <ConsultingOverviewPage />;
+        break;
       case 'consulting_deliverables':     consultingPage = <ConsultingDeliverablesPage />; break;
       case 'consulting_calendar':         consultingPage = <ConsultingCalendarPage />; break;
       // Founder-only utility surfaces (still accessible by URL)
