@@ -65,6 +65,10 @@ interface Project {
   linked_tenant_id?: string | null;
   owner_user_id?: string | null;
   updated_at: string;
+  /** Schedule (migrations 151/153) — drives the Due column and the default sort. */
+  start_date?: string | null;
+  target_end_date?: string | null;
+  estimate_hours?: number | null;
   current_milestone_name?: string | null;
   milestones_complete_count?: number;
   milestones_total_count?: number;
@@ -91,6 +95,32 @@ interface Category {
 // the dropdown's default "All clients" state remains distinct from explicit
 // "Internal" filtering.
 const CLIENT_INTERNAL_SENTINEL = "__internal__";
+
+/** Target end date + how long is left. DATE columns come back as YYYY-MM-DD;
+ *  parsing one with `new Date()` treats it as UTC midnight and renders a day
+ *  early in every western timezone, so the comparison is done on the string.
+ *  A closed project shows its date without a countdown — "12d overdue" on
+ *  something already delivered is noise. */
+function ProjectDue({ end, status }: { end?: string | null; status?: string }) {
+  if (!end) return <span className="text-xs text-slate-400">—</span>;
+  const iso = String(end).slice(0, 10);
+  const [y, m, d] = iso.split("-").map(Number);
+  const label = `${m}/${d}/${y}`;
+  const closed = status === "completed" || status === "closed" || status === "cancelled";
+  if (closed) return <span className="text-xs text-slate-500">{label}</span>;
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const days = Math.round((new Date(y, m - 1, d).getTime() - today.getTime()) / 86400000);
+  const tone = days < 0 ? "font-bold text-red-600" : days <= 7 ? "font-semibold text-amber-700" : "text-slate-500";
+  return (
+    <div className="text-right">
+      <div className="text-xs font-medium text-slate-700">{label}</div>
+      <div className={`text-[10px] ${tone}`}>
+        {days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? "due today" : `${days}d left`}
+      </div>
+    </div>
+  );
+}
 
 // ── Pill mapping ────────────────────────────────────────────────────────
 // Map a raw project.status → which filter pill bucket it belongs in. The
@@ -289,7 +319,19 @@ export function ConsultingProjectsPage() {
     if (!showClosed && statusPill !== "closed") {
       out = out.filter((p) => computePillForProject(p) !== "closed");
     }
-    out.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+    // Brandon 2026-08-08: "It should honestly automatically sort by the one
+    // that is supposed to end the soonest." Projects with no target end sink to
+    // the bottom rather than to the top — an unscheduled project is not urgent,
+    // it is unplanned, and sorting it first would bury the real deadlines.
+    // updated_at is the tiebreak so same-date projects keep the old ordering.
+    out.sort((a, b) => {
+      const ea = a.target_end_date ? String(a.target_end_date).slice(0, 10) : null;
+      const eb = b.target_end_date ? String(b.target_end_date).slice(0, 10) : null;
+      if (ea && eb && ea !== eb) return ea < eb ? -1 : 1;
+      if (ea && !eb) return -1;
+      if (!ea && eb) return 1;
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
     return out;
   }, [projects, clientFilter, statusPill, showClosed]);
 
@@ -324,7 +366,7 @@ export function ConsultingProjectsPage() {
               Projects
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Every active engagement, sorted by recent activity.
+              Every active engagement, soonest deadline first.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -446,6 +488,7 @@ export function ConsultingProjectsPage() {
                   <th style={{ textAlign: "left" }}>Client</th>
                   <th style={{ textAlign: "left" }}>Status</th>
                   <th style={{ textAlign: "left" }}>Current milestone</th>
+                  <th style={{ textAlign: "right" }}>Due</th>
                   <th style={{ textAlign: "right" }}>Updated</th>
                 </tr>
               </thead>
@@ -501,6 +544,9 @@ export function ConsultingProjectsPage() {
                             </span>
                           )}
                         </div>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <ProjectDue end={p.target_end_date} status={p.status} />
                       </td>
                       <td style={{ textAlign: "right" }}>
                         <div className="text-xs text-slate-600 inline-flex items-center gap-1">

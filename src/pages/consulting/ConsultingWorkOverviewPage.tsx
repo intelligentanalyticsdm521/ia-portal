@@ -155,6 +155,33 @@ function PersonLine({ p }: { p: PersonRow & { committed: number; cap: number | n
   );
 }
 
+/** One release row. Extracted for the same reason the other three were: the
+ *  band shows the first five and the modal shows all of them, and two copies of
+ *  a row renderer drift. */
+function ReleaseLine({ r }: { r: OverviewData["releases"][number] }) {
+  const late = r.days_left != null && r.days_left < 0;
+  const tight = r.days_left != null && r.days_left >= 0 && r.days_left <= 7 && r.open_count > 0;
+  return (
+    <Link to={`${BOARD}?release_id=${r.release_id}`}
+      className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50">
+      <div>
+        <div className="text-xs font-semibold text-slate-800">{r.name}</div>
+        <div className="mt-0.5 text-[11px] text-slate-500">
+          {r.open_count} open{r.hours_open ? ` · ${r.hours_open}h` : ""}
+        </div>
+      </div>
+      <div className="text-right">
+        <div className="text-[11px] text-slate-600">{fmtDate(r.target_date)}</div>
+        {r.days_left != null && (
+          <div className={`text-[10px] ${late ? "font-bold text-red-600" : tight ? "font-semibold text-amber-700" : "text-slate-500"}`}>
+            {late ? `${Math.abs(r.days_left)}d overdue` : `${r.days_left}d left`}
+          </div>
+        )}
+      </div>
+    </Link>
+  );
+}
+
 function Band({ icon, title, subtitle, count, tone, onViewAll, children }: {
   icon: React.ReactNode; title: string; subtitle: string; count: number;
   tone: string; onViewAll?: () => void; children: React.ReactNode;
@@ -186,7 +213,7 @@ export function ConsultingWorkOverviewPage() {
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [viewAll, setViewAll] = useState<null | "needs" | "waiting" | "people">(null);
+  const [viewAll, setViewAll] = useState<null | "needs" | "waiting" | "people" | "releases">(null);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -294,31 +321,13 @@ export function ConsultingWorkOverviewPage() {
 
         {releases.length > 0 && (
           <Band icon={<Rocket className="h-4 w-4" />} tone="#7c3aed"
-            title="Releases" subtitle="Open work against target dates" count={releases.length}>
+            title="Releases" subtitle="Open work against target dates" count={releases.length}
+            onViewAll={() => setViewAll("releases")}>
             <div className="divide-y divide-slate-100">
-              {releases.map((r) => {
-                const late = r.days_left != null && r.days_left < 0;
-                const tight = r.days_left != null && r.days_left >= 0 && r.days_left <= 7 && r.open_count > 0;
-                return (
-                  <Link key={r.release_id} to={`${BOARD}?release_id=${r.release_id}`}
-                    className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50">
-                    <div>
-                      <div className="text-xs font-semibold text-slate-800">{r.name}</div>
-                      <div className="mt-0.5 text-[11px] text-slate-500">
-                        {r.open_count} open{r.hours_open ? ` · ${r.hours_open}h` : ""}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-[11px] text-slate-600">{fmtDate(r.target_date)}</div>
-                      {r.days_left != null && (
-                        <div className={`text-[10px] ${late ? "font-bold text-red-600" : tight ? "font-semibold text-amber-700" : "text-slate-500"}`}>
-                          {late ? `${Math.abs(r.days_left)}d overdue` : `${r.days_left}d left`}
-                        </div>
-                      )}
-                    </div>
-                  </Link>
-                );
-              })}
+              {/* Next five only. A year of generated releases scrolls the whole
+                  page off screen, and the ones that matter are the near ones —
+                  they are already ordered by target date. */}
+              {releases.slice(0, BAND_LIMIT).map((r) => <ReleaseLine key={r.release_id} r={r} />)}
             </div>
           </Band>
         )}
@@ -334,10 +343,16 @@ export function ConsultingWorkOverviewPage() {
           open
           onClose={() => setViewAll(null)}
           product="oliver"
-          title={viewAll === "needs" ? "Needs you" : viewAll === "waiting" ? "Waiting on the client" : "Who's loaded"}
+          title={
+            viewAll === "needs" ? "Needs you"
+            : viewAll === "waiting" ? "Waiting on the client"
+            : viewAll === "releases" ? "Releases"
+            : "Who's loaded"
+          }
           subtitle={
             viewAll === "needs" ? `${needsYou.length} items where you are the blocker`
             : viewAll === "waiting" ? `${waiting.length} items on the client's side`
+            : viewAll === "releases" ? `${releases.length} releases on the calendar`
             : `${peopleRanked.length} people`
           }
           size="report"
@@ -346,6 +361,7 @@ export function ConsultingWorkOverviewPage() {
             {viewAll === "needs" && needsYou.map((r) => <NeedsYouLine key={r.id} r={r} />)}
             {viewAll === "waiting" && waiting.map((r) => <WaitingLine key={r.id} r={r} />)}
             {viewAll === "people" && peopleRanked.map((p) => <PersonLine key={p.worker_id} p={p} />)}
+            {viewAll === "releases" && releases.map((r) => <ReleaseLine key={r.release_id} r={r} />)}
           </div>
         </IadmModal>
       )}
