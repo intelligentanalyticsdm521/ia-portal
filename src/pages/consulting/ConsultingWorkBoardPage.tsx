@@ -186,20 +186,31 @@ export function ConsultingWorkBoardPage() {
       key: k,
       label: labelFor(k),
       rows: byKey.get(k)!,
-      // Only a worker lane has a real capacity baseline. Release lanes stay
-      // neutral rather than inventing one from team size.
-      capacity: view === "worker" && k !== NO_LANE ? (workerById.get(k)?.hours_per_week ?? null) : null,
+      // A worker's baseline is their week. A release's is the team-hours between
+      // the previous release and this one — derived server-side so it can't go
+      // stale when someone joins, leaves, or changes hours. Brandon: "I need to
+      // know if a release is pushing it because we have a shit ton of work
+      // outstanding or in-progress."
+      capacity: k === NO_LANE ? null
+        : view === "worker" ? (workerById.get(k)?.hours_per_week ?? null)
+        : (releases.find((x) => x.release_id === k)?.capacity_hours ?? null),
     }));
   }, [rows, view, workerById, releases]);
 
   const unit = meta?.estimate_unit || "hours";
+  // `open` is what the band measures. A lane holding 80 shipped hours is not
+  // over capacity; one holding 80 unfinished hours is. Cancelled work is
+  // excluded for the same reason — nobody has to absorb it.
   const capacityOf = (items: WorkRow[]) => {
-    let hours = 0, unsized = 0;
+    let hours = 0, open = 0, unsized = 0;
     for (const r of items) {
-      if (r.estimate_hours != null) hours += Number(r.estimate_hours);
-      else if (!r.estimate_size) unsized++;
+      const done = r.stage === "completed" || r.stage === "cancelled";
+      if (r.estimate_hours != null) {
+        hours += Number(r.estimate_hours);
+        if (!done) open += Number(r.estimate_hours);
+      } else if (!r.estimate_size && !done) unsized++;
     }
-    return { hours, unsized };
+    return { hours, open, unsized };
   };
   const totals = useMemo(() => capacityOf(rows), [rows]);
   const allTags = useMemo(() => {
@@ -457,7 +468,7 @@ export function ConsultingWorkBoardPage() {
         <div className="space-y-3 overflow-x-auto pb-2">
           {lanes.map((lane) => {
             const cap = capacityOf(lane.rows);
-            const band = loadBand(cap.hours, lane.capacity);
+            const band = loadBand(cap.open, lane.capacity);
             const style = BAND_STYLE[band];
             const isCollapsed = !!collapsed[`${view}:${lane.key}`];
             return (
@@ -474,8 +485,15 @@ export function ConsultingWorkBoardPage() {
                     {/* Bigger, per Brandon — the counts are the point of the lane. */}
                     <span className="text-sm font-bold tabular-nums" style={{ color: style.text }}>
                       {lane.rows.length} <span className="text-xs font-medium opacity-70">{lane.rows.length === 1 ? "item" : "items"}</span>
-                      {cap.hours > 0 && <> · {cap.hours}<span className="text-xs font-medium opacity-70">h</span></>}
-                      {lane.capacity != null && <span className="text-xs font-medium opacity-70"> / {lane.capacity}h</span>}
+                      {cap.open > 0 && <> · {cap.open}<span className="text-xs font-medium opacity-70">h open</span></>}
+                      {lane.capacity != null && (
+                        <span className="text-xs font-medium opacity-70"
+                          title={view === "release"
+                            ? "Team hours available between the previous release and this one"
+                            : "This person's weekly hours"}>
+                          {" "}/ {lane.capacity}h
+                        </span>
+                      )}
                     </span>
                     {cap.unsized > 0 && <span className="text-xs font-semibold text-amber-700">{cap.unsized} unsized</span>}
                     {style.note && (

@@ -41,6 +41,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IadmModal, CORE_BLUE } from "../IadmModal";
+import { ProjectDetailsTab } from "./ProjectDetailsTab";
+import { ProjectTasksTab } from "./ProjectTasksTab";
 import { OnboardingWizardModal } from "./OnboardingWizardModal";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { DeliverableActionPanel, type DeliverableShape } from "./DeliverableActionPanel";
@@ -123,7 +125,18 @@ export interface ConsultingProjectRow {
   total_billable_cents?: number | null;
   currency?: string | null;
   started_at?: string | null;
+  /** DEAD COLUMN. `target_completion_date` does not exist on consulting.project
+   *  — the Overview card bound to it has always rendered "—". The real column
+   *  is `target_end_date` (migration 151). Kept only so nothing that still
+   *  reads it fails to compile; nothing should. */
   target_completion_date?: string | null;
+  /** Schedule + capacity (migrations 151 / 153). */
+  start_date?: string | null;
+  target_end_date?: string | null;
+  estimate_hours?: number | null;
+  estimate_size?: string | null;
+  internal_notes?: string | null;
+  priority?: string | null;
   closed_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -175,6 +188,32 @@ export interface ConsultingTask {
   updated_at?: string | null;
   /** Newest OPEN client revision request — what they asked to be changed. */
   open_revision_note?: string | null;
+  // Planning fields, so the project's Tasks tab shows the same shape the board
+  // does rather than a thinner second version of the same row.
+  estimate_hours?: number | null;
+  estimate_size?: string | null;
+  actual_hours?: number | null;
+  priority?: string | null;
+  platform?: string | null;
+  due_at?: string | null;
+  start_at?: string | null;
+  completed_at?: string | null;
+  release_id?: string | null;
+  release_name?: string | null;
+  release_target_date?: string | null;
+  assigned_to_worker_id?: string | null;
+  assignee_name?: string | null;
+}
+
+/** Server-computed hours rollup for the project (GET /consulting/projects/:id). */
+export interface ProjectCapacity {
+  budget_hours: number | null;
+  estimate_size: string | null;
+  committed_hours: number;
+  actual_hours: number;
+  task_count: number;
+  done_count: number;
+  unsized: number;
 }
 
 interface WorkspaceResponse {
@@ -182,6 +221,7 @@ interface WorkspaceResponse {
   milestones: ConsultingProjectMilestone[];
   deliverables?: ConsultingDeliverable[];
   tasks?: ConsultingTask[];
+  capacity?: ProjectCapacity;
 }
 
 // Friendly labels + the founder's quick actions per stage. Mirrors the
@@ -287,7 +327,7 @@ export function ConsultingProjectModal({
 }: ConsultingProjectModalProps) {
   const { get, post, patch, del } = useOliverApi();
 
-  const [tab, setTab] = useState<"overview" | "milestones" | "deliverables" | "notes" | "activity" | "invoices" | "proposals">("overview");
+  const [tab, setTab] = useState<"overview" | "milestones" | "tasks" | "deliverables" | "details" | "activity" | "invoices" | "proposals">("overview");
   const [data, setData] = useState<WorkspaceResponse | null>(null);
   // Editable project details (Category / Owner / Total budget). Picker sources
   // are loaded once per open, founder-only — clients never edit these.
@@ -304,6 +344,9 @@ export function ConsultingProjectModal({
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [deleteArmed, setDeleteArmed] = useState(false);
+  // Tasks tab — opening a row reuses the SAME task modal the Milestones tab
+  // uses, so the two surfaces cannot drift on what editing a task means.
+  const [tasksTabTask, setTasksTabTask] = useState<ConsultingTask | null>(null);
   const [milestoneNotice, setMilestoneNotice] = useState<string | null>(null);
   // CS-1 — milestone metadata edit target (null = closed).
   const [editingMilestone, setEditingMilestone] = useState<ConsultingProjectMilestone | null>(null);
@@ -617,6 +660,14 @@ export function ConsultingProjectModal({
               </span>
             )}
           </TabButton>
+          <TabButton active={tab === "tasks"} onClick={() => setTab("tasks")}>
+            Tasks
+            {(data?.tasks?.length ?? 0) > 0 && (
+              <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                {data?.tasks?.length}
+              </span>
+            )}
+          </TabButton>
           <TabButton active={tab === "deliverables"} onClick={() => setTab("deliverables")}>
             Deliverables
             {(data?.deliverables?.length ?? 0) > 0 && (
@@ -625,7 +676,7 @@ export function ConsultingProjectModal({
               </span>
             )}
           </TabButton>
-          <TabButton active={tab === "notes"} onClick={() => setTab("notes")}>Notes</TabButton>
+          <TabButton active={tab === "details"} onClick={() => setTab("details")}>Details</TabButton>
           <TabButton active={tab === "activity"} onClick={() => setTab("activity")}>Activity</TabButton>
           <TabButton active={tab === "invoices"} onClick={() => setTab("invoices")}>Invoices</TabButton>
           <TabButton active={tab === "proposals"} onClick={() => setTab("proposals")}>Proposals</TabButton>
@@ -691,8 +742,25 @@ export function ConsultingProjectModal({
               onChanged={load}
             />
           )}
-          {data && tab === "notes" && (
-            <ProjectNotesTab projectId={data.project.project_id} viewerRole={viewerRole} />
+          {data && tab === "tasks" && (
+            <ProjectTasksTab
+              tasks={data.tasks || []}
+              milestones={milestones}
+              onOpenTask={viewerRole === "founder" ? setTasksTabTask : undefined}
+            />
+          )}
+          {/* Details replaced Notes (Brandon 2026-08-08). The notes THREAD is
+              not deleted with the tab — it renders inside Details, because a
+              tab that disappears takes its history out of reach. */}
+          {data && tab === "details" && (
+            <ProjectDetailsTab
+              project={data.project}
+              capacity={data.capacity}
+              viewerRole={viewerRole}
+              savingDetail={savingDetail}
+              onDetailPatch={handleDetailPatch}
+              notesSlot={<ProjectNotesTab projectId={data.project.project_id} viewerRole={viewerRole} />}
+            />
           )}
           {data && tab === "activity" && (
             <ProjectActivityTab
@@ -714,6 +782,23 @@ export function ConsultingProjectModal({
           the founder doesn't lose project context while picking a template.
           The nested IadmModal renders above its parent via fixed positioning
           (see IadmModal's overlay z-index). */}
+      {tasksTabTask && (
+        <TaskDetailModal
+          task={tasksTabTask}
+          deliverables={(data?.deliverables || [])
+            .filter((d) => d.service_request_id === tasksTabTask.id)
+            .map((d) => ({
+              deliverable_id: d.deliverable_id,
+              title: d.title,
+              file_name: d.file_name,
+              file_url: d.file_url,
+              status: d.status,
+            }))}
+          onClose={() => setTasksTabTask(null)}
+          onChanged={() => { setTasksTabTask(null); void load(); onChanged?.(); }}
+        />
+      )}
+
       {showSendIntake && project && (
         <SendIntakeModal
           projectId={project.project_id}
@@ -1647,12 +1732,26 @@ function OverviewTab({
           </div>
         </MetaCard>
 
-        <MetaCard title="Started">
-          <div className="text-sm text-slate-800">{formatDate(project.started_at) || "—"}</div>
+        {/* Planned start vs actual start — the gap between them IS the slip.
+            Both dates are set on the Details tab. */}
+        <MetaCard title="Start">
+          <div className="text-sm text-slate-800">
+            {fmtProjectDate(project.start_date) || <span className="text-slate-400">Not scheduled</span>}
+          </div>
+          {project.started_at && (
+            <div className="text-[11px] text-slate-500">
+              actually started {formatDate(project.started_at)}
+            </div>
+          )}
         </MetaCard>
 
-        <MetaCard title="Target completion">
-          <div className="text-sm text-slate-800">{formatDate(project.target_completion_date) || "—"}</div>
+        {/* Was bound to `target_completion_date`, a column that does not exist —
+            so this card rendered "—" no matter what was set. The real column is
+            target_end_date (migration 151). */}
+        <MetaCard title="Target end">
+          <div className="text-sm text-slate-800">
+            {fmtProjectDate(project.target_end_date) || <span className="text-slate-400">Not set</span>}
+          </div>
         </MetaCard>
 
         <MetaCard title="Total budget">
@@ -1692,6 +1791,16 @@ function OverviewTab({
       </div>
     </div>
   );
+}
+
+/** DATE columns come back as YYYY-MM-DD. Parsing one with `new Date()` treats it
+ *  as UTC midnight and renders a day early in every western timezone — the same
+ *  off-by-one that showed a 9/18 release as 9/17. Format from the string. */
+function fmtProjectDate(v?: string | null): string {
+  if (!v) return "";
+  const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return "";
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString();
 }
 
 function MetaCard({ title, children }: { title: string; children: React.ReactNode }) {

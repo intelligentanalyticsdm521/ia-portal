@@ -28,6 +28,11 @@ export interface ReleaseRow {
   release_id: string; name: string; target_date?: string | null; status: string;
   task_count: number; done_count: number; hours_total: number | null; unsized: number;
   is_generated?: boolean;
+  // Capacity (server-derived): hours still owed, and the team-hours that exist
+  // between the previous release and this one. capacity_hours is null when no
+  // worker has hours_per_week set — no baseline, so no band.
+  hours_open?: number | null; open_count?: number; capacity_hours?: number | null;
+  weekly_capacity_hours?: number | null;
 }
 
 export interface WorkerRow {
