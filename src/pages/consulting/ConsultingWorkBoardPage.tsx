@@ -213,6 +213,30 @@ export function ConsultingWorkBoardPage() {
     return { hours, open, unsized };
   };
   const totals = useMemo(() => capacityOf(rows), [rows]);
+
+  // Priority mix — Brandon 2026-08-08: "seeing all high/urgent priorities should
+  // be flagged. I shouldn't have 50%+ of my tasks as a high/urgent priority."
+  //
+  // Measured over OPEN work only. Finished work was correctly urgent once and
+  // counting it forever would keep the warning lit after the problem is gone.
+  // Urgent gets its own lower ceiling: his definition is "do this right now
+  // before any other work", and more than a handful of those means none of them
+  // are actually first.
+  const prioMix = useMemo(() => {
+    const open = rows.filter((r) => r.stage !== "completed" && r.stage !== "cancelled");
+    const urgent = open.filter((r) => r.priority === "urgent").length;
+    const high = open.filter((r) => r.priority === "high").length;
+    const total = open.length;
+    if (!total) return null;
+    const hu = urgent + high;
+    return {
+      total, urgent, high, hu,
+      pct: Math.round((hu / total) * 100),
+      urgentPct: Math.round((urgent / total) * 100),
+      over: hu / total > 0.5,
+      urgentOver: urgent / total > 0.15,
+    };
+  }, [rows]);
   const allTags = useMemo(() => {
     const s = new Set<string>();
     rows.forEach((r) => (r.tags || []).forEach((t) => s.add(t)));
@@ -323,6 +347,16 @@ export function ConsultingWorkBoardPage() {
             <strong className="text-sm text-slate-800">{totals.hours}h</strong> estimated
             {totals.unsized > 0 && <> · <strong className="text-amber-700">{totals.unsized} unsized</strong></>}
           </p>
+          {prioMix && (prioMix.over || prioMix.urgentOver) && (
+            <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
+              <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+              <span>
+                <strong>{prioMix.pct}% of open work is high or urgent</strong>
+                {prioMix.urgentOver && <> ({prioMix.urgent} urgent)</>} — when everything
+                is a priority, nothing is. Re-rank the ones that can wait.
+              </span>
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex overflow-hidden rounded-md border border-slate-200">
