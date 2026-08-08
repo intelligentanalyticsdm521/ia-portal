@@ -521,7 +521,7 @@ const CONSULTING_NAV: SubNavConfig = {
         // AppShell continues to drop founder-only items for non-founders;
         // the URL move means founders + clients no longer share a nav row.
         { key: "consulting_overview",          label: "Overview",          route: "/app/services/consulting_overview" },
-        { key: "consulting_tickets",           label: "Service Requests",  route: "/app/admin/consulting/requests" },
+        { key: "consulting_tickets",           label: "Work",              route: "/app/admin/consulting/requests" },
         { key: "consulting_projects",          label: "Projects",          route: "/app/admin/consulting/projects" },
         { key: "consulting_deliverables",      label: "Deliverables",      route: "/app/services/consulting_deliverables" },
         { key: "consulting_documents",         label: "Document Library",  route: "/app/admin/consulting/document-library" },

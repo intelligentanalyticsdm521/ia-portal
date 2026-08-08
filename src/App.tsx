@@ -109,7 +109,7 @@ const ConsultingClientsPageAdmin = lazy(() => import('./pages/consulting/Consult
 // 2026-07-24 — Service Requests rewired onto consulting.service_request (the
 // 7-stage pipeline + OLIVER bridge). ConsultingTicketsBoardPage read the
 // abandoned lumen.consulting_ticket fork (0 rows in prod) and is retired.
-const ConsultingRequestsBoardPageAdmin = lazy(() => import('./pages/consulting/ConsultingRequestsBoardPage'));
+const ConsultingRequestsBoardPageAdmin = lazy(() => import('./pages/consulting/ConsultingWorkBoardPage'));
 const ConsultingProjectsPageAdmin = lazy(() => import('./pages/consulting/ConsultingProjectsPage'));
 const ConsultingOnboardClientPageAdmin = lazy(() => import('./pages/consulting/ConsultingOnboardClientPageV2'));
 const ConsultingDocumentLibraryPageAdmin = lazy(() => import('./pages/consulting/ConsultingDocumentLibraryPage'));
