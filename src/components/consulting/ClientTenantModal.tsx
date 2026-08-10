@@ -145,6 +145,12 @@ export function ClientTenantModal({ open, tenantId, tenantName, onClose }: Props
       activeTenantId: tenantId,
       setActiveTenantId: () => {/* read-only in modal */},
       enabledServices: enabled,
+      // 2026-08-06 — the CLIENT's product entitlements (core.tenant_services),
+      // so view-as shows exactly the products they bought. Previously the rail
+      // ignored this entirely and rendered SPARK/ARGUS for every client — which
+      // is how ARION-only tenants (Briarwood, Midwest Ag) appeared to have
+      // SPARK. `svcKeys` is already the raw service_key set we need.
+      ownedProducts: svcKeys,
     };
   }, [clientActive, tenantId, founderState.bootstrap]);
 

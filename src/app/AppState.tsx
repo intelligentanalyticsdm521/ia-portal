@@ -13,6 +13,14 @@ interface AppStateValue {
   setActiveTenantId: (v: string | null) => void;
 
   enabledServices: Set<string>;
+
+  /**
+   * PRODUCT-level entitlements ("arion" | "oliver" | "spark" | …) exactly as
+   * recorded in core.tenant_services. Use THIS to answer "does the tenant own
+   * this product?" — `enabledServices` is a derived granular set that has no
+   * SPARK coverage and cannot answer it. See buildOwnedProducts().
+   */
+  ownedProducts: Set<string>;
 }
 
 export const AppStateContext = createContext<AppStateValue | undefined>(undefined);
@@ -105,12 +113,38 @@ function buildEnabledServices(active: SelectTenantResponse | null): Set<string> 
   return keys;
 }
 
+/**
+ * The tenant's PRODUCT-level entitlements, straight from the session response —
+ * i.e. exactly the `core.tenant_services` rows with `is_enabled = 1`
+ * ("arion" | "oliver" | "spark" | "argus" | "stella" | "forge" | …).
+ *
+ * 2026-08-06 — why this exists separately from `enabledServices`.
+ * `enabledServices` is a *derived, granular* set (arion_dashboard, arion_seo_*,
+ * …) built by hand-maintained per-product branches, and it only has branches for
+ * `arion` and `oliver`. Nothing ever adds `spark_*` keys, so it CANNOT answer
+ * "does this tenant own SPARK?" — gating the product rail on it would hide SPARK
+ * from tenants who actually pay for it. This set is the authoritative answer and
+ * needs no per-product maintenance.
+ *
+ * Dev (`VITE_ENABLED_SERVICES`) has no session payload, so callers fall back to
+ * the legacy behaviour when this set is empty — see IconRail.
+ * See memory: reference_subscription_gating_model.
+ */
+function buildOwnedProducts(active: SelectTenantResponse | null): Set<string> {
+  return new Set(
+    (active?.services || [])
+      .map((svc) => String(svc.serviceKey || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
 export function AppStateProvider({ children }: PropsWithChildren) {
   const [bootstrap, setBootstrap] = useState<SessionVerifyResponse | null>(null);
   const [active, setActive] = useState<SelectTenantResponse | null>(null);
   const [activeTenantId, setActiveTenantIdState] = useState<string | null>(() => loadStoredActiveTenantId());
 
   const enabledServices = useMemo(() => buildEnabledServices(active), [active]);
+  const ownedProducts = useMemo(() => buildOwnedProducts(active), [active]);
 
   function setActiveTenantId(v: string | null) {
     setActiveTenantIdState(v);
@@ -125,7 +159,8 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     setActive,
     activeTenantId,
     setActiveTenantId,
-    enabledServices
+    enabledServices,
+    ownedProducts
   };
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

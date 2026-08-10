@@ -95,22 +95,54 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
   // AccountMenu. Hide the gear entirely for non-super-admin users so they
   // aren't tempted into a /admin page they can't use.
   const isAdminActive = location.pathname.startsWith("/admin");
-  const { enabledServices } = useAppState();
+  const { enabledServices, ownedProducts } = useAppState();
   const isSuperAdmin = useIsSuperAdmin();
 
+  // 2026-08-06 — PRODUCT GATING. A product rail icon appears only when the
+  // tenant actually OWNS that product (core.tenant_services.is_enabled).
+  //
+  // The old test — "any service in this section resolves to enabled" — was
+  // bypassed entirely by `resolveServiceStatus()`, which returns 'enabled'
+  // unconditionally whenever a catalog row is declared `defaultStatus:'enabled'`.
+  // 41 rows are (12 SPARK, 11 ARION, 9 CONSULTING, 6 ARGUS, 2 OLIVER), so every
+  // tenant saw SPARK/ARGUS regardless of what they bought — Briarwood and
+  // Midwest Ag (ARION-only) both showed SPARK.
+  //
+  // We gate on `ownedProducts` (the raw core.tenant_services keys) rather than
+  // `enabledServices`, because the latter is a derived granular set whose
+  // per-product branches only cover arion + oliver — no spark_* key is ever
+  // added, so using it would hide SPARK from tenants who DO pay for it.
+  // See memory: reference_subscription_gating_model.
+  const PRODUCT_SERVICE_KEY: Partial<Record<ProductKey, string>> = {
+    arion: "arion", oliver: "oliver", spark: "spark",
+    stella: "stella", forge: "forge", argus: "argus",
+  };
+
   const products: ProductDef[] = PRODUCTS.map((p) => {
-    // Check if any service in this product's section is enabled
-    const sectionMap: Record<ProductKey, string> = {
-      overview: "Shared", arion: "ARION", oliver: "OLIVER", spark: "LUMEN",
-      stella: "STELLA", forge: "FORGE", argus: "ARGUS", consulting: "CONSULTING",
-      settings: "Settings",
-    };
-    const section = sectionMap[p.key];
+    // Home is always available. Consulting is founder/client-surface gated
+    // elsewhere (applyConsultingNavFilter + RequireFounderRoute), not by
+    // subscription — leave its existing behaviour untouched.
     if (p.key === "overview" || p.key === "consulting") return { ...p, enabled: true };
-    const hasEnabled = SERVICE_CATALOG.some(
-      (s) => s.section === section && resolveServiceStatus(s, enabledServices) === "enabled"
-    );
-    return { ...p, enabled: hasEnabled };
+
+    const serviceKey = PRODUCT_SERVICE_KEY[p.key];
+    if (!serviceKey) return { ...p, enabled: false };
+
+    // Dev / preview: no session payload exists (VITE_ENABLED_SERVICES drives
+    // the granular set instead), so fall back to the legacy catalog test rather
+    // than blanking the rail for local work.
+    if (ownedProducts.size === 0) {
+      const sectionMap: Record<string, string> = {
+        arion: "ARION", oliver: "OLIVER", spark: "LUMEN",
+        stella: "STELLA", forge: "FORGE", argus: "ARGUS",
+      };
+      const section = sectionMap[p.key];
+      const hasEnabled = SERVICE_CATALOG.some(
+        (s) => s.section === section && resolveServiceStatus(s, enabledServices) === "enabled"
+      );
+      return { ...p, enabled: hasEnabled };
+    }
+
+    return { ...p, enabled: ownedProducts.has(serviceKey) };
   });
 
   return (
