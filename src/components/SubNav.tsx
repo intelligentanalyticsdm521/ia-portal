@@ -168,7 +168,9 @@ const OLIVER_NAV: SubNavConfig = {
       items: [
         { key: "oliver_ia_insights_health", label: "Health", route: "/app/services/oliver_ia_insights_health" },
         { key: "oliver_ia_insights_trends", label: "Trends", route: "/app/services/oliver_ia_insights_trends", tag: { label: "OLIVER", color: "#FEC82C" } },
-        { key: "oliver_ia_insights_intelligence", label: "Intelligence", route: "/app/services/oliver_ia_insights_intelligence", tag: { label: "OLIVER", color: "#FEC82C" } },
+        // IA Insights model (see SPARK block): Health/Trends/Reports every tier,
+        // Intelligence = Pro. Brandon 2026-08-06.
+        { key: "oliver_ia_insights_intelligence", label: "Intelligence", route: "/app/services/oliver_ia_insights_intelligence", tag: { label: "OLIVER", color: "#FEC82C" }, minTier: "pro" },
         { key: "oliver_ia_insights_reports", label: "Reports", route: "/app/services/oliver_ia_insights_reports" },
       ],
     },
@@ -309,7 +311,9 @@ const ARION_NAV: SubNavConfig = {
       items: [
         { key: "arion_ia_insights_health", label: "Health", route: "/app/services/arion_ia_insights_health" },
         { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends", tag: { label: "ARION", color: "#38BDF8" } },
-        { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#38BDF8" } },
+        // IA Insights model (see SPARK block): Health/Trends/Reports every tier,
+        // Intelligence = Pro. Brandon 2026-08-06.
+        { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#38BDF8" }, minTier: "pro" },
       ],
     },
   ],
@@ -366,8 +370,8 @@ const SPARK_NAV: SubNavConfig = {
         // Brandon: "Contact 360 - no clue what this is." Its only unique
         // content was email/SMS history + OLIVER jobs, which now render on the
         // record itself — one screen per person instead of two places to look.
-        { key: "spark_contact_360", label: "Contact 360°", route: "/app/services/spark_contact_360", intelligence: true, merged: true },
-        { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true, merged: true /* merged: linked from IA Insights -> Health (contact scoring) */ },
+        { key: "spark_contact_360", label: "Contact 360°", route: "/app/services/spark_contact_360", intelligence: true, merged: true, minTier: "business" /* BUSINESS (tier matrix 2026-08-06) */ },
+        { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true, merged: true, minTier: "business" /* BUSINESS (tier matrix 2026-08-06) — merged: linked from IA Insights -> Health (contact scoring) */ },
       ],
     },
     {
@@ -421,13 +425,13 @@ const SPARK_NAV: SubNavConfig = {
         // Triggers consolidated into ONE list page. The page exposes a
         // segmented filter for "All / Automations / Rules" and a single
         // "New workflow" button that opens the unified chooser modal.
-        { key: "spark_workflows_automations", label: "Workflows & Automations", route: "/app/services/spark_workflows_automations" },
+        { key: "spark_workflows_automations", label: "Workflows & Automations", route: "/app/services/spark_workflows_automations", minTier: "pro" /* PRO (tier matrix 2026-08-06) — the ~4 prebuilt toggle-on automations */ },
         // F-CS.6 — admin for the lumen.spark_task rows that `task_call`
         // steps reference. Sits next to Workflows & Automations because
         // tasks ARE workflow building blocks — same mental model, same
         // group home.
         { key: "spark_tasks", label: "Tasks", route: "/app/services/spark_tasks", minTier: "pro" /* PRO: follow-up tasks are core CRM */},
-        { key: "spark_journey_builder", label: "Journeys", route: "/app/services/spark_journey_builder", minTier: "pro" /* PRO: multi-step branching journeys — the classic Pro unlock */},
+        { key: "spark_journey_builder", label: "Journeys", route: "/app/services/spark_journey_builder", minTier: "business" /* BUSINESS (tier matrix 2026-08-06): multi-step branching journeys are the advanced-automation tier; Pro gets the prebuilt toggles */},
         { key: "spark_ab_tests", label: "A/B Tests", route: "/app/services/spark_ab_tests", minTier: "pro" /* PRO */},
         { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals", minTier: "business" /* BUSINESS: matters at 2+ marketers */},
         { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts", minTier: "business" /* BUSINESS */},
@@ -457,7 +461,7 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_lead_inbox", label: "Lead Inbox", route: "/app/services/spark_lead_inbox", addon: "leadgen" },
         { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines", minTier: "pro" /* PRO: moved out of the Lead Gen add-on into the package */},
         { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals", minTier: "pro" /* PRO: deals + pipelines are what ActiveCampaign gates too */},
-        { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution", minTier: "pro" /* PRO */},
+        { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution", minTier: "business" /* BUSINESS (tier matrix 2026-08-06): multi-touch revenue attribution sits with the advanced reporting tier */},
       ],
     },
     {
@@ -477,7 +481,7 @@ const SPARK_NAV: SubNavConfig = {
         // Surfacing it as a nav item misleads users into thinking it
         // works. Page route remains so deep-links don't 404 and the
         // marketing/coming-soon preview is still reachable.
-        { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence", merged: true /* merged: per-contact score is on the Contacts list (tier + score columns, Tier X/Y/Z filters); the trend lives in IA Insights. A third page showing the same distribution is the duplication Brandon flagged 2026-08-06 */ },
+        { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence", merged: true, minTier: "business" /* BUSINESS (tier matrix 2026-08-06) — merged: per-contact score is on the Contacts list (tier + score columns, Tier X/Y/Z filters); the trend lives in IA Insights. A third page showing the same distribution is the duplication Brandon flagged 2026-08-06 */ },
         { key: "spark_activity_stream", label: "Activity Stream", route: "/app/services/spark_activity_stream", merged: true /* merged: linked from IA Insights -> Health (activity stream) */ },
       ],
     },
@@ -496,7 +500,13 @@ const SPARK_NAV: SubNavConfig = {
       items: [
         { key: "spark_ia_insights_health", label: "Health", route: "/app/services/spark_ia_insights_health" },
         { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends", tag: { label: "SPARK", color: "#EF6C33" } },
-        { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" } },
+        // IA INSIGHTS MODEL (Brandon 2026-08-06, applies to ARION/OLIVER/SPARK
+        // identically): Health + Trends + Reports at EVERY tier — their depth
+        // scales naturally because a lower tier simply connects fewer data
+        // sources. Only the MODELLED layer (forecasts, anomaly detection,
+        // weighted-impact opportunity) is a paid unlock at Pro. Cross-platform
+        // intelligence stays ARGUS-only.
+        { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" }, minTier: "pro" },
         { key: "spark_ia_insights_reports", label: "Reports", route: "/app/services/spark_ia_insights_reports" },
       ],
     },
