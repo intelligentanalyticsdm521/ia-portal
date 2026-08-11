@@ -169,7 +169,11 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
           return (
             <button
               key={p.key}
-              onClick={() => (locked ? onSelect("settings") : onSelect(p.key))}
+              // Locked products still OPEN (Brandon 2026-08-06): the customer
+              // browses the full feature nav with everything locked plus an
+              // upgrade banner, so they can see exactly what they'd get. Do NOT
+              // bounce them to Settings — that hides the product entirely.
+              onClick={() => onSelect(p.key)}
               title={locked
                 ? `${p.tagline} is not part of your plan — add ${p.tagline} to enable ${p.label}`
                 : `${p.label} - ${p.tagline}`}

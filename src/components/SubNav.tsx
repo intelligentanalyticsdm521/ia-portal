@@ -14,6 +14,7 @@ import {
   type VisibilityRules,
 } from "./navVisibility";
 import { useProductTier } from "../hooks/useProductTier";
+import { useAppState } from "../app/AppState";
 
 export interface SubNavItem extends VisibilityRules {
   key: string;
@@ -922,6 +923,7 @@ export function SubNav({ config }: SubNavProps) {
   const productKey = productOfConfig(config);
   const gatingActive = isGatedProduct(productKey);
   const { tier } = useProductTier(gatingActive ? productKey : "spark");
+  const { ownedProducts } = useAppState();
   const visCtx = { tier, addons: activeAddons(), gatingActive };
 
   // 2026-08-06 (Brandon) — SHOW, DON'T HIDE. Features the tenant's plan doesn't
@@ -930,10 +932,23 @@ export function SubNav({ config }: SubNavProps) {
   // Pipelines or Newsletter Studio existed. The API still hard-blocks them
   // (LUMEN requireSparkTier -> 403 tier_upgrade_required), so this is purely a
   // discovery/merchandising surface, not an access decision.
+  // If the business doesn't own this PRODUCT at all, every item is locked —
+  // they can still browse the whole feature list (with the upgrade banner
+  // above it) to see what buying it would give them.
+  const PRODUCT_SERVICE_KEY: Record<string, string | undefined> = {
+    arion: "arion", oliver: "oliver", spark: "spark",
+    stella: "stella", forge: "forge", argus: "argus",
+  };
+  const needsKey = PRODUCT_SERVICE_KEY[productKey || ""];
+  const productLocked =
+    !!needsKey && ownedProducts.size > 0 && !ownedProducts.has(needsKey);
+
   const gatedGroups = config.groups
     .map((g) => ({
       ...g,
-      items: g.items.map((it) => (isVisible(it, visCtx) ? it : { ...it, locked: true as const })),
+      items: g.items.map((it) =>
+        productLocked || !isVisible(it, visCtx) ? { ...it, locked: true as const } : it
+      ),
     }))
     .filter((g) => g.items.length > 0);
   config = { ...config, groups: gatedGroups };
@@ -1012,6 +1027,32 @@ export function SubNav({ config }: SubNavProps) {
         <h2 className="text-sm font-bold text-white">{config.productName}</h2>
         <p className="text-[10px] text-[#A8CDD8]">{config.tagline}</p>
       </div>
+
+      {/* 2026-08-06 (Brandon) — product NOT owned: the whole feature list stays
+          browsable so the customer can see exactly what they'd get, with a
+          prominent "add this product" banner above it. Access itself is
+          enforced server-side (403), never by hiding the nav. */}
+      {productLocked && (
+        <div
+          className="mx-3 mb-3 rounded-md px-3 py-2.5"
+          style={{ background: "#EF6C3318", border: "1px solid #EF6C3355" }}
+        >
+          <div className="text-[11px] font-bold" style={{ color: "#EF6C33" }}>
+            🔒 Not included in your plan
+          </div>
+          <div className="mt-1 text-[10px] leading-snug text-[#D5E8F0]/80">
+            Add <span className="font-semibold">{config.productName}</span> to unlock these features.
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate("/app/settings/plan")}
+            className="mt-2 w-full rounded px-2 py-1 text-[10px] font-bold text-white"
+            style={{ background: "#EF6C33" }}
+          >
+            Add {config.productName}
+          </button>
+        </div>
+      )}
 
       {/* Scrollable nav groups */}
       <nav className="flex-1 overflow-y-auto px-2 py-2">
