@@ -32,6 +32,13 @@ export interface SubNavItem extends VisibilityRules {
    * intelligence items, ARGUS Cross-Platform links, STELLA, etc.
    */
   tag?: { label: string; color: string };
+  /**
+   * Set at render time (not authored in the nav config) when the tenant's plan
+   * does NOT include this feature. The item still renders — with an "Upgrade"
+   * pill — so customers can see what they're missing. Brandon 2026-08-06:
+   * show, don't hide. Real enforcement is server-side (403).
+   */
+  locked?: boolean;
 }
 
 export interface SubNavGroup {
@@ -917,12 +924,19 @@ export function SubNav({ config }: SubNavProps) {
   const { tier } = useProductTier(gatingActive ? productKey : "spark");
   const visCtx = { tier, addons: activeAddons(), gatingActive };
 
-  // Filter items, then drop any group left with nothing in it — an empty
-  // "Sales" header with no links under it is worse than no header.
-  const visibleGroups = config.groups
-    .map((g) => ({ ...g, items: g.items.filter((it) => isVisible(it, visCtx)) }))
+  // 2026-08-06 (Brandon) — SHOW, DON'T HIDE. Features the tenant's plan doesn't
+  // include stay VISIBLE and are marked "Upgrade", so they can see what they're
+  // missing. Hiding them destroyed the upsell: a Standard customer had no idea
+  // Pipelines or Newsletter Studio existed. The API still hard-blocks them
+  // (LUMEN requireSparkTier -> 403 tier_upgrade_required), so this is purely a
+  // discovery/merchandising surface, not an access decision.
+  const gatedGroups = config.groups
+    .map((g) => ({
+      ...g,
+      items: g.items.map((it) => (isVisible(it, visCtx) ? it : { ...it, locked: true as const })),
+    }))
     .filter((g) => g.items.length > 0);
-  config = { ...config, groups: visibleGroups };
+  config = { ...config, groups: gatedGroups };
   // Single-section-expanded mode for products that opt in via sectionId on groups.
   // ARION, SPARK, OLIVER all have sectionIds; STELLA/FORGE/ARGUS placeholders don't.
   const hasSectionIds = config.groups.some(g => !!g.sectionId);
@@ -1061,8 +1075,29 @@ export function SubNav({ config }: SubNavProps) {
                         }
                       >
                         <span className="h-1 w-1 flex-shrink-0 rounded-full bg-current opacity-50" />
-                        <span className="truncate">{item.label}</span>
-                        {item.tag && (
+                        <span className={`truncate${item.locked ? " opacity-60" : ""}`}>{item.label}</span>
+                        {/* 2026-08-06 — plan-locked features stay VISIBLE with an
+                            "Upgrade" pill so customers discover what they're
+                            missing. The API enforces the real block (403). */}
+                        {item.locked && (
+                          <span
+                            title="Not included in your plan — upgrade to unlock"
+                            style={{
+                              background: '#EF6C3322',
+                              color: '#EF6C33',
+                              fontSize: 9,
+                              fontWeight: 700,
+                              letterSpacing: '0.04em',
+                              padding: '1px 5px',
+                              borderRadius: 99,
+                              flexShrink: 0,
+                              marginLeft: 'auto',
+                            }}
+                          >
+                            UPGRADE
+                          </span>
+                        )}
+                        {item.tag && !item.locked && (
                           <span
                             style={{
                               background: `${item.tag.color}22`,

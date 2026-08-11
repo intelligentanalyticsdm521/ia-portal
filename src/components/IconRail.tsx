@@ -158,15 +158,28 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
       <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
         {products.map((p) => {
           const isActive = activeProduct === p.key;
+          // 2026-08-06 (Brandon) — SHOW, DON'T HIDE. Products the business
+          // doesn't subscribe to stay visible but render LOCKED with a padlock
+          // and an "Add <PRODUCT>" prompt, so customers discover what else the
+          // platform does. (`enabled` was previously computed and then never
+          // used in the render — every product showed as if owned.) Real access
+          // is enforced server-side: arion-api requireArionAccess, oliver-api
+          // enforceTenantAccess, LUMEN requireSparkAccess.
+          const locked = !p.enabled;
           return (
             <button
               key={p.key}
-              onClick={() => onSelect(p.key)}
-              title={`${p.label} - ${p.tagline}`}
+              onClick={() => (locked ? onSelect("settings") : onSelect(p.key))}
+              title={locked
+                ? `${p.tagline} is not part of your plan — add ${p.tagline} to enable ${p.label}`
+                : `${p.label} - ${p.tagline}`}
+              aria-disabled={locked}
               className={`relative flex w-[88px] flex-col items-center gap-1 rounded-md px-1 py-2 transition-colors ${
                 isActive
                   ? "bg-white/10 text-white"
-                  : "text-white/50 hover:bg-white/5 hover:text-white/80"
+                  : locked
+                    ? "text-white/25 hover:bg-white/5 hover:text-white/40"
+                    : "text-white/50 hover:bg-white/5 hover:text-white/80"
               }`}
             >
               {/* Active indicator bar */}
@@ -175,8 +188,25 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
               )}
               <span className="relative flex h-6 w-6 items-center justify-center">
                 {p.icon}
+                {locked && (
+                  <span
+                    aria-hidden
+                    className="absolute -right-1 -top-1 flex h-3 w-3 items-center justify-center rounded-full bg-[#0B1C24] text-[8px] leading-none"
+                    style={{ color: "#EF6C33" }}
+                  >
+                    🔒
+                  </span>
+                )}
               </span>
               <span className="text-[10px] font-medium leading-tight text-center">{p.label}</span>
+              {locked && (
+                <span
+                  className="text-[8px] font-bold leading-none tracking-wide"
+                  style={{ color: "#EF6C33" }}
+                >
+                  ADD
+                </span>
+              )}
             </button>
           );
         })}
