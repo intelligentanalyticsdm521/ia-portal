@@ -10,7 +10,8 @@ interface AppStateValue {
   setActive: (v: SelectTenantResponse | null) => void;
 
   activeTenantId: string | null;
-  setActiveTenantId: (v: string | null) => void;
+  /** `persist=false` keeps the tenant in memory only (consultant/view-as). */
+  setActiveTenantId: (v: string | null, persist?: boolean) => void;
 
   enabledServices: Set<string>;
 
@@ -146,8 +147,23 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const enabledServices = useMemo(() => buildEnabledServices(active), [active]);
   const ownedProducts = useMemo(() => buildOwnedProducts(active), [active]);
 
-  function setActiveTenantId(v: string | null) {
+  /**
+   * @param persist  When false the tenant is held in memory ONLY — nothing is
+   *   written to localStorage. Used by the consultant/view-as workspace.
+   *
+   * 2026-08-06 — WHY. View-as used to persist the CLIENT's tenant id into
+   * localStorage. That value outlives the workspace tab, so the founder's own
+   * portal reloaded straight back into the client's tenant: Brandon opened his
+   * own portal and saw Rolling In It's SPARK/OLIVER data, an empty clients
+   * list (RII has none), and CONTACT_INSERT_NOT_ALLOWED_AS_CONSULTANT when he
+   * tried to write — all because the app still believed he was acting as RII.
+   *
+   * View-as must be a scoped, disposable context. It never writes to the
+   * founder's persisted session.
+   */
+  function setActiveTenantId(v: string | null, persist: boolean = true) {
     setActiveTenantIdState(v);
+    if (!persist) return;
     if (!v) localStorage.removeItem(STORAGE_KEYS.activeTenantId);
     else localStorage.setItem(STORAGE_KEYS.activeTenantId, v);
   }

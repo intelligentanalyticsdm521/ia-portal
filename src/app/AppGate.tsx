@@ -296,7 +296,12 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         ), 'selectTenant');
 
         appState.setActive(selected);
-        appState.setActiveTenantId(tenantToSelect);
+        // 2026-08-06 — in the consultant/view-as workspace, hold the client
+        // tenant in MEMORY ONLY. Persisting it leaked the client's tenant into
+        // the founder's own session: his portal reloaded into the client's
+        // tenant (client's SPARK/OLIVER data, empty clients list, and
+        // CONTACT_INSERT_NOT_ALLOWED_AS_CONSULTANT on writes).
+        appState.setActiveTenantId(tenantToSelect, !isConsultantWorkspace);
         bootstrapDoneRef.current = true;
         // Clear any leftover auto-recovery flag from a prior broken session
         try { sessionStorage.removeItem('iadm.portal.auth_auto_recovery'); } catch {}
