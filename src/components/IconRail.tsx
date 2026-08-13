@@ -3,6 +3,7 @@ import { Shield, Settings } from "lucide-react";
 import { useAppState } from "../app/AppState";
 import { useIsSuperAdmin } from "../hooks/useIsSuperAdmin";
 import { resolveServiceStatus, SERVICE_CATALOG } from "../config/serviceCatalog";
+import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
 
 // "my_brand" intentionally REMOVED 2026-06-22 — the top-level My Brand slot
 // was a premature Wave-2 add for the Q4 2026 deferred product. ARION's
@@ -165,7 +166,10 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
           // used in the render — every product showed as if owned.) Real access
           // is enforced server-side: arion-api requireArionAccess, oliver-api
           // enforceTenantAccess, LUMEN requireSparkAccess.
-          const locked = !p.enabled;
+          // Kill switch (2026-08-06): when gating is off, nothing renders as
+          // locked — restores the pre-gating behaviour while the founder-bypass
+          // path is verified. See config/featureFlags.FEATURE_GATING_ENABLED.
+          const locked = FEATURE_GATING_ENABLED && !p.enabled;
           return (
             <button
               key={p.key}

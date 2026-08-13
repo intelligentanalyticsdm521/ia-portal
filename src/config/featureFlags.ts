@@ -39,6 +39,24 @@ export const GBP_ENABLED = false;
 // weighted and pruned) and a real search is verified end-to-end.
 export const LEADGEN_ENABLED = false;
 
+// KILL SWITCH for the 2026-08-06 subscription/tier gating (product rail lock,
+// per-item "UPGRADE" pills, product-not-owned banner).
+//
+// Turned OFF 2026-08-06 same day: after shipping, Brandon reported OLIVER
+// inaccessible and SPARK behaving wrongly on the Intelligent Analytics tenant.
+// The agency owns every product and has no Stripe subscriptions, so any hole in
+// the founder-bypass path makes its own products read as locked. Rather than
+// leave a broken portal while diagnosing, this flag restores the pre-gating
+// behaviour: every product and every nav item renders normally.
+//
+// Backend enforcement is unaffected (requireSparkAccess / requireSparkTier /
+// requireArionTier / oliver enforceTenantAccess) — real access control still
+// lives server-side. This flag only controls what the MENU does.
+//
+// Re-enable only after verifying, as the founder tenant, that ARION + OLIVER +
+// SPARK are all fully reachable.
+export const FEATURE_GATING_ENABLED = false;
+
 // Service keys hidden from nav while LEADGEN_ENABLED is false. Kept here (not
 // inline in serviceCatalog) so the lock lives with the flag it depends on.
 export const LEADGEN_LOCKED_KEYS: readonly string[] = [

@@ -15,6 +15,7 @@ import {
 } from "./navVisibility";
 import { useProductTier } from "../hooks/useProductTier";
 import { useAppState } from "../app/AppState";
+import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
 
 export interface SubNavItem extends VisibilityRules {
   key: string;
@@ -940,14 +941,19 @@ export function SubNav({ config }: SubNavProps) {
     stella: "stella", forge: "forge", argus: "argus",
   };
   const needsKey = PRODUCT_SERVICE_KEY[productKey || ""];
+  // Kill switch (2026-08-06) — see config/featureFlags.FEATURE_GATING_ENABLED.
+  // With gating off nothing is marked locked, restoring the pre-gating menu.
   const productLocked =
+    FEATURE_GATING_ENABLED &&
     !!needsKey && ownedProducts.size > 0 && !ownedProducts.has(needsKey);
 
   const gatedGroups = config.groups
     .map((g) => ({
       ...g,
       items: g.items.map((it) =>
-        productLocked || !isVisible(it, visCtx) ? { ...it, locked: true as const } : it
+        FEATURE_GATING_ENABLED && (productLocked || !isVisible(it, visCtx))
+          ? { ...it, locked: true as const }
+          : it
       ),
     }))
     .filter((g) => g.items.length > 0);
