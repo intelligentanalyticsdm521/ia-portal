@@ -81,6 +81,10 @@ export function TransactionDetailModal({
   const [postedDate, setPostedDate] = useState(() => (txn.posted_date ? String(txn.posted_date).slice(0, 10) : ""));
   const [isReimbursable, setIsReimbursable] = useState(!!txn.is_reimbursable);
   const [reimbursedAt, setReimbursedAt] = useState<string | null>(txn.reimbursed_at || null);
+  // Walkthrough finding (Brandon, 2026-08-13): Mark reimbursed saves instantly
+  // via PATCH, but the modal never SAID so — a disabled "Save changes" button
+  // afterwards read as "can't save". This note makes instant saves explicit.
+  const [savedNote, setSavedNote] = useState<string | null>(null);
   const [status, setStatus] = useState(txn.status || "needs_categorization");
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -126,6 +130,7 @@ export function TransactionDetailModal({
       // just toggled in this modal and not separately saved yet.
       await patch(`/ledger/transactions/${txn.transaction_id}`, { is_reimbursable: true, reimbursed_at: now });
       setReimbursedAt(now);
+      setSavedNote("Marked reimbursed and saved — it no longer counts toward Owed to you.");
       changedRef.current = true;
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not mark this reimbursed. Please try again.");
@@ -140,6 +145,7 @@ export function TransactionDetailModal({
     try {
       await patch(`/ledger/transactions/${txn.transaction_id}`, { reimbursed_at: null });
       setReimbursedAt(null);
+      setSavedNote("Reimbursement reopened and saved — it counts toward Owed to you again.");
       changedRef.current = true;
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not update the reimbursement. Please try again.");
@@ -195,7 +201,7 @@ export function TransactionDetailModal({
           )}
           <IadmButton variant="primary" onClick={close} disabled={busy != null}>Close</IadmButton>
           <IadmButton variant="accent" product="stella" onClick={save} disabled={busy != null || !dirty || isVoid}>
-            {busy === "save" ? "Saving…" : "Save changes"}
+            {busy === "save" ? "Saving…" : !dirty && savedNote ? "Saved ✓" : "Save changes"}
           </IadmButton>
         </>
       }
@@ -261,7 +267,7 @@ export function TransactionDetailModal({
               <input
                 type="checkbox"
                 checked={isReimbursable}
-                onChange={(e) => setIsReimbursable(e.target.checked)}
+                onChange={(e) => { setIsReimbursable(e.target.checked); setSavedNote(null); }}
                 style={{ marginTop: 2 }}
                 disabled={!!reimbursedAt}
               />
@@ -269,9 +275,9 @@ export function TransactionDetailModal({
                 <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>Needs reimbursement</span>
                 <span style={{ display: "block", fontSize: 11, color: "#5A7A8A", marginTop: 2, lineHeight: 1.45 }}>
                   {reimbursedAt
-                    ? `Reimbursed ${fmtDate(reimbursedAt)}.`
+                    ? `Reimbursed ${fmtDate(reimbursedAt)}. Saved automatically — no need to press Save.`
                     : isReimbursable
-                      ? "Paid personally — counts toward the Owed to you total until marked reimbursed."
+                      ? "Paid personally — counts toward the Owed to you total until marked reimbursed. Mark reimbursed saves instantly."
                       : "Turn on if this was paid with a personal card or cash."}
                 </span>
               </span>
@@ -295,6 +301,11 @@ export function TransactionDetailModal({
           </div>
         )}
 
+        {savedNote && !err && (
+          <div style={{ padding: 10, fontSize: 12, background: "#ECFDF5", color: "#047857", border: "1px solid #A7F3D0", borderRadius: 6 }}>
+            ✓ {savedNote}
+          </div>
+        )}
         {err && (
           <div style={{ padding: 10, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 6 }}>
             {err}
