@@ -97,8 +97,8 @@ function ItemRow({ it, deep }: { it: DetailItem; deep: DeepReportData }) {
             {flag && <AlertTriangle className="h-3 w-3 text-amber-500" aria-label={flag} />}
           </span>
         </td>
-        {!isFeed && <td className="py-1.5 px-2 text-right tabular-nums font-medium text-slate-800">{fmtV(cur, report.format)}</td>}
-        {!isFeed && <td className="py-1.5 px-2 text-right"><Mom pct={mom} lowerBetter={lowerBetter} /></td>}
+        {!isFeed && !deep.categorical && <td className="py-1.5 px-2 text-right tabular-nums font-medium text-slate-800">{fmtV(cur, report.format)}</td>}
+        {!isFeed && !deep.categorical && <td className="py-1.5 px-2 text-right"><Mom pct={mom} lowerBetter={lowerBetter} /></td>}
         {!isFeed && <td className="py-1.5 px-2"><Spark series={it.series} up={up} /></td>}
         {cols.map((c: DetailColumn) => (
           <td key={c.key} className="py-1.5 px-2 text-right tabular-nums text-slate-600">{fmtV(it.extra?.[c.key] as any, c.format)}</td>
@@ -157,7 +157,7 @@ function MiniMovementTable({ title, rows, format, lowerBetter }: { title: string
 }
 
 export function DeepReportView({ deep }: { deep: DeepReportData }) {
-  const { report, months, narrative, stats, distribution, movements, segments, opportunities, meaning } = deep;
+  const { report, months, narrative, stats, distribution, movements, segments, opportunities, meaning, categorical } = deep;
   const cols = report.columns || [];
   const isFeed = report.kind === "feed" || !report.items.some((it) => it.series?.length);
   const lowerBetter = !report.higherIsBetter;
@@ -269,7 +269,10 @@ export function DeepReportView({ deep }: { deep: DeepReportData }) {
                   <div key={it.name} className="flex items-center justify-between gap-2 py-0.5 text-[11px]">
                     <span className="text-slate-700 truncate" title={it.name}>{it.name}</span>
                     <span className="flex items-center gap-2 flex-shrink-0">
-                      <span className="tabular-nums font-medium text-slate-800">{fmtV(it.series?.filter((v): v is number => v != null).slice(-1)[0] ?? null, report.format)}</span>
+                      {/* On a categorical report the series is a status code —
+                          printing "1" beside a plugin name reads as a
+                          measurement of something. */}
+                      {!categorical && <span className="tabular-nums font-medium text-slate-800">{fmtV(it.series?.filter((v): v is number => v != null).slice(-1)[0] ?? null, report.format)}</span>}
                       {it.extra?.volume != null && <span className="text-[10px] text-slate-400">{fmtV(it.extra.volume as any, "number")} vol</span>}
                     </span>
                   </div>
@@ -290,8 +293,14 @@ export function DeepReportView({ deep }: { deep: DeepReportData }) {
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-200">
                 <th className="py-1.5 px-3 font-semibold">{report.itemLabel}</th>
-                {!isFeed && <th className="py-1.5 px-2 font-semibold text-right">{report.primaryLabel || "Value"}</th>}
-                {!isFeed && <th className="py-1.5 px-2 font-semibold text-right">MoM</th>}
+                {/* A categorical report's series is a state code. Printing it as a
+                    value column, and a month-over-month percentage beside it,
+                    invents two measurements that do not exist — the state is
+                    already spelled out in the report's own columns. The
+                    sparkline stays: the SHAPE of the state changing over the
+                    year is real and readable. */}
+                {!isFeed && !categorical && <th className="py-1.5 px-2 font-semibold text-right">{report.primaryLabel || "Value"}</th>}
+                {!isFeed && !categorical && <th className="py-1.5 px-2 font-semibold text-right">MoM</th>}
                 {!isFeed && <th className="py-1.5 px-2 font-semibold">Trend</th>}
                 {cols.map((c) => <th key={c.key} className="py-1.5 px-2 font-semibold text-right">{c.label}</th>)}
               </tr>

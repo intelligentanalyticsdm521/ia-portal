@@ -52,6 +52,15 @@ export interface DeepConfig {
   flag?: (it: DetailItem, all: DetailItem[]) => string | null;
   /** extra[] key used to weight movement importance (default "volume", falls back to current value). */
   weightKey?: string;
+  /**
+   * The series is a STATE CODE, not a quantity — 1 = current, 2 = update
+   * available, 3 = dormant. Arithmetic on those numbers is meaningless: summing
+   * them produced "TOTAL STATUS 9", and a plugin going from current to needing
+   * an update read as "-50%, high volatility". Set this and the report drops
+   * every quantity-shaped derivation and talks in band changes instead, which
+   * is the only thing a state code can honestly say.
+   */
+  categorical?: boolean;
 }
 
 // ── output ────────────────────────────────────────────────────────────────
@@ -77,6 +86,8 @@ export interface DeepReportData {
   itemStats: Record<string, DeepItemStats>;
   /** "What this means" — friendly interpretation derived from the same data. */
   meaning: MeaningItem[];
+  /** Mirrors DeepConfig.categorical so the view can drop numeric columns too. */
+  categorical?: boolean;
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
@@ -204,7 +215,12 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
   }
 
   // C — movement tables
-  const row = (it: DetailItem) => ({ name: it.name, current: lastVal(it.series || []), momPct: itemMom(it) });
+  // A state code has nothing worth printing in a value column: "Elementor  1
+  // 0%" reads as a measurement when it is really just the code for "update
+  // available". The name alone is the whole finding in a band-change table.
+  const row = (it: DetailItem) => cfg?.categorical
+    ? { name: it.name, current: null, momPct: null }
+    : { name: it.name, current: lastVal(it.series || []), momPct: itemMom(it) };
   const movements: DeepMovementTable[] = [];
   const entered: DetailItem[] = [], dropped: DetailItem[] = [];
   if (cfg?.bands) {
@@ -219,8 +235,13 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
     if (entered.length) movements.push({ title: `Entered ${topBand.label} (last 3 months)`, items: entered.map(row) });
     if (dropped.length) movements.push({ title: `Dropped from ${topBand.label}`, items: dropped.map(row) });
   }
-  if (gainers.length) movements.push({ title: "Biggest gainers (volume-weighted)", items: gainers.slice(0, 6).map((x) => row(x.it)) });
-  if (losers.length) movements.push({ title: "Biggest losers (volume-weighted)", items: losers.slice(0, 6).map((x) => row(x.it)) });
+  // "+50% this month" is a lie about a state code — the only honest movement
+  // is which band an item left and which one it landed in, and the band tables
+  // above already say that.
+  if (!cfg?.categorical) {
+    if (gainers.length) movements.push({ title: "Biggest gainers (volume-weighted)", items: gainers.slice(0, 6).map((x) => row(x.it)) });
+    if (losers.length) movements.push({ title: "Biggest losers (volume-weighted)", items: losers.slice(0, 6).map((x) => row(x.it)) });
+  }
 
   // E — segments
   const segments: DeepSegmentTable[] = (cfg?.segments || []).map((def) => {
@@ -234,11 +255,16 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
       const curs = its.map((it) => lastVal(it.series || [])).filter((v): v is number => v != null);
       const val = curs.length ? (isAvgFormat(report.format) ? curs.reduce((s, v) => s + v, 0) / curs.length : curs.reduce((s, v) => s + v, 0)) : null;
       const moms = its.map(itemMom).filter((v): v is number => v != null);
-      return {
-        name, count: its.length,
-        value: fmtV(val, report.format),
-        momPct: moms.length ? moms.reduce((s, v) => s + v, 0) / moms.length : null,
-      };
+      // Summing status codes gave "Active (11) → 5": the total of eleven
+      // 1s-and-2s, printed as though it measured something. The group's count
+      // is already in its name, so a categorical segment shows nothing else.
+      return cfg?.categorical
+        ? { name, count: its.length, value: "", momPct: null }
+        : {
+            name, count: its.length,
+            value: fmtV(val, report.format),
+            momPct: moms.length ? moms.reduce((s, v) => s + v, 0) / moms.length : null,
+          };
     }).sort((a, b) => b.count - a.count);
     return { title: def.label, rows };
   }).filter((s) => s.rows.length > 1);
@@ -262,7 +288,8 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
         best: report.higherIsBetter ? Math.max(...vals) : Math.min(...vals),
         worst: report.higherIsBetter ? Math.min(...vals) : Math.max(...vals),
         avg,
-        volatilityPct: avg !== 0 ? (sd / Math.abs(avg)) * 100 : 0,
+        // Standard deviation over 1/2/3 measures nothing about a plugin.
+        volatilityPct: cfg?.categorical ? 0 : (avg !== 0 ? (sd / Math.abs(avg)) * 100 : 0),
       };
     }
     if (cfg?.flag) {
@@ -274,7 +301,7 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
   // Narrative + headline stats
   const flagged = Object.keys(flags).length;
   let narrative = `${items.length} ${pluralize(report.itemLabel, items.length)} tracked`;
-  if (trendItems.length) narrative += ` — ${gainers.length} improving, ${losers.length} declining this month`;
+  if (trendItems.length && !cfg?.categorical) narrative += ` — ${gainers.length} improving, ${losers.length} declining this month`;
   if (distribution?.kind === "bands" && cfg?.bands) {
     const top = distribution.series[0];
     const nowN = top.values[seriesLen - 1] ?? 0;
@@ -285,7 +312,7 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
   narrative += ".";
 
   const stats: DeepStat[] = [{ label: pluralize(report.itemLabel, 2), value: String(items.length) }];
-  if (aggCur != null) {
+  if (aggCur != null && !cfg?.categorical) {
     stats.push({
       label: `${isAvgFormat(report.format) ? "Avg" : "Total"} ${report.primaryLabel || "value"}`,
       value: fmtV(aggCur, report.format), momPct: aggMom,
@@ -295,6 +322,14 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
     const top = distribution.series[0];
     const nowN = top.values[seriesLen - 1] ?? 0, yearN = top.values[0] ?? 0;
     stats.push({ label: cfg.bands[0].label, value: String(nowN), sub: `${nowN - yearN >= 0 ? "+" : ""}${nowN - yearN} vs 12 mo ago` });
+    // With no total to headline, the bands that need action carry the summary.
+    if (cfg.categorical) {
+      for (let i = 1; i < distribution.series.length; i++) {
+        const b = distribution.series[i];
+        const n = b.values[seriesLen - 1] ?? 0;
+        if (n > 0) stats.push({ label: b.label, value: String(n) });
+      }
+    }
   }
   if (gainers.length || losers.length) stats.push({ label: "Movers", value: `${gainers.length}▲ ${losers.length}▼` });
   if (flagged) stats.push({ label: "Flagged", value: String(flagged) });
@@ -305,7 +340,7 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
     distribution, opportunities, flags, itemStats, seriesLen,
   });
 
-  return { report, months, narrative, stats, distribution, movements, segments, opportunities, flags, itemStats, meaning };
+  return { report, months, narrative, stats, distribution, movements, segments, opportunities, flags, itemStats, meaning, categorical: cfg?.categorical };
 }
 
 // ── "What this means" ─────────────────────────────────────────────────────
@@ -429,7 +464,9 @@ function buildMeaning(ctx: {
 
   // ── Trend reports ──
   // 1. The headline: is this area winning or losing overall?
-  if (total >= 3 && (gainers.length || losers.length)) {
+  //    Skipped for categorical reports — "8 improved this month" is measuring
+  //    the size of a status code, which means nothing.
+  if (total >= 3 && !cfg?.categorical && (gainers.length || losers.length)) {
     if (gainers.length >= losers.length * 2) {
       out.push({ tone: "good", text: `Momentum is on your side: ${gainers.length} of your ${total} ${nouns} improved this month, only ${losers.length} slipped. Whatever you're doing here, keep doing it.` });
     } else if (losers.length >= gainers.length * 2) {
@@ -491,16 +528,20 @@ function buildMeaning(ctx: {
     }
   }
 
-  // 4. The single most valuable fix (weight × decline).
-  if (losers.length) {
-    const worst = losers[0];
-    out.push({
-      tone: "bad",
-      text: `If you fix one thing, fix ${worst.it.name}: it moved the wrong way by ${pctOf(worst.imp)} and it carries more weight than anything else that declined. A small recovery there is worth more than big wins on minor ${nouns}.`,
-    });
-  } else if (gainers.length && out.length < 3) {
-    const best = gainers[0];
-    out.push({ tone: "good", text: `Your strongest mover is ${best.it.name}, improving ${pctOf(best.imp)} — and it's one of the heavyweights, so that gain shows up in your real results, not just this table.` });
+  // 4. The single most valuable fix (weight × decline). A percentage move on a
+  //    status code is not a fix worth naming, so categorical reports lean on
+  //    their opportunity lists instead.
+  if (!cfg?.categorical) {
+    if (losers.length) {
+      const worst = losers[0];
+      out.push({
+        tone: "bad",
+        text: `If you fix one thing, fix ${worst.it.name}: it moved the wrong way by ${pctOf(worst.imp)} and it carries more weight than anything else that declined. A small recovery there is worth more than big wins on minor ${nouns}.`,
+      });
+    } else if (gainers.length && out.length < 3) {
+      const best = gainers[0];
+      out.push({ tone: "good", text: `Your strongest mover is ${best.it.name}, improving ${pctOf(best.imp)} — and it's one of the heavyweights, so that gain shows up in your real results, not just this table.` });
+    }
   }
 
   // 5. Opportunities: name the low-hanging fruit.
@@ -523,8 +564,9 @@ function buildMeaning(ctx: {
     });
   }
 
-  // 7. Volatility, so one bad month doesn't cause panic.
-  if (out.length < 5) {
+  // 7. Volatility, so one bad month doesn't cause panic. Meaningless on a
+  //    state code, where volatilityPct is pinned to 0 anyway.
+  if (out.length < 5 && !cfg?.categorical) {
     const volatile = Object.entries(itemStats).sort((a, b) => b[1].volatilityPct - a[1].volatilityPct)[0];
     if (volatile && volatile[1].volatilityPct >= 50) {
       out.push({ tone: "info", text: `${volatile[0]} swings about ±${volatile[1].volatilityPct.toFixed(0)}% month to month — that's its normal personality. Judge it on the three-month picture, not any single month.` });

@@ -150,6 +150,10 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
   // as "composition of the site today", and become a real 12-month distribution
   // as the nightly snapshot accumulates — same config, no change needed.
   component_upkeep: {
+    // The series is a status code, not a count. Without this the report
+    // reported "TOTAL STATUS 9" and described a plugin needing an update
+    // as a volatile 50% decline.
+    categorical: true,
     bands: [
       { label: "Current", color: "#15803d", test: (v) => v === 0 },
       { label: "Update available", color: "#f59e0b", test: (v) => v === 1 },
@@ -166,12 +170,16 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
       {
         title: "Update these first — running and behind",
         note: "Active components with a published update waiting. Each one is a fix that exists and has not been taken.",
+        lede: (n: number, label: string) =>
+          `${n} active ${pluralize(label.toLowerCase(), n)} ${n === 1 ? "is" : "are"} running a version behind the one that is published. Out-of-date plugins are the number-one way small-business sites get broken into, and every one of these is a fix that already exists and simply has not been applied.`,
         filter: (it: DetailItem) => Number(it.extra?.needs_update) === 1 && Number(it.extra?.is_active) === 1,
         sortBy: (a: DetailItem, b: DetailItem) => String(a.name).localeCompare(String(b.name)),
       },
       {
         title: "Dormant risk — inactive but still installed",
         note: "Deactivated code still sits on the server and still carries its vulnerabilities. Remove it or keep it patched; leaving it is the worst of both.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} ${n === 1 ? "is" : "are"} switched off but still installed. Deactivating is not removing — the code is still on the server, still reachable, and still carries whatever it carried. Delete what you have stopped using.`,
         filter: (it: DetailItem) => Number(it.extra?.is_active) === 0,
         sortBy: (a: DetailItem, b: DetailItem) => String(a.name).localeCompare(String(b.name)),
       },
