@@ -118,6 +118,67 @@ export const REPORT_NOTES: Record<string, ReportNote> = {
     "Searches where Google already shows your site sometimes — but you have no page that properly answers them.",
     "This is demand you're leaving on the table. Each row is a page worth creating; the impressions trend shows whether that demand is growing while you wait.",
   ),
+  // ══ ARION — 2026-08-14 reports over the expanded integrations ══
+  search_by_country: N(
+    "Which countries your site is found from in Google, with clicks and impressions for each.",
+    "For a local business, traffic from outside your service area is not a win — it inflates every other number without ever becoming a customer. What matters is whether the places you actually serve are growing.",
+  ),
+  page_query_pairs: N(
+    "Every page paired with the searches that brought someone to it, with the position that page holds for each one.",
+    "This is the only view that answers \"what is this page actually ranking for\" — which is a different question from what you meant it to rank for. Pairs sitting at 11-20 are the cheapest work available: the page exists and Google already connects it to that search, so it needs strengthening rather than replacing.",
+  ),
+  search_appearance: N(
+    "The presentation formats you earn in Google results — rich snippets, FAQs, videos, how-to steps.",
+    "A result with a rich format takes up more of the page and gets clicked more at the same rank. If this is empty, you are competing on plain blue links against people who are not.",
+  ),
+  audience_by_country: N(
+    "Where your visitors are, with how many are new, how long they stay, and how many leave immediately.",
+    "Growth from the places you serve is the number that counts. Out-of-area growth can completely mask a local decline, which is why the bounce column matters as much as the session count.",
+  ),
+  browser_experience: N(
+    "How your site behaves in each browser — sessions, bounce rate, and time on site.",
+    "One browser bouncing far harder than the rest almost always means the site is broken in it, not that it is unpopular. Open your site in that browser and look; this is a bug report, not a statistic.",
+  ),
+  device_os_split: N(
+    "Your visitors split by operating system, with how each one behaves.",
+    "Same logic as the browser view: a big gap between iOS and Android usually points at something rendering badly on one of them rather than a difference in the people.",
+  ),
+  new_vs_returning: N(
+    "How much of your traffic is people arriving for the first time versus people coming back.",
+    "Almost all new visitors means marketing is working and nothing is holding anyone. Almost all returning means you are talking to the same small group — good for loyalty, a ceiling on growth.",
+  ),
+  traffic_by_hour: N(
+    "What hour of the day people actually visit your site, across the whole week.",
+    "This is when someone should be available to answer the phone, and when a campaign should land. Sending at 9am because that is when you are at your desk is a guess; this is the answer.",
+  ),
+  traffic_by_medium: N(
+    "How people got to you — organic search, paid, referral, email, social — with how well each behaves once here.",
+    "Volume without engagement is not traffic worth buying. Compare the bounce column across mediums before deciding where the next pound goes.",
+  ),
+  campaign_performance: N(
+    "Each named campaign with the traffic it brought and what that traffic did.",
+    "A campaign with high sessions and high bounce is money buying a click and nothing else — usually because the landing page does not say what the ad said. Match the page to the promise before spending more.",
+  ),
+  page_titles_read: N(
+    "Your pages by what people actually read, with time on page and bounce rate.",
+    "High views with a high bounce means the title is doing its job and the page is not. That is a rewrite, not a traffic problem.",
+  ),
+  gbp_visibility_split: N(
+    "Where your Google listing gets seen — Search or Maps, on a phone or a desktop.",
+    "Maps views are high intent: those people are often ready to visit or call. If mobile is most of your visibility, the site your listing points at is being judged on a phone — which makes the speed report the next thing to look at.",
+  ),
+  gbp_actions: N(
+    "What people did after finding your listing — called, asked for directions, visited the site, sent a message, or booked.",
+    "These are the closest thing to a customer raising their hand. Messages and bookings especially: someone taking that step has already decided, and a slow reply is the only thing left that can lose them.",
+  ),
+  core_web_vitals: N(
+    "The three loading and stability measures Google ranks on, plus the supporting ones, for phone and desktop separately.",
+    "These are not vanity numbers — they are a ranking input and a direct measure of what a visitor puts up with before giving up. Phone and desktop are shown apart on purpose: averaging them hides whichever one is bad, and it is almost always the phone.",
+  ),
+  pagespeed_opportunities: N(
+    "Specific, named changes that would make the site faster, each with the time it saves.",
+    "This is the list to hand whoever maintains the site. It is specific enough to act on without anyone diagnosing anything first — start at the top, because the savings are ordered.",
+  ),
   page_reachability: N(
     "Every page with the number of other pages linking to it, whether it sits in a menu, and whether its own links still go anywhere.",
     "A page nothing links to is a page nobody finds — Google included. Fix orphans by adding one link from a page that already gets traffic; it costs ten minutes and is the highest-return thing on this report. Broken links are listed with their targets, so that section is a to-do list, not a search.",

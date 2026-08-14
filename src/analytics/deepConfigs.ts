@@ -18,6 +18,14 @@ const lastOf = (it: DetailItem) => it.series?.filter((v): v is number => v != nu
 
 // ── shared band sets ──────────────────────────────────────────────────────
 /** Keyword position bands — the classic ranking distribution. Order matters (top band first). */
+/** Position bands applied to a page+query pair's POSITION column rather than
+ *  its series (the pair report's series is clicks). */
+export const POSITION_BANDS_FOR_PAIRS: DeepBand[] = [
+  { label: "Page one (1-10)", color: "#15803d", test: (v) => v >= 3 },
+  { label: "Some clicks", color: "#65a30d", test: (v) => v >= 1 },
+  { label: "No clicks yet", color: "#f59e0b", test: () => true },
+];
+
 export const POSITION_BANDS: DeepBand[] = [
   { label: "Top 3",       color: "#15803d", test: (v) => v <= 3 },
   { label: "Positions 4–10",  color: "#65a30d", test: (v) => v <= 10 },
@@ -193,6 +201,188 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
       if (needs) return "Update published and not applied";
       return null;
     },
+  },
+
+  // ── 2026-08-14: reports over the newly captured integration dimensions ──
+  // Bands and opportunity lists only where they say something an owner can act
+  // on. A report that would only get a generic "top group" story is left with
+  // the engine's defaults rather than dressed up.
+
+  // Where a visitor came from geographically. For a local service business,
+  // traffic from outside the service area is not a win — it is noise that
+  // makes every other number look better than it is.
+  audience_by_country: {
+    segments: [
+      { label: "Engagement", of: (it: DetailItem) => Number(it.extra?.bounce || 0) > 70 ? "Bounces straight off" : "Sticks around" },
+    ],
+    opportunities: [
+      {
+        title: "High bounce, real volume",
+        note: "Enough visitors to matter, and almost all of them leave immediately.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} send you real traffic that leaves almost immediately. Either the page does not match what they expected, or they were never your customer — worth knowing which before paying for more of it.`,
+        filter: (it: DetailItem) => Number(it.extra?.bounce || 0) > 70,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.users || 0) - Number(a.extra?.users || 0),
+      },
+    ],
+    flag: (it: DetailItem) => (Number(it.extra?.bounce || 0) > 80 ? `${it.extra?.bounce}% leave without doing anything` : null),
+    weightKey: "users",
+  },
+
+  // A browser with a bounce rate far above the others is usually a BROKEN
+  // browser, and nothing else in the stack would ever tell an owner that.
+  browser_experience: {
+    opportunities: [
+      {
+        title: "Something is wrong in this browser",
+        note: "Bounce rate well above the site's norm. Usually a layout or script that only breaks here.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} lose almost everyone who arrives in them. When one browser behaves this differently from the others it is nearly always broken rather than unpopular — open the site in it and look.`,
+        filter: (it: DetailItem) => Number(it.extra?.bounce || 0) > 75 && Number(it.series?.filter((v): v is number => v != null).slice(-1)[0] || 0) >= 5,
+      },
+    ],
+    flag: (it: DetailItem) => (Number(it.extra?.bounce || 0) > 75 ? `${it.extra?.bounce}% bounce — check the site in this browser` : null),
+  },
+
+  device_os_split: {
+    flag: (it: DetailItem) => (Number(it.extra?.bounce || 0) > 75 ? `${it.extra?.bounce}% bounce on this OS` : null),
+  },
+
+  new_vs_returning: {
+    segments: [
+      { label: "Visitor type", of: (it: DetailItem) => it.name },
+    ],
+  },
+
+  // 24 rows. The point is the shape, not the total — it says when someone
+  // should be answering the phone and when a campaign should land.
+  traffic_by_hour: {
+    bands: [
+      { label: "Peak", color: "#15803d", test: (v) => v >= 20 },
+      { label: "Busy", color: "#65a30d", test: (v) => v >= 8 },
+      { label: "Quiet", color: "#f59e0b", test: (v) => v >= 2 },
+      { label: "Dead", color: "#94a3b8", test: () => true },
+    ],
+  },
+
+  traffic_by_medium: {
+    opportunities: [
+      {
+        title: "Sends traffic that does not stay",
+        note: "Real volume, high bounce. Worth checking what the promise was before they clicked.",
+        filter: (it: DetailItem) => Number(it.extra?.bounce || 0) > 70,
+      },
+    ],
+    flag: (it: DetailItem) => (Number(it.extra?.bounce || 0) > 75 ? `${it.extra?.bounce}% bounce` : null),
+  },
+
+  campaign_performance: {
+    opportunities: [
+      {
+        title: "Campaigns that are not landing",
+        note: "Traffic arrives and leaves. The ad and the page are promising different things.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} bring people who leave immediately. That is money buying a click and nothing else — usually the landing page does not say what the ad said.`,
+        filter: (it: DetailItem) => Number(it.extra?.bounce || 0) > 70,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.users || 0) - Number(a.extra?.users || 0),
+      },
+    ],
+    weightKey: "users",
+  },
+
+  page_titles_read: {
+    opportunities: [
+      {
+        title: "Opened and abandoned",
+        note: "People arrive and leave without reading. Usually the title promised something the page does not deliver.",
+        filter: (it: DetailItem) => Number(it.extra?.bounce || 0) > 75,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.sessions || 0) - Number(a.extra?.sessions || 0),
+      },
+    ],
+    weightKey: "sessions",
+  },
+
+  // Search Console
+  search_by_country: {
+    opportunities: [
+      {
+        title: "Seen but never clicked",
+        note: "Plenty of impressions, almost no clicks. Either the wrong audience or a listing that does not appeal to them.",
+        filter: (it: DetailItem) => Number(it.extra?.impressions || 0) > 100 &&
+          Number(it.series?.filter((v): v is number => v != null).slice(-1)[0] || 0) < 3,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.impressions || 0) - Number(a.extra?.impressions || 0),
+      },
+    ],
+    weightKey: "impressions",
+  },
+
+  // The pair report. Position 11-20 on a page that already exists is the
+  // cheapest ranking work available, and this is the only place it is visible
+  // per page rather than per keyword.
+  page_query_pairs: {
+    bands: POSITION_BANDS_FOR_PAIRS,
+    opportunities: [
+      {
+        title: "One push from page one",
+        note: "This page already ranks 11-20 for this search. It does not need a new page — it needs this one to be better.",
+        lede: (n: number, label: string) =>
+          `${n} page-and-search ${pluralize("pair", n)} sit at position 11-20 — page two. The page already exists and Google already associates it with the search; it needs strengthening, not replacing. This is the cheapest ranking work on the site.`,
+        filter: (it: DetailItem) => {
+          const p = Number(it.extra?.position || 0);
+          return p >= 11 && p <= 20;
+        },
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.impressions || 0) - Number(a.extra?.impressions || 0),
+      },
+      {
+        title: "Ranking well, nobody clicking",
+        note: "Top 10 and still barely clicked. The title and description are not selling the click.",
+        filter: (it: DetailItem) => Number(it.extra?.position || 99) <= 10 &&
+          Number(it.extra?.impressions || 0) > 50 &&
+          Number(it.series?.filter((v): v is number => v != null).slice(-1)[0] || 0) < 3,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.impressions || 0) - Number(a.extra?.impressions || 0),
+      },
+    ],
+    weightKey: "impressions",
+  },
+
+  // Business Profile
+  gbp_visibility_split: {
+    segments: [
+      { label: "Surface", of: (it: DetailItem) => String(it.extra?.surface || "-") },
+      { label: "Device", of: (it: DetailItem) => String(it.extra?.device || "-") },
+    ],
+  },
+
+  gbp_actions: {},
+
+  // PageSpeed
+  core_web_vitals: {
+    segments: [
+      { label: "Verdict", of: (it: DetailItem) => String(it.extra?.verdict || "-") },
+      { label: "Device", of: (it: DetailItem) => String(it.extra?.strategy || "-") },
+    ],
+    opportunities: [
+      {
+        title: "Failing Google's threshold",
+        note: "These are the numbers Google ranks on. Anything here is costing rankings and visitors at the same time.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} are outside what Google calls good. These are not vanity numbers — they are a ranking input and a direct measure of what a visitor on a phone puts up with before giving up.`,
+        filter: (it: DetailItem) => String(it.extra?.verdict) === "Poor" || String(it.extra?.verdict) === "Needs work",
+      },
+    ],
+    flag: (it: DetailItem) => (String(it.extra?.verdict) === "Poor" ? `Poor — Google wants ${it.extra?.good_at}` : null),
+  },
+
+  pagespeed_opportunities: {
+    opportunities: [
+      {
+        title: "Biggest wins first",
+        note: "Each row is a specific change with the time it saves. Hand this list to whoever maintains the site.",
+        lede: (n: number, label: string) =>
+          `${n} named ${pluralize(label.toLowerCase(), n)}, each with what it is worth. This is the list to hand a developer — it is specific enough to act on without anyone needing to diagnose anything first.`,
+        filter: () => true,
+      },
+    ],
   },
 
   // ARION - Page Reachability (2026-08-14)
