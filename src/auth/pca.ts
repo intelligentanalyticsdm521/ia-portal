@@ -138,6 +138,19 @@ export function clearStaleInteractionFlags(): void {
  * preferred_username / username when the optional claim isn't configured on the
  * app registration.
  *
+ * 2026-08-14 — AND THAT STILL WASN'T ENOUGH, because we are not on workforce
+ * Entra. Our authority is `iadmexternalid.ciamlogin.com` — Entra External ID
+ * (CIAM). `logout_hint` is a workforce-Entra parameter; CIAM's end-session
+ * endpoint skips the account picker on **`id_token_hint`**, which is the raw ID
+ * token, not an email. MSAL exposes it as `idTokenHint` on the logout request
+ * (verified in the installed @azure/msal-common: CommonEndSessionRequest has the
+ * field, and RequestParameterBuilder.addIdTokenHint writes `id_token_hint` onto
+ * the logout URL), and MSAL v3's AccountInfo carries the raw token as
+ * `account.idToken`.
+ *
+ * Both hints are sent. They're independent, cost nothing together, and this way
+ * the behaviour is right whichever authority a given environment points at.
+ *
  * Also clears interaction flags first: if a user ever abandoned the old picker
  * page, a stale `interaction_in_progress` would otherwise make this call throw
  * and leave them wedged (that's what locked Brandon out previously).
@@ -153,12 +166,18 @@ export function hardLogout(instance: IPublicClientApplication): Promise<void> {
     account?.username ||
     undefined;
 
+  // The one that actually matters for CIAM. If it's ever absent (an account
+  // rehydrated from cache without its raw token), we still send logoutHint and
+  // degrade to the previous behaviour rather than failing the sign-out.
+  const idTokenHint = account?.idToken || undefined;
+
   clearStaleInteractionFlags();
 
   return instance
     .logoutRedirect({
       account,
       logoutHint,
+      idTokenHint,
       postLogoutRedirectUri: window.location.origin,
     })
     .catch(() => {
