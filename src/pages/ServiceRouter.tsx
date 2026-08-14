@@ -1,6 +1,9 @@
 import { lazy, Suspense, useMemo } from 'react';
 import { useParams, useLocation, Navigate } from 'react-router-dom';
 import { useIsFounder } from '../hooks/useIsFounder';
+import { SERVICE_VISIBILITY } from '../components/SubNav';
+import { activeAddons, isRoutable } from '../components/navVisibility';
+import { useProductTier } from '../hooks/useProductTier';
 
 // Lazy-load a named React export so it's compatible with React.lazy
 // (which expects { default: Component }). Lets each service section
@@ -27,21 +30,9 @@ import { ArionPageWrapper } from '../arion/ArionPageWrapper';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { ComingSoonBanner } from '../components/ComingSoonBanner';
 
-// Business Profile section gated 2026-06-28 — entire section behind Coming Soon
-// pending Google Workspace migration + GBP auto-provision rework (see
-// SCOPE_WORKING.md F-Onb-D3). Wrap each business page so power users (founder)
-// can still poke at it during dev while paying clients see the banner.
-function withBusinessProfileBanner(page: React.ReactNode) {
-  return (
-    <>
-      <ComingSoonBanner
-        feature="Business Profile is coming soon"
-        detail="We're putting the finishing touches on Business Profile management. Your live Google Business Profile is still working — we'll let you know as soon as these tools are ready."
-      />
-      {page}
-    </>
-  );
-}
+// Business Profile un-gated 2026-07-22 — GBP Connect (client-owned OAuth +
+// create + in-portal verification) shipped and walked; the 2026-06-28
+// coming-soon wrapper is retired (Brandon's call during the GBP walk).
 
 // IA Insights gated 2026-06-28 — entire stack behind Coming Soon pending model
 // audit (SCOPE_WORKING.md F-Onb-D8). No tenant has 30+ days of data; model is
@@ -121,7 +112,7 @@ const BusinessServices = lazyNamed(() => import('../arion/pages/business/Busines
 const BusinessBingOverview = lazyNamed(() => import('../arion/pages/business/BusinessBingOverview'), 'BusinessBingOverview');
 const BusinessAppleOverview = lazyNamed(() => import('../arion/pages/business/BusinessAppleOverview'), 'BusinessAppleOverview');
 // Brand — the old BrandPage "Coming soon" stub is retired; arion_brand now
-// routes to MyBrandLandingPage (see MY BRAND pages block below). Item 1 Task 3.
+// redirects to Image Studio (no overview page — Brandon 2026-07-21).
 // v5.x IA Insights architecture — Health, Trends, Intelligence, Cross-Platform (ARGUS)
 const ArionIAInsightsHealthPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsHealthPage'), 'ArionIAInsightsHealthPage');
 const ArionIAInsightsTrendsPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsTrendsPage'), 'ArionIAInsightsTrendsPage');
@@ -132,14 +123,13 @@ const ArgusHealthPage = lazyNamed(() => import('./argus/ArgusHealthPage'), 'Argu
 const ArgusTrendsPage = lazyNamed(() => import('./argus/ArgusTrendsPage'), 'ArgusTrendsPage');
 const ArgusIntelligencePage = lazyNamed(() => import('./argus/ArgusIntelligencePage'), 'ArgusIntelligencePage');
 const ArgusWorkflowAutomationsPage = lazyNamed(() => import('./argus/ArgusWorkflowAutomationsPage'), 'ArgusWorkflowAutomationsPage');
-// 2026-06-21: ArgusCrossChannelPage renamed to ArgusIAInsightsIntelligencePage
-// to align with the per-platform Insights pattern.
-// 2026-06-22: canonical service key renamed to `argus_cross_platform`;
-// legacy `argus_cross_channel` is retained as a back-compat alias and resolves
-// to the same page.
-const ArgusIAInsightsIntelligencePage = lazyNamed(() => import('./argus/ArgusIAInsightsIntelligencePage'), 'ArgusIAInsightsIntelligencePage');
+// 2026-07-25 v13.0: the old platform-api grid page
+// (ArgusIAInsightsIntelligencePage) is no longer routed — all ARGUS
+// Intelligence keys (argus_intelligence / argus_cross_platform /
+// argus_cross_channel) resolve to the mirror-model ArgusIntelligencePage.
 const SparkIAInsightsHealthPage = lazyNamed(() => import('./spark/SparkIAInsightsHealthPage'), 'SparkIAInsightsHealthPage');
 const SparkIAInsightsTrendsPage = lazyNamed(() => import('./spark/SparkIAInsightsTrendsPage'), 'SparkIAInsightsTrendsPage');
+const ReportsHubPage = lazyNamed(() => import('../components/insights/ReportsHubPage'), 'ReportsHubPage');
 const SparkIAInsightsIntelligencePage = lazyNamed(() => import('./spark/SparkIAInsightsIntelligencePage'), 'SparkIAInsightsIntelligencePage');
 const OliverIAInsightsHealthPage = lazyNamed(() => import('./oliver/OliverIAInsightsHealthPage'), 'OliverIAInsightsHealthPage');
 const OliverIAInsightsTrendsPage = lazyNamed(() => import('./oliver/OliverIAInsightsTrendsPage'), 'OliverIAInsightsTrendsPage');
@@ -148,7 +138,7 @@ const OliverIAInsightsIntelligencePage = lazyNamed(() => import('./oliver/Oliver
 // MY BRAND pages — re-added 2026-07-18 (Item 1 Task 3). The 10 pages under
 // src/pages/myBrand/* were built + merged but unrouted since 2026-06-22;
 // re-registered here + in serviceCatalog + the MY_BRAND dispatch block below.
-const MyBrandLandingPage = lazyNamed(() => import('./myBrand/MyBrandLandingPage'), 'MyBrandLandingPage');
+// (No My Brand overview page — arion_brand redirects to Image Studio. 2026-07-21.)
 const MyBrandImageStudioPage = lazyNamed(() => import('./myBrand/ImageStudioPage'), 'ImageStudioPage');
 const MyBrandVoicePage = lazyNamed(() => import('./myBrand/VoicePage'), 'VoicePage');
 const MyBrandTemplateStudioPage = lazyNamed(() => import('./myBrand/TemplateStudioPage'), 'TemplateStudioPage');
@@ -156,8 +146,10 @@ const MyBrandAssetLibraryPage = lazyNamed(() => import('./myBrand/AssetLibraryPa
 const MyBrandSocialChannelsPage = lazyNamed(() => import('./myBrand/SocialChannelsPage'), 'SocialChannelsPage');
 const MyBrandSocialComposerPage = lazyNamed(() => import('./myBrand/SocialComposerPage'), 'SocialComposerPage');
 const MyBrandSocialCalendarPage = lazyNamed(() => import('./myBrand/SocialCalendarPage'), 'SocialCalendarPage');
-const MyBrandSocialAnalyticsPage = lazyNamed(() => import('./myBrand/SocialAnalyticsPage'), 'SocialAnalyticsPage');
-const MyBrandSocialApprovalsPage = lazyNamed(() => import('./myBrand/SocialApprovalsPage'), 'SocialApprovalsPage');
+const MyBrandSocialContentPage = lazyNamed(() => import('./myBrand/SocialContentPage'), 'SocialContentPage');
+const MyBrandSocialReportPage = lazyNamed(() => import('./myBrand/SocialReportPage'), 'SocialReportPage');
+// SocialAnalyticsPage + SocialApprovalsPage intentionally NOT routed (IA
+// re-cut 2026-07-21): analytics → ARION IA Insights; approvals → Consulting.
 
 // SPARK / LUMEN pages — lazy-loaded
 const SparkOverviewPage = lazyNamed(() => import('./spark/SparkOverviewPage'), 'SparkOverviewPage');
@@ -235,6 +227,7 @@ const SparkTemplatesPage = lazyNamed(() => import('./spark/SparkTemplatesPage'),
 const SparkRulesPage = lazyNamed(() => import('./spark/SparkRulesPage'), 'SparkRulesPage');
 // Phase 3A merger — unified Workflows + Rules list page.
 const SparkWorkflowsAutomationsPage = lazyNamed(() => import('./spark/SparkWorkflowsAutomationsPage'), 'SparkWorkflowsAutomationsPage');
+const SparkAutomationsSimplePage = lazyNamed(() => import('./spark/SparkAutomationsSimplePage'), 'SparkAutomationsSimplePage');
 // F-CS.6 Phase 1 admin surface for lumen.spark_task rows (named sub-automations
 // invoked via task_call). Backs the F-CS.3 dropdown in the IL Customize editor.
 const SparkTasksPage = lazyNamed(() => import('./spark/SparkTasksPage'), 'SparkTasksPage');
@@ -356,6 +349,9 @@ const ArionPluginProvisioningPage = lazyNamed(() => import('./arion/ArionPluginP
 // /app/admin/consulting/* and are imported by App.tsx directly. Only the
 // shared/client-readable consulting surfaces remain in this dispatcher.
 const ConsultingOverviewPage = lazyNamed(() => import('./consulting/ConsultingOverviewPage'), 'ConsultingOverviewPage');
+// Founder-only agency Overview. The shared page above still serves CLIENTS
+// unchanged — this is a branch, not a replacement.
+const ConsultingWorkOverviewPage = lazyNamed(() => import('./consulting/ConsultingWorkOverviewPage'), 'ConsultingWorkOverviewPage');
 const ConsultingCalendarPage = lazyNamed(() => import('./consulting/ConsultingCalendarPage'), 'ConsultingCalendarPage');
 const ConsultingAccessLogPage = lazyNamed(() => import('./consulting/ConsultingAccessLogPage'), 'ConsultingAccessLogPage');
 const ConsultingDeliverablesPage = lazyNamed(() => import('./consulting/ConsultingDeliverablesPage'), 'ConsultingDeliverablesPage');
@@ -414,11 +410,38 @@ export function ServiceRouter() {
     [serviceKey]
   );
 
+  // Resolve the feature wall for this route. Hooks run unconditionally, so the
+  // tier is always fetched; only the verdict is conditional.
+  const { tier: sparkTier } = useProductTier("spark");
+  const navVisible = isRoutable(serviceKey ? SERVICE_VISIBILITY[serviceKey] : undefined, {
+    tier: sparkTier,
+    addons: activeAddons(),
+    gatingActive: true,
+  });
+
   if (!service) {
     return (
       <div className="p-6">
         <h1 className="text-xl font-semibold text-slate-900">Service not found</h1>
         <p className="mt-2 text-sm text-slate-600">We couldn&apos;t find that service in your portal.</p>
+      </div>
+    );
+  }
+
+  // ── Feature wall (SPARK simplification, 2026-07-30) ──────────────────────
+  // The nav hides these, but hiding a LINK doesn't stop a URL. Bookmarks, old
+  // deep links and the engagement alerts all navigate by route, so the route
+  // has to enforce the same rules or the "cut" surfaces stay reachable.
+  // Same declarations the nav reads (SERVICE_VISIBILITY), so the two can't
+  // disagree about what a tenant is allowed to see.
+  if (!navVisible) {
+    return (
+      <div className="p-6">
+        <h1 className="text-xl font-semibold text-slate-900">Not available on your plan</h1>
+        <p className="mt-2 max-w-prose text-sm text-slate-600">
+          This feature isn&apos;t part of your current plan. If you need it, get in touch —
+          it can be switched on for your account.
+        </p>
       </div>
     );
   }
@@ -482,15 +505,19 @@ export function ServiceRouter() {
       case 'arion_search_core_web_vitals': return <Navigate to="/app/services/arion_website_performance_cache" replace />;
       case 'arion_search_bing_copilot': arionPage = <SearchBingCopilot />; break;
       case 'arion_search_bing_indexnow': arionPage = <SearchBingIndexNow />; break;
-      case 'arion_business_overview': arionPage = withBusinessProfileBanner(<BusinessOverview />); break;
-      case 'arion_business_locations': arionPage = withBusinessProfileBanner(<BusinessLocations />); break;
-      case 'arion_business_reviews': arionPage = withBusinessProfileBanner(<BusinessReviews />); break;
-      case 'arion_business_insights': arionPage = withBusinessProfileBanner(<BusinessInsights />); break;
-      case 'arion_business_posts': arionPage = withBusinessProfileBanner(<BusinessPosts />); break;
-      case 'arion_business_services': arionPage = withBusinessProfileBanner(<BusinessServices />); break;
-      case 'arion_business_bing_overview': arionPage = withBusinessProfileBanner(<BusinessBingOverview />); break;
-      case 'arion_business_apple_overview': arionPage = withBusinessProfileBanner(<BusinessAppleOverview />); break;
-      case 'arion_brand': arionPage = <MyBrandLandingPage />; break; // My Brand hub (was BrandPage "Coming soon" stub) — Item 1 Task 3
+      case 'arion_business_overview': arionPage = <BusinessOverview />; break;
+      case 'arion_business_locations': arionPage = <BusinessLocations />; break;
+      case 'arion_business_reviews': arionPage = <BusinessReviews />; break;
+      case 'arion_business_insights': arionPage = <BusinessInsights />; break;
+      case 'arion_business_posts': arionPage = <BusinessPosts />; break;
+      case 'arion_business_services': arionPage = <BusinessServices />; break;
+      case 'arion_business_bing_overview': arionPage = <BusinessBingOverview />; break;
+      case 'arion_business_apple_overview': arionPage = <BusinessAppleOverview />; break;
+      // My Brand has NO overview page (Brandon 2026-07-21) — the section
+      // lands on Image Studio. arion_brand kept as a redirect so old links,
+      // the catalog row, and Settings-era bookmarks keep working.
+      case 'arion_brand':
+        return <Navigate to="/app/services/my_brand_image_studio" replace />;
       // v5.x IA Insights architecture
       case 'arion_ia_insights_health': arionPage = <ArionIAInsightsHealthPage />; break;
       case 'arion_ia_insights_trends': arionPage = <ArionIAInsightsTrendsPage />; break;
@@ -523,8 +550,12 @@ export function ServiceRouter() {
       case 'my_brand_social_channels': page = <MyBrandSocialChannelsPage />; break;
       case 'my_brand_compose': page = <MyBrandSocialComposerPage />; break;
       case 'my_brand_calendar': page = <MyBrandSocialCalendarPage />; break;
-      case 'my_brand_analytics': page = <MyBrandSocialAnalyticsPage />; break;
-      case 'my_brand_approvals': page = <MyBrandSocialApprovalsPage />; break;
+      // Re-cut item 5 (2026-07-22): Social Content view + its full-report page.
+      case 'my_brand_social_content': page = <MyBrandSocialContentPage />; break;
+      case 'my_brand_social_report': page = <MyBrandSocialReportPage />; break;
+      // IA re-cut 2026-07-21: analytics is a REPORT → ARION IA Insights;
+      // approvals is the IA↔client project workflow → removed from My Brand.
+      case 'my_brand_analytics': return <Navigate to="/app/services/arion_ia_insights_trends" replace />;
       default: break;
     }
     if (page) {
@@ -661,6 +692,7 @@ export function ServiceRouter() {
       // v5.x IA Insights architecture
       case 'oliver_ia_insights_health': oliverPage = <OliverIAInsightsHealthPage />; break;
       case 'oliver_ia_insights_trends': oliverPage = <OliverIAInsightsTrendsPage />; break;
+      case 'oliver_ia_insights_reports': oliverPage = <ReportsHubPage platform="OLIVER" />; break;
       case 'oliver_ia_insights_intelligence': oliverPage = <OliverIAInsightsIntelligencePage />; break;
       // ARGUS pages also routed via OLIVER section since ARGUS doesn't have its own section yet
       case 'argus_ia_insights': oliverPage = <ArgusIAInsightsPage />; break;
@@ -686,11 +718,13 @@ export function ServiceRouter() {
   if (service.key === 'argus_trends') {
     return <Suspense fallback={<RouteLoading />}><ArgusTrendsPage /></Suspense>;
   }
-  if (service.key === 'argus_intelligence') {
+  // v13.0 (2026-07-25) — every ARGUS Intelligence key routes to the mirror
+  // page (business-question dashboards → sections → modeled deep detail).
+  // The old platform-api grid page (ArgusIAInsightsIntelligencePage) is
+  // unrouted; the nav's canonical "Cross-Platform Intelligence" entry must
+  // show the new model, not the legacy 6-card grid.
+  if (service.key === 'argus_intelligence' || service.key === 'argus_cross_platform' || service.key === 'argus_cross_channel') {
     return <Suspense fallback={<RouteLoading />}><ArgusIntelligencePage /></Suspense>;
-  }
-  if (service.key === 'argus_cross_platform' || service.key === 'argus_cross_channel') {
-    return <Suspense fallback={<RouteLoading />}><ArgusIAInsightsIntelligencePage /></Suspense>;
   }
   // P0-7 (Agency Foundation) — ARGUS Workflow & Automations observe surface.
   if (service.key === 'argus_workflows' || service.key === 'argus_workflow_automations') {
@@ -709,10 +743,15 @@ export function ServiceRouter() {
       case 'spark_forms': sparkPage = <SparkFormsPage />; break;
       // Phase 3A — unified Workflows & Automations list page. The old
       // automation/rules/workflow-triggers keys redirect here for back-compat.
+      // 2026-07-30 — the four builders collapse into ONE page of prebuilt
+      // toggles (feature map: "ONE page: ~4 prebuilt toggle-on automations").
+      // The old builder is still imported and reachable at
+      // /spark_automation_builder for anything already wired up; it is no
+      // longer what a client meets when they click Automations.
       case 'spark_workflows_automations':
       case 'spark_automations':
       case 'spark_workflow_triggers':
-        sparkPage = <SparkWorkflowsAutomationsPage />; break;
+        sparkPage = <SparkAutomationsSimplePage />; break;
       // F-CS.6 — named-task admin (lumen.spark_task)
       case 'spark_tasks': sparkPage = <SparkTasksPage />; break;
       // Unified Lead Inbox (2026-06-25). `spark_lead_inbox` is the new canonical
@@ -809,6 +848,7 @@ export function ServiceRouter() {
       // v5.x IA Insights architecture
       case 'spark_ia_insights_health': sparkPage = <SparkIAInsightsHealthPage />; break;
       case 'spark_ia_insights_trends': sparkPage = <SparkIAInsightsTrendsPage />; break;
+      case 'spark_ia_insights_reports': sparkPage = <ReportsHubPage platform="SPARK" />; break;
       case 'spark_ia_insights_intelligence': sparkPage = <SparkIAInsightsIntelligencePage />; break;
       case 'spark_service_category': sparkPage = <SparkServiceCategoryPage />; break;
       case 'spark_form_builder': sparkPage = <SparkFormBuilderPage />; break;
@@ -840,7 +880,11 @@ export function ServiceRouter() {
       // CONSULTING_FOUNDER_RELOCATIONS table at the top of this component
       // (founders → /app/admin/consulting/*; non-founders → /overview),
       // so they never reach this switch.
-      case 'consulting_overview':         consultingPage = <ConsultingOverviewPage />; break;
+      case 'consulting_overview':
+        // Founders get the agency Overview (needs-you / waiting-on-client /
+        // capacity); clients keep the existing shared summary untouched.
+        consultingPage = effectiveIsFounder ? <ConsultingWorkOverviewPage /> : <ConsultingOverviewPage />;
+        break;
       case 'consulting_deliverables':     consultingPage = <ConsultingDeliverablesPage />; break;
       case 'consulting_calendar':         consultingPage = <ConsultingCalendarPage />; break;
       // Founder-only utility surfaces (still accessible by URL)

@@ -14,6 +14,7 @@
 // renumber, retire instead.
 
 import { type InsightRule, fmt, expectedCtrAt } from "./insightRules";
+import { GBP_ENABLED } from "../../config/featureFlags";
 
 export const VISIBILITY_RULES: InsightRule[] = [
   // ─── GSC Core ──────────────────────────────────────────────────────
@@ -331,7 +332,7 @@ export const VISIBILITY_RULES: InsightRule[] = [
     kind: ["observation", "action"],
     dataSources: ["gbp"],
     priority: 9,
-    appliesWhen: (c) => c.gbp?.connected !== true,
+    appliesWhen: (c) => GBP_ENABLED && c.gbp?.connected !== true,
     observation: () => `Google Business Profile is not connected. For a local-service business this is the single biggest visibility blind spot — GBP often delivers more impressions than organic search, and you're flying blind on Maps discoverability without it.`,
     action: () => `Connect Google Business Profile in Settings → Connected Accounts. Once connected, ARION pulls impressions, calls, website clicks, photos viewed, direction requests, and review velocity into the Local Presence + Visibility & Reach trend engines.`,
   },

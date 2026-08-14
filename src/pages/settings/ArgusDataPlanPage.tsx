@@ -12,12 +12,10 @@ import { useAppState } from '../../app/AppState';
 import { useAccessToken } from '../../auth/useAccessToken';
 import { useOliverApi } from '../../hooks/useOliverApi';
 import {
-  getArgusBalance,
   getArgusUsage,
   getArgusPricing,
   getArgusAutoTopoff,
   patchArgusAutoTopoff,
-  type ArgusBalance,
   type ArgusUsage,
   type ArgusPricingRow,
   type ArgusAutoTopoffConfig,
@@ -49,7 +47,15 @@ export function ArgusDataPlanPage() {
   const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
   const oliverApi = useOliverApi();
-  const [balance, setBalance] = useState<ArgusBalance['data'] | null>(null);
+  // 2026-07-21 split-brain fix: the balance cards read the CANONICAL
+  // Phase-1 ledger (oliver-api GET /argus/credits/balance — same source as
+  // the header ArgusBalanceBadge and the My Brand meter). The old
+  // getArgusBalance (arion-api, lumen-backed) showed a pool that purchases
+  // and debits no longer touch.
+  const [phase1Balance, setPhase1Balance] = useState<{
+    granted: number; used: number; remaining: number;
+    plan: string | null; renewal_date: string;
+  } | null>(null);
   const [usage, setUsage] = useState<ArgusUsage['data'] | null>(null);
   const [pricing, setPricing] = useState<ArgusPricingRow[]>([]);
   const [packSize, setPackSize] = useState(200);
@@ -70,14 +76,12 @@ export function ArgusDataPlanPage() {
     (async () => {
       try {
         const token = await getToken();
-        const [b, u, p, at] = await Promise.all([
-          getArgusBalance({ baseUrl: ARION_API_BASE, bearerToken: token.accessToken, tenantId: activeTenantId }),
+        const [u, p, at] = await Promise.all([
           getArgusUsage({ baseUrl: ARION_API_BASE, bearerToken: token.accessToken, tenantId: activeTenantId, days: usageDays }),
           getArgusPricing({ baseUrl: ARION_API_BASE, bearerToken: token.accessToken, tenantId: activeTenantId }),
           getArgusAutoTopoff({ baseUrl: ARION_API_BASE, bearerToken: token.accessToken, tenantId: activeTenantId }),
         ]);
         if (!cancelled) {
-          setBalance(b.data);
           setUsage(u.data);
           setPricing(p.data);
           setAutoTopoff(at.data);
@@ -87,6 +91,24 @@ export function ArgusDataPlanPage() {
     })();
     return () => { cancelled = true; };
   }, [activeTenantId, getToken, usageDays]);
+
+  // Canonical Phase-1 balance (oliver ledger) — independent fetch so an
+  // arion-api hiccup can't blank the balance cards. useOliverApi
+  // auto-unwraps the { data: ... } envelope.
+  useEffect(() => {
+    if (!activeTenantId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const b = await oliverApi.get<{
+          granted: number; used: number; remaining: number;
+          plan: string | null; renewal_date: string;
+        }>('/argus/credits/balance');
+        if (!cancelled) setPhase1Balance(b);
+      } catch (e) { console.error('[argus data plan] balance', e); }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTenantId, oliverApi]);
 
   // One-time pack price the auto-topoff would charge at the chosen size,
   // shown next to the dropdown so the user knows what each refill will cost.
@@ -164,27 +186,26 @@ export function ArgusDataPlanPage() {
         </p>
       </div>
 
-      {/* Balance summary */}
+      {/* Balance summary — canonical Phase-1 ledger (oliver) */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500">Current Balance</div>
-          <div className="text-3xl font-bold text-slate-900 mt-1">{balance?.balance?.toLocaleString() ?? '—'}</div>
+          <div className="text-3xl font-bold text-slate-900 mt-1">{phase1Balance?.remaining?.toLocaleString() ?? '—'}</div>
           <div className="text-xs text-slate-500 mt-0.5">credits available now</div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500">Monthly Allocation</div>
-          <div className="text-3xl font-bold text-slate-900 mt-1">{balance?.monthly_allocation?.toLocaleString() ?? '—'}</div>
-          <div className="text-xs text-slate-500 mt-0.5">
-            {balance ? `${balance.pool_base} (${balance.base_tier}) + ${balance.pool_bonus} bonus` : ''}
-          </div>
+          <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500">Credits Granted</div>
+          <div className="text-3xl font-bold text-slate-900 mt-1">{phase1Balance?.granted?.toLocaleString() ?? '—'}</div>
+          <div className="text-xs text-slate-500 mt-0.5">active (un-expired) grants</div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500">Lifetime Spent</div>
-          <div className="text-3xl font-bold text-slate-900 mt-1">{balance?.lifetime_spent?.toLocaleString() ?? '—'}</div>
+          <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500">Credits Used</div>
+          <div className="text-3xl font-bold text-slate-900 mt-1">{phase1Balance?.used?.toLocaleString() ?? '—'}</div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500">Refunded by Guard</div>
-          <div className="text-3xl font-bold text-slate-900 mt-1">{balance?.lifetime_refunded?.toLocaleString() ?? '—'}</div>
+          <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500">Next Renewal</div>
+          <div className="text-3xl font-bold text-slate-900 mt-1">{phase1Balance?.renewal_date ?? '—'}</div>
+          <div className="text-xs text-slate-500 mt-0.5">{phase1Balance?.plan ? `plan: ${phase1Balance.plan}` : ''}</div>
         </div>
       </div>
 

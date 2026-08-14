@@ -2,31 +2,33 @@
 //
 // Unified view of every brand asset the tenant has produced or uploaded:
 // AI-generated images, Template Studio designs, logos, color palettes,
-// font pairs. Filterable by kind, searchable, sortable; supports drag-drop
-// uploads (images), inline send-to-social, and a detail modal showing the
-// full asset + metadata (prompt, source, dimensions, usage count, voice
-// score where applicable).
+// font pairs. Filterable by kind, searchable, sortable (all client-side over
+// one fetch); supports uploads (images, drag-drop inside the Upload modal),
+// send-to-social, and a detail modal showing the full asset + metadata
+// (prompt, source, dimensions, usage count, voice score where applicable).
 //
 // Backed by LUMEN-API My Brand endpoints (wave 1):
-//   GET    /api/v1/my-brand/assets?kind=&search=&sort=&limit=&offset=
+//   GET    /api/v1/my-brand/assets?limit=&offset=
 //   DELETE /api/v1/my-brand/assets/:assetId
 //   POST   /api/v1/my-brand/assets/upload  (multipart)
 //   GET    /api/v1/my-brand/assets/:assetId/usage
 //
-// We also POST to /api/v1/my-brand/social/queue for the "Send to Social"
-// quick-action — if that endpoint is missing on the backend the modal
-// surfaces the error inline (wave 3 will close any gap).
+// "Send to Social" navigates to the Composer with ?asset_ids=…
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Search, Upload, Trash2, Download, Send, Edit3, X, Image as ImageIcon,
-  LayoutTemplate, Star, Palette, Type, Layers, Loader2, AlertCircle, CheckSquare, Square,
+  Upload, Trash2, Download, Send, ArrowRight, Image as ImageIcon,
+  Loader2, AlertCircle, CheckSquare, Square, Wand2,
 } from "lucide-react";
+import { useMsal } from "@azure/msal-react";
+import type { AccountInfo, IPublicClientApplication } from "@azure/msal-browser";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
-import { useMsal } from "@azure/msal-react";
-import { authScopes } from "../../auth/msalConfig";
+import { acquireApiToken } from "../../lib/msalToken";
+import { emergencyActAsHeaders } from "../../lib/emergencyActAs";
+import { getCurrentTenantOverride, useClientTenantIdOverride } from "../../lib/tenantContext";
+import { useActiveAccount } from "../../auth/useAccessToken";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types — kept lenient so a backend that ships partial fields still renders.
@@ -67,6 +69,38 @@ interface AssetListResponse {
   total: number;
 }
 
+// The list API actually returns { data: { rows: [...] } } with imageStudio
+// column names (width_px / height_px / bytes / metadata) — NOT the
+// { items, total } view model above, so the library rendered EMPTY for
+// every tenant (same latent contract-mismatch class as the composer
+// destinations and calendar posts bugs). Normalize at the fetch boundary.
+function normalizeAsset(row: Record<string, unknown>): BrandAsset {
+  const metadata = (row.metadata as Record<string, unknown> | null) || null;
+  return {
+    asset_id: String(row.asset_id ?? ""),
+    kind: (row.kind as AssetKind) || "image",
+    filename: (row.filename as string | null) ?? null,
+    title: (row.title as string | null)
+      ?? (typeof metadata?.prompt === "string" ? (metadata.prompt as string).slice(0, 60) : null),
+    thumbnail_url: (row.thumbnail_url as string | null) ?? (row.url as string | null) ?? null,
+    preview_url: (row.preview_url as string | null) ?? (row.url as string | null) ?? null,
+    source: (row.source as string | null) ?? null,
+    prompt: (row.prompt as string | null)
+      ?? (typeof metadata?.prompt === "string" ? (metadata.prompt as string) : null),
+    width: (row.width as number | null) ?? (row.width_px as number | null) ?? null,
+    height: (row.height as number | null) ?? (row.height_px as number | null) ?? null,
+    file_size_bytes: (row.file_size_bytes as number | null) ?? (row.bytes as number | null) ?? null,
+    mime_type: (row.mime_type as string | null) ?? null,
+    tags: (row.tags as string[] | null) ?? null,
+    used_count: (row.used_count as number | null) ?? null,
+    voice_score: (row.voice_score as number | null) ?? null,
+    palette: (row.palette as string[] | null) ?? null,
+    font_pair: (row.font_pair as { heading: string; body: string } | null) ?? null,
+    created_at: (row.created_at as string | null) ?? null,
+    updated_at: (row.updated_at as string | null) ?? null,
+  };
+}
+
 interface AssetUsageEntry {
   context: string;                 // e.g. "social_post" | "campaign" | "template"
   ref_id: string;
@@ -82,16 +116,16 @@ type KindFilter = "all" | AssetKind;
 type SortKey = "newest" | "oldest" | "most_used";
 
 // ────────────────────────────────────────────────────────────────────────────
-// Static config — tabs / icons / labels.
+// Static config — tabs / labels.
 // ────────────────────────────────────────────────────────────────────────────
 
-const KIND_TABS: Array<{ key: KindFilter; label: string; icon: typeof ImageIcon }> = [
-  { key: "all",            label: "All",            icon: Layers },
-  { key: "image",          label: "Images",         icon: ImageIcon },
-  { key: "template",       label: "Templates",      icon: LayoutTemplate },
-  { key: "logo",           label: "Logos",          icon: Star },
-  { key: "color_palette",  label: "Color palettes", icon: Palette },
-  { key: "font_pair",      label: "Font pairs",     icon: Type },
+const KIND_TABS: Array<{ key: KindFilter; label: string }> = [
+  { key: "all",            label: "All" },
+  { key: "image",          label: "Images" },
+  { key: "template",       label: "Templates" },
+  { key: "logo",           label: "Logos" },
+  { key: "color_palette",  label: "Color palettes" },
+  { key: "font_pair",      label: "Font pairs" },
 ];
 
 const KIND_BADGE: Record<AssetKind, { label: string; color: string; bg: string }> = {
@@ -105,32 +139,102 @@ const KIND_BADGE: Record<AssetKind, { label: string; color: string; bg: string }
 const ACCEPTED_UPLOAD_MIME = "image/jpeg,image/png,image/webp,image/svg+xml";
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB
 
+// Mirrors the private SPARK_API_BASE in src/lib/sparkApi.ts (not exported —
+// keeping the shared client untouched, so the fallback chain is repeated here).
 const LUMEN_API_BASE =
   (import.meta.env.VITE_SPARK_API_BASE as string) ||
   (import.meta.env.VITE_LUMEN_API_BASE as string) ||
   "https://app-lumen-api-prod-c6afftekgua4axh9.centralus-01.azurewebsites.net";
 
 // ────────────────────────────────────────────────────────────────────────────
+// Upload helper — same auth + tenant seams as the shared sparkFetch client
+// (token via acquireApiToken, tenant precedence: explicit override > view-as
+// override > AppState activeTenantId > JWT tid last-resort), but multipart
+// FormData, so it must NOT set the JSON Content-Type sparkFetch hardcodes
+// (the browser supplies the multipart boundary). sparkApi.ts keeps its fetch
+// core private, so this lives page-locally instead of forking shared code.
+// ────────────────────────────────────────────────────────────────────────────
+
+async function uploadBrandAsset(
+  msal: IPublicClientApplication,
+  account: AccountInfo,
+  payload: { file: File },
+  tenantOverride: string | null
+): Promise<void> {
+  const token = await acquireApiToken(msal, account);
+  const viewAsTid = getCurrentTenantOverride();
+  const tenantId =
+    (tenantOverride && tenantOverride.trim()) ||
+    (viewAsTid && viewAsTid.trim()) ||
+    readActiveTenantId() ||
+    decodeTid(token);
+
+  // JSON base64 body — the server endpoint is JSON (no multipart parser
+  // in LUMEN); the old FormData version posted to a route that never
+  // existed, so Library uploads 404'd silently since wave 2.
+  const dataUrl: string = await new Promise((resolve, reject) => {
+    const rd = new FileReader();
+    rd.onload = () => resolve(String(rd.result));
+    rd.onerror = () => reject(new Error("could not read file"));
+    rd.readAsDataURL(payload.file);
+  });
+
+  const res = await fetch(`${LUMEN_API_BASE}/api/v1/my-brand/assets/upload`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "x-tenant-id": tenantId,
+      "Content-Type": "application/json",
+      ...emergencyActAsHeaders(),
+    },
+    body: JSON.stringify({ data: dataUrl, filename: payload.file.name }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Upload failed (${res.status}): ${text || res.statusText}`);
+  }
+}
+
+// The user's REAL active IADM tenant (AppState → STORAGE_KEYS.activeTenantId).
+// Same read the shared API clients use (sparkApi.ts readActiveTenantId). The
+// shared CIAM JWT `tid` resolves to the FOUNDER tenant for every user, so it
+// is only the last-resort fallback below — never the primary scope.
+function readActiveTenantId(): string {
+  try {
+    return (localStorage.getItem("iadm.portal.activeTenantId") || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function decodeTid(token: string): string {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return payload.tid || "";
+  } catch {
+    return "";
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Page component.
 // ────────────────────────────────────────────────────────────────────────────
 
 export function AssetLibraryPage() {
-  const { get, del, ready } = useSparkApi();
+  const { get, post, del, ready } = useSparkApi();
   const navigate = useNavigate();
 
   const [kind, setKind] = useState<KindFilter>("all");
   const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("newest");
   const [items, setItems] = useState<BrandAsset[]>([]);
-  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [activeAsset, setActiveAsset] = useState<BrandAsset | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
-  // Wave-3: "Send to Social" now navigates to the Composer with ?asset_ids=…
-  // rather than opening an inline modal. The legacy modal is preserved below
-  // for an in-page quick-queue fallback if we ever need it.
+  const [confirmDelete, setConfirmDelete] = useState<BrandAsset | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
 
   const sendOneToSocial = useCallback((asset: BrandAsset) => {
@@ -153,52 +257,100 @@ export function AssetLibraryPage() {
 
   const clearBulk = useCallback(() => setBulkSelected(new Set()), []);
 
-  // Debounce search input by 250ms.
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search.trim()), 250);
-    return () => clearTimeout(t);
-  }, [search]);
-
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams();
-    if (kind !== "all") params.set("kind", kind);
-    if (debouncedSearch) params.set("search", debouncedSearch);
-    params.set("sort", sort);
-    params.set("limit", "50");
-    params.set("offset", "0");
-    return params.toString();
-  }, [kind, debouncedSearch, sort]);
-
-  const fetchAssets = useCallback(async () => {
+  // Fetch ONCE, gated on `ready` — kind/search/sort are applied client-side
+  // in the useMemo below (canonical SparkTemplatesPage pattern; no
+  // render-driven refetch per facet change).
+  const load = useCallback(async () => {
     if (!ready) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await get<AssetListResponse>(`/api/v1/my-brand/assets?${queryString}`);
-      setItems(res?.items ?? []);
-      setTotal(res?.total ?? 0);
+      type ApiShape = Partial<AssetListResponse> & { data?: { rows?: Record<string, unknown>[] } };
+      const res = await get<ApiShape>("/api/v1/my-brand/assets?limit=200&offset=0");
+      const rawRows = res?.data?.rows ?? (res?.items as unknown as Record<string, unknown>[]) ?? [];
+      setItems(rawRows.map(normalizeAsset));
     } catch (err) {
       setError(err);
       setItems([]);
-      setTotal(0);
     } finally {
       setLoading(false);
     }
-  }, [get, ready, queryString]);
+  }, [get, ready]);
 
-  useEffect(() => { fetchAssets(); }, [fetchAssets]);
+  useEffect(() => { load(); }, [load]);
 
-  const handleDelete = useCallback(async (assetId: string) => {
-    if (!window.confirm("Delete this asset? This cannot be undone.")) return;
-    try {
-      await del<void>(`/api/v1/my-brand/assets/${assetId}`);
-      setItems((prev) => prev.filter((a) => a.asset_id !== assetId));
-      setTotal((t) => Math.max(0, t - 1));
-      if (activeAsset?.asset_id === assetId) setActiveAsset(null);
-    } catch (err) {
-      window.alert(`Delete failed: ${err instanceof Error ? err.message : String(err)}`);
+  // All filtering + sorting client-side over the one fetched list.
+  const rows = useMemo(() => {
+    let list = items;
+    if (kind !== "all") list = list.filter((a) => a.kind === kind);
+    const q = search.trim().toLowerCase();
+    if (q) {
+      list = list.filter((a) =>
+        (a.title || "").toLowerCase().includes(q) ||
+        (a.filename || "").toLowerCase().includes(q) ||
+        (a.tags || []).some((t) => t.toLowerCase().includes(q))
+      );
     }
-  }, [del, activeAsset]);
+    const sorted = [...list];
+    if (sort === "newest") {
+      sorted.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+    } else if (sort === "oldest") {
+      sorted.sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+    } else {
+      sorted.sort((a, b) => (b.used_count ?? 0) - (a.used_count ?? 0));
+    }
+    return sorted;
+  }, [items, kind, search, sort]);
+
+  // Delete flow — confirm via IadmModal size="confirm" (window.confirm is
+  // forbidden); errors surface inline in the confirm modal.
+  const requestDelete = useCallback((asset: BrandAsset) => {
+    setDeleteError(null);
+    setConfirmDelete(asset);
+  }, []);
+
+  const performDelete = useCallback(async () => {
+    if (!confirmDelete) return;
+    const id = confirmDelete.asset_id;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await del<void>(`/api/v1/my-brand/assets/${id}`);
+      setItems((prev) => prev.filter((a) => a.asset_id !== id));
+      setBulkSelected((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      if (activeAsset?.asset_id === id) setActiveAsset(null);
+      setConfirmDelete(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [confirmDelete, del, activeAsset]);
+
+  // §8c background remover — credit-metered Pro+ Smart Tool. Produces a NEW
+  // asset (parent_asset_id chain); the library reloads so it appears first.
+  const [bgBusy, setBgBusy] = useState(false);
+  const [bgError, setBgError] = useState<string | null>(null);
+  const removeBackground = useCallback(async (asset: BrandAsset) => {
+    setBgBusy(true);
+    setBgError(null);
+    try {
+      await post(`/api/v1/my-brand/image-studio/${asset.asset_id}/edit`, {
+        edits: { bg_remove: true },
+      });
+      setActiveAsset(null);
+      await load();
+    } catch (err) {
+      setBgError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBgBusy(false);
+    }
+  }, [post, load]);
 
   const handleDownload = useCallback((asset: BrandAsset) => {
     const url = asset.preview_url || asset.thumbnail_url;
@@ -213,24 +365,24 @@ export function AssetLibraryPage() {
     document.body.removeChild(a);
   }, []);
 
-  // Counts per tab — refresh-light; we just re-use the loaded list, the API
-  // returns total for the active filter so we show "—" when filtered.
   const countsLabel = useMemo(() => {
     if (loading) return "Loading…";
-    if (kind === "all") return `${total} asset${total === 1 ? "" : "s"}`;
-    return `${total} ${KIND_BADGE[kind].label.toLowerCase()}${total === 1 ? "" : "s"}`;
-  }, [loading, total, kind]);
+    if (kind === "all" && !search.trim()) {
+      return `${rows.length} asset${rows.length === 1 ? "" : "s"}`;
+    }
+    return `${rows.length} of ${items.length} asset${items.length === 1 ? "" : "s"}`;
+  }, [loading, rows.length, items.length, kind, search]);
 
   return (
     <SparkPageShell
       title="Asset Library"
       subtitle="Every brand asset in one place — images, templates, logos, palettes, fonts."
-      help="Filter by kind, search by name or tag, then send-to-social, edit, download, or delete. Drag a JPG/PNG/WEBP/SVG anywhere on the grid to upload (max 10MB)."
+      help="Filter by kind, search by name or tag, then open any asset to send it to social, download, or delete it. Click Upload to add your own JPG, PNG, WEBP, or SVG images (max 10MB — drag-drop inside the upload window)."
       actions={
         <button
           type="button"
           onClick={() => setUploadOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+          className="inline-flex items-center gap-1 rounded-lg bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#d75a25]"
         >
           <Upload className="h-3.5 w-3.5" />
           Upload
@@ -259,11 +411,9 @@ export function AssetLibraryPage() {
       )}
 
       <AssetGrid
-        items={items}
-        onCardClick={setActiveAsset}
-        onSendToSocial={sendOneToSocial}
-        onDownload={handleDownload}
-        onDelete={handleDelete}
+        items={rows}
+        onCardOpen={setActiveAsset}
+        onUpload={() => setUploadOpen(true)}
         bulkSelected={bulkSelected}
         onToggleBulk={toggleBulk}
       />
@@ -275,7 +425,10 @@ export function AssetLibraryPage() {
           onClose={() => setActiveAsset(null)}
           onSendToSocial={() => { sendOneToSocial(activeAsset); }}
           onDownload={() => handleDownload(activeAsset)}
-          onDelete={() => handleDelete(activeAsset.asset_id)}
+          onDelete={() => requestDelete(activeAsset)}
+          onRemoveBackground={() => { void removeBackground(activeAsset); }}
+          removeBackgroundBusy={bgBusy}
+          removeBackgroundError={bgError}
         />
       )}
 
@@ -283,15 +436,61 @@ export function AssetLibraryPage() {
       {uploadOpen && (
         <UploadAssetModal
           onClose={() => setUploadOpen(false)}
-          onUploaded={() => { setUploadOpen(false); fetchAssets(); }}
+          onUploaded={() => { setUploadOpen(false); load(); }}
         />
+      )}
+
+      {/* Delete confirm — rendered last so it stacks above the detail modal. */}
+      {confirmDelete && (
+        <IadmModal
+          open
+          onClose={() => { if (!deleteBusy) setConfirmDelete(null); }}
+          product="spark"
+          eyebrow="MY BRAND · ASSET"
+          title="Delete asset?"
+          size="confirm"
+          footer={
+            <>
+              <IadmButton variant="ghost" onClick={() => setConfirmDelete(null)} disabled={deleteBusy}>
+                Cancel
+              </IadmButton>
+              <button
+                type="button"
+                onClick={performDelete}
+                disabled={deleteBusy}
+                className="inline-flex items-center gap-1 rounded bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
+              >
+                {deleteBusy
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Trash2 className="h-3.5 w-3.5" />}
+                Delete asset
+              </button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-3 p-5 text-sm text-slate-700">
+            <p>
+              <strong>
+                {confirmDelete.title || confirmDelete.filename || `This ${KIND_BADGE[confirmDelete.kind].label.toLowerCase()}`}
+              </strong>{" "}
+              will be permanently deleted. This cannot be undone.
+            </p>
+            {deleteError && (
+              <div className="flex items-start gap-2 rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+          </div>
+        </IadmModal>
       )}
     </SparkPageShell>
   );
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// FilterBar — tabs + search + sort. Sticky inside SparkPageShell's filter row.
+// FilterBar — canonical segmented control + sort + search, in the shell's
+// `filters` slot (class recipes from SparkTemplatesPage).
 // ────────────────────────────────────────────────────────────────────────────
 
 function FilterBar(props: {
@@ -306,49 +505,38 @@ function FilterBar(props: {
   const { kind, onKindChange, search, onSearchChange, sort, onSortChange, countsLabel } = props;
   return (
     <div className="flex flex-wrap items-center gap-3 py-2">
-      <div className="flex flex-wrap items-center gap-1">
-        {KIND_TABS.map((tab) => {
-          const Icon = tab.icon;
-          const active = kind === tab.key;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => onKindChange(tab.key)}
-              className={
-                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
-                (active
-                  ? "border-blue-600 bg-blue-600 text-white"
-                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100")
-              }
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {tab.label}
-            </button>
-          );
-        })}
+      <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+        {KIND_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => onKindChange(tab.key)}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+              kind === tab.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       <div className="ml-auto flex flex-wrap items-center gap-2">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search assets…"
-            className="h-8 w-56 rounded border border-slate-300 bg-white pl-7 pr-2 text-xs text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-        </div>
         <select
           value={sort}
           onChange={(e) => onSortChange(e.target.value as SortKey)}
-          className="h-8 rounded border border-slate-300 bg-white px-2 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="text-xs border border-slate-300 rounded-md px-2 py-1 bg-white"
         >
           <option value="newest">Newest</option>
           <option value="oldest">Oldest</option>
           <option value="most_used">Most used</option>
         </select>
+        <input
+          type="search"
+          placeholder="Search assets"
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          className="text-xs border border-slate-300 rounded-md px-2 py-1 w-44"
+        />
         <div className="text-xs text-slate-500">{countsLabel}</div>
       </div>
     </div>
@@ -356,42 +544,48 @@ function FilterBar(props: {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// AssetGrid — responsive thumbnail grid with hover overlay actions.
+// AssetGrid — library-item cards: the whole card is a <button> opening the
+// detail modal (canonical library card). Per-card actions live in the modal.
 // ────────────────────────────────────────────────────────────────────────────
 
 function AssetGrid(props: {
   items: BrandAsset[];
-  onCardClick: (a: BrandAsset) => void;
-  onSendToSocial: (a: BrandAsset) => void;
-  onDownload: (a: BrandAsset) => void;
-  onDelete: (id: string) => void;
+  onCardOpen: (a: BrandAsset) => void;
+  onUpload: () => void;
   bulkSelected: Set<string>;
   onToggleBulk: (id: string) => void;
 }) {
-  const { items, onCardClick, onSendToSocial, onDownload, onDelete, bulkSelected, onToggleBulk } = props;
+  const { items, onCardOpen, onUpload, bulkSelected, onToggleBulk } = props;
   if (!items.length) {
     return (
-      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
-        <ImageIcon className="mx-auto mb-2 h-8 w-8 text-slate-400" />
-        <div className="text-sm font-medium text-slate-800">No assets yet</div>
-        <div className="mt-1 text-xs text-slate-500">
-          Generate one in Image Studio, design in Template Studio, or upload your own.
+      <div className="rounded-xl border-2 border-dashed border-slate-200 bg-white p-10 text-center">
+        <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+          <ImageIcon className="h-7 w-7 text-slate-400" />
         </div>
+        <h3 className="text-lg font-semibold text-slate-900">No assets yet</h3>
+        <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
+          Generate one in Image Studio, design in Template Studio, or upload your own.
+        </p>
+        <button
+          type="button"
+          onClick={onUpload}
+          className="mt-4 inline-flex items-center gap-1 rounded-lg bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#d75a25]"
+        >
+          <Upload className="h-3.5 w-3.5" /> Upload asset
+        </button>
       </div>
     );
   }
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
       {items.map((a) => (
         <AssetCard
           key={a.asset_id}
           asset={a}
           selected={bulkSelected.has(a.asset_id)}
+          selectionActive={bulkSelected.size > 0}
           onToggleSelect={() => onToggleBulk(a.asset_id)}
-          onClick={() => onCardClick(a)}
-          onSendToSocial={() => onSendToSocial(a)}
-          onDownload={() => onDownload(a)}
-          onDelete={() => onDelete(a.asset_id)}
+          onOpen={() => onCardOpen(a)}
         />
       ))}
     </div>
@@ -401,93 +595,83 @@ function AssetGrid(props: {
 function AssetCard(props: {
   asset: BrandAsset;
   selected: boolean;
+  selectionActive: boolean;
   onToggleSelect: () => void;
-  onClick: () => void;
-  onSendToSocial: () => void;
-  onDownload: () => void;
-  onDelete: () => void;
+  onOpen: () => void;
 }) {
-  const { asset, selected, onToggleSelect, onClick, onSendToSocial, onDownload, onDelete } = props;
+  const { asset, selected, selectionActive, onToggleSelect, onOpen } = props;
   const badge = KIND_BADGE[asset.kind];
 
   return (
-    <div
-      className={
-        "group relative flex cursor-pointer flex-col overflow-hidden rounded-lg border bg-white shadow-sm transition-shadow hover:shadow-md " +
-        (selected ? "border-blue-600 ring-2 ring-blue-600" : "border-slate-200")
-      }
-      onClick={onClick}
-    >
-      {/* Bulk-select checkbox (top-left, always visible if selected, else on hover) */}
+    <div className="group relative">
       <button
         type="button"
-        title={selected ? "Deselect" : "Select for bulk action"}
-        aria-label={selected ? "Deselect asset" : "Select asset"}
-        onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
+        onClick={onOpen}
         className={
-          "pointer-events-auto absolute left-1.5 top-1.5 z-10 inline-flex h-6 w-6 items-center justify-center rounded transition-opacity " +
+          "flex w-full flex-col overflow-hidden rounded-lg border bg-white text-left transition-colors hover:border-[#EF6C33] hover:bg-[#EF6C33]/5 " +
+          (selected ? "border-[#EF6C33] ring-2 ring-[#EF6C33]" : "border-slate-200")
+        }
+      >
+        <AssetThumb asset={asset} />
+
+        {/* Card footer — filename + kind + tags + meta row */}
+        <div className="flex w-full flex-col gap-1 p-2">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1 truncate text-xs font-medium text-slate-900">
+              {asset.title || asset.filename || `Untitled ${badge.label.toLowerCase()}`}
+            </div>
+            <span
+              className="flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+              style={{ color: badge.color, background: badge.bg }}
+            >
+              {badge.label}
+            </span>
+          </div>
+          {asset.tags && asset.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {asset.tags.slice(0, 3).map((t) => (
+                <span key={t} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
+                  {t}
+                </span>
+              ))}
+              {asset.tags.length > 3 && (
+                <span className="text-[10px] text-slate-400">+{asset.tags.length - 3}</span>
+              )}
+            </div>
+          )}
+          <div className="flex items-center gap-2 text-[10px] text-slate-500">
+            {asset.created_at && <span>{formatDate(asset.created_at)}</span>}
+            {asset.used_count != null && (
+              <span className="inline-flex items-center gap-0.5">
+                <Send className="h-2.5 w-2.5" /> {asset.used_count}
+              </span>
+            )}
+            <ArrowRight className="ml-auto h-3 w-3 text-[#EF6C33] opacity-0 transition-opacity group-hover:opacity-100" />
+          </div>
+        </div>
+      </button>
+
+      {/* Bulk-select checkbox — a SIBLING of the card button (buttons can't
+          nest). Always visible once a selection is active so touch users can
+          keep adding; hover/focus reveal otherwise. */}
+      <button
+        type="button"
+        title={selected ? "Deselect" : "Select for bulk send"}
+        aria-label={selected ? "Deselect asset" : "Select asset"}
+        onClick={onToggleSelect}
+        className={
+          "absolute left-1.5 top-1.5 z-10 inline-flex h-6 w-6 items-center justify-center rounded transition-opacity " +
           (selected
-            ? "bg-blue-600 text-white opacity-100"
-            : "bg-white/90 text-slate-700 opacity-0 group-hover:opacity-100")
+            ? "bg-[#EF6C33] text-white opacity-100"
+            : selectionActive
+              ? "bg-white/90 text-slate-700 opacity-100"
+              : "bg-white/90 text-slate-700 opacity-0 focus-visible:opacity-100 group-hover:opacity-100")
         }
       >
         {selected
           ? <CheckSquare className="h-4 w-4" />
           : <Square className="h-4 w-4" />}
       </button>
-      <AssetThumb asset={asset} />
-
-      {/* Hover overlay actions */}
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1.5 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-        <OverlayBtn
-          icon={<Send className="h-3.5 w-3.5" />}
-          label="Send to Social"
-          onClick={(e) => { e.stopPropagation(); onSendToSocial(); }}
-        />
-        <OverlayBtn
-          icon={<Edit3 className="h-3.5 w-3.5" />}
-          label="Edit"
-          onClick={(e) => { e.stopPropagation(); onClick(); }}
-        />
-        <OverlayBtn
-          icon={<Download className="h-3.5 w-3.5" />}
-          label="Download"
-          onClick={(e) => { e.stopPropagation(); onDownload(); }}
-        />
-        <OverlayBtn
-          icon={<Trash2 className="h-3.5 w-3.5" />}
-          label="Delete"
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          danger
-        />
-      </div>
-
-      {/* Card footer — filename + kind + tags */}
-      <div className="flex flex-col gap-1 p-2">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1 truncate text-xs font-medium text-slate-900">
-            {asset.title || asset.filename || `Untitled ${badge.label.toLowerCase()}`}
-          </div>
-          <span
-            className="flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
-            style={{ color: badge.color, background: badge.bg }}
-          >
-            {badge.label}
-          </span>
-        </div>
-        {asset.tags && asset.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {asset.tags.slice(0, 3).map((t) => (
-              <span key={t} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
-                {t}
-              </span>
-            ))}
-            {asset.tags.length > 3 && (
-              <span className="text-[10px] text-slate-400">+{asset.tags.length - 3}</span>
-            )}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
@@ -499,51 +683,29 @@ function BulkSelectToolbar(props: {
 }) {
   const { count, onSend, onClear } = props;
   return (
-    <div className="sticky top-0 z-20 mb-3 flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 shadow-sm">
-      <div className="flex items-center gap-2 text-sm text-blue-900">
-        <CheckSquare className="h-4 w-4" />
+    <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-[#EF6C33]/40 bg-[#EF6C33]/10 px-3 py-2">
+      <div className="flex items-center gap-2 text-sm text-slate-800">
+        <CheckSquare className="h-4 w-4 text-[#EF6C33]" />
         <span className="font-semibold">{count}</span> selected
       </div>
       <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={onClear}
-          className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+          className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
         >
           Clear
         </button>
         <button
           type="button"
           onClick={onSend}
-          className="inline-flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700"
+          className="inline-flex items-center gap-1 rounded-lg bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#d75a25]"
         >
           <Send className="h-3.5 w-3.5" />
           Send selected to Social
         </button>
       </div>
     </div>
-  );
-}
-
-function OverlayBtn(props: {
-  icon: React.ReactNode;
-  label: string;
-  onClick: (e: React.MouseEvent) => void;
-  danger?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={props.onClick}
-      title={props.label}
-      aria-label={props.label}
-      className={
-        "pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full text-white transition-colors " +
-        (props.danger ? "bg-rose-600 hover:bg-rose-700" : "bg-white/20 hover:bg-white/40")
-      }
-    >
-      {props.icon}
-    </button>
   );
 }
 
@@ -601,8 +763,15 @@ function AssetDetailModal(props: {
   onSendToSocial: () => void;
   onDownload: () => void;
   onDelete: () => void;
+  /** §8c background remover — image assets only; result is a NEW asset. */
+  onRemoveBackground: () => void;
+  removeBackgroundBusy: boolean;
+  removeBackgroundError: string | null;
 }) {
-  const { asset, onClose, onSendToSocial, onDownload, onDelete } = props;
+  const {
+    asset, onClose, onSendToSocial, onDownload, onDelete,
+    onRemoveBackground, removeBackgroundBusy, removeBackgroundError,
+  } = props;
   const { get, ready } = useSparkApi();
   const [usage, setUsage] = useState<AssetUsageResponse | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
@@ -639,13 +808,30 @@ function AssetDetailModal(props: {
       open
       onClose={onClose}
       product="spark"
-      eyebrow="MY BRAND"
+      eyebrow="MY BRAND · ASSET"
       title={asset.title || asset.filename || `Untitled ${badge.label.toLowerCase()}`}
       subtitle={`${badge.label}${asset.source ? ` · ${asset.source.replace(/_/g, " ")}` : ""}`}
       size="info"
       footer={
         <>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="mr-auto inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700"
+          >
+            <Trash2 className="h-3 w-3" /> Delete
+          </button>
           <IadmButton variant="ghost" onClick={onClose}>Close</IadmButton>
+          {asset.kind === "image" && (
+            <IadmButton
+              variant="ghost"
+              onClick={onRemoveBackground}
+              disabled={removeBackgroundBusy}
+              icon={<Wand2 className="h-3.5 w-3.5" />}
+            >
+              {removeBackgroundBusy ? "Removing…" : "Remove background"}
+            </IadmButton>
+          )}
           <IadmButton variant="primary" onClick={onDownload} icon={<Download className="h-3.5 w-3.5" />}>
             Download
           </IadmButton>
@@ -657,7 +843,12 @@ function AssetDetailModal(props: {
     >
       <div className="grid h-full grid-cols-1 gap-6 p-6 md:grid-cols-[1.4fr_1fr]">
         {/* Preview */}
-        <div className="flex items-center justify-center overflow-hidden rounded-lg bg-slate-50 p-2">
+        <div className="flex flex-col items-center justify-center gap-2 overflow-hidden rounded-lg bg-slate-50 p-2">
+          {removeBackgroundError && (
+            <div className="w-full rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+              Remove background failed: {removeBackgroundError}
+            </div>
+          )}
           <DetailPreview asset={asset} />
         </div>
 
@@ -743,17 +934,6 @@ function AssetDetailModal(props: {
               </>
             )}
           </Section>
-
-          {/* Destructive action — kept off the main footer bar by design */}
-          <div className="mt-auto pt-2">
-            <button
-              type="button"
-              onClick={onDelete}
-              className="inline-flex items-center gap-1 rounded border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete asset
-            </button>
-          </div>
         </div>
       </div>
     </IadmModal>
@@ -824,12 +1004,15 @@ function formatDate(iso: string): string {
 
 // ────────────────────────────────────────────────────────────────────────────
 // UploadAssetModal — drag-drop file picker, single file at a time (MVP).
+// Auth goes through the shared token seam (acquireApiToken) + the standard
+// tenant precedence via uploadBrandAsset — never the raw JWT `tid`.
 // ────────────────────────────────────────────────────────────────────────────
 
 function UploadAssetModal(props: { onClose: () => void; onUploaded: () => void }) {
   const { onClose, onUploaded } = props;
-  const { instance, accounts } = useMsal();
-  const account = accounts[0];
+  const { instance } = useMsal();
+  const account = useActiveAccount();
+  const tenantOverride = useClientTenantIdOverride();
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -875,37 +1058,21 @@ function UploadAssetModal(props: { onClose: () => void; onUploaded: () => void }
     setBusy(true);
     setError(null);
     try {
-      const { accessToken } = await instance.acquireTokenSilent({ scopes: authScopes, account });
-      const tenantId = decodeTid(accessToken);
-      const form = new FormData();
-      form.append("file", file);
-      if (tags.trim()) form.append("tags", tags.trim());
-      const res = await fetch(`${LUMEN_API_BASE}/api/v1/my-brand/assets/upload`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "x-tenant-id": tenantId,
-        },
-        body: form,
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Upload failed (${res.status}): ${text || res.statusText}`);
-      }
+      await uploadBrandAsset(instance, account, { file }, tenantOverride);
       onUploaded();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
-  }, [file, account, instance, tags, onUploaded]);
+  }, [file, account, instance, tags, tenantOverride, onUploaded]);
 
   return (
     <IadmModal
       open
       onClose={onClose}
       product="spark"
-      eyebrow="MY BRAND"
+      eyebrow="MY BRAND · ASSET"
       title="Upload asset"
       subtitle="Drag-drop or click to pick an image. JPG, PNG, WEBP, SVG · max 10MB."
       size="info"
@@ -916,7 +1083,7 @@ function UploadAssetModal(props: { onClose: () => void; onUploaded: () => void }
             variant="accent"
             product="spark"
             onClick={handleUpload}
-            disabled={!file || busy}
+            disabled={!file || busy || !account}
             icon={busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
           >
             {busy ? "Uploading…" : "Upload asset"}
@@ -932,7 +1099,7 @@ function UploadAssetModal(props: { onClose: () => void; onUploaded: () => void }
           onClick={() => inputRef.current?.click()}
           className={
             "flex min-h-[220px] cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 text-center transition-colors " +
-            (dragOver ? "border-blue-500 bg-blue-50" : "border-slate-300 bg-slate-50 hover:bg-slate-100")
+            (dragOver ? "border-[#EF6C33] bg-[#EF6C33]/10" : "border-slate-300 bg-slate-50 hover:bg-slate-100")
           }
         >
           {preview ? (
@@ -966,12 +1133,12 @@ function UploadAssetModal(props: { onClose: () => void; onUploaded: () => void }
             value={tags}
             onChange={(e) => setTags(e.target.value)}
             placeholder="e.g. summer-promo, instagram, hero"
-            className="h-9 w-full rounded border border-slate-300 bg-white px-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="h-9 w-full rounded border border-slate-300 bg-white px-2 text-sm text-slate-900 focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
           />
         </div>
 
         {error && (
-          <div className="flex items-start gap-2 rounded bg-rose-50 p-2 text-xs text-rose-800">
+          <div className="flex items-start gap-2 rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
             <span>{error}</span>
           </div>
@@ -981,15 +1148,4 @@ function UploadAssetModal(props: { onClose: () => void; onUploaded: () => void }
   );
 }
 
-function decodeTid(token: string): string {
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return payload.tid || "";
-  } catch {
-    return "";
-  }
-}
-
-
-// ComingSoonOverlay HOC removed 2026-06-22 — see VoicePage.tsx note.
 export default AssetLibraryPage;

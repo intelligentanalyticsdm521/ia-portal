@@ -76,7 +76,33 @@ export interface InsightRule {
   action?: (ctx: InsightContext) => string;
 }
 
+/**
+ * One INSIGHT paired with its RECOMMENDATION.
+ *
+ * Brandon, 2026-07-24: these are not two lists. An insight is the finding
+ * ("your mobile CTR 0.73% is outperforming desktop 0.24% — unusual and worth
+ * preserving"); the recommendation is what to do about it. Splitting them
+ * into an observations list and a separate "recommended actions" list forces
+ * the reader to re-pair them by hand, and the pairing is the whole value.
+ *
+ * Both halves come from the SAME rule id, so the pairing is exact rather
+ * than inferred.
+ */
+export interface InsightPair {
+  /** Stable rule id — survives quarterly review. */
+  id: string;
+  /** Rule priority; higher = bigger impact on the score. */
+  priority: number;
+  /** The finding. */
+  insight: string;
+  /** What to do about it. Absent for observation-only rules. */
+  recommendation?: string;
+}
+
 export interface EvaluatedInsights {
+  /** Paired insight + recommendation, highest impact first. PREFER THIS. */
+  pairs: InsightPair[];
+  /** Legacy flat lists — kept so existing callers don't break. */
   observations: string[];
   actions: string[];
   /** Stable IDs of rules that fired — useful for telemetry and quarterly
@@ -89,6 +115,19 @@ export interface EvaluateOptions {
   maxObservations?: number;
   /** Maximum actions to surface. Default 5. */
   maxActions?: number;
+  /**
+   * Hard cap on paired insights. Default 5 (Brandon, 2026-07-24: "No more
+   * than 5 total. Any more would be way too many").
+   *
+   * NOTE the anti-padding rule: this is a CEILING, not a quota. Pairs are
+   * only included if they clear `minPriority`, so one dominant problem plus
+   * four trivia yields ONE pair, not five. A report showing a single insight
+   * is a good outcome, not an empty state.
+   */
+  maxPairs?: number;
+  /** Minimum rule priority to surface at all. Default 4 — below this the
+   *  finding isn't worth the reader's attention. */
+  minPriority?: number;
 }
 
 /** Evaluate a rule library against a context and return the fired
@@ -100,8 +139,12 @@ export function evaluateRules(
 ): EvaluatedInsights {
   const maxObs = opts.maxObservations ?? 8;
   const maxAct = opts.maxActions ?? 5;
+  const maxPairs = opts.maxPairs ?? 5;
+  const minPriority = opts.minPriority ?? 4;
   const observations: Array<{ text: string; priority: number; id: string }> = [];
   const actions: Array<{ text: string; priority: number; id: string }> = [];
+  /** Keyed by rule id so an observation and its action stay bound together. */
+  const pairMap = new Map<string, InsightPair>();
   const fired: string[] = [];
 
   for (const r of rules) {
@@ -123,6 +166,9 @@ export function evaluateRules(
         const text = r.observation(ctx);
         if (text && text.trim().length > 0) {
           observations.push({ text: text.trim(), priority: pri, id: r.id });
+          const existing = pairMap.get(r.id);
+          if (existing) existing.insight = text.trim();
+          else pairMap.set(r.id, { id: r.id, priority: pri, insight: text.trim() });
         }
       } catch { /* skip */ }
     }
@@ -131,6 +177,9 @@ export function evaluateRules(
         const text = r.action(ctx);
         if (text && text.trim().length > 0) {
           actions.push({ text: text.trim(), priority: pri, id: r.id });
+          const existing = pairMap.get(r.id);
+          if (existing) existing.recommendation = text.trim();
+          else pairMap.set(r.id, { id: r.id, priority: pri, insight: "", recommendation: text.trim() });
         }
       } catch { /* skip */ }
     }
@@ -139,7 +188,15 @@ export function evaluateRules(
   observations.sort((a, b) => b.priority - a.priority);
   actions.sort((a, b) => b.priority - a.priority);
 
+  // Pairs: drop anything below the attention threshold, rank by impact, cap.
+  // The cap is a ceiling — nothing is padded up to it.
+  const pairs = [...pairMap.values()]
+    .filter((p) => p.insight && p.priority >= minPriority)
+    .sort((a, b) => b.priority - a.priority)
+    .slice(0, maxPairs);
+
   return {
+    pairs,
     observations: observations.slice(0, maxObs).map((o) => o.text),
     actions:      actions.slice(0, maxAct).map((a) => a.text),
     firedRuleIds: fired,

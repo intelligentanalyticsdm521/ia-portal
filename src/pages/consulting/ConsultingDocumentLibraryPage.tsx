@@ -151,14 +151,9 @@ export function ConsultingDocumentLibraryPage() {
       setRows(Array.isArray(r?.templates) ? r.templates : []);
     } catch (e) {
       const msg = (e as Error).message || "Could not load templates";
-      // F4 backend endpoints may not be wired yet — surface a clear inline
-      // banner instead of the OliverPageWrapper's red "Failed to load"
-      // splash so the founder still sees the empty page shell.
-      if (/404|not.?found/i.test(msg)) {
-        setError("Document Library API not deployed yet — coming alongside the F4 backend.");
-      } else {
-        setError(msg);
-      }
+      // FIX-6 (2026-07-22): real error — the F4 backend is mounted, so a 404
+      // here means a genuine routing/data problem, not an unshipped feature.
+      setError(msg);
       setRows([]);
     } finally {
       setLoading(false);

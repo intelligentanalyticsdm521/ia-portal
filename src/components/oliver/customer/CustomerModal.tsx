@@ -752,11 +752,11 @@ function CustomerInfoCard({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={labelS}>Display name <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#7C97A6" }}>— appears on invoices</span></label>
-              <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} style={inputS} placeholder="e.g. Rolling In It, LLC" />
+              <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} style={inputS} placeholder="e.g. Summit Lawn & Landscape, LLC" />
             </div>
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={labelS}>Business name</label>
-              <input value={company} onChange={(e) => setCompany(e.target.value)} style={inputS} placeholder="The legal entity, e.g. Rolling In It, LLC" />
+              <input value={company} onChange={(e) => setCompany(e.target.value)} style={inputS} placeholder="The legal entity, e.g. Summit Lawn & Landscape, LLC" />
             </div>
             <div>
               <label style={labelS}>Customer first name</label>

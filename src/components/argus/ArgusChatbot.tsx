@@ -13,13 +13,24 @@
 // hook for that — `tryServerFallback()`.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { MessageSquare, Send, X, ExternalLink, Play, Ticket } from "lucide-react";
+import { MessageSquare, Send, X, ExternalLink, Play, Ticket, MousePointerClick } from "lucide-react";
 import { matchIntent, type ArgusIntent } from "./argusIntents";
 import { ALL_TOURS, GuidedTour, type TourDef } from "../GuidedTour";
 import { useAppState } from "../../app/AppState";
 import { emergencyActAsHeaders } from "../../lib/emergencyActAs";
+import { searchJourneySteps } from "../../journeys";
+import { launchJourneyStep } from "../walkthroughs/walkthroughLaunchBus";
+import { useSparkApi } from "../../hooks/useSparkApi";
 
 type Sender = "user" | "argus";
+
+/** A journey step ARGUS is offering to teach — the "how do I…" answer. */
+export interface HelpOffer {
+  stepId: string;
+  label: string;
+  productLabel: string;
+  hasDoIt: boolean;
+}
 
 interface Message {
   id: string;
@@ -28,6 +39,10 @@ interface Message {
   cta?: { label: string; to: string };
   tourId?: string;
   openTicket?: boolean;
+  /** Primary "show me / walk me through it" offer for a matched step. */
+  help?: HelpOffer;
+  /** Near-miss alternatives the user can pick instead. */
+  alsoTry?: HelpOffer[];
 }
 
 interface TicketDraft {
@@ -62,7 +77,41 @@ export function ArgusChatbot() {
   ]);
   const [ticketOpen, setTicketOpen] = useState(false);
   const [activeTour, setActiveTour] = useState<TourDef | null>(null);
+  const [greeted, setGreeted] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const spark = useSparkApi();
+
+  // Alert-aware greeting. The engagement alerts already know what's wrong for
+  // this tenant, so ARGUS opens with that instead of a blank "how can I
+  // help?" — the assistant should know what's going on before you tell it.
+  useEffect(() => {
+    if (!open || greeted || !spark.ready) return;
+    setGreeted(true);
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await spark.get<{ data: { alerts: Array<{ title: string; platform: string; walkthroughId?: string | null }> } }>(
+          "/api/v1/engagement-alerts",
+        );
+        const alerts = r.data?.alerts || [];
+        if (cancelled || !alerts.length) return;
+        const top = alerts.slice(0, 3);
+        const lines = top.map((a) => `• ${a.title} (${a.platform.toUpperCase()})`).join("\n");
+        setMessages((m) => [
+          ...m,
+          {
+            id: uid(),
+            sender: "argus",
+            text:
+              `Before you ask — I've been keeping an eye on things. ${alerts.length === 1 ? "There's 1 thing" : `There are ${alerts.length} things`} worth a look:\n\n${lines}\n\nAsk me about any of them and I'll walk you through it.`,
+          },
+        ]);
+      } catch {
+        /* alerts are a bonus, never a blocker */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, greeted, spark]);
 
   // Scroll to bottom on new message.
   useEffect(() => {
@@ -79,24 +128,50 @@ export function ArgusChatbot() {
     setMessages((m) => [...m, userMsg]);
 
     const m = matchIntent(text);
+    // Journey search — the expansive "how do I…" layer. Every step of every
+    // platform curriculum is an answerable question, and the answer IS the
+    // consultant's explanation for that step. Deterministic keyword scoring,
+    // no LLM (per KB_intelligence_layer: the IL is in-house and free; Claude
+    // is adjacent and always metered — that lives in SPARK_IL P7, not here).
+    const hits = searchJourneySteps(text, 3);
+    const toOffer = (h: (typeof hits)[number]): HelpOffer => ({
+      stepId: h.step.id,
+      label: h.step.label,
+      productLabel: h.journey.productLabel,
+      hasDoIt: (h.step.doIt?.length ?? 0) > 0,
+    });
+
     let replyText = "";
     let intent: ArgusIntent | null = null;
     let openTicket = false;
     let tourId: string | undefined;
     let cta: Message["cta"] | undefined;
+    let help: HelpOffer | undefined;
+    let alsoTry: HelpOffer[] | undefined;
 
     if (m.smalltalk) {
       replyText = m.smalltalk.reply;
+    } else if (hits.length && hits[0].score >= 12) {
+      // Strong curriculum match — answer the question directly.
+      const top = hits[0];
+      replyText = `${top.step.explain.title}\n\n${top.step.explain.body}`;
+      help = toOffer(top);
+      if (hits.length > 1) alsoTry = hits.slice(1).map(toOffer);
     } else if (m.intent && m.score >= 10) {
       intent = m.intent;
       replyText = intent.reply;
       cta = intent.cta;
       tourId = intent.tour;
       openTicket = !!intent.openTicket;
+    } else if (hits.length) {
+      // Weaker match — still better than a shrug.
+      const top = hits[0];
+      replyText = `${top.step.explain.title}\n\n${top.step.explain.body}`;
+      help = toOffer(top);
+      if (hits.length > 1) alsoTry = hits.slice(1).map(toOffer);
     } else {
-      // Below threshold — Phase 1 polite fallback. Phase 2 hooks in here.
       replyText =
-        "I didn't quite catch that. Try wording it differently, tap one of the quick options below, or hit ‘I'm stuck — submit a ticket' to reach the founder directly.";
+        "I didn't quite catch that. Try naming the thing you're trying to do — \"create an email list\", \"send an invoice\", \"claim my Google listing\" — or hit \"I'm stuck\" to reach the founder directly.";
     }
 
     const argusMsg: Message = {
@@ -106,6 +181,8 @@ export function ArgusChatbot() {
       cta,
       tourId,
       openTicket,
+      help,
+      alsoTry,
     };
     setMessages((m2) => [...m2, argusMsg]);
     if (openTicket) setTicketOpen(true);
@@ -127,6 +204,14 @@ export function ArgusChatbot() {
   const handleCtaClick = (to: string) => {
     navigate(to);
     setOpen(false);
+  };
+
+  // Launch a journey step in either mode. Close the panel first so the chat
+  // z-index doesn't cover the element the spotlight is trying to highlight
+  // (same reason the tour handoff below delays before opening).
+  const handleHelp = (stepId: string, mode: "explain" | "doIt") => {
+    setOpen(false);
+    setTimeout(() => launchJourneyStep(stepId, mode), 250);
   };
 
   return (
@@ -190,6 +275,7 @@ export function ArgusChatbot() {
                 message={m}
                 onCta={handleCtaClick}
                 onStartTicket={() => setTicketOpen(true)}
+                onHelp={handleHelp}
               />
             ))}
             {!ticketOpen && messages.length <= 2 && (
@@ -252,11 +338,12 @@ export function ArgusChatbot() {
 }
 
 function ChatBubble({
-  message, onCta, onStartTicket,
+  message, onCta, onStartTicket, onHelp,
 }: {
   message: Message;
   onCta: (to: string) => void;
   onStartTicket: () => void;
+  onHelp: (stepId: string, mode: "explain" | "doIt") => void;
 }) {
   const isUser = message.sender === "user";
   return (
@@ -267,6 +354,44 @@ function ChatBubble({
         }`}
       >
         {message.text}
+        {/* Curriculum answer — offer both modes, same as the Learn menu. */}
+        {message.help && !isUser && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <button
+              onClick={() => onHelp(message.help!.stepId, "explain")}
+              className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white"
+              style={{ background: "#84CC16" }}
+            >
+              <Play className="h-3 w-3" /> Show me
+            </button>
+            {message.help.hasDoIt && (
+              <button
+                onClick={() => onHelp(message.help!.stepId, "doIt")}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <MousePointerClick className="h-3 w-3" /> Walk me through it
+              </button>
+            )}
+          </div>
+        )}
+        {message.alsoTry?.length && !isUser ? (
+          <div className="mt-2 border-t border-slate-100 pt-1.5">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+              Or did you mean
+            </div>
+            <div className="flex flex-col gap-0.5">
+              {message.alsoTry.map((alt) => (
+                <button
+                  key={alt.stepId}
+                  onClick={() => onHelp(alt.stepId, "explain")}
+                  className="text-left text-[11px] text-slate-600 hover:text-slate-900 hover:underline"
+                >
+                  {alt.label} <span className="text-slate-400">· {alt.productLabel}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {message.cta && !isUser && (
           <div className="mt-2">
             <button

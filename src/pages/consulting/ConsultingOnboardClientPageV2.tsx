@@ -1191,6 +1191,35 @@ function OnboardingsList({ rows, loading, onNew, onCancel, onContinue, onResendW
                       {new Date(r.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {/* 2026-07-31 — Copy the client's registration link.
+                          Deterministic and NON-EXPIRING: AppGate turns
+                          ?welcome=1 into the branded CIAM create-account page
+                          with the email pre-filled. Access is granted by the
+                          pending core.tenant_invitations row (this exact email
+                          + tenant), and Entra emails a one-time code before
+                          creating the account — so the link itself is not a
+                          secret. Always available so the founder never has to
+                          regenerate an expiring token again.
+                          See overnight-report/CLIENT_PORTAL_LOGIN_SOP.md. */}
+                      {r.contact_email && (
+                        <button
+                          onClick={async () => {
+                            const link = `${window.location.origin}/app?welcome=1&prefill_email=${encodeURIComponent(r.contact_email)}`;
+                            try {
+                              await navigator.clipboard.writeText(link);
+                              alert(`Registration link copied — send it to ${r.contact_email}:\n\n${link}\n\nIt never expires. They set their own password; we never see it.`);
+                            } catch {
+                              // Clipboard blocked (permissions/insecure ctx) —
+                              // prompt() lets the founder copy it manually.
+                              window.prompt(`Registration link for ${r.contact_email} (never expires):`, link);
+                            }
+                          }}
+                          title="Copy the non-expiring registration link for this client"
+                          className="text-[11px] font-semibold text-slate-700 px-3 py-1 rounded-md mr-1 border border-slate-300 hover:bg-slate-50"
+                        >
+                          Copy link
+                        </button>
+                      )}
                       {r.can_resend_welcome && (
                         <button onClick={() => onResendWelcome(r)}
                           title={r.welcome_expired ? "Welcome link expired — send a new one" : "Send another activation email"}

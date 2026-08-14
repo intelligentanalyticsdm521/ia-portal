@@ -23,6 +23,7 @@ const TIER_LABEL: Record<string, string> = {
 export function OliverFeesPage() {
   const { get, ready } = useOliverApi();
   const [rows, setRows] = useState<FeeBreakdown[]>([]);
+  const [mine, setMine] = useState<FeeBreakdown | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 
@@ -32,8 +33,16 @@ export function OliverFeesPage() {
     (async () => {
       setLoading(true); setError(null);
       try {
-        const res = await get<{ data: FeeBreakdown[] }>("/tier-limits/fees");
-        if (!cancelled) setRows(res?.data || []);
+        // useOliverApi.get already strips the { data: … } envelope
+        // (oliverApi.ts:128). Reading res.data here returned undefined and
+        // rendered an empty table — the page looked blank in production even
+        // though the endpoint was fine. Kept tolerant of both shapes.
+        const res = await get<FeeBreakdown[] | { data: FeeBreakdown[] }>("/tier-limits/fees");
+        const list = Array.isArray(res) ? res : (res?.data ?? []);
+        if (!cancelled) setRows(list);
+        // Which row is THIS tenant on — so the table can mark "Your plan".
+        const own = await get<FeeBreakdown>("/tier-limits/my-fees").catch(() => null);
+        if (!cancelled && own) setMine(own);
       } catch (err) { if (!cancelled) setError(err); }
       finally { if (!cancelled) setLoading(false); }
     })();
@@ -73,9 +82,19 @@ export function OliverFeesPage() {
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.tier} className="border-b border-slate-100 align-top">
+                <tr
+                  key={r.tier}
+                  className={`border-b border-slate-100 align-top ${
+                    mine && r.tier === mine.tier ? "bg-sky-50/70" : ""
+                  }`}
+                >
                   <td className="py-3 pr-3 font-semibold text-slate-800">
                     {TIER_LABEL[r.tier] || r.tier}
+                    {mine && r.tier === mine.tier && (
+                      <span className="ml-2 inline-block px-2 py-0.5 rounded bg-[#1A7DB5] text-white text-[10px] font-semibold align-middle">
+                        YOUR PLAN
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 px-3 text-slate-700">
                     <div className="font-medium">{r.stripe.percent}% + {money(r.stripe.flat)}</div>
@@ -108,13 +127,100 @@ export function OliverFeesPage() {
         </div>
       </div>
 
-      <p className="text-xs text-slate-500 px-1">
-        The Stripe portion is billed by Stripe directly to your connected
-        account at their standard US card rate. The platform portion is the
-        Intelligent Analytics application fee and is capped per transaction
-        where shown. Founder/platform-owner accounts transact directly and pay
-        no platform fee.
-      </p>
+      {mine && (
+        <div className="card mb-4">
+          <div className="card-hdr">
+            <div>
+              <div className="card-ttl">What you pay today</div>
+              <div className="card-sub">
+                Your account is on the {TIER_LABEL[mine.tier] || mine.tier} plan.
+              </div>
+            </div>
+          </div>
+          <div className="px-4 pb-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded border border-slate-200 p-3">
+              <div className="text-[11px] uppercase tracking-wide text-slate-500">Stripe</div>
+              <div className="text-lg font-bold text-slate-800 mt-1">
+                {mine.stripe.percent}% + {money(mine.stripe.flat)}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1">Billed by Stripe</div>
+            </div>
+            <div className="rounded border border-slate-200 p-3">
+              <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                Intelligent Analytics
+              </div>
+              <div className="text-lg font-bold text-slate-800 mt-1">
+                {mine.ia.percent === 0 && mine.ia.flat === 0
+                  ? "None"
+                  : `${mine.ia.percent}% + ${money(mine.ia.flat)}`}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1">
+                {mine.ia.cap != null ? `Capped at ${money(mine.ia.cap)} per transaction` : "No cap"}
+              </div>
+            </div>
+            <div className="rounded border-2 border-[#1A7DB5] p-3 bg-sky-50/50">
+              <div className="text-[11px] uppercase tracking-wide text-[#1A7DB5]">
+                Total per transaction
+              </div>
+              <div className="text-lg font-bold text-[#1A3A4A] mt-1">
+                {mine.blendedCard.percent}% + {money(mine.blendedCard.flat)}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1">Before the platform cap applies</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="card">
+        <div className="card-hdr">
+          <div>
+            <div className="card-ttl">Fee terms</div>
+            <div className="card-sub">How and when each portion is charged.</div>
+          </div>
+        </div>
+        <div className="px-4 pb-4 text-xs text-slate-600 leading-relaxed space-y-3">
+          <div>
+            <div className="font-semibold text-slate-800 mb-1">Stripe processing fee</div>
+            Charged by Stripe directly to your connected Stripe account at their
+            standard US card rate, and deducted from each payment before payout.
+            Intelligent Analytics does not set, receive, or control this amount.
+            Rates for non-US cards, currency conversion, chargebacks, and
+            alternative payment methods are set by Stripe and may differ — see
+            your Stripe dashboard for the authoritative schedule.
+          </div>
+          <div>
+            <div className="font-semibold text-slate-800 mb-1">
+              Intelligent Analytics platform fee
+            </div>
+            Collected at the time the customer pays, as a Stripe Connect
+            application fee on the same transaction — there is no separate
+            invoice and nothing is billed to you later. Where a cap is shown, the
+            platform fee never exceeds that amount on a single transaction
+            regardless of size. Plans with no platform fee are charged nothing on
+            top of Stripe.
+          </div>
+          <div>
+            <div className="font-semibold text-slate-800 mb-1">Refunds and disputes</div>
+            Refunding a payment returns the customer's money but does not
+            return the processing fees already charged on it. Stripe's fee is
+            governed by your Stripe agreement and is generally not returned on a
+            refund, and Stripe may charge a separate dispute fee; those amounts
+            are between you and Stripe. The Intelligent Analytics platform fee
+            on a refunded transaction is likewise retained.
+          </div>
+          <div>
+            <div className="font-semibold text-slate-800 mb-1">Plan changes</div>
+            The platform fee follows your current plan. If you change plans, the
+            new rate applies to transactions processed from that point forward;
+            transactions already completed are not repriced. This page always
+            reflects the rate in effect for your account right now.
+          </div>
+          <div className="pt-1 border-t border-slate-100 text-slate-500">
+            Founder and platform-owner accounts transact on the platform account
+            directly and are charged no platform fee.
+          </div>
+        </div>
+      </div>
     </OliverPageWrapper>
   );
 }

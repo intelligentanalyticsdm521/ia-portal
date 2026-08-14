@@ -48,6 +48,19 @@ export function ConsultantModeBanner() {
 
   function exit() {
     try { sessionStorage.removeItem(WORKSPACE_FLAG_KEY); } catch {}
+    // 2026-08-06 — tear the workspace down completely. Previously only the
+    // banner flag was cleared, so the client's tenant id lingered and the
+    // founder's next portal load resumed inside the CLIENT's tenant. Clear the
+    // consultant target too, and drop any persisted client tenant so the
+    // founder is restored to their own tenant on next load.
+    try { sessionStorage.removeItem("iadm.portal.consultantTargetTid.v1"); } catch {}
+    try {
+      const home = appState.bootstrap?.homeTenantId;
+      const stored = localStorage.getItem("iadm.portal.activeTenantId");
+      if (stored && home && stored.toLowerCase() !== String(home).toLowerCase()) {
+        localStorage.removeItem("iadm.portal.activeTenantId");
+      }
+    } catch { /* storage unavailable — nothing to clean */ }
     // Try to close the tab. If the browser refuses (because this tab wasn't
     // opened by script), redirect to the founder's home so it's no longer
     // visually a client workspace.

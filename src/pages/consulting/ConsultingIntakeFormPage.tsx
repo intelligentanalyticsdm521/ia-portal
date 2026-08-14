@@ -124,12 +124,10 @@ export function ConsultingIntakeFormPage() {
         });
       }
     } catch (e) {
-      const msg = (e as Error).message || "Could not load intake form";
-      if (/404|not.?found/i.test(msg)) {
-        setError("Intake form not available — the F4 backend may not be deployed yet or this link is invalid.");
-      } else {
-        setError(msg);
-      }
+      // FIX-6 (2026-07-22): the backend IS mounted — a 404 here means THIS
+      // link/row is bad (e.g. the FIX-2 id-vs-slug mismatch), not that the
+      // feature is unshipped. Show the real error.
+      setError((e as Error).message || "Could not load intake form");
     } finally {
       setLoading(false);
     }
@@ -165,12 +163,11 @@ export function ConsultingIntakeFormPage() {
       });
       setSavedMessage("Draft saved.");
     } catch (e) {
-      const msg = (e as Error).message || "Save failed";
-      if (/404|not.?found/i.test(msg)) {
-        setSubmitErr("Draft save endpoint not deployed yet — keep this tab open until the F4 backend lands.");
-      } else {
-        setSubmitErr(msg);
-      }
+      // FIX-6 (2026-07-22): show the REAL error. The old /404|not-found/
+      // branch claimed "endpoint not deployed yet" — but the F4 backend IS
+      // mounted (oliver-api index.js), so a real 404 (missing row, the FIX-2
+      // id-vs-slug mismatch) was being misreported as an unshipped feature.
+      setSubmitErr((e as Error).message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -217,12 +214,8 @@ export function ConsultingIntakeFormPage() {
         });
       }
     } catch (e) {
-      const msg = (e as Error).message || "Submit failed";
-      if (/404|not.?found/i.test(msg)) {
-        setSubmitErr("Submit endpoint not deployed yet — your draft is safe; the F4 backend will pick it up when it ships.");
-      } else {
-        setSubmitErr(msg);
-      }
+      // FIX-6 (2026-07-22): real error, not the false "not deployed" mask.
+      setSubmitErr((e as Error).message || "Submit failed");
     } finally {
       setSubmitting(false);
     }

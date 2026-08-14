@@ -2,19 +2,21 @@
 //
 // My Brand > Image Studio (Wave 2 — Brandon, 2026-06-22).
 // --------------------------------------------------------------------------
-// Generate-edit-deliver flow for tenant brand imagery.
+// Generate-edit-deliver flow for tenant brand imagery, hosted in the
+// canonical SparkPageShell (sticky header + stat strip + tinted body).
 //
-//   * Left ~40% — prompt + style + aspect-ratio + Generate CTA, plus the
+//   * Left pane — prompt + style + aspect-ratio + Generate CTA, plus the
 //     last 5 prompts as quick-recall pills.
-//   * Right ~60% — 2x2 grid of variations. Each tile has Edit / Save /
-//     Send to Social / Delete on hover, an EditModal with crop+tint+text
-//     sliders, and a "Send to Social" action that navigates to the
-//     Wave-3 my_brand_compose page with ?asset_ids=… preserving selection.
+//   * Right pane — 2x2 grid of variations. Each tile has always-visible
+//     Edit / Save / Send to Social / Delete actions, an EditModal
+//     (IadmModal size="info") with crop+tint+text sliders, and a
+//     "Send to Social" action that navigates to my_brand_compose with
+//     ?asset_ids=… preserving selection.
 //
 // Backend:
 //   * POST   /api/v1/my-brand/image-studio/generate
 //             { prompt, count, style, size }
-//             → { jobId, assets[], totalCostUsd, errors[] }
+//             → { jobId, assets[], credits_charged, errors[] }
 //   * POST   /api/v1/my-brand/image-studio/:assetId/edit
 //             { edits: { colors?, text_overlay?, crop?, brightness? } }
 //             → { assetId, blobRef, url, parent_asset_id }
@@ -22,17 +24,19 @@
 //
 // Auth: useLumenApi handles MSAL + x-tenant-id + 503-key-missing surfacing.
 //
-// Cost preview: spec says "$cost / 1 = 1 credit". gpt-image-1 published rate
-// card (Jun 2026) — 1024² = $0.04, 1024×1536 = $0.06. The UI shows the
-// per-variation USD before the user commits.
+// Spend preview (2026-07-21): the UI shows CREDITS only — 8 credits per
+// image (LOCKED matrix), user picks count 1-4. Provider USD never reaches
+// the client; it stays in the job row + ai_call_audit for founder margin.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sparkles, Trash2, Pencil, Save, Send, ImagePlus, RefreshCw, AlertTriangle } from "lucide-react";
 import { useLumenApi } from "../../hooks/useLumenApi";
 import { isImageStudioNotConfiguredError } from "../../lib/lumenApi";
 import { ArgusBalanceBadge } from "../../components/ArgusBalanceBadge";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { MyBrandUpgradeGate } from "../../components/MyBrandUpgradeGate";
 import { useMyBrandTier } from "../../hooks/useMyBrandTier";
 
@@ -49,9 +53,17 @@ interface GeneratedAsset {
 interface GenerateResponse {
   jobId: string;
   assets: GeneratedAsset[];
-  totalCostUsd: number | null;
+  /** ARGUS credits charged for the job (count × 8, LOCKED matrix). The API
+   *  never sends USD — provider cost is internal margin data. */
+  credits_charged: number | null;
   errors: Array<{ variant_n: number; message: string }>;
 }
+
+// LOCKED matrix (ARGUS_CREDIT_MATRIX.md): AI image, standard quality = 8
+// credits per image. Keep in lockstep with lumen.argus_action_pricing
+// 'my_brand.image_generate' (migration 146).
+const CREDITS_PER_IMAGE = 8;
+const COUNT_OPTIONS = [1, 2, 3, 4] as const;
 
 interface EditResponse {
   assetId: string;
@@ -65,6 +77,10 @@ interface EditResponse {
 const RECENT_PROMPTS_KEY = "myBrand.imageStudio.recentPrompts";
 const RECENT_PROMPTS_MAX = 5;
 
+// Accent: My Brand rides the SPARK accent (#EF6C33 / hover #d75a25) —
+// matches PRODUCT_ACCENT.spark in IadmModal so the page and its modals
+// share one accent system. Used as Tailwind arbitrary values throughout.
+
 type StyleKey = "photorealistic" | "illustration" | "flat" | "watercolor";
 type SizeKey = "1024x1024" | "1536x1024" | "1024x1536";
 
@@ -72,13 +88,13 @@ interface SizeOption {
   key: SizeKey;
   label: string;
   ratio: string;
-  costUsd: number; // gpt-image-1 published rate card, Jun 2026
 }
 
+// All sizes cost the same 8 credits (standard quality) — no per-size price.
 const SIZE_OPTIONS: SizeOption[] = [
-  { key: "1024x1024", label: "1:1 Square", ratio: "1024 × 1024", costUsd: 0.04 },
-  { key: "1536x1024", label: "16:9 Wide", ratio: "1536 × 1024", costUsd: 0.06 },
-  { key: "1024x1536", label: "9:16 Tall", ratio: "1024 × 1536", costUsd: 0.06 },
+  { key: "1024x1024", label: "1:1 Square", ratio: "1024 × 1024" },
+  { key: "1536x1024", label: "16:9 Wide", ratio: "1536 × 1024" },
+  { key: "1024x1536", label: "9:16 Tall", ratio: "1024 × 1536" },
 ];
 
 const STYLE_OPTIONS: { key: StyleKey; label: string; hint: string }[] = [
@@ -110,9 +126,9 @@ function persistRecentPrompts(prompts: string[]) {
   }
 }
 
-function fmtUsd(n: number | null | undefined): string {
+function fmtCredits(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
-  return `$${n.toFixed(2)}`;
+  return `${n} credit${n === 1 ? "" : "s"}`;
 }
 
 // Map error → user-facing message + tone. The OpenAI errors we care about
@@ -159,32 +175,23 @@ export function ImageStudioPage() {
   // Wave 3 tier gate — Image Studio requires Standard+. While the SPARK
   // subscription is still loading we render the normal page (the backend
   // will still 403 if the user is sub-tier, and we show the gate the moment
-  // we know). Once `ready` we either continue with the page or short-circuit
-  // to the upgrade overlay so users on Lite see a clear path forward.
+  // we know). The gated early-return lives BELOW every hook declaration —
+  // rules of hooks: the hook count must not change between renders when
+  // `gate.ready` flips after mount.
   const gate = useMyBrandTier();
-  if (gate.ready && !gate.meets("image_studio")) {
-    return (
-      <div className="p-6">
-        <MyBrandUpgradeGate
-          featureName="Image Studio"
-          requiredTier={gate.requiredTier("image_studio")}
-          currentTier={gate.tier}
-        />
-      </div>
-    );
-  }
 
   // Prompt panel state
   const [prompt, setPrompt] = useState("");
   const [style, setStyle] = useState<StyleKey>("photorealistic");
   const [size, setSize] = useState<SizeKey>("1024x1024");
   const [recentPrompts, setRecentPrompts] = useState<string[]>(() => loadRecentPrompts());
+  const promptRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Generation state
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<{ tone: "warn" | "error"; message: string } | null>(null);
   const [variations, setVariations] = useState<GeneratedAsset[]>([]);
-  const [lastJobCost, setLastJobCost] = useState<number | null>(null);
+  const [lastJobCredits, setLastJobCredits] = useState<number | null>(null);
   const [perVariantErrors, setPerVariantErrors] = useState<Array<{ variant_n: number; message: string }>>([]);
 
   // Per-tile transient state (delete pending, edit pending) — keyed by assetId
@@ -193,6 +200,11 @@ export function ImageStudioPage() {
 
   // Edit modal state
   const [editTarget, setEditTarget] = useState<GeneratedAsset | null>(null);
+
+  // Delete-confirm modal state (IadmModal size="confirm" — replaces
+  // window.confirm per F-107). Delete errors render inline in the modal.
+  const [confirmDelete, setConfirmDelete] = useState<GeneratedAsset | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Used so we can keep the "Send to Social" multi-select UX honest — clicking
   // multiple tiles toggles; "Send" jumps to compose with all selected.
@@ -204,11 +216,10 @@ export function ImageStudioPage() {
     () => SIZE_OPTIONS.find((s) => s.key === size) || SIZE_OPTIONS[0],
     [size]
   );
-  const perVariantCost = currentSizeOption.costUsd;
-  // The Generate button always asks for 4 (per spec). Single CTA + visible
-  // cost preview, no "how many?" knob to confuse first-time users.
-  const VARIATION_COUNT = 4;
-  const totalCostPreview = perVariantCost * VARIATION_COUNT;
+  // How many images to generate — the user chooses (1–4); each costs 8
+  // credits, so the choice IS the spend decision (Brandon 2026-07-21).
+  const [count, setCount] = useState<number>(1);
+  const totalCreditsPreview = count * CREDITS_PER_IMAGE;
 
   // ─── Generate ────────────────────────────────────────────────────────────
 
@@ -229,12 +240,12 @@ export function ImageStudioPage() {
     try {
       const res = await api.post<GenerateResponse>("/api/v1/my-brand/image-studio/generate", {
         prompt: trimmed,
-        count: VARIATION_COUNT,
+        count,
         style,
         size,
       });
       setVariations(res.assets || []);
-      setLastJobCost(res.totalCostUsd ?? null);
+      setLastJobCredits(res.credits_charged ?? count * CREDITS_PER_IMAGE);
       setPerVariantErrors(res.errors || []);
       // Update recent prompts — newest first, dedupe (case-insensitive),
       // keep the 5 most recent. Persist to localStorage.
@@ -252,13 +263,27 @@ export function ImageStudioPage() {
     } finally {
       setGenerating(false);
     }
-  }, [prompt, style, size, api]);
+  }, [prompt, style, size, count, api]);
 
   // ─── Tile actions ────────────────────────────────────────────────────────
 
-  const onDelete = useCallback(async (asset: GeneratedAsset) => {
-    if (!api.ready) return;
-    if (!window.confirm("Delete this variation? It will be removed from the Asset Library too.")) return;
+  // Step 1: the tile's Delete button opens the confirm modal.
+  const requestDelete = useCallback((asset: GeneratedAsset) => {
+    setDeleteError(null);
+    setConfirmDelete(asset);
+  }, []);
+
+  const cancelDelete = useCallback(() => {
+    setConfirmDelete(null);
+    setDeleteError(null);
+  }, []);
+
+  // Step 2: confirmed — perform the DELETE. On failure the error renders
+  // inline in the confirm modal so the user can retry or cancel.
+  const performDelete = useCallback(async () => {
+    const asset = confirmDelete;
+    if (!asset || !api.ready) return;
+    setDeleteError(null);
     setPendingByAsset((prev) => ({ ...prev, [asset.assetId]: "deleting" }));
     try {
       await api.del(`/api/v1/my-brand/image-studio/${asset.assetId}`);
@@ -269,8 +294,9 @@ export function ImageStudioPage() {
         next.delete(asset.assetId);
         return next;
       });
+      setConfirmDelete(null);
     } catch (e) {
-      setError(friendlyError(e));
+      setDeleteError(friendlyError(e).message);
     } finally {
       setPendingByAsset((prev) => {
         const next = { ...prev };
@@ -278,7 +304,7 @@ export function ImageStudioPage() {
         return next;
       });
     }
-  }, [api]);
+  }, [confirmDelete, api]);
 
   // "Save" = mark as favorited / stop auto-deletion. Wave 1 backend already
   // persists every generated asset to brand_asset; until the favorite flag
@@ -295,8 +321,6 @@ export function ImageStudioPage() {
 
   // "Send to Social" — navigate to my_brand_compose with ?asset_ids=<id>.
   // If the user has multi-selected tiles, the comma-joined list goes through.
-  // Compose page is Wave 3; until it lands the route falls through to the
-  // catalog "not found" page, which still gives the right user signal.
   const onSendOne = useCallback((asset: GeneratedAsset) => {
     navigate(`/app/services/my_brand_compose?asset_ids=${encodeURIComponent(asset.assetId)}`);
   }, [navigate]);
@@ -322,11 +346,11 @@ export function ImageStudioPage() {
 
   const closeEdit = useCallback(() => setEditTarget(null), []);
 
-  // Handler called from the EditModal when the user submits — performs the
-  // edit + swaps the parent tile to show the new asset. Keeps the original
-  // chain queryable on the backend via parent_asset_id, but the UI shows
-  // the latest version since edits compound.
-  const onEditCommitted = useCallback((parentAssetId: string, result: EditResponse) => {
+  // Handler called from the EditModal when the user submits — swaps the
+  // parent tile to show the new asset. Keeps the original chain queryable
+  // on the backend via parent_asset_id, but the UI shows the latest version
+  // since edits compound.
+  const onEditChanged = useCallback((parentAssetId: string, result: EditResponse) => {
     setVariations((prev) =>
       prev.map((v) =>
         v.assetId === parentAssetId
@@ -349,53 +373,75 @@ export function ImageStudioPage() {
     onGenerate();
   }, [prompt, onGenerate]);
 
-  return (
-    <div className="flex flex-col h-full bg-slate-50">
-      {/* Header bar */}
-      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            <Sparkles className="h-3 w-3 text-violet-500" />
-            <span>My Brand · Intelligence Layer</span>
-          </div>
-          <h1 className="mt-0.5 text-xl font-semibold text-slate-900">Image Studio</h1>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Generate on-brand variations with gpt-image-1, edit them inline, send them straight to social.
-          </p>
-        </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <ArgusBalanceBadge />
-        </div>
-      </div>
+  // Empty-state CTA — mirrors the page's primary action: generate when a
+  // usable prompt exists, otherwise focus the prompt textarea.
+  const onEmptyCta = useCallback(() => {
+    if (prompt.trim().length >= 4) onGenerate();
+    else promptRef.current?.focus();
+  }, [prompt, onGenerate]);
 
-      {/* Two-pane body */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Left: prompt panel (~40%) */}
-        <aside className="flex w-2/5 min-w-[340px] flex-col gap-4 overflow-y-auto border-r border-slate-200 bg-white p-6">
+  const deleting = confirmDelete
+    ? pendingByAsset[confirmDelete.assetId] === "deleting"
+    : false;
+
+  // Tier gate — rendered through the shell so the page header survives.
+  if (gate.ready && !gate.meets("image_studio")) {
+    return (
+      <SparkPageShell
+        title="Image Studio"
+        subtitle="Generate on-brand variations, edit them, send them to social."
+      >
+        <MyBrandUpgradeGate
+          featureName="Image Studio"
+          requiredTier={gate.requiredTier("image_studio")}
+          currentTier={gate.tier}
+        />
+      </SparkPageShell>
+    );
+  }
+
+  return (
+    <SparkPageShell
+      title="Image Studio"
+      subtitle="Generate on-brand variations, edit them, send them to social."
+      help="Describe an image, choose how many variations (each costs 8 AI credits), then edit or push them to your social composer. Every variation is saved to your Asset Library."
+      actions={<ArgusBalanceBadge />}
+      stats={
+        variations.length > 0 ? (
+          <SparkStatStrip stats={[
+            { label: "Credits this run", value: fmtCredits(lastJobCredits) },
+            { label: "Saved", value: savedAssetIds.size, accent: savedAssetIds.size > 0 ? "emerald" : "default", icon: Save },
+          ]} />
+        ) : undefined
+      }
+    >
+      {/* Two-pane workspace — prompt card left, variations grid right */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="md:col-span-2 self-start rounded-lg border border-slate-200 bg-white p-5">
           <PromptPanel
             prompt={prompt}
             setPrompt={setPrompt}
+            promptRef={promptRef}
             style={style}
             setStyle={setStyle}
             size={size}
             setSize={setSize}
-            perVariantCost={perVariantCost}
-            totalCostPreview={totalCostPreview}
+            count={count}
+            setCount={setCount}
+            totalCreditsPreview={totalCreditsPreview}
             generating={generating}
             onGenerate={onGenerate}
             recentPrompts={recentPrompts}
             onRecentClick={onRecentClick}
           />
-        </aside>
+        </div>
 
-        {/* Right: variations grid (~60%) */}
-        <main className="flex-1 min-w-0 overflow-y-auto p-6">
+        <div className="md:col-span-3 min-w-0">
           <VariationsPane
             generating={generating}
             error={error}
             perVariantErrors={perVariantErrors}
             variations={variations}
-            lastJobCost={lastJobCost}
             savedAssetIds={savedAssetIds}
             pendingByAsset={pendingByAsset}
             selectedForSocial={selectedForSocial}
@@ -404,23 +450,62 @@ export function ImageStudioPage() {
             onSave={onSave}
             onSendOne={onSendOne}
             onSendSelected={onSendSelected}
-            onDelete={onDelete}
+            onDelete={requestDelete}
             onToggleSelect={toggleSelectForSocial}
             onReroll={onReroll}
+            onEmptyCta={onEmptyCta}
           />
-        </main>
+        </div>
       </div>
 
       {/* Edit modal */}
       {editTarget && (
         <EditAssetModal
+          open={true}
           target={editTarget}
-          api={api}
           onClose={closeEdit}
-          onCommitted={onEditCommitted}
+          onChanged={onEditChanged}
         />
       )}
-    </div>
+
+      {/* Delete confirm — IadmModal size="confirm" replaces window.confirm */}
+      {confirmDelete && (
+        <IadmModal
+          open={true}
+          onClose={cancelDelete}
+          product="spark"
+          eyebrow="MY BRAND · IMAGE"
+          title="Delete this variation?"
+          size="confirm"
+          footer={
+            <>
+              <IadmButton variant="ghost" onClick={cancelDelete} disabled={deleting}>
+                Cancel
+              </IadmButton>
+              <button
+                type="button"
+                onClick={performDelete}
+                disabled={deleting}
+                className="inline-flex items-center gap-1 rounded bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
+              >
+                <Trash2 className="h-3 w-3" />
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </>
+          }
+        >
+          <div className="p-5 text-sm text-slate-700">
+            It will be removed from the Asset Library too. This cannot be undone.
+            {deleteError && (
+              <div className="mt-3 flex items-start gap-2 rounded border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+          </div>
+        </IadmModal>
+      )}
+    </SparkPageShell>
   );
 }
 
@@ -429,12 +514,14 @@ export function ImageStudioPage() {
 interface PromptPanelProps {
   prompt: string;
   setPrompt: (s: string) => void;
+  promptRef: React.MutableRefObject<HTMLTextAreaElement | null>;
   style: StyleKey;
   setStyle: (s: StyleKey) => void;
   size: SizeKey;
   setSize: (s: SizeKey) => void;
-  perVariantCost: number;
-  totalCostPreview: number;
+  count: number;
+  setCount: (n: number) => void;
+  totalCreditsPreview: number;
   generating: boolean;
   onGenerate: () => void;
   recentPrompts: string[];
@@ -442,8 +529,8 @@ interface PromptPanelProps {
 }
 
 function PromptPanel({
-  prompt, setPrompt, style, setStyle, size, setSize,
-  perVariantCost, totalCostPreview, generating, onGenerate,
+  prompt, setPrompt, promptRef, style, setStyle, size, setSize,
+  count, setCount, totalCreditsPreview, generating, onGenerate,
   recentPrompts, onRecentClick,
 }: PromptPanelProps) {
   const promptValid = prompt.trim().length >= 4;
@@ -456,12 +543,13 @@ function PromptPanel({
           Be specific — subject, setting, mood, framing. Stay away from real people and brand logos to avoid policy blocks.
         </p>
         <textarea
+          ref={promptRef}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           rows={4}
           maxLength={4000}
           placeholder="A sunlit team of plumbers laying copper pipes on a clean job site, warm photography style, shallow depth of field, golden hour"
-          className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-200"
+          className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]/25"
           disabled={generating}
         />
         <div className="mt-1 text-right text-[10px] text-slate-400">{prompt.length} / 4000</div>
@@ -473,7 +561,7 @@ function PromptPanel({
           value={style}
           onChange={(e) => setStyle(e.target.value as StyleKey)}
           disabled={generating}
-          className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-200"
+          className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]/25"
         >
           {STYLE_OPTIONS.map((s) => (
             <option key={s.key} value={s.key}>{s.label}</option>
@@ -497,24 +585,43 @@ function PromptPanel({
                 disabled={generating}
                 className={`flex flex-col items-center gap-0.5 rounded-lg border px-2 py-2 text-[11px] font-medium transition-colors ${
                   isActive
-                    ? "border-violet-500 bg-violet-50 text-violet-900"
+                    ? "border-[#EF6C33] bg-[#EF6C33]/5 text-slate-900"
                     : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
                 } disabled:opacity-50`}
               >
                 <span className="text-xs font-semibold">{opt.label}</span>
                 <span className="text-[10px] text-slate-500">{opt.ratio}</span>
-                <span className="text-[10px] font-medium text-slate-400">{fmtUsd(opt.costUsd)} ea</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Generate CTA + cost preview */}
+      {/* How many images — the user picks the spend (8 credits each) */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700">How many images?</label>
+        <div className="mt-1.5 flex gap-1 rounded-lg bg-slate-100 p-1">
+          {COUNT_OPTIONS.map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setCount(n)}
+              disabled={generating}
+              className={`flex-1 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors ${
+                count === n ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              } disabled:opacity-50`}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Generate CTA + credit preview */}
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
         <div className="flex items-center justify-between text-[11px] text-slate-600">
-          <span>4 variations × {fmtUsd(perVariantCost)}</span>
-          <span className="font-semibold text-slate-900">≈ {fmtUsd(totalCostPreview)}</span>
+          <span>{count} image{count === 1 ? "" : "s"} × {CREDITS_PER_IMAGE} credits</span>
+          <span className="font-semibold text-slate-900">{totalCreditsPreview} credits</span>
         </div>
         <button
           type="button"
@@ -522,21 +629,21 @@ function PromptPanel({
           disabled={generating || !promptValid}
           className={`mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors ${
             generating
-              ? "bg-violet-300"
+              ? "bg-[#EF6C33]/60"
               : promptValid
-                ? "bg-violet-600 hover:bg-violet-700"
+                ? "bg-[#EF6C33] hover:bg-[#d75a25]"
                 : "bg-slate-300"
           }`}
         >
           {generating ? (
             <>
               <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-              Generating 4 variations…
+              Generating {count} image{count === 1 ? "" : "s"}…
             </>
           ) : (
             <>
               <Sparkles className="h-4 w-4" />
-              Generate 4 variations
+              Generate {count} image{count === 1 ? "" : "s"} · {totalCreditsPreview} credits
             </>
           )}
         </button>
@@ -559,7 +666,7 @@ function PromptPanel({
                   type="button"
                   onClick={() => onRecentClick(p)}
                   disabled={generating}
-                  className="block w-full truncate rounded border border-slate-200 bg-white px-2 py-1.5 text-left text-[11px] text-slate-700 transition-colors hover:border-violet-300 hover:bg-violet-50 disabled:opacity-50"
+                  className="block w-full truncate rounded border border-slate-200 bg-white px-2 py-1.5 text-left text-[11px] text-slate-700 transition-colors hover:border-[#EF6C33]/50 hover:bg-[#EF6C33]/5 disabled:opacity-50"
                   title={p}
                 >
                   {p}
@@ -580,7 +687,6 @@ interface VariationsPaneProps {
   error: { tone: "warn" | "error"; message: string } | null;
   perVariantErrors: Array<{ variant_n: number; message: string }>;
   variations: GeneratedAsset[];
-  lastJobCost: number | null;
   savedAssetIds: Set<string>;
   pendingByAsset: Record<string, "deleting" | "editing">;
   selectedForSocial: Set<string>;
@@ -592,12 +698,13 @@ interface VariationsPaneProps {
   onDelete: (a: GeneratedAsset) => void;
   onToggleSelect: (assetId: string) => void;
   onReroll: () => void;
+  onEmptyCta: () => void;
 }
 
 function VariationsPane({
-  generating, error, perVariantErrors, variations, lastJobCost, savedAssetIds,
+  generating, error, perVariantErrors, variations, savedAssetIds,
   pendingByAsset, selectedForSocial, recentPrompts,
-  onEdit, onSave, onSendOne, onSendSelected, onDelete, onToggleSelect, onReroll,
+  onEdit, onSave, onSendOne, onSendSelected, onDelete, onToggleSelect, onReroll, onEmptyCta,
 }: VariationsPaneProps) {
   // Loading skeleton — 4 placeholder tiles. Mirrors the 2x2 grid so layout
   // doesn't shift when results land.
@@ -640,7 +747,7 @@ function VariationsPane({
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <div className="text-sm">{error.message}</div>
         </div>
-        <EmptyState recentPrompts={recentPrompts} />
+        <EmptyState recentPrompts={recentPrompts} onCta={onEmptyCta} />
       </div>
     );
   }
@@ -648,33 +755,23 @@ function VariationsPane({
   // Empty state — no variations yet, no error. Most users land here on
   // first visit.
   if (variations.length === 0) {
-    return <EmptyState recentPrompts={recentPrompts} />;
+    return <EmptyState recentPrompts={recentPrompts} onCta={onEmptyCta} />;
   }
 
-  // Results — header strip + 2x2 grid + per-variant error footer if any.
+  // Results — toolbar row + 2x2 grid + per-variant error footer if any.
+  // (Cost / saved-count stats live in the shell's stat strip.)
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Variations · {variations.length}
-          </div>
-          <div className="mt-0.5 text-[11px] text-slate-500">
-            Cost this run: <span className="font-semibold text-slate-700">{fmtUsd(lastJobCost)}</span>
-            {savedAssetIds.size > 0 && (
-              <>
-                {" · "}
-                <span className="font-semibold text-emerald-700">{savedAssetIds.size} saved</span>
-              </>
-            )}
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Variations · {variations.length}
         </div>
         <div className="flex items-center gap-2">
           {selectedForSocial.size > 0 && (
             <button
               type="button"
               onClick={onSendSelected}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-900 hover:bg-violet-100"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#d75a25]"
             >
               <Send className="h-3.5 w-3.5" />
               Send {selectedForSocial.size} to Social
@@ -684,7 +781,7 @@ function VariationsPane({
             type="button"
             onClick={onReroll}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-            title="Generate 4 new variations with the same prompt + settings"
+            title="Generate again with the same prompt + settings"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Re-roll
@@ -742,8 +839,8 @@ function VariationTile({
 
   return (
     <div
-      className={`group relative aspect-square overflow-hidden rounded-xl border bg-slate-100 transition-all ${
-        selected ? "border-violet-500 ring-2 ring-violet-200" : "border-slate-200"
+      className={`relative aspect-square overflow-hidden rounded-xl border bg-slate-100 transition-all ${
+        selected ? "border-[#EF6C33] ring-2 ring-[#EF6C33]/25" : "border-slate-200"
       } ${dimmed ? "opacity-50" : ""}`}
     >
       {/* Selection toggle — top-left checkbox-style */}
@@ -753,7 +850,7 @@ function VariationTile({
         title="Select for multi-send to Social"
         className={`absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded border text-[10px] font-bold transition-colors ${
           selected
-            ? "border-violet-500 bg-violet-500 text-white"
+            ? "border-[#EF6C33] bg-[#EF6C33] text-white"
             : "border-white/70 bg-black/30 text-transparent hover:border-white"
         }`}
       >
@@ -784,8 +881,10 @@ function VariationTile({
         />
       )}
 
-      {/* Hover overlay with actions */}
-      <div className="pointer-events-none absolute inset-0 flex items-end justify-center bg-gradient-to-t from-black/70 via-black/0 to-black/0 p-3 opacity-0 transition-opacity group-hover:opacity-100">
+      {/* Action bar — always visible (platform card rule: no hover-only
+          affordances; hover-only actions are unreachable on touch). The
+          tile itself stays non-clickable. */}
+      <div className="pointer-events-none absolute inset-0 flex items-end justify-center bg-gradient-to-t from-black/70 via-black/0 to-black/0 p-3">
         <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-1.5">
           <TileBtn icon={<Pencil className="h-3 w-3" />} label="Edit" onClick={onEdit} />
           <TileBtn
@@ -814,7 +913,7 @@ function TileBtn({
 }) {
   let cls = "border-white/40 bg-black/60 text-white hover:bg-black/80";
   if (variant === "danger") cls = "border-rose-300/60 bg-rose-600/80 text-white hover:bg-rose-700";
-  if (variant === "accent") cls = "border-violet-300/60 bg-violet-600/90 text-white hover:bg-violet-700";
+  if (variant === "accent") cls = "border-orange-200/60 bg-[#EF6C33]/90 text-white hover:bg-[#d75a25]";
   if (variant === "muted") cls = "border-emerald-300/60 bg-emerald-600/80 text-white";
 
   return (
@@ -832,19 +931,26 @@ function TileBtn({
 
 // ─── Empty state ───────────────────────────────────────────────────────────
 
-function EmptyState({ recentPrompts }: { recentPrompts: string[] }) {
+function EmptyState({ recentPrompts, onCta }: { recentPrompts: string[]; onCta: () => void }) {
   return (
-    <div className="flex h-full min-h-[400px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
-      <div className="rounded-full bg-violet-50 p-3">
-        <ImagePlus className="h-6 w-6 text-violet-600" />
+    <div className="rounded-xl border-2 border-dashed border-slate-200 bg-white p-10 text-center">
+      <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+        <ImagePlus className="h-7 w-7 text-slate-400" />
       </div>
-      <h2 className="text-base font-semibold text-slate-900">
+      <h3 className="text-lg font-semibold text-slate-900">
         {recentPrompts.length === 0 ? "Generate your first image" : "Ready for the next batch"}
-      </h2>
-      <p className="max-w-md text-xs text-slate-500">
-        Type a description on the left, pick a style + aspect ratio, then hit Generate. You'll get four variations in
-        ~20 seconds. Every variation lands in your Asset Library so you can come back later.
+      </h3>
+      <p className="mt-1 mx-auto max-w-md text-sm text-slate-500">
+        Type a description on the left, pick a style, aspect ratio, and how many images (8 credits each), then hit
+        Generate. Every image lands in your Asset Library so you can come back later.
       </p>
+      <button
+        type="button"
+        onClick={onCta}
+        className="mt-4 inline-flex items-center gap-1 rounded-lg bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#d75a25]"
+      >
+        <Sparkles className="h-3.5 w-3.5" /> Generate
+      </button>
     </div>
   );
 }
@@ -852,13 +958,16 @@ function EmptyState({ recentPrompts }: { recentPrompts: string[] }) {
 // ─── Edit modal — crop / tint / text overlay / brightness ──────────────────
 
 interface EditAssetModalProps {
+  open: boolean;
   target: GeneratedAsset;
-  api: ReturnType<typeof useLumenApi>;
   onClose: () => void;
-  onCommitted: (parentAssetId: string, result: EditResponse) => void;
+  onChanged: (parentAssetId: string, result: EditResponse) => void;
 }
 
-function EditAssetModal({ target, api, onClose, onCommitted }: EditAssetModalProps) {
+function EditAssetModal({ open, target, onClose, onChanged }: EditAssetModalProps) {
+  // The modal owns its own API hook (canonical CRUD-modal contract).
+  const api = useLumenApi();
+
   // Tint
   const [tintEnabled, setTintEnabled] = useState(false);
   const [tintColor, setTintColor] = useState("#38BDF8");
@@ -940,7 +1049,7 @@ function EditAssetModal({ target, api, onClose, onCommitted }: EditAssetModalPro
         `/api/v1/my-brand/image-studio/${target.assetId}/edit`,
         { edits }
       );
-      onCommitted(target.assetId, res);
+      onChanged(target.assetId, res);
     } catch (e) {
       setEditError(e instanceof Error ? e.message : String(e ?? "Edit failed."));
     } finally {
@@ -951,15 +1060,15 @@ function EditAssetModal({ target, api, onClose, onCommitted }: EditAssetModalPro
     textEnabled, text, textColor, textPosition, textSize,
     brightness, cropEnabled, naturalW, naturalH,
     cropLeftPct, cropTopPct, cropWidthPct, cropHeightPct,
-    target.assetId, onCommitted,
+    target.assetId, onChanged,
   ]);
 
   return (
     <IadmModal
-      open={true}
+      open={open}
       onClose={onClose}
       product="spark"
-      eyebrow="MY BRAND · EDIT"
+      eyebrow="MY BRAND · IMAGE"
       title="Edit image"
       subtitle="Tint, text overlay, crop — server-side, no editor download."
       size="info"
@@ -967,7 +1076,8 @@ function EditAssetModal({ target, api, onClose, onCommitted }: EditAssetModalPro
         <>
           <IadmButton variant="ghost" onClick={onClose}>Cancel</IadmButton>
           <IadmButton
-            variant="primary"
+            variant="accent"
+            product="spark"
             onClick={submit}
             disabled={submitting || !hasAnyEdit}
           >
@@ -979,7 +1089,7 @@ function EditAssetModal({ target, api, onClose, onCommitted }: EditAssetModalPro
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6 p-6">
         {/* Preview column — 2/5 */}
         <div className="md:col-span-2 flex flex-col gap-2">
-          <div className="text-xs font-semibold text-slate-700">Original</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Original</div>
           <div className="rounded-lg border border-slate-200 bg-slate-100 p-2">
             <img
               ref={imgRef}
@@ -1006,7 +1116,7 @@ function EditAssetModal({ target, api, onClose, onCommitted }: EditAssetModalPro
               step={0.05}
               value={brightness}
               onChange={(e) => setBrightness(Number(e.target.value))}
-              className="w-full accent-violet-500"
+              className="w-full accent-[#EF6C33]"
             />
             <div className="text-[11px] text-slate-500">Current: {brightness.toFixed(2)}×</div>
           </Section>
@@ -1043,7 +1153,7 @@ function EditAssetModal({ target, api, onClose, onCommitted }: EditAssetModalPro
                 step={0.05}
                 value={tintStrength}
                 onChange={(e) => setTintStrength(Number(e.target.value))}
-                className="w-full accent-violet-500"
+                className="w-full accent-[#EF6C33]"
               />
               <div className="text-[11px] text-slate-500">Strength: {Math.round(tintStrength * 100)}%</div>
             </div>
@@ -1073,7 +1183,7 @@ function EditAssetModal({ target, api, onClose, onCommitted }: EditAssetModalPro
                     onClick={() => setTextPosition(p)}
                     className={`rounded border px-2 py-1 text-[11px] font-semibold capitalize ${
                       textPosition === p
-                        ? "border-violet-500 bg-violet-50 text-violet-900"
+                        ? "border-[#EF6C33] bg-[#EF6C33]/5 text-slate-900"
                         : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
                     }`}
                   >
@@ -1096,7 +1206,7 @@ function EditAssetModal({ target, api, onClose, onCommitted }: EditAssetModalPro
                   step={2}
                   value={textSize}
                   onChange={(e) => setTextSize(Number(e.target.value))}
-                  className="flex-1 accent-violet-500"
+                  className="flex-1 accent-[#EF6C33]"
                 />
                 <span className="text-[11px] text-slate-500 w-12 text-right">{textSize}px</span>
               </div>
@@ -1124,8 +1234,9 @@ function EditAssetModal({ target, api, onClose, onCommitted }: EditAssetModalPro
           </Section>
 
           {editError && (
-            <div className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">
-              {editError}
+            <div className="flex items-start gap-2 rounded border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+              <span>{editError}</span>
             </div>
           )}
         </div>
@@ -1149,7 +1260,7 @@ function Section({
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="text-xs font-semibold text-slate-800">{title}</div>
+          <div className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500">{title}</div>
           {hint && <div className="mt-0.5 text-[10px] text-slate-500">{hint}</div>}
         </div>
         {typeof onToggle === "function" && (
@@ -1159,7 +1270,7 @@ function Section({
             aria-checked={!!enabled}
             onClick={onToggle}
             className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${
-              enabled ? "bg-violet-500" : "bg-slate-300"
+              enabled ? "bg-[#EF6C33]" : "bg-slate-300"
             }`}
           >
             <span
@@ -1203,10 +1314,4 @@ function NumberInput({
   );
 }
 
-// ─── Suppress unused-import warning when nothing imported is actually
-// referenced (some lints flag bare imports even though they're for side
-// effects). useEffect is consumed transitively below; this NOOP keeps the
-// import set tight without forcing a barrel file.
-// (No-op intentional.)
-// ComingSoonOverlay HOC removed 2026-06-22 — see VoicePage.tsx note.
 export default ImageStudioPage;

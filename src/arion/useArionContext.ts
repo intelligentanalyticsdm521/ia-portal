@@ -32,6 +32,7 @@ import {
   getSeoSummary as portalGetSeoSummary,
   getSiteDetail as portalGetSiteDetail,
   getSearchPerformance as portalGetSearchPerformance,
+  getInsightsMetrics as portalGetInsightsMetrics,
   inspectUrl as portalInspectUrl,
   submitUrlForIndexing as portalSubmitUrlForIndexing,
   getSearchSitemaps as portalGetSearchSitemaps,
@@ -54,6 +55,14 @@ import {
   getGbpReviewsLive as portalGetGbpReviewsLive,
   getGbpInsightsLive as portalGetGbpInsightsLive,
   getGbpPostsLive as portalGetGbpPostsLive,
+  getGbpServices as portalGetGbpServices,
+  draftGbpReviewReply as portalDraftGbpReviewReply,
+  getGbpAutoReply as portalGetGbpAutoReply,
+  setGbpAutoReply as portalSetGbpAutoReply,
+  getGbpMedia as portalGetGbpMedia,
+  addGbpMedia as portalAddGbpMedia,
+  deleteGbpMedia as portalDeleteGbpMedia,
+  saveGbpServices as portalSaveGbpServices,
   getGbpQanda as portalGetGbpQanda,
   updateGbpBusiness as portalUpdateGbpBusiness,
   createGbpPost as portalCreateGbpPost,
@@ -116,6 +125,14 @@ import {
   listGbpLocations as portalListGbpLocations,
   selectGbpLocation as portalSelectGbpLocation,
   disconnectGbp as portalDisconnectGbp,
+  // GBP Connect Batch B — client-owned listing creation + verification
+  createGbpListing as portalCreateGbpListing,
+  getGbpVerificationOptions as portalGetGbpVerificationOptions,
+  requestGbpVerification as portalRequestGbpVerification,
+  completeGbpVerification as portalCompleteGbpVerification,
+  getGbpVerificationStatus as portalGetGbpVerificationStatus,
+  type GbpCreateListingInput,
+  type GbpVerificationOption,
   // Onboarding V3 Phase 3 — tenant-scoped multi-location store
   listBusinessLocations as portalListBusinessLocations,
   setBusinessLocationPrimary as portalSetBusinessLocationPrimary,
@@ -468,9 +485,17 @@ export function useArionContext() {
       async getPluginLitespeedConfig(siteId: string) { const b = await base(); return portalGetPluginLitespeedConfig({ ...b, siteId }); },
       async setPluginLitespeedConfig(siteId: string, body: { settings?: Record<string, any>; apply_ia_defaults?: boolean }) { const b = await base(); return portalSetPluginLitespeedConfig({ ...b, siteId, body }); },
       async applyPluginIADefaults(siteId: string) { const b = await base(); return portalApplyPluginIADefaults({ ...b, siteId }); },
-      async listGbpLocations(siteId: string) { const b = await base(); return portalListGbpLocations({ ...b, siteId }); },
+      async listGbpLocations(siteId: string, showAll?: boolean) { const b = await base(); return portalListGbpLocations({ ...b, siteId, showAll }); },
       async selectGbpLocation(siteId: string, locationName: string) { const b = await base(); return portalSelectGbpLocation({ ...b, siteId, locationName }); },
       async disconnectGbp(siteId: string) { const b = await base(); return portalDisconnectGbp({ ...b, siteId }); },
+
+      // GBP Connect Batch B — client-owned listing creation + in-ARION
+      // verification (options → request → PIN complete → status poll).
+      async createGbpListing(siteId: string, body: GbpCreateListingInput) { const b = await base(); return portalCreateGbpListing({ ...b, siteId, body }); },
+      async getGbpVerificationOptions(siteId: string) { const b = await base(); return portalGetGbpVerificationOptions({ ...b, siteId }); },
+      async requestGbpVerification(siteId: string, option: GbpVerificationOption | string) { const b = await base(); return portalRequestGbpVerification({ ...b, siteId, option }); },
+      async completeGbpVerification(siteId: string, verificationName: string, pin: string) { const b = await base(); return portalCompleteGbpVerification({ ...b, siteId, verificationName, pin }); },
+      async getGbpVerificationStatus(siteId: string) { const b = await base(); return portalGetGbpVerificationStatus({ ...b, siteId }); },
       // ── Onboarding V3 Phase 3 — tenant-wide multi-location store ──
       async listBusinessLocations() { const b = await base(); return portalListBusinessLocations(b); },
       async setBusinessLocationPrimary(locationId: string) { const b = await base(); return portalSetBusinessLocationPrimary({ ...b, locationId }); },
@@ -543,6 +568,11 @@ export function useArionContext() {
         return portalGetSearchPerformance({ ...b, siteId, provider, period: opts?.period, groupBy: opts?.groupBy, days: opts?.days });
       },
 
+      async getInsightsMetrics(siteId: string, months?: number) {
+        const b = await base();
+        return portalGetInsightsMetrics({ ...b, siteId, months });
+      },
+
       async inspectUrl(siteId: string, url: string) {
         const b = await base();
         return portalInspectUrl({ ...b, siteId, url });
@@ -606,6 +636,38 @@ export function useArionContext() {
       async getGbpInsightsLive(siteId: string, period?: number) {
         const b = await base();
         return portalGetGbpInsightsLive({ ...b, siteId, period });
+      },
+      async getGbpServices(siteId: string) {
+        const b = await base();
+        return portalGetGbpServices({ ...b, siteId });
+      },
+      async draftGbpReviewReply(siteId: string, review: { reviewId: string; reviewerName?: string; starRating?: number; comment?: string | null }) {
+        const b = await base();
+        return portalDraftGbpReviewReply({ ...b, siteId, ...review });
+      },
+      async getGbpAutoReply(siteId: string) {
+        const b = await base();
+        return portalGetGbpAutoReply({ ...b, siteId });
+      },
+      async setGbpAutoReply(siteId: string, enabled: boolean, minStars: number) {
+        const b = await base();
+        return portalSetGbpAutoReply({ ...b, siteId, enabled, minStars });
+      },
+      async getGbpMedia(siteId: string) {
+        const b = await base();
+        return portalGetGbpMedia({ ...b, siteId });
+      },
+      async addGbpMedia(siteId: string, sourceUrl: string, category?: string) {
+        const b = await base();
+        return portalAddGbpMedia({ ...b, siteId, sourceUrl, category });
+      },
+      async deleteGbpMedia(siteId: string, mediaId: string) {
+        const b = await base();
+        return portalDeleteGbpMedia({ ...b, siteId, mediaId });
+      },
+      async saveGbpServices(siteId: string, services: Array<Record<string, any>>) {
+        const b = await base();
+        return portalSaveGbpServices({ ...b, siteId, services });
       },
       async getGbpPostsLive(siteId: string) {
         const b = await base();

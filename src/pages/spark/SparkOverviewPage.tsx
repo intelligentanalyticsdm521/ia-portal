@@ -17,6 +17,7 @@ import { WalkthroughRunner } from "../../components/walkthroughs/WalkthroughRunn
 // has its own dedicated page already — keeping a parallel "summary"
 // layer on Overview was duplication, not value.
 import { SetupHints } from "../../components/SetupHints";
+import { EngagementAlertCallout } from "../../components/insights/EngagementAlertCallout";
 
 // ─ Types ──────────────────────────────────────────────────────────────────────
 interface UsageResponse {
@@ -166,6 +167,9 @@ export function SparkOverviewPage() {
       loading={loading}
     >
       <div className="p-6 space-y-6">
+        {/* Engagement alerts call-out (2026-07-26) — the platform's open
+            alerts lead the dashboard, not just the home Alerts tab. */}
+        <EngagementAlertCallout platform="spark" />
         {/* Onboarding nag lives on Command Center only (UnifiedSetupCard). */}
 
         {/* F-118 — lightweight, dismissable setup hints. This is the ONLY

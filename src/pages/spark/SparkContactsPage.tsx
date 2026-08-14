@@ -18,6 +18,8 @@ import {
 // lifecycle_stage. Columns rendered from the tenant's lifecycle_preset
 // (simplified=3, moderate=5, advanced=10) via GET /api/v1/lifecycle/preset.
 import { SparkLifecycleKanban } from "../../components/spark/SparkLifecycleKanban";
+import { SparkAccountsPage } from "./SparkAccountsPage";
+import { readSpreadsheet, parseDelimited, gridToRows, toContact } from "../../lib/sheetImport";
 import { PhoneInput } from "../../components/PhoneInput";
 
 interface Contact {
@@ -93,10 +95,10 @@ export function SparkContactsPage() {
   // Kanban hits GET /api/v1/lifecycle/kanban; List hits the existing
   // /contacts endpoint. Persisted in localStorage so the user's pick sticks
   // across navigation.
-  const [view, setView] = useState<"list" | "kanban">(() => {
+  const [view, setView] = useState<"list" | "kanban" | "companies">(() => {
     try {
       const v = localStorage.getItem("spark.contacts.view");
-      return v === "kanban" ? "kanban" : "list";
+      return v === "kanban" || v === "companies" ? v : "list";
     } catch { return "list"; }
   });
   useEffect(() => {
@@ -115,7 +117,20 @@ export function SparkContactsPage() {
   const [detail, setDetail] = useState<Contact | null>(null);
   const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", company: "", title: "" });
   const [saving, setSaving] = useState(false);
+  /**
+   * Id of the contact created in this session — marks its row for the
+   * walkthrough's "open it back up" step.
+   *
+   * Replaces matching on email "test@email.com", which only worked if the user
+   * typed exactly that. Keying on the returned id works whatever they type and
+   * still can't point at a record they didn't just create.
+   */
+  const [justCreatedId, setJustCreatedId] = useState<number | null>(null);
   const [importText, setImportText] = useState("");
+  /** Rows parsed from an uploaded .csv/.xlsx, ready to send. */
+  const [importFileRows, setImportFileRows] = useState<ReturnType<typeof toContact>[] | null>(null);
+  const [importFileName, setImportFileName] = useState("");
+  const [importFileError, setImportFileError] = useState<string | null>(null);
 
   // ─ Load ─────────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -315,7 +330,12 @@ export function SparkContactsPage() {
     if (!form.first_name && !form.email) return;
     setSaving(true);
     try {
-      await post("/api/v1/contacts", form);
+      // Keep the new id so its row can carry the walkthrough hook — see
+      // justCreatedId. If the response has no id we simply mark nothing,
+      // which is the safe direction: no hook beats the wrong hook.
+      const created = await post<{ data?: { id?: number } }>("/api/v1/contacts", form);
+      const newId = created?.data?.id;
+      if (newId) setJustCreatedId(newId);
       setDrawer(null);
       setForm({ first_name: "", last_name: "", email: "", phone: "", company: "", title: "" });
       await load();
@@ -323,36 +343,67 @@ export function SparkContactsPage() {
     finally { setSaving(false); }
   }
 
+  /** Read the chosen file and show what we found BEFORE anything is sent. */
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    setImportFileError(null);
+    setImportFileRows(null);
+    setImportFileName("");
+    if (!file) return;
+    try {
+      const grid = await readSpreadsheet(file);
+      const rows = gridToRows(grid)
+        .map(toContact)
+        .filter((c) => c.email || c.first_name);   // skip blank/filler rows
+      if (!rows.length) {
+        setImportFileError(
+          "No contacts found. Check the first row holds column names like First Name and Email.",
+        );
+        return;
+      }
+      setImportFileRows(rows);
+      setImportFileName(file.name);
+    } catch (err) {
+      // SheetImportError messages are written for the user; anything else is
+      // surfaced verbatim rather than swallowed into a generic failure.
+      setImportFileError(String((err as Error)?.message || err));
+    }
+  }
+
   async function handleImport() {
-    // Parse CSV-style paste: one row per line, headers in first line
-    if (!importText.trim()) return;
+    // File wins when one is loaded; otherwise parse the pasted text.
+    //
+    // The paste path used to be `line.split(",")`, which corrupted any row
+    // containing a quoted comma — "Smith, Jane" became two columns and shifted
+    // every field after it. Both paths now share the RFC4180 parser in
+    // lib/sheetImport.ts.
+    const rows = importFileRows
+      ?? gridToRows(parseDelimited(importText)).map(toContact).filter((c) => c.email || c.first_name);
+    if (!rows.length) return;
+
     setSaving(true);
     try {
-      const lines = importText.trim().split(/\r?\n/);
-      const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
-      const rows = lines.slice(1).map(line => {
-        const cells = line.split(",").map(c => c.trim());
-        const obj: Record<string, string> = {};
-        headers.forEach((h, i) => { obj[h] = cells[i] || ""; });
-        return obj;
-      });
       let count = 0;
+      const failures: string[] = [];
       for (const r of rows) {
-        if (!r.email && !r.first_name) continue;
-        await post("/api/v1/contacts", {
-          first_name: r.first_name || r["first name"] || "",
-          last_name: r.last_name || r["last name"] || "",
-          email: r.email || "",
-          phone: r.phone || "",
-          company: r.company || "",
-          title: r.title || "",
-        });
-        count++;
+        try {
+          await post("/api/v1/contacts", r);
+          count++;
+        } catch (err) {
+          // Don't let one bad row abort the whole import — collect and report.
+          failures.push(`${r.email || r.first_name}: ${String((err as Error)?.message || err).slice(0, 80)}`);
+        }
       }
       setDrawer(null);
       setImportText("");
-      alert(`Imported ${count} contacts`);
+      setImportFileRows(null);
+      setImportFileName("");
       await load();
+      alert(
+        failures.length
+          ? `Imported ${count} of ${rows.length} contacts.\n\n${failures.length} didn't import:\n${failures.slice(0, 5).join("\n")}`
+          : `Imported ${count} contact${count === 1 ? "" : "s"}`,
+      );
     } catch (err) { setError(err); }
     finally { setSaving(false); }
   }
@@ -469,11 +520,25 @@ export function SparkContactsPage() {
             >
               <Columns3 className="h-3.5 w-3.5" /> Kanban
             </button>
+            {/* Companies as a VIEW of your people, not a separate destination.
+                Same records, grouped by the business they belong to — which is
+                why it sits on this toggle rather than in the nav. */}
+            <button
+              type="button"
+              data-tour="contacts-companies-tab"
+              onClick={() => setView("companies")}
+              className={`px-2 py-1 text-xs flex items-center gap-1 rounded ${
+                view === "companies" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
+              }`}
+              title="Companies — the businesses your contacts belong to"
+            >
+              <Building2 className="h-3.5 w-3.5" /> Companies
+            </button>
           </div>
           <button onClick={handleExport} className="spark-btn spark-btn-secondary" disabled={!contacts.length}>
             <Download className="h-3.5 w-3.5" /> Export
           </button>
-          <button onClick={() => setDrawer("import")} className="spark-btn spark-btn-secondary">
+          <button data-tour="contact-import" onClick={() => setDrawer("import")} className="spark-btn spark-btn-secondary">
             <Upload className="h-3.5 w-3.5" /> Import
           </button>
           <button data-tour="new-contact" onClick={() => setDrawer("add")} className="spark-btn spark-btn-accent">
@@ -560,6 +625,18 @@ export function SparkContactsPage() {
                       Create
                     </button>
                   </div>
+                  {/* Renaming/removing tags is rare enough to live one click
+                      away rather than in the nav — but it has to be reachable
+                      from here, or hiding the Tags page would strand the
+                      taxonomy. */}
+                  <button
+                    type="button"
+                    data-tour="manage-tags"
+                    onClick={() => { setTagMenuOpen(false); navigate("/app/services/spark_tags"); }}
+                    className="mt-2 w-full rounded px-2 py-1 text-left text-[11px] text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                  >
+                    Manage all tags →
+                  </button>
                 </div>
               </div>
             )}
@@ -584,7 +661,12 @@ export function SparkContactsPage() {
           ignores the list filter pills + search box (its own preset-driven
           server query handles grouping) and clicking a card opens the same
           SparkContactModal the list view uses. */}
-      {view === "kanban" ? (
+      {view === "companies" ? (
+        /* Companies view — the SparkAccountsPage surface, rendered inside
+           Contacts instead of as its own nav destination. Same component, so
+           there is one implementation, not a copy that drifts. */
+        <SparkAccountsPage embedded />
+      ) : view === "kanban" ? (
         <SparkLifecycleKanban
           onOpenContact={(id) => {
             const c = contacts.find((x) => x.id === id);
@@ -606,7 +688,11 @@ export function SparkContactsPage() {
           columns={columns}
           totalCount={filtered.length}
           rowActions={c => (
-            <button onClick={() => { setDetail(c); setDrawer("detail"); }} className="spark-btn-icon" title="View details">
+            // The hook goes ONLY on the contact created in this session, so the
+            // walkthrough opens the record it just made — never "whatever is in
+            // the first row", which would walk the user into deleting a real
+            // customer if the create had failed.
+            <button data-tour={c.id === justCreatedId ? "contact-open" : undefined} onClick={() => { setDetail(c); setDrawer("detail"); }} className="spark-btn-icon" title="View details">
               <MoreHorizontal className="h-4 w-4" />
             </button>
           )}
@@ -661,22 +747,68 @@ export function SparkContactsPage() {
         </div>
       </SparkDrawer>
 
-      {/* Import CSV drawer */}
+      {/* Import drawer — replaces the standalone Import (CSV) nav page.
+          Brandon 2026-07-27: "no longer needed this is a feature already
+          available in the contacts section. Also, need to expand to xlsx
+          file format in the contacts button." The old page's one advantage
+          was a file picker; that's here now, plus xlsx. */}
       <SparkDrawer
         open={drawer === "import"}
         onClose={() => setDrawer(null)}
         title="Import contacts"
-        subtitle="Paste CSV with headers, or download the template"
+        subtitle="Upload a spreadsheet, or paste your rows"
         width="wide"
         footer={
           <>
             <button onClick={() => setDrawer(null)} className="spark-btn spark-btn-secondary">Cancel</button>
-            <button onClick={handleImport} disabled={saving || !importText.trim()} className="spark-btn spark-btn-primary">
-              {saving ? "Importing…" : "Import"}
+            <button
+              onClick={handleImport}
+              disabled={saving || (!importText.trim() && !importFileRows)}
+              className="spark-btn spark-btn-primary"
+            >
+              {saving ? "Importing…" : importFileRows ? `Import ${importFileRows.length}` : "Import"}
             </button>
           </>
         }
       >
+        {/* File upload — the primary path. Most people have a file, not text. */}
+        <div className="spark-field">
+          <label className="spark-field-label">Upload a file</label>
+          <p className="text-[11px] text-slate-500 mb-2">
+            Excel (<code className="bg-slate-100 px-1 rounded text-[10px]">.xlsx</code>) or
+            <code className="bg-slate-100 px-1 rounded text-[10px] ml-1">.csv</code>. We read the first
+            sheet and match your column names automatically — "First Name", "E-mail" and
+            "Given Name" all work.
+          </p>
+          <input
+            data-tour="contact-import-file"
+            type="file"
+            accept=".csv,.tsv,.xlsx,text/csv"
+            onChange={handleImportFile}
+            className="block w-full text-xs text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-[#EF6C33] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-[#d95f2b]"
+          />
+          {importFileError && (
+            <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1.5 text-[11px] text-rose-700">
+              {importFileError}
+            </p>
+          )}
+          {importFileRows && (
+            <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-[11px] text-emerald-800">
+              <strong>{importFileRows.length}</strong> contact{importFileRows.length === 1 ? "" : "s"} ready
+              from <strong>{importFileName}</strong>
+              {importFileRows[0] && (
+                <span className="block mt-0.5 text-emerald-700">
+                  First row: {importFileRows[0].first_name || "—"} {importFileRows[0].last_name || ""} · {importFileRows[0].email || "no email"}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="my-4 flex items-center gap-3 text-[10px] uppercase tracking-wide text-slate-400">
+          <span className="h-px flex-1 bg-slate-200" /> or paste <span className="h-px flex-1 bg-slate-200" />
+        </div>
+
         <div className="spark-field">
           <label className="spark-field-label">CSV data</label>
           <p className="text-[11px] text-slate-500 mb-2">

@@ -1,129 +1,96 @@
-// ArgusHealthPage — v9.0 ARGUS IA Insights · Health page.
+// ArgusHealthPage — v13.0 (Brandon 2026-07-25 model).
 //
-// Per spec §6.1: 4 gauges (Business Pulse, ARGUS Platform Score, Trend
-// Score, Intelligence Score) + active-products indicator + 2 bar charts
-// (Trend Breakdown 4 bars + Intelligence Breakdown 5 bars).
-//
-// ARGUS Platform Score = Trend 50% + Intelligence 50% (no cross-platform
-// sub-score — cross-platform is the whole product).
-import { useEffect, useMemo, useState } from "react";
-import { useAccessToken } from "../../auth/useAccessToken";
+// Health = the gauge summary of the SAME builders the ARGUS Trends and
+// Intelligence pages render, so the gauges can never disagree with the pages
+// they link to:
+//   Trend Score        = roll-up of the ARGUS trend dashboards (cross-platform
+//                        overview, customer journey, automation health)
+//   Intelligence Score = roll-up of the business-question mirror dashboards
+//                        (Revenue Journey, Platform Connectivity & Data Quality)
+//   Platform Score     = 50/50 Trend + Intelligence (LOCKED rule, 2026-06-21)
+//   Business Pulse     = client-side roll-up across ARION/SPARK/OLIVER —
+//                        reverts to platform-api /argus/business-pulse once
+//                        the monthly snapshot jobs land.
+import { useMemo } from "react";
 import { useAppState } from "../../app/AppState";
 import { IAInsightsHeader } from "../../components/iainsights/IAInsightsHeader";
-import { bandFromScore, type IAInsightsHeaderData } from "../../components/iainsights/types";
+import type { IAInsightsHeaderData } from "../../components/iainsights/types";
+import { buildArionDashboards } from "../../analytics/arionDashboards";
+import { demoArionMetricsClient } from "../../analytics/arionDemoClient";
+import { buildSparkDashboards, demoSparkMetrics } from "../../analytics/sparkDashboards";
+import { buildOliverDashboards, demoOliverMetrics } from "../../analytics/oliverDashboards";
+import { buildArgusDashboards, demoArgusMetrics, type PlatformRollup } from "../../analytics/argusDashboards";
+import { buildIntelligenceMirror, ARGUS_MIRROR } from "../../analytics/intelligenceMirror";
+import { businessPulse, type DashboardScore } from "../../analytics/scoring";
+import { platformHealth, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
+import { useArionInsightsPayload } from "../../hooks/useArionInsightsPayload";
+import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 
-interface BusinessPulse {
-  pulse: number | null;
-  previous_pulse: number | null;
-  components: { arion: number | null; spark: number | null; oliver: number | null };
-  prior_components: { arion: number | null; spark: number | null; oliver: number | null };
-  weights: { arion: number; spark: number; oliver: number };
-}
-
-const ARGUS_TRENDS = [
-  { key: "automation_health", label: "Automation Health" },
-  { key: "event_flow",        label: "Event Flow" },
-  { key: "workflow_perf",     label: "Workflow Performance" },
-  { key: "trigger_chains",    label: "Cross-Product Trigger Chains" },
-];
-
-const ARGUS_INTEL = [
-  { key: "connectivity_health", label: "Platform Connectivity Health" },
-  { key: "automation_roi",      label: "Automation ROI" },
-  { key: "anomaly_detection",   label: "Event Volume Anomaly Detection" },
-  { key: "data_quality",        label: "Cross-Platform Data Quality" },
-  { key: "workflow_opt",        label: "Workflow Optimisation" },
-];
+const TRENDS_ROUTE = "/app/services/argus_trends";
+const INTEL_ROUTE = "/app/services/argus_cross_platform";
 
 export function ArgusHealthPage() {
   const { activeTenantId } = useAppState();
-  const { getToken } = useAccessToken();
-  const [pulse, setPulse] = useState<BusinessPulse | null>(null);
+  const arionPayload = useArionInsightsPayload();
+  const sparkPayload = useProductInsightsPayload("spark");
+  const oliverPayload = useProductInsightsPayload("oliver");
 
-  useEffect(() => {
-    if (!activeTenantId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const token = await getToken();
-        const platformBase = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string)?.replace(/\/$/, "");
-        if (!platformBase) return;
-        const res = await globalThis.fetch(`${platformBase}/argus/business-pulse`, {
-          headers: { Authorization: `Bearer ${token.accessToken}`, "x-tenant-key": activeTenantId },
-        });
-        if (res.ok && !cancelled) setPulse((await res.json())?.data || null);
-      } catch { /* swallow */ }
-    })();
-    return () => { cancelled = true; };
-  }, [activeTenantId, getToken]);
+  const { headerData, activeProducts } = useMemo(() => {
+    const seed = activeTenantId || "argus";
 
-  const data: IAInsightsHeaderData = useMemo(() => {
-    const pulseScore = pulse?.pulse ?? 0;
-    const trendScore = pulseScore;  // ARGUS Trend = average of trend reports — placeholder uses pulse
-    const intelScore = 0;            // Intelligence locked v2
-    const platformScore = Math.round((trendScore * 0.5) + (intelScore * 0.5));
-    return {
+    // Same per-platform roll-up ArgusTrendsPage feeds the cross-platform view.
+    const rollup = (label: string, key: string, ds: DashboardScore[]): PlatformRollup => {
+      const moves = ds.map((d) => d.movementPct).filter((v): v is number => v != null);
+      return {
+        key, label, dashboards: ds,
+        score: businessPulse(ds.map((d) => d.score)),
+        movementPct: moves.length ? moves.reduce((s, v) => s + v, 0) / moves.length : null,
+      };
+    };
+    const platforms: PlatformRollup[] = [
+      rollup("ARION", "arion", buildArionDashboards(arionPayload || demoArionMetricsClient(seed))),
+      rollup("SPARK", "spark", buildSparkDashboards(sparkPayload || demoSparkMetrics(seed))),
+      rollup("OLIVER", "oliver", buildOliverDashboards(oliverPayload || demoOliverMetrics(seed))),
+    ];
+
+    const argusPayload = demoArgusMetrics(seed);
+    const trendDs = buildArgusDashboards(argusPayload, platforms);
+    const intelDs = buildIntelligenceMirror(argusPayload, ARGUS_MIRROR).dashboards;
+    const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE);
+    const bp = demoBusinessPulse(seed, { arionPayload, sparkPayload, oliverPayload });
+
+    const headerData: IAInsightsHeaderData = {
       product: "argus",
-      overall: {
-        score: pulseScore,
-        previousScore: pulse?.previous_pulse ?? null,
-        band: bandFromScore(pulseScore),
-        state: pulseScore > 0 ? "ok" : "insufficient_data",
-        message: "Composite of all active Platform Scores.",
-      },
-      platform: {
-        score: platformScore,
-        band: bandFromScore(platformScore),
-        state: pulseScore > 0 ? "ok" : "insufficient_data",
-        message: "ARGUS Platform Score = Trend 50% + Intelligence 50%.",
-      },
-      trend: {
-        score: trendScore,
-        band: bandFromScore(trendScore),
-        state: trendScore > 0 ? "ok" : "insufficient_data",
-        message: "Composite of 4 ARGUS Trend reports — Automation Health, Event Flow, Workflow Performance, Cross-Product Trigger Chains.",
-      },
-      intelligence: {
-        score: intelScore,
-        band: "unknown",
-        state: "locked",
-        message: "v2 — unlocks after 90 days of platform_events history.",
-      },
-      trendBreakdown: ARGUS_TRENDS.map((t) => ({
-        key: t.key,
-        label: t.label,
-        score: 0,
-        band: "unknown" as const,
-        locked: t.key === "workflow_perf" || t.key === "trigger_chains",
-        lockReason: t.key === "workflow_perf" || t.key === "trigger_chains" ? "Level 2 ARGUS tables — post-launch" : undefined,
-        reportRoute: "/app/services/argus_trends",
-      })),
-      intelligenceBreakdown: ARGUS_INTEL.map((i) => ({
-        key: i.key,
-        label: i.label,
-        score: 0,
-        band: "unknown" as const,
-        locked: true,
-        lockReason: "v2 — 90 days history minimum",
-        reportRoute: "/app/services/argus_intelligence",
-      })),
+      overall: gaugeOf(bp.pulse, bp.prior, {
+        message: "Composite of all active Platform Scores — ARION, SPARK and OLIVER combined.",
+      }),
+      platform: gaugeOf(h.platformScore, h.platformPrior, { message: "50/50 Trend + Intelligence." }),
+      trend: gaugeOf(h.trendScore, h.trendPrior, { drillTo: TRENDS_ROUTE }),
+      intelligence: gaugeOf(h.intelScore, h.intelPrior, {
+        message: "Modelled: the revenue journey end to end, and the connectivity that feeds it.",
+        drillTo: INTEL_ROUTE,
+      }),
+      trendBreakdown: h.trendBreakdown,
+      intelligenceBreakdown: h.intelligenceBreakdown,
       banners: [
         {
           severity: "info" as const,
-          message: "ARGUS is the cross-platform intelligence layer. Health page summarises all active product scores — drill into Trends, Intelligence, or Cross-Platform for detail.",
+          message: "ARGUS is the cross-platform intelligence layer. Health summarises every active product — drill into Trends or Intelligence for the full dashboards and detail reports.",
         },
       ],
       meta: { generatedAt: new Date().toISOString(), tier: "pro" as const },
     };
-  }, [pulse]);
 
-  // ARGUS gets the active-products indicator instead of the 5th gauge.
-  const activeProducts = useMemo(() => ([
-    { key: "arion" as const, active: (pulse?.components?.arion ?? null) != null, score: pulse?.components?.arion ?? null },
-    { key: "spark" as const, active: (pulse?.components?.spark ?? null) != null, score: pulse?.components?.spark ?? null },
-    { key: "oliver" as const, active: (pulse?.components?.oliver ?? null) != null, score: pulse?.components?.oliver ?? null },
-    { key: "stella" as const, active: false, score: null },  // STELLA not yet shipped
-  ]), [pulse]);
+    // ARGUS gets the active-products indicator instead of the 5th gauge.
+    const activeProducts = [
+      { key: "arion" as const, active: bp.components.arion != null, score: bp.components.arion },
+      { key: "spark" as const, active: bp.components.spark != null, score: bp.components.spark },
+      { key: "oliver" as const, active: bp.components.oliver != null, score: bp.components.oliver },
+      { key: "stella" as const, active: false, score: null },  // STELLA not yet shipped
+    ];
+
+    return { headerData, activeProducts };
+  }, [activeTenantId, arionPayload, sparkPayload, oliverPayload]);
 
   return (
     <div className="p-4 max-w-7xl mx-auto">
@@ -131,7 +98,7 @@ export function ArgusHealthPage() {
         <h1 className="text-2xl font-bold text-slate-900">ARGUS IA Insights — Health</h1>
         <p className="text-sm text-slate-500 mt-0.5">Cross-platform intelligence layer. Aggregates every active Platform Score into the Business Pulse.</p>
       </div>
-      <IAInsightsHeader data={data} mode="argus" activeProducts={activeProducts} />
+      <IAInsightsHeader data={headerData} mode="argus" activeProducts={activeProducts} />
     </div>
   );
 }

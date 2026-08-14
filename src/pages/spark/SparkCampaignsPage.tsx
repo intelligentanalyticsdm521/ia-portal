@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { EmbeddedReportChart, type ReportSeriesResponse } from "../../components/reporting/EmbeddedReportChart";
 import { SparkCampaignComposerModal } from "../../components/spark/SparkCampaignComposerModal";
+
+/** Open rate from the campaign's own counters. Shows "—" only when nothing
+ *  has actually been sent yet, rather than for every row. */
+function openRate(c: { total_sent?: number; total_opened?: number }): string {
+  const sent = c.total_sent ?? 0;
+  if (!sent) return "—";
+  return `${Math.round(((c.total_opened ?? 0) / sent) * 100)}%`;
+}
 
 interface Campaign {
   id: number;
@@ -12,10 +21,14 @@ interface Campaign {
   // worked.
   type: "email" | "sms";
   status: string;
-  // List endpoint returns recipient_count only; opens/sent come from
-  // /campaigns/:id/stats. Don't reference total_recipients / total_sent /
-  // total_opened on a list row — those are undefined and would crash render.
+  // The list endpoint SELECTs c.*, so the campaign counters DO come back on
+  // every row (verified 2026-07-28 against the live endpoint). An older
+  // comment here claimed otherwise, which is why the Open Rate column was
+  // hardcoded to an em-dash and never showed a number.
   recipient_count?: number;
+  total_sent?: number;
+  total_opened?: number;
+  total_clicked?: number;
   sent_at: string | null;
   created_at: string;
 }
@@ -33,6 +46,17 @@ export function SparkCampaignsPage() {
   // re-opened to refine or send. editCampaignId drives the modal — null
   // when creating, set when editing/viewing an existing campaign.
   const [editCampaignId, setEditCampaignId] = useState<number | null>(null);
+  /**
+   * Id of the campaign created in this session, used to mark its row for the
+   * walkthrough.
+   *
+   * The first attempt pinned the walkthrough to a campaign NAMED "Test
+   * campaign", which broke the moment Brandon typed a different name — the
+   * step just reported "I can't find that control". Keying on the id the
+   * composer hands back works whatever the user calls it, and still can't
+   * point at a record they didn't just make.
+   */
+  const [justCreatedId, setJustCreatedId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -88,14 +112,17 @@ export function SparkCampaignsPage() {
         {/* v7.2 — Embedded Campaign Performance from the IA Insights Trends
             engine. Date toggles + "View full report" link to the full
             Campaign Performance trend on the SPARK Trends page. */}
+        {/* compact: this page exists to work your campaign LIST — the chart is
+            context. Full size pushed the table below the fold. */}
         <EmbeddedReportChart
           title="Campaign performance"
-          subtitle={`Daily engagement for ${tab.toUpperCase()} campaigns. Toggle date range or open the full IA Insights report.`}
+          subtitle={`Daily engagement for ${tab.toUpperCase()} campaigns`}
           fetcher={fetchPerf}
           metrics={perfMetrics}
           fullReportRoute="/app/services/spark_ia_insights_trends"
           accent="#EF6C33"
           initialRange="last30"
+          compact
         />
 
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -110,13 +137,25 @@ export function SparkCampaignsPage() {
               </button>
             ))}
           </div>
-          <button
-            data-tour="new-campaign"
-            onClick={() => { setEditCampaignId(null); setComposerOpen(true); }}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            + New campaign
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Templates is a campaign tool, not a top-level destination — the
+                map moves it out of nav and opens it from here. Without this
+                link, hiding the nav item would strand the library. */}
+            <Link
+              to="/app/services/spark_templates"
+              data-tour="campaign-templates"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Templates
+            </Link>
+            <button
+              data-tour="new-campaign"
+              onClick={() => { setEditCampaignId(null); setComposerOpen(true); }}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              + New campaign
+            </button>
+          </div>
         </div>
 
         <div className="rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden">
@@ -134,6 +173,12 @@ export function SparkCampaignsPage() {
               {filtered.map((c) => (
                 <tr
                   key={c.id}
+                  // Walkthrough hook: ONLY the draft this session just created.
+                  // Not "the first draft" (which could be someone else's work)
+                  // and not name-matched (which broke when the user typed their
+                  // own name). If the save failed there's no marked row, so the
+                  // runner stops rather than pointing at the wrong campaign.
+                  data-tour={c.status === "draft" && c.id === justCreatedId ? "campaign-open" : undefined}
                   onClick={() => { setEditCampaignId(c.id); setComposerOpen(true); }}
                   className="hover:bg-gray-50 cursor-pointer"
                   title={c.status === "draft" ? "Open to edit + send" : "Open to view"}
@@ -141,7 +186,7 @@ export function SparkCampaignsPage() {
                   <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
                   <td className="px-4 py-3">{statusBadge(c.status)}</td>
                   <td className="px-4 py-3 text-slate-600">{(c.recipient_count ?? 0).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-slate-600">—</td>
+                  <td className="px-4 py-3 text-slate-600" data-tour="campaign-open-rate">{openRate(c)}</td>
                   <td className="px-4 py-3 text-slate-400 text-xs">{c.sent_at ? new Date(c.sent_at).toLocaleDateString() : "—"}</td>
                 </tr>
               ))}
@@ -160,7 +205,15 @@ export function SparkCampaignsPage() {
       <SparkCampaignComposerModal
         open={composerOpen}
         onClose={() => { setComposerOpen(false); setEditCampaignId(null); }}
-        onCreated={() => { setComposerOpen(false); setEditCampaignId(null); load(); }}
+        onCreated={(id) => {
+          // Remember the new draft's id so its row carries the walkthrough
+          // hook. Deleting it clears the mark (the row is gone), and editing
+          // an existing draft passes its own id, which is harmless.
+          if (id) setJustCreatedId(id);
+          setComposerOpen(false);
+          setEditCampaignId(null);
+          load();
+        }}
         editCampaignId={editCampaignId}
       />
     </SparkPageShell>

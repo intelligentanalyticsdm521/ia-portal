@@ -15,13 +15,17 @@
 // Persistence: localStorage["tour:completed:${tourId}"] = "1". A tour that
 // has been completed (or skipped) won't auto-launch again, but the user can
 // re-launch from the header "?" menu.
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { X, ChevronRight, ChevronLeft, Play } from "lucide-react";
 import { useSparkApi } from "../hooks/useSparkApi";
+import { placeTooltip, type Placement } from "./walkthroughs/placeTooltip";
 
 export interface TourStep {
   targetSelector?: string;             // CSS selector; omit for centered hero step
+  /** Curriculum section this step belongs to — shown in the tooltip header
+   *  so the user always knows WHERE they are, not just how far along. */
+  sectionLabel?: string;
   title: string;
   body: string;
   placement?: "top" | "bottom" | "left" | "right" | "center";
@@ -67,6 +71,9 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
   const [stepIdx, setStepIdx] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const [ready, setReady] = useState(false);
+  /** Measured card height — see tooltipStyle; an assumed one was the bug. */
+  const cardEl = useRef<HTMLDivElement | null>(null);
+  const [cardH, setCardH] = useState(0);
   const accent = tour.accent || "#1A3A4A";
 
   const step = tour.steps[stepIdx];
@@ -104,6 +111,10 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
     if (inferredRoute && location.pathname !== inferredRoute) return;
 
     let cancelled = false;
+    // Poll with setTimeout, not requestAnimationFrame: rAF does not fire at
+    // all while the tab is hidden, so a tour opened and then backgrounded
+    // would freeze mid-measure and never render its tooltip. setTimeout is
+    // throttled when hidden but still fires, so the tour survives a tab switch.
     let raf = 0;
     let reMeasureTimer = 0;
     const start = performance.now();
@@ -127,7 +138,7 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
       if (!el) {
         // Lazy-loaded chunks can take a moment; keep trying up to 4s.
         if (elapsed < 4000) {
-          raf = requestAnimationFrame(measure);
+          raf = window.setTimeout(measure, 16);
           return;
         }
         // #256 2026-07-04 FIX: When target selector fails to appear, render
@@ -143,7 +154,7 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
         return;
       }
       if (elapsed < minWait) {
-        raf = requestAnimationFrame(measure);
+        raf = window.setTimeout(measure, 16);
         return;
       }
       const initialRect = el.getBoundingClientRect();
@@ -179,7 +190,7 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
     window.addEventListener("scroll", onResize, true);
     return () => {
       cancelled = true;
-      cancelAnimationFrame(raf);
+      clearTimeout(raf);
       clearTimeout(reMeasureTimer);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("scroll", onResize, true);
@@ -216,26 +227,31 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
 
   if (!open || !step) return null;
 
-  // Tooltip position
-  const tooltipStyle: React.CSSProperties = (() => {
-    const pad = 12;
-    const w = 320;
-    const h = 180; // approx
-    if (!targetRect || step.placement === "center") {
-      return { left: `calc(50% - ${w / 2}px)`, top: `calc(50% - ${h / 2}px)`, width: w };
-    }
-    const placement = step.placement || (targetRect.top > window.innerHeight / 2 ? "top" : "bottom");
-    let top = targetRect.top;
-    let left = targetRect.left;
-    if (placement === "bottom") { top = targetRect.bottom + pad; left = targetRect.left; }
-    else if (placement === "top") { top = targetRect.top - h - pad; left = targetRect.left; }
-    else if (placement === "right") { top = targetRect.top; left = targetRect.right + pad; }
-    else if (placement === "left") { top = targetRect.top; left = targetRect.left - w - pad; }
-    // Keep on screen
-    left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
-    top = Math.max(8, Math.min(top, window.innerHeight - h - 8));
-    return { top, left, width: w };
-  })();
+  // Measure the rendered card, then let the placement maths re-run with the
+  // real height. Without this the card can sit on top of what it explains.
+  useLayoutEffect(() => {
+    if (!ready) return;
+    const h = cardEl.current?.offsetHeight;
+    if (h && Math.abs(h - cardH) > 1) setCardH(h);
+  }, [ready, stepIdx, cardH, step?.title, step?.body]);
+
+  // Tooltip position.
+  //
+  // The height used to be `180; // approx`, and the approximation was the bug:
+  // real tour cards run 220-300px with a title, two to four sentences of
+  // teaching copy and a footer, so placement:"top" put the card's top 180px
+  // above the target and the surplus hung down over it — hiding the exact
+  // control the step was explaining. Now we measure the card (see cardH) and
+  // let placeTooltip pick a side that stays clear of the target.
+  const w = 320;
+  const tooltipStyle: React.CSSProperties =
+    placeTooltip({
+      targetRect,
+      width: w,
+      height: cardH || 200,
+      placement: step.placement as Placement | undefined,
+    })
+    ?? { left: `calc(50% - ${w / 2}px)`, top: `calc(50% - ${(cardH || 200) / 2}px)`, width: w };
 
   // Spotlight cut-out via box-shadow (covers entire viewport with a hole).
   const spotlightStyle: React.CSSProperties = targetRect ? {
@@ -263,25 +279,54 @@ export function GuidedTour({ tour, open, onClose, persistOnFinish = true }: Guid
       {ready && (
         <div
           className="fixed z-[9999] rounded-xl bg-white shadow-2xl border-2"
+          ref={cardEl}
           style={{ ...tooltipStyle, borderColor: accent }}
         >
+          {/* Header — Brandon 2026-07-27: "a small box is fine as long as we
+              have a header section stating what it is." Product name on its
+              own line, the section you're in beneath it, and a progress bar
+              so the length of the tour is visible rather than implied. */}
           <div
-            className="flex items-center justify-between rounded-t-lg px-3 py-2"
+            className="rounded-t-lg px-3 pt-2 pb-2"
             style={{ background: accent, color: accent === "#FEC82C" ? "#1A3A4A" : "#fff" }}
           >
-            <div className="flex items-center gap-2">
-              <Play className="h-3.5 w-3.5" />
-              <span className="text-[10px] font-bold uppercase tracking-wider">
-                {tour.title} · {stepIdx + 1} of {tour.steps.length}
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <Play className="h-3 w-3 flex-shrink-0" />
+                  <span className="text-[11px] font-bold tracking-wide truncate">{tour.title}</span>
+                </div>
+                {step.sectionLabel && (
+                  <div className="text-[10px] opacity-80 mt-0.5 truncate">{step.sectionLabel}</div>
+                )}
+              </div>
+              <button onClick={finish} className="rounded p-0.5 hover:bg-black/10 flex-shrink-0" aria-label="Skip tour">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="mt-1.5 flex items-center gap-2">
+              <div className="h-1 flex-1 rounded-full bg-black/20 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-white/90 transition-all duration-300"
+                  style={{ width: `${((stepIdx + 1) / tour.steps.length) * 100}%` }}
+                />
+              </div>
+              <span className="text-[10px] font-semibold tabular-nums flex-shrink-0">
+                {stepIdx + 1}/{tour.steps.length}
               </span>
             </div>
-            <button onClick={finish} className="rounded p-0.5 hover:bg-black/10" aria-label="Skip tour">
-              <X className="h-3.5 w-3.5" />
-            </button>
           </div>
           <div className="p-4">
             <div className="text-sm font-bold text-slate-900 mb-1.5">{step.title}</div>
             <div className="text-xs text-slate-600 leading-relaxed">{step.body}</div>
+            {!targetRect && step.placement !== "center" && (
+              // Honest fallback: the thing this step describes isn't on screen.
+              // Better to say so than to leave the user hunting for a
+              // highlight that never appears.
+              <div className="mt-2 rounded bg-amber-50 border border-amber-200 px-2 py-1 text-[10px] text-amber-800">
+                This one isn't visible on your screen right now — the description above still applies.
+              </div>
+            )}
           </div>
           <div className="flex items-center justify-between border-t border-slate-100 px-3 py-2">
             <button onClick={finish} className="text-[11px] text-slate-500 hover:text-slate-700">
@@ -465,13 +510,9 @@ export const OLIVER_QUICK_TOUR: TourDef = {
       targetSelector: "a[href='/app/services/oliver_ia_insights_trends']",
       placement: "right",
     },
-    // ── Reports ─────────────────────────────────────────────────────────────
-    {
-      title: "Reports",
-      body: "Pre-built reports across jobs, revenue, workers, and customers. Export to CSV or schedule by email.",
-      targetSelector: "a[href='/app/services/oliver_reports']",
-      placement: "right",
-    },
+    // ── Activity ────────────────────────────────────────────────────────────
+    // 2026-07-25: the old "Reports" nav item was removed (dead navigation —
+    // the page never had a working backend). Reporting lives in IA Insights.
     {
       title: "Activity Log",
       body: "Every meaningful action by every user — audit trail for compliance and troubleshooting.",
@@ -938,10 +979,10 @@ export function sectionForStep(step: TourStep): string {
   return m ? m[1] : "General";
 }
 
-/** Human-readable section label — prefers step.sectionLabel from derivedTours. */
+/** Human-readable section label. Now a first-class TourStep field (journeys
+ *  set it explicitly; derivedTours still appends it the same way). */
 export function sectionLabelForStep(step: TourStep): string | undefined {
-  // @ts-expect-error sectionLabel is a runtime addition from derivedTours
-  return step.sectionLabel as string | undefined;
+  return step.sectionLabel;
 }
 
 /**

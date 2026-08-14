@@ -77,17 +77,27 @@ function deriveProduct(pathname: string): ProductKey {
   // intake form player), which conceptually belongs to the same surface.
   if (/^\/app\/consulting(\/|$)/.test(pathname)) return "consulting";
 
+  // Product sub-routes that AREN'T /app/services/<key>.
+  //
+  // Brandon 2026-08-06: "OLIVER templates is working but for some reason it's
+  // closing the nav page." Quotes & Proposals templates live at
+  // /app/oliver/quotes/templates, which doesn't match the /app/services/<key>
+  // pattern below — so this function fell through to "overview" and the whole
+  // OLIVER SubNav disappeared while you were still inside OLIVER.
+  if (/^\/app\/oliver(\/|$)/.test(pathname)) return "oliver";
+
   // F-86 — Settings-class URLs share the product prefix (oliver_settings,
   // spark_account_profile, etc.) but should activate the Settings SubNav,
   // not the product's daily-work SubNav. Check the SETTINGS_KEYS set first.
   const keyMatch = pathname.match(/\/app\/services\/([a-z0-9_]+)/);
   if (keyMatch && SETTINGS_KEYS.has(keyMatch[1])) return "settings";
 
-  // My Brand top-level slot REMOVED 2026-06-22 — any lingering my_brand_*
-  // links (from the page files we kept on disk for the Q4 build) fall back
-  // to "overview" through the map below, which is the desired behaviour:
-  // they're no longer reachable from nav and pointing at them shouldn't
-  // try to activate a ProductKey that no longer exists.
+  // IA re-cut 2026-07-21 — My Brand lives INSIDE ARION as a nav section.
+  // Every my_brand_* route must keep the ARION product active (SubNav
+  // mounted + rail icon lit); before this, the generic prefix regex below
+  // extracted "my" → no product → "overview" → the whole SubNav unmounted
+  // the moment you entered Image Studio (Brandon's "nav bar doesn't work").
+  if (keyMatch && keyMatch[1].startsWith("my_brand_")) return "arion";
 
   const match = pathname.match(/\/app\/services\/([a-z]+)_/);
   if (!match) return "overview";
@@ -195,16 +205,32 @@ export function AppShell() {
     [navigate, mobileNavOpen, effectiveIsFounder]
   );
 
-  // F-Client.Consulting (2026-06-29) — the CLIENT-facing /app/consulting/*
-  // surface supplies its own three-tab pill nav inside ClientConsultingLayout.
-  // Suppress the founder SubNav there so we don't double up on navigation
-  // chrome. Founder /app/admin/consulting/* still gets the founder SubNav.
+  // F-Client.Consulting — 2026-07-24 (Brandon): the client consulting surface
+  // gets THREE INDEPENDENT PAGES in the portal's own left SubNav — Service
+  // Requests / Deliverables / Projects — not a pill-tab strip on one page.
+  // (Replaces the 2026-06-29 pattern that suppressed the SubNav here and let
+  // ClientConsultingLayout render tabs.) Founder /app/admin/consulting/* still
+  // gets the founder SubNav.
   const onClientConsultingSurface = /^\/app\/consulting(\/|$)/.test(location.pathname);
   const rawSubNavConfig =
     activeProduct !== "overview" ? SUB_NAV_CONFIGS[activeProduct] : null;
+  const clientConsultingSubNav = useMemo<SubNavConfig>(() => ({
+    productName: "Consulting",
+    tagline: "Your work with Intelligent Analytics",
+    groups: [
+      {
+        label: "Consulting",
+        items: [
+          { key: "client_consulting_requests", label: "Service Requests", route: "/app/consulting/requests" },
+          { key: "client_consulting_deliverables", label: "Deliverables", route: "/app/consulting/deliverables" },
+          { key: "client_consulting_projects", label: "Projects", route: "/app/consulting/projects" },
+        ],
+      },
+    ],
+  }), []);
   const subNavConfig = useMemo(() => {
+    if (onClientConsultingSurface) return clientConsultingSubNav;
     if (!rawSubNavConfig) return null;
-    if (onClientConsultingSurface) return null;
     if (activeProduct === "oliver") {
       return applyOliverNavFilter(rawSubNavConfig, roleInfo.allowedServiceKeys);
     }

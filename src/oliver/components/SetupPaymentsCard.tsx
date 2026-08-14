@@ -32,9 +32,17 @@
 // Visibility: caller decides via the `show` prop. The OLIVER dashboard
 // only renders this when stripeStatus indicates charges_enabled is not
 // true.
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CreditCard, AlertCircle } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+
+// Mirrors feeBreakdown() in oliver-api lib/iaFee.js.
+interface FeeBreakdown {
+  tier: string;
+  stripe: { percent: number; flat: number; note: string };
+  ia: { percent: number; flat: number; cap: number | null; note: string };
+  blendedCard: { percent: number; flat: number; label: string };
+}
 
 interface ConnectStartResponse {
   url?: string;
@@ -63,8 +71,21 @@ function parseApiError(e: unknown): { status: number | null; body: ApiErrorBody 
 }
 
 export function SetupPaymentsCard() {
-  const { post } = useOliverApi();
+  const { post, get } = useOliverApi();
   const [pending, setPending] = useState<"express" | "standard" | null>(null);
+
+  // The tenant's REAL blended rate (Stripe + IA platform fee) for their tier.
+  // This card used to hardcode "2.9% + $0.30" and hand-wave the IA portion as
+  // "may add a small platform fee", which understated what the merchant
+  // actually pays. /tier-limits/my-fees resolves it from their subscription.
+  const [fees, setFees] = useState<FeeBreakdown | null>(null);
+  useEffect(() => {
+    let alive = true;
+    get("/tier-limits/my-fees")
+      .then((d) => { if (alive && d) setFees(d as FeeBreakdown); })
+      .catch(() => { /* non-fatal: fall back to the generic line below */ });
+    return () => { alive = false; };
+  }, [get]);
   // We track two error slots so users can see "Standard is unavailable"
   // without it bleeding into a separate Express failure.
   const [expressError, setExpressError] = useState<string | null>(null);
@@ -233,11 +254,20 @@ export function SetupPaymentsCard() {
           )}
 
           <div style={{ marginTop: 12, fontSize: 10, color: "#5A5A5A", lineHeight: 1.5 }}>
-            Standard Stripe processing fee 2.9% + $0.30 applies. Your OLIVER tier may add a small platform fee (see{" "}
+            {fees ? (
+              <>
+                Payment processing is{" "}
+                <strong style={{ color: "#2A2A2A" }}>{fees.blendedCard.label}</strong> on your{" "}
+                {fees.tier.charAt(0).toUpperCase() + fees.tier.slice(1)} plan.{" "}
+              </>
+            ) : (
+              <>Payment processing fees apply to each transaction. </>
+            )}
+            See{" "}
             <a href="/app/services/oliver_fees" style={{ color: "#1A7DB5", textDecoration: "none" }}>
-              Settings → Fees
-            </a>
-            ).
+              Fees &amp; Terms
+            </a>{" "}
+            for the full Stripe and Intelligent Analytics breakdown.
           </div>
         </div>
       </div>

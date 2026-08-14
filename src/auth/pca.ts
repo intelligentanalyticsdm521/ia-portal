@@ -100,7 +100,7 @@ async function ensureActiveAccount(msal: IPublicClientApplication, result?: Auth
  *
  * Only clears the interaction-tracking keys; real token cache is untouched.
  */
-function clearStaleInteractionFlags(): void {
+export function clearStaleInteractionFlags(): void {
   try {
     // MSAL tracks interaction state under keys like
     // `msal.<clientId>.interaction.status` and `msal.interaction.status`.
@@ -118,6 +118,55 @@ function clearStaleInteractionFlags(): void {
       for (const k of keys) storage.removeItem(k);
     }
   } catch { /* storage access denied — ignore */ }
+}
+
+/**
+ * Sign the user out — completely, with NO "pick an account to sign out of"
+ * chooser. Used by BOTH the account-menu Sign out and the idle auto-logout, so
+ * the two can never drift apart.
+ *
+ * 2026-08-06 — why the previous fix wasn't enough. We already passed `account`,
+ * which only tells MSAL whose LOCAL cache to drop; it does not tell Entra which
+ * server-side session to end, so Entra still rendered its account picker. The
+ * missing piece is `logoutHint`, which MSAL's own docs describe as:
+ *
+ *   "A string that specifies the account that is being logged out in order to
+ *    SKIP THE SERVER ACCOUNT PICKER on logout."
+ *
+ * Microsoft's guidance is to source it from the ID token's `login_hint` claim;
+ * for our Entra External ID local accounts that's the email, so we fall back to
+ * preferred_username / username when the optional claim isn't configured on the
+ * app registration.
+ *
+ * Also clears interaction flags first: if a user ever abandoned the old picker
+ * page, a stale `interaction_in_progress` would otherwise make this call throw
+ * and leave them wedged (that's what locked Brandon out previously).
+ */
+export function hardLogout(instance: IPublicClientApplication): Promise<void> {
+  const account =
+    instance.getActiveAccount() ?? instance.getAllAccounts()[0] ?? undefined;
+
+  const claims = (account?.idTokenClaims ?? {}) as Record<string, unknown>;
+  const logoutHint =
+    (typeof claims.login_hint === 'string' && claims.login_hint) ||
+    (typeof claims.preferred_username === 'string' && claims.preferred_username) ||
+    account?.username ||
+    undefined;
+
+  clearStaleInteractionFlags();
+
+  return instance
+    .logoutRedirect({
+      account,
+      logoutHint,
+      postLogoutRedirectUri: window.location.origin,
+    })
+    .catch(() => {
+      // Never strand the user on a half-signed-out screen: drop local state
+      // and bounce to the landing page.
+      try { instance.clearCache?.(); } catch { /* ignore */ }
+      window.location.assign('/');
+    });
 }
 
 /**

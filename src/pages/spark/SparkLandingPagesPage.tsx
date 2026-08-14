@@ -3,6 +3,7 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkTable } from "../../components/spark/SparkTable";
+import { SparkLandingPageEditor, type Block } from "../../components/spark/SparkLandingPageEditor";
 import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { Plus, FileText, Eye, Send, ExternalLink } from "lucide-react";
@@ -22,6 +23,9 @@ export function SparkLandingPagesPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [filter, setFilter] = useState("all");
   const [form, setForm] = useState({ slug: "", name: "", title: "" });
+  /** The page currently open in the section editor — this is what turns
+   *  "publish a placeholder" into "build a page". */
+  const [editing, setEditing] = useState<LandingPage | null>(null);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -59,7 +63,7 @@ export function SparkLandingPagesPage() {
   return (
     <SparkPageShell
       title="Landing Pages"
-      subtitle="Hosted landing pages with submission capture"
+      subtitle="Hosted landing pages with submission capture — click any page to build it"
       actions={
         <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
           <Plus className="h-3.5 w-3.5" /> New page
@@ -90,6 +94,7 @@ export function SparkLandingPagesPage() {
       <SparkTable<LandingPage>
         rows={filtered}
         getRowKey={p => p.id}
+        onRowClick={p => setEditing(p)}
         emptyState="No landing pages yet. Create your first one to start capturing leads."
         totalCount={filtered.length}
         columns={[
@@ -133,7 +138,7 @@ export function SparkLandingPagesPage() {
         onClose={() => setDrawerOpen(false)}
         product="spark"
         title="New landing page"
-        subtitle="Create a draft. Block editor coming in v2 — for now, the page is a placeholder you can publish + capture submissions on."
+        subtitle="Name it first — then you'll build the page itself (headline, copy, image, button, contact form)."
         size="info"
         footer={
           <>
@@ -158,6 +163,19 @@ export function SparkLandingPagesPage() {
           </div>
         </div>
       </IadmModal>
+
+      {/* Section editor — the thing that was missing. Row click opens it. */}
+      <SparkLandingPageEditor
+        open={!!editing}
+        page={editing}
+        publicUrl={editing?.published_url || null}
+        onClose={() => setEditing(null)}
+        onSave={async (blocks: Block[]) => {
+          if (!editing) return;
+          await put(`/api/v1/landing-pages/${editing.id}`, { blocks_json: blocks });
+          await load();
+        }}
+      />
     </SparkPageShell>
   );
 }

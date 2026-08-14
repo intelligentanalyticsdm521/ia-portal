@@ -1,4 +1,5 @@
 import React from 'react';
+import { GBP_ENABLED } from "../../../config/featureFlags";
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip } from 'chart.js';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import {
@@ -23,7 +24,7 @@ import { ConsultingUpsell } from '../../components/Ui';
 // Reach has been migrated to the library (26 conditional rules); other
 // reports still use the hardcoded short list below until their libraries
 // are built out.
-import { evaluateRules } from '../../../components/iainsights/insightRules';
+import { evaluateRules, type InsightPair } from '../../../components/iainsights/insightRules';
 import { VISIBILITY_RULES } from '../../../components/iainsights/arionVisibilityRules';
 import { AUDIENCE_RULES } from '../../../components/iainsights/arionAudienceRules';
 import { CONVERSION_RULES } from '../../../components/iainsights/arionConversionRules';
@@ -231,38 +232,46 @@ export function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpRe
     maxActions: 5,
   });
 
-  const insights: Record<string, { observations: string[]; actions: string[] }> = {
+  const insights: Record<string, { observations: string[]; actions: string[]; pairs?: InsightPair[] }> = {
     visibility: {
       observations: visibilityFired.observations,
       actions: visibilityFired.actions,
+      pairs: visibilityFired.pairs,
     },
     audience: {
       observations: audienceFired.observations,
       actions: audienceFired.actions,
+      pairs: audienceFired.pairs,
     },
     conversion: {
       observations: conversionFired.observations,
       actions: conversionFired.actions,
+      pairs: conversionFired.pairs,
     },
     search: {
       observations: searchFired.observations,
       actions: searchFired.actions,
+      pairs: searchFired.pairs,
     },
     content: {
       observations: contentFired.observations,
       actions: contentFired.actions,
+      pairs: contentFired.pairs,
     },
     presence: {
       observations: presenceFired.observations,
       actions: presenceFired.actions,
+      pairs: presenceFired.pairs,
     },
     tech: {
       observations: technicalFired.observations,
       actions: technicalFired.actions,
+      pairs: technicalFired.pairs,
     },
     local: {
       observations: localFired.observations,
       actions: localFired.actions,
+      pairs: localFired.pairs,
     },
   };
 
@@ -274,21 +283,69 @@ export function ArgusInsightBox({ reportKey, data: d, searchData, gbpData, gbpRe
         <span style={{ background: 'rgba(151,204,4,0.15)', color: '#97CC04', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 3 }}>ARGUS</span>
         <span style={{ color: '#D5E8F0', fontSize: 13 }}>Intelligence for intelligentanalyticsdm.com · Q1 2026</span>
       </div>
-      {ins.observations.map((obs, i) => (
-        <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-          <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#EF6C33', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{i + 1}</div>
-          <p style={{ color: '#A8CDD8', fontSize: 12, lineHeight: 1.6, margin: 0 }}>{obs}</p>
-        </div>
-      ))}
-      <div style={{ borderTop: '1px solid rgba(168,205,216,0.2)', marginTop: 14, paddingTop: 14 }}>
-        <div style={{ color: '#97CC04', fontSize: 10, fontWeight: 700, letterSpacing: 0.5, marginBottom: 10 }}>RECOMMENDED ACTIONS</div>
-        {ins.actions.map((act, i) => (
-          <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-            <span style={{ color: '#EF6C33', flexShrink: 0, marginTop: 2 }}>●</span>
-            <p style={{ color: '#D5E8F0', fontSize: 11, lineHeight: 1.5, margin: 0 }}>{act}</p>
+      {(() => {
+        // Paired INSIGHT + RECOMMENDATION (Brandon, 2026-07-24). An insight is
+        // the finding; the recommendation is what to do about it. They render
+        // as one unit — never as an observations list plus a disconnected
+        // "recommended actions" list, which made the reader re-pair them.
+        //
+        // Split is by IMPACT, not by quota: the highest-priority findings are
+        // the top priorities (up to 3), everything else is secondary. If one
+        // problem dominates, you get ONE top priority — we do not pad to 3.
+        const pairs = ins.pairs && ins.pairs.length ? ins.pairs : [];
+        if (!pairs.length) {
+          // Fall back to the legacy flat lists for any report whose library
+          // hasn't been migrated, so nothing renders blank.
+          return (
+            <>
+              {ins.observations.slice(0, 5).map((obs, i) => (
+                <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                  <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#EF6C33', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{i + 1}</div>
+                  <p style={{ color: '#A8CDD8', fontSize: 12, lineHeight: 1.6, margin: 0 }}>{obs}</p>
+                </div>
+              ))}
+            </>
+          );
+        }
+
+        const TOP_PRIORITY_MIN = 8;
+        const top = pairs.filter((p) => p.priority >= TOP_PRIORITY_MIN).slice(0, 3);
+        const rest = pairs.filter((p) => !top.includes(p));
+
+        const renderPair = (p: InsightPair, i: number, accent: string) => (
+          <div key={p.id} style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+            <div style={{ width: 22, height: 22, borderRadius: '50%', background: accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{i + 1}</div>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ color: '#D5E8F0', fontSize: 12, lineHeight: 1.6, margin: 0 }}>{p.insight}</p>
+              {p.recommendation && (
+                <p style={{ color: '#97CC04', fontSize: 11, lineHeight: 1.5, margin: '6px 0 0 0', display: 'flex', gap: 6 }}>
+                  <span style={{ flexShrink: 0, fontWeight: 700 }}>&rarr;</span>
+                  <span>{p.recommendation}</span>
+                </p>
+              )}
+            </div>
           </div>
-        ))}
-      </div>
+        );
+
+        return (
+          <>
+            {top.length > 0 && (
+              <>
+                <div style={{ color: '#EF6C33', fontSize: 10, fontWeight: 700, letterSpacing: 0.5, marginBottom: 10 }}>
+                  {top.length === 1 ? 'TOP PRIORITY' : `TOP ${top.length} PRIORITIES`}
+                </div>
+                {top.map((p, i) => renderPair(p, i, '#EF6C33'))}
+              </>
+            )}
+            {rest.length > 0 && (
+              <div style={{ borderTop: top.length ? '1px solid rgba(168,205,216,0.2)' : 'none', marginTop: top.length ? 14 : 0, paddingTop: top.length ? 14 : 0 }}>
+                <div style={{ color: '#97CC04', fontSize: 10, fontWeight: 700, letterSpacing: 0.5, marginBottom: 10 }}>ALSO WORTH KNOWING</div>
+                {rest.map((p, i) => renderPair(p, top.length + i, '#4A7A8C'))}
+              </div>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }
@@ -1313,9 +1370,9 @@ export function renderModalContent(reportKey: string, d: any, searchData?: any, 
     return (
       <div>
         <div style={{ background: '#FFF8E1', borderLeft: '3px solid #D4A800', borderRadius: 4, padding: '14px 18px', marginBottom: 18 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 4 }}>Report locked — connect Google Business Profile</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 4 }}>{GBP_ENABLED ? 'Report locked — connect Google Business Profile' : 'Report not available'}</div>
           <p style={{ fontSize: 12, color: '#5A7A8A', lineHeight: 1.6, margin: 0 }}>
-            Connect Google in Settings → Connected Accounts to generate this report from live GBP data.
+            {GBP_ENABLED ? 'Connect Google in Settings → Connected Accounts to generate this report from live GBP data.' : 'This report isn’t available for your account yet.'}
           </p>
         </div>
       </div>

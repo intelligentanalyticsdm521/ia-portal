@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { AppStateProvider } from './app/AppState';
 
 import { LandingPage } from './pages/LandingPage';
+import { DEV_AUTH } from './lib/devAuth';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 // F3 — Scope Change Revisions public surface (no auth, token IS the auth).
 import { PublicRevisionPage } from './pages/public/PublicRevisionPage';
@@ -9,6 +10,7 @@ import { PublicFormPage } from './pages/public/PublicFormPage';
 import { BusinessCardPublicPage } from './pages/public/BusinessCardPublicPage';
 
 import { AppGate } from './app/AppGate';
+import { IdleLogout } from './components/IdleLogout';
 import { AppLayout } from './components/AppLayout';
 
 import { OverviewPage } from './pages/OverviewPage';
@@ -104,7 +106,10 @@ import { lazy, Suspense } from 'react';
 // Each page file exports a default that matches the named export; using the
 // default keeps these lazy() calls minimal and tree-shaker-friendly.
 const ConsultingClientsPageAdmin = lazy(() => import('./pages/consulting/ConsultingClientsPage'));
-const ConsultingTicketsBoardPageAdmin = lazy(() => import('./pages/consulting/ConsultingTicketsBoardPage'));
+// 2026-07-24 — Service Requests rewired onto consulting.service_request (the
+// 7-stage pipeline + OLIVER bridge). ConsultingTicketsBoardPage read the
+// abandoned lumen.consulting_ticket fork (0 rows in prod) and is retired.
+const ConsultingRequestsBoardPageAdmin = lazy(() => import('./pages/consulting/ConsultingWorkBoardPage'));
 const ConsultingProjectsPageAdmin = lazy(() => import('./pages/consulting/ConsultingProjectsPage'));
 const ConsultingOnboardClientPageAdmin = lazy(() => import('./pages/consulting/ConsultingOnboardClientPageV2'));
 const ConsultingDocumentLibraryPageAdmin = lazy(() => import('./pages/consulting/ConsultingDocumentLibraryPage'));
@@ -115,6 +120,8 @@ const ConsultingDocumentLibraryPageAdmin = lazy(() => import('./pages/consulting
 // gating at this layer; each page does its own subscription/upsell checks
 // where needed (Service Requests gates on Build Your Brand sub).
 import { ClientConsultingLayout } from './components/consulting/ClientConsultingLayout';
+import { LEADGEN_ENABLED } from './config/featureFlags';
+import { FeatureUnavailable } from './components/FeatureUnavailable';
 const ClientConsultingProjectsPage = lazy(() => import('./pages/consulting/ClientConsultingProjectsPage'));
 const ClientConsultingDeliverablesPage = lazy(() => import('./pages/consulting/ClientConsultingDeliverablesPage'));
 const ClientConsultingServiceRequestsPage = lazy(() => import('./pages/consulting/ClientConsultingServiceRequestsPage'));
@@ -142,8 +149,11 @@ export function App() {
     <BrowserRouter>
       <AppStateProvider>
         <Routes>
-          {/* Public routes */}
-          <Route path="/" element={<LandingPage />} />
+          {/* Public routes. Under VITE_DEV_AUTH=1 the bare root goes straight
+              into the app — the sign-in landing must never render in local dev
+              (there is no CIAM locally; its button redirects to prod CIAM and
+              the callback bounces). Build-time constant: prod is unaffected. */}
+          <Route path="/" element={DEV_AUTH ? <Navigate to="/app/overview" replace /> : <LandingPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
           {/* Public pricing / signup flow — unauthenticated end-to-end.
@@ -191,6 +201,8 @@ export function App() {
             path="/app"
             element={
               <AppGate>
+                {/* Auto sign-out after 2h idle — authenticated area only. */}
+                <IdleLogout />
                 <AppLayout />
               </AppGate>
             }
@@ -232,7 +244,7 @@ export function App() {
                 cleanup, schema migrations, etc. */}
             <Route path="admin" element={<PlatformAdminPage />} />
             <Route path="admin/onboard-arion-existing" element={<ArionOnboardExistingPage />} />
-            <Route path="admin/leadgen" element={<AdminLeadgenPage />} />
+            <Route path="admin/leadgen" element={LEADGEN_ENABLED ? <AdminLeadgenPage /> : <FeatureUnavailable name="Lead Gen admin" />} />
             <Route path="admin/infra-health" element={<InfraHealthPage />} />
 
             {/* 2026-06-29 — Founder-side Consulting relocated to /app/admin/consulting/*.
@@ -253,7 +265,7 @@ export function App() {
                 path="requests"
                 element={
                   <Suspense fallback={<AdminRouteLoading />}>
-                    <ConsultingTicketsBoardPageAdmin />
+                    <ConsultingRequestsBoardPageAdmin />
                   </Suspense>
                 }
               />
@@ -299,9 +311,12 @@ export function App() {
             {/* SPARK Lead Gen V1 (F-150/F-163) — search form, job progress,
                 saved searches. The job page needs an :id path param so these
                 live here instead of the service-key router. */}
-            <Route path="spark/leadgen/new" element={<SparkLeadGenNewPage />} />
-            <Route path="spark/leadgen/jobs/:id" element={<SparkLeadGenJobPage />} />
-            <Route path="spark/leadgen/saved" element={<SparkLeadGenSavedPage />} />
+            {/* Lead Gen LOCKED 2026-07-27 (LEADGEN_ENABLED=false) — taxonomy
+                produces garbage keyword expansions. Direct-URL access shows a
+                paused notice; nav entries are filtered in serviceCatalog. */}
+            <Route path="spark/leadgen/new" element={LEADGEN_ENABLED ? <SparkLeadGenNewPage /> : <FeatureUnavailable name="Lead Gen" />} />
+            <Route path="spark/leadgen/jobs/:id" element={LEADGEN_ENABLED ? <SparkLeadGenJobPage /> : <FeatureUnavailable name="Lead Gen" />} />
+            <Route path="spark/leadgen/saved" element={LEADGEN_ENABLED ? <SparkLeadGenSavedPage /> : <FeatureUnavailable name="Lead Gen" />} />
             <Route path="spark/customer-flow" element={<SparkCustomerFlowPage />} />
             <Route path="spark/lifecycle" element={<SparkLifecyclePage />} />
             <Route path="spark/sync-issues" element={<SparkSyncIssuesPage />} />

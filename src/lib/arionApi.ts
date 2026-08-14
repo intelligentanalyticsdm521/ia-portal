@@ -1292,6 +1292,12 @@ export async function getSiteDetail(params: { baseUrl: string; bearerToken: stri
   return requestJson<any>({ ...params, path: `/arion/sites/${encodeURIComponent(params.siteId)}` });
 }
 
+export async function getInsightsMetrics(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; months?: number }) {
+  const qp = new URLSearchParams({ siteId: params.siteId });
+  if (params.months != null) qp.set('months', String(params.months));
+  return requestJson<{ source: string; months: string[]; metrics: Record<string, Array<number | null>> }>({ ...params, path: `/arion/insights/metrics?${qp.toString()}` });
+}
+
 export async function getSearchPerformance(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; provider: string; period?: number; groupBy?: string; days?: number }) {
   const qp = new URLSearchParams({ provider: params.provider, siteId: params.siteId });
   if (params.period != null) qp.set('period', String(params.period));
@@ -1388,6 +1394,30 @@ export async function getGbpPostsLive(p: { baseUrl: string; bearerToken: string;
 }
 export async function getGbpQanda(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<any>({ ...p, path: `/arion/business/qanda?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function getGbpServices(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...p, path: `/arion/business/services?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function draftGbpReviewReply(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; reviewId: string; reviewerName?: string; starRating?: number; comment?: string | null }) {
+  return requestJson<any>({ ...p, method: 'POST', path: `/arion/business/reviews/${encodeURIComponent(p.reviewId)}/draft-reply?siteId=${encodeURIComponent(p.siteId)}`, body: { reviewerName: p.reviewerName, starRating: p.starRating, comment: p.comment } });
+}
+export async function getGbpAutoReply(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...p, path: `/arion/business/reviews/auto-reply?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function setGbpAutoReply(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; enabled: boolean; minStars: number }) {
+  return requestJson<any>({ ...p, method: 'PUT', path: `/arion/business/reviews/auto-reply?siteId=${encodeURIComponent(p.siteId)}`, body: { enabled: p.enabled, minStars: p.minStars } });
+}
+export async function getGbpMedia(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...p, path: `/arion/business/media?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function addGbpMedia(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; sourceUrl: string; category?: string }) {
+  return requestJson<any>({ ...p, method: 'POST', path: `/arion/business/media?siteId=${encodeURIComponent(p.siteId)}`, body: { sourceUrl: p.sourceUrl, category: p.category } });
+}
+export async function deleteGbpMedia(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; mediaId: string }) {
+  return requestJson<any>({ ...p, method: 'DELETE', path: `/arion/business/media/${encodeURIComponent(p.mediaId)}?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function saveGbpServices(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; services: Array<Record<string, any>> }) {
+  return requestJson<any>({ ...p, method: 'PUT', path: `/arion/business/services?siteId=${encodeURIComponent(p.siteId)}`, body: { services: p.services } });
 }
 export async function updateGbpBusiness(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; body: Record<string, any> }) {
   return requestJson<any>({ ...p, method: 'PATCH', path: `/arion/business/update?siteId=${encodeURIComponent(p.siteId)}`, body: p.body });
@@ -1794,7 +1824,7 @@ export async function setPluginLitespeedConfig(p: { baseUrl: string; bearerToken
 // v2.0.13 GBP location picker (security: no auto-resolve)
 export async function listGbpLocations(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; showAll?: boolean }) {
   const qs = p.showAll ? `?showAll=1` : '';
-  return requestJson<{ data: { locations: any[]; locations_total?: number; domain_filter_active?: boolean; no_matching_locations?: boolean; can_auto_provision?: boolean; currently_selected: string | null; site_domain: string; suggestion: string | null } }>({
+  return requestJson<{ data: { locations: any[]; locations_total?: number; domain_filter_active?: boolean; no_matching_locations?: boolean; can_auto_provision?: boolean; currently_selected: string | null; site_domain: string; suggestion: string | null; auto_selected?: { location_name: string; title: string; reason: string } | null } }>({
     ...p,
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/gbp/locations${qs}`,
   });
@@ -1813,6 +1843,88 @@ export async function disconnectGbp(p: { baseUrl: string; bearerToken: string; t
     method: 'POST',
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/gbp/disconnect`,
     body: {},
+  });
+}
+
+// ── GBP Connect Batch B (2026-07-22) — client-owned listing creation +
+// in-ARION verification. The listing is created on the CLIENT'S OAuth token
+// under the CLIENT'S Google account (client = PRIMARY_OWNER), then the
+// portal drives Google's verification flow: options → request → PIN
+// complete → VoiceOfMerchant status.
+export interface GbpCreateListingInput {
+  title: string;
+  primary_category: string;
+  phone: string;
+  website_uri?: string;
+  address?: {
+    addressLines: string[];
+    locality?: string;
+    administrativeArea?: string;
+    postalCode?: string;
+    regionCode?: string;
+  };
+  service_area?: boolean;
+  /** Disambiguates when the backend answers 409 multiple_accounts. */
+  account_name?: string;
+}
+export interface GbpVerificationOption {
+  verificationMethod: string;
+  phoneNumber?: string;
+  addressData?: any;
+  emailData?: { user?: string; domain?: string; isUserNameEditable?: boolean };
+  announcement?: string;
+  /** Optional enrichments forwarded to Google's verify request. */
+  emailAddress?: string;
+  mailerContact?: string;
+}
+export interface GbpVerification {
+  name: string;
+  method: string;
+  state: string;
+  createTime?: string;
+  announcement?: string;
+}
+export interface GbpVerificationStatus {
+  location_name: string;
+  has_voice_of_merchant: boolean;
+  is_verified: boolean;
+  voice_of_merchant_state: any;
+  verification: { method: string | null; name: string | null; state: string | null; requested_at: string | null } | null;
+}
+export async function createGbpListing(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; body: GbpCreateListingInput }) {
+  return requestJson<{ data: { location_name: string; title: string; account_name: string; verification_required: boolean } }>({
+    ...p,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/gbp/create-listing`,
+    body: p.body,
+  });
+}
+export async function getGbpVerificationOptions(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<{ data: { options: GbpVerificationOption[]; location_name: string } }>({
+    ...p,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/gbp/verification-options`,
+  });
+}
+export async function requestGbpVerification(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; option: GbpVerificationOption | string }) {
+  return requestJson<{ data: { verification: GbpVerification | null; location_name: string } }>({
+    ...p,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/gbp/request-verification`,
+    body: { option: p.option },
+  });
+}
+export async function completeGbpVerification(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; verificationName: string; pin: string }) {
+  return requestJson<{ data: { verification: GbpVerification | null; has_voice_of_merchant: boolean | null; location_name: string } }>({
+    ...p,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/gbp/complete-verification`,
+    body: { verification_name: p.verificationName, pin: p.pin },
+  });
+}
+export async function getGbpVerificationStatus(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<{ data: GbpVerificationStatus }>({
+    ...p,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/gbp/verification-status`,
   });
 }
 

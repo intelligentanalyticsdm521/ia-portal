@@ -1,3 +1,5 @@
+import { LEADGEN_ENABLED, LEADGEN_LOCKED_KEYS } from './featureFlags';
+
 export type ServiceStatus = 'enabled' | 'not_subscribed' | 'coming_soon';
 
 export interface PortalService {
@@ -17,19 +19,21 @@ export interface PortalService {
   tierGate?: 'Lite' | 'Standard' | 'Pro' | 'Business';
 }
 
+// Platform descriptors locked by Brandon 2026-07-22 (cosmetic pass) — one or
+// two words per platform, used verbatim in IconRail taglines + SubNav headers.
 export const LAYER_LABELS: Record<PortalService['section'], string> = {
   Shared: 'Overview',
-  ARION: 'ARION — Web & Digital Presence',
-  STELLA: 'STELLA — Reporting & BI',
-  OLIVER: 'OLIVER — Operations & Portals',
-  LUMEN: 'SPARK — Growth Platform',
+  ARION: 'ARION — Digital Presence',
+  STELLA: 'STELLA — Expenses & Data',
+  OLIVER: 'OLIVER — Operations',
+  LUMEN: 'SPARK — CRM',
   MY_BRAND: 'My Brand — Creative Studio',
-  FORGE: 'FORGE — Software & Integrations',
-  ARGUS: 'ARGUS — Orchestration & Automation',
-  CONSULTING: 'CONSULTING — IA Work & Deliverables'
+  FORGE: 'FORGE — Integrations & Software',
+  ARGUS: 'ARGUS — AI & Agents',
+  CONSULTING: 'CONSULTING — Projects'
 };
 
-export const SERVICE_CATALOG: PortalService[] = [
+const RAW_SERVICE_CATALOG: PortalService[] = [
   {
     key: 'portal_overview',
     displayName: 'Overview',
@@ -115,14 +119,14 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'arion_search_core_web_vitals', displayName: 'Core Web Vitals', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_search_core_web_vitals', description: 'LCP, FID, CLS, and INP scores from CrUX with mobile and desktop breakdowns.' },
   { key: 'arion_search_bing_copilot', displayName: 'Bing Copilot', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_search_bing_copilot', description: 'Bing Copilot AI appearance tracking and citation monitoring.' },
   { key: 'arion_search_bing_indexnow', displayName: 'Bing IndexNow', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_search_bing_indexnow', description: 'IndexNow submission history, accepted URLs, and instant indexing status.' },
-  { key: 'arion_business_overview', displayName: 'Business Overview', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_business_overview', description: 'Google Business Profile summary — listing status, hours, and categories.' },
-  { key: 'arion_business_locations', displayName: 'Business Locations', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_business_locations', description: 'All Google Business Profile locations imported for this tenant — pick which is the primary and re-sync from Google.' },
-  { key: 'arion_business_reviews', displayName: 'Business Reviews', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_business_reviews', description: 'Customer reviews across Google, Bing, and Apple with sentiment tracking.' },
-  { key: 'arion_business_insights', displayName: 'Business Insights', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_business_insights', description: 'GBP performance metrics — searches, views, direction requests, and calls.' },
-  { key: 'arion_business_posts', displayName: 'Business Posts', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_business_posts', description: 'Google Business Profile posts — updates, offers, and event announcements.' },
-  { key: 'arion_business_services', displayName: 'Business Services', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_business_services', description: 'GBP services and product catalog management.' },
-  { key: 'arion_business_bing_overview', displayName: 'Bing Places', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_business_bing_overview', description: 'Bing Places for Business listing status and profile management.' },
-  { key: 'arion_business_apple_overview', displayName: 'Apple Business Connect', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_business_apple_overview', description: 'Apple Business Connect listing and Apple Maps presence management.' },
+  { key: 'arion_business_overview', displayName: 'Business Overview', section: 'ARION', defaultStatus: 'enabled', route: '/app/services/arion_business_overview', description: 'Google Business Profile summary — listing status, hours, and categories.' },
+  { key: 'arion_business_locations', displayName: 'Business Locations', section: 'ARION', defaultStatus: 'enabled', route: '/app/services/arion_business_locations', description: 'All Google Business Profile locations imported for this tenant — pick which is the primary and re-sync from Google.' },
+  { key: 'arion_business_reviews', displayName: 'Business Reviews', section: 'ARION', defaultStatus: 'enabled', route: '/app/services/arion_business_reviews', description: 'Customer reviews across Google, Bing, and Apple with sentiment tracking.' },
+  { key: 'arion_business_insights', displayName: 'Business Performance', section: 'ARION', defaultStatus: 'enabled', route: '/app/services/arion_business_insights', description: 'GBP performance metrics — searches, views, direction requests, and calls.' },
+  { key: 'arion_business_posts', displayName: 'Business Posts', section: 'ARION', defaultStatus: 'enabled', route: '/app/services/arion_business_posts', description: 'Google Business Profile posts — updates, offers, and event announcements.' },
+  { key: 'arion_business_services', displayName: 'Business Services', section: 'ARION', defaultStatus: 'enabled', route: '/app/services/arion_business_services', description: 'GBP services and product catalog management.' },
+  { key: 'arion_business_bing_overview', displayName: 'Bing Places', section: 'ARION', defaultStatus: 'enabled', route: '/app/services/arion_business_bing_overview', description: 'Bing Places for Business listing status and profile management.' },
+  { key: 'arion_business_apple_overview', displayName: 'Apple Business Connect', section: 'ARION', defaultStatus: 'enabled', route: '/app/services/arion_business_apple_overview', description: 'Apple Business Connect listing and Apple Maps presence management.' },
   { key: 'arion_brand', displayName: 'Your Brand', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_brand', description: 'Brand management tools — assets, style guides, and digital brand presence.' },
   // (My Brand entries live under the MY_BRAND section block further down —
   // sibling Wave 2 agent owns the full taxonomy. Don't add LUMEN-scoped
@@ -332,7 +336,12 @@ export const SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_scoring_rules', displayName: 'Scoring Rules', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_scoring_rules', description: 'Rules-based lead scoring engine — assign points on event triggers (Business).' },
   { key: 'spark_routing_rules', displayName: 'Routing Rules', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_routing_rules', description: 'Round-robin / weighted / territory routing for new leads (Business).' },
   { key: 'spark_attribution', displayName: 'Attribution', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_attribution', description: 'Multi-touch attribution — first/last/linear/u-shaped models with per-contact journey viewer (Business).' },
+  // 2026-07-26 — spark_stella stays routable (deep links) but is out of the
+  // nav: its analysis ships as the spark_send_times report in SPARK
+  // Intelligence. The Reports hubs are the IA Insights "general reporting" bucket.
   { key: 'spark_stella', displayName: 'STELLA Send Intelligence', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_stella', description: 'Best-time-to-send heatmap and per-contact recommendation, learned from your historical engagement data.' },
+  { key: 'spark_ia_insights_reports', displayName: 'Reports', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_ia_insights_reports', description: 'Operational reports — real-time activity, usage, and the audit log.' },
+  { key: 'oliver_ia_insights_reports', displayName: 'Reports', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_ia_insights_reports', description: 'Operational reports — the activity log behind your scored insights.' },
   { key: 'spark_scheduled_reports', displayName: 'Scheduled Reports', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_scheduled_reports', description: 'Save report configurations and have them emailed on a daily/weekly/monthly cadence (Business).' },
   { key: 'spark_audience_sync', displayName: 'Audience Sync', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_audience_sync', description: 'Export hashed audiences for Google Ads Customer Match + Meta Custom Audiences (Business).' },
   { key: 'spark_journey_builder', displayName: 'Journey Builder', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_journey_builder', description: 'Visual graph editor for branching automation journeys with yes/no edge wiring.' },
@@ -441,14 +450,32 @@ export const SERVICE_CATALOG: PortalService[] = [
   // fail-closed via MY_BRAND_LAUNCHED (LUMEN lib/myBrand/tierCheck.js) until launch.
   { key: 'my_brand_image_studio', displayName: 'Image Studio', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_image_studio', description: 'Generate on-brand images from a prompt — uses your brand colors, fonts, and logo.', tierGate: 'Standard' },
   { key: 'my_brand_voice', displayName: 'Brand Voice', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_voice', description: 'Capture your voice profile and check any copy for drift before you publish.' },
-  { key: 'my_brand_templates', displayName: 'Template Studio', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_templates', description: 'Mini-canva: design social posts, ads, and email banners from reusable templates.', tierGate: 'Standard' },
-  { key: 'my_brand_assets', displayName: 'Asset Library', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_assets', description: 'Central library for logos, photos, generated images, and finished designs.' },
+  // Renames 2026-07-22 (Brandon's re-cut, MY_BRAND_RECUT doc): Template
+  // Studio → Design Studio, Asset Library → Media Library, Calendar+Composer
+  // → Social Hub. Keys stay stable — routes and deep links are unchanged.
+  { key: 'my_brand_templates', displayName: 'Design Studio', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_templates', description: 'Design social posts, ads, and email banners from brand-locked templates.', tierGate: 'Standard' },
+  { key: 'my_brand_assets', displayName: 'Media Library', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_assets', description: 'Central library for logos, photos, generated images, and finished designs.' },
   { key: 'my_brand_social_channels', displayName: 'Social Channels', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_social_channels', description: 'Connect Facebook, Instagram, LinkedIn, X, TikTok, YouTube, and Google Business.', tierGate: 'Standard' },
   { key: 'my_brand_compose', displayName: 'Composer', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_compose', description: 'Compose once, publish to every connected channel with per-channel preview.', tierGate: 'Standard' },
-  { key: 'my_brand_calendar', displayName: 'Calendar', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_calendar', description: 'Schedule and re-arrange upcoming posts across every connected channel.', tierGate: 'Standard' },
-  { key: 'my_brand_analytics', displayName: 'Analytics', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_analytics', description: 'Per-channel and per-post engagement, reach, and follower trends.', tierGate: 'Pro' },
-  { key: 'my_brand_approvals', displayName: 'Approval Inbox', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_approvals', description: 'Founder/admin review queue for team-submitted posts when approval gating is on.' },
+  { key: 'my_brand_calendar', displayName: 'Social Hub', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_calendar', description: 'Compose, schedule, and re-arrange posts across every connected channel.', tierGate: 'Standard' },
+  { key: 'my_brand_social_content', displayName: 'Social Content', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_social_content', description: 'Every published and scheduled post with per-post metrics, filters, and the full social report.', tierGate: 'Standard' },
+  { key: 'my_brand_social_report', displayName: 'Social Report', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_social_report', description: 'Totals and daily trends across connected platforms. Reached from Social Content, not the nav.', tierGate: 'Standard' },
+  // IA re-cut 2026-07-21 (Brandon): my_brand_analytics REMOVED — social
+  // reporting lives in ARION IA Insights (Trends/Intelligence); the router
+  // redirects the old key. my_brand_approvals REMOVED — the approval queue is
+  // the IA↔client project workflow (Consulting domain), not a My Brand page.
+  // my_brand_voice + my_brand_social_channels rows are KEPT (routes must
+  // resolve — they are settings surfaces linked from Brand Identity /
+  // integrations, not nav features).
 ];
+
+// Feature-flag filter: while LEADGEN_ENABLED is false, the Lead Gen search
+// keys are removed from the catalog entirely, so SidebarNav and any catalog
+// consumer stop surfacing them. Dedicated Lead Gen routes are additionally
+// gated in App.tsx for direct-URL access. See featureFlags.ts.
+export const SERVICE_CATALOG: PortalService[] = LEADGEN_ENABLED
+  ? RAW_SERVICE_CATALOG
+  : RAW_SERVICE_CATALOG.filter((s) => !LEADGEN_LOCKED_KEYS.includes(s.key));
 
 export function resolveServiceStatus(service: PortalService, enabledKeys: Set<string>): ServiceStatus {
   if (service.defaultStatus === 'enabled') return 'enabled';

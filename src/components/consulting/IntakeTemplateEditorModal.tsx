@@ -259,12 +259,9 @@ export function IntakeTemplateEditorModal({
       setIsSystem(asBool(t.is_system_seed));
       setVersion(t.version || 1);
     } catch (e) {
-      const msg = (e as Error).message || "Could not load template";
-      if (/404|not.?found/i.test(msg)) {
-        setErr("F4 backend endpoint not deployed yet — load failed.");
-      } else {
-        setErr(msg);
-      }
+      // FIX-6 (2026-07-22): real error — the F4 backend is mounted, so a 404
+      // means this template row/id is bad, not an unshipped feature.
+      setErr((e as Error).message || "Could not load template");
     } finally {
       setLoading(false);
     }
@@ -451,12 +448,8 @@ export function IntakeTemplateEditorModal({
       }
       onSaved?.();
     } catch (e) {
-      const msg = (e as Error).message || "Save failed";
-      if (/404|not.?found/i.test(msg)) {
-        setErr("F4 backend not deployed yet — save will work once the API ships.");
-      } else {
-        setErr(msg);
-      }
+      // FIX-6 (2026-07-22): real error, not the false "not deployed" mask.
+      setErr((e as Error).message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -483,12 +476,8 @@ export function IntakeTemplateEditorModal({
       }
       onSaved?.();
     } catch (e) {
-      const msg = (e as Error).message || "Clone failed";
-      if (/404|not.?found/i.test(msg)) {
-        setErr("F4 backend not deployed yet — clone will work once the API ships.");
-      } else {
-        setErr(msg);
-      }
+      // FIX-6 (2026-07-22): real error, not the false "not deployed" mask.
+      setErr((e as Error).message || "Clone failed");
     } finally {
       setSaving(false);
     }

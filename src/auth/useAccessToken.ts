@@ -1,11 +1,13 @@
 import {
   InteractionRequiredAuthError,
+  BrowserAuthError,
   type AccountInfo,
   type AuthenticationResult
 } from '@azure/msal-browser';
 import { useMsal } from '@azure/msal-react';
 import { useCallback, useMemo } from 'react';
 import { authScopes } from './msalConfig';
+import { clearStaleInteractionFlags, hardLogout } from './pca';
 import { DEV_AUTH, DEV_TOKEN_RESULT } from '../lib/devAuth';
 
 /**
@@ -88,11 +90,26 @@ export function useAccessToken() {
       req.prompt = 'create';
       if (loginHint) req.loginHint = loginHint;
     }
-    return instance.loginRedirect(req);
+    // Self-heal a stuck session: if a PRIOR interaction (e.g. an aborted
+    // logout where the user closed the "pick an account" page) left
+    // `interaction_in_progress` in localStorage, loginRedirect throws and the
+    // button appears dead. Clear the stale flag and retry once so the user is
+    // never wedged out of signing in.
+    return instance.loginRedirect(req).catch((err) => {
+      if (err instanceof BrowserAuthError && err.errorCode === 'interaction_in_progress') {
+        clearStaleInteractionFlags();
+        return instance.loginRedirect(req);
+      }
+      throw err;
+    });
   }, [instance]);
 
   const logout = useCallback(() => {
-    return instance.logoutRedirect();
+    // Sign out means sign out — no "pick an account" chooser. Shared with the
+    // idle auto-logout via hardLogout() so the two paths can never diverge.
+    // It sends `logoutHint` (not just `account`), which is what actually tells
+    // Entra to skip the server-side account picker. See pca.ts.
+    return hardLogout(instance);
   }, [instance]);
 
   return { activeAccount, getToken, login, logout };

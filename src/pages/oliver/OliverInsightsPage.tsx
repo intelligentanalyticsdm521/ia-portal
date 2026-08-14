@@ -441,7 +441,7 @@ export function OliverInsightsPage() {
             <div className="card-ttl">Service profitability</div>
             <div className="card-sub">Where your margin actually lives</div>
           </div>
-          <Link to="/app/services/oliver_reports" style={{ fontSize: 11, color: "#1A7DB5", textDecoration: "none" }}>Full reports →</Link>
+          <Link to="/app/services/oliver_ia_insights_trends" style={{ fontSize: 11, color: "#1A7DB5", textDecoration: "none" }}>Full reports →</Link>
         </div>
         {topOfferings.length === 0 ? (
           <div style={{ padding: "20px 0", color: "#5A7A8A", fontSize: 12, fontStyle: "italic", textAlign: "center" }}>

@@ -1,41 +1,52 @@
 // SocialCalendarPage — wave 2 of the My Brand stack (LUMEN-API migration 050).
 //
-// Shows every scheduled/published social post across every connected channel
-// in one of two views:
+// Canonical SparkPageShell library page: every scheduled/published social
+// post across every connected channel in one of two views:
 //
-//   • List view  — paged table with status + platform filters. Standard tier
-//                  only sees this (calendar grid is gated to Pro+).
+//   • List view  — spark-table with status + platform + search filters.
+//                  Standard tier only sees this (grid is gated to Pro+).
 //   • Calendar   — month grid with platform-colored chips per post. Click a
 //                  chip to open the post-detail modal (edit / reschedule /
 //                  cancel). Pro+ unlocks drag-to-reschedule across days.
 //
+// The composer is a centered IadmModal (SocialComposerModal) launched from
+// "+ New post", the empty-state CTA, and the detail modal's "Edit in
+// composer" path. The /my_brand_compose route renders this page with the
+// modal pre-opened (see SocialComposerPage.tsx shim) so deep links work.
+//
 // API surface (already shipped on LUMEN-API):
-//   GET    /api/v1/my-brand/social/posts?from=&to=&status=&platform=
+//   GET    /api/v1/my-brand/social/posts?from=&to=
 //   PATCH  /api/v1/my-brand/social/posts/:id/reschedule { scheduled_for }
 //   DELETE /api/v1/my-brand/social/posts/:id   (only "scheduled" can cancel)
 //
-// Tier gate is informational — the LUMEN-API also enforces server-side, so we
-// just toggle the default view (list for Standard, calendar for Pro+) and
-// disable the grid toggle entirely on Lite/Standard. Drag-reschedule is
-// further gated to Pro+ even when calendar view is reachable.
+// Fetch is keyed ONLY on the date window; status/platform/search filter
+// client-side in one useMemo (convention_data_fetching — no per-facet
+// refetch). Tier gate is informational — LUMEN-API also enforces
+// server-side; we toggle the default view (list for Standard, calendar for
+// Pro+) and disable the grid toggle on Lite/Standard.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  AlertTriangle,
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
-  Filter,
   List,
   LayoutGrid,
   Plus,
   Share2,
-  X,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { useProductTier, tierMeets } from "../../hooks/useProductTier";
 import { useMyBrandTier } from "../../hooks/useMyBrandTier";
 import { MyBrandUpgradeGate } from "../../components/MyBrandUpgradeGate";
-import { IadmModal } from "../../components/IadmModal";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { IadmModal, IadmButton } from "../../components/IadmModal";
+import {
+  SocialComposerModal,
+  type ComposerPrefillPost,
+  type Platform,
+} from "../../components/myBrand/SocialComposerModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -44,15 +55,43 @@ import { IadmModal } from "../../components/IadmModal";
 type PostStatus = "scheduled" | "published" | "failed" | "draft" | "cancelled" | "pending_approval" | "rejected";
 
 interface SocialPost {
-  id: number;
+  id: string;                     // GUID (API: post_id)
   scheduled_for: string | null;   // ISO timestamp; null = draft
   published_at: string | null;    // ISO timestamp once published
   status: PostStatus;
   body: string;
   platforms: string[];            // ["facebook","instagram",...]
+  content_type?: string;          // post | story | reel
   media_urls?: string[];
   error_reason?: string | null;
   created_at: string;
+}
+
+// The list API speaks post_id / body_default / targets[] — this page (and
+// the composer prefill) speak the id / body / platforms view model above.
+// Normalize at the fetch boundary; before this, every reschedule/cancel hit
+// /posts/undefined/... and chips showed no platform or body (same latent
+// contract-mismatch class as the composer destinations bug, fixed 6a888e6).
+interface ApiTarget { platform: string; status?: string | null; error_class?: string | null }
+function normalizePost(row: Record<string, unknown>): SocialPost {
+  const targets = (row.targets as ApiTarget[] | undefined) || [];
+  const failed = targets.filter((t) => t.status === "failed");
+  return {
+    id: String(row.post_id ?? row.id ?? ""),
+    scheduled_for: (row.scheduled_for as string | null) ?? null,
+    published_at: (row.published_at as string | null) ?? null,
+    status: row.status as PostStatus,
+    body: String(row.body_default ?? row.body ?? ""),
+    platforms: Array.isArray(row.platforms)
+      ? (row.platforms as string[])
+      : targets.map((t) => t.platform),
+    content_type: (row.content_type as string | undefined) || "post",
+    error_reason: (row.error_reason as string | null | undefined)
+      ?? (failed.length
+        ? failed.map((t) => `${platformMeta(t.platform).label}: ${t.error_class || "failed"}`).join(" · ")
+        : null),
+    created_at: String(row.created_at ?? ""),
+  };
 }
 
 // Platform identity — keep colors in lockstep with the IconRail / analytics
@@ -84,12 +123,25 @@ const STATUS_META: Record<PostStatus, { label: string; className: string }> = {
   rejected:         { label: "Rejected",       className: "bg-rose-100 text-rose-700 line-through" },
 };
 
+// Status filter chips — LOCKED 3-lane customer vocabulary (re-cut §2,
+// 2026-07-22): Draft · Scheduled · Published. pending_approval/rejected are
+// leftovers of the approval workflow that moved to Consulting; cancelled
+// posts are just gone from the surfaces; failed is NOT a lane — a failed
+// post stays VISIBLE under All/Published-adjacent slots with its red
+// "didn't publish" marker (STATUS_META keeps the failed treatment), it just
+// isn't a filter chip. The status column itself is untouched.
+const STATUS_FILTERS: Array<{ key: PostStatus | "all"; label: string }> = [
+  { key: "all",       label: "All" },
+  { key: "scheduled", label: "Scheduled" },
+  { key: "published", label: "Published" },
+  { key: "draft",     label: "Drafts" },
+];
+
 // ── Date helpers (local-tz, no library) ───────────────────────────────────
 function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1); }
-function endOfMonth(d: Date)   { return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999); }
 function startOfGrid(d: Date) {
   const first = startOfMonth(d);
   const day = first.getDay(); // 0=Sun
@@ -118,25 +170,31 @@ function addDays(d: Date, n: number) {
 type View = "list" | "calendar";
 type GridScope = "month" | "week";
 
+/** What the composer modal opens with — empty = blank new post. */
+interface ComposerLaunch {
+  destinations?: Platform[];
+  assetIds?: string[];
+  post?: ComposerPrefillPost;
+}
+
+interface SocialCalendarPageProps {
+  /** Deep-link support (/my_brand_compose): open the composer on mount. */
+  initialComposerOpen?: boolean;
+  /** Deep-link prefill forwarded from ?destination= / ?asset_ids=. */
+  composerDefaults?: { destinations?: Platform[]; assetIds?: string[] };
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────
-export function SocialCalendarPage() {
+export function SocialCalendarPage({ initialComposerOpen = false, composerDefaults }: SocialCalendarPageProps = {}) {
   const { get, patch, del, ready } = useSparkApi();
   const { tier, ready: tierReady } = useProductTier("spark");
   // My Brand Wave 3 gate — Calendar requires Standard (list view). Lite
   // tenants see the upgrade card; Standard+ continues into the existing
-  // list/grid logic where grid is further gated to Pro+.
+  // list/grid logic where grid is further gated to Pro+. NOTE: the gate's
+  // early return lives BELOW every hook declaration — returning before the
+  // hooks made the hook count change when gate.ready flipped mid-session
+  // (rules-of-hooks crash).
   const gate = useMyBrandTier();
-  if (gate.ready && !gate.meets("social_calendar_list")) {
-    return (
-      <div className="p-6">
-        <MyBrandUpgradeGate
-          featureName="Social Calendar"
-          requiredTier={gate.requiredTier("social_calendar_list")}
-          currentTier={gate.tier}
-        />
-      </div>
-    );
-  }
   // Calendar grid only unlocked at Pro+. Drag-to-reschedule also Pro+.
   const hasCalendar = tierMeets(tier, "pro");
   const hasDrag = hasCalendar;
@@ -147,14 +205,20 @@ export function SocialCalendarPage() {
   const [cursor, setCursor] = useState<Date>(() => startOfMonth(new Date()));
   const [statusFilter, setStatusFilter] = useState<PostStatus | "all">("all");
   const [platformFilter, setPlatformFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
   const [posts, setPosts] = useState<SocialPost[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [openPost, setOpenPost] = useState<SocialPost | null>(null);
+  const [composer, setComposer] = useState<ComposerLaunch | null>(
+    initialComposerOpen
+      ? { destinations: composerDefaults?.destinations, assetIds: composerDefaults?.assetIds }
+      : null,
+  );
   const [page, setPage] = useState(1);
   const pageSize = 25;
   // Drag state — { postId, originalDate }. Stores nothing if no drag in progress.
-  const [drag, setDrag] = useState<{ id: number; from: string } | null>(null);
+  const [drag, setDrag] = useState<{ id: string; from: string } | null>(null);
 
   // Default view flip-flop: when tier resolves and we have calendar access,
   // switch default to calendar. Standard stays on list. Don't override if the
@@ -166,7 +230,7 @@ export function SocialCalendarPage() {
   }, [tierReady, hasCalendar, userToggled]);
 
   // Window of posts to fetch. For calendar = grid window. For list = wide
-  // 90-day window centered on cursor (paginated client-side, with intent
+  // 90-day window centered on today (paginated client-side, with intent
   // to swap to server pagination in v1.1 once volume warrants it).
   const fromDate = useMemo(() => {
     if (view === "calendar") {
@@ -185,75 +249,84 @@ export function SocialCalendarPage() {
     if (!ready) return;
     setLoading(true); setError(null);
     try {
+      // Window-only query — status/platform/search apply CLIENT-side in the
+      // `filtered` useMemo below (canon: fetch once per window, no
+      // render-driven refetch per facet change).
       const qs = new URLSearchParams({
         from: ymd(fromDate),
         to:   ymd(toDate),
       });
-      if (statusFilter !== "all")   qs.set("status", statusFilter);
-      if (platformFilter !== "all") qs.set("platform", platformFilter);
-      // useSparkApi.get auto-unwraps {data:...} envelope — see memory
-      // feedback "oliver_api_envelope_unwrap" (same applies to sparkApi).
-      const r = await get<SocialPost[] | { data: SocialPost[] }>(`/api/v1/my-brand/social/posts?${qs}`);
+      // useSparkApi does NOT auto-unwrap the {data:...} envelope — handle
+      // both shapes (see memory feedback "oliver_api_envelope_unwrap").
+      type ApiRow = Record<string, unknown>;
+      const r = await get<ApiRow[] | { data: ApiRow[] }>(`/api/v1/my-brand/social/posts?${qs}`);
       const arr = Array.isArray(r) ? r : (r?.data || []);
-      setPosts(arr);
+      setPosts(arr.map(normalizePost));
     } catch (e) {
-      setError((e as Error).message);
+      // Keep the raw error — SparkPageShell renders Error messages and
+      // short-circuits tier_gate objects to the upgrade gate.
+      setError(e);
     } finally {
       setLoading(false);
     }
-  }, [get, ready, fromDate, toDate, statusFilter, platformFilter]);
+  }, [get, ready, fromDate, toDate]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Client-side facet filtering over the fetched window (canon
+  // SparkTemplatesPage pattern — one useMemo, lowercased .includes search).
+  const filtered = useMemo(() => {
+    let list = posts;
+    if (statusFilter !== "all") list = list.filter((p) => p.status === statusFilter);
+    if (platformFilter !== "all") list = list.filter((p) => (p.platforms || []).includes(platformFilter));
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((p) => (p.body || "").toLowerCase().includes(q));
+    }
+    return list;
+  }, [posts, statusFilter, platformFilter, search]);
 
   // Bucket posts by YYYY-MM-DD of their scheduled_for / published_at — calendar
   // groups by intent: scheduled posts on the day they should fire, published
   // on the day they fired.
   const postsByDay = useMemo(() => {
     const m: Record<string, SocialPost[]> = {};
-    for (const p of posts) {
+    for (const p of filtered) {
       const dt = p.scheduled_for || p.published_at;
       if (!dt) continue;
       const key = ymd(new Date(dt));
       (m[key] = m[key] || []).push(p);
     }
     return m;
-  }, [posts]);
+  }, [filtered]);
 
   // List-view pagination (client-side until volume warrants server-side).
-  const totalPages = Math.max(1, Math.ceil(posts.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pagedPosts = useMemo(() => {
-    const sorted = [...posts].sort((a, b) => {
+    const sorted = [...filtered].sort((a, b) => {
       const av = (a.scheduled_for || a.published_at || a.created_at || "");
       const bv = (b.scheduled_for || b.published_at || b.created_at || "");
       return bv.localeCompare(av);
     });
     const start = (page - 1) * pageSize;
     return sorted.slice(start, start + pageSize);
-  }, [posts, page]);
+  }, [filtered, page]);
 
   // ── Mutation handlers ───────────────────────────────────────────────────
-  async function reschedulePost(id: number, scheduled_for: string) {
-    try {
-      await patch(`/api/v1/my-brand/social/posts/${id}/reschedule`, { scheduled_for });
-      await load();
-    } catch (e) {
-      // Surface error to the user — typical cause is "already published"
-      // (server returns 409). Re-throw so callers can display inline.
-      throw e;
-    }
-  }
-  async function cancelPost(id: number) {
-    if (!confirm("Cancel this scheduled post? This cannot be undone.")) return;
-    try {
-      await del(`/api/v1/my-brand/social/posts/${id}`);
-      setOpenPost(null);
-      await load();
-    } catch (e) {
-      alert(`Cancel failed: ${(e as Error).message}`);
-    }
-  }
+  // Both throw on failure — PostDetailModal surfaces errors inline (no
+  // window.alert; see the canon inline AlertTriangle banner there).
+  const reschedulePost = useCallback(async (id: string, scheduled_for: string) => {
+    // Typical failure is "already published" (server returns 409).
+    await patch(`/api/v1/my-brand/social/posts/${id}/reschedule`, { scheduled_for });
+    await load();
+  }, [patch, load]);
+  const cancelPost = useCallback(async (id: string) => {
+    await del(`/api/v1/my-brand/social/posts/${id}`);
+    await load();
+  }, [del, load]);
 
   // ── Drag-to-reschedule handlers ─────────────────────────────────────────
+  const [dragError, setDragError] = useState<string | null>(null);
   function onChipDragStart(p: SocialPost, e: React.DragEvent) {
     if (!hasDrag || p.status !== "scheduled") { e.preventDefault(); return; }
     setDrag({ id: p.id, from: ymd(new Date(p.scheduled_for!)) });
@@ -275,9 +348,10 @@ export function SocialCalendarPage() {
     const [yy, mm, dd] = targetDay.split("-").map(Number);
     const next = new Date(yy, mm - 1, dd, orig.getHours(), orig.getMinutes(), 0, 0);
     try {
+      setDragError(null);
       await reschedulePost(drag.id, next.toISOString());
     } catch (err) {
-      alert(`Reschedule failed: ${(err as Error).message}`);
+      setDragError(`Reschedule failed: ${(err as Error).message}`);
     } finally {
       setDrag(null);
     }
@@ -285,71 +359,123 @@ export function SocialCalendarPage() {
 
   // ── Render ──────────────────────────────────────────────────────────────
   const today = ymd(new Date());
+  const pageTitle = "Social Calendar";
+  const pageSubtitle = "Every scheduled and published post across your channels";
+
+  // Tier gate — rendered through the shell so the sticky header survives,
+  // mirroring the shell's own OliverUpgradeGate short-circuit shape.
+  if (gate.ready && !gate.meets("social_calendar_list")) {
+    return (
+      <SparkPageShell title={pageTitle} subtitle={pageSubtitle}>
+        <MyBrandUpgradeGate
+          featureName="Social Calendar"
+          requiredTier={gate.requiredTier("social_calendar_list")}
+          currentTier={gate.tier}
+        />
+      </SparkPageShell>
+    );
+  }
 
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <header className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Social Calendar</h1>
-          <p className="mt-1 text-sm text-slate-600 max-w-2xl">
-            Every scheduled, published, and failed post across every connected channel.
-            {hasCalendar
-              ? " Drag chips between days to reschedule on the fly."
-              : " Upgrade to Pro for the calendar grid view and drag-to-reschedule."}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <SparkPageShell
+      title={pageTitle}
+      subtitle={pageSubtitle}
+      help="One calendar for every scheduled, published, and failed post. Click a post to reschedule or cancel it; + New post opens the composer. Pro unlocks the month grid and drag-to-reschedule."
+      actions={
+        <>
           <ViewToggle
             view={view}
             onChange={(v) => { setUserToggled(true); setView(v); }}
             hasCalendar={hasCalendar}
           />
-          <Link
-            to="/app/services/my_brand_compose"
-            className="inline-flex items-center gap-1.5 rounded-md bg-[#1A3A4A] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#0B1C24]"
+          <button
+            type="button"
+            onClick={() => setComposer({})}
+            className="rounded-lg bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#d75a25] inline-flex items-center gap-1"
           >
-            <Plus className="h-4 w-4" /> New post
-          </Link>
+            <Plus className="h-3.5 w-3.5" /> New post
+          </button>
+        </>
+      }
+      filters={
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Status segmented control */}
+          <div className="flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
+            {STATUS_FILTERS.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => { setStatusFilter(s.key); setPage(1); }}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  statusFilter === s.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+          {/* Platform filter */}
+          <select
+            value={platformFilter}
+            onChange={(e) => { setPlatformFilter(e.target.value); setPage(1); }}
+            className="text-xs border border-slate-300 rounded-md px-2 py-1 bg-white"
+          >
+            <option value="all">All platforms</option>
+            {uniquePlatforms(posts).map((p) => (
+              <option key={p} value={p}>{platformMeta(p).label}</option>
+            ))}
+          </select>
+          {/* Search */}
+          <input
+            type="search"
+            placeholder="Search posts"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            className="text-xs border border-slate-300 rounded-md px-2 py-1 w-44"
+          />
         </div>
-      </header>
-
-      <FilterRow
-        statusFilter={statusFilter}
-        onStatusChange={(s) => { setStatusFilter(s); setPage(1); }}
-        platformFilter={platformFilter}
-        onPlatformChange={(p) => { setPlatformFilter(p); setPage(1); }}
-        connectedPlatforms={uniquePlatforms(posts)}
-      />
-
-      {error && (
-        <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-          {error}
+      }
+      loading={loading}
+      error={error}
+    >
+      {dragError && (
+        <div className="mb-3 rounded border border-red-200 bg-red-50 p-2.5 text-xs text-red-700 flex items-start gap-2">
+          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+          <span className="flex-1">{dragError}</span>
+          <button type="button" onClick={() => setDragError(null)} className="font-semibold hover:underline">Dismiss</button>
         </div>
       )}
 
-      {loading && posts.length === 0 ? (
-        <div className="py-16 text-center text-sm text-slate-500">Loading…</div>
-      ) : posts.length === 0 ? (
-        <EmptyState />
+      {posts.length === 0 ? (
+        <EmptyState onNew={() => setComposer({})} />
+      ) : filtered.length === 0 ? (
+        <div className="py-10 text-center text-sm text-slate-500">
+          No posts match the current filters.
+        </div>
       ) : view === "calendar" && hasCalendar ? (
-        <CalendarView
-          cursor={cursor}
-          setCursor={setCursor}
-          scope={scope}
-          setScope={setScope}
-          postsByDay={postsByDay}
-          today={today}
-          onChipClick={setOpenPost}
-          onChipDragStart={onChipDragStart}
-          onDayDragOver={onDayDragOver}
-          onDayDrop={onDayDrop}
-          dragActive={!!drag}
-          hasDrag={hasDrag}
-        />
+        <div className="flex flex-col xl:flex-row gap-4">
+          <div className="flex-1 min-w-0">
+            <CalendarView
+              cursor={cursor}
+              setCursor={setCursor}
+              scope={scope}
+              setScope={setScope}
+              postsByDay={postsByDay}
+              today={today}
+              onChipClick={setOpenPost}
+              onChipDragStart={onChipDragStart}
+              onDayDragOver={onDayDragOver}
+              onDayDrop={onDayDrop}
+              dragActive={!!drag}
+              hasDrag={hasDrag}
+            />
+          </div>
+          <UpcomingRail posts={filtered} onOpen={setOpenPost} />
+        </div>
       ) : (
         <ListView
           posts={pagedPosts}
-          totalCount={posts.length}
+          totalCount={filtered.length}
           page={page}
           totalPages={totalPages}
           onPageChange={setPage}
@@ -361,34 +487,39 @@ export function SocialCalendarPage() {
         <PostDetailModal
           post={openPost}
           onClose={() => setOpenPost(null)}
-          onCancel={() => cancelPost(openPost.id)}
-          onReschedule={async (newWhen) => {
-            try {
-              await reschedulePost(openPost.id, newWhen);
-              setOpenPost(null);
-            } catch (e) {
-              alert(`Reschedule failed: ${(e as Error).message}`);
-            }
-          }}
+          onCancel={async () => { await cancelPost(openPost.id); setOpenPost(null); }}
+          onReschedule={async (iso) => { await reschedulePost(openPost.id, iso); setOpenPost(null); }}
+          onEdit={() => { setComposer({ post: openPost }); setOpenPost(null); }}
         />
       )}
-    </div>
+
+      {composer && (
+        <SocialComposerModal
+          open
+          onClose={() => setComposer(null)}
+          onChanged={() => { setComposer(null); load(); }}
+          initialDestinations={composer.destinations}
+          initialAssetIds={composer.assetIds}
+          initialPost={composer.post || null}
+        />
+      )}
+    </SparkPageShell>
   );
 }
 
-// ── View toggle ───────────────────────────────────────────────────────────
+// ── View toggle (canon segmented control) ─────────────────────────────────
 function ViewToggle({ view, onChange, hasCalendar }: {
   view: View;
   onChange: (v: View) => void;
   hasCalendar: boolean;
 }) {
   return (
-    <div className="inline-flex rounded-md border border-slate-300 bg-white overflow-hidden">
+    <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
       <button
         type="button"
         onClick={() => onChange("list")}
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors ${
-          view === "list" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"
+        className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+          view === "list" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
         }`}
       >
         <List className="h-3.5 w-3.5" /> List
@@ -398,57 +529,16 @@ function ViewToggle({ view, onChange, hasCalendar }: {
         onClick={() => hasCalendar && onChange("calendar")}
         disabled={!hasCalendar}
         title={hasCalendar ? "" : "Calendar view available on Pro+"}
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors ${
+        className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
           view === "calendar"
-            ? "bg-slate-900 text-white"
+            ? "bg-white text-slate-900 shadow-sm"
             : hasCalendar
-              ? "text-slate-700 hover:bg-slate-50"
-              : "text-slate-400 cursor-not-allowed"
+              ? "text-slate-500 hover:text-slate-700"
+              : "text-slate-300 cursor-not-allowed"
         }`}
       >
         <LayoutGrid className="h-3.5 w-3.5" /> Calendar {!hasCalendar && <span className="text-[10px]">Pro+</span>}
       </button>
-    </div>
-  );
-}
-
-// ── Filter row ────────────────────────────────────────────────────────────
-function FilterRow({
-  statusFilter, onStatusChange, platformFilter, onPlatformChange, connectedPlatforms,
-}: {
-  statusFilter: PostStatus | "all";
-  onStatusChange: (s: PostStatus | "all") => void;
-  platformFilter: string;
-  onPlatformChange: (p: string) => void;
-  connectedPlatforms: string[];
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-      <Filter className="h-3.5 w-3.5 text-slate-500" />
-      <label className="text-xs font-medium text-slate-600">Status</label>
-      <select
-        value={statusFilter}
-        onChange={(e) => onStatusChange(e.target.value as PostStatus | "all")}
-        className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs"
-      >
-        <option value="all">All</option>
-        <option value="scheduled">Scheduled</option>
-        <option value="published">Published</option>
-        <option value="failed">Failed</option>
-        <option value="draft">Draft</option>
-        <option value="cancelled">Cancelled</option>
-      </select>
-      <label className="text-xs font-medium text-slate-600 ml-3">Platform</label>
-      <select
-        value={platformFilter}
-        onChange={(e) => onPlatformChange(e.target.value)}
-        className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs"
-      >
-        <option value="all">All</option>
-        {connectedPlatforms.map((p) => (
-          <option key={p} value={p}>{platformMeta(p).label}</option>
-        ))}
-      </select>
     </div>
   );
 }
@@ -461,34 +551,37 @@ function uniquePlatforms(posts: SocialPost[]): string[] {
   return Array.from(seen).sort();
 }
 
-// ── Empty state ───────────────────────────────────────────────────────────
-function EmptyState() {
+// ── Empty state (canon dashed card, actionable) ───────────────────────────
+function EmptyState({ onNew }: { onNew: () => void }) {
   return (
-    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-12 text-center">
-      <Share2 className="h-10 w-10 mx-auto text-slate-300 mb-3" />
-      <h3 className="text-sm font-semibold text-slate-900">No posts yet</h3>
-      <p className="mt-1 text-xs text-slate-500 max-w-md mx-auto">
+    <div className="rounded-xl border-2 border-dashed border-slate-200 bg-white p-10 text-center">
+      <div className="mx-auto w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mb-3">
+        <Share2 className="h-7 w-7 text-slate-400" />
+      </div>
+      <h3 className="text-lg font-semibold text-slate-900">No posts yet</h3>
+      <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
         Connect a channel and schedule your first post — it will appear here as soon as it's queued.
       </p>
       <div className="mt-4 flex items-center justify-center gap-2">
         <Link
           to="/app/services/my_brand_social_channels"
-          className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
         >
           Connect a channel
         </Link>
-        <Link
-          to="/app/services/my_brand_compose"
-          className="inline-flex items-center gap-1.5 rounded-md bg-[#1A3A4A] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0B1C24]"
+        <button
+          type="button"
+          onClick={onNew}
+          className="inline-flex items-center gap-1 rounded-lg bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#d75a25]"
         >
           <Plus className="h-3.5 w-3.5" /> New post
-        </Link>
+        </button>
       </div>
     </div>
   );
 }
 
-// ── List view ─────────────────────────────────────────────────────────────
+// ── List view (spark-table directly on the page body — no wrapper card) ───
 function ListView({
   posts, totalCount, page, totalPages, onPageChange, onRowClick,
 }: {
@@ -500,15 +593,15 @@ function ListView({
   onRowClick: (p: SocialPost) => void;
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-      <table className="w-full text-sm">
-        <thead className="bg-slate-50 border-b border-slate-200">
+    <div className="spark-table-wrap">
+      <div className="overflow-x-auto">
+      <table className="spark-table">
+        <thead>
           <tr>
-            <th className="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">When</th>
-            <th className="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">Platforms</th>
-            <th className="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">Body</th>
-            <th className="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">Status</th>
-            <th className="text-right px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600">Actions</th>
+            <th>When</th>
+            <th>Platforms</th>
+            <th>Body</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -516,12 +609,12 @@ function ListView({
             <tr
               key={p.id}
               onClick={() => onRowClick(p)}
-              className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer"
+              className="spark-table-row cursor-pointer"
             >
-              <td className="px-4 py-2 whitespace-nowrap text-xs text-slate-700">
+              <td className="whitespace-nowrap text-xs text-slate-700">
                 {formatWhen(p)}
               </td>
-              <td className="px-4 py-2">
+              <td>
                 <div className="flex items-center gap-1 flex-wrap">
                   {(p.platforms || []).map((plat) => (
                     <span
@@ -534,10 +627,10 @@ function ListView({
                   ))}
                 </div>
               </td>
-              <td className="px-4 py-2 max-w-md">
+              <td className="max-w-md">
                 <div className="text-sm text-slate-700 line-clamp-2">{p.body || <em className="text-slate-400">(no body)</em>}</div>
               </td>
-              <td className="px-4 py-2">
+              <td>
                 <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_META[p.status]?.className || "bg-slate-100 text-slate-600"}`}>
                   {STATUS_META[p.status]?.label || p.status}
                 </span>
@@ -547,21 +640,13 @@ function ListView({
                   </div>
                 )}
               </td>
-              <td className="px-4 py-2 text-right">
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onRowClick(p); }}
-                  className="text-xs font-semibold text-blue-600 hover:underline"
-                >
-                  Open
-                </button>
-              </td>
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-4 py-2 border-t border-slate-200 text-xs text-slate-600">
+        <div className="spark-table-footer text-xs text-slate-600">
           <span>{totalCount} post{totalCount === 1 ? "" : "s"} • page {page} of {totalPages}</span>
           <div className="flex items-center gap-2">
             <button
@@ -645,14 +730,15 @@ function CalendarView({
             className="ml-2 text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-50"
           >Today</button>
         </div>
-        <div className="inline-flex rounded-md border border-slate-300 bg-white overflow-hidden text-xs">
+        {/* Month/Week scope — canon segmented control */}
+        <div className="flex gap-1 rounded-lg bg-slate-100 p-1 text-xs">
           <button
             onClick={() => setScope("month")}
-            className={`px-2.5 py-1 font-semibold ${scope === "month" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"}`}
+            className={`rounded-md px-2.5 py-1 font-medium transition-colors ${scope === "month" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
           >Month</button>
           <button
             onClick={() => setScope("week")}
-            className={`px-2.5 py-1 font-semibold ${scope === "week" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"}`}
+            className={`rounded-md px-2.5 py-1 font-medium transition-colors ${scope === "week" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
           >Week</button>
         </div>
       </div>
@@ -680,14 +766,14 @@ function CalendarView({
               onDrop={hasDrag ? (e) => onDayDrop(dayKey, e) : undefined}
               className={`bg-white p-1.5 text-left flex flex-col gap-0.5 transition-colors ${
                 inCurrentMonth ? "" : "bg-slate-50"
-              } ${isToday ? "ring-2 ring-inset ring-[#FEC82C]" : ""} ${
+              } ${isToday ? "ring-2 ring-inset ring-[#EF6C33]" : ""} ${
                 dragActive ? "outline-dashed outline-1 outline-blue-300" : ""
               }`}
               style={{ minHeight: scope === "month" ? 88 : 220 }}
             >
               <div className={`text-[11px] font-medium ${
                 inCurrentMonth ? "text-slate-700" : "text-slate-400"
-              } ${isToday ? "text-[#1A3A4A] font-bold" : ""}`}>
+              } ${isToday ? "text-[#EF6C33] font-bold" : ""}`}>
                 {day.getDate()}
               </div>
               <div className="flex-1 flex flex-col gap-0.5 overflow-hidden">
@@ -703,6 +789,71 @@ function CalendarView({
         })}
       </div>
     </div>
+  );
+}
+
+// ── Upcoming rail (re-cut §9 item 5) ──────────────────────────────────────
+// The next scheduled posts in the viewed window, chronological — the "what
+// fires next" list Meta Business Suite pairs with its calendar. Computed
+// from the already-fetched window (respects the active facet filters); a
+// past-due-but-still-scheduled post sorts first, which is exactly where the
+// eye should land (the dispatcher claims it within 5 minutes).
+function UpcomingRail({ posts, onOpen }: {
+  posts: SocialPost[];
+  onOpen: (p: SocialPost) => void;
+}) {
+  const upcoming = useMemo(() => {
+    return posts
+      .filter((p) => p.status === "scheduled" && p.scheduled_for)
+      .sort((a, b) => (a.scheduled_for || "").localeCompare(b.scheduled_for || ""))
+      .slice(0, 10);
+  }, [posts]);
+
+  return (
+    <aside className="xl:w-72 flex-shrink-0">
+      <div className="rounded-xl border border-slate-200 bg-white">
+        <div className="px-3 py-2.5 border-b border-slate-100 flex items-center gap-2">
+          <CalendarIcon className="h-3.5 w-3.5 text-slate-500" />
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">Upcoming</h4>
+          <span className="ml-auto text-[10px] text-slate-400">{upcoming.length ? `next ${upcoming.length}` : ""}</span>
+        </div>
+        {upcoming.length === 0 ? (
+          <div className="px-3 py-6 text-center text-xs text-slate-400">
+            No scheduled posts in this window.
+          </div>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {upcoming.map((p) => (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpen(p)}
+                  className="w-full px-3 py-2 text-left hover:bg-slate-50 transition-colors"
+                >
+                  <div className="text-[11px] font-semibold text-slate-800">
+                    {formatWhen(p)}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1 flex-wrap">
+                    {(p.platforms || []).map((plat) => (
+                      <span
+                        key={plat}
+                        className="inline-flex items-center rounded px-1 py-px text-[9px] font-semibold text-white"
+                        style={{ background: platformMeta(plat).color }}
+                      >
+                        {platformMeta(plat).label}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-slate-500 line-clamp-2">
+                    {p.body || <em className="text-slate-400">(no body)</em>}
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </aside>
   );
 }
 
@@ -732,13 +883,20 @@ function PostChip({ post, onClick, onDragStart, draggable }: {
 }
 
 // ── Detail modal ──────────────────────────────────────────────────────────
+// Canon footer order: [danger red text, mr-auto] Close(ghost) positive(accent).
+// Cancel-post confirmation is an IadmModal size="confirm" (replaces
+// window.confirm); reschedule/cancel failures render as inline banners.
 function PostDetailModal({
-  post, onClose, onCancel, onReschedule,
+  post, onClose, onCancel, onReschedule, onEdit,
 }: {
   post: SocialPost;
   onClose: () => void;
-  onCancel: () => void;
-  onReschedule: (iso: string) => void;
+  /** DELETE + reload; the caller closes this modal on success. Throws on failure. */
+  onCancel: () => Promise<void>;
+  /** PATCH reschedule + reload; the caller closes on success. Throws on failure. */
+  onReschedule: (iso: string) => Promise<void>;
+  /** Open the composer modal pre-filled from this post. */
+  onEdit: () => void;
 }) {
   const isScheduled = post.status === "scheduled";
   const [newWhen, setNewWhen] = useState<string>(() => {
@@ -749,42 +907,71 @@ function PostDetailModal({
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const meta = STATUS_META[post.status];
+
+  async function doReschedule() {
+    setBusy(true); setError(null);
+    try {
+      await onReschedule(new Date(newWhen).toISOString());
+    } catch (e) {
+      setError(`Reschedule failed: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function doCancel() {
+    setBusy(true); setError(null);
+    try {
+      await onCancel();
+      setConfirmCancel(false);
+    } catch (e) {
+      setConfirmCancel(false);
+      setError(`Cancel failed: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <IadmModal
       open
       onClose={onClose}
       product="spark"
-      eyebrow="SOCIAL POST"
-      title={`Post #${post.id}`}
+      eyebrow="MY BRAND · SOCIAL POST"
+      title="Social post"
       subtitle={meta?.label || post.status}
       size="info"
       footer={
         <>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-          >Close</button>
           {isScheduled && (
-            <>
-              <button
-                type="button"
-                onClick={() => onReschedule(new Date(newWhen).toISOString())}
-                className="rounded-md bg-[#2563eb] px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
-              >Reschedule</button>
-              <button
-                type="button"
-                onClick={onCancel}
-                className="rounded-md bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
-              >Cancel post</button>
-            </>
+            <button
+              type="button"
+              onClick={() => setConfirmCancel(true)}
+              disabled={busy}
+              className="mr-auto text-xs text-rose-600 hover:text-rose-700 inline-flex items-center gap-1"
+            >
+              Cancel post
+            </button>
+          )}
+          <IadmButton variant="ghost" onClick={onClose}>Close</IadmButton>
+          {isScheduled && (
+            <IadmButton variant="accent" product="spark" onClick={doReschedule} disabled={busy}>
+              {busy ? "Working…" : "Reschedule"}
+            </IadmButton>
           )}
         </>
       }
     >
       <div className="p-5 space-y-4">
+        {error && (
+          <div className="rounded border border-red-200 bg-red-50 p-2.5 text-xs text-red-700 flex items-start gap-2">
+            <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
         <div>
           <div className="text-[11px] font-bold uppercase text-slate-500 mb-1">Platforms</div>
           <div className="flex items-center gap-1 flex-wrap">
@@ -842,15 +1029,44 @@ function PostDetailModal({
           </div>
         )}
         <div className="flex items-center justify-end pt-2">
-          <Link
-            to="/app/services/my_brand_compose"
-            onClick={onClose}
-            className="text-xs font-semibold text-blue-600 hover:underline"
+          <button
+            type="button"
+            onClick={onEdit}
+            className="text-xs font-semibold text-[#EF6C33] hover:underline"
           >
-            Open in composer →
-          </Link>
+            Edit in composer →
+          </button>
         </div>
       </div>
+
+      {/* Cancel-post confirm — IadmModal size="confirm" replaces window.confirm */}
+      {confirmCancel && (
+        <IadmModal
+          open
+          onClose={() => setConfirmCancel(false)}
+          product="spark"
+          eyebrow="MY BRAND · SOCIAL POST"
+          title="Cancel this post?"
+          size="confirm"
+          footer={
+            <>
+              <IadmButton variant="ghost" onClick={() => setConfirmCancel(false)}>Keep post</IadmButton>
+              <button
+                type="button"
+                onClick={doCancel}
+                disabled={busy}
+                className="inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 transition-colors disabled:opacity-50"
+              >
+                {busy ? "Cancelling…" : "Cancel post"}
+              </button>
+            </>
+          }
+        >
+          <div className="p-5 text-sm text-slate-700">
+            The scheduled post will be removed from the queue and will not publish. This cannot be undone.
+          </div>
+        </IadmModal>
+      )}
     </IadmModal>
   );
 }

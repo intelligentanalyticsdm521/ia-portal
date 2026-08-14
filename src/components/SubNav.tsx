@@ -1,17 +1,27 @@
-import { useState, type ComponentType } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Monitor, Server, ShieldCheck, BarChart2, TrendingUp,
   Search as SearchIcon, MapPin, Star, ChevronDown, Settings,
   Users, Megaphone, Briefcase, Heart, Target, Sparkles,
-  Wrench, UserCircle, CreditCard, MessageSquare, LineChart, Zap,
+  Wrench, UserCircle, CreditCard, MessageSquare, LineChart, Zap, Palette,
 } from "lucide-react";
 import type { ProductKey } from "./IconRail";
+import {
+  activeAddons,
+  isGatedProduct,
+  isVisible,
+  type VisibilityRules,
+} from "./navVisibility";
+import { useProductTier } from "../hooks/useProductTier";
+import { useAppState } from "../app/AppState";
+import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
 
-export interface SubNavItem {
+export interface SubNavItem extends VisibilityRules {
   key: string;
   label: string;
   route: string;
+  /** Renders a padlock ICON only — see navVisibility.ts for actual gating. */
   gated?: boolean;
   intelligence?: boolean; // (legacy) — no longer changes the label color; harmless if set.
   crossPlatform?: boolean; // (legacy) — no longer changes the label color; harmless if set.
@@ -24,6 +34,13 @@ export interface SubNavItem {
    * intelligence items, ARGUS Cross-Platform links, STELLA, etc.
    */
   tag?: { label: string; color: string };
+  /**
+   * Set at render time (not authored in the nav config) when the tenant's plan
+   * does NOT include this feature. The item still renders — with an "Upgrade"
+   * pill — so customers can see what they're missing. Brandon 2026-08-06:
+   * show, don't hide. Real enforcement is server-side (403).
+   */
+  locked?: boolean;
 }
 
 export interface SubNavGroup {
@@ -67,7 +84,7 @@ export interface SubNavConfig {
 // ─────────────────────────────────────────────────────────────────────────────
 const OLIVER_NAV: SubNavConfig = {
   productName: "OLIVER",
-  tagline: "Field Service & Job Lifecycle",
+  tagline: "Operations",
   groups: [
     {
       label: "",
@@ -102,7 +119,6 @@ const OLIVER_NAV: SubNavConfig = {
         // F-74 — separate taxonomy for crew skills (Plumbing, Electrical, etc.).
         // Distinct from product categories; drives auto-assign + customer
         // worker preferences.
-        { key: "oliver_service_categories", label: "Service Categories", route: "/app/services/oliver_service_categories" },
         { key: "oliver_coupons", label: "Coupons", route: "/app/services/oliver_coupons" },
       ],
     },
@@ -144,25 +160,27 @@ const OLIVER_NAV: SubNavConfig = {
         // the old page stays reachable by URL but no longer surfaces in nav.
         { key: "oliver_portals_hub", label: "Customer & Crew Portals", route: "/app/services/oliver_portals_hub" },
         // F-70 + F-72 + F-63 — reschedule policy, post-booking actions, signup form
-        { key: "oliver_workflow_settings", label: "Workflow Settings", route: "/app/services/oliver_workflow_settings" },
       ],
     },
     // F-116 — Expenses removed from OLIVER nav; rebuilds in STELLA. The
     // routes/page/backend table stay in place (deprecated) so deep links
     // don't 500 if anyone hits them.
+    // 2026-07-25 (Brandon): the "Reports" nav item removed — dead navigation,
+    // the page never had a working backend ("Failed to fetch"). Reporting is
+    // the IA Insights funnel now. Route/page stay so deep links don't 500.
+    // 2026-07-26 (Brandon): the leftover "Activity" group dissolved too —
+    // Activity Log is reachable from IA Insights → Reports (route unchanged).
+    // Cosmetic pass 2026-07-22 (Brandon): IA Insights is ALWAYS the bottom
+    // section of every platform nav.
     {
       label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "oliver_ia_insights",
       items: [
         { key: "oliver_ia_insights_health", label: "Health", route: "/app/services/oliver_ia_insights_health" },
         { key: "oliver_ia_insights_trends", label: "Trends", route: "/app/services/oliver_ia_insights_trends", tag: { label: "OLIVER", color: "#FEC82C" } },
-        { key: "oliver_ia_insights_intelligence", label: "Intelligence", route: "/app/services/oliver_ia_insights_intelligence", tag: { label: "OLIVER", color: "#FEC82C" } },
-      ],
-    },
-    {
-      label: "Reports", icon: BarChart2, collapsible: true, sectionId: "oliver_reporting",
-      items: [
-        { key: "oliver_reports", label: "Reports", route: "/app/services/oliver_reports" },
-        { key: "oliver_activity_log", label: "Activity Log", route: "/app/services/oliver_activity_log" },
+        // IA Insights model (see SPARK block): Health/Trends/Reports every tier,
+        // Intelligence = Pro. Brandon 2026-08-06.
+        { key: "oliver_ia_insights_intelligence", label: "Intelligence", route: "/app/services/oliver_ia_insights_intelligence", tag: { label: "OLIVER", color: "#FEC82C" }, minTier: "pro" },
+        { key: "oliver_ia_insights_reports", label: "Reports", route: "/app/services/oliver_ia_insights_reports" },
       ],
     },
   ],
@@ -170,7 +188,7 @@ const OLIVER_NAV: SubNavConfig = {
 
 const ARION_NAV: SubNavConfig = {
   productName: "ARION",
-  tagline: "Web & Digital Presence",
+  tagline: "Digital Presence",
   groups: [
     {
       label: "",
@@ -224,15 +242,6 @@ const ARION_NAV: SubNavConfig = {
       ],
     },
     {
-      label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "ia_insights",
-      items: [
-        { key: "arion_ia_insights_health", label: "Health", route: "/app/services/arion_ia_insights_health" },
-        { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends", tag: { label: "ARION", color: "#38BDF8" } },
-        { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#38BDF8" } },
-        { key: "arion_service_area", label: "Service Area Config", route: "/app/services/arion_service_area" },
-      ],
-    },
-    {
       label: "SEO", icon: TrendingUp, collapsible: true, sectionId: "seo",
       items: [
         { key: "arion_seo_overview", label: "Overview", route: "/app/services/arion_seo_overview" },
@@ -254,28 +263,66 @@ const ARION_NAV: SubNavConfig = {
       ],
     },
     {
-      // Business Profile gated 2026-06-28 — entire section behind Coming Soon
-      // pending Google Workspace migration + GBP auto-provision rework
-      // (see SCOPE_WORKING.md F-Onb-D3). All items show the lock icon; routes
-      // still render the underlying pages with a ComingSoonBanner at top.
+      // Business Profile un-gated 2026-07-22 — GBP Connect (client-owned
+      // OAuth + create + verification) shipped and walked; the 2026-06-28
+      // coming-soon locks predated the rework and are retired.
       label: "Business Profile", icon: MapPin, collapsible: true, sectionId: "business",
       items: [
-        { key: "arion_business_overview", label: "Overview", route: "/app/services/arion_business_overview", gated: true },
-        { key: "arion_business_locations", label: "Locations", route: "/app/services/arion_business_locations", gated: true },
-        { key: "arion_business_reviews", label: "Reviews", route: "/app/services/arion_business_reviews", gated: true },
-        { key: "arion_business_insights", label: "Insights", route: "/app/services/arion_business_insights", gated: true },
-        { key: "arion_business_posts", label: "Posts", route: "/app/services/arion_business_posts", gated: true },
-        { key: "arion_business_services", label: "Services", route: "/app/services/arion_business_services", gated: true },
-        { key: "arion_business_bing_overview", label: "Bing Places", route: "/app/services/arion_business_bing_overview", gated: true },
-        { key: "arion_business_apple_overview", label: "Apple Maps", route: "/app/services/arion_business_apple_overview", gated: true },
+        { key: "arion_business_overview", label: "Overview", route: "/app/services/arion_business_overview" },
+        { key: "arion_business_locations", label: "Locations", route: "/app/services/arion_business_locations" },
+        { key: "arion_business_reviews", label: "Reviews", route: "/app/services/arion_business_reviews" },
+        { key: "arion_business_insights", label: "Performance", route: "/app/services/arion_business_insights" },
+        { key: "arion_business_posts", label: "Posts", route: "/app/services/arion_business_posts" },
+        { key: "arion_business_services", label: "Services", route: "/app/services/arion_business_services" },
+        { key: "arion_business_bing_overview", label: "Bing Places", route: "/app/services/arion_business_bing_overview" },
+        { key: "arion_business_apple_overview", label: "Apple Maps", route: "/app/services/arion_business_apple_overview" },
       ],
     },
     {
-      label: "", icon: Star,
+      // My Brand — ARION's brand-management section (re-cut 2026-07-21 per
+      // Brandon's IA correction). FEATURES only: things a tenant does with
+      // their brand. Voice profile + channel connections are SETTINGS
+      // (Brand Identity / integrations surfaces); social analytics is a
+      // REPORT (ARION IA Insights); the approval queue is the IA↔client
+      // project workflow (Consulting domain) and is not in this nav.
+      label: "My Brand", icon: Palette, collapsible: true, sectionId: "arion_my_brand",
+      // No Overview page (Brandon 2026-07-21): the section lands directly on
+      // Image Studio. Call-out surfaces (today's posts, new activity) belong
+      // on the home / ARION dashboard calendars, not a My Brand page.
+      // RE-CUT 2026-07-22 (MY_BRAND_RECUT doc, locked): Design Studio (was
+      // Template Studio), Media Library (was Asset Library), Social Hub =
+      // Composer + Calendar MERGED (canonical surface is the calendar page,
+      // which hosts the composer modal; my_brand_compose route stays
+      // registered as a redirect shim for old links). Social Content joins
+      // this list when its page lands.
+      landingRoute: "/app/services/my_brand_image_studio",
       items: [
-        { key: "arion_brand", label: "My Brand", route: "/app/services/arion_brand" },
-        { key: "arion_plugin_provisioning", label: "Plugin Provisioning", route: "/app/services/arion_plugin_provisioning" },
-        { key: "arion_usage", label: "Plan & Pricing", route: "/app/services/arion_usage" },
+        { key: "my_brand_image_studio", label: "Image Studio", route: "/app/services/my_brand_image_studio" },
+        { key: "my_brand_templates", label: "Design Studio", route: "/app/services/my_brand_templates" },
+        { key: "my_brand_assets", label: "Media Library", route: "/app/services/my_brand_assets" },
+        { key: "my_brand_calendar", label: "Social Hub", route: "/app/services/my_brand_calendar" },
+        // Re-cut item 5 (2026-07-22): Meta-Business-Suite-style content view —
+        // per-post metrics + filters; "full report" page hangs off it (not nav).
+        { key: "my_brand_social_content", label: "Social Content", route: "/app/services/my_brand_social_content" },
+      ],
+    },
+    // REMOVED 2026-07-21 (Brandon, My Brand verification pass):
+    //   * arion_usage "Plan & Pricing" — pricing lives ONLY in the global
+    //     hub (hamburger > Plan & Pricing > /app/settings/plan-pricing);
+    //     the arion_usage route stays registered for deep links from there.
+    //   * arion_plugin_provisioning — it's a SETTING, not a daily-work
+    //     feature; moved to Settings > ARION below.
+    // Cosmetic pass 2026-07-22 (Brandon): IA Insights is ALWAYS the bottom
+    // section of every platform nav; Service Area Config removed from it
+    // (it's a setting — lives in Settings > ARION only).
+    {
+      label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "ia_insights",
+      items: [
+        { key: "arion_ia_insights_health", label: "Health", route: "/app/services/arion_ia_insights_health" },
+        { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends", tag: { label: "ARION", color: "#38BDF8" } },
+        // IA Insights model (see SPARK block): Health/Trends/Reports every tier,
+        // Intelligence = Pro. Brandon 2026-08-06.
+        { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#38BDF8" }, minTier: "pro" },
       ],
     },
   ],
@@ -303,7 +350,7 @@ const ARION_NAV: SubNavConfig = {
 // ─────────────────────────────────────────────────────────────────────────────
 const SPARK_NAV: SubNavConfig = {
   productName: "SPARK",
-  tagline: "Growth Platform",
+  tagline: "CRM",
   groups: [
     {
       // F-87 — "Get Started" removed from nav. Onboarding now lives as a
@@ -320,13 +367,20 @@ const SPARK_NAV: SubNavConfig = {
       label: "CRM", icon: Users, collapsible: true, sectionId: "spark_crm",
       items: [
         { key: "spark_contacts", label: "Contacts", route: "/app/services/spark_contacts" },
-        { key: "spark_contact_import", label: "Import (CSV)", route: "/app/services/spark_contact_import" },
-        { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts" },
+        // MERGED into the Contacts import modal 2026-07-30 (phase 4). The modal
+        // now does everything this page did (file picker) plus xlsx, so hiding
+        // it removes a nav item without removing a capability.
+        { key: "spark_contact_import", label: "Import (CSV)", route: "/app/services/spark_contact_import", merged: true },
+        { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts", merged: true /* merged: Companies is now a view on Contacts (List | Kanban | Companies) — same component, not a copy */ },
         { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
-        { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments" },
-        { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags" },
-        { key: "spark_contact_360", label: "Contact 360°", route: "/app/services/spark_contact_360", intelligence: true },
-        { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true },
+        { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments", minTier: "pro" },
+        { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags", merged: true /* merged: apply/create tags inline on Contacts; 'Manage all tags' link opens the taxonomy */ },
+        // MERGED into the contact record's Activity tab 2026-07-30 (phase 4).
+        // Brandon: "Contact 360 - no clue what this is." Its only unique
+        // content was email/SMS history + OLIVER jobs, which now render on the
+        // record itself — one screen per person instead of two places to look.
+        { key: "spark_contact_360", label: "Contact 360°", route: "/app/services/spark_contact_360", intelligence: true, merged: true, minTier: "business" /* BUSINESS (tier matrix 2026-08-06) */ },
+        { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true, merged: true, minTier: "business" /* BUSINESS (tier matrix 2026-08-06) — merged: linked from IA Insights -> Health (contact scoring) */ },
       ],
     },
     {
@@ -341,18 +395,18 @@ const SPARK_NAV: SubNavConfig = {
         // per founder decision. Library is configuration-like, used BY
         // campaigns rather than alongside them. Keeping reference here so
         // the move is documented.
-        { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter" },
-        { key: "spark_social", label: "Social & Calendar", route: "/app/services/spark_social" },
-        { key: "spark_sms_inbox", label: "SMS Inbox", route: "/app/services/spark_sms_inbox" },
-        { key: "spark_deliverability", label: "Deliverability", route: "/app/services/spark_deliverability" },
+        { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter", minTier: "pro" },
+        { key: "spark_social", label: "Social & Calendar", route: "/app/services/spark_social", hidden: true /* cut: moved to ARION -> My Brand */ },
+        { key: "spark_sms_inbox", label: "SMS Inbox", route: "/app/services/spark_sms_inbox", minTier: "pro", hidden: true },
+        { key: "spark_deliverability", label: "Deliverability", route: "/app/services/spark_deliverability", merged: true /* merged: status indicator on Settings -> Senders links to the full dashboard */ },
       ],
     },
     {
       label: "Capture", icon: Target, collapsible: true, sectionId: "spark_capture",
       items: [
         { key: "spark_forms", label: "Forms", route: "/app/services/spark_forms" },
-        { key: "spark_form_builder", label: "Form Builder", route: "/app/services/spark_form_builder" },
-        { key: "spark_landing_pages", label: "Landing Pages", route: "/app/services/spark_landing_pages" },
+        { key: "spark_form_builder", label: "Form Builder", route: "/app/services/spark_form_builder", merged: true /* merged: Forms opens the builder as a modal (F-104, 2026-05-28); this page is only a back-compat route for old deep links */ },
+        { key: "spark_landing_pages", label: "Landing Pages", route: "/app/services/spark_landing_pages", minTier: "pro" /* PRO */},
         { key: "spark_qr_codes", label: "QR Codes", route: "/app/services/spark_qr_codes" },
       ],
     },
@@ -380,23 +434,23 @@ const SPARK_NAV: SubNavConfig = {
         // Triggers consolidated into ONE list page. The page exposes a
         // segmented filter for "All / Automations / Rules" and a single
         // "New workflow" button that opens the unified chooser modal.
-        { key: "spark_workflows_automations", label: "Workflows & Automations", route: "/app/services/spark_workflows_automations" },
+        { key: "spark_workflows_automations", label: "Workflows & Automations", route: "/app/services/spark_workflows_automations", minTier: "pro" /* PRO (tier matrix 2026-08-06) — the ~4 prebuilt toggle-on automations */ },
         // F-CS.6 — admin for the lumen.spark_task rows that `task_call`
         // steps reference. Sits next to Workflows & Automations because
         // tasks ARE workflow building blocks — same mental model, same
         // group home.
-        { key: "spark_tasks", label: "Tasks", route: "/app/services/spark_tasks" },
-        { key: "spark_journey_builder", label: "Journeys", route: "/app/services/spark_journey_builder" },
-        { key: "spark_ab_tests", label: "A/B Tests", route: "/app/services/spark_ab_tests" },
-        { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals" },
-        { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts" },
+        { key: "spark_tasks", label: "Tasks", route: "/app/services/spark_tasks", minTier: "pro" /* PRO: follow-up tasks are core CRM */},
+        { key: "spark_journey_builder", label: "Journeys", route: "/app/services/spark_journey_builder", minTier: "business" /* BUSINESS (tier matrix 2026-08-06): multi-step branching journeys are the advanced-automation tier; Pro gets the prebuilt toggles */},
+        { key: "spark_ab_tests", label: "A/B Tests", route: "/app/services/spark_ab_tests", minTier: "pro" /* PRO */},
+        { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals", minTier: "business" /* BUSINESS: matters at 2+ marketers */},
+        { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts", minTier: "business" /* BUSINESS */},
         // Templates moved here from Outreach (2026-05-28 founder decision).
         // It's a library used by other features — configuration-like, not
         // an active send surface.
-        { key: "spark_templates", label: "Templates", route: "/app/services/spark_templates" },
+        { key: "spark_templates", label: "Templates", route: "/app/services/spark_templates", merged: true /* merged: reachable from Campaigns -> Templates. Already unified Email+SMS+Translations into one library (F-91) */ },
         // Phase 3A (2026-06-16) — Webhooks pulled from nav until our own
         // implementation ships in SPARK v1.5 (page shows Coming Soon banner).
-        { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync" },
+        { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync", minTier: "business" /* BUSINESS: ad-platform audience push */},
         // Lead Suppression + Lead Territories used to live here as separate
         // entries; both were absorbed into the unified Lead Inbox page
         // (Sales group) as tabs on 2026-06-25.
@@ -413,29 +467,19 @@ const SPARK_NAV: SubNavConfig = {
         // (Lead Inbox, Suppressed Domains, Territories). Legacy routes
         // /spark_leads, /spark_lead_suppression, /spark_lead_territories
         // still resolve and pre-select the correct tab.
-        { key: "spark_lead_inbox", label: "Lead Inbox", route: "/app/services/spark_lead_inbox" },
-        { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines" },
-        { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals" },
-        { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution" },
+        { key: "spark_lead_inbox", label: "Lead Inbox", route: "/app/services/spark_lead_inbox", addon: "leadgen" },
+        { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines", minTier: "pro" /* PRO: moved out of the Lead Gen add-on into the package */},
+        { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals", minTier: "pro" /* PRO: deals + pipelines are what ActiveCampaign gates too */},
+        { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution", minTier: "business" /* BUSINESS (tier matrix 2026-08-06): multi-touch revenue attribution sits with the advanced reporting tier */},
       ],
     },
     {
       label: "Customer Success", icon: Heart, collapsible: true, sectionId: "spark_customer_success",
       items: [
-        { key: "spark_nps", label: "NPS", route: "/app/services/spark_nps" },
-        { key: "spark_nps_schedules", label: "NPS Schedules", route: "/app/services/spark_nps_schedules" },
-        { key: "spark_reviews", label: "Reputation Hub", route: "/app/services/spark_reviews" },
-        { key: "spark_referrals", label: "Referrals", route: "/app/services/spark_referrals" },
-      ],
-    },
-    {
-      // IA Insights — pure analytics. Service Category moved to Settings.
-      label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "spark_ia_insights",
-      items: [
-        { key: "spark_ia_insights_health", label: "Health", route: "/app/services/spark_ia_insights_health" },
-        { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends", tag: { label: "SPARK", color: "#EF6C33" } },
-        { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" } },
-        { key: "spark_stella", label: "STELLA Send Intelligence", route: "/app/services/spark_stella", tag: { label: "STELLA", color: "#EF6C33" } },
+        { key: "spark_nps", label: "NPS", route: "/app/services/spark_nps", minTier: "business" /* BUSINESS: customer-success suite */},
+        { key: "spark_nps_schedules", label: "NPS Schedules", route: "/app/services/spark_nps_schedules", minTier: "business" /* BUSINESS: customer-success suite */},
+        { key: "spark_reviews", label: "Reputation Hub", route: "/app/services/spark_reviews", hidden: true /* cut: reviews live in ARION My Business/GBP */ },
+        { key: "spark_referrals", label: "Referrals", route: "/app/services/spark_referrals", minTier: "business" /* BUSINESS: customer-success suite */},
       ],
     },
     {
@@ -446,23 +490,33 @@ const SPARK_NAV: SubNavConfig = {
         // Surfacing it as a nav item misleads users into thinking it
         // works. Page route remains so deep-links don't 404 and the
         // marketing/coming-soon preview is still reachable.
-        { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence" },
-        { key: "spark_activity_stream", label: "Activity Stream", route: "/app/services/spark_activity_stream" },
+        { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence", merged: true, minTier: "business" /* BUSINESS (tier matrix 2026-08-06) — merged: per-contact score is on the Contacts list (tier + score columns, Tier X/Y/Z filters); the trend lives in IA Insights. A third page showing the same distribution is the duplication Brandon flagged 2026-08-06 */ },
+        { key: "spark_activity_stream", label: "Activity Stream", route: "/app/services/spark_activity_stream", merged: true /* merged: linked from IA Insights -> Health (activity stream) */ },
       ],
     },
+    // 2026-07-26 (Brandon): the standalone "Reporting" nav group removed —
+    // general/operational reporting lives under IA Insights → Reports now
+    // (Real-Time Activity / Usage / Audit Log reachable from that hub; their
+    // routes/pages stay so deep links don't 500). "STELLA Send Intelligence"
+    // removed from nav too: its best-time-to-send analysis now ships as the
+    // real spark_send_times report inside SPARK Intelligence (Campaign ROI →
+    // Campaign Opportunities).
+    // Cosmetic pass 2026-07-22 (Brandon): IA Insights is ALWAYS the bottom
+    // section of every platform nav. Pure analytics; Service Category is in
+    // Settings.
     {
-      // Reporting absorbed the formerly-standalone Real-Time Activity + Usage.
-      // Plan & Pricing left to Settings (it's a tenant admin concern, not a report).
-      label: "Reporting", icon: BarChart2, collapsible: true, sectionId: "spark_reporting",
+      label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "spark_ia_insights",
       items: [
-        { key: "spark_dashboards", label: "Dashboards", route: "/app/services/spark_dashboards" },
-        { key: "spark_analytics_reports", label: "Analytics Reports", route: "/app/services/spark_analytics_reports" },
-        { key: "spark_scheduled_reports", label: "Scheduled Reports", route: "/app/services/spark_scheduled_reports" },
-        { key: "spark_realtime_metrics", label: "Real-Time Activity", route: "/app/services/spark_realtime_metrics" },
-        { key: "spark_usage_report", label: "Usage", route: "/app/services/spark_usage_report" },
-        // F-93 — Audit Log moved here from Settings. It's a viewer feature
-        // (you READ the log), not a configuration toggle.
-        { key: "spark_audit_log", label: "Audit Log", route: "/app/services/spark_audit_log" },
+        { key: "spark_ia_insights_health", label: "Health", route: "/app/services/spark_ia_insights_health" },
+        { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends", tag: { label: "SPARK", color: "#EF6C33" } },
+        // IA INSIGHTS MODEL (Brandon 2026-08-06, applies to ARION/OLIVER/SPARK
+        // identically): Health + Trends + Reports at EVERY tier — their depth
+        // scales naturally because a lower tier simply connects fewer data
+        // sources. Only the MODELLED layer (forecasts, anomaly detection,
+        // weighted-impact opportunity) is a paid unlock at Pro. Cross-platform
+        // intelligence stays ARGUS-only.
+        { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" }, minTier: "pro" },
+        { key: "spark_ia_insights_reports", label: "Reports", route: "/app/services/spark_ia_insights_reports" },
       ],
     },
   ],
@@ -475,7 +529,7 @@ const SPARK_NAV: SubNavConfig = {
 //           applyConsultingNavFilter (AppShell.tsx)
 const CONSULTING_NAV: SubNavConfig = {
   productName: "Consulting",
-  tagline: "IA Work & Deliverables",
+  tagline: "Projects",
   groups: [
     {
       label: "",
@@ -486,7 +540,7 @@ const CONSULTING_NAV: SubNavConfig = {
         // AppShell continues to drop founder-only items for non-founders;
         // the URL move means founders + clients no longer share a nav row.
         { key: "consulting_overview",          label: "Overview",          route: "/app/services/consulting_overview" },
-        { key: "consulting_tickets",           label: "Service Requests",  route: "/app/admin/consulting/requests" },
+        { key: "consulting_tickets",           label: "Work",              route: "/app/admin/consulting/requests" },
         { key: "consulting_projects",          label: "Projects",          route: "/app/admin/consulting/projects" },
         { key: "consulting_deliverables",      label: "Deliverables",      route: "/app/services/consulting_deliverables" },
         { key: "consulting_documents",         label: "Document Library",  route: "/app/admin/consulting/document-library" },
@@ -621,12 +675,18 @@ const SETTINGS_NAV: SubNavConfig = {
     {
       label: "ARION", icon: Monitor, collapsible: true, sectionId: "settings_arion",
       items: [
-        // Brand = brand colors/logos config (setting).
         // Service Area = single-value config (setting).
-        // REMOVED: arion_plugin_provisioning (feature → main nav).
-        // REMOVED: arion_usage Plan & Pricing (global → hamburger).
-        { key: "arion_brand", label: "Brand", route: "/app/services/arion_brand" },
+        // REMOVED 2026-07-21: arion_brand — My Brand is a FEATURE section in
+        //   the ARION main nav (Brandon's IA re-cut). Having it registered
+        //   here put arion_brand in SETTINGS_KEYS, so landing on the My Brand
+        //   hub flipped the whole shell into the Settings panel. Brand
+        //   IDENTITY config remains a GLOBAL (hamburger > Brand Identity).
+        // arion_plugin_provisioning RETURNED here 2026-07-21 (Brandon, My
+        //   Brand verification pass): provisioning is a setup/config concern,
+        //   not a daily-work feature — reversing the earlier feature→main-nav
+        //   move. arion_usage stays OUT of both navs (global hamburger hub).
         { key: "arion_service_area", label: "Service Area", route: "/app/services/arion_service_area" },
+        { key: "arion_plugin_provisioning", label: "Plugin Provisioning", route: "/app/services/arion_plugin_provisioning" },
       ],
     },
     {
@@ -665,14 +725,14 @@ const SETTINGS_NAV: SubNavConfig = {
         { key: "spark_sender_domains", label: "Sender Setup", route: "/app/services/spark_sender_domains" },
         { key: "spark_senders", label: "Senders", route: "/app/services/spark_senders" },
         { key: "spark_signatures", label: "Signatures", route: "/app/services/spark_signatures" },
-        { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys" },
-        { key: "spark_secrets", label: "Tenant Secrets", route: "/app/services/spark_secrets" },
+        { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys", hidden: true /* cut: platform plumbing */ },
+        { key: "spark_secrets", label: "Tenant Secrets", route: "/app/services/spark_secrets", hidden: true /* cut: platform plumbing */ },
         { key: "spark_custom_fields", label: "Custom Fields", route: "/app/services/spark_custom_fields" },
-        { key: "spark_quiet_hours", label: "Quiet Hours", route: "/app/services/spark_quiet_hours" },
-        { key: "spark_tracking", label: "Tracking Pixels", route: "/app/services/spark_tracking" },
-        { key: "spark_calendar_sync", label: "Calendar Sync", route: "/app/services/spark_calendar_sync" },
+        { key: "spark_quiet_hours", label: "Quiet Hours", route: "/app/services/spark_quiet_hours", hidden: true /* cut: niche */ },
+        { key: "spark_tracking", label: "Tracking Pixels", route: "/app/services/spark_tracking", hidden: true /* cut: visitor tracking, niche */ },
+        { key: "spark_calendar_sync", label: "Calendar Sync", route: "/app/services/spark_calendar_sync", hidden: true /* cut: niche */ },
         { key: "spark_service_category", label: "Service Category", route: "/app/services/spark_service_category" },
-        { key: "spark_config_backup", label: "Config Backup", route: "/app/services/spark_config_backup" },
+        { key: "spark_config_backup", label: "Config Backup", route: "/app/services/spark_config_backup", hidden: true /* cut: platform plumbing */ },
       ],
     },
     {
@@ -725,7 +785,7 @@ export const SETTINGS_KEYS = new Set<string>(
 // any deep links, but no nav entry surfaces it.
 const ARGUS_NAV: SubNavConfig = {
   productName: "ARGUS",
-  tagline: "Multi-platform Intelligence",
+  tagline: "AI & Agents",
   groups: [
     {
       label: "Workflow & Automations", icon: Zap, collapsible: false, sectionId: "argus_workflow",
@@ -772,14 +832,59 @@ interface SubNavProps {
 
 // Determine which section should auto-expand based on current path.
 // Each entry maps a path predicate to a sectionId (which must match a group's sectionId).
+/**
+ * route → sectionId, DERIVED from the nav config itself.
+ *
+ * The hand-written `path.includes(...)` chain below has drifted from the nav
+ * three times, because moving an item between groups doesn't touch it. Found
+ * 2026-07-28 while walking the tours:
+ *   - /spark_templates returned "spark_outreach" but the item now lives in
+ *     Workflow & Automations
+ *   - /spark_lead_inbox matched nothing at all (the Sales test is
+ *     "/spark_leads", which "spark_lead_inbox" does not contain)
+ *   - arion_ia_insights_* had no mapping whatsoever
+ * In each case the wrong group expanded (or none did), so the page you were
+ * looking at stayed hidden inside a collapsed group.
+ *
+ * Every nav item already knows its group, so read it from there. Built once,
+ * and it cannot go stale — moving an item updates this automatically.
+ */
+const ROUTE_TO_SECTION: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  for (const config of Object.values(SUB_NAV_CONFIGS)) {
+    if (!config) continue;
+    for (const group of config.groups) {
+      const sid = (group as { sectionId?: string }).sectionId;
+      if (!sid) continue;
+      for (const item of group.items) {
+        // FIRST claim wins. Three routes appear in both a main-nav group and
+        // the Settings hub (oliver_service_categories, oliver_workflow_settings,
+        // stella_coming); main nav is declared first and is where users expect
+        // to be shown, so don't let the settings entry overwrite it.
+        if (item.route && !map[item.route]) map[item.route] = sid;
+      }
+    }
+  }
+  return map;
+})();
+
 function getDefaultSection(path: string): string | null {
+  // Exact nav route wins — this is the authoritative answer whenever the
+  // path IS a nav destination. The legacy chain below still handles retired
+  // routes and deep links that aren't in the nav any more.
+  const exact = ROUTE_TO_SECTION[path];
+  if (exact) return exact;
+
   // F-93 — Settings auto-expand. ONLY the routes that are CURRENTLY in
   // Settings should expand a settings group. Routes that moved OUT to
   // main nav (Templates, Webhooks, Audience Sync, Audit Log, Review Widget,
   // Coupons, Categories, Booking, etc.) are intentionally excluded —
   // they expand their main-nav group instead.
   if (path.includes("/oliver_settings") || path.includes("/oliver_workflow_settings") || path.includes("/oliver_service_categories") || path.includes("/oliver_team_access")) return "settings_oliver";
-  if (path.includes("/arion_brand") || path.includes("/arion_service_area")) return "settings_arion";
+  if (path.includes("/arion_service_area") || path.includes("/arion_plugin_provisioning")) return "settings_arion";
+  // My Brand is a FEATURE section in the ARION main nav (IA re-cut 2026-07-21)
+  // — the hub (arion_brand) and every my_brand_* child expand it.
+  if (path.includes("/arion_brand") || path.includes("/my_brand_")) return "arion_my_brand";
   if (
     path.includes("/spark_sender_domains") ||
     path.includes("/spark_senders") ||
@@ -833,7 +938,8 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/spark_ai_writer") || path.includes("/spark_intelligence") || path.includes("/spark_activity_stream")) return "spark_intelligence";
   if (path.includes("/spark_ia_insights_") || path.includes("/spark_stella")) return "spark_ia_insights";
   // F-93 — Audit Log moved from Settings → Reporting.
-  if (path.includes("/spark_dashboards") || path.includes("/spark_analytics_reports") || path.includes("/spark_scheduled_reports") || path.includes("/spark_realtime_metrics") || path.includes("/spark_usage_report") || path.includes("/spark_audit_log")) return "spark_reporting";
+  // Operational report pages live under IA Insights → Reports now (2026-07-26).
+  if (path.includes("/spark_dashboards") || path.includes("/spark_analytics_reports") || path.includes("/spark_scheduled_reports") || path.includes("/spark_realtime_metrics") || path.includes("/spark_usage_report") || path.includes("/spark_audit_log")) return "spark_ia_insights";
   // OLIVER sections (simplified nav 2026-05-25 — see OLIVER_NAV comment)
   //   - Removed entries for retired nav items (Projects, Schedule, Dispatch,
   //     Quotes-page, Billing Overview, Template Library, Operations *, Comms)
@@ -852,16 +958,87 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/oliver_ia_insights")) return "oliver_ia_insights";
   // ARGUS — single IA Insights group; expand it on any ARGUS Insights route.
   if (path.includes("/argus_health") || path.includes("/argus_trends") || path.includes("/argus_cross_platform") || path.includes("/argus_cross_channel") || path.includes("/argus_intelligence") || path.includes("/argus_ia_insights")) return "argus_ia_insights";
-  if (path.includes("/oliver_reports") || path.includes("/oliver_activity_log")) return "oliver_reporting";
+  if (path.includes("/oliver_reports") || path.includes("/oliver_activity_log")) return "oliver_ia_insights";
   // MY BRAND sections REMOVED 2026-06-22 — top-level slot pulled from
   // IconRail/SubNav (Q4 2026 deferred product). ARION's internal arion_brand
   // is handled by the settings_arion auto-expand above.
   return null;
 }
 
+/**
+ * serviceKey → its visibility declaration, derived from the nav configs.
+ *
+ * Exported so ServiceRouter can enforce the SAME rules on the route as the nav
+ * does on the link. Hiding a link without guarding its route just makes the
+ * page reachable by URL — from a bookmark, an old deep link, or one of the
+ * engagement alerts, which navigate by route.
+ */
+export const SERVICE_VISIBILITY: Record<string, VisibilityRules> = (() => {
+  const map: Record<string, VisibilityRules> = {};
+  for (const config of Object.values(SUB_NAV_CONFIGS)) {
+    if (!config) continue;
+    for (const group of config.groups) {
+      for (const item of group.items) {
+        if (item.hidden || item.merged || item.addon || item.minTier) {
+          map[item.key] = { hidden: item.hidden, merged: item.merged, addon: item.addon, minTier: item.minTier };
+        }
+      }
+    }
+  }
+  return map;
+})();
+
+/** Which product a config belongs to — configs are singletons, so identity works. */
+export function productOfConfig(config: SubNavConfig): ProductKey | undefined {
+  return (Object.keys(SUB_NAV_CONFIGS) as ProductKey[])
+    .find((k) => SUB_NAV_CONFIGS[k] === config);
+}
+
 export function SubNav({ config }: SubNavProps) {
   const location = useLocation();
   const navigate = useNavigate();
+
+  // ── Feature wall ────────────────────────────────────────────────────────
+  // Hooks must run unconditionally, so always resolve a tier; whether it's
+  // APPLIED depends on the product (STELLA/FORGE/ARGUS placeholders, Settings
+  // and Consulting are not gated).
+  const productKey = productOfConfig(config);
+  const gatingActive = isGatedProduct(productKey);
+  const { tier } = useProductTier(gatingActive ? productKey : "spark");
+  const { ownedProducts } = useAppState();
+  const visCtx = { tier, addons: activeAddons(), gatingActive };
+
+  // 2026-08-06 (Brandon) — SHOW, DON'T HIDE. Features the tenant's plan doesn't
+  // include stay VISIBLE and are marked "Upgrade", so they can see what they're
+  // missing. Hiding them destroyed the upsell: a Standard customer had no idea
+  // Pipelines or Newsletter Studio existed. The API still hard-blocks them
+  // (LUMEN requireSparkTier -> 403 tier_upgrade_required), so this is purely a
+  // discovery/merchandising surface, not an access decision.
+  // If the business doesn't own this PRODUCT at all, every item is locked —
+  // they can still browse the whole feature list (with the upgrade banner
+  // above it) to see what buying it would give them.
+  const PRODUCT_SERVICE_KEY: Record<string, string | undefined> = {
+    arion: "arion", oliver: "oliver", spark: "spark",
+    stella: "stella", forge: "forge", argus: "argus",
+  };
+  const needsKey = PRODUCT_SERVICE_KEY[productKey || ""];
+  // Kill switch (2026-08-06) — see config/featureFlags.FEATURE_GATING_ENABLED.
+  // With gating off nothing is marked locked, restoring the pre-gating menu.
+  const productLocked =
+    FEATURE_GATING_ENABLED &&
+    !!needsKey && ownedProducts.size > 0 && !ownedProducts.has(needsKey);
+
+  const gatedGroups = config.groups
+    .map((g) => ({
+      ...g,
+      items: g.items.map((it) =>
+        FEATURE_GATING_ENABLED && (productLocked || !isVisible(it, visCtx))
+          ? { ...it, locked: true as const }
+          : it
+      ),
+    }))
+    .filter((g) => g.items.length > 0);
+  config = { ...config, groups: gatedGroups };
   // Single-section-expanded mode for products that opt in via sectionId on groups.
   // ARION, SPARK, OLIVER all have sectionIds; STELLA/FORGE/ARGUS placeholders don't.
   const hasSectionIds = config.groups.some(g => !!g.sectionId);
@@ -871,6 +1048,23 @@ export function SubNav({ config }: SubNavProps) {
     if (!hasSectionIds) return null;
     return getDefaultSection(location.pathname);
   });
+
+  // Keep the open section in sync with the URL (2026-07-27).
+  //
+  // activeSection was seeded ONCE at mount and only changed on a header
+  // click, so any navigation the user didn't perform by clicking that header
+  // — a deep link, an alert "Open →", a guided tour stepping between
+  // sections — left the wrong group open and the destination group COLLAPSED.
+  // Collapsed means its <a> isn't in the DOM at all, which is why the tour
+  // had nothing to highlight and fell back to a bare centred box.
+  //
+  // Only forces a section when the path maps to one, so a user who collapses
+  // everything on the page they're already on keeps that state.
+  useEffect(() => {
+    if (!hasSectionIds) return;
+    const target = getDefaultSection(location.pathname);
+    if (target) setActiveSection((prev) => (prev === target ? prev : target));
+  }, [location.pathname, hasSectionIds]);
 
   // Legacy expanded set for non-ARION products
   const [expanded, setExpanded] = useState<Set<number>>(() => {
@@ -921,6 +1115,32 @@ export function SubNav({ config }: SubNavProps) {
         <p className="text-[10px] text-[#A8CDD8]">{config.tagline}</p>
       </div>
 
+      {/* 2026-08-06 (Brandon) — product NOT owned: the whole feature list stays
+          browsable so the customer can see exactly what they'd get, with a
+          prominent "add this product" banner above it. Access itself is
+          enforced server-side (403), never by hiding the nav. */}
+      {productLocked && (
+        <div
+          className="mx-3 mb-3 rounded-md px-3 py-2.5"
+          style={{ background: "#EF6C3318", border: "1px solid #EF6C3355" }}
+        >
+          <div className="text-[11px] font-bold" style={{ color: "#EF6C33" }}>
+            🔒 Not included in your plan
+          </div>
+          <div className="mt-1 text-[10px] leading-snug text-[#D5E8F0]/80">
+            Add <span className="font-semibold">{config.productName}</span> to unlock these features.
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate("/app/settings/plan")}
+            className="mt-2 w-full rounded px-2 py-1 text-[10px] font-bold text-white"
+            style={{ background: "#EF6C33" }}
+          >
+            Add {config.productName}
+          </button>
+        </div>
+      )}
+
       {/* Scrollable nav groups */}
       <nav className="flex-1 overflow-y-auto px-2 py-2">
         {config.groups.map((group, gi) => {
@@ -944,6 +1164,10 @@ export function SubNav({ config }: SubNavProps) {
               {group.label && group.collapsible ? (
                 <button
                   type="button"
+                  // Tours spotlight this to teach the nav itself ("click
+                  // Website — that's where your pages live") before drilling
+                  // into an item inside it.
+                  data-subnav-header={sid || group.label || undefined}
                   onClick={() => {
                     const landingRoute = group.landingRoute ?? group.items[0]?.route;
                     if (sid) toggleSection(sid, landingRoute);
@@ -979,8 +1203,29 @@ export function SubNav({ config }: SubNavProps) {
                         }
                       >
                         <span className="h-1 w-1 flex-shrink-0 rounded-full bg-current opacity-50" />
-                        <span className="truncate">{item.label}</span>
-                        {item.tag && (
+                        <span className={`truncate${item.locked ? " opacity-60" : ""}`}>{item.label}</span>
+                        {/* 2026-08-06 — plan-locked features stay VISIBLE with an
+                            "Upgrade" pill so customers discover what they're
+                            missing. The API enforces the real block (403). */}
+                        {item.locked && (
+                          <span
+                            title="Not included in your plan — upgrade to unlock"
+                            style={{
+                              background: '#EF6C3322',
+                              color: '#EF6C33',
+                              fontSize: 9,
+                              fontWeight: 700,
+                              letterSpacing: '0.04em',
+                              padding: '1px 5px',
+                              borderRadius: 99,
+                              flexShrink: 0,
+                              marginLeft: 'auto',
+                            }}
+                          >
+                            UPGRADE
+                          </span>
+                        )}
+                        {item.tag && !item.locked && (
                           <span
                             style={{
                               background: `${item.tag.color}22`,

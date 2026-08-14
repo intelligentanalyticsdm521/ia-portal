@@ -3,6 +3,7 @@ import { Shield, Settings } from "lucide-react";
 import { useAppState } from "../app/AppState";
 import { useIsSuperAdmin } from "../hooks/useIsSuperAdmin";
 import { resolveServiceStatus, SERVICE_CATALOG } from "../config/serviceCatalog";
+import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
 
 // "my_brand" intentionally REMOVED 2026-06-22 — the top-level My Brand slot
 // was a premature Wave-2 add for the Q4 2026 deferred product. ARION's
@@ -65,18 +66,21 @@ const PRODUCT_ICONS: Record<ProductKey, React.ReactNode> = {
   ),
 };
 
+// Nav labels (2026-07-27, Brandon): plain-English names in the icon rail —
+// "no one understands ARION/SPARK/ARGUS". Cosmetic, scoped to this rail only;
+// the product codenames stay everywhere else (SubNav headers, routes, docs).
 const PRODUCTS: Omit<ProductDef, "enabled">[] = [
   { key: "overview", label: "Home", tagline: "Portal Overview", icon: PRODUCT_ICONS.overview },
-  { key: "arion", label: "ARION", tagline: "Web & Digital Presence", icon: PRODUCT_ICONS.arion },
-  { key: "oliver", label: "OLIVER", tagline: "Job & Project Lifecycle", icon: PRODUCT_ICONS.oliver },
+  { key: "arion", label: "Digital Presence", tagline: "ARION", icon: PRODUCT_ICONS.arion },
+  { key: "oliver", label: "Invoicing & Administration", tagline: "OLIVER", icon: PRODUCT_ICONS.oliver },
   // 2026-06-22 — My Brand top-level slot REMOVED (Q4 2026 deferred product).
   // The legitimate ARION-internal "My Brand" page is reachable via the
   // ARION SubNav -> My Brand entry (route /app/services/arion_brand).
-  { key: "spark", label: "SPARK", tagline: "Growth Platform", icon: PRODUCT_ICONS.spark },
-  { key: "stella", label: "STELLA", tagline: "Reporting & BI", icon: PRODUCT_ICONS.stella },
-  { key: "forge", label: "FORGE", tagline: "Integrations", icon: PRODUCT_ICONS.forge },
-  { key: "argus", label: "ARGUS", tagline: "Orchestration", icon: PRODUCT_ICONS.argus },
-  { key: "consulting", label: "Consulting", tagline: "IA Work & Deliverables", icon: PRODUCT_ICONS.consulting },
+  { key: "spark", label: "CRM & Marketing", tagline: "SPARK", icon: PRODUCT_ICONS.spark },
+  { key: "stella", label: "Ledger & Data Management", tagline: "STELLA", icon: PRODUCT_ICONS.stella },
+  { key: "forge", label: "Integrations & Software", tagline: "FORGE", icon: PRODUCT_ICONS.forge },
+  { key: "argus", label: "Agents & Automations", tagline: "ARGUS", icon: PRODUCT_ICONS.argus },
+  { key: "consulting", label: "Consulting", tagline: "Projects", icon: PRODUCT_ICONS.consulting },
 ];
 
 interface IconRailProps {
@@ -92,22 +96,54 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
   // AccountMenu. Hide the gear entirely for non-super-admin users so they
   // aren't tempted into a /admin page they can't use.
   const isAdminActive = location.pathname.startsWith("/admin");
-  const { enabledServices } = useAppState();
+  const { enabledServices, ownedProducts } = useAppState();
   const isSuperAdmin = useIsSuperAdmin();
 
+  // 2026-08-06 — PRODUCT GATING. A product rail icon appears only when the
+  // tenant actually OWNS that product (core.tenant_services.is_enabled).
+  //
+  // The old test — "any service in this section resolves to enabled" — was
+  // bypassed entirely by `resolveServiceStatus()`, which returns 'enabled'
+  // unconditionally whenever a catalog row is declared `defaultStatus:'enabled'`.
+  // 41 rows are (12 SPARK, 11 ARION, 9 CONSULTING, 6 ARGUS, 2 OLIVER), so every
+  // tenant saw SPARK/ARGUS regardless of what they bought — Briarwood and
+  // Midwest Ag (ARION-only) both showed SPARK.
+  //
+  // We gate on `ownedProducts` (the raw core.tenant_services keys) rather than
+  // `enabledServices`, because the latter is a derived granular set whose
+  // per-product branches only cover arion + oliver — no spark_* key is ever
+  // added, so using it would hide SPARK from tenants who DO pay for it.
+  // See memory: reference_subscription_gating_model.
+  const PRODUCT_SERVICE_KEY: Partial<Record<ProductKey, string>> = {
+    arion: "arion", oliver: "oliver", spark: "spark",
+    stella: "stella", forge: "forge", argus: "argus",
+  };
+
   const products: ProductDef[] = PRODUCTS.map((p) => {
-    // Check if any service in this product's section is enabled
-    const sectionMap: Record<ProductKey, string> = {
-      overview: "Shared", arion: "ARION", oliver: "OLIVER", spark: "LUMEN",
-      stella: "STELLA", forge: "FORGE", argus: "ARGUS", consulting: "CONSULTING",
-      settings: "Settings",
-    };
-    const section = sectionMap[p.key];
+    // Home is always available. Consulting is founder/client-surface gated
+    // elsewhere (applyConsultingNavFilter + RequireFounderRoute), not by
+    // subscription — leave its existing behaviour untouched.
     if (p.key === "overview" || p.key === "consulting") return { ...p, enabled: true };
-    const hasEnabled = SERVICE_CATALOG.some(
-      (s) => s.section === section && resolveServiceStatus(s, enabledServices) === "enabled"
-    );
-    return { ...p, enabled: hasEnabled };
+
+    const serviceKey = PRODUCT_SERVICE_KEY[p.key];
+    if (!serviceKey) return { ...p, enabled: false };
+
+    // Dev / preview: no session payload exists (VITE_ENABLED_SERVICES drives
+    // the granular set instead), so fall back to the legacy catalog test rather
+    // than blanking the rail for local work.
+    if (ownedProducts.size === 0) {
+      const sectionMap: Record<string, string> = {
+        arion: "ARION", oliver: "OLIVER", spark: "LUMEN",
+        stella: "STELLA", forge: "FORGE", argus: "ARGUS",
+      };
+      const section = sectionMap[p.key];
+      const hasEnabled = SERVICE_CATALOG.some(
+        (s) => s.section === section && resolveServiceStatus(s, enabledServices) === "enabled"
+      );
+      return { ...p, enabled: hasEnabled };
+    }
+
+    return { ...p, enabled: ownedProducts.has(serviceKey) };
   });
 
   return (
@@ -116,19 +152,42 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
     // h-full breaks on some browsers when the parent height is flex-derived rather than
     // explicit. `min-h-0` on the inner list lets it scroll rather than pushing Settings
     // off-screen when many products are enabled.
-    <div className="flex w-16 flex-col items-center bg-[#0B1C24] py-3">
+    // Widened 64px -> 96px (2026-07-27, Brandon): the plain-English labels
+    // ("Invoicing & Administration", "Ledger & Data Management") were
+    // clipping/cramped at the old width. Buttons follow at 56px -> 88px.
+    <div className="flex w-24 flex-col items-center bg-[#0B1C24] py-3">
       <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
         {products.map((p) => {
           const isActive = activeProduct === p.key;
+          // 2026-08-06 (Brandon) — SHOW, DON'T HIDE. Products the business
+          // doesn't subscribe to stay visible but render LOCKED with a padlock
+          // and an "Add <PRODUCT>" prompt, so customers discover what else the
+          // platform does. (`enabled` was previously computed and then never
+          // used in the render — every product showed as if owned.) Real access
+          // is enforced server-side: arion-api requireArionAccess, oliver-api
+          // enforceTenantAccess, LUMEN requireSparkAccess.
+          // Kill switch (2026-08-06): when gating is off, nothing renders as
+          // locked — restores the pre-gating behaviour while the founder-bypass
+          // path is verified. See config/featureFlags.FEATURE_GATING_ENABLED.
+          const locked = FEATURE_GATING_ENABLED && !p.enabled;
           return (
             <button
               key={p.key}
+              // Locked products still OPEN (Brandon 2026-08-06): the customer
+              // browses the full feature nav with everything locked plus an
+              // upgrade banner, so they can see exactly what they'd get. Do NOT
+              // bounce them to Settings — that hides the product entirely.
               onClick={() => onSelect(p.key)}
-              title={`${p.label} - ${p.tagline}`}
-              className={`relative flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
+              title={locked
+                ? `${p.tagline} is not part of your plan — add ${p.tagline} to enable ${p.label}`
+                : `${p.label} - ${p.tagline}`}
+              aria-disabled={locked}
+              className={`relative flex w-[88px] flex-col items-center gap-1 rounded-md px-1 py-2 transition-colors ${
                 isActive
                   ? "bg-white/10 text-white"
-                  : "text-white/50 hover:bg-white/5 hover:text-white/80"
+                  : locked
+                    ? "text-white/25 hover:bg-white/5 hover:text-white/40"
+                    : "text-white/50 hover:bg-white/5 hover:text-white/80"
               }`}
             >
               {/* Active indicator bar — STELLA gets its own Indigo (#4C5BD4);
@@ -141,8 +200,25 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
               )}
               <span className="relative flex h-6 w-6 items-center justify-center">
                 {p.icon}
+                {locked && (
+                  <span
+                    aria-hidden
+                    className="absolute -right-1 -top-1 flex h-3 w-3 items-center justify-center rounded-full bg-[#0B1C24] text-[8px] leading-none"
+                    style={{ color: "#EF6C33" }}
+                  >
+                    🔒
+                  </span>
+                )}
               </span>
-              <span className="text-[9px] font-medium leading-tight">{p.label}</span>
+              <span className="text-[10px] font-medium leading-tight text-center">{p.label}</span>
+              {locked && (
+                <span
+                  className="text-[8px] font-bold leading-none tracking-wide"
+                  style={{ color: "#EF6C33" }}
+                >
+                  ADD
+                </span>
+              )}
             </button>
           );
         })}
@@ -156,14 +232,14 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
       <button
         onClick={() => onSelect("settings")}
         title="Settings"
-        className={`mt-auto flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
+        className={`mt-auto flex w-[88px] flex-col items-center gap-1 rounded-md px-1 py-2 transition-colors ${
           activeProduct === "settings" ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white/80"
         }`}
       >
         <span className="flex h-6 w-6 items-center justify-center">
           <Settings className="h-5 w-5" />
         </span>
-        <span className="text-[9px] font-medium leading-tight">Settings</span>
+        <span className="text-[10px] font-medium leading-tight text-center">Settings</span>
       </button>
 
       {/* Platform Admin gear — pinned at bottom. SUPER_ADMIN-only.
@@ -173,14 +249,14 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
         <button
           onClick={() => navigate("/admin")}
           title="Platform Admin (SUPER_ADMIN)"
-          className={`flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 transition-colors ${
+          className={`flex w-[88px] flex-col items-center gap-1 rounded-md px-1 py-2 transition-colors ${
             isAdminActive ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white/80"
           }`}
         >
           <span className="flex h-6 w-6 items-center justify-center">
             <Shield className="h-5 w-5" />
           </span>
-          <span className="text-[9px] font-medium leading-tight">Admin</span>
+          <span className="text-[10px] font-medium leading-tight text-center">Admin</span>
         </button>
       )}
     </div>

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useAppState } from "../../app/AppState";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { launchJourneyStep } from "../../components/walkthroughs/walkthroughLaunchBus";
 
 interface Alert {
   id: string;
@@ -11,6 +12,21 @@ interface Alert {
   title: string;
   description: string;
   href?: string;
+}
+
+// Engagement alerts (2026-07-26) — the server-side, catalog-driven feed from
+// core.engagement_alert (LUMEN /api/v1/engagement-alerts). These are the
+// anti-abandonment nudges: setup gaps, money-leaking risks, 30-day staleness.
+// Each may carry a walkthrough id → "Show me how" launches it in place.
+interface EngagementAlert {
+  id: number;
+  key: string;
+  platform: string;
+  severity: "setup" | "risk" | "stale";
+  title: string;
+  description: string;
+  href?: string | null;
+  walkthroughId?: string | null;
 }
 
 export function CommandAlerts() {
@@ -22,7 +38,33 @@ export function CommandAlerts() {
   const hasSpark = enabledServices.has("spark_overview") || enabledServices.has("spark_contacts");
 
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [engagement, setEngagement] = useState<EngagementAlert[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const loadEngagement = useCallback(async () => {
+    if (!spark.ready) return;
+    try {
+      // Evaluate-on-view keeps dev/prod correct without waiting on the
+      // nightly timer; the run is tenant-scoped and idempotent.
+      await spark.post("/api/v1/engagement-alerts/run", {}).catch(() => {});
+      const r = await spark.get<{ data: { alerts: EngagementAlert[] } }>("/api/v1/engagement-alerts");
+      setEngagement(r.data?.alerts || []);
+    } catch { /* engagement feed is additive — legacy signals still render */ }
+  }, [spark]);
+
+  async function actOn(id: number, action: "dismiss" | "snooze") {
+    try {
+      await spark.post(`/api/v1/engagement-alerts/${id}/${action}`, {});
+      setEngagement((prev) => prev.filter((a) => a.id !== id));
+    } catch { /* leave it visible */ }
+  }
+
+  // Alerts now point at journey steps, so "Show me how" opens the actual
+  // lesson for that task (and the runner offers the hands-on mode where one
+  // exists) rather than a bare interactive flow.
+  function showMeHow(a: EngagementAlert) {
+    if (a.walkthroughId) launchJourneyStep(a.walkthroughId, "explain");
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -149,6 +191,7 @@ export function CommandAlerts() {
   }, [oliver, spark, hasOliver, hasSpark]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadEngagement(); }, [loadEngagement]);
 
   const colors = {
     critical: "border-rose-400 bg-rose-50 text-rose-900",
@@ -161,10 +204,44 @@ export function CommandAlerts() {
     info: "ℹ️",
   };
 
+  const engStyle: Record<EngagementAlert["severity"], { box: string; chip: string; label: string }> = {
+    setup: { box: "border-sky-400 bg-sky-50 text-sky-900", chip: "bg-sky-600", label: "GET SET UP" },
+    risk:  { box: "border-rose-400 bg-rose-50 text-rose-900", chip: "bg-rose-600", label: "NEEDS ATTENTION" },
+    stale: { box: "border-amber-400 bg-amber-50 text-amber-900", chip: "bg-amber-600", label: "GONE QUIET" },
+  };
+
   return (
     <div className="space-y-3">
       {loading && <div className="text-sm text-gray-500 py-8 text-center">Scanning signals…</div>}
-      {alerts.map(a => (
+      {engagement.map((a) => {
+        const s = engStyle[a.severity] || engStyle.stale;
+        return (
+          <div key={`eng-${a.id}`} className={`border-l-4 rounded-md p-4 ${s.box}`}>
+            <div className="flex items-start gap-3">
+              <span className={`mt-0.5 rounded px-1.5 py-0.5 text-[9px] font-bold text-white ${s.chip}`}>{s.label}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-semibold">{a.title}</div>
+                  <span className="text-xs uppercase tracking-wide text-gray-600">{a.platform}</span>
+                </div>
+                <div className="mt-1 text-sm">{a.description}</div>
+                <div className="mt-2 flex items-center gap-3 text-sm">
+                  {a.walkthroughId && (
+                    <button onClick={() => showMeHow(a)} className="rounded bg-[#0B1C24] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#123246]">
+                      Show me how
+                    </button>
+                  )}
+                  {a.href && <Link to={a.href} className="underline">Open →</Link>}
+                  <span className="flex-1" />
+                  <button onClick={() => actOn(a.id, "snooze")} className="text-xs text-gray-500 hover:text-gray-800">Snooze 7d</button>
+                  <button onClick={() => actOn(a.id, "dismiss")} className="text-xs text-gray-500 hover:text-gray-800">Dismiss</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      {alerts.filter((a) => !(a.id === "system-all-clear" && engagement.length > 0)).map(a => (
         <div key={a.id} className={`border-l-4 rounded-md p-4 ${colors[a.severity]}`}>
           <div className="flex items-start gap-3">
             <span className="text-xl leading-none">{icons[a.severity]}</span>

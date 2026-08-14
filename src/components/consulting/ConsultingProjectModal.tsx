@@ -39,8 +39,10 @@
 // customer-visible copy — schema names like client_tenant_id stay in code
 // only.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IadmModal, CORE_BLUE } from "../IadmModal";
+import { ProjectDetailsTab } from "./ProjectDetailsTab";
+import { ProjectTasksTab } from "./ProjectTasksTab";
 import { OnboardingWizardModal } from "./OnboardingWizardModal";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { DeliverableActionPanel, type DeliverableShape } from "./DeliverableActionPanel";
@@ -117,10 +119,24 @@ export interface ConsultingProjectRow {
   owner_user_id?: string | null;
   owner_display_name?: string | null;
   owner_avatar_url?: string | null;
-  total_budget_cents?: number | null;
+  // Column is `total_billable_cents` (verified against prod 2026-07-22).
+  // This was typed as `total_budget_cents`, which the API never returns — so the
+  // budget rendered "Not set" even when a value existed.
+  total_billable_cents?: number | null;
   currency?: string | null;
   started_at?: string | null;
+  /** DEAD COLUMN. `target_completion_date` does not exist on consulting.project
+   *  — the Overview card bound to it has always rendered "—". The real column
+   *  is `target_end_date` (migration 151). Kept only so nothing that still
+   *  reads it fails to compile; nothing should. */
   target_completion_date?: string | null;
+  /** Schedule + capacity (migrations 151 / 153). */
+  start_date?: string | null;
+  target_end_date?: string | null;
+  estimate_hours?: number | null;
+  estimate_size?: string | null;
+  internal_notes?: string | null;
+  priority?: string | null;
   closed_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -136,6 +152,8 @@ export interface ConsultingProjectRow {
 // shape uses `revision_notes` (PLURAL) — mapped at the render site below.
 interface ConsultingDeliverable {
   deliverable_id: string;
+  /** Set when the deliverable is attached to a task (service request). */
+  service_request_id?: string | null;
   title?: string | null;
   description?: string | null;
   file_url?: string | null;
@@ -151,11 +169,139 @@ interface ConsultingDeliverable {
   sent_at?: string | null;
 }
 
+// Task ≡ service request (consulting.service_request). A milestone task is a
+// request with project_id + milestone_id set. Stage/status pairs come from the
+// 7-stage pipeline in routes/consultingRequests.js — labels in TASK_STAGES.
+export interface ConsultingTask {
+  id: string;
+  tenant_id: string;
+  project_id?: string | null;
+  milestone_id?: string | null;
+  title: string;
+  description?: string | null;
+  stage: string;
+  status: string;
+  origin: string;
+  oliver_job_id?: string | null;
+  assigned_to_user_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  /** Newest OPEN client revision request — what they asked to be changed. */
+  open_revision_note?: string | null;
+  // Planning fields, so the project's Tasks tab shows the same shape the board
+  // does rather than a thinner second version of the same row.
+  estimate_hours?: number | null;
+  estimate_size?: string | null;
+  actual_hours?: number | null;
+  priority?: string | null;
+  platform?: string | null;
+  due_at?: string | null;
+  start_at?: string | null;
+  completed_at?: string | null;
+  release_id?: string | null;
+  release_name?: string | null;
+  release_target_date?: string | null;
+  assigned_to_worker_id?: string | null;
+  assignee_name?: string | null;
+}
+
+/** Server-computed hours rollup for the project (GET /consulting/projects/:id). */
+export interface ProjectCapacity {
+  budget_hours: number | null;
+  estimate_size: string | null;
+  committed_hours: number;
+  actual_hours: number;
+  task_count: number;
+  done_count: number;
+  unsized: number;
+}
+
 interface WorkspaceResponse {
   project: ConsultingProjectRow;
   milestones: ConsultingProjectMilestone[];
   deliverables?: ConsultingDeliverable[];
+  tasks?: ConsultingTask[];
+  capacity?: ProjectCapacity;
 }
+
+// Friendly labels + the founder's quick actions per stage. Mirrors the
+// server's stage machine — the server validates every transition, so a drift
+// here shows as a 400, never silent corruption.
+export const TASK_STAGE_LABELS: Record<string, string> = {
+  new: "New",
+  in_progress: "In Progress",
+  client_review: "Client Review",
+  revision: "Revision",
+  client_revision_review: "Client Revision Review",
+  approved: "Approved",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+export const TASK_STATUS_LABELS: Record<string, string> = {
+  not_reviewed: "Not Reviewed",
+  needs_client_discussion: "Needs Client Discussion",
+  work_approved: "Work Approved",
+  in_progress: "In Progress",
+  blocked: "Blocked",
+  waiting_on_client: "Waiting on Client",
+  ready_for_client_review: "Ready for Client Review",
+  awaiting_client: "Awaiting Client",
+  revision_requested: "Revision Requested",
+  approved_by_client: "Approved by Client",
+  in_revision: "In Revision",
+  ready_for_re_review: "Ready for Re-Review",
+  more_revisions_requested: "More Revisions Requested",
+  revisions_approved: "Revisions Approved",
+  ready_to_deploy: "Ready to Deploy",
+  deploying: "Deploying",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+// value = "stage|status" — parsed at the PATCH call site.
+export const TASK_ACTIONS: Record<string, Array<{ value: string; label: string }>> = {
+  new: [
+    { value: "in_progress|in_progress", label: "Approve work → In Progress" },
+    { value: "new|needs_client_discussion", label: "Needs Client Discussion" },
+    { value: "new|not_reviewed", label: "Not Reviewed" },
+    { value: "cancelled|cancelled", label: "Cancel" },
+  ],
+  in_progress: [
+    { value: "in_progress|in_progress", label: "In Progress" },
+    { value: "in_progress|blocked", label: "Blocked" },
+    { value: "in_progress|waiting_on_client", label: "Waiting on Client" },
+    { value: "client_review|awaiting_client", label: "Send for Client Review" },
+    { value: "cancelled|cancelled", label: "Cancel" },
+  ],
+  client_review: [
+    { value: "client_review|awaiting_client", label: "Awaiting Client" },
+    { value: "approved|ready_to_deploy", label: "Client Approved" },
+    { value: "revision|in_revision", label: "Revision Requested" },
+    { value: "cancelled|cancelled", label: "Cancel" },
+  ],
+  revision: [
+    { value: "revision|in_revision", label: "In Revision" },
+    { value: "revision|blocked", label: "Blocked" },
+    { value: "client_revision_review|awaiting_client", label: "Send for Re-Review" },
+    { value: "cancelled|cancelled", label: "Cancel" },
+  ],
+  client_revision_review: [
+    { value: "client_revision_review|awaiting_client", label: "Awaiting Client" },
+    { value: "approved|ready_to_deploy", label: "Revisions Approved" },
+    { value: "revision|in_revision", label: "More Revisions Requested" },
+    { value: "cancelled|cancelled", label: "Cancel" },
+  ],
+  approved: [
+    { value: "approved|ready_to_deploy", label: "Ready to Deploy" },
+    { value: "approved|deploying", label: "Deploying" },
+    { value: "completed|completed", label: "Mark Completed" },
+    { value: "in_progress|in_progress", label: "Pull back to In Progress" },
+    { value: "cancelled|cancelled", label: "Cancel" },
+  ],
+  completed: [{ value: "in_progress|in_progress", label: "Reopen" }],
+  cancelled: [{ value: "in_progress|in_progress", label: "Revive → In Progress" }],
+};
 
 // ─── Modal props ─────────────────────────────────────────────────────────
 
@@ -181,8 +327,13 @@ export function ConsultingProjectModal({
 }: ConsultingProjectModalProps) {
   const { get, post, patch, del } = useOliverApi();
 
-  const [tab, setTab] = useState<"overview" | "milestones" | "deliverables" | "notes" | "activity" | "invoices" | "proposals">("overview");
+  const [tab, setTab] = useState<"overview" | "milestones" | "tasks" | "deliverables" | "details" | "activity" | "invoices" | "proposals">("overview");
   const [data, setData] = useState<WorkspaceResponse | null>(null);
+  // Editable project details (Category / Owner / Total budget). Picker sources
+  // are loaded once per open, founder-only — clients never edit these.
+  const [savingDetail, setSavingDetail] = useState(false);
+  const [categoryOptions, setCategoryOptions] = useState<Array<{ category_id: string; name: string }>>([]);
+  const [ownerOptions, setOwnerOptions] = useState<Array<{ user_id: string; label: string }>>([]);
   // PB-2 — milestone-anchored onboarding launcher. Opened by the "Start
   // Onboarding" button on the Platform-Provisioning milestone; scoped to the
   // project's linked_tenant_id.
@@ -193,6 +344,9 @@ export function ConsultingProjectModal({
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [deleteArmed, setDeleteArmed] = useState(false);
+  // Tasks tab — opening a row reuses the SAME task modal the Milestones tab
+  // uses, so the two surfaces cannot drift on what editing a task means.
+  const [tasksTabTask, setTasksTabTask] = useState<ConsultingTask | null>(null);
   const [milestoneNotice, setMilestoneNotice] = useState<string | null>(null);
   // CS-1 — milestone metadata edit target (null = closed).
   const [editingMilestone, setEditingMilestone] = useState<ConsultingProjectMilestone | null>(null);
@@ -242,6 +396,33 @@ export function ConsultingProjectModal({
     void load();
   }, [open, projectId, load]);
 
+  // Picker sources for the editable detail fields. Founder-only; failures are
+  // non-fatal (the field just falls back to read-only text rather than breaking
+  // the whole modal).
+  useEffect(() => {
+    if (!open || viewerRole !== "founder") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await get<{ data?: Array<{ category_id: string; name: string }> }>("/consulting/categories");
+        const list = (r as { data?: Array<{ category_id: string; name: string }> })?.data ?? (r as unknown as Array<{ category_id: string; name: string }>);
+        if (!cancelled && Array.isArray(list)) setCategoryOptions(list);
+      } catch { /* leave empty — field renders read-only */ }
+      try {
+        const r = await get<{ data?: Array<Record<string, string>> }>("/tenant-users");
+        const list = (r as { data?: Array<Record<string, string>> })?.data ?? (r as unknown as Array<Record<string, string>>);
+        if (!cancelled && Array.isArray(list)) {
+          setOwnerOptions(
+            list
+              .filter((u) => u.user_id)
+              .map((u) => ({ user_id: u.user_id, label: (u.full_name || "").trim() || u.email || u.user_id }))
+          );
+        }
+      } catch { /* leave empty — field renders read-only */ }
+    })();
+    return () => { cancelled = true; };
+  }, [open, viewerRole, get]);
+
   // NOTE: hooks must run BEFORE the early return below — keep useMemo here.
   const project = data?.project;
   const milestones = useMemo(
@@ -280,6 +461,28 @@ export function ConsultingProjectModal({
       onChanged?.();
     } catch (e) {
       setErr((e as Error).message || "Could not save status");
+    }
+  }
+
+  /**
+   * Save any project detail field. PATCH /consulting/projects/:id previously
+   * accepted ONLY status + name — every other field came back 400 "nothing to
+   * update", which is why Category / Owner / Total budget were unfixable from
+   * the UI. The endpoint now validates and accepts them. Mirrors
+   * handleStatusChange: patch → reload → tell the parent list.
+   */
+  async function handleDetailPatch(fields: Record<string, unknown>) {
+    if (!project) return;
+    setErr(null);
+    setSavingDetail(true);
+    try {
+      await patch(`/consulting/projects/${project.project_id}`, fields);
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setErr((e as Error).message || "Could not save");
+    } finally {
+      setSavingDetail(false);
     }
   }
 
@@ -457,6 +660,14 @@ export function ConsultingProjectModal({
               </span>
             )}
           </TabButton>
+          <TabButton active={tab === "tasks"} onClick={() => setTab("tasks")}>
+            Tasks
+            {(data?.tasks?.length ?? 0) > 0 && (
+              <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                {data?.tasks?.length}
+              </span>
+            )}
+          </TabButton>
           <TabButton active={tab === "deliverables"} onClick={() => setTab("deliverables")}>
             Deliverables
             {(data?.deliverables?.length ?? 0) > 0 && (
@@ -465,7 +676,7 @@ export function ConsultingProjectModal({
               </span>
             )}
           </TabButton>
-          <TabButton active={tab === "notes"} onClick={() => setTab("notes")}>Notes</TabButton>
+          <TabButton active={tab === "details"} onClick={() => setTab("details")}>Details</TabButton>
           <TabButton active={tab === "activity"} onClick={() => setTab("activity")}>Activity</TabButton>
           <TabButton active={tab === "invoices"} onClick={() => setTab("invoices")}>Invoices</TabButton>
           <TabButton active={tab === "proposals"} onClick={() => setTab("proposals")}>Proposals</TabButton>
@@ -492,6 +703,10 @@ export function ConsultingProjectModal({
               viewerRole={viewerRole}
               onStatusChange={handleStatusChange}
               onAccessPortal={() => setViewAsOpen(true)}
+              categoryOptions={categoryOptions}
+              ownerOptions={ownerOptions}
+              savingDetail={savingDetail}
+              onDetailPatch={handleDetailPatch}
             />
           )}
           {data && tab === "milestones" && (
@@ -507,6 +722,10 @@ export function ConsultingProjectModal({
               onStartOnboarding={() => setOnboardWizardOpen(true)}
               intakes={intakes}
               proposals={projProposals}
+              tasks={data.tasks || []}
+              taskDeliverables={data.deliverables || []}
+              projectId={data.project.project_id}
+              onTasksChanged={load}
               onSendIntake={viewerRole === "founder" ? (mid) => { setIntakeMilestoneId(mid); setShowSendIntake(true); } : undefined}
               onAddDocument={viewerRole === "founder" ? (mid) => { setAddDocMilestoneId(mid); setShowAddDoc(true); } : undefined}
               onCreateProposal={viewerRole === "founder" ? handleCreateProposal : undefined}
@@ -517,12 +736,31 @@ export function ConsultingProjectModal({
           {data && tab === "deliverables" && (
             <DeliverablesTab
               deliverables={data.deliverables || []}
+              milestones={milestones}
+              projectId={data.project.project_id}
               viewerRole={viewerRole}
               onChanged={load}
             />
           )}
-          {data && tab === "notes" && (
-            <ProjectNotesTab projectId={data.project.project_id} viewerRole={viewerRole} />
+          {data && tab === "tasks" && (
+            <ProjectTasksTab
+              tasks={data.tasks || []}
+              milestones={milestones}
+              onOpenTask={viewerRole === "founder" ? setTasksTabTask : undefined}
+            />
+          )}
+          {/* Details replaced Notes (Brandon 2026-08-08). The notes THREAD is
+              not deleted with the tab — it renders inside Details, because a
+              tab that disappears takes its history out of reach. */}
+          {data && tab === "details" && (
+            <ProjectDetailsTab
+              project={data.project}
+              capacity={data.capacity}
+              viewerRole={viewerRole}
+              savingDetail={savingDetail}
+              onDetailPatch={handleDetailPatch}
+              notesSlot={<ProjectNotesTab projectId={data.project.project_id} viewerRole={viewerRole} />}
+            />
           )}
           {data && tab === "activity" && (
             <ProjectActivityTab
@@ -544,6 +782,23 @@ export function ConsultingProjectModal({
           the founder doesn't lose project context while picking a template.
           The nested IadmModal renders above its parent via fixed positioning
           (see IadmModal's overlay z-index). */}
+      {tasksTabTask && (
+        <TaskDetailModal
+          task={tasksTabTask}
+          deliverables={(data?.deliverables || [])
+            .filter((d) => d.service_request_id === tasksTabTask.id)
+            .map((d) => ({
+              deliverable_id: d.deliverable_id,
+              title: d.title,
+              file_name: d.file_name,
+              file_url: d.file_url,
+              status: d.status,
+            }))}
+          onClose={() => setTasksTabTask(null)}
+          onChanged={() => { setTasksTabTask(null); void load(); onChanged?.(); }}
+        />
+      )}
+
       {showSendIntake && project && (
         <SendIntakeModal
           projectId={project.project_id}
@@ -827,12 +1082,8 @@ function SendIntakeModal({
       })
       .catch((e) => {
         if (cancelled) return;
-        const msg = (e as Error).message || "Could not load intake templates";
-        if (/404|not.?found/i.test(msg)) {
-          setError("Intake templates API not deployed yet — coming with the F4 backend.");
-        } else {
-          setError(msg);
-        }
+        // FIX-6 (2026-07-22): real error, not the false "not deployed" mask.
+        setError((e as Error).message || "Could not load intake templates");
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -853,12 +1104,8 @@ function SendIntakeModal({
       });
       onSent();
     } catch (e) {
-      const msg = (e as Error).message || "Send failed";
-      if (/404|not.?found/i.test(msg)) {
-        setError("Send-intake endpoint not deployed yet — submission record will create once the F4 backend ships.");
-      } else {
-        setError(msg);
-      }
+      // FIX-6 (2026-07-22): real error, not the false "not deployed" mask.
+      setError((e as Error).message || "Send failed");
     } finally {
       setSending(false);
     }
@@ -999,7 +1246,7 @@ function AddDocumentModal({
   onAdded: () => void;
   onCreateProposal?: (milestoneId: string) => void;
 }) {
-  const { get, post } = useOliverApi();
+  const { get, post, uploadFounder } = useOliverApi();
 
   const [templates, setTemplates] = useState<DocTemplatePickerRow[]>([]);
   const [templateId, setTemplateId] = useState<string>("");
@@ -1009,6 +1256,12 @@ function AddDocumentModal({
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Upload-a-file branch. This picker previously offered ONLY pre-made
+  // templates, so an authored document (a growth plan, an audit) could not be
+  // attached to a step at all — the capability existed on the Deliverables tab
+  // but not here, which is where the founder actually works.
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadTitle, setUploadTitle] = useState("");
 
   useEffect(() => { setRecipient(clientEmail || ""); }, [clientEmail]);
 
@@ -1029,6 +1282,7 @@ function AddDocumentModal({
   }, [get]);
 
   const isProposal = templateId === "__proposal__";
+  const isUpload = templateId === "__upload__";
 
   async function handleAdd() {
     if (!templateId) { setError("Pick a document."); return; }
@@ -1036,6 +1290,27 @@ function AddDocumentModal({
     if (isProposal) {
       if (milestoneId && onCreateProposal) onCreateProposal(milestoneId);
       onClose();
+      return;
+    }
+    // Upload branch — files land in consulting.deliverable, not as an intake
+    // submission. Requires a milestone (CK_deliverable_attached_to_one).
+    if (isUpload) {
+      if (!uploadFile) { setError("Choose a file to upload."); return; }
+      if (!milestoneId) { setError("A file must be attached to a milestone."); return; }
+      setAdding(true);
+      setError(null);
+      try {
+        const form = new FormData();
+        form.append("file", uploadFile);
+        form.append("milestone_id", milestoneId);
+        form.append("title", uploadTitle.trim() || uploadFile.name);
+        await uploadFounder(`/consulting/projects/${projectId}/deliverables`, form);
+        onAdded();
+      } catch (e) {
+        setError((e as Error).message || "Could not upload the file");
+      } finally {
+        setAdding(false);
+      }
       return;
     }
     setAdding(true);
@@ -1083,7 +1358,15 @@ function AddDocumentModal({
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white disabled:opacity-50"
             style={{ background: CORE_BLUE }}
           >
-            {adding ? "Working…" : isProposal ? "Create proposal" : sendNow ? "Add & send" : "Add document"}
+            {adding
+              ? "Working…"
+              : isProposal
+                ? "Create proposal"
+                : isUpload
+                  ? "Upload file"
+                  : sendNow
+                    ? "Add & send"
+                    : "Add document"}
           </button>
         </div>
       }
@@ -1106,6 +1389,7 @@ function AddDocumentModal({
               onChange={(e) => setTemplateId(e.target.value)}
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm bg-white"
             >
+              <option value="__upload__">📎 Upload a file (PDF, DOCX, deck…)</option>
               {onCreateProposal && <option value="__proposal__">Proposal (create in OLIVER)</option>}
               {templates.map((t) => (
                 <option key={t.template_id} value={t.template_id}>
@@ -1119,7 +1403,43 @@ function AddDocumentModal({
           )}
         </div>
 
-        {!isProposal && (
+        {isUpload && (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                File <span className="font-normal normal-case text-slate-400">· max 50 MB</span>
+              </label>
+              <input
+                type="file"
+                onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                className="block w-full text-xs text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-slate-700"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                Title <span className="font-normal normal-case text-slate-400">(optional)</span>
+              </label>
+              <input
+                value={uploadTitle}
+                onChange={(e) => setUploadTitle(e.target.value)}
+                placeholder={uploadFile?.name || "Defaults to the file name"}
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+              />
+            </div>
+            {!milestoneId && (
+              <p className="text-[11px] text-amber-700">
+                Open <strong>+ Add document</strong> from a milestone to upload a file — every file is
+                filed against a step.
+              </p>
+            )}
+            <p className="text-[11px] text-slate-500">
+              The file is filed to this step as a deliverable. Send it to the client from the
+              Deliverables tab once you're ready.
+            </p>
+          </div>
+        )}
+
+        {!isProposal && !isUpload && (
           <>
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" checked={sendNow} onChange={(e) => setSendNow(e.target.checked)} />
@@ -1241,6 +1561,10 @@ function OverviewTab({
   viewerRole,
   onStatusChange,
   onAccessPortal,
+  categoryOptions = [],
+  ownerOptions = [],
+  savingDetail = false,
+  onDetailPatch,
 }: {
   project: ConsultingProjectRow;
   milestoneCount: number;
@@ -1249,6 +1573,12 @@ function OverviewTab({
   viewerRole: "founder" | "client";
   onStatusChange: (s: ProjectStatus) => void;
   onAccessPortal?: () => void;
+  // Editable project details (founder only). Defaults keep the component safe
+  // to render read-only if a caller doesn't supply them.
+  categoryOptions?: Array<{ category_id: string; name: string }>;
+  ownerOptions?: Array<{ user_id: string; label: string }>;
+  savingDetail?: boolean;
+  onDetailPatch?: (fields: Record<string, unknown>) => void | Promise<void>;
 }) {
   const progressPct = milestoneCount > 0
     ? Math.round((milestonesComplete / milestoneCount) * 100)
@@ -1312,9 +1642,22 @@ function OverviewTab({
       {/* Two-column meta */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <MetaCard title="Category">
-          <div className="text-sm font-semibold text-slate-800">
-            {project.category_name || <span className="text-slate-400">Uncategorized</span>}
-          </div>
+          {viewerRole === "founder" && categoryOptions.length ? (
+            <select
+              value={project.category_id || ""}
+              disabled={savingDetail}
+              onChange={(e) => void onDetailPatch?.({ category_id: e.target.value })}
+              className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold disabled:opacity-60"
+            >
+              {categoryOptions.map((c) => (
+                <option key={c.category_id} value={c.category_id}>{c.name}</option>
+              ))}
+            </select>
+          ) : (
+            <div className="text-sm font-semibold text-slate-800">
+              {project.category_name || <span className="text-slate-400">Uncategorized</span>}
+            </div>
+          )}
         </MetaCard>
 
         <MetaCard title="Status">
@@ -1369,26 +1712,77 @@ function OverviewTab({
                 <User className="h-3.5 w-3.5" />
               </span>
             )}
-            <span className="text-sm font-medium text-slate-800">
-              {project.owner_display_name || <span className="text-slate-400">Unassigned</span>}
-            </span>
+            {viewerRole === "founder" && ownerOptions.length ? (
+              <select
+                value={project.owner_user_id || ""}
+                disabled={savingDetail}
+                onChange={(e) => void onDetailPatch?.({ owner_user_id: e.target.value || null })}
+                className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm font-medium disabled:opacity-60"
+              >
+                <option value="">Unassigned</option>
+                {ownerOptions.map((u) => (
+                  <option key={u.user_id} value={u.user_id}>{u.label}</option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-sm font-medium text-slate-800">
+                {project.owner_display_name || <span className="text-slate-400">Unassigned</span>}
+              </span>
+            )}
           </div>
         </MetaCard>
 
-        <MetaCard title="Started">
-          <div className="text-sm text-slate-800">{formatDate(project.started_at) || "—"}</div>
+        {/* Planned start vs actual start — the gap between them IS the slip.
+            Both dates are set on the Details tab. */}
+        <MetaCard title="Start">
+          <div className="text-sm text-slate-800">
+            {fmtProjectDate(project.start_date) || <span className="text-slate-400">Not scheduled</span>}
+          </div>
+          {project.started_at && (
+            <div className="text-[11px] text-slate-500">
+              actually started {formatDate(project.started_at)}
+            </div>
+          )}
         </MetaCard>
 
-        <MetaCard title="Target completion">
-          <div className="text-sm text-slate-800">{formatDate(project.target_completion_date) || "—"}</div>
+        {/* Was bound to `target_completion_date`, a column that does not exist —
+            so this card rendered "—" no matter what was set. The real column is
+            target_end_date (migration 151). */}
+        <MetaCard title="Target end">
+          <div className="text-sm text-slate-800">
+            {fmtProjectDate(project.target_end_date) || <span className="text-slate-400">Not set</span>}
+          </div>
         </MetaCard>
 
         <MetaCard title="Total budget">
-          <div className="text-sm font-semibold text-slate-800">
-            {formatMoney(project.total_budget_cents, project.currency) || (
-              <span className="text-slate-400 font-normal">Not set</span>
-            )}
-          </div>
+          {viewerRole === "founder" ? (
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              disabled={savingDetail}
+              defaultValue={
+                project.total_billable_cents == null ? "" : (project.total_billable_cents / 100).toFixed(2)
+              }
+              placeholder="Not set"
+              // Save on blur / Enter — stored in CENTS, entered in dollars.
+              onBlur={(e) => {
+                const raw = e.target.value.trim();
+                const next = raw === "" ? null : Math.round(Number(raw) * 100);
+                if (raw !== "" && (!Number.isFinite(next as number) || (next as number) < 0)) return;
+                if ((project.total_billable_cents ?? null) === next) return;
+                void onDetailPatch?.({ total_billable_cents: next });
+              }}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold disabled:opacity-60"
+            />
+          ) : (
+            <div className="text-sm font-semibold text-slate-800">
+              {formatMoney(project.total_billable_cents, project.currency) || (
+                <span className="text-slate-400 font-normal">Not set</span>
+              )}
+            </div>
+          )}
         </MetaCard>
 
         <MetaCard title="Last updated">
@@ -1397,6 +1791,16 @@ function OverviewTab({
       </div>
     </div>
   );
+}
+
+/** DATE columns come back as YYYY-MM-DD. Parsing one with `new Date()` treats it
+ *  as UTC midnight and renders a day early in every western timezone — the same
+ *  off-by-one that showed a 9/18 release as 9/17. Format from the string. */
+function fmtProjectDate(v?: string | null): string {
+  if (!v) return "";
+  const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return "";
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString();
 }
 
 function MetaCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -1412,6 +1816,329 @@ function MetaCard({ title, children }: { title: string; children: React.ReactNod
 
 // ─── Milestones tab ──────────────────────────────────────────────────────
 
+// ─── Task detail modal (shared: milestone tasks + Service Requests board) ──
+// Open a task to edit title/description, change status, and attach the
+// document the client will review — linked via service_request_id so the
+// client sees ONE review item, not a task plus a floating doc.
+export interface TaskDeliverable {
+  deliverable_id: string;
+  title?: string | null;
+  file_name?: string | null;
+  file_url?: string | null;
+  status: string;
+}
+
+export function TaskDetailModal({
+  task,
+  deliverables,
+  onClose,
+  onChanged,
+}: {
+  task: ConsultingTask;
+  deliverables: TaskDeliverable[];
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const { patchFounder, uploadFounder, download } = useOliverApi();
+  const [title, setTitle] = useState(task.title);
+  const [description, setDescription] = useState(task.description || "");
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(kind: string, fn: () => Promise<unknown>) {
+    setBusy(kind);
+    setError(null);
+    try {
+      await fn();
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Action failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const saveMeta = () =>
+    run("meta", () => patchFounder(`/consulting/requests/${task.id}`, {
+      title: title.trim() || task.title,
+      description: description.trim() || null,
+    }));
+
+  const transition = (value: string) => {
+    const [stage, status] = value.split("|");
+    if (!stage || !status || (stage === task.stage && status === task.status)) return;
+    run("status", () => patchFounder(`/consulting/requests/${task.id}`, { stage, status }));
+  };
+
+  const attach = () => {
+    if (!file) return;
+    run("attach", async () => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("title", file.name);
+      await uploadFounder(`/consulting/requests/${task.id}/deliverables`, form);
+      setFile(null);
+    });
+  };
+
+  return (
+    <IadmModal
+      open
+      onClose={onClose}
+      product="oliver"
+      eyebrow="TASK"
+      title={task.title}
+      subtitle={`${TASK_STAGE_LABELS[task.stage] || task.stage} · ${TASK_STATUS_LABELS[task.status] || task.status}${task.oliver_job_id ? " · synced to OLIVER" : ""}`}
+      size="info"
+    >
+      <div className="space-y-4 p-4">
+        {error && <div className="rounded bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div>}
+
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Status</label>
+          <select
+            value={`${task.stage}|${task.status}`}
+            disabled={busy === "status"}
+            onChange={(e) => transition(e.target.value)}
+            className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+          >
+            <option value={`${task.stage}|${task.status}`}>
+              {busy === "status" ? "Saving…" : `${TASK_STAGE_LABELS[task.stage] || task.stage} — ${TASK_STATUS_LABELS[task.status] || task.status}`}
+            </option>
+            {(TASK_ACTIONS[task.stage] || [])
+              .filter((a) => a.value !== `${task.stage}|${task.status}`)
+              .map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Title</label>
+          <input value={title} onChange={(e) => setTitle(e.target.value)}
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Description</label>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+        </div>
+        <button type="button" onClick={saveMeta} disabled={busy === "meta"}
+          className="rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:bg-slate-300">
+          {busy === "meta" ? "Saving…" : "Save details"}
+        </button>
+
+        {task.open_revision_note && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-amber-800">
+              Client requested changes
+            </div>
+            <div className="mt-1 whitespace-pre-wrap text-sm text-amber-900">
+              {task.open_revision_note}
+            </div>
+            <div className="mt-1.5 text-[10px] text-amber-700">
+              Closes automatically when you move this past Revision.
+            </div>
+          </div>
+        )}
+
+        <div className="border-t border-slate-100 pt-3">
+          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Documents on this task
+          </div>
+          {deliverables.length === 0 ? (
+            <div className="text-xs italic text-slate-400">No documents attached yet.</div>
+          ) : (
+            <ul className="space-y-1">
+              {deliverables.map((d) => (
+                <li key={d.deliverable_id} className="flex items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1.5 text-xs">
+                  <span className="min-w-0 flex-1 truncate text-slate-700">
+                    📄 {d.title || d.file_name} · {String(d.status).replace(/_/g, " ")}
+                    {(d as ConsultingDeliverable & { is_client_supplied?: boolean | number }).is_client_supplied ? (
+                      <span className="ml-1 rounded bg-violet-100 px-1 py-0.5 text-[9px] font-bold uppercase text-violet-700">
+                        client markup
+                      </span>
+                    ) : null}
+                  </span>
+                  {d.file_url && (
+                    <button type="button"
+                      onClick={() => download(`/consulting/deliverables/${d.deliverable_id}/download`, d.file_name || d.title || "document")}
+                      className="flex-shrink-0 font-semibold text-sky-700 hover:underline">
+                      Download
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-2 flex items-center gap-2">
+            <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)}
+              className="min-w-0 flex-1 text-xs text-slate-600 file:mr-2 file:rounded file:border-0 file:bg-slate-900 file:px-2.5 file:py-1 file:text-xs file:font-semibold file:text-white" />
+            <button type="button" onClick={attach} disabled={!file || busy === "attach"}
+              className="rounded bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white disabled:bg-slate-300">
+              {busy === "attach" ? "Attaching…" : "Attach"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </IadmModal>
+  );
+}
+
+// ─── Milestone tasks (consulting.service_request) ─────────────────────────
+// Self-contained like DeliverableActionPanel: POSTs via useOliverApi, then
+// onChanged() → the host re-fetches. Founder gets add + transitions; client
+// sees a read-only list (their approve/revision actions live on the client
+// Service Requests surface).
+function MilestoneTasksSection({
+  projectId,
+  milestoneId,
+  tasks,
+  deliverables = [],
+  viewerRole,
+  onChanged,
+}: {
+  projectId: string;
+  milestoneId: string;
+  tasks: ConsultingTask[];
+  deliverables?: ConsultingDeliverable[];
+  viewerRole: "founder" | "client";
+  onChanged: () => void;
+}) {
+  const { postFounder, patchFounder } = useOliverApi();
+  const [adding, setAdding] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [openTask, setOpenTask] = useState<ConsultingTask | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleAdd() {
+    const t = newTitle.trim();
+    if (!t) return;
+    setAdding(true);
+    setError(null);
+    try {
+      await postFounder(`/consulting/projects/${projectId}/milestones/${milestoneId}/tasks`, { title: t });
+      setNewTitle("");
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add the task");
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function handleTransition(task: ConsultingTask, value: string) {
+    const [stage, status] = value.split("|");
+    if (!stage || !status || (stage === task.stage && status === task.status)) return;
+    setBusyId(task.id);
+    setError(null);
+    try {
+      await patchFounder(`/consulting/requests/${task.id}`, { stage, status });
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Transition failed");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const docsForTask = (t: ConsultingTask) =>
+    deliverables.filter((d) => String(d.service_request_id || "").toUpperCase() === t.id.toUpperCase());
+
+  const done = tasks.filter((t) => t.stage === "completed").length;
+  const active = tasks.filter((t) => t.stage !== "cancelled").length;
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          Tasks{active > 0 ? ` · ${done}/${active} complete` : ""}
+        </span>
+      </div>
+      {error && (
+        <div className="mb-2 rounded bg-rose-50 px-2 py-1 text-[11px] text-rose-700">{error}</div>
+      )}
+      {tasks.length === 0 ? (
+        <div className="text-[11px] italic text-slate-400">
+          No tasks on this milestone yet.
+          {viewerRole === "founder" ? " Tasks must all be complete before the milestone can complete." : ""}
+        </div>
+      ) : (
+        <ul className="space-y-1">
+          {tasks.map((t) => {
+            const docs = docsForTask(t);
+            return (
+              <li key={t.id} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-1.5 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setOpenTask(t)}
+                  className={`min-w-0 flex-1 truncate text-left hover:underline ${t.stage === "cancelled" ? "text-slate-400 line-through" : "text-slate-700"}`}
+                  title="Open task"
+                >
+                  {t.stage === "completed" ? "✅ " : ""}{t.title}
+                  {docs.length > 0 && <span className="ml-1 text-[9px] text-sky-600" title={`${docs.length} document(s) attached`}>📄{docs.length}</span>}
+                  {t.open_revision_note && <span className="ml-1 text-[9px] font-bold text-amber-600" title="Client requested changes">⟲ revision</span>}
+                  {t.oliver_job_id && <span className="ml-1 text-[9px] uppercase tracking-wide text-amber-600" title="Synced to an OLIVER job">· OLIVER</span>}
+                </button>
+                {viewerRole === "founder" ? (
+                  // The select IS the status display — current value shown,
+                  // legal moves as the options.
+                  <select
+                    value={`${t.stage}|${t.status}`}
+                    disabled={busyId === t.id}
+                    onChange={(e) => handleTransition(t, e.target.value)}
+                    className="flex-shrink-0 rounded border border-slate-300 bg-white px-1 py-0.5 text-[10px] text-slate-700"
+                  >
+                    <option value={`${t.stage}|${t.status}`}>
+                      {busyId === t.id ? "Saving…" : `${TASK_STAGE_LABELS[t.stage] || t.stage} — ${TASK_STATUS_LABELS[t.status] || t.status}`}
+                    </option>
+                    {(TASK_ACTIONS[t.stage] || [])
+                      .filter((a) => a.value !== `${t.stage}|${t.status}`)
+                      .map((a) => (
+                        <option key={a.value} value={a.value}>{a.label}</option>
+                      ))}
+                  </select>
+                ) : (
+                  <span className="flex-shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                    {TASK_STAGE_LABELS[t.stage] || t.stage} · {TASK_STATUS_LABELS[t.status] || t.status}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {viewerRole === "founder" && (
+        <div className="mt-2 flex items-center gap-1.5">
+          <input
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+            placeholder="Add a task…"
+            className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-2 py-1 text-[11px]"
+          />
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={adding || !newTitle.trim()}
+            className="rounded bg-slate-900 px-2 py-1 text-[10px] font-semibold text-white disabled:bg-slate-300"
+          >
+            {adding ? "Adding…" : "+ Add task"}
+          </button>
+        </div>
+      )}
+      {openTask && (
+        <TaskDetailModal
+          task={openTask}
+          deliverables={docsForTask(openTask)}
+          onClose={() => setOpenTask(null)}
+          onChanged={() => { setOpenTask(null); onChanged(); }}
+        />
+      )}
+    </div>
+  );
+}
+
 function MilestonesTab({
   milestones,
   viewerRole,
@@ -1424,6 +2151,10 @@ function MilestonesTab({
   onStartOnboarding,
   intakes = [],
   proposals = [],
+  tasks = [],
+  taskDeliverables = [],
+  projectId,
+  onTasksChanged,
   onSendIntake,
   onAddDocument,
   onCreateProposal,
@@ -1441,6 +2172,10 @@ function MilestonesTab({
   onStartOnboarding?: () => void;
   intakes?: IntakeSubRow[];
   proposals?: ProposalRow[];
+  tasks?: ConsultingTask[];
+  taskDeliverables?: ConsultingDeliverable[];
+  projectId: string;
+  onTasksChanged: () => void;
   onSendIntake?: (milestoneId: string) => void;
   onAddDocument?: (milestoneId: string) => void;
   onCreateProposal?: (milestoneId: string) => void;
@@ -1475,6 +2210,10 @@ function MilestonesTab({
             onStartOnboarding={onStartOnboarding}
             intakes={intakes.filter((i) => i.milestone_id === m.milestone_id)}
             proposals={proposals.filter((p) => p.milestone_id === m.milestone_id)}
+            tasks={tasks.filter((t) => t.milestone_id === m.milestone_id)}
+            taskDeliverables={taskDeliverables}
+            projectId={projectId}
+            onTasksChanged={onTasksChanged}
             onSendIntake={onSendIntake}
             onAddDocument={onAddDocument}
             onCreateProposal={onCreateProposal}
@@ -1509,6 +2248,10 @@ function MilestoneRow({
   onStartOnboarding,
   intakes = [],
   proposals = [],
+  tasks = [],
+  taskDeliverables = [],
+  projectId,
+  onTasksChanged,
   onSendIntake,
   onAddDocument,
   onCreateProposal,
@@ -1525,6 +2268,10 @@ function MilestoneRow({
   onStartOnboarding?: () => void;
   intakes?: IntakeSubRow[];
   proposals?: ProposalRow[];
+  tasks?: ConsultingTask[];
+  taskDeliverables?: ConsultingDeliverable[];
+  projectId: string;
+  onTasksChanged: () => void;
   onSendIntake?: (milestoneId: string) => void;
   onAddDocument?: (milestoneId: string) => void;
   onCreateProposal?: (milestoneId: string) => void;
@@ -1600,6 +2347,19 @@ function MilestoneRow({
           ) : (
             <div className="text-xs italic text-slate-400">No description.</div>
           )}
+
+          {/* Tasks on this milestone. Task ≡ service request — each one runs
+              the 7-stage pipeline and syncs to an OLIVER job. All tasks must
+              be complete before the milestone can complete (server-enforced),
+              and the milestone auto-completes on the last one. */}
+          <MilestoneTasksSection
+            projectId={projectId}
+            milestoneId={milestone.milestone_id}
+            tasks={tasks}
+            deliverables={taskDeliverables}
+            viewerRole={viewerRole}
+            onChanged={onTasksChanged}
+          />
 
           {/* Documents on this milestone. Everything here is a workflow the founder
               controls: attach ANY document (scoping doc, intake, custom), create an
@@ -2098,22 +2858,150 @@ function EditMilestoneModal({
 // ─────────────────────────────────────────────────────────────────────────
 function DeliverablesTab({
   deliverables,
+  milestones,
+  projectId,
   viewerRole,
   onChanged,
 }: {
   deliverables: ConsultingDeliverable[];
+  milestones: ConsultingProjectMilestone[];
+  projectId: string;
   viewerRole: "founder" | "client";
   onChanged: () => void;
 }) {
+  const { uploadFounder, download } = useOliverApi();
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [milestoneId, setMilestoneId] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  async function handleUpload() {
+    if (!file || !milestoneId) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("milestone_id", milestoneId);
+      // Title is optional server-side (it falls back to the file name), but
+      // sending it explicitly keeps the list readable.
+      form.append("title", title.trim() || file.name);
+      await uploadFounder(`/consulting/projects/${projectId}/deliverables`, form);
+      setFile(null);
+      setTitle("");
+      setMilestoneId("");
+      if (fileRef.current) fileRef.current.value = "";
+      onChanged();
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  // The blob container is private, so the file must be streamed through the
+  // API with a bearer token — a direct link to file_url would be denied.
+  async function handleDownload(d: ConsultingDeliverable) {
+    setDownloadingId(d.deliverable_id);
+    try {
+      await download(
+        `/consulting/deliverables/${d.deliverable_id}/download`,
+        d.file_name || d.title || "deliverable"
+      );
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Download failed.");
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
+  const uploader =
+    viewerRole === "founder" ? (
+      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-4">
+        <div className="text-sm font-semibold text-slate-900">Upload a deliverable</div>
+        <div className="mt-0.5 text-xs text-slate-500">
+          Attach an authored file — a growth plan, audit, or deck. Max 50&nbsp;MB.
+        </div>
+        {milestones.length === 0 ? (
+          <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            This project has no milestones yet. Add a milestone first — every deliverable is
+            filed against one.
+          </div>
+        ) : (
+          <>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Milestone
+                </span>
+                <select
+                  value={milestoneId}
+                  onChange={(e) => setMilestoneId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900"
+                >
+                  <option value="">Select a milestone…</option>
+                  {milestones.map((m) => (
+                    <option key={m.milestone_id} value={m.milestone_id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Title <span className="font-normal normal-case text-slate-400">(optional)</span>
+                </span>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder={file?.name || "Defaults to the file name"}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900"
+                />
+              </label>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <input
+                ref={fileRef}
+                type="file"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                className="block w-full max-w-xs text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-slate-700"
+              />
+              <button
+                type="button"
+                onClick={handleUpload}
+                disabled={!file || !milestoneId || uploading}
+                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {uploading ? "Uploading…" : "Upload deliverable"}
+              </button>
+            </div>
+          </>
+        )}
+        {uploadError && (
+          <div className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{uploadError}</div>
+        )}
+      </div>
+    ) : null;
+
   if (!deliverables.length) {
     return (
-      <div className="px-6 py-10 text-center text-sm text-slate-500">
-        No deliverables on this project yet. They appear here once a deliverable is filed to a milestone.
+      <div className="space-y-3 p-4">
+        {uploader}
+        <div className="px-2 py-8 text-center text-sm text-slate-500">
+          No deliverables on this project yet.
+          {viewerRole === "founder"
+            ? " Upload one above, or file one from a milestone."
+            : " They appear here once your consultant files one."}
+        </div>
       </div>
     );
   }
   return (
     <div className="space-y-3 p-4">
+      {uploader}
       {deliverables.map((d) => {
         const panelShape: DeliverableShape = {
           deliverable_id: d.deliverable_id,
@@ -2143,14 +3031,16 @@ function DeliverablesTab({
                 )}
               </div>
               {d.file_url && (
-                <a
-                  href={d.file_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                // NOT an <a href={d.file_url}> — the blob container is private,
+                // so a direct link is denied. Stream it through the API instead.
+                <button
+                  type="button"
+                  onClick={() => handleDownload(d)}
+                  disabled={downloadingId === d.deliverable_id}
+                  className="shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
                 >
-                  {d.file_name ? "Download" : "Open file"}
-                </a>
+                  {downloadingId === d.deliverable_id ? "Downloading…" : "Download"}
+                </button>
               )}
             </div>
             <div className="mt-3 border-t border-slate-100 pt-3">

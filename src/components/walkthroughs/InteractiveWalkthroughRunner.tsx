@@ -18,9 +18,10 @@
 // box-shadow, tooltip beside target) but wires interaction listeners
 // instead of Next-button-only.
 
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { X, ChevronLeft } from "lucide-react";
+import { placeTooltip, type Placement } from "./placeTooltip";
 
 export type InteractiveAdvanceMode = "click" | "input" | "route" | "next";
 
@@ -84,11 +85,24 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
   const [stepIdx, setStepIdx] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const [ready, setReady] = useState(false);
+  /** For input steps: they've typed something, so Next is available. */
+  const [typedOk, setTypedOk] = useState(false);
+  /** Target never appeared. We SHOW this rather than skipping past it. */
+  const [notFound, setNotFound] = useState(false);
+  /** Step index we've already advanced from — see nextOrFinish. */
+  const advancedForStep = useRef<number | null>(null);
+  /** The tooltip's real rendered height, so placement can't cover the target. */
+  const tooltipEl = useRef<HTMLDivElement | null>(null);
+  const [tooltipH, setTooltipH] = useState(0);
 
   const step = flow.steps[stepIdx];
 
   // Reset when opening
-  useEffect(() => { if (open) setStepIdx(0); }, [open, flow.id]);
+  useEffect(() => {
+    if (!open) return;
+    advancedForStep.current = null;
+    setStepIdx(0);
+  }, [open, flow.id]);
 
   // Navigate to step.route if we're not already there
   useEffect(() => {
@@ -103,12 +117,16 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
     if (!open || !step) return;
     setReady(false);
     setTargetRect(null);
+    setTypedOk(false);
+    setNotFound(false);
 
     // If we still need to navigate, wait for the URL to match before
     // looking for the target.
     if (step.route && location.pathname !== step.route) return;
 
     let cancelled = false;
+    // setTimeout, not rAF — rAF is suspended entirely while the tab is
+    // hidden, which would freeze the walkthrough mid-step. See GuidedTour.
     let raf = 0;
     let advanceListenerCleanup: (() => void) | null = null;
     const start = performance.now();
@@ -121,18 +139,32 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
       const elapsed = performance.now() - start;
       if (!el) {
         if (elapsed < maxWait) {
-          raf = requestAnimationFrame(findAndWire);
+          raf = window.setTimeout(findAndWire, 16);
           return;
         }
-        // Target never appeared — auto-advance to next step so the user
-        // isn't stuck. Same bug pattern as GuidedTour #256 fix.
+        // Target never appeared.
+        //
+        // Brandon 2026-07-28: "we got to the start a campaign and then nothing
+        // popped up afterwards."
+        //
+        // This used to AUTO-ADVANCE, and that turned one bad selector into a
+        // silent detonation of the whole rest of the flow: the campaign step
+        // opened the composer on its channel picker, so the next three targets
+        // (name, subject, save) were all unrendered, each waited its timeout,
+        // each skipped — and ~9s later the walkthrough "completed" and
+        // vanished. From the user's seat the thing simply died, with the only
+        // evidence in a console nobody has open.
+        //
+        // Auto-advancing is fail-open: it hides our bug and strands the user.
+        // Now we STOP and say so. The step's own teaching text still shows —
+        // so the explanation lands even when the button doesn't — and Next is
+        // always available, so a missing hook costs one manual click instead
+        // of the remainder of the walkthrough.
         console.warn(
-          `[InteractiveWalkthrough] Target "${step.targetSelector}" not found within ${maxWait}ms for flow "${flow.id}" step ${stepIdx + 1}/${flow.steps.length}. Auto-advancing.`,
+          `[InteractiveWalkthrough] Target "${step.targetSelector}" not found within ${maxWait}ms for flow "${flow.id}" step ${stepIdx + 1}/${flow.steps.length}.`,
         );
-        setTimeout(() => {
-          if (cancelled) return;
-          nextOrFinish();
-        }, 0);
+        setNotFound(true);
+        setReady(true);
         return;
       }
 
@@ -152,22 +184,69 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
         setReady(true);
       }
 
-      // Wire the advance listener
+      // Wire the advance listener.
+      //
+      // DELEGATED, not bound to `el`. Binding to the node we happened to find
+      // looks right and fails silently: saving a contact refetches the list,
+      // React swaps the row nodes, and our listener is stranded on a detached
+      // element. The user then clicks the button they can see, the modal
+      // opens — and the walkthrough sits on the same step forever, with no
+      // Next button to escape (click steps don't render one). Verified: the
+      // create→delete exercise stalled dead at "Now open it back up".
+      //
+      // Listening on the document and matching with closest() means we react
+      // to whatever node is live at click time, so re-renders can't break it.
       if (advance === "click") {
-        const onClick = () => {
+        const onClick = (e: MouseEvent) => {
           if (cancelled) return;
-          setTimeout(nextOrFinish, 250); // small delay so the click's own handler fires first
+          const hit = (e.target as HTMLElement | null)?.closest?.(step.targetSelector);
+          if (!hit) return;
+          setTimeout(nextOrFinish, 250); // let the button's own handler run first
         };
-        el.addEventListener("click", onClick, { once: true });
-        advanceListenerCleanup = () => el.removeEventListener("click", onClick);
+        document.addEventListener("click", onClick, true); // capture: fires even if a handler stops propagation
+        advanceListenerCleanup = () => document.removeEventListener("click", onClick, true);
       } else if (advance === "input") {
-        const onInput = () => {
-          if (cancelled) return;
-          // Don't advance immediately — let user finish typing
-          setTimeout(nextOrFinish, 600);
+        // Typing NEVER advances — it only enables Next. The user signals
+        // they're done with Enter, Tab, or the Next button.
+        //
+        // Brandon 2026-07-28, twice: first "as soon as I hit a space or a
+        // character it moves on", then "if I click on something and then click
+        // off it just immediately goes to the next step... things are being
+        // skipped." Both were auto-advance guesses about intent, and both were
+        // wrong.
+        //
+        // There used to be a `focusout` handler here that advanced on blur.
+        // It caused BOTH complaints' second half: clicking away from a filled
+        // field jumped forward unbidden, and pressing Tab fired keydown AND
+        // focusout — two advances from one keypress, which silently skipped
+        // the next step. Blur is not a "done" signal; it's just leaving.
+        //
+        // Delegated (like click above) so a re-render can't strand the
+        // listener on a detached node.
+        const field = (e: Event) =>
+          (e.target as HTMLElement | null)?.closest?.(step.targetSelector) as
+            | HTMLInputElement
+            | null;
+        const isDone = (f: HTMLInputElement | null) => !!f?.value?.trim().length;
+        const onInput = (e: Event) => {
+          const f = field(e);
+          if (cancelled || !f) return;
+          setTypedOk(isDone(f)); // lights up Next; does NOT advance
         };
-        el.addEventListener("input", onInput, { once: true });
-        advanceListenerCleanup = () => el.removeEventListener("input", onInput);
+        const onKey = (e: KeyboardEvent) => {
+          const f = field(e);
+          if (cancelled || !f) return;
+          if ((e.key === "Enter" || e.key === "Tab") && isDone(f)) {
+            e.preventDefault(); // don't let Tab move focus as well as advance
+            setTimeout(nextOrFinish, 120);
+          }
+        };
+        document.addEventListener("input", onInput, true);
+        document.addEventListener("keydown", onKey as EventListener, true);
+        advanceListenerCleanup = () => {
+          document.removeEventListener("input", onInput, true);
+          document.removeEventListener("keydown", onKey as EventListener, true);
+        };
       } else if (advance === "route") {
         // Handled via location.pathname change effect below
         advanceListenerCleanup = null;
@@ -185,9 +264,26 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
     window.addEventListener("resize", onResize);
     window.addEventListener("scroll", onResize, true);
 
+    // Keep tracking the target while the step is open (Brandon 2026-07-28:
+    // the highlight sat in empty space above the New-campaign button). Pages
+    // finish loading async content AFTER we measure — a chart or table
+    // renders, everything below shifts down, and a one-shot rect leaves the
+    // spotlight stranded where the element USED to be. Resize/scroll handlers
+    // don't fire for that. Cheap poll; stops with the step.
+    const track = window.setInterval(() => {
+      if (cancelled) return;
+      const el = document.querySelector(step.targetSelector) as HTMLElement | null;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setTargetRect((prev) =>
+        !prev || Math.abs(prev.top - r.top) > 1 || Math.abs(prev.left - r.left) > 1 ||
+        Math.abs(prev.width - r.width) > 1 || Math.abs(prev.height - r.height) > 1 ? r : prev);
+    }, 250);
+
     return () => {
       cancelled = true;
-      cancelAnimationFrame(raf);
+      clearTimeout(raf);
+      clearInterval(track);
       advanceListenerCleanup?.();
       window.removeEventListener("resize", onResize);
       window.removeEventListener("scroll", onResize, true);
@@ -207,7 +303,29 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, step, location.pathname]);
 
+  /**
+   * Advance at most ONCE per step.
+   *
+   * Brandon 2026-07-28: "things are being skipped." Several things can race to
+   * advance the same step — a keydown and a blur from one Tab press, a click
+   * plus its own re-render, a stale setTimeout that survives a re-wire. Each
+   * extra call ate a step silently. Latching on the step index makes every
+   * advance idempotent, so a double-fire is harmless instead of invisible.
+   *
+   * Back/Skip reset the latch (see `back`), and each new step effect clears it.
+   */
+  // Measure the card once it's on screen, then let the placement maths re-run
+  // with the true height. One extra render per step, and it's what stops the
+  // card from landing on top of its own target.
+  useLayoutEffect(() => {
+    if (!ready) return;
+    const h = tooltipEl.current?.offsetHeight;
+    if (h && Math.abs(h - tooltipH) > 1) setTooltipH(h);
+  }, [ready, stepIdx, notFound, step?.title, step?.body, tooltipH]);
+
   function nextOrFinish() {
+    if (advancedForStep.current === stepIdx) return;
+    advancedForStep.current = stepIdx;
     if (stepIdx + 1 >= flow.steps.length) {
       finish();
     } else {
@@ -221,6 +339,7 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
   }
 
   function back() {
+    advancedForStep.current = null; // going back re-arms the step we return to
     setStepIdx((i) => Math.max(0, i - 1));
   }
 
@@ -247,42 +366,65 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
   };
 
   const tooltipW = 320;
-  const tooltipH = 200;
   const pad = 12;
-  const tooltipStyle: React.CSSProperties = (() => {
-    if (!targetRect) {
-      return { left: `calc(50% - ${tooltipW / 2}px)`, top: `calc(50% - ${tooltipH / 2}px)`, width: tooltipW };
-    }
-    const placement = step.placement === "auto" || !step.placement
-      ? (targetRect.top > window.innerHeight / 2 ? "top" : "bottom")
-      : step.placement;
-    let top = targetRect.top;
-    let left = targetRect.left;
-    if (placement === "bottom") { top = targetRect.bottom + pad; }
-    else if (placement === "top") { top = targetRect.top - tooltipH - pad; }
-    else if (placement === "right") { left = targetRect.right + pad; }
-    else if (placement === "left") { left = targetRect.left - tooltipW - pad; }
-    left = Math.max(8, Math.min(left, window.innerWidth - tooltipW - 8));
-    top = Math.max(8, Math.min(top, window.innerHeight - tooltipH - 8));
-    return { top, left, width: tooltipW };
-  })();
+  // MEASURED height, not a guess.
+  //
+  // Brandon 2026-07-28: "it's very hard to use." The card's height was
+  // hardcoded at 200px while the real thing is often taller (longer body
+  // copy, the amber not-found note, a wrapped title). With placement:"top"
+  // the maths put its TOP 200px above the target — so a 260px card hung
+  // down over the very button the step tells you to click, and because the
+  // card has pointer-events:auto it swallowed the click. That's the same
+  // root cause as the stranded spotlight and "I can't actually click the
+  // button": trusting an assumed size instead of measuring the real one.
+  const tipH = tooltipH || 200;
+  const tooltipStyle: React.CSSProperties =
+    placeTooltip({
+      targetRect,
+      width: tooltipW,
+      height: tipH,
+      placement: step.placement as Placement | undefined,
+      pad,
+    })
+    // No target yet — centre it.
+    ?? { left: `calc(50% - ${tooltipW / 2}px)`, top: `calc(50% - ${tipH / 2}px)`, width: tooltipW };
 
   const advanceCopy = (() => {
+    if (notFound) return null; // nothing to click — see the note instead
     switch (step.advance ?? "click") {
       case "click": return "Click the highlighted element";
-      case "input": return "Type into the highlighted field";
+      case "input": return "Type your answer, then press Enter";
       case "route": return "Follow the highlighted link";
       case "next": return null;
     }
   })();
 
   return (
-    <div className="fixed inset-0 z-[9997]" role="dialog" aria-modal="true" aria-label={flow.title}>
+    // pointer-events NONE on the root (Brandon 2026-07-28: "it says to add a
+    // new contact but I can't actually click the button").
+    //
+    // This overlay is fixed inset-0, so with default pointer-events it sat on
+    // top of the entire page and swallowed every click — including the click
+    // on the highlighted element that the step is literally waiting for. The
+    // walkthrough could never advance by real interaction. It escaped notice
+    // because verification dispatched synthetic events, which bypass
+    // hit-testing entirely; only a real cursor (or elementFromPoint) reveals it.
+    //
+    // The spotlight is already pointer-events:none; the tooltip re-enables
+    // them so its own Skip/Back/Next stay clickable.
+    <div
+      className="fixed inset-0 z-[9997]"
+      style={{ pointerEvents: "none" }}
+      role="dialog"
+      aria-modal="false"
+      aria-label={flow.title}
+    >
       <div style={spotlightStyle} />
       {ready && (
         <div
+          ref={tooltipEl}
           className="fixed z-[9999] rounded-xl bg-white shadow-2xl border-2"
-          style={{ ...tooltipStyle, borderColor: accent }}
+          style={{ ...tooltipStyle, borderColor: accent, pointerEvents: "auto" }}
         >
           <div
             className="flex items-center justify-between rounded-t-lg px-3 py-2"
@@ -308,6 +450,14 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
                 {advanceCopy} to continue
               </div>
             )}
+            {notFound && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] leading-relaxed text-amber-900">
+                I can't find that control on this screen — it may not be
+                available on your plan, or it may have moved. Click{" "}
+                <span className="font-semibold">Next</span> to carry on with the
+                walkthrough.
+              </div>
+            )}
           </div>
           <div className="flex items-center justify-between border-t border-slate-100 px-3 py-2">
             <button onClick={finish} className="text-[11px] text-slate-500 hover:text-slate-700">
@@ -322,15 +472,22 @@ export function InteractiveWalkthroughRunner({ flow, open, onClose, accent = "#E
                   <ChevronLeft className="h-3 w-3" /> Back
                 </button>
               )}
-              {step.advance === "next" && (
-                <button
-                  onClick={nextOrFinish}
-                  className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white"
-                  style={{ background: accent }}
-                >
-                  {stepIdx + 1 === flow.steps.length ? "Finish" : "Next"}
-                </button>
-              )}
+              {/* EVERY step gets a Next button.
+                  Brandon 2026-07-28: "it's very hard to use." Click steps used
+                  to render no Next at all, so if the click didn't register for
+                  any reason the step was a dead end. Doing the real action
+                  still advances; this is the always-available way out, so the
+                  user is never stuck hunting for the magic gesture. Input
+                  steps keep it disabled until something's typed, so Next never
+                  skips past a field the next step depends on. */}
+              <button
+                onClick={nextOrFinish}
+                disabled={!notFound && step.advance === "input" && !typedOk}
+                className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40"
+                style={{ background: accent }}
+              >
+                {stepIdx + 1 === flow.steps.length ? "Finish" : "Next"}
+              </button>
             </div>
           </div>
         </div>

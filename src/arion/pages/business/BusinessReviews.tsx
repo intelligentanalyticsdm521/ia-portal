@@ -2,7 +2,64 @@ import React from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
-import { Card, StatCard, InfoCard, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
+import { Card, StatCard, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
+import { GbpPendingVerificationCard, GbpStatusCard } from './GbpStatusCard';
+
+// Pro+ auto-reply automation — opt-in + minimum-star gate. Uses the ARION
+// IL model to reply automatically to new reviews (metered per reply).
+function AutoReplyCard({ siteId, arionApi }: { siteId: string; arionApi: any }) {
+  const [cfg, setCfg] = React.useState<{ enabled: boolean; minStars: number; allowed: boolean; tier: string } | null>(null);
+  const [saving, setSaving] = React.useState(false);
+  React.useEffect(() => {
+    let alive = true;
+    arionApi.getGbpAutoReply(siteId).then((r: any) => { if (alive) setCfg(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, [siteId, arionApi]);
+  if (!cfg) return null;
+
+  const save = async (enabled: boolean, minStars: number) => {
+    setSaving(true);
+    try {
+      const r = await arionApi.setGbpAutoReply(siteId, enabled, minStars);
+      setCfg(c => c ? { ...c, enabled: r.enabled, minStars: r.minStars } : c);
+    } catch { /* keep prior state */ }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Card title="Auto-reply to reviews">
+      {!cfg.allowed ? (
+        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+          Automatic replies are a <strong>Pro</strong> feature. Upgrade to have ARION reply to
+          new reviews in your brand voice automatically (each reply uses 1 AI credit).
+        </div>
+      ) : (
+        <div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, cursor: 'pointer' }}>
+            <input type="checkbox" checked={cfg.enabled} disabled={saving} onChange={e => save(e.target.checked, cfg.minStars)} />
+            Automatically reply to new reviews in my brand voice
+          </label>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+            ARION checks daily and drafts a reply for each new review, using 1 AI credit per reply.
+            You can still edit any reply afterward.
+          </div>
+          {cfg.enabled && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 13 }}>
+              <span>Only auto-reply to reviews of</span>
+              <select className="field-input" style={{ width: 'auto' }} value={cfg.minStars} disabled={saving} onChange={e => save(true, parseInt(e.target.value, 10))}>
+                <option value={1}>all ratings</option>
+                <option value={3}>3★ and up</option>
+                <option value={4}>4★ and up</option>
+                <option value={5}>5★ only</option>
+              </select>
+              <span style={{ color: 'var(--text-muted)' }}>— hand-craft the tougher ones yourself.</span>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function Stars({ n }: { n: number }) {
   const full = Math.max(0, Math.min(5, Math.round(n)));
@@ -15,14 +72,19 @@ export function BusinessReviews() {
     () => activeSiteId ? arionApi.getGbpReviewsLive(activeSiteId).catch((e: any) => ({ error: e.message })) : Promise.resolve(null),
     [activeSiteId]
   );
-  const [replyState, setReplyState] = React.useState<Record<string, { text: string; saving: boolean }>>({});
+  const [replyState, setReplyState] = React.useState<Record<string, { text: string; saving: boolean; drafting?: boolean; draftErr?: string | null }>>({});
 
   if (loading) return <Loading />;
   if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
 
   const d = data as any;
+  if (d?.pendingVerification) {
+    return <GbpPendingVerificationCard what="reviews" />;
+  }
   if (!d || d.error || d.connected === false) {
-    return <InfoCard title="Google Business Profile — Not Connected"><p style={{ margin: 0 }}>Connect Google in Settings → Connected Accounts to see live reviews.</p></InfoCard>;
+    // Differentiated failure copy — quota/auth/no-listing are NOT "not
+    // connected" (the backend returns several of these with connected:true).
+    return <GbpStatusCard error={d?.error} surface="reviews" />;
   }
 
   const total = d.totalReviewCount || 0;
@@ -43,11 +105,25 @@ export function BusinessReviews() {
   }));
   const distColors = ['#1D9E75', '#2D9CDB', '#EF6C33', '#D85A30', '#B71C1C'];
 
-  const setReply = (id: string, patch: Partial<{ text: string; saving: boolean }>) =>
+  const setReply = (id: string, patch: Partial<{ text: string; saving: boolean; drafting: boolean; draftErr: string | null }>) =>
     setReplyState(prev => {
       const existing = prev[id] || { text: '', saving: false };
       return { ...prev, [id]: { ...existing, ...patch } };
     });
+
+  const draftWithAi = async (r: any) => {
+    if (!activeSiteId) return;
+    setReply(r.reviewId, { drafting: true, draftErr: null });
+    try {
+      const res: any = await arionApi.draftGbpReviewReply(activeSiteId, {
+        reviewId: r.reviewId, reviewerName: r.reviewerName, starRating: r.starRating, comment: r.comment,
+      });
+      setReply(r.reviewId, { text: res.draft || '', drafting: false });
+    } catch (e: any) {
+      const insufficient = e?.status === 402 || /insufficient/i.test(e?.message || '');
+      setReply(r.reviewId, { drafting: false, draftErr: insufficient ? 'Not enough AI credits — top up in the Data Plan.' : (e?.message || 'Draft failed') });
+    }
+  };
 
   const submitReply = async (id: string) => {
     const txt = replyState[id]?.text?.trim();
@@ -85,6 +161,8 @@ export function BusinessReviews() {
         </Card>
       )}
 
+      <AutoReplyCard siteId={activeSiteId!} arionApi={arionApi} />
+
       <Card title="Reviews">
         {reviews.length === 0 ? (
           <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No reviews yet</div>
@@ -114,16 +192,20 @@ export function BusinessReviews() {
                       <textarea
                         className="field-input"
                         rows={3}
-                        placeholder="Write your reply..."
+                        placeholder="Write your reply, or let AI draft one..."
                         value={rep.text}
                         onChange={e => setReply(r.reviewId, { text: e.target.value })}
                       />
-                      <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
                         <button className="abtn abtn-sky" disabled={rep.saving || !rep.text.trim()} onClick={() => submitReply(r.reviewId)}>
                           {rep.saving ? 'Posting...' : 'Submit reply'}
                         </button>
+                        <button className="abtn" disabled={rep.drafting} onClick={() => draftWithAi(r)} title="Draft a reply in your brand voice — 1 AI credit">
+                          {rep.drafting ? 'Drafting…' : '✨ Draft with AI · 1cr'}
+                        </button>
                         <button className="abtn" onClick={() => setReplyState(prev => { const { [r.reviewId]: _x, ...rest } = prev; return rest; })}>Cancel</button>
                       </div>
+                      {rep.draftErr && <div style={{ marginTop: 6, fontSize: 11, color: '#D85A30' }}>{rep.draftErr}</div>}
                     </div>
                   )}
                 </div>

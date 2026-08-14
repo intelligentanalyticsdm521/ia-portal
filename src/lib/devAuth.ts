@@ -38,6 +38,36 @@
 export const DEV_AUTH = String(import.meta.env.VITE_DEV_AUTH || '') === '1';
 export const DEV_TENANT = String(import.meta.env.VITE_DEV_TENANT || '').trim();
 
+// The backend dev seam hard-blocks the founder tenant; sending it would 401
+// every call, so the resolver skips it and falls back to the env pin.
+const FOUNDER_TENANT = '8c9527b9-8999-4b31-a306-f3d4ccc39fbd';
+
+/**
+ * 2026-07-26 (Brandon: "cross tenant leakage") — the dev tenant now FOLLOWS
+ * the tenant switcher instead of being pinned per Vite run. The switcher
+ * persists AppState.activeTenantId to localStorage; each intercepted request
+ * reads it fresh, so switching tenants in the UI switches the data too.
+ * Falls back to VITE_DEV_TENANT when unset or when the founder tenant is
+ * selected (the seam refuses it by design).
+ */
+function resolveDevTenant(): string {
+  try {
+    // 1) Founder act-as session targets a client tenant while activeTenantId
+    //    stays the founder's own — honor the TARGET so acting-as works in dev.
+    const raw = sessionStorage.getItem('iadm.portal.emergencyActAs.v1');
+    if (raw) {
+      const s = JSON.parse(raw) as { tenantId?: string; expiresAt?: string };
+      const t = (s.tenantId || '').trim().toLowerCase();
+      if (t && t !== FOUNDER_TENANT && s.expiresAt && Date.parse(s.expiresAt) > Date.now()) return t;
+    }
+  } catch { /* fall through */ }
+  try {
+    const active = (localStorage.getItem('iadm.portal.activeTenantId') || '').trim().toLowerCase();
+    if (active && active !== FOUNDER_TENANT) return active;
+  } catch { /* storage denied — env pin still works */ }
+  return DEV_TENANT;
+}
+
 /** Loopback only. Anything else — notably *.azurewebsites.net — is left alone. */
 function isLocalApi(url: string): boolean {
   try {
@@ -70,7 +100,19 @@ export function installDevAuthFetch(): void {
     if (!isLocalApi(url)) return original(input as any, init);
 
     const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
-    headers.set('x-dev-tenant', DEV_TENANT);
+    const devTenant = resolveDevTenant();
+    headers.set('x-dev-tenant', devTenant);
+    // Keep the scope headers in lockstep with the dev identity — the backend
+    // seams reject a request whose x-tenant-key disagrees with the dev
+    // tenant, and the app computes those from AppState (which can lag the
+    // act-as flow in dev). Dev-only, loopback-only, same as everything here.
+    if (headers.has('x-tenant-key')) headers.set('x-tenant-key', devTenant);
+    if (headers.has('x-tenant-id')) headers.set('x-tenant-id', devTenant);
+    // Emergency act-as can't work end-to-end against the dev seam (the
+    // middleware demands a real founder JWT). resolveDevTenant() already
+    // scopes requests to the act-as TARGET, so drop the mode header rather
+    // than let every LUMEN/oliver call 401 for the whole 30-minute session.
+    headers.delete('x-actas-mode');
     // Some clients send `Authorization: Bearer undefined` when MSAL is absent;
     // the backend would try to verify it as a real token and 401 before the
     // dev seam is consulted. Strip it — devAuth runs first only if no Bearer
