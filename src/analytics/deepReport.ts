@@ -90,7 +90,12 @@ export interface DeepReportData {
   distribution?: DeepDistribution;
   movements: DeepMovementTable[];
   segments: DeepSegmentTable[];
-  opportunities: Array<{ title: string; note?: string; items: DetailItem[]; lede?: (n: number, itemLabel: string) => string }>;
+  opportunities: Array<{
+    title: string; note?: string; items: DetailItem[];
+    /** How many items actually match. `items` is capped for display; this is not. */
+    total: number;
+    lede?: (n: number, itemLabel: string) => string;
+  }>;
   flags: Record<string, string>;
   itemStats: Record<string, DeepItemStats>;
   /** "What this means" — friendly interpretation derived from the same data. */
@@ -301,16 +306,34 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
   }).filter((s) => s.rows.length > 1);
 
   // F — opportunities
+  //
+  // Over ALL items, not just the ones with a trend. A page being an orphan, an
+  // image having no alt text, a post being published empty — none of those
+  // become true only after two months of history, and gating them on a series
+  // meant a freshly connected site showed an item table with every finding
+  // stripped out of it. Verified against production the day capture started:
+  // 30 orphans, 150 images with no alt text and 13 empty posts, all real, none
+  // of which would have appeared. Movement analysis still needs the series;
+  // "what is wrong right now" never did.
   const opportunities = (cfg?.opportunities || []).map((def) => {
-    let list = trendItems.filter(def.filter);
+    let list = items.filter(def.filter);
     if (def.sortBy) list = [...list].sort(def.sortBy);
-    return { title: def.title, note: def.note, lede: def.lede, items: list.slice(0, def.limit ?? 8) };
+    // The list is capped for display; the COUNT never is. Reporting the capped
+    // number as the finding is a lie the reader cannot detect: production has
+    // 150 images with no alt text and the narrative would have said 8.
+    return {
+      title: def.title, note: def.note, lede: def.lede,
+      total: list.length,
+      items: list.slice(0, def.limit ?? 8),
+    };
   }).filter((o) => o.items.length);
 
   // D — per-item stats + flags
   const itemStats: Record<string, DeepItemStats> = {};
   const flags: Record<string, string> = {};
-  for (const it of trendItems) {
+  // Same reasoning as the opportunities above: a warning is about the item's
+  // state now. itemStats genuinely needs history and guards for it below.
+  for (const it of items) {
     const vals = (it.series || []).filter((v): v is number => v != null && isFinite(v));
     if (vals.length >= 2) {
       const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
@@ -399,7 +422,12 @@ function buildMeaning(ctx: {
   entered: DetailItem[];
   dropped: DetailItem[];
   distribution?: DeepDistribution;
-  opportunities: Array<{ title: string; note?: string; items: DetailItem[]; lede?: (n: number, itemLabel: string) => string }>;
+  opportunities: Array<{
+    title: string; note?: string; items: DetailItem[];
+    /** How many items actually match. `items` is capped for display; this is not. */
+    total: number;
+    lede?: (n: number, itemLabel: string) => string;
+  }>;
   flags: Record<string, string>;
   itemStats: Record<string, DeepItemStats>;
   seriesLen: number;
@@ -592,8 +620,8 @@ function buildMeaning(ctx: {
     out.push({
       tone: opp.lede ? "watch" : "good",
       text: opp.lede
-        ? opp.lede(opp.items.length, report.itemLabel)
-        : `${opp.items.length} ${pluralize(report.itemLabel, opp.items.length)} qualify as "${opp.title}" — already close enough that a small push gets them over the line. These are usually the cheapest wins on this page.`,
+        ? opp.lede(opp.total, report.itemLabel)
+        : `${opp.total} ${pluralize(report.itemLabel, opp.total)} qualify as "${opp.title}" — already close enough that a small push gets them over the line. These are usually the cheapest wins on this page.`,
     });
   }
 
@@ -602,7 +630,7 @@ function buildMeaning(ctx: {
   if (flagNames.length) {
     out.push({
       tone: "watch",
-      text: `${flagNames.length} ${pluralize(report.itemLabel, flagNames.length)} carry a warning (look for the ⚠ in the table). For example ${flagNames[0]}: ${flags[flagNames[0]].toLowerCase()}`,
+      text: `${flagNames.length} ${pluralize(report.itemLabel, flagNames.length)} ${flagNames.length === 1 ? "carries" : "carry"} a warning (look for the ⚠ in the table). For example ${flagNames[0]}: ${flags[flagNames[0]].toLowerCase()}`,
     });
   }
 

@@ -263,7 +263,13 @@ export function DeepReportView({ deep }: { deep: DeepReportData }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {opportunities.map((op) => (
               <div key={op.title} className="rounded-lg border border-lime-200 bg-lime-50/60 px-3 py-2">
-                <div className="text-[10px] uppercase font-semibold tracking-wide text-lime-800 mb-0.5">{op.title}</div>
+                <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                  <div className="text-[10px] uppercase font-semibold tracking-wide text-lime-800">{op.title}</div>
+                  {/* Never let a capped list read as the whole finding. */}
+                  <div className="text-[10px] font-semibold text-lime-700 flex-shrink-0">
+                    {op.total > op.items.length ? `${op.items.length} of ${op.total}` : op.total}
+                  </div>
+                </div>
                 {op.note && <div className="text-[10px] text-lime-700 mb-1.5">{op.note}</div>}
                 {op.items.map((it) => (
                   <div key={it.name} className="flex items-center justify-between gap-2 py-0.5 text-[11px]">
