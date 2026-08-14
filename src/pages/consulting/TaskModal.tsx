@@ -15,7 +15,7 @@ import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { IadmModal } from "../../components/IadmModal";
 import {
-  TASK_STAGE_LABELS, TASK_STATUS_LABELS, TASK_ACTIONS,
+  TASK_STAGE_LABELS, TASK_STATUS_LABELS, taskActionsFor,
 } from "../../components/consulting/ConsultingProjectModal";
 import type { WorkRow, ReleaseRow, WorkerRow, WorkMeta } from "./workTypes";
 import { PLATFORM_LABEL } from "./workTypes";
@@ -194,7 +194,7 @@ export function TaskModal({ row, releases, workers, meta, projects, onClose, onS
                 <option value={`${row.stage}|${row.status}`}>
                   {TASK_STAGE_LABELS[row.stage] || row.stage} — {TASK_STATUS_LABELS[row.status] || row.status}
                 </option>
-                {(TASK_ACTIONS[row.stage] || []).filter((a) => a.value !== `${row.stage}|${row.status}`)
+                {taskActionsFor(row.stage, row.is_internal).filter((a) => a.value !== `${row.stage}|${row.status}`)
                   .map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
               </select>
               {(row.days_in_stage ?? 0) > 0 && (
