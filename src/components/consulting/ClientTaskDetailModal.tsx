@@ -8,8 +8,18 @@
 // Shows description, the documents attached to the task (private container,
 // so downloads stream through the API), and the ONLY two client actions —
 // Approve / Request revision — and only while it is actually their turn.
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { IadmModal } from "../IadmModal";
+import { useOliverApi } from "../../hooks/useOliverApi";
+
+/** A client-visible message on a request (is_internal = 0 only). */
+interface ClientMessage {
+  comment_id: number;
+  body: string;
+  created_at: string;
+  author_name?: string | null;
+  author_kind?: string | null;
+}
 
 export interface ClientTaskLike {
   id: string;
@@ -82,6 +92,36 @@ export function ClientTaskDetailModal({
   const [file, setFile] = useState<File | null>(null);
   const [attaching, setAttaching] = useState(false);
   const [attachErr, setAttachErr] = useState<string | null>(null);
+
+  // Client-visible message thread. GET returns only is_internal=0 rows for a
+  // client (enforced server-side in SQL), and a client POST is always external.
+  const { get: apiGet, post: apiPost } = useOliverApi();
+  const [msgs, setMsgs] = useState<ClientMessage[]>([]);
+  const [msgDraft, setMsgDraft] = useState("");
+  const [msgSending, setMsgSending] = useState(false);
+  const [msgErr, setMsgErr] = useState<string | null>(null);
+
+  const loadMsgs = useCallback(async () => {
+    if (!task?.id) return;
+    try {
+      const d = await apiGet<ClientMessage[]>(`/consulting/requests/${task.id}/comments`);
+      setMsgs(Array.isArray(d) ? [...d].reverse() : []); // API is newest-first; read oldest-first
+    } catch { /* an empty thread must not break the modal */ }
+  }, [apiGet, task?.id]);
+  useEffect(() => { loadMsgs(); }, [loadMsgs]);
+
+  const sendMessage = async () => {
+    const b = msgDraft.trim();
+    if (!b || msgSending) return;
+    setMsgSending(true); setMsgErr(null);
+    try {
+      await apiPost(`/consulting/requests/${task.id}/comments`, { body: b });
+      setMsgDraft("");
+      await loadMsgs();
+    } catch (e) {
+      setMsgErr((e as Error).message || "Could not send your message.");
+    } finally { setMsgSending(false); }
+  };
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   async function handleAttach() {
@@ -264,6 +304,57 @@ export function ClientTaskDetailModal({
             review.
           </div>
         )}
+
+        {/* Two-way thread. The API returns ONLY external notes to a client, so
+            nothing internal can appear here even by accident, and anything the
+            client posts is external by definition. */}
+        <div className="border-t border-slate-200 pt-3">
+          <div className="mb-1.5 text-xs font-semibold text-slate-700">Messages</div>
+          {msgErr && (
+            <div className="mb-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] text-rose-700">
+              {msgErr}
+            </div>
+          )}
+          {msgs.length === 0 ? (
+            <p className="text-[11px] text-slate-400">No messages yet.</p>
+          ) : (
+            <ul className="mb-2 max-h-48 space-y-1.5 overflow-y-auto">
+              {msgs.map((m) => {
+                const mine = m.author_kind === "client";
+                return (
+                  <li key={m.comment_id}
+                    className={`rounded border px-2 py-1.5 text-xs ${
+                      mine ? "border-slate-200 bg-slate-50 text-slate-700"
+                           : "border-[#EF6C33]/40 bg-orange-50/60 text-slate-800"
+                    }`}>
+                    <div className="whitespace-pre-wrap">{m.body}</div>
+                    <div className="mt-0.5 text-[10px] text-slate-400">
+                      {mine ? "You" : (m.author_name || "Intelligent Analytics")} ·{" "}
+                      {new Date(m.created_at).toLocaleString()}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <textarea
+            value={msgDraft}
+            onChange={(e) => setMsgDraft(e.target.value)}
+            rows={2}
+            placeholder="Reply to us — tell us if this still isn't resolved."
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+          />
+          <div className="mt-1.5 flex justify-end">
+            <button
+              type="button"
+              disabled={!msgDraft.trim() || msgSending}
+              onClick={sendMessage}
+              className="rounded bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+            >
+              {msgSending ? "Sending…" : "Send message"}
+            </button>
+          </div>
+        </div>
       </div>
     </IadmModal>
   );

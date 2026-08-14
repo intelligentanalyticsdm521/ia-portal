@@ -22,6 +22,10 @@ import { PLATFORM_LABEL } from "./workTypes";
 
 interface CommentRow {
   comment_id: number; author_name?: string | null; body: string; created_at: string;
+  /** true = agency-only note; false = message the client can read. */
+  is_internal?: boolean | number;
+  /** 'provider' (agency) or 'client'. */
+  author_kind?: string | null;
 }
 
 export function TaskModal({ row, releases, workers, meta, projects, onClose, onSaved }: {
@@ -78,15 +82,23 @@ export function TaskModal({ row, releases, workers, meta, projects, onClose, onS
     finally { setBusy(false); }
   };
 
-  const addComment = async () => {
+  // One thread, two send actions. is_internal=true stays with the agency;
+  // is_internal=false is a message the client reads in their portal, and it
+  // emails them. The API treats an omitted flag as internal, so this must
+  // always send it explicitly.
+  const [sending, setSending] = useState<"internal" | "external" | null>(null);
+  const addComment = async (isInternal: boolean) => {
     const b = newComment.trim();
-    if (!b) return;
+    if (!b || sending) return;
+    setSending(isInternal ? "internal" : "external");
+    setErr(null);
     try {
-      await postFounder(`/consulting/requests/${row.id}/comments`, { body: b });
+      await postFounder(`/consulting/requests/${row.id}/comments`, { body: b, is_internal: isInternal });
       setNewComment("");
       const d = await getFounder<CommentRow[]>(`/consulting/requests/${row.id}/comments`);
       setComments(Array.isArray(d) ? d : []);
     } catch (e) { setErr((e as Error).message || "Could not add note."); }
+    finally { setSending(null); }
   };
 
   const changeStatus = async (value: string) => {
@@ -293,25 +305,59 @@ export function TaskModal({ row, releases, workers, meta, projects, onClose, onS
 
             <div>
               <label className={l}>
-                Notes <span className="font-normal text-slate-400">(internal — never shown to the client)</span>
+                Notes{" "}
+                <span className="font-normal text-slate-400">
+                  (one thread — each note is flagged internal or external)
+                </span>
               </label>
-              <div className="flex gap-2">
-                <input value={newComment} onChange={(e) => setNewComment(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addComment(); } }}
-                  placeholder="Add a note…" className={f} />
-                <button type="button" onClick={addComment}
-                  className="flex-shrink-0 rounded-md border border-slate-300 px-2 py-1 text-xs">Add</button>
+              <textarea value={newComment} onChange={(e) => setNewComment(e.target.value)}
+                rows={2} placeholder="Write a note…" className={f} />
+              <div className="mt-1.5 flex items-center gap-2">
+                <button type="button" onClick={() => addComment(true)}
+                  disabled={!newComment.trim() || !!sending}
+                  className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 disabled:opacity-40">
+                  {sending === "internal" ? "Adding…" : "Add internal"}
+                </button>
+                <button type="button" onClick={() => addComment(false)}
+                  disabled={!newComment.trim() || !!sending}
+                  className="rounded-md bg-[#EF6C33] px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-40">
+                  {sending === "external" ? "Sending…" : "Send external"}
+                </button>
+                <span className="text-[10px] text-slate-400">
+                  External is visible to the client and emails them.
+                </span>
               </div>
               {comments.length > 0 && (
-                <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
-                  {comments.map((c) => (
-                    <li key={c.comment_id} className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-700">
-                      <div>{c.body}</div>
-                      <div className="mt-0.5 text-[10px] text-slate-400">
-                        {c.author_name || "Agency"} · {new Date(c.created_at).toLocaleString()}
-                      </div>
-                    </li>
-                  ))}
+                <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto">
+                  {comments.map((c) => {
+                    const internal = c.is_internal !== false && c.is_internal !== 0;
+                    const fromClient = c.author_kind === "client";
+                    return (
+                      <li key={c.comment_id}
+                        className={`rounded border px-2 py-1 text-xs ${
+                          internal
+                            ? "border-slate-200 bg-white text-slate-700"
+                            : "border-[#EF6C33]/40 bg-orange-50/60 text-slate-800"
+                        }`}>
+                        <div className="mb-0.5 flex items-center gap-1.5">
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                            internal ? "bg-slate-100 text-slate-600" : "bg-[#EF6C33] text-white"
+                          }`}>
+                            {internal ? "INTERNAL" : "EXTERNAL"}
+                          </span>
+                          {fromClient && (
+                            <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+                              from client
+                            </span>
+                          )}
+                        </div>
+                        <div className="whitespace-pre-wrap">{c.body}</div>
+                        <div className="mt-0.5 text-[10px] text-slate-400">
+                          {c.author_name || (fromClient ? "Client" : "Agency")} · {new Date(c.created_at).toLocaleString()}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
