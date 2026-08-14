@@ -6,6 +6,7 @@ import {
   type AuthenticationResult,
   type AccountInfo
 } from '@azure/msal-browser';
+import { authScopes } from './msalConfig';
 
 let pca: IPublicClientApplication | null = null;
 let initPromise: Promise<void> | null = null;
@@ -155,7 +156,7 @@ export function clearStaleInteractionFlags(): void {
  * page, a stale `interaction_in_progress` would otherwise make this call throw
  * and leave them wedged (that's what locked Brandon out previously).
  */
-export function hardLogout(instance: IPublicClientApplication): Promise<void> {
+export async function hardLogout(instance: IPublicClientApplication): Promise<void> {
   const account =
     instance.getActiveAccount() ?? instance.getAllAccounts()[0] ?? undefined;
 
@@ -166,10 +167,27 @@ export function hardLogout(instance: IPublicClientApplication): Promise<void> {
     account?.username ||
     undefined;
 
-  // The one that actually matters for CIAM. If it's ever absent (an account
-  // rehydrated from cache without its raw token), we still send logoutHint and
-  // degrade to the previous behaviour rather than failing the sign-out.
-  const idTokenHint = account?.idToken || undefined;
+  // 2026-08-14 (attempt 3) — DO NOT trust account.idToken.
+  //
+  // The previous attempt read the raw token off AccountInfo. MSAL v3 declares
+  // that field, but the accounts handed back by getActiveAccount() /
+  // getAllAccounts() are built from the account cache and StandardController
+  // only ever populates idTokenClaims on them — never idToken. So idTokenHint
+  // was almost certainly undefined, `id_token_hint` never made it onto the
+  // logout URL, and CIAM went on showing its picker exactly as before.
+  //
+  // acquireTokenSilent returns the RAW id token on the AuthenticationResult,
+  // which is what CIAM needs. It's a cache read in the normal case; if it has
+  // to hit the network and fails, we fall back rather than block sign-out.
+  let idTokenHint = account?.idToken || undefined;
+  if (!idTokenHint && account) {
+    try {
+      const result = await instance.acquireTokenSilent({ account, scopes: authScopes });
+      idTokenHint = result.idToken || undefined;
+    } catch {
+      /* fall through — logoutHint alone is still better than nothing */
+    }
+  }
 
   clearStaleInteractionFlags();
 
@@ -179,6 +197,18 @@ export function hardLogout(instance: IPublicClientApplication): Promise<void> {
       logoutHint,
       idTokenHint,
       postLogoutRedirectUri: window.location.origin,
+      // Diagnostic: this is the exact URL handed to Entra. If a picker STILL
+      // appears, this line says definitively whether id_token_hint was present
+      // and populated, instead of another round of guessing. Returning true
+      // lets the navigation proceed normally.
+      onRedirectNavigate: (url: string) => {
+        try {
+          console.info('[logout] id_token_hint present:', url.includes('id_token_hint='),
+            '| logout_hint present:', url.includes('logout_hint='));
+          console.info('[logout] url:', url);
+        } catch { /* ignore */ }
+        return true;
+      },
     })
     .catch(() => {
       // Never strand the user on a half-signed-out screen: drop local state
