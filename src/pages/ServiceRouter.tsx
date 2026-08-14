@@ -116,6 +116,7 @@ const BusinessAppleOverview = lazyNamed(() => import('../arion/pages/business/Bu
 // v5.x IA Insights architecture — Health, Trends, Intelligence, Cross-Platform (ARGUS)
 const ArionIAInsightsHealthPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsHealthPage'), 'ArionIAInsightsHealthPage');
 const ArionIAInsightsTrendsPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsTrendsPage'), 'ArionIAInsightsTrendsPage');
+const ArionIAInsightsReportsPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsReportsPage'), 'ArionIAInsightsReportsPage');
 const ArionIAInsightsIntelligencePage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsIntelligencePage'), 'ArionIAInsightsIntelligencePage');
 const ArionServiceAreaPage = lazyNamed(() => import('../arion/pages/iainsights/ArionServiceAreaPage'), 'ArionServiceAreaPage');
 const ArgusIAInsightsPage = lazyNamed(() => import('./argus/ArgusIAInsightsPage'), 'ArgusIAInsightsPage');
@@ -502,6 +503,7 @@ export function ServiceRouter() {
       // v5.x IA Insights architecture
       case 'arion_ia_insights_health': arionPage = <ArionIAInsightsHealthPage />; break;
       case 'arion_ia_insights_trends': arionPage = <ArionIAInsightsTrendsPage />; break;
+      case 'arion_ia_insights_reports': arionPage = <ArionIAInsightsReportsPage />; break;
       case 'arion_ia_insights_intelligence': arionPage = <ArionIAInsightsIntelligencePage />; break;
       case 'arion_service_area': arionPage = <ArionServiceAreaPage />; break;
       case 'arion_usage': arionPage = <ArionUsagePage service={service} status={status} />; break;

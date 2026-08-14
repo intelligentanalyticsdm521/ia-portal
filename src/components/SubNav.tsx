@@ -310,6 +310,7 @@ const ARION_NAV: SubNavConfig = {
         { key: "arion_ia_insights_health", label: "Health", route: "/app/services/arion_ia_insights_health" },
         { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends", tag: { label: "ARION", color: "#38BDF8" } },
         { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#38BDF8" } },
+        { key: "arion_ia_insights_reports", label: "Reports", route: "/app/services/arion_ia_insights_reports" },
       ],
     },
   ],

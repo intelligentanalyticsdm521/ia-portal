@@ -2,6 +2,8 @@ import React, { useState, useCallback } from 'react';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { Card, Loading, ConsultingUpsell } from '../../components/Ui';
+import { ReportButton } from '../../../components/insights/ReportButton';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 import type { PluginAutoUpdateToggleBody } from '../../../lib/arionApi';
 
 type UpdateItem = {
@@ -28,6 +30,11 @@ export function WebsiteUpdates() {
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [version, setVersion] = useState(0); // cache-buster for refetch
+  // This page IS the high-level view — pending updates, act on them here.
+  // The BUTTON is the depth: every component's 12-month upkeep history, bands,
+  // movement, dormant-risk. Same report the Trends drill-down and the Reports
+  // catalog render, derived from one definition (Brandon 2026-08-14).
+  const insights = useArionInsightsPayload();
 
   const { data: updatesData, loading: updatesLoading } = useArionData(
     () => activeSiteId ? arionApi.getPluginUpdates(activeSiteId) : Promise.resolve(null),
@@ -190,6 +197,10 @@ export function WebsiteUpdates() {
 
   return (
     <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <ReportButton detail={insights?.detail} reportId="component_upkeep" />
+      </div>
+
       {/* Plugin connection banner */}
       {!pluginConnected && (updatesLoading || autoCfgLoading ? null : (
         <div style={{ background: '#FEF3C7', borderLeft: '4px solid #D97706', padding: '12px 16px', marginBottom: 16, borderRadius: 4, fontSize: 13 }}>
