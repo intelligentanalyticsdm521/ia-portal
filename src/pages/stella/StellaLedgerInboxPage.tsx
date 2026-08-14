@@ -2,13 +2,20 @@
 //
 // The needs-review queue (status IN needs_categorization / flagged) — the core
 // bookkeeping UX. Reads GET /ledger/inbox (raw stella.[transaction] rows).
-// Quick-categorize: every needs_categorization row carries an inline compact
-// COA select (expense accounts first for outflows, revenue first for inflows)
+// Quick-categorize: every needs_categorization row carries an inline SEARCHABLE
+// account combobox (Brandon's walkthrough, 2026-08-13: "a search option in the
+// ledger inbox so you can easily find an account") — a text input filtering the
+// COA list (expense accounts first for outflows, revenue first for inflows,
+// arrow/enter keyboard selection, click-away closes; built inline, no new dep)
 // plus a one-tap "Categorize" button that PATCHes /ledger/transactions/:id
 // with { coa_account_id, status: 'categorized' } — the row leaves the inbox on
-// success with a count-down flash. Row click opens the TransactionDetailModal
-// (IadmModal standard) so a line can be memo'd / voided / reimbursed without
-// leaving the queue (inline controls stopPropagation so they don't open it).
+// success with a count-down flash. Outflow rows also carry a compact "Personal"
+// quick-action (PATCH status:'personal' — excluded from the books entirely; the
+// row leaves the inbox). A plain search box above the table filters the rows
+// themselves by counterparty/description/memo. Row click opens the
+// TransactionDetailModal (IadmModal standard) so a line can be memo'd / voided
+// / reimbursed without leaving the queue (inline controls stopPropagation so
+// they don't open it).
 // Duplicate / OCR-pending review reasons return with P3 receipt capture.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useStellaApi } from "../../hooks/useStellaApi";
@@ -57,6 +64,158 @@ function toNum(v: number | string | null | undefined): number {
   return Number.isFinite(n as number) ? (n as number) : 0;
 }
 
+function coaLabel(a: CoaAccount): string {
+  return a.code ? `${a.code} — ${a.name}` : a.name;
+}
+
+/**
+ * Inline searchable account combobox (house style, no dependency): a text
+ * input filtering the COA list, dropdown of matches (row-direction accounts
+ * first), ArrowUp/ArrowDown + Enter selection, Escape/click-away closes.
+ */
+function CoaCombobox({
+  accounts,
+  direction,
+  value,
+  onChange,
+  disabled,
+}: {
+  accounts: CoaAccount[];
+  direction: string;
+  value: string;
+  onChange: (id: string) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [hi, setHi] = useState(0);
+
+  const selected = accounts.find((a) => a.coa_account_id === value) || null;
+  const preferredType = direction === "inflow" ? "revenue" : "expense";
+
+  // Filtered matches, preferred type first — one flat list for keyboard nav,
+  // with group boundaries marked for the tiny headers.
+  const { matches, preferredCount } = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const hit = (a: CoaAccount) => !q || coaLabel(a).toLowerCase().includes(q);
+    const preferred = accounts.filter((a) => a.type === preferredType && hit(a));
+    const others = accounts.filter((a) => a.type !== preferredType && hit(a));
+    return { matches: [...preferred, ...others], preferredCount: preferred.length };
+  }, [accounts, preferredType, query]);
+
+  useEffect(() => {
+    setHi(0);
+  }, [query, open]);
+
+  function pick(a: CoaAccount) {
+    onChange(a.coa_account_id);
+    setQuery("");
+    setOpen(false);
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!open && (e.key === "ArrowDown" || e.key === "Enter")) {
+      setOpen(true);
+      e.preventDefault();
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHi((h) => Math.min(h + 1, matches.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHi((h) => Math.max(h - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (matches[hi]) pick(matches[hi]);
+    } else if (e.key === "Escape") {
+      setQuery("");
+      setOpen(false);
+    }
+  }
+
+  const groupHeader = (text: string) => (
+    <div style={{ padding: "5px 10px 2px", fontSize: 9, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: 0.4 }}>
+      {text}
+    </div>
+  );
+
+  return (
+    <div
+      style={{ position: "relative", width: 190 }}
+      onBlur={(e) => {
+        // Click-away close — ignore focus moving within the combobox.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          setQuery("");
+          setOpen(false);
+        }
+      }}
+    >
+      <input
+        role="combobox"
+        aria-expanded={open}
+        aria-label="Search accounts"
+        value={open ? query : selected ? coaLabel(selected) : ""}
+        placeholder={selected ? coaLabel(selected) : "Search accounts…"}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          if (!open) setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={onKeyDown}
+        disabled={disabled}
+        style={{
+          width: "100%",
+          padding: "5px 8px",
+          fontSize: 11,
+          color: "#0B1C24",
+          background: "#fff",
+          border: `1px solid ${open ? STELLA_INDIGO : STELLA_LAVENDER}`,
+          borderRadius: 6,
+        }}
+      />
+      {open && (
+        <div
+          style={{
+            position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 40,
+            maxHeight: 230, overflowY: "auto", background: "#fff",
+            border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(11,28,36,0.14)",
+          }}
+        >
+          {matches.length === 0 ? (
+            <div style={{ padding: "8px 10px", fontSize: 11, color: "#94A3B8" }}>No accounts match "{query}"</div>
+          ) : (
+            matches.map((a, i) => (
+              <div key={a.coa_account_id}>
+                {i === 0 && preferredCount > 0 && groupHeader(preferredType === "revenue" ? "Revenue" : "Expenses")}
+                {i === preferredCount && groupHeader("Other accounts")}
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    pick(a);
+                  }}
+                  onMouseEnter={() => setHi(i)}
+                  style={{
+                    display: "block", width: "100%", textAlign: "left", padding: "6px 10px",
+                    fontSize: 11, color: "#0B1C24", border: 0, cursor: "pointer",
+                    background: i === hi ? "#EEF0FB" : "transparent",
+                    fontWeight: a.coa_account_id === value ? 700 : 500,
+                  }}
+                >
+                  {coaLabel(a)}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function StellaLedgerInboxPage() {
   const { get, patch, ready } = useStellaApi();
   const [rows, setRows] = useState<InboxItem[]>([]);
@@ -67,8 +226,10 @@ export function StellaLedgerInboxPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [detail, setDetail] = useState<InboxItem | null>(null);
-  // Per-row pending COA pick for the inline quick-categorize select.
+  // Per-row pending COA pick for the inline quick-categorize combobox.
   const [picks, setPicks] = useState<Record<string, string>>({});
+  // Plain text filter over the inbox rows themselves (counterparty/description).
+  const [search, setSearch] = useState("");
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -99,9 +260,18 @@ export function StellaLedgerInboxPage() {
   }, [get, ready]);
 
   const filtered = useMemo(() => {
-    if (filter === "all") return rows;
-    return rows.filter((r) => (r.status || "needs_categorization") === filter);
-  }, [rows, filter]);
+    let out = rows;
+    if (filter !== "all") out = out.filter((r) => (r.status || "needs_categorization") === filter);
+    const q = search.trim().toLowerCase();
+    if (q) {
+      out = out.filter(
+        (r) =>
+          (r.description || "").toLowerCase().includes(q) ||
+          (r.memo || "").toLowerCase().includes(q)
+      );
+    }
+    return out;
+  }, [rows, filter, search]);
 
   function flashMsg(m: string) {
     setFlash(m);
@@ -142,26 +312,28 @@ export function StellaLedgerInboxPage() {
     }
   }
 
-  // Inline select options — the row's own direction leads (expense accounts
-  // first for outflows, revenue first for inflows), rest under "Other".
-  function coaOptions(r: InboxItem) {
-    const preferredType = r.direction === "inflow" ? "revenue" : "expense";
-    const preferred = activeCoa.filter((a) => a.type === preferredType);
-    const others = activeCoa.filter((a) => a.type !== preferredType);
-    const optionFor = (a: CoaAccount) => (
-      <option key={a.coa_account_id} value={a.coa_account_id}>
-        {a.code ? `${a.code} — ${a.name}` : a.name}
-      </option>
-    );
-    return (
-      <>
-        <option value="">Pick account…</option>
-        {preferred.length > 0 && (
-          <optgroup label={preferredType === "revenue" ? "Revenue" : "Expenses"}>{preferred.map(optionFor)}</optgroup>
-        )}
-        {others.length > 0 && <optgroup label="Other accounts">{others.map(optionFor)}</optgroup>}
-      </>
-    );
+  // "Personal" quick-action (Brandon's walkthrough, 2026-08-13) — exclude a
+  // personal charge from the books in one tap: PATCH status:'personal', the
+  // row leaves the inbox with a flash. Undo lives in the detail modal / the
+  // Transactions page's Personal filter ("Add back to business books").
+  async function markPersonal(r: InboxItem) {
+    if (!confirm("Exclude this from your business books? It stays on the bank record but leaves every report and total.")) return;
+    setBusy(r.transaction_id);
+    try {
+      await patch(`/ledger/transactions/${r.transaction_id}`, { status: "personal" });
+      setRows((prev) => {
+        const next = prev.filter((x) => x.transaction_id !== r.transaction_id);
+        flashMsg(
+          `Marked "${r.description || "transaction"}" personal — it's out of your books. ` +
+          (next.length === 0 ? "Inbox zero — all caught up." : `${next.length} left to review.`)
+        );
+        return next;
+      });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not mark this personal");
+    } finally {
+      setBusy(null);
+    }
   }
 
   const columns: Column<InboxItem>[] = [
@@ -214,23 +386,14 @@ export function StellaLedgerInboxPage() {
       // detail modal (rows are clickable — see onRowClick below).
       render: (r) =>
         r.status === "needs_categorization" ? (
-          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
-            <select
+          <div data-tour="stella-inbox-quick-categorize" style={{ display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+            <CoaCombobox
+              accounts={activeCoa}
+              direction={r.direction}
               value={picks[r.transaction_id] || ""}
-              onChange={(e) => setPicks((prev) => ({ ...prev, [r.transaction_id]: e.target.value }))}
+              onChange={(id) => setPicks((prev) => ({ ...prev, [r.transaction_id]: id }))}
               disabled={busy === r.transaction_id || !activeCoa.length}
-              style={{
-                maxWidth: 190,
-                padding: "5px 6px",
-                fontSize: 11,
-                color: "#0B1C24",
-                background: "#fff",
-                border: `1px solid ${STELLA_LAVENDER}`,
-                borderRadius: 6,
-              }}
-            >
-              {coaOptions(r)}
-            </select>
+            />
             <Button
               variant="secondary"
               size="sm"
@@ -239,6 +402,21 @@ export function StellaLedgerInboxPage() {
             >
               <CheckCircle2 size={11} color="#059669" /> {busy === r.transaction_id ? "Saving…" : "Categorize"}
             </Button>
+            {r.direction === "outflow" && (
+              <button
+                type="button"
+                onClick={() => markPersonal(r)}
+                disabled={busy === r.transaction_id}
+                title="This is a personal expense — exclude it from your business books"
+                style={{
+                  padding: "5px 10px", fontSize: 11, fontWeight: 600, borderRadius: 6,
+                  border: "1px solid #CBD5E1", background: "#fff", color: "#475569",
+                  cursor: "pointer", whiteSpace: "nowrap",
+                }}
+              >
+                Personal
+              </button>
+            )}
           </div>
         ) : (
           <span style={{ fontSize: 11, color: "#94A3B8" }}>Open to review</span>
@@ -287,13 +465,27 @@ export function StellaLedgerInboxPage() {
         />
       ) : (
         <>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by counterparty or description…"
+              aria-label="Search inbox transactions"
+              style={{ width: 300, maxWidth: "100%", padding: "7px 10px", fontSize: 12, border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 6, color: "#0B1C24" }}
+            />
+            {search.trim() && (
+              <span style={{ fontSize: 11, color: "#5A7A8A" }}>
+                {filtered.length} of {rows.length} transaction{rows.length === 1 ? "" : "s"}
+              </span>
+            )}
+          </div>
           <FilterBar pills={FILTER_PILLS} activePill={filter} onPillChange={setFilter} />
           <DataTable
             rows={filtered}
             columns={columns}
             rowKey={(r) => r.transaction_id}
             onRowClick={(r) => setDetail(r)}
-            emptyMessage="Nothing to review in this filter."
+            emptyMessage={search.trim() ? "No inbox rows match your search." : "Nothing to review in this filter."}
           />
         </>
       )}

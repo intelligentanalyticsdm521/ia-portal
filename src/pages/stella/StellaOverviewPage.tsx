@@ -177,7 +177,7 @@ export function StellaOverviewPage() {
           <HeroCard ov={ov} isCurrentMonth={isCurrentMonth} />
 
           {/* KPI row — the four money numbers */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 16 }}>
+          <div data-tour="stella-overview-kpis" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 16 }}>
             <KpiTile label="Money in" value={fmtMoney(ov.income)} hint={monthLabel(ov.month || month)} />
             <KpiTile label="Money out" value={fmtMoney(Math.abs(ov.expenses))} hint={monthLabel(ov.month || month)} />
             <KpiTile
@@ -191,6 +191,7 @@ export function StellaOverviewPage() {
               value={fmtMoney(ov.owedToYou)}
               color={ov.owedToYou > 0 ? STELLA_INDIGO : undefined}
               hint="personal-card expenses"
+              dataTour="stella-owed-tile"
             />
           </div>
 
@@ -245,7 +246,7 @@ export function StellaOverviewPage() {
 
           {/* Accounts + upcoming recurring */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 12 }}>
-            <div style={card}>
+            <div data-tour="stella-accounts-card" style={card}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                 <div style={cardTitle}>Accounts</div>
                 {ov.accounts.length === 0 && plaidItems.length === 0 && (
@@ -386,7 +387,7 @@ function HeroCard({ ov, isCurrentMonth }: { ov: LedgerOverview; isCurrentMonth: 
 
   const c = palette[tone];
   return (
-    <div style={{ ...card, padding: 0, overflow: "hidden", marginBottom: 16 }}>
+    <div data-tour="stella-overview-hero" style={{ ...card, padding: 0, overflow: "hidden", marginBottom: 16 }}>
       <div style={{ padding: 16, background: c.bg, borderBottom: `1px solid ${c.border}`, display: "flex", alignItems: "center", gap: 14 }}>
         <div style={{ width: 32, height: 32, borderRadius: "50%", background: c.text, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, flexShrink: 0 }}>
           {c.icon}
@@ -408,9 +409,9 @@ function HeroCard({ ov, isCurrentMonth }: { ov: LedgerOverview; isCurrentMonth: 
   );
 }
 
-function KpiTile({ label, value, hint, color }: { label: string; value: string; hint?: string; color?: string }) {
+function KpiTile({ label, value, hint, color, dataTour }: { label: string; value: string; hint?: string; color?: string; dataTour?: string }) {
   return (
-    <div style={card}>
+    <div data-tour={dataTour} style={card}>
       <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 700, color: color || "#0B1C24", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{value}</div>
       {hint && <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 3 }}>{hint}</div>}

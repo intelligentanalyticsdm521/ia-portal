@@ -53,7 +53,7 @@ export interface InteractiveStep {
 
 export interface InteractiveFlow {
   id: string;
-  product: "oliver" | "spark" | "arion" | "consulting" | "platform";
+  product: "oliver" | "spark" | "arion" | "stella" | "consulting" | "platform";
   title: string;
   oneLiner: string;
   estimatedMinutes: number;

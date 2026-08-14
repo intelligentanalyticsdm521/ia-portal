@@ -42,8 +42,10 @@ export function StellaShell({
   loading?: boolean;
   /** Render the global "+ Record" split-menu button in the shell header. */
   showRecord?: boolean;
-  /** Fires after a successful record; pages showing transactions reload here. */
-  onRecorded?: (msg: string) => void;
+  /** Fires after a successful record; pages showing transactions reload here.
+   *  transactionId (when the API echoes it) lets a page mark the new row —
+   *  the do-it-with-me walkthrough spotlights it via that marker. */
+  onRecorded?: (msg: string, transactionId?: string) => void;
   children: ReactNode;
 }) {
   return (
@@ -100,13 +102,16 @@ export function StellaShell({
  * Menu: Record income · Record expense · Mileage (P3) · Material (P3).
  * Opens the shared RecordTransactionModal; the modal fetches COA itself.
  */
-function RecordSplitButton({ onRecorded }: { onRecorded?: (msg: string) => void }) {
+function RecordSplitButton({ onRecorded }: { onRecorded?: (msg: string, transactionId?: string) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [modal, setModal] = useState<"inflow" | "outflow" | null>(null);
 
-  const item = (label: string, onClick?: () => void, disabledTag?: string) => (
+  // tourId → data-tour anchor for the guided-tour / do-it-with-me system
+  // (journeys/content/stellaPages.ts targets these; SPARK convention).
+  const item = (label: string, onClick?: () => void, disabledTag?: string, tourId?: string) => (
     <button
       key={label}
+      data-tour={tourId}
       onClick={onClick}
       disabled={!onClick}
       title={disabledTag ? `Lands in ${disabledTag} with mileage & materials capture` : undefined}
@@ -141,6 +146,7 @@ function RecordSplitButton({ onRecorded }: { onRecorded?: (msg: string) => void 
   return (
     <div style={{ position: "relative" }}>
       <button
+        data-tour="stella-record"
         onClick={() => setMenuOpen((v) => !v)}
         style={{
           display: "inline-flex",
@@ -179,8 +185,8 @@ function RecordSplitButton({ onRecorded }: { onRecorded?: (msg: string) => void 
               gap: 2,
             }}
           >
-            {item("Record income", () => { setMenuOpen(false); setModal("inflow"); })}
-            {item("Record expense", () => { setMenuOpen(false); setModal("outflow"); })}
+            {item("Record income", () => { setMenuOpen(false); setModal("inflow"); }, undefined, "stella-record-income")}
+            {item("Record expense", () => { setMenuOpen(false); setModal("outflow"); }, undefined, "stella-record-expense")}
             <div style={{ height: 1, background: STELLA_LAVENDER, margin: "4px 6px" }} />
             {item("Mileage", undefined, "P3")}
             {item("Material", undefined, "P3")}
@@ -192,9 +198,9 @@ function RecordSplitButton({ onRecorded }: { onRecorded?: (msg: string) => void 
         <RecordTransactionModal
           direction={modal}
           onClose={() => setModal(null)}
-          onCreated={(msg) => {
+          onCreated={(msg, transactionId) => {
             setModal(null);
-            onRecorded?.(msg);
+            onRecorded?.(msg, transactionId);
           }}
         />
       )}
@@ -210,13 +216,16 @@ export function StellaTabs({
   tabs,
   active,
   onChange,
+  dataTour,
 }: {
   tabs: { key: string; label: string }[];
   active: string;
   onChange: (key: string) => void;
+  /** Optional guided-tour anchor for the whole tab strip. */
+  dataTour?: string;
 }) {
   return (
-    <div style={{ display: "flex", gap: 4, marginBottom: 14, borderBottom: `1px solid ${STELLA_LAVENDER}` }}>
+    <div data-tour={dataTour} style={{ display: "flex", gap: 4, marginBottom: 14, borderBottom: `1px solid ${STELLA_LAVENDER}` }}>
       {tabs.map((t) => {
         const isActive = t.key === active;
         return (

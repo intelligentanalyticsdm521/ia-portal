@@ -71,12 +71,14 @@ const REPORTS = [
 ];
 
 // The two remaining placeholders — same page, honest copy, no fake data.
+// Walkthrough finding (Brandon, 2026-08-14): the Pro badge here read as "my
+// plan is blocking this" — it isn't. Balance Sheet is a PHASE gap, not a tier
+// gate, so the section carries no tier badge and says so plainly.
 const PLACEHOLDERS: Record<string, { title: string; note: string; bullets: string[]; tier?: "Pro" }> = {
   balance_sheet: {
     title: "Balance Sheet",
-    note: "A point-in-time statement of what your business owns, owes, and is worth, derived from your ledger. Lands with accrual accounting in a later phase.",
-    bullets: ["Assets · Liabilities · Equity", "As-of date picker", "Pro tier and above"],
-    tier: "Pro",
+    note: "Balance Sheet arrives with accrual accounting in a later STELLA phase — every plan gets it, no upgrade needed. A point-in-time statement of what your business owns, owes, and is worth, derived from your ledger.",
+    bullets: ["Assets · Liabilities · Equity", "As-of date picker", "Arrives for every plan — no upgrade needed"],
   },
   ap_aging: {
     title: "AP Aging",
@@ -210,7 +212,7 @@ export function StellaReportsPage() {
       error={!placeholder ? error : undefined}
       loading={!placeholder && loading && !hasData}
     >
-      <StellaTabs tabs={REPORTS} active={report} onChange={setReport} />
+      <StellaTabs tabs={REPORTS} active={report} onChange={setReport} dataTour="stella-reports-tabs" />
 
       {report === "pnl" && pnl && (
         <>

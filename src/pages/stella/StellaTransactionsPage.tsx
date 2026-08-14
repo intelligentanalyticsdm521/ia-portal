@@ -73,6 +73,9 @@ const STATUS_PILL: Record<string, { bg: string; color: string }> = {
   flagged: { bg: "#FEE2E2", color: "#991B1B" },
   reconciled: { bg: "#E0E7FF", color: "#3730A3" },
   void: { bg: "#F1F5F9", color: "#64748B" },
+  // Personal (migration 157) — excluded from the books; slate. Rows only show
+  // under the explicit Personal filter pill (the API hides them by default).
+  personal: { bg: "#F1F5F9", color: "#475569" },
 };
 
 const TABS = [
@@ -109,6 +112,11 @@ export function StellaTransactionsPage() {
   const [search, setSearch] = useState("");
   const [flash, setFlash] = useState<string | null>(null);
   const [detail, setDetail] = useState<StellaTransaction | null>(null);
+  // The row THIS session just recorded via + Record. Marked with the
+  // .stella-txn-new class so the do-it-with-me walkthrough spotlights the
+  // user's own line — never a same-day stranger that happens to sort first
+  // (the SPARK contact/campaign marker pattern). Cleared on the next record.
+  const [newTxnId, setNewTxnId] = useState<string | null>(null);
   // Reimbursable filter — deep-linkable: the Overview hero links to
   // ?reimbursable=open. Toggled by the pill next to the search box. The URL
   // is kept in sync on toggle so a copied link always matches what's shown
@@ -121,6 +129,10 @@ export function StellaTransactionsPage() {
     else url.searchParams.delete("reimbursable");
     window.history.replaceState(null, "", url.pathname + url.search);
   }, []);
+  // Personal filter — the API hides status='personal' rows from every default
+  // list; this pill sends the explicit ?status=personal so excluded personal
+  // charges can be reviewed (and added back via the detail modal).
+  const [personalOnly, setPersonalOnly] = useState(false);
   // Account filter — the COA register drill deep-links here as ?coa=<id>.
   // Server-side (?coa_account_id on the API); cleared via the chip's ×, which
   // also strips the URL param (same URL-sync pattern as the reimbursable pill).
@@ -153,6 +165,7 @@ export function StellaTransactionsPage() {
       const month = new Date().toISOString().slice(0, 7);
       const qs = new URLSearchParams();
       if (reimbOnly) qs.set("reimbursable", "open");
+      if (personalOnly) qs.set("status", "personal");
       if (coaFilter) qs.set("coa_account_id", coaFilter);
       if (jobFilter) qs.set("job_id", jobFilter);
       const query = qs.toString();
@@ -171,7 +184,7 @@ export function StellaTransactionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [get, reimbOnly, coaFilter, jobFilter]);
+  }, [get, reimbOnly, personalOnly, coaFilter, jobFilter]);
 
   useEffect(() => {
     if (ready) reload();
@@ -349,7 +362,8 @@ export function StellaTransactionsPage() {
       title="Transactions"
       subtitle="Your canonical ledger — every money-in and money-out line, cash-basis by default."
       showRecord
-      onRecorded={(msg) => {
+      onRecorded={(msg, transactionId) => {
+        setNewTxnId(transactionId || null);
         reload();
         flashMsg(msg);
       }}
@@ -364,14 +378,14 @@ export function StellaTransactionsPage() {
 
       {/* Money bar — this month's totals, click to filter */}
       {money && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 14 }}>
+        <div data-tour="stella-money-bar" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 14 }}>
           {moneyTile("Money in", toNum(money.income), "income", "#047857")}
           {moneyTile("Money out", Math.abs(toNum(money.expenses)), "expenses")}
           {moneyTile("Net", toNum(money.net), "all", toNum(money.net) >= 0 ? "#047857" : "#B91C1C")}
         </div>
       )}
 
-      <StellaTabs tabs={TABS} active={tab} onChange={setTab} />
+      <StellaTabs tabs={TABS} active={tab} onChange={setTab} dataTour="stella-txn-tabs" />
 
       {tab === "recurring" ? (
         recurring == null || recurring.length === 0 ? (
@@ -387,7 +401,7 @@ export function StellaTransactionsPage() {
             emptyMessage="No recurring templates yet."
           />
         )
-      ) : !rows.length && !loading && !reimbOnly && !coaFilter && !jobFilter && !search ? (
+      ) : !rows.length && !loading && !reimbOnly && !personalOnly && !coaFilter && !jobFilter && !search ? (
         <EmptyState
           title="No transactions yet"
           description="Transactions land here from bank feeds, receipts, recurring templates, and manual entry. Record your first income or expense with the + Record button above."
@@ -402,6 +416,7 @@ export function StellaTransactionsPage() {
               style={{ width: 320, maxWidth: "100%", padding: "7px 10px", fontSize: 12, border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 6, color: "#0B1C24" }}
             />
             <button
+              data-tour="stella-reimbursable-pill"
               onClick={() => setReimbOnly(!reimbOnly)}
               title="Show only personal-card expenses awaiting reimbursement"
               style={{
@@ -433,6 +448,25 @@ export function StellaTransactionsPage() {
                   {fmtMoney(toNum(money.owedToYou))} owed
                 </span>
               )}
+            </button>
+            <button
+              onClick={() => setPersonalOnly(!personalOnly)}
+              title="Show personal charges you've excluded from your business books"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "6px 12px",
+                fontSize: 11,
+                fontWeight: 600,
+                borderRadius: 99,
+                border: `1px solid ${personalOnly ? "#475569" : STELLA_LAVENDER}`,
+                background: personalOnly ? "#475569" : "#fff",
+                color: personalOnly ? "#fff" : "#0B1C24",
+                cursor: "pointer",
+              }}
+            >
+              Personal
             </button>
             {coaFilter && (
               <span
@@ -515,6 +549,12 @@ export function StellaTransactionsPage() {
               rows={filtered}
               columns={columns}
               rowKey={(r) => r.transaction_id}
+              rowClassName={(r) => {
+                // Case-insensitive GUID compare: SQL Server echoes uppercase
+                // GUIDs on reads while the POST returns lowercase (same trap
+                // the job-filter compare above guards against).
+                return newTxnId && String(r.transaction_id).toLowerCase() === newTxnId.toLowerCase() ? "stella-txn-new" : "";
+              }}
               onRowClick={(r) => setDetail(r)}
               initialSort={{ key: "posted_date", direction: "desc" }}
               emptyMessage="No transactions match these filters."

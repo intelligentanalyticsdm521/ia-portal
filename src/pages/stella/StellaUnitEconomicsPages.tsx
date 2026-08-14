@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  Cell, ReferenceLine,
+  Cell, ReferenceLine, Legend, PieChart, Pie,
 } from "recharts";
 import { useStellaApi } from "../../hooks/useStellaApi";
 import { DataTable, EmptyState, Button, type Column } from "../../components/oliver/ui";
@@ -29,6 +29,9 @@ const MARGIN_TEAL = "#0D9488";
 const MARGIN_TEAL_BG = "#CCFBF1";
 const MARGIN_CORAL = "#E4572E";
 const MARGIN_CORAL_BG = "#FFE3D9";
+// Allocation-visual lavender — STELLA_LAVENDER (#E8E9FA) is a border tint,
+// too faint for a chart mark; this is the same hue at chart strength.
+const ALLOC_LAVENDER = "#A5AEE9";
 
 // ── API shapes (routes/stellaUnitEconomics.js) ───────────────────────────────
 
@@ -106,9 +109,18 @@ interface CustomerMargin {
   margin_pct: number | null;
 }
 
+interface MarginTotals {
+  revenue: number;
+  direct_cost: number;
+  allocated_overhead: number;
+  margin: number;
+  margin_pct: number | null;
+}
+
 interface MarginsResponse {
   period: { from: string; to: string };
   allocation_run_id: string | null;
+  totals: MarginTotals;
   jobs: JobMargin[];
   customers: CustomerMargin[];
 }
@@ -263,6 +275,52 @@ export function StellaAllocationsPage() {
   const [runError, setRunError] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<RunSummary | null>(null);
 
+  // Run breakdown visual (Brandon's walkthrough, 2026-08-14: "a visual is a
+  // better story teller than just a banner") — a completed run is selected
+  // (click a row; defaults to the latest) and its per-job direct + overhead
+  // split renders as a stacked bar + donut. Job-level data comes from
+  // /unit-economics/margins for the run's exact period (the same read the
+  // Margins page uses — it resolves to the latest complete run for that
+  // period).
+  const [selRunId, setSelRunId] = useState<string | null>(null);
+  const completeRuns = useMemo(() => runs.filter((r) => r.status === "complete"), [runs]);
+  const selectedRun = completeRuns.find((r) => r.allocation_run_id === selRunId) || completeRuns[0] || null;
+  const selectedRunId = selectedRun?.allocation_run_id || null;
+  const selectedRunFrom = selectedRun ? String(selectedRun.period_start).slice(0, 10) : null;
+  const selectedRunTo = selectedRun ? String(selectedRun.period_end).slice(0, 10) : null;
+  const [runJobs, setRunJobs] = useState<JobMargin[] | null>(null);
+  const [runJobsLoading, setRunJobsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!ready || !selectedRunFrom || !selectedRunTo) {
+      setRunJobs(null);
+      return;
+    }
+    let cancelled = false;
+    setRunJobsLoading(true);
+    get<MarginsResponse>(`/unit-economics/margins?from=${selectedRunFrom}&to=${selectedRunTo}`)
+      .then((d) => { if (!cancelled) setRunJobs(d?.jobs || []); })
+      .catch(() => { if (!cancelled) setRunJobs([]); })
+      .finally(() => { if (!cancelled) setRunJobsLoading(false); });
+    return () => { cancelled = true; };
+  }, [ready, get, selectedRunId, selectedRunFrom, selectedRunTo]);
+
+  // Top 10 jobs by total cost (direct + allocated overhead) for the stacked bar.
+  const runChart = useMemo(
+    () =>
+      (runJobs || [])
+        .map((j) => ({
+          name: j.job_number || (j.title || "").slice(0, 18) || "—",
+          direct: j.direct_cost,
+          overhead: j.allocated_overhead,
+          total: j.direct_cost + j.allocated_overhead,
+        }))
+        .filter((j) => j.total > 0)
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 10),
+    [runJobs]
+  );
+
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -338,7 +396,16 @@ export function StellaAllocationsPage() {
   const runColumns: Column<AllocationRun>[] = [
     {
       key: "created_at", header: "Ran", sortable: true, sortAccessor: (r) => r.created_at,
-      render: (r) => <span style={{ fontSize: 11, color: "#0B1C24" }}>{fmtDateTime(r.created_at)}</span>,
+      render: (r) => (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+          <span style={{ fontSize: 11, color: "#0B1C24" }}>{fmtDateTime(r.created_at)}</span>
+          {r.allocation_run_id === selectedRunId && (
+            <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 99, background: `${STELLA_INDIGO}14`, color: STELLA_INDIGO, whiteSpace: "nowrap" }}>
+              Viewing
+            </span>
+          )}
+        </span>
+      ),
     },
     {
       key: "rule", header: "Rule",
@@ -486,6 +553,78 @@ export function StellaAllocationsPage() {
             )}
           </div>
 
+          {/* Run breakdown visual — where the selected run's money landed */}
+          {selectedRun && (
+            <div style={{ background: "#fff", border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 10, padding: "14px 16px", marginBottom: 14 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#0B1C24" }}>Where this run's costs landed</div>
+                <div style={{ fontSize: 11, color: "#5A7A8A" }}>
+                  {selectedRun.rule_name || "Full pass"} · {fmtDate(selectedRun.period_start)} – {fmtDate(selectedRun.period_end)}
+                  {completeRuns.length > 1 ? " · click a completed run below to switch" : ""}
+                </div>
+              </div>
+              {runJobsLoading && !runJobs ? (
+                <div style={{ padding: "18px 0", fontSize: 12, color: "#94A3B8" }}>Loading run breakdown…</div>
+              ) : runChart.length === 0 ? (
+                <div style={{ padding: "18px 0", fontSize: 12, color: "#94A3B8" }}>
+                  No job-level costs landed in this run's period — tag expenses to jobs or check the period.
+                </div>
+              ) : (
+                <div style={{ display: "flex", gap: 18, alignItems: "flex-start", flexWrap: "wrap", marginTop: 8 }}>
+                  {/* Stacked cost-per-job bar — direct (indigo) + allocated overhead (lavender) */}
+                  <div style={{ flex: "1 1 420px", minWidth: 320 }}>
+                    <ResponsiveContainer width="100%" height={Math.max(180, runChart.length * 30 + 60)}>
+                      <BarChart data={runChart} layout="vertical" margin={{ top: 4, right: 24, bottom: 4, left: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={STELLA_LAVENDER} />
+                        <XAxis type="number" tickFormatter={(v: number) => fmtMoney(v)} tick={{ fontSize: 10, fill: "#5A7A8A" }} />
+                        <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 10, fill: "#0B1C24" }} />
+                        <Tooltip formatter={(v) => fmtMoney(Number(v))} labelStyle={{ fontSize: 12, fontWeight: 700 }} contentStyle={{ fontSize: 12 }} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Bar dataKey="direct" name="Direct (job-tagged)" stackId="cost" fill={STELLA_INDIGO} maxBarSize={16} isAnimationActive={false} />
+                        <Bar dataKey="overhead" name="Allocated overhead" stackId="cost" fill={ALLOC_LAVENDER} radius={[0, 4, 4, 0]} maxBarSize={16} isAnimationActive={false} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                    <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 2 }}>
+                      Top {runChart.length} job{runChart.length === 1 ? "" : "s"} by total cost in the run period.
+                    </div>
+                  </div>
+                  {/* Direct vs overhead donut — the run's own totals */}
+                  <div style={{ flex: "0 0 200px", textAlign: "center" }}>
+                    <PieChart width={200} height={170}>
+                      <Pie
+                        data={[
+                          { name: "Direct", value: selectedRun.direct_amount },
+                          { name: "Overhead", value: selectedRun.overhead_amount },
+                        ]}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={42}
+                        outerRadius={65}
+                        paddingAngle={2}
+                        stroke="#fff"
+                        isAnimationActive={false}
+                      >
+                        <Cell fill={STELLA_INDIGO} />
+                        <Cell fill={ALLOC_LAVENDER} />
+                      </Pie>
+                      <Tooltip formatter={(v) => fmtMoney(Number(v))} contentStyle={{ fontSize: 12 }} />
+                    </PieChart>
+                    <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.6 }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginRight: 10 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 99, background: STELLA_INDIGO }} />
+                        Direct {fmtMoney(selectedRun.direct_amount)}
+                      </span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 99, background: ALLOC_LAVENDER }} />
+                        Overhead {fmtMoney(selectedRun.overhead_amount)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {runs.length === 0 ? (
             <EmptyState
               title="No allocation runs yet"
@@ -496,6 +635,9 @@ export function StellaAllocationsPage() {
               rows={runs}
               columns={runColumns}
               rowKey={(r) => r.allocation_run_id}
+              onRowClick={(r) => {
+                if (r.status === "complete") setSelRunId(r.allocation_run_id);
+              }}
               initialSort={{ key: "created_at", direction: "desc" }}
               emptyMessage="No allocation runs yet."
             />
@@ -720,7 +862,7 @@ export function StellaMarginsPage() {
       error={error}
       loading={loading && !data}
     >
-      <div style={{ background: "#fff", border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 10, padding: "12px 16px", marginBottom: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div data-tour="stella-margins-period" style={{ background: "#fff", border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 10, padding: "12px 16px", marginBottom: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <span style={{ fontSize: 12, fontWeight: 700, color: "#0B1C24" }}>Period</span>
         <PeriodPicker from={period.from} to={period.to} busy={loading} onApply={(from, to) => setPeriod({ from, to })} />
         {data && data.allocation_run_id == null && jobs.length > 0 && (
@@ -737,6 +879,33 @@ export function StellaMarginsPage() {
         />
       ) : (
         <>
+          {/* Totals KPI tiles (Brandon's walkthrough, 2026-08-14) — server-side
+              sums over the jobs table below, same tile style as the money bar. */}
+          {data?.totals && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 14 }}>
+              {[
+                { label: "Total revenue", value: data.totals.revenue, color: "#0B1C24", sub: "collected in the period" },
+                { label: "Total direct cost", value: data.totals.direct_cost, color: "#0B1C24", sub: "job-tagged expenses" },
+                { label: "Total overhead", value: data.totals.allocated_overhead, color: "#0B1C24", sub: "allocated to jobs" },
+                {
+                  label: "Total margin",
+                  value: data.totals.margin,
+                  color: data.totals.margin >= 0 ? MARGIN_TEAL : MARGIN_CORAL,
+                  sub: data.totals.margin_pct == null ? "no revenue — margin % undefined" : `${data.totals.margin_pct >= 0 ? "" : "−"}${Math.abs(data.totals.margin_pct).toFixed(1)}% margin`,
+                  subColor: data.totals.margin_pct == null ? undefined : data.totals.margin_pct >= 0 ? MARGIN_TEAL : MARGIN_CORAL,
+                },
+              ].map((t) => (
+                <div key={t.label} style={{ background: "#fff", border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 12, padding: "12px 16px" }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4 }}>{t.label}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: t.color, marginTop: 3, fontVariantNumeric: "tabular-nums" }}>
+                    {t.value < 0 ? "−" : ""}{fmtMoney(Math.abs(t.value))}
+                  </div>
+                  <div style={{ fontSize: 10, color: (t as { subColor?: string }).subColor || "#94A3B8", marginTop: 2, fontWeight: (t as { subColor?: string }).subColor ? 700 : 400 }}>{t.sub}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Margin-by-job bar */}
           <div style={{ background: "#fff", border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 10, padding: "14px 16px", marginBottom: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#0B1C24", marginBottom: 6 }}>Margin by job</div>

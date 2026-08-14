@@ -11,8 +11,11 @@
 // show "job_number — title"). Tagged expenses become DIRECT job costs in the
 // allocation engine; untagged overhead spreads by revenue share.
 // Actions: Mark reimbursed (PATCH reimbursed_at=now), Void (confirm() then
-// PATCH status:'void'), Save (PATCH the edited fields). The caller reloads
-// its list when onClose(changed=true) fires.
+// PATCH status:'void'), "This is a personal expense" on expense rows (confirm()
+// then PATCH status:'personal' — excluded from every report/total; personal
+// rows lock like void and offer "Add back to business books" → 'categorized'),
+// Save (PATCH the edited fields). The caller reloads its list when
+// onClose(changed=true) fires.
 import { useEffect, useRef, useState } from "react";
 import { useStellaApi } from "../../hooks/useStellaApi";
 import { useOliverApi } from "../../hooks/useOliverApi";
@@ -45,6 +48,8 @@ const STATUS_PILL: Record<string, { bg: string; color: string }> = {
   flagged: { bg: "#FEE2E2", color: "#991B1B" },
   reconciled: { bg: "#E0E7FF", color: "#3730A3" },
   void: { bg: "#F1F5F9", color: "#64748B" },
+  // Personal (migration 157) — excluded from the books entirely; slate pill.
+  personal: { bg: "#F1F5F9", color: "#475569" },
 };
 
 function toNum(v: number | string | null | undefined): number {
@@ -118,6 +123,11 @@ export function TransactionDetailModal({
   const amount = toNum(txn.amount_signed);
   const isExpense = amount < 0;
   const isVoid = status === "void";
+  // Personal (Brandon's walkthrough, 2026-08-13): the expense is excluded from
+  // the business books entirely — fields lock like void, but an "Add back to
+  // business books" action reverses it.
+  const isPersonal = status === "personal";
+  const locked = isVoid || isPersonal;
   const dirty =
     coaAccountId !== (txn.coa_account_id || "") ||
     jobId !== (txn.job_id || "") ||
@@ -180,6 +190,41 @@ export function TransactionDetailModal({
     }
   }
 
+  async function markPersonal() {
+    if (!confirm("Exclude this from your business books? It stays on the bank record but leaves every report and total.")) return;
+    setBusy("personal");
+    setErr(null);
+    try {
+      await patch(`/ledger/transactions/${txn.transaction_id}`, { status: "personal" });
+      setStatus("personal");
+      changedRef.current = true;
+      onClose(true);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not mark this personal. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function addBackToBooks() {
+    setBusy("personal");
+    setErr(null);
+    try {
+      // Verify finding: a personal row with NO account must go back to the
+      // Inbox review queue, not straight to 'categorized' — otherwise it sits
+      // account-less forever with nothing prompting categorization.
+      const target = coaAccountId ? "categorized" : "needs_categorization";
+      await patch(`/ledger/transactions/${txn.transaction_id}`, { status: target });
+      setStatus(target);
+      changedRef.current = true;
+      onClose(true);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not add this back. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function voidTxn() {
     if (!confirm("Void this transaction? It stays in the ledger for audit but drops out of every report.")) return;
     setBusy("void");
@@ -214,19 +259,45 @@ export function TransactionDetailModal({
       subtitle={`${fmtDate(txn.posted_date)} · ${amount >= 0 ? "+" : "−"}${fmtMoney(Math.abs(amount))}`}
       footer={
         <>
-          {!isVoid && (
+          {!isVoid && !isPersonal && (
+            <span style={{ display: "inline-flex", gap: 8, marginRight: "auto" }}>
+              <button
+                type="button"
+                onClick={voidTxn}
+                disabled={busy != null}
+                className="inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50"
+                style={{ background: "#fff", color: "#B91C1C", border: "1px solid #FECACA" }}
+              >
+                {busy === "void" ? "Voiding…" : "Void"}
+              </button>
+              {isExpense && (
+                <button
+                  type="button"
+                  onClick={markPersonal}
+                  disabled={busy != null}
+                  title="Exclude this expense from your business books — it stays on the bank record but leaves every report and total"
+                  className="inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50"
+                  style={{ background: "#fff", color: "#475569", border: "1px solid #CBD5E1" }}
+                >
+                  {busy === "personal" ? "Updating…" : "This is a personal expense"}
+                </button>
+              )}
+            </span>
+          )}
+          {isPersonal && (
             <button
               type="button"
-              onClick={voidTxn}
+              onClick={addBackToBooks}
               disabled={busy != null}
+              title="Bring this expense back into your business books and reports"
               className="inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50"
-              style={{ background: "#fff", color: "#B91C1C", border: "1px solid #FECACA", marginRight: "auto" }}
+              style={{ background: "#fff", color: STELLA_INDIGO, border: `1px solid ${STELLA_INDIGO}55`, marginRight: "auto" }}
             >
-              {busy === "void" ? "Voiding…" : "Void"}
+              {busy === "personal" ? "Updating…" : "Add back to business books"}
             </button>
           )}
           <IadmButton variant="primary" onClick={close} disabled={busy != null}>Close</IadmButton>
-          <IadmButton variant="accent" product="stella" onClick={save} disabled={busy != null || !dirty || isVoid}>
+          <IadmButton variant="accent" product="stella" onClick={save} disabled={busy != null || !dirty || locked}>
             {busy === "save" ? "Saving…" : !dirty && savedNote ? "Saved ✓" : "Save changes"}
           </IadmButton>
         </>
@@ -253,11 +324,11 @@ export function TransactionDetailModal({
           </div>
           <label>
             <span style={fLabel}>Date</span>
-            <input type="date" style={fInput} value={postedDate} onChange={(e) => setPostedDate(e.target.value)} disabled={isVoid} />
+            <input type="date" style={fInput} value={postedDate} onChange={(e) => setPostedDate(e.target.value)} disabled={locked} />
           </label>
           <label>
             <span style={fLabel}>Account</span>
-            <select style={fInput} value={coaAccountId} onChange={(e) => setCoaAccountId(e.target.value)} disabled={isVoid}>
+            <select style={fInput} value={coaAccountId} onChange={(e) => setCoaAccountId(e.target.value)} disabled={locked}>
               <option value="">Uncategorized</option>
               {activeAccounts.map(optionFor)}
             </select>
@@ -270,7 +341,7 @@ export function TransactionDetailModal({
           </div>
           <label>
             <span style={fLabel}>Job (for margins)</span>
-            <select style={fInput} value={jobId} onChange={(e) => setJobId(e.target.value)} disabled={isVoid}>
+            <select style={fInput} value={jobId} onChange={(e) => setJobId(e.target.value)} disabled={locked}>
               <option value="">No job</option>
               {/* Keep an existing tag visible even when the jobs fetch failed
                   or the job fell outside the first page. */}
@@ -290,12 +361,13 @@ export function TransactionDetailModal({
         </div>
         <label>
           <span style={fLabel}>Memo</span>
-          <textarea rows={2} style={{ ...fInput, resize: "vertical" }} placeholder="Optional note" value={memo} onChange={(e) => setMemo(e.target.value)} disabled={isVoid} />
+          <textarea rows={2} style={{ ...fInput, resize: "vertical" }} placeholder="Optional note" value={memo} onChange={(e) => setMemo(e.target.value)} disabled={locked} />
         </label>
 
         {/* Reimbursement — expense rows only */}
-        {isExpense && !isVoid && (
+        {isExpense && !locked && (
           <div
+            data-tour="stella-reimburse-box"
             style={{
               border: `1px solid ${isReimbursable ? STELLA_INDIGO : STELLA_LAVENDER}`,
               background: isReimbursable ? "#EEF0FB" : "#fff",
@@ -335,6 +407,7 @@ export function TransactionDetailModal({
               ) : (
                 <button
                   type="button"
+                  data-tour="stella-mark-reimbursed"
                   onClick={markReimbursed}
                   disabled={busy != null}
                   style={{ ...ghostBtn, background: STELLA_INDIGO, color: "#fff", border: `1px solid ${STELLA_INDIGO}` }}

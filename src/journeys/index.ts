@@ -1,8 +1,8 @@
 // journeys/index.ts — the help-system registry.
 //
-// One journey per client-facing product. STELLA isn't built, FORGE/ARGUS are
-// thin, and Consulting is founder-facing — so those don't get a curriculum
-// rather than getting a padded one.
+// One journey per client-facing product. FORGE/ARGUS are thin and Consulting
+// is founder-facing — so those don't get a curriculum rather than getting a
+// padded one. STELLA joined 2026-08-14 (Ledger L1 + Unit Economics L2 live).
 //
 // Everything that helps a user — the Tours menu, engagement alerts, ARGUS
 // chat — resolves through here, so there is exactly one place that knows how
@@ -10,12 +10,13 @@
 import { SPARK_JOURNEY } from "./sparkJourney";
 import { OLIVER_JOURNEY } from "./oliverJourney";
 import { ARION_JOURNEY } from "./arionJourney";
+import { STELLA_JOURNEY } from "./stellaJourney";
 import type { Journey, JourneyProduct, JourneyStep } from "./types";
 
 export * from "./types";
-export { SPARK_JOURNEY, OLIVER_JOURNEY, ARION_JOURNEY };
+export { SPARK_JOURNEY, OLIVER_JOURNEY, ARION_JOURNEY, STELLA_JOURNEY };
 
-export const ALL_JOURNEYS: Journey[] = [ARION_JOURNEY, OLIVER_JOURNEY, SPARK_JOURNEY];
+export const ALL_JOURNEYS: Journey[] = [ARION_JOURNEY, OLIVER_JOURNEY, SPARK_JOURNEY, STELLA_JOURNEY];
 
 export function journeyFor(product: JourneyProduct): Journey | undefined {
   return ALL_JOURNEYS.find((j) => j.product === product);

@@ -31,7 +31,7 @@ import type {
   InteractiveStep,
 } from "../components/walkthroughs/InteractiveWalkthroughRunner";
 
-export type JourneyProduct = "spark" | "oliver" | "arion";
+export type JourneyProduct = "spark" | "oliver" | "arion" | "stella";
 
 export interface JourneyStep {
   /** Stable, addressable id — e.g. "spark.contacts". Survives content edits;

@@ -22,7 +22,7 @@ const PRODUCT_ACCENTS: Partial<Record<ProductKey, string>> = {
   spark: "#EF6C33",
   arion: "#2D9CDB",
   consulting: "#8B5CF6",
-  stella: "#10B981",
+  stella: "#4C5BD4", // STELLA Indigo — was #10B981 (wrong; emerald is not a STELLA color)
   argus: "#0B1C24",
   settings: "#64748B",
 };

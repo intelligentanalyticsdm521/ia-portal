@@ -64,6 +64,58 @@ function friendlyPlaidError(e: unknown): string {
 }
 
 /**
+ * Inline iOS-style switch (36×20 track, sliding knob) — no dependency.
+ * role="switch" + aria-checked; native <button> gives Enter/Space keyboard
+ * toggling for free. Indigo when on.
+ */
+function SwitchToggle({
+  on,
+  disabled,
+  label,
+  onToggle,
+}: {
+  on: boolean;
+  disabled?: boolean;
+  label: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onToggle}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 8, padding: 0,
+        background: "transparent", border: 0, cursor: disabled ? "wait" : "pointer",
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <span style={{ fontSize: 11, fontWeight: 600, color: on ? STELLA_INDIGO : "#5A7A8A", whiteSpace: "nowrap" }}>
+        {label}
+      </span>
+      <span
+        aria-hidden
+        style={{
+          position: "relative", width: 36, height: 20, borderRadius: 99, flexShrink: 0,
+          background: on ? STELLA_INDIGO : "#CBD5E1", transition: "background 120ms ease",
+        }}
+      >
+        <span
+          style={{
+            position: "absolute", top: 2, left: on ? 18 : 2, width: 16, height: 16,
+            borderRadius: 99, background: "#fff", boxShadow: "0 1px 2px rgba(11,28,36,0.3)",
+            transition: "left 120ms ease",
+          }}
+        />
+      </span>
+    </button>
+  );
+}
+
+/**
  * Mount-and-open wrapper around usePlaidLink. The hook needs the token at
  * mount, so the page fetches /link-token first and only then renders this —
  * it auto-opens as soon as the Link script is ready and renders nothing.
@@ -217,7 +269,7 @@ export function StellaBankPage() {
       actions={
         status && !configured ? (
           // (a) keys not on this environment yet — honest disabled state.
-          <div style={{ textAlign: "right" }}>
+          <div data-tour="stella-bank-connect" style={{ textAlign: "right" }}>
             <Button variant="primary" disabled title="Plaid keys are not configured on this environment yet">
               Plaid keys pending
             </Button>
@@ -227,6 +279,7 @@ export function StellaBankPage() {
           </div>
         ) : (
           <Button
+            data-tour="stella-bank-connect"
             variant="primary"
             style={{ background: STELLA_INDIGO }}
             onClick={startConnect}
@@ -275,50 +328,55 @@ export function StellaBankPage() {
               return (
                 <div
                   key={it.raw_plaid_item_id || it.item_id}
-                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: i === items.length - 1 ? "none" : "1px solid #F1F5F9", flexWrap: "wrap" }}
+                  style={{ padding: "12px 0", borderBottom: i === items.length - 1 ? "none" : "1px solid #F1F5F9" }}
                 >
-                  <span style={bankIconDisc}><Landmark size={18} color={STELLA_INDIGO} /></span>
-                  <div style={{ flex: 1, minWidth: 180 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "#0B1C24" }}>
-                        {it.institution_name || "Bank connection"}
-                      </span>
-                      {it.error_code && (
-                        <span style={{ ...pill, color: "#B91C1C", background: "#FEF2F2" }}>{it.error_code}</span>
-                      )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <span style={bankIconDisc}><Landmark size={18} color={STELLA_INDIGO} /></span>
+                    <div style={{ flex: 1, minWidth: 180 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#0B1C24" }}>
+                          {it.institution_name || "Bank connection"}
+                        </span>
+                        {it.error_code && (
+                          <span style={{ ...pill, color: "#B91C1C", background: "#FEF2F2" }}>{it.error_code}</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>
+                        {[
+                          fmtDate(it.created_at) ? `Connected ${fmtDate(it.created_at)}` : null,
+                          synced ? `Last synced ${synced}` : "Not synced yet — balances land after first sync",
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>
-                      {[
-                        fmtDate(it.created_at) ? `Connected ${fmtDate(it.created_at)}` : null,
-                        synced ? `Last synced ${synced}` : "Not synced yet — balances land after first sync",
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </div>
+                    <SwitchToggle
+                      on={designated}
+                      disabled={designating === it.raw_plaid_item_id}
+                      label="Personal card — business use"
+                      onToggle={() => toggleDesignation(it)}
+                    />
+                    <Button variant="secondary" size="sm" onClick={() => syncNow(it.item_id)} disabled={syncing} loading={syncing}>
+                      {!syncing && <RefreshCw size={11} />} {syncing ? "Syncing…" : "Sync now"}
+                    </Button>
                   </div>
-                  <button
-                    onClick={() => toggleDesignation(it)}
-                    disabled={designating === it.raw_plaid_item_id}
-                    title="Designate this as a personal card used for the business — its NEW expenses default to needs-reimbursement"
-                    style={{
-                      display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", fontSize: 10,
-                      fontWeight: 700, borderRadius: 99, cursor: "pointer",
-                      color: designated ? "#fff" : STELLA_INDIGO,
-                      background: designated ? STELLA_INDIGO : `${STELLA_INDIGO}14`,
-                      border: `1px solid ${designated ? STELLA_INDIGO : "transparent"}`,
-                    }}
-                  >
-                    <Wallet size={11} /> Personal card — business use
-                  </button>
-                  <Button variant="secondary" size="sm" onClick={() => syncNow(it.item_id)} disabled={syncing} loading={syncing}>
-                    {!syncing && <RefreshCw size={11} />} {syncing ? "Syncing…" : "Sync now"}
-                  </Button>
+                  {designated && (
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, marginLeft: 52, padding: "8px 12px", fontSize: 11, color: "#3730A3", background: "#EEF0FB", border: `1px solid ${STELLA_INDIGO}33`, borderRadius: 8, lineHeight: 1.5, maxWidth: 640 }}>
+                      <Wallet size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <span>
+                        This is a personal card you also use for business. New charges arrive flagged
+                        "needs reimbursement" so you can pay yourself back — and anything that's purely
+                        personal can be excluded from your books entirely.
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}
             <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 8, lineHeight: 1.5 }}>
-              Personal-card designation saves instantly. New charges from a designated card default to
-              "needs reimbursement" and roll into the Owed to you total — already-imported transactions
+              The switch saves instantly. Turn it on for the scenario where you put business expenses on a
+              personal card and reimburse yourself later — new charges from that card default to
+              "needs reimbursement" and roll into the Owed to you total. Already-imported transactions
               are never re-flagged automatically.
             </div>
           </div>
@@ -345,15 +403,17 @@ export function StellaBankPage() {
             Card charges flow straight into the ledger as business expenses, matched to receipts once OCR lands.
           </div>
         </div>
-        <div style={{ ...bankCard, border: `1px solid ${STELLA_INDIGO}55` }}>
+        <div data-tour="stella-bank-personal" style={{ ...bankCard, border: `1px solid ${STELLA_INDIGO}55` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={bankIconDisc}><Wallet size={18} color={STELLA_INDIGO} /></span>
             <span style={pill}>Personal card — business use</span>
           </div>
           <div style={bankTypeTitle}>Personal card you use for the business</div>
           <div style={bankTypeCopy}>
-            Designate a personal card as business-use and its expenses default to "needs reimbursement" — they roll into
-            the Owed to you total on the Overview until you pay yourself back and mark them reimbursed.
+            For when you put business expenses on your personal card and pay yourself back later. Flip the switch on a
+            connected card and its new charges arrive flagged "needs reimbursement" — they roll into the Owed to you
+            total on the Overview until you reimburse yourself and mark them settled. Charges that are purely personal
+            can be excluded from your books entirely.
           </div>
         </div>
       </div>

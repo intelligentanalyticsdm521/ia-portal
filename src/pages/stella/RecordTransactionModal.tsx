@@ -53,7 +53,9 @@ export function RecordTransactionModal({
   /** Optional pre-fetched chart of accounts; fetched on open when omitted. */
   coa?: CoaAccount[];
   onClose: () => void;
-  onCreated: (msg: string) => void;
+  /** transactionId (POST response) lets callers mark the just-created row —
+   *  the do-it-with-me walkthrough targets it instead of guessing by sort. */
+  onCreated: (msg: string, transactionId?: string) => void;
 }) {
   const { get, post, ready } = useStellaApi();
   const oliver = useOliverApi();
@@ -108,7 +110,7 @@ export function RecordTransactionModal({
     setErr(null);
     setSaving(true);
     try {
-      await post("/ledger/transactions", {
+      const created = await post<{ transaction_id?: string }>("/ledger/transactions", {
         direction,
         coa_account_id: coaAccountId,
         counterparty_name: counterparty.trim(),
@@ -118,7 +120,7 @@ export function RecordTransactionModal({
         is_reimbursable: !isIncome && reimbursable,
         job_id: jobId || null,
       });
-      onCreated(`Recorded ${isIncome ? "income" : "expense"} of ${fmtMoney(amountNum)}.`);
+      onCreated(`Recorded ${isIncome ? "income" : "expense"} of ${fmtMoney(amountNum)}.`, created?.transaction_id);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to record the transaction. Please try again.");
     } finally {
@@ -145,6 +147,7 @@ export function RecordTransactionModal({
           <label>
             <span style={mLabel}>{isIncome ? "Customer" : "Vendor"}</span>
             <input
+              data-tour="stella-record-counterparty"
               style={mInput}
               placeholder={isIncome ? "e.g. Johnson Residence" : "e.g. Home Depot"}
               value={counterparty}
@@ -154,7 +157,7 @@ export function RecordTransactionModal({
           </label>
           <label>
             <span style={mLabel}>Account</span>
-            <select style={mInput} value={coaAccountId} onChange={(e) => setCoaAccountId(e.target.value)}>
+            <select data-tour="stella-record-account" style={mInput} value={coaAccountId} onChange={(e) => setCoaAccountId(e.target.value)}>
               <option value="">Select an account…</option>
               {preferred.length > 0 && <optgroup label={isIncome ? "Revenue" : "Expenses"}>{preferred.map(optionFor)}</optgroup>}
               {others.length > 0 && <optgroup label="Other accounts">{others.map(optionFor)}</optgroup>}
@@ -163,7 +166,7 @@ export function RecordTransactionModal({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <label>
               <span style={mLabel}>Amount</span>
-              <input type="number" min="0.01" step="0.01" style={mInput} placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <input data-tour="stella-record-amount" type="number" min="0.01" step="0.01" style={mInput} placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
             </label>
             <label>
               <span style={mLabel}>Date</span>
@@ -188,6 +191,7 @@ export function RecordTransactionModal({
           </label>
           {!isIncome && (
             <label
+              data-tour="stella-record-personal"
               style={{
                 display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 12px",
                 border: `1px solid ${reimbursable ? STELLA_INDIGO : STELLA_LAVENDER}`,
@@ -225,7 +229,7 @@ export function RecordTransactionModal({
           )}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
-            <Button variant="primary" style={{ background: STELLA_INDIGO }} onClick={submit} disabled={saving || !valid}>
+            <Button data-tour="stella-record-save" variant="primary" style={{ background: STELLA_INDIGO }} onClick={submit} disabled={saving || !valid}>
               {saving ? "Saving…" : isIncome ? "Record income" : "Record expense"}
             </Button>
           </div>
