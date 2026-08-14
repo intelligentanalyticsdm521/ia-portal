@@ -81,6 +81,9 @@ export function StellaOverviewPage() {
   const { get, ready } = useStellaApi();
   const [month, setMonth] = useState(currentMonth());
   const [ov, setOv] = useState<LedgerOverview | null>(null);
+  // Plaid connections (GET /ledger/plaid/status + /items) — shown in the
+  // Accounts card once itemCount > 0, until real balances land via ingestion.
+  const [plaidItems, setPlaidItems] = useState<Array<{ item_id: string; institution_name?: string | null }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   // Backend contract is being shipped by a sibling build — a 404 means "not
@@ -106,6 +109,17 @@ export function StellaOverviewPage() {
         upcomingRecurring: Array.isArray(data?.upcomingRecurring) ? data.upcomingRecurring : [],
         accounts: Array.isArray(data?.accounts) ? data.accounts : [],
       });
+      // Non-fatal enrichment: connected Plaid items for the Accounts card.
+      // A plaid-endpoint failure must never break the Overview.
+      try {
+        const [ps, pi] = await Promise.all([
+          get<{ configured: boolean; itemCount: number }>("/ledger/plaid/status"),
+          get<Array<{ item_id: string; institution_name?: string | null }>>("/ledger/plaid/items"),
+        ]);
+        setPlaidItems(Number(ps?.itemCount || 0) > 0 && Array.isArray(pi) ? pi : []);
+      } catch {
+        setPlaidItems([]);
+      }
     } catch (e) {
       if (e instanceof Error && e.message.includes("STELLA API 404")) setNotLive(true);
       else setError(e);
@@ -227,13 +241,24 @@ export function StellaOverviewPage() {
             <div style={card}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                 <div style={cardTitle}>Accounts</div>
-                {ov.accounts.length === 0 && (
+                {ov.accounts.length === 0 && plaidItems.length === 0 && (
                   <span style={{ fontSize: 10, fontWeight: 700, color: STELLA_INDIGO, background: `${STELLA_INDIGO}14`, padding: "2px 8px", borderRadius: 99, whiteSpace: "nowrap" }}>
                     Lands with bank feeds
                   </span>
                 )}
               </div>
-              {ov.accounts.length === 0 ? (
+              {ov.accounts.length === 0 && plaidItems.length > 0 ? (
+                // Plaid items are connected but ingestion hasn't landed
+                // balances yet — show the connections honestly, no fake numbers.
+                <div style={{ marginTop: 8 }}>
+                  {plaidItems.map((p, i) => (
+                    <div key={p.item_id || i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "9px 0", borderBottom: i === plaidItems.length - 1 ? "none" : "1px solid #F1F5F9" }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>{p.institution_name || "Bank connection"}</div>
+                      <div style={{ fontSize: 10, color: "#5A7A8A" }}>balances land after first sync</div>
+                    </div>
+                  ))}
+                </div>
+              ) : ov.accounts.length === 0 ? (
                 <div style={{ padding: "18px 0 6px", textAlign: "center" }}>
                   <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 12 }}>
                     <span style={iconDisc}><Landmark size={18} color={STELLA_INDIGO} /></span>

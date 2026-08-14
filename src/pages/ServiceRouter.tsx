@@ -333,7 +333,7 @@ const StellaComingSoonPage = lazyNamed(() => import('./stella/StellaComingSoonPa
 // Live Ledger shells (2026-07-30 consolidation — 8-item nav cap): Mileage &
 // Materials is one two-tab page; Bank + Period Close are Settings-hub pages.
 const StellaMileageMaterialsPage = lazyNamed(() => import('./stella/StellaLedgerShellPages'), 'StellaMileageMaterialsPage');
-const StellaBankPage = lazyNamed(() => import('./stella/StellaLedgerShellPages'), 'StellaBankPage');
+const StellaBankPage = lazyNamed(() => import('./stella/StellaBankPage'), 'StellaBankPage');
 const StellaPeriodClosePage = lazyNamed(() => import('./stella/StellaLedgerShellPages'), 'StellaPeriodClosePage');
 // Unit Economics (Layer 2 — live, scaffolded). Rules + Runs merged into one
 // two-tab Allocations page.
