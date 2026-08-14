@@ -402,21 +402,29 @@ export function StellaLedgerInboxPage() {
             >
               <CheckCircle2 size={11} color="#059669" /> {busy === r.transaction_id ? "Saving…" : "Categorize"}
             </Button>
-            {r.direction === "outflow" && (
-              <button
-                type="button"
-                onClick={() => markPersonal(r)}
-                disabled={busy === r.transaction_id}
-                title="This is a personal expense — exclude it from your business books"
-                style={{
-                  padding: "5px 10px", fontSize: 11, fontWeight: 600, borderRadius: 6,
-                  border: "1px solid #CBD5E1", background: "#fff", color: "#475569",
-                  cursor: "pointer", whiteSpace: "nowrap",
-                }}
-              >
-                Personal
-              </button>
-            )}
+            {/* Always rendered so row actions align (Brandon's walkthrough
+                note, 2026-08-14) — greyed out on inflows where "personal
+                expense" doesn't apply. */}
+            <button
+              type="button"
+              onClick={() => r.direction === "outflow" && markPersonal(r)}
+              disabled={r.direction !== "outflow" || busy === r.transaction_id}
+              title={
+                r.direction === "outflow"
+                  ? "This is a personal expense — exclude it from your business books"
+                  : "Only expenses can be marked personal — this is money in"
+              }
+              style={{
+                padding: "5px 10px", fontSize: 11, fontWeight: 600, borderRadius: 6,
+                whiteSpace: "nowrap",
+                border: r.direction === "outflow" ? "1px solid #CBD5E1" : "1px solid #E2E8F0",
+                background: r.direction === "outflow" ? "#fff" : "#F8FAFC",
+                color: r.direction === "outflow" ? "#475569" : "#CBD5E1",
+                cursor: r.direction === "outflow" ? "pointer" : "not-allowed",
+              }}
+            >
+              Personal
+            </button>
           </div>
         ) : (
           <span style={{ fontSize: 11, color: "#94A3B8" }}>Open to review</span>

@@ -1,4 +1,4 @@
-// stellaJourney.ts — Ledger & Data Management (STELLA) walkthrough.
+// stellaJourney.ts — STELLA (Ledger & Unit Economics) walkthrough.
 //
 // Steps are GENERATED from the live STELLA nav (pageGuide.ts) exactly like
 // the SPARK/OLIVER/ARION journeys, so page coverage can never drift; teaching
@@ -56,11 +56,11 @@ const BANK_STEP: JourneyStep = {
 
 export const STELLA_JOURNEY: Journey = {
   product: "stella",
-  productLabel: "Ledger & Data Management",
+  productLabel: "STELLA — Ledger & Unit Economics",
   accent: "#4C5BD4", // STELLA Indigo
   tourId: "journey_stella_tour_v1",
   interactiveId: "journey_stella_interactive_v1",
-  tourTitle: "Ledger & Data Management — guided by your consultant",
+  tourTitle: "STELLA Ledger — guided by your consultant",
   interactiveTitle: "Record your first expense with me",
   oneLiner: "Your ledger top to bottom — then record and reimburse your first expense",
   steps: [...buildPageSteps("stella", STELLA_PAGES), BANK_STEP],
