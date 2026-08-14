@@ -20,6 +20,15 @@ import {
 import type { WorkRow, ReleaseRow, WorkerRow, WorkMeta } from "./workTypes";
 import { PLATFORM_LABEL } from "./workTypes";
 
+/** One stage change from consulting.request_status_event. */
+interface StatusEvent {
+  event_id: string;
+  from_stage?: string | null; from_status?: string | null;
+  to_stage: string; to_status: string;
+  changed_at: string;
+  actor_name?: string | null;
+}
+
 interface CommentRow {
   comment_id: number; author_name?: string | null; body: string; created_at: string;
   /** true = agency-only note; false = message the client can read. */
@@ -35,7 +44,7 @@ export function TaskModal({ row, releases, workers, meta, projects, onClose, onS
 }) {
   const { getFounder, patchFounder, postFounder } = useOliverApi();
   const unit = meta?.estimate_unit || "hours";
-  const [tab, setTab] = useState<"overview" | "details">("overview");
+  const [tab, setTab] = useState<"overview" | "details" | "activity">("overview");
 
   const [title, setTitle] = useState(row.title);
   const [description, setDescription] = useState(row.description || "");
@@ -54,10 +63,18 @@ export function TaskModal({ row, releases, workers, meta, projects, onClose, onS
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const [events, setEvents] = useState<StatusEvent[]>([]);
+
   useEffect(() => {
     getFounder<CommentRow[]>(`/consulting/requests/${row.id}/comments`)
       .then((d) => setComments(Array.isArray(d) ? d : []))
       .catch(() => { /* notes are additive; absence is not an error */ });
+    // Stage history — recorded since migration 151, surfaced here for the
+    // first time. This is the approval proof: a client moving something to
+    // approved leaves a row with their user on it.
+    getFounder<StatusEvent[]>(`/consulting/requests/${row.id}/events`)
+      .then((d) => setEvents(Array.isArray(d) ? d : []))
+      .catch(() => { /* same — an empty history must not break the modal */ });
   }, [getFounder, row.id]);
 
   const save = async () => {
@@ -125,6 +142,9 @@ export function TaskModal({ row, releases, workers, meta, projects, onClose, onS
         <div className="mb-3 flex gap-1 border-b border-slate-200">
           <button type="button" className={tabCls("overview")} onClick={() => setTab("overview")}>Overview</button>
           <button type="button" className={tabCls("details")} onClick={() => setTab("details")}>Details</button>
+          <button type="button" className={tabCls("activity")} onClick={() => setTab("activity")}>
+            Activity{events.length > 0 && <span className="ml-1 text-slate-400">({events.length})</span>}
+          </button>
         </div>
 
         {tab === "overview" ? (
@@ -217,7 +237,7 @@ export function TaskModal({ row, releases, workers, meta, projects, onClose, onS
               </div>
             )}
           </div>
-        ) : (
+        ) : tab === "details" ? (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -361,6 +381,54 @@ export function TaskModal({ row, releases, workers, meta, projects, onClose, onS
                 </ul>
               )}
             </div>
+          </div>
+        ) : (
+          /* Activity — the stage-change audit trail. This is where a client
+             approval shows up with their name and timestamp, which previously
+             existed only as a row nobody read. */
+          <div>
+            {events.length === 0 ? (
+              <p className="py-4 text-center text-xs text-slate-400">
+                No stage changes recorded yet.
+              </p>
+            ) : (
+              <ol className="max-h-80 space-y-1.5 overflow-y-auto">
+                {events.map((e) => {
+                  const byClient = /@/.test(e.actor_name || "") || e.to_stage === "approved";
+                  return (
+                    <li key={e.event_id}
+                      className="rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {e.from_stage && (
+                          <>
+                            <span className="text-slate-500">
+                              {TASK_STAGE_LABELS[e.from_stage] || e.from_stage}
+                            </span>
+                            <span className="text-slate-300">→</span>
+                          </>
+                        )}
+                        <span className="font-semibold text-slate-800">
+                          {TASK_STAGE_LABELS[e.to_stage] || e.to_stage}
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          ({TASK_STATUS_LABELS[e.to_status] || e.to_status})
+                        </span>
+                        {e.to_stage === "approved" && (
+                          <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                            APPROVED
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-slate-500">
+                        {e.actor_name || "system"}
+                        {byClient && e.to_stage === "approved" ? " (client)" : ""} ·{" "}
+                        {new Date(e.changed_at).toLocaleString()}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
           </div>
         )}
 
