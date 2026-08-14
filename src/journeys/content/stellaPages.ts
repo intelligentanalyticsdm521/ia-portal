@@ -184,7 +184,7 @@ export const STELLA_PAGES: PageContentMap = {
         waitForMs: 1500,
         title: "Settled — that's the whole loop",
         body:
-          "The expense no longer counts toward Owed to you, and the ledger keeps the reimbursement date. If you want to tidy the test line away, Void in the footer removes it from every report while keeping it for audit. Click Finish — you now know the full expense cycle.",
+          "The expense no longer counts toward Owed to you, and the ledger keeps the reimbursement date. Since this was just practice, click Delete in the footer to remove it entirely — manual entries can be deleted; real imported transactions can only be voided, which is proper bookkeeping. Click Finish — you now know the full expense cycle.",
         placement: "top",
       },
     ],

@@ -74,7 +74,7 @@ export function TransactionDetailModal({
   coa?: CoaAccount[];
   onClose: (changed: boolean) => void;
 }) {
-  const { get, patch, ready } = useStellaApi();
+  const { get, patch, del, ready } = useStellaApi();
   const oliver = useOliverApi();
 
   // COA for the account select — caller's list when given, else one fetch on open.
@@ -241,6 +241,25 @@ export function TransactionDetailModal({
     }
   }
 
+  // Delete is MANUAL-entries only (Brandon 2026-08-14: a test expense marked
+  // reimbursed is bad accounting — it should be deletable). Imported rows keep
+  // Void/Personal: deleting a bank/OLIVER row would just re-import on sync.
+  const isDeletable = txn.raw_source === "manual" || txn.raw_source === "recurring_template";
+  async function deleteTxn() {
+    if (!confirm("Delete this manual entry permanently? Unlike Void, it leaves no trace in the ledger. Use this for test entries and mistakes that never really happened.")) return;
+    setBusy("delete");
+    setErr(null);
+    try {
+      await del(`/ledger/transactions/${txn.transaction_id}`);
+      changedRef.current = true;
+      onClose(true);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Delete failed. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const pill = STATUS_PILL[status] || STATUS_PILL.needs_categorization;
   const optionFor = (a: CoaAccount) => (
     <option key={a.coa_account_id} value={a.coa_account_id}>
@@ -261,10 +280,23 @@ export function TransactionDetailModal({
         <>
           {!isVoid && !isPersonal && (
             <span style={{ display: "inline-flex", gap: 8, marginRight: "auto" }}>
+              {isDeletable && (
+                <button
+                  type="button"
+                  onClick={deleteTxn}
+                  disabled={busy != null}
+                  title="Manual entry — safe to delete permanently (test entries, mistakes)"
+                  className="inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50"
+                  style={{ background: "#B91C1C", color: "#fff", border: "1px solid #B91C1C" }}
+                >
+                  {busy === "delete" ? "Deleting…" : "Delete"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={voidTxn}
                 disabled={busy != null}
+                title={isDeletable ? "Keep the row for audit but drop it from every report" : "Imported rows can't be deleted (they'd re-import on the next sync) — Void keeps the record and drops it from every report"}
                 className="inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50"
                 style={{ background: "#fff", color: "#B91C1C", border: "1px solid #FECACA" }}
               >
