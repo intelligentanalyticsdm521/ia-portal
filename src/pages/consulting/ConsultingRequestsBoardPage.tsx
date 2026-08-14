@@ -40,6 +40,8 @@ interface RequestRow {
   client_company?: string | null;
   client_first_name?: string | null;
   client_last_name?: string | null;
+  /** Owning business name from core.tenants — present even with no project. */
+  tenant_name?: string | null;
 }
 
 const STAGE_ORDER = [
@@ -62,7 +64,12 @@ function clientName(r: RequestRow): string | null {
   return (
     r.client_display_name ||
     r.client_company ||
-    ([r.client_first_name, r.client_last_name].filter(Boolean).join(" ") || null)
+    ([r.client_first_name, r.client_last_name].filter(Boolean).join(" ") || null) ||
+    // Falls back to the owning business. The fields above all come from
+    // lumen.contact joined through the PROJECT, so a request a client filed
+    // directly (no project) had no name at all — see ConsultingWorkBoardPage.
+    r.tenant_name ||
+    null
   );
 }
 

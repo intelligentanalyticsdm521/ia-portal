@@ -243,7 +243,13 @@ export function ConsultingWorkBoardPage() {
     return [...s].sort();
   }, [rows]);
 
-  const clientOf = (r: WorkRow) => r.client_display_name || r.client_company || null;
+  // client_display_name/client_company only exist when the request hangs off a
+  // PROJECT with a linked contact. A client filing a request directly has
+  // neither, which is why RII's ticket showed only a bare "client" badge with
+  // no indication of who sent it. tenant_name (the owning business) is the
+  // reliable answer and is now returned by GET /consulting/requests.
+  const clientOf = (r: WorkRow) =>
+    r.client_display_name || r.client_company || r.tenant_name || null;
 
   const Card = ({ r }: { r: WorkRow }) => {
     const est = r.estimate_hours != null ? `${r.estimate_hours}h` : r.estimate_size || null;
@@ -274,9 +280,20 @@ export function ConsultingWorkBoardPage() {
           {(r.tags || []).map((t) => <span key={t} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">#{t}</span>)}
         </div>
 
-        {(clientOf(r) || r.project_name) && (
+        {(clientOf(r) || r.project_name || r.created_at) && (
           <div className="mt-1 truncate text-[10px] text-slate-500">
             {clientOf(r)}{clientOf(r) && r.project_name ? " · " : ""}{r.project_name}
+            {/* Filed-on date. It was always in the API response, just never
+                rendered — a ticket with no date reads as though it appeared
+                from nowhere. */}
+            {r.created_at && (
+              <>
+                {(clientOf(r) || r.project_name) ? " · " : ""}
+                {new Date(r.created_at).toLocaleDateString(undefined, {
+                  month: "short", day: "numeric",
+                })}
+              </>
+            )}
           </div>
         )}
         {r.due_at && (

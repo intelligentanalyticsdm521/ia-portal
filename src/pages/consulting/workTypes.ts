@@ -21,6 +21,11 @@ export interface WorkRow {
   deliverables?: TaskDeliverable[];
   project_name?: string | null; milestone_name?: string | null;
   client_display_name?: string | null; client_company?: string | null;
+  /** Owning business name, resolved from core.tenants. Present even when the
+   *  request has no project/contact — the only reliable attribution for a
+   *  request a client filed directly. */
+  tenant_name?: string | null;
+  created_at?: string | null;
   total_count?: number;
 }
 
