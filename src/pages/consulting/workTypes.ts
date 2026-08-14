@@ -25,6 +25,11 @@ export interface WorkRow {
    *  request has no project/contact — the only reliable attribution for a
    *  request a client filed directly. */
   tenant_name?: string | null;
+  /** What every surface should print for "Client": "Internal" when the work
+   *  belongs to the agency's own tenant, otherwise the client's business name.
+   *  Resolved server-side so the card, board and modal cannot drift. */
+  client_label?: string | null;
+  is_internal?: boolean;
   created_at?: string | null;
   total_count?: number;
 }

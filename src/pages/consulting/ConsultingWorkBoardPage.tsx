@@ -249,7 +249,7 @@ export function ConsultingWorkBoardPage() {
   // no indication of who sent it. tenant_name (the owning business) is the
   // reliable answer and is now returned by GET /consulting/requests.
   const clientOf = (r: WorkRow) =>
-    r.client_display_name || r.client_company || r.tenant_name || null;
+    r.client_label || r.client_display_name || r.client_company || r.tenant_name || null;
 
   const Card = ({ r }: { r: WorkRow }) => {
     const est = r.estimate_hours != null ? `${r.estimate_hours}h` : r.estimate_size || null;

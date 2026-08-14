@@ -42,6 +42,9 @@ interface RequestRow {
   client_last_name?: string | null;
   /** Owning business name from core.tenants — present even with no project. */
   tenant_name?: string | null;
+  /** "Internal" for agency-owned work, else the client's business name. */
+  client_label?: string | null;
+  is_internal?: boolean;
 }
 
 const STAGE_ORDER = [
@@ -62,6 +65,7 @@ const STAGE_TINT: Record<string, string> = {
 
 function clientName(r: RequestRow): string | null {
   return (
+    r.client_label ||
     r.client_display_name ||
     r.client_company ||
     ([r.client_first_name, r.client_last_name].filter(Boolean).join(" ") || null) ||

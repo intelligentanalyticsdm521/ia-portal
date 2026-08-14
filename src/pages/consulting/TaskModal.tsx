@@ -106,7 +106,9 @@ export function TaskModal({ row, releases, workers, meta, projects, onClose, onS
 
   return (
     <IadmModal open onClose={onClose} product="oliver" title="Task"
-      subtitle={row.project_name || row.client_display_name || "Internal"} size="lg">
+      subtitle={row.client_label
+        ? (row.project_name ? `${row.client_label} · ${row.project_name}` : row.client_label)
+        : (row.project_name || "Internal")} size="lg">
       <div className="p-1">
         <div className="mb-3 flex gap-1 border-b border-slate-200">
           <button type="button" className={tabCls("overview")} onClick={() => setTab("overview")}>Overview</button>
@@ -115,6 +117,32 @@ export function TaskModal({ row, releases, workers, meta, projects, onClose, onS
 
         {tab === "overview" ? (
           <div className="space-y-3">
+            {/* WHO this is for, and when it came in. Neither was shown before:
+                a request filed by a client had no project and no linked
+                contact, so the modal fell through to the "Internal" default and
+                a genuine client ticket read as internal work. client_label is
+                resolved server-side (agency's own tenant => "Internal",
+                otherwise the client's business name). */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={l}>Client</label>
+                <div className={`${f} bg-slate-50 ${row.is_internal ? "text-slate-500" : "font-medium text-slate-800"}`}>
+                  {row.client_label || "—"}
+                  {row.origin === "client" && (
+                    <span className="ml-2 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+                      they filed this
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className={l}>Filed</label>
+                <div className={`${f} bg-slate-50 text-slate-700`}>
+                  {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
+                </div>
+              </div>
+            </div>
+
             <div>
               <label className={l}>Title</label>
               <input value={title} onChange={(e) => setTitle(e.target.value)} className={f} />
