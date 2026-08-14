@@ -11,7 +11,9 @@ import { acquireApiToken } from "./msalToken";
 import { emergencyActAsHeaders } from "./emergencyActAs";
 import { getCurrentTenantOverride } from "./tenantContext";
 
-const OLIVER_API_BASE =
+// Exported: stellaApi.ts reuses this host since the 2026-08 fold put the
+// STELLA ledger routes on oliver-api (no standalone stella-api service).
+export const OLIVER_API_BASE =
   (import.meta.env.VITE_OLIVER_API_BASE as string) ||
   "https://app-oliver-api-prod-eaffhyhqgrgbcfh0.centralus-01.azurewebsites.net";
 

@@ -16,15 +16,15 @@ import type { IPublicClientApplication, AccountInfo } from "@azure/msal-browser"
 import { acquireApiToken } from "./msalToken";
 import { emergencyActAsHeaders } from "./emergencyActAs";
 import { getCurrentTenantOverride } from "./tenantContext";
+import { OLIVER_API_BASE } from "./oliverApi";
 
+// 2026-08 fold: STELLA's ledger routes live ON oliver-api — there is no
+// standalone stella-api service. Default to oliver-api's host (shared
+// constant, one URL to maintain); VITE_STELLA_API_BASE overrides for local
+// dev (the folded oliver-api on a loopback port — devAuth.ts attaches
+// x-dev-tenant to loopback calls automatically).
 const STELLA_API_BASE =
-  (import.meta.env.VITE_STELLA_API_BASE as string) ||
-  // Local-dev default — stella-api runs on loopback until the prod service is
-  // provisioned. devAuth.ts attaches x-dev-tenant to loopback calls, so this
-  // "just works" under VITE_DEV_AUTH=1 with no CIAM.
-  // TODO(prod): swap for the deployed host once stella-api ships, e.g.
-  //   "https://app-stella-api-prod-<hash>.centralus-01.azurewebsites.net"
-  "http://localhost:8790";
+  (import.meta.env.VITE_STELLA_API_BASE as string) || OLIVER_API_BASE;
 
 // Delegates to the one shared token seam so the dev-auth short-circuit lives in
 // exactly one place (see msalToken.ts — mirrors oliverApi/sparkApi/lumenApi).
