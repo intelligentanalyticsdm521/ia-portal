@@ -77,6 +77,13 @@ export function ConsultingWorkBoardPage() {
   const [showReleaseSettings, setShowReleaseSettings] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
+  // Drag-to-move between stage columns. Native HTML5 DnD, no library — same
+  // approach already used by ConsultingTicketsBoardPage and the category
+  // builder. Restored 2026-08-13: the rebuilt board dropped it and the only
+  // way to move work was the per-card status select.
+  const [draggingRow, setDraggingRow] = useState<WorkRow | null>(null);
+  const [dragOverStage, setDragOverStage] = useState<string | null>(null);
+
   const [mode, setMode] = useState<"board" | "list">("board");
   const [view, setView] = useState<View>("stage");
   const [page, setPage] = useState(0);
@@ -135,6 +142,15 @@ export function ConsultingWorkBoardPage() {
     try { await patchFounder(`/consulting/requests/${id}`, body); await load(); }
     catch (e) { setError((e as Error).message || "Update failed."); }
     finally { setBusyId(null); }
+  };
+
+  /** The legal "stage|status" for moving `r` into `stage`, or null if the stage
+   *  machine has no such transition (e.g. new -> approved). Prefers a non-cancel
+   *  action so dropping on a column never silently cancels work. */
+  const actionTo = (r: WorkRow, stage: string): string | null => {
+    const legal = (TASK_ACTIONS[r.stage] || []).filter((a) => a.value.split("|")[0] === stage);
+    if (!legal.length) return null;
+    return (legal.find((a) => !a.value.startsWith("cancelled|")) || legal[0]).value;
   };
 
   const transition = async (r: WorkRow, value: string) => {
@@ -254,8 +270,20 @@ export function ConsultingWorkBoardPage() {
   const Card = ({ r }: { r: WorkRow }) => {
     const est = r.estimate_hours != null ? `${r.estimate_hours}h` : r.estimate_size || null;
     const overdue = r.due_at && new Date(r.due_at) < new Date() && r.stage !== "completed";
+    const isDragging = draggingRow?.id === r.id;
     return (
-      <div className="rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm">
+      <div
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/plain", r.id);
+          e.dataTransfer.effectAllowed = "move";
+          setDraggingRow(r);
+        }}
+        onDragEnd={() => { setDraggingRow(null); setDragOverStage(null); }}
+        className={`rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm ${
+          isDragging ? "opacity-40" : "cursor-grab active:cursor-grabbing"
+        }`}
+      >
         {/* One modal now — the separate "Plan" button is gone. */}
         <button type="button" onClick={() => setOpenRow(r)}
           className="block w-full text-left text-xs font-semibold leading-snug text-slate-800 hover:text-[#EF6C33]">
@@ -323,12 +351,45 @@ export function ConsultingWorkBoardPage() {
       {columns.map((stage) => {
         const cards = items.filter((r) => r.stage === stage);
         const cap = capacityOf(cards);
+        const isDropTarget = dragOverStage === `${laneKey}:${stage}`;
         const seed: Record<string, unknown> =
           view === "worker" && laneKey !== NO_LANE && laneKey !== "__all" ? { assigned_to_worker_id: laneKey }
           : view === "release" && laneKey !== NO_LANE && laneKey !== "__all" ? { release_id: laneKey }
           : {};
         return (
-          <div key={stage} className="w-60 flex-shrink-0 rounded-xl border border-slate-200 bg-slate-50/80">
+          <div key={stage}
+            className={`w-60 flex-shrink-0 rounded-xl border bg-slate-50/80 transition-colors ${
+              isDropTarget ? "border-[#EF6C33] ring-2 ring-[#EF6C33]/40" : "border-slate-200"
+            }`}
+            onDragOver={(e) => {
+              // Only accept the drop if the move is actually legal for the
+              // dragged card's current stage — the stage machine is
+              // server-validated, so a drop we can't express as a legal
+              // transition would just 4xx.
+              if (!draggingRow || draggingRow.stage === stage) return;
+              if (!actionTo(draggingRow, stage)) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              const key = `${laneKey}:${stage}`;
+              if (dragOverStage !== key) setDragOverStage(key);
+            }}
+            onDragLeave={(e) => {
+              if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+              if (dragOverStage === `${laneKey}:${stage}`) setDragOverStage(null);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOverStage(null);
+              const id = e.dataTransfer.getData("text/plain");
+              const r = rows.find((x) => x.id === id);
+              if (!r || r.stage === stage) return;
+              const value = actionTo(r, stage);
+              if (!value) {
+                setError(`Can't move "${r.title}" straight to ${TASK_STAGE_LABELS[stage] || stage}.`);
+                return;
+              }
+              transition(r, value);
+            }}>
             <div className="flex items-center justify-between rounded-t-xl border-b-2 bg-white px-3 py-2"
                  style={{ borderBottomColor: STAGE_TINT[stage] }}>
               <span className="text-xs font-semibold text-slate-700">{TASK_STAGE_LABELS[stage] || stage}</span>
