@@ -1846,6 +1846,9 @@ export interface TaskDeliverable {
   file_name?: string | null;
   file_url?: string | null;
   status: string;
+  /** 1 when the CLIENT uploaded it (their markup), not the agency. Returned by
+   *  GET /consulting/requests but was never declared here. */
+  is_client_supplied?: boolean | number | null;
 }
 
 export function TaskDetailModal({
