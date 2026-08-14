@@ -161,61 +161,93 @@ export async function hardLogout(instance: IPublicClientApplication): Promise<vo
     instance.getActiveAccount() ?? instance.getAllAccounts()[0] ?? undefined;
 
   const claims = (account?.idTokenClaims ?? {}) as Record<string, unknown>;
-  const logoutHint =
+  const loginHint =
     (typeof claims.login_hint === 'string' && claims.login_hint) ||
     (typeof claims.preferred_username === 'string' && claims.preferred_username) ||
     account?.username ||
     undefined;
 
-  // 2026-08-14 (attempt 3) — DO NOT trust account.idToken.
-  //
-  // The previous attempt read the raw token off AccountInfo. MSAL v3 declares
-  // that field, but the accounts handed back by getActiveAccount() /
-  // getAllAccounts() are built from the account cache and StandardController
-  // only ever populates idTokenClaims on them — never idToken. So idTokenHint
-  // was almost certainly undefined, `id_token_hint` never made it onto the
-  // logout URL, and CIAM went on showing its picker exactly as before.
-  //
-  // acquireTokenSilent returns the RAW id token on the AuthenticationResult,
-  // which is what CIAM needs. It's a cache read in the normal case; if it has
-  // to hit the network and fails, we fall back rather than block sign-out.
-  let idTokenHint = account?.idToken || undefined;
-  if (!idTokenHint && account) {
-    try {
-      const result = await instance.acquireTokenSilent({ account, scopes: authScopes });
-      idTokenHint = result.idToken || undefined;
-    } catch {
-      /* fall through — logoutHint alone is still better than nothing */
-    }
-  }
+  // Get the RAW id token, trying every place MSAL can hold it. This is the
+  // parameter CIAM actually acts on, and each earlier attempt failed because
+  // the value silently came back undefined:
+  //   1. AccountInfo.idToken — declared in MSAL v3 but NOT populated by
+  //      getActiveAccount()/getAllAccounts(); those rebuild the account from
+  //      the account cache and only fill idTokenClaims.
+  //   2. acquireTokenSilent().idToken — correct, but throws if the token needs
+  //      a network refresh and the session is already half-gone.
+  //   3. the localStorage cache entry MSAL writes it to — the last resort, and
+  //      the only one that still works when the other two have given up.
+  const idToken = await resolveRawIdToken(instance, account);
 
   clearStaleInteractionFlags();
+  try { await instance.clearCache?.(); } catch { /* ignore */ }
 
-  return instance
-    .logoutRedirect({
-      account,
-      logoutHint,
-      idTokenHint,
-      postLogoutRedirectUri: window.location.origin,
-      // Diagnostic: this is the exact URL handed to Entra. If a picker STILL
-      // appears, this line says definitively whether id_token_hint was present
-      // and populated, instead of another round of guessing. Returning true
-      // lets the navigation proceed normally.
-      onRedirectNavigate: (url: string) => {
-        try {
-          console.info('[logout] id_token_hint present:', url.includes('id_token_hint='),
-            '| logout_hint present:', url.includes('logout_hint='));
-          console.info('[logout] url:', url);
-        } catch { /* ignore */ }
-        return true;
-      },
-    })
-    .catch(() => {
-      // Never strand the user on a half-signed-out screen: drop local state
-      // and bounce to the landing page.
-      try { instance.clearCache?.(); } catch { /* ignore */ }
-      window.location.assign('/');
-    });
+  // Build the end-session URL BY HAND rather than going through
+  // logoutRedirect().
+  //
+  // 2026-08-14 — three fixes in a row "shipped" and changed nothing, because
+  // each one handed MSAL a parameter that turned out to be undefined and MSAL
+  // silently omitted it. Constructing the URL here means what we intend to send
+  // is exactly what gets sent, and the log line below states it as fact instead
+  // of another assumption. This is the same lesson as the phantom-column sweep:
+  // stop trusting that a call did what it looked like it did.
+  const authority = String(import.meta.env.VITE_AUTH_AUTHORITY || '').replace(/\/+$/, '');
+  if (!authority) {
+    window.location.assign('/');
+    return;
+  }
+
+  const params = new URLSearchParams();
+  params.set('post_logout_redirect_uri', window.location.origin);
+  if (idToken) params.set('id_token_hint', idToken);
+  // Harmless on CIAM, and correct if an environment ever points at workforce Entra.
+  if (loginHint) params.set('logout_hint', loginHint);
+
+  const url = `${authority}/oauth2/v2.0/logout?${params.toString()}`;
+  console.info(
+    '[logout] id_token_hint:', idToken ? `present (${idToken.length} chars)` : 'MISSING',
+    '| logout_hint:', loginHint || 'MISSING',
+  );
+
+  window.location.assign(url);
+}
+
+/** Raw id token from wherever MSAL is actually keeping it. Never throws. */
+async function resolveRawIdToken(
+  instance: IPublicClientApplication,
+  account: AccountInfo | undefined,
+): Promise<string | undefined> {
+  if (account?.idToken) return account.idToken;
+
+  if (account) {
+    try {
+      const r = await instance.acquireTokenSilent({ account, scopes: authScopes });
+      if (r.idToken) return r.idToken;
+    } catch { /* fall through to the cache scan */ }
+  }
+
+  // MSAL stores credentials in localStorage under keys shaped like
+  // `<homeAccountId>-<env>-idtoken-<clientId>-<tenantId>---`, with the raw JWT
+  // on the entry's `secret` field. Prefer the entry belonging to THIS account;
+  // fall back to any id token if the account couldn't be resolved at all.
+  try {
+    const want = account?.homeAccountId?.toLowerCase();
+    let fallback: string | undefined;
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (!key || !key.toLowerCase().includes('-idtoken-')) continue;
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      let secret: string | undefined;
+      try { secret = JSON.parse(raw)?.secret; } catch { continue; }
+      if (!secret) continue;
+      if (want && key.toLowerCase().startsWith(want)) return secret;
+      fallback ??= secret;
+    }
+    return fallback;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
