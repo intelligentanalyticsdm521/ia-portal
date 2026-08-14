@@ -61,6 +61,15 @@ export interface DeepConfig {
    * is the only thing a state code can honestly say.
    */
   categorical?: boolean;
+  /**
+   * Index of the band to AIM FOR, when it is not the first one. Defaults to 0,
+   * which is right for every best-first set (Position 1-3, Pillar 2,000+).
+   * Set it when the bands run worst-first because that is the natural reading
+   * order — a media library is read heaviest-first, and its goal is the light
+   * end. Getting this wrong makes the report tell an owner to grow the number
+   * that is hurting them, so it is declared rather than guessed.
+   */
+  goalBand?: number;
 }
 
 // ── output ────────────────────────────────────────────────────────────────
@@ -134,6 +143,27 @@ const lastVal = (s: Array<number | null>): number | null => {
   return null;
 };
 const isAvgFormat = (f: ValueFormat) => f === "percent" || f === "position" || f === "rating" || f === "score";
+
+/**
+ * Which band is the one to AIM FOR — declared, never inferred.
+ *
+ * Everything used to assume bands[0], and the Media Library report caught what
+ * that costs: its first band is "Huge (1MB+)", so the report told the owner
+ * "6 more than a year ago... this is the single number to keep growing." It was
+ * advising them to make their site slower.
+ *
+ * The obvious repair — "if lower-is-better, the goal is the last band" — is
+ * also wrong, and worse because it looks right. keyword_movement is
+ * lower-is-better AND declares "Position 1-3" first: inferring from the flag
+ * would have moved its goal to "Position 21+" and inverted every keyword
+ * report we have. Which end is good is a property of how the bands were
+ * written, not of the metric's direction, so a config that departs from
+ * best-first says so with goalBand.
+ */
+function goalBandIndex(cfg: DeepConfig | undefined, bands: DeepBand[]): number {
+  const g = cfg?.goalBand;
+  return g != null && g >= 0 && g < bands.length ? g : 0;
+}
 
 function bandIndex(bands: DeepBand[], v: number | null): number {
   if (v == null || !isFinite(v)) return -1;
@@ -224,11 +254,12 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
   const movements: DeepMovementTable[] = [];
   const entered: DetailItem[] = [], dropped: DetailItem[] = [];
   if (cfg?.bands) {
-    const topBand = cfg.bands[0];
+    const gi = goalBandIndex(cfg, cfg.bands);
+    const topBand = cfg.bands[gi];
     const backIdx = Math.max(0, seriesLen - 4); // ~3 months ago
     for (const it of trendItems) {
-      const nowIn = bandIndex(cfg.bands, lastVal(it.series || [])) === 0;
-      const wasIn = bandIndex(cfg.bands, it.series?.[backIdx] ?? null) === 0;
+      const nowIn = bandIndex(cfg.bands, lastVal(it.series || [])) === gi;
+      const wasIn = bandIndex(cfg.bands, it.series?.[backIdx] ?? null) === gi;
       if (nowIn && !wasIn) entered.push(it);
       if (!nowIn && wasIn) dropped.push(it);
     }
@@ -303,10 +334,11 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
   let narrative = `${items.length} ${pluralize(report.itemLabel, items.length)} tracked`;
   if (trendItems.length && !cfg?.categorical) narrative += ` — ${gainers.length} improving, ${losers.length} declining this month`;
   if (distribution?.kind === "bands" && cfg?.bands) {
-    const top = distribution.series[0];
+    const gi = goalBandIndex(cfg, cfg.bands);
+    const top = distribution.series[gi];
     const nowN = top.values[seriesLen - 1] ?? 0;
     const yearN = top.values[0] ?? 0;
-    narrative += `. ${nowN} in ${cfg.bands[0].label} (${nowN - yearN >= 0 ? "+" : ""}${nowN - yearN} vs a year ago)`;
+    narrative += `. ${nowN} in ${cfg.bands[gi].label} (${nowN - yearN >= 0 ? "+" : ""}${nowN - yearN} vs a year ago)`;
   }
   if (flagged) narrative += `. ${flagged} flagged for attention`;
   narrative += ".";
@@ -319,9 +351,18 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
     });
   }
   if (distribution?.kind === "bands" && cfg?.bands) {
-    const top = distribution.series[0];
+    const gi = goalBandIndex(cfg, cfg.bands);
+    const top = distribution.series[gi];
     const nowN = top.values[seriesLen - 1] ?? 0, yearN = top.values[0] ?? 0;
-    stats.push({ label: cfg.bands[0].label, value: String(nowN), sub: `${nowN - yearN >= 0 ? "+" : ""}${nowN - yearN} vs 12 mo ago` });
+    stats.push({ label: cfg.bands[gi].label, value: String(nowN), sub: `${nowN - yearN >= 0 ? "+" : ""}${nowN - yearN} vs 12 mo ago` });
+    // When the goal is NOT the first band, the first band is the problem band —
+    // and that is the number an owner needs in front of them, not buried in the
+    // chart legend.
+    if (gi !== 0 && distribution.series[0]) {
+      const worst = distribution.series[0];
+      const n = worst.values[seriesLen - 1] ?? 0;
+      if (n > 0) stats.push({ label: worst.label, value: String(n) });
+    }
     // With no total to headline, the bands that need action carry the summary.
     if (cfg.categorical) {
       for (let i = 1; i < distribution.series.length; i++) {
@@ -478,22 +519,23 @@ function buildMeaning(ctx: {
 
   // 2. Band story: the count that matters, in plain terms.
   if (distribution?.kind === "bands" && cfg?.bands?.length) {
-    const top = distribution.series[0];
+    const gi = goalBandIndex(cfg, cfg.bands);
+    const top = distribution.series[gi];
     const nowN = top.values[seriesLen - 1] ?? 0;
     const yearN = top.values[0] ?? 0;
     const d = nowN - yearN;
     out.push({
       tone: d > 0 ? "good" : d < 0 ? "bad" : "info",
       text: d > 0
-        ? `You now have ${nowN} ${pluralize(report.itemLabel, nowN)} in "${top.label}" — ${d} more than a year ago. That top group does most of the work, so this is the single number to keep growing.`
+        ? `You now have ${nowN} ${pluralize(report.itemLabel, nowN)} in "${top.label}" — ${d} more than a year ago. That is the group worth growing — it is the one this report is trying to get you to.`
         : d < 0
-        ? `You're down to ${nowN} ${pluralize(report.itemLabel, nowN)} in "${top.label}" — ${Math.abs(d)} fewer than a year ago. The top group does most of the work, so winning those back matters more than anything else on this page.`
-        : `You have ${nowN} ${pluralize(report.itemLabel, nowN)} in "${top.label}" — the same as a year ago. Holding position isn't failure, but the fastest growth comes from moving more ${nouns} into that top group.`,
+        ? `You're down to ${nowN} ${pluralize(report.itemLabel, nowN)} in "${top.label}" — ${Math.abs(d)} fewer than a year ago. That is the group this report is trying to get you to, so winning those back matters more than anything else on this page.`
+        : `You have ${nowN} ${pluralize(report.itemLabel, nowN)} in "${top.label}" — the same as a year ago. Holding position isn't failure, but the gain here comes from moving more ${nouns} into that group.`,
     });
     if (entered.length) {
-      out.push({ tone: "good", text: `Fresh wins: ${entered.slice(0, 2).map((i) => i.name).join(" and ")} just moved into "${cfg.bands[0].label}" in the last three months. New arrivals are fragile — a little reinforcement now locks them in.` });
+      out.push({ tone: "good", text: `Fresh wins: ${entered.slice(0, 2).map((i) => i.name).join(" and ")} just moved into "${cfg.bands[goalBandIndex(cfg, cfg.bands)].label}" in the last three months. New arrivals are fragile — a little reinforcement now locks them in.` });
     } else if (dropped.length) {
-      out.push({ tone: "watch", text: `${dropped.slice(0, 2).map((i) => i.name).join(" and ")} recently fell out of "${cfg.bands[0].label}". Recent drops are usually the easiest to reverse — they were there a few weeks ago.` });
+      out.push({ tone: "watch", text: `${dropped.slice(0, 2).map((i) => i.name).join(" and ")} recently fell out of "${cfg.bands[goalBandIndex(cfg, cfg.bands)].label}". Recent drops are usually the easiest to reverse — they were there a few weeks ago.` });
     }
   }
 

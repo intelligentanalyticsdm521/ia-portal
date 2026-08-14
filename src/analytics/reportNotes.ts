@@ -118,6 +118,14 @@ export const REPORT_NOTES: Record<string, ReportNote> = {
     "Searches where Google already shows your site sometimes — but you have no page that properly answers them.",
     "This is demand you're leaving on the table. Each row is a page worth creating; the impressions trend shows whether that demand is growing while you wait.",
   ),
+  page_reachability: N(
+    "Every page with the number of other pages linking to it, whether it sits in a menu, and whether its own links still go anywhere.",
+    "A page nothing links to is a page nobody finds — Google included. Fix orphans by adding one link from a page that already gets traffic; it costs ten minutes and is the highest-return thing on this report. Broken links are listed with their targets, so that section is a to-do list, not a search.",
+  ),
+  media_library: N(
+    "Every file in your media library — size, dimensions, alt text, and whether any published page actually uses it.",
+    "Oversized images are the most common reason a small-business site feels slow on a phone, and the visitor pays for them in load time and data. Missing alt text costs accessibility and image search together. Unused files are usually years of uploads nobody removed — check before deleting, but they slow every backup you take.",
+  ),
   content_library: N(
     "Every page and post on your website, reviewed one by one — length, on-page SEO score, meta description, focus keyword, and how long since it was last touched.",
     "This is the review a consultant would do by hand on day one. Start with the opportunity lists: pages competing for the same keyword are the most expensive problem (you're bidding against yourself), missing meta descriptions are the cheapest fix. Thin and stale pages matter most on the pages that describe what you actually sell.",

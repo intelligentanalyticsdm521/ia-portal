@@ -34,6 +34,8 @@ const FEATURE_LABEL: Record<string, string> = {
 const ANSWERS: Record<string, string> = {
   component_upkeep: "Is anyone actually looking after this site?",
   content_library: "Page by page — what is thin, stale, or competing with itself?",
+  page_reachability: "Which pages can nobody actually find?",
+  media_library: "What is my media library doing to my speed?",
   keyword_movement: "Which keywords moved, and which ones matter?",
   striking_distance: "What is one push from page one?",
   query_performance: "What are people searching to find me?",

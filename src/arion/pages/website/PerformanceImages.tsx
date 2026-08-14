@@ -2,12 +2,18 @@ import React, { useState } from 'react';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { StatCard, Card, HealthRow, Loading, ConsultingUpsell } from '../../components/Ui';
+import { ReportButton } from '../../../components/insights/ReportButton';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
 /**
  * Media — LiteSpeed image-optimization status + one-click bulk optimize.
  */
 export function PerformanceImages() {
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
+  // Must sit with the other hooks, above the `if (loading)` early return —
+  // a hook after a conditional return changes the hook count between renders
+  // and React tears the page down.
+  const insights = useArionInsightsPayload();
   const [optimizing, setOptimizing] = useState(false);
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
@@ -64,6 +70,10 @@ export function PerformanceImages() {
 
   return (
     <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <ReportButton detail={insights?.detail} reportId="media_library" />
+      </div>
+
       {!pluginConnected && (
         <div style={{ background: '#FEF3C7', borderLeft: '4px solid #D97706', padding: '12px 16px', marginBottom: 16, borderRadius: 4, fontSize: 13 }}>
           <strong>Plugin not reachable.</strong> Image optimization stats require the IA Plugin. Status: <code>{pluginStatus || 'unknown'}</code>

@@ -195,6 +195,130 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
     },
   },
 
+  // ARION - Page Reachability (2026-08-14)
+  //
+  // The question an owner cannot answer from inside WordPress: can anyone
+  // actually GET to this page? A page with no inbound link and no menu entry
+  // exists only for whoever already has the URL. First real run on
+  // intelligentanalyticsdm.com: 30 of 115 pages.
+  page_reachability: {
+    bands: [
+      { label: "Well linked (5+)", color: "#15803d", test: (v) => v >= 5 },
+      { label: "Linked (2-4)", color: "#65a30d", test: (v) => v >= 2 },
+      { label: "Barely linked (1)", color: "#f59e0b", test: (v) => v >= 1 },
+      { label: "Orphan (0)", color: "#dc2626", test: () => true },
+    ],
+    segments: [
+      { label: "In the menu", of: (it: DetailItem) => String(it.extra?.in_menu) === "Yes" ? "In a menu" : "Not in any menu" },
+      {
+        label: "Links out",
+        of: (it: DetailItem) => {
+          const n = Number(it.extra?.links_out || 0);
+          if (n === 0) return "Dead end (links nowhere)";
+          if (n <= 2) return "1-2 links out";
+          return "3+ links out";
+        },
+      },
+    ],
+    opportunities: [
+      {
+        title: "Orphans - nothing links here",
+        note: "No inbound link from any published page, and not in a menu. Reachable only by someone who already has the URL.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} have nothing pointing at them - no link from another page, no menu entry. You paid to make them and nobody can find them. One internal link from a page that already gets traffic is usually a ten-minute fix.`,
+        filter: (it: DetailItem) => Number(it.extra?.orphan) === 1,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.links_out || 0) - Number(a.extra?.links_out || 0),
+      },
+      {
+        title: "Links pointing at pages that are gone",
+        note: "These links resolve to nothing. Every one wastes a visitor's click and a little of Google's trust.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} contain links to pages that no longer exist. The Pointing at column lists exactly where each one goes, so this is a fix list rather than a hunt.`,
+        filter: (it: DetailItem) => Number(it.extra?.to_missing || 0) > 0,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.to_missing || 0) - Number(a.extra?.to_missing || 0),
+      },
+      {
+        title: "Links to something you never published",
+        note: "The target exists but is still a draft. Either publish it or stop linking to it.",
+        filter: (it: DetailItem) => Number(it.extra?.to_unpublished || 0) > 0,
+      },
+      {
+        title: "Dead ends - pages that link nowhere",
+        note: "A page that sends a reader nowhere next is the end of the visit. Even one relevant onward link changes that.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} link nowhere at all. A reader who finishes one of these has no next step but the back button - and Google reads the same dead end you do.`,
+        filter: (it: DetailItem) => Number(it.extra?.links_out || 0) === 0 && Number(it.extra?.orphan) !== 1,
+      },
+    ],
+    flag: (it: DetailItem) => {
+      if (Number(it.extra?.orphan) === 1) return "Orphan - nothing links here and it is in no menu";
+      if (Number(it.extra?.to_missing || 0) > 0) return `Links to ${it.extra?.to_missing} page(s) that no longer exist`;
+      if (Number(it.extra?.links_out || 0) === 0) return "Dead end - links nowhere";
+      return null;
+    },
+    weightKey: "links_in",
+  },
+
+  // ARION - Media Library (2026-08-14)
+  //
+  // Where small-business sites quietly go slow. Nothing in WordPress ever tells
+  // an owner that the photo they dropped in is 4MB, that 150 of their images
+  // have no alt text, or that most of the library is not used anywhere.
+  // Lower IS better here, so the bands run heaviest-first.
+  media_library: {
+    // Read heaviest-first, because the heavy files are the point of the report.
+    // That makes the LAST band the one to aim for, and the engine has to be
+    // told: left to its default it would congratulate the owner on growing the
+    // "Huge (1MB+)" group.
+    goalBand: 3,
+    bands: [
+      { label: "Huge (1MB+)", color: "#dc2626", test: (v) => v >= 1024 },
+      { label: "Large (500KB-1MB)", color: "#f59e0b", test: (v) => v >= 500 },
+      { label: "Normal (100-500KB)", color: "#65a30d", test: (v) => v >= 100 },
+      { label: "Light (under 100KB)", color: "#15803d", test: () => true },
+    ],
+    segments: [
+      { label: "File type", of: (it: DetailItem) => String(it.extra?.mime || "other") },
+      { label: "Used on a page", of: (it: DetailItem) => String(it.extra?.used) === "Yes" ? "In use" : "Not used anywhere" },
+      { label: "Alt text", of: (it: DetailItem) => String(it.extra?.alt) === "Yes" ? "Has alt text" : "No alt text" },
+    ],
+    opportunities: [
+      {
+        title: "Oversized - shrink these first",
+        note: "Over 500KB or wider than 2,500px. Every visitor on a phone downloads the full file.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} are far bigger than they need to be - over 500KB, or wider than any screen will ever show. Every phone visitor downloads them in full, on their data, before your page appears. Resizing these is the single fastest speed win available.`,
+        filter: (it: DetailItem) => Number(it.extra?.oversized) === 1,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.kb || 0) - Number(a.extra?.kb || 0),
+      },
+      {
+        title: "No alt text",
+        note: "Alt text is what a screen reader announces and what Google reads. Missing it costs accessibility and image search at once.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} have no alt text. That is what a screen reader announces to someone who cannot see the image, and what Google reads to understand it - so a blank one costs you accessibility and image search in the same stroke. Start with the images on the pages you actually sell from.`,
+        filter: (it: DetailItem) => Number(it.extra?.is_image) === 1 && String(it.extra?.alt) === "Missing",
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.kb || 0) - Number(a.extra?.kb || 0),
+      },
+      {
+        title: "Used nowhere",
+        note: "Not referenced by any published page and not set as any page's featured image. Dead weight in backups and migrations.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} are not used on any published page. Check before deleting - a file can be referenced from somewhere this scan cannot see - but this is usually years of uploads nobody ever removed, slowing every backup and migration since.`,
+        filter: (it: DetailItem) => String(it.extra?.used) === "No",
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.kb || 0) - Number(a.extra?.kb || 0),
+      },
+    ],
+    flag: (it: DetailItem) => {
+      if (Number(it.extra?.oversized) === 1) {
+        return `${Number(it.extra?.kb).toLocaleString()}KB${Number(it.extra?.width) > 2500 ? ` at ${it.extra?.dimensions}` : ""} - bigger than any screen needs`;
+      }
+      if (Number(it.extra?.is_image) === 1 && String(it.extra?.alt) === "Missing") return "No alt text";
+      if (String(it.extra?.used) === "No") return "Not used on any page";
+      return null;
+    },
+    weightKey: "kb",
+  },
+
   // ARION - Content Library (2026-08-14)
   //
   // Brandon: "I want them to see the things I would as a consultant point out
@@ -210,7 +334,8 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
       { label: "Pillar (2,000+)", color: "#15803d", test: (v) => v >= 2000 },
       { label: "Long (1,000-1,999)", color: "#65a30d", test: (v) => v >= 1000 },
       { label: "Standard (300-999)", color: "#f59e0b", test: (v) => v >= 300 },
-      { label: "Thin (under 300)", color: "#dc2626", test: () => true },
+      { label: "Thin (under 300)", color: "#dc2626", test: (v) => v > 0 },
+      { label: "Empty", color: "#7f1d1d", test: () => true },
     ],
     segments: [
       { label: "Pages vs posts", of: (it: DetailItem) => String(it.extra?.type || "unknown") },
@@ -252,11 +377,21 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
         sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.words || 0) - Number(a.extra?.words || 0),
       },
       {
+        title: "Published with nothing on them",
+        note: "No body content at all. The page is live and indexable, and there is nothing on it but the site's own header and footer.",
+        lede: (n: number, label: string) =>
+          `${n} published ${pluralize(label.toLowerCase(), n)} have no content at all — live, indexable, and carrying nothing but your header and footer. Either finish them or unpublish them; an empty page that ranks is worse than one that doesn't exist.`,
+        filter: (it: DetailItem) => Number(it.extra?.words || 0) === 0,
+      },
+      {
         title: "Thin pages worth expanding",
         note: "Under 300 words. Too short to answer a real question or to rank for one.",
         lede: (n: number, label: string) =>
           `${n} ${pluralize(label, n)} are under 300 words - too short to answer a real question, which is what Google is trying to reward. Pick the two or three that describe what you actually sell and give each one a proper answer.`,
-        filter: (it: DetailItem) => Number(it.extra?.words || 0) < 300,
+        filter: (it: DetailItem) => {
+          const w = Number(it.extra?.words || 0);
+          return w > 0 && w < 300;            // 0 words is its own list, above
+        },
         sortBy: (a: DetailItem, b: DetailItem) => Number(a.extra?.words || 0) - Number(b.extra?.words || 0),
       },
       {
@@ -289,6 +424,7 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
         return `Competing with ${Number(it.extra?.competing) - 1} other page(s) for "${it.extra?.focus_keyword}"`;
       }
       if (Number(it.extra?.noindex) === 1) return "Hidden from search (noindex)";
+      if (Number(it.extra?.words || 0) === 0) return "Published with no content on it";
       if (Number(it.extra?.words || 0) < 300) return "Thin - under 300 words";
       if (Number(it.extra?.days_since_update || 0) > 365) {
         return `Not updated in ${Math.round(Number(it.extra?.days_since_update) / 30)} months`;
