@@ -267,9 +267,22 @@ export function StellaReportsPage() {
               {expenseLines.length === 0 ? (
                 <div style={{ padding: "6px 0", fontSize: 12, color: "#94A3B8", fontStyle: "italic" }}>$0 expenses recorded</div>
               ) : (
-                expenseLines.map((l) => (
-                  <Row key={l.coa_account_id || l.account_name || "expense"} label={l.account_name || "Uncategorized"} value={fmtMoney(Math.abs(l.total))} indent />
-                ))
+                expenseLines.map((l) => {
+                  // Expense account totals are normally negative (costs). A
+                  // POSITIVE total is a net credit (e.g. a refund exceeding
+                  // the month's costs) — QB convention: show it as a negative
+                  // expense so the visible lines sum to Total expenses.
+                  const isCredit = l.total > 0;
+                  return (
+                    <Row
+                      key={l.coa_account_id || l.account_name || "expense"}
+                      label={isCredit ? `${l.account_name || "Uncategorized"} (credit)` : l.account_name || "Uncategorized"}
+                      value={isCredit ? `−${fmtMoney(l.total)}` : fmtMoney(Math.abs(l.total))}
+                      color={isCredit ? "#0F6E56" : undefined}
+                      indent
+                    />
+                  );
+                })
               )}
               <Row label="Total expenses" value={fmtMoney(pnl.totals.expenses)} bold />
 

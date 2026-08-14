@@ -18,6 +18,7 @@
 // are referenced inside render functions only. Keep it that way.
 import { useEffect, useState } from "react";
 import { useStellaApi } from "../../hooks/useStellaApi";
+import { useOliverApi } from "../../hooks/useOliverApi";
 import { Button } from "../../components/oliver/ui";
 import { STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./StellaShell";
 
@@ -27,6 +28,19 @@ export interface CoaAccount {
   name: string;
   type: string | null; // asset | liability | equity | revenue | expense
   is_active: boolean | number | null;
+}
+
+/** OLIVER GET /jobs list item — the fields the Job tag select needs. Shared
+ *  with TransactionDetailModal (which already imports from this module). */
+export interface JobLite {
+  id: string;
+  jobNumber?: string | null;
+  title: string | null;
+  status?: string | null;
+}
+
+export function jobOptionLabel(j: JobLite): string {
+  return j.jobNumber ? `${j.jobNumber} — ${j.title || "Untitled job"}` : j.title || "Untitled job";
 }
 
 export function RecordTransactionModal({
@@ -42,6 +56,7 @@ export function RecordTransactionModal({
   onCreated: (msg: string) => void;
 }) {
   const { get, post, ready } = useStellaApi();
+  const oliver = useOliverApi();
   const isIncome = direction === "inflow";
 
   // COA — use the caller's list when given, otherwise fetch once on open.
@@ -56,6 +71,19 @@ export function RecordTransactionModal({
   }, [coa, get, ready]);
   const accounts = coa ?? fetchedCoa ?? [];
 
+  // OLIVER jobs for the optional Job tag — one fetch per open (user-action
+  // fetch, not a page fetch). Soft-fails to an empty list: recording must
+  // never block on the jobs endpoint.
+  const [jobs, setJobs] = useState<JobLite[]>([]);
+  useEffect(() => {
+    if (!oliver.ready) return;
+    let cancelled = false;
+    oliver.get<JobLite[]>("/jobs?per_page=100")
+      .then((rows) => { if (!cancelled) setJobs(rows || []); })
+      .catch(() => { if (!cancelled) setJobs([]); });
+    return () => { cancelled = true; };
+  }, [oliver]);
+
   // Income posts to revenue accounts, expenses to expense accounts — but keep
   // the full COA reachable under an "Other accounts" group for edge cases.
   const preferredType = isIncome ? "revenue" : "expense";
@@ -64,6 +92,7 @@ export function RecordTransactionModal({
 
   const [counterparty, setCounterparty] = useState("");
   const [coaAccountId, setCoaAccountId] = useState("");
+  const [jobId, setJobId] = useState("");
   const [amount, setAmount] = useState("");
   const [postedDate, setPostedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [memo, setMemo] = useState("");
@@ -87,6 +116,7 @@ export function RecordTransactionModal({
         posted_date: postedDate,
         memo: memo.trim() || null,
         is_reimbursable: !isIncome && reimbursable,
+        job_id: jobId || null,
       });
       onCreated(`Recorded ${isIncome ? "income" : "expense"} of ${fmtMoney(amountNum)}.`);
     } catch (e) {
@@ -140,6 +170,18 @@ export function RecordTransactionModal({
               <input type="date" style={mInput} value={postedDate} onChange={(e) => setPostedDate(e.target.value)} />
             </label>
           </div>
+          <label>
+            <span style={mLabel}>Job (optional)</span>
+            <select style={mInput} value={jobId} onChange={(e) => setJobId(e.target.value)}>
+              <option value="">No job</option>
+              {jobs.map((j) => (
+                <option key={j.id} value={j.id}>{jobOptionLabel(j)}</option>
+              ))}
+            </select>
+            <span style={{ display: "block", fontSize: 10, color: "#94A3B8", marginTop: 3, lineHeight: 1.4 }}>
+              Tagging ties this line to a job — expenses count as direct job cost in Unit Economics margins.
+            </span>
+          </label>
           <label>
             <span style={mLabel}>Memo</span>
             <textarea rows={2} style={{ ...mInput, resize: "vertical" }} placeholder="Optional note" value={memo} onChange={(e) => setMemo(e.target.value)} />

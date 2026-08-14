@@ -42,6 +42,10 @@ interface StellaTransaction {
   raw_source: string | null;
   is_reimbursable?: boolean | number | null;
   reimbursed_at?: string | null;
+  // Job tag (Unit Economics) — the API LEFT JOINs oliver.job on tagged rows.
+  job_id?: string | null;
+  job_number?: string | null;
+  job_title?: string | null;
 }
 
 // Month money-bar slice of GET /ledger/overview (envelope unwrapped).
@@ -127,6 +131,17 @@ export function StellaTransactionsPage() {
     url.searchParams.delete("coa");
     window.history.replaceState(null, "", url.pathname + url.search);
   }, []);
+  // Job filter — deep-linkable as ?job=<job_id> (Unit Economics drill / the
+  // row chip). Server-side (?job_id on the API); same URL-sync discipline as
+  // the coa chip above.
+  const [jobFilter, setJobFilterState] = useState<string | null>(() => new URLSearchParams(location.search).get("job"));
+  const setJobFilter = useCallback((id: string | null) => {
+    setJobFilterState(id);
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set("job", id);
+    else url.searchParams.delete("job");
+    window.history.replaceState(null, "", url.pathname + url.search);
+  }, []);
 
   // One fetch per page (house rule): transactions + COA + overview money-bar
   // together; recurring is allowed to 404 until the Ingestion phase and the
@@ -139,6 +154,7 @@ export function StellaTransactionsPage() {
       const qs = new URLSearchParams();
       if (reimbOnly) qs.set("reimbursable", "open");
       if (coaFilter) qs.set("coa_account_id", coaFilter);
+      if (jobFilter) qs.set("job_id", jobFilter);
       const query = qs.toString();
       const [txns, accounts, ovw, rec] = await Promise.all([
         get<StellaTransaction[]>(`/ledger/transactions${query ? `?${query}` : ""}`),
@@ -155,7 +171,7 @@ export function StellaTransactionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [get, reimbOnly, coaFilter]);
+  }, [get, reimbOnly, coaFilter, jobFilter]);
 
   useEffect(() => {
     if (ready) reload();
@@ -174,6 +190,16 @@ export function StellaTransactionsPage() {
     if (!a) return "Selected account";
     return a.code ? `${a.code} — ${a.name}` : a.name;
   }, [coa, coaFilter]);
+
+  // Chip label for the ?job filter — "JOB-99001 — Patio install". The rows
+  // themselves echo job_number/title (server LEFT JOIN), so the first tagged
+  // row names the chip; a job with zero matching rows falls back generically.
+  const jobFilterLabel = useMemo(() => {
+    if (!jobFilter) return null;
+    const r = rows.find((x) => x.job_id && String(x.job_id).toLowerCase() === jobFilter.toLowerCase());
+    if (!r) return "Selected job";
+    return r.job_number ? `${r.job_number}${r.job_title ? ` — ${r.job_title}` : ""}` : r.job_title || "Selected job";
+  }, [rows, jobFilter]);
 
   const filtered = useMemo(() => {
     let out = rows;
@@ -209,8 +235,26 @@ export function StellaTransactionsPage() {
       key: "counterparty",
       header: "Counterparty / Description",
       render: (r) => (
-        <span style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>
-          {r.counterparty_name || r.description || r.memo || "—"}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>
+            {r.counterparty_name || r.description || r.memo || "—"}
+          </span>
+          {r.job_id && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setJobFilter(String(r.job_id));
+              }}
+              title={`Tagged to ${r.job_number || "a job"}${r.job_title ? ` — ${r.job_title}` : ""}. Click to filter.`}
+              style={{
+                fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 99,
+                background: `${STELLA_INDIGO}14`, color: STELLA_INDIGO,
+                border: 0, cursor: "pointer", whiteSpace: "nowrap",
+              }}
+            >
+              {r.job_number || "Job"}
+            </button>
+          )}
         </span>
       ),
     },
@@ -343,7 +387,7 @@ export function StellaTransactionsPage() {
             emptyMessage="No recurring templates yet."
           />
         )
-      ) : !rows.length && !loading && !reimbOnly && !coaFilter && !search ? (
+      ) : !rows.length && !loading && !reimbOnly && !coaFilter && !jobFilter && !search ? (
         <EmptyState
           title="No transactions yet"
           description="Transactions land here from bank feeds, receipts, recurring templates, and manual entry. Record your first income or expense with the + Record button above."
@@ -410,6 +454,41 @@ export function StellaTransactionsPage() {
                   onClick={clearCoaFilter}
                   aria-label="Clear account filter"
                   title="Clear account filter"
+                  style={{
+                    background: "transparent",
+                    border: 0,
+                    padding: 0,
+                    lineHeight: 1,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: STELLA_INDIGO,
+                    cursor: "pointer",
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            {jobFilter && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  padding: "6px 12px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  borderRadius: 99,
+                  border: `1px solid ${STELLA_INDIGO}`,
+                  background: `${STELLA_INDIGO}14`,
+                  color: STELLA_INDIGO,
+                }}
+              >
+                Job: {jobFilterLabel}
+                <button
+                  onClick={() => setJobFilter(null)}
+                  aria-label="Clear job filter"
+                  title="Clear job filter"
                   style={{
                     background: "transparent",
                     border: 0,

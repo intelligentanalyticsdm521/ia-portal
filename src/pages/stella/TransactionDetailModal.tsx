@@ -5,15 +5,20 @@
 // the OLIVER CustomerModal pattern; see IadmModal docblock) with the STELLA
 // product accent. Used by StellaTransactionsPage and StellaLedgerInboxPage.
 //
-// Editable: account (COA select), memo, date, reimbursable designation.
+// Editable: account (COA select), memo, date, reimbursable designation, and
+// (2026-08-13 Unit Economics build) the JOB tag — an optional, clearable
+// select over OLIVER's jobs (fetched once per open via useOliverApi; options
+// show "job_number — title"). Tagged expenses become DIRECT job costs in the
+// allocation engine; untagged overhead spreads by revenue share.
 // Actions: Mark reimbursed (PATCH reimbursed_at=now), Void (confirm() then
 // PATCH status:'void'), Save (PATCH the edited fields). The caller reloads
 // its list when onClose(changed=true) fires.
 import { useEffect, useRef, useState } from "react";
 import { useStellaApi } from "../../hooks/useStellaApi";
+import { useOliverApi } from "../../hooks/useOliverApi";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./StellaShell";
-import type { CoaAccount } from "./RecordTransactionModal";
+import { jobOptionLabel, type CoaAccount, type JobLite } from "./RecordTransactionModal";
 
 /** Minimal row shape the modal needs — Transactions rows satisfy it directly;
  *  Inbox items are mapped into it by the caller. */
@@ -29,6 +34,9 @@ export interface DetailTxn {
   raw_source?: string | null;
   is_reimbursable?: boolean | number | null;
   reimbursed_at?: string | null;
+  job_id?: string | null;
+  job_number?: string | null;
+  job_title?: string | null;
 }
 
 const STATUS_PILL: Record<string, { bg: string; color: string }> = {
@@ -62,6 +70,7 @@ export function TransactionDetailModal({
   onClose: (changed: boolean) => void;
 }) {
   const { get, patch, ready } = useStellaApi();
+  const oliver = useOliverApi();
 
   // COA for the account select — caller's list when given, else one fetch on open.
   const [fetchedCoa, setFetchedCoa] = useState<CoaAccount[] | null>(null);
@@ -75,8 +84,23 @@ export function TransactionDetailModal({
   }, [coa, get, ready]);
   const accounts = coa ?? fetchedCoa ?? [];
 
+  // OLIVER jobs for the Job tag select — one fetch per open. null = failed /
+  // not loaded; the select then falls back to the row's own job echo so an
+  // existing tag never disappears from view.
+  const [jobs, setJobs] = useState<JobLite[] | null>(null);
+  useEffect(() => {
+    if (!oliver.ready) return;
+    let cancelled = false;
+    oliver.get<JobLite[]>("/jobs?per_page=100")
+      .then((rows) => { if (!cancelled) setJobs(rows || []); })
+      .catch(() => { if (!cancelled) setJobs(null); });
+    return () => { cancelled = true; };
+    // oliver has a stable identity (useMemo in the hook) — this runs once per open.
+  }, [oliver]);
+
   // Editable state, seeded from the row.
   const [coaAccountId, setCoaAccountId] = useState(txn.coa_account_id || "");
+  const [jobId, setJobId] = useState(txn.job_id || "");
   const [memo, setMemo] = useState(txn.memo || "");
   const [postedDate, setPostedDate] = useState(() => (txn.posted_date ? String(txn.posted_date).slice(0, 10) : ""));
   const [isReimbursable, setIsReimbursable] = useState(!!txn.is_reimbursable);
@@ -96,6 +120,7 @@ export function TransactionDetailModal({
   const isVoid = status === "void";
   const dirty =
     coaAccountId !== (txn.coa_account_id || "") ||
+    jobId !== (txn.job_id || "") ||
     memo !== (txn.memo || "") ||
     postedDate !== (txn.posted_date ? String(txn.posted_date).slice(0, 10) : "") ||
     isReimbursable !== !!txn.is_reimbursable;
@@ -108,6 +133,7 @@ export function TransactionDetailModal({
     try {
       await patch(`/ledger/transactions/${txn.transaction_id}`, {
         coa_account_id: coaAccountId || null,
+        job_id: jobId || null,
         memo: memo.trim() || null,
         posted_date: postedDate || null,
         is_reimbursable: isReimbursable,
@@ -242,6 +268,25 @@ export function TransactionDetailModal({
               {(txn.raw_source || "manual").replace(/_/g, " ")}
             </div>
           </div>
+          <label>
+            <span style={fLabel}>Job (for margins)</span>
+            <select style={fInput} value={jobId} onChange={(e) => setJobId(e.target.value)} disabled={isVoid}>
+              <option value="">No job</option>
+              {/* Keep an existing tag visible even when the jobs fetch failed
+                  or the job fell outside the first page. */}
+              {jobId && !(jobs || []).some((j) => j.id === jobId) && (
+                <option value={jobId}>
+                  {txn.job_number ? `${txn.job_number} — ${txn.job_title || "Tagged job"}` : txn.job_title || "Tagged job"}
+                </option>
+              )}
+              {(jobs || []).map((j) => (
+                <option key={j.id} value={j.id}>{jobOptionLabel(j)}</option>
+              ))}
+            </select>
+            <span style={{ display: "block", fontSize: 10, color: "#94A3B8", marginTop: 3, lineHeight: 1.4 }}>
+              Tagged expenses count as direct job cost in Unit Economics margins.
+            </span>
+          </label>
         </div>
         <label>
           <span style={fLabel}>Memo</span>
