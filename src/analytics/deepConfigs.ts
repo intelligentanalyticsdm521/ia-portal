@@ -12,6 +12,7 @@
 
 import type { DeepConfig, DeepBand } from "./deepReport";
 import type { DetailItem } from "./detail";
+import { pluralize } from "./detail";
 
 const lastOf = (it: DetailItem) => it.series?.filter((v): v is number => v != null).slice(-1)[0] ?? null;
 
@@ -184,6 +185,110 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
       if (needs) return "Update published and not applied";
       return null;
     },
+  },
+
+  // ARION - Content Library (2026-08-14)
+  //
+  // Brandon: "I want them to see the things I would as a consultant point out
+  // as you are doing great in this area, don't lose focus here but here are the
+  // areas that you have opportunities."
+  //
+  // Series is WORD COUNT, so the depth bands below are the same thin / standard
+  // / long / pillar buckets the plugin already reports. Everything a consultant
+  // would actually flag lives in the opportunity lists, because that is the part
+  // an owner can act on without being an analyst.
+  content_library: {
+    bands: [
+      { label: "Pillar (2,000+)", color: "#15803d", test: (v) => v >= 2000 },
+      { label: "Long (1,000-1,999)", color: "#65a30d", test: (v) => v >= 1000 },
+      { label: "Standard (300-999)", color: "#f59e0b", test: (v) => v >= 300 },
+      { label: "Thin (under 300)", color: "#dc2626", test: () => true },
+    ],
+    segments: [
+      { label: "Pages vs posts", of: (it: DetailItem) => String(it.extra?.type || "unknown") },
+      {
+        label: "Freshness",
+        of: (it: DetailItem) => {
+          const d = Number(it.extra?.days_since_update || 0);
+          if (d <= 90) return "Updated in 90 days";
+          if (d <= 365) return "3-12 months";
+          return "Over a year";
+        },
+      },
+      {
+        label: "On-page SEO",
+        of: (it: DetailItem) => {
+          const v = Number(it.extra?.seo || 0);
+          if (v >= 80) return "Good (80+)";
+          if (v >= 50) return "Needs work (50-79)";
+          if (v > 0) return "Poor (under 50)";
+          return "Not scored";
+        },
+      },
+    ],
+    opportunities: [
+      {
+        title: "Competing with each other",
+        note: "More than one page declares the same focus keyword. They split the signal and Google picks one - usually not the one you would choose. Consolidate or re-target.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label, n)} are competing against each other for the same search term. You are bidding against yourself: Google picks one and buries the rest, and it rarely picks the page you would have chosen. Merging them into a single stronger page is usually the highest-value hour on this list.`,
+        filter: (it: DetailItem) => Number(it.extra?.competing || 1) > 1,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.competing || 0) - Number(a.extra?.competing || 0),
+      },
+      {
+        title: "No meta description",
+        note: "Google writes its own snippet when you leave this blank. It is the cheapest fix on the site and it changes what a searcher reads before deciding to click.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label, n)} have no meta description, so Google is writing your sales pitch for you - usually by grabbing the first sentence it finds. This is the cheapest fix on the whole site and it changes what a searcher reads before deciding whether to click you or the next result.`,
+        filter: (it: DetailItem) => String(it.extra?.meta) === "Missing",
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.words || 0) - Number(a.extra?.words || 0),
+      },
+      {
+        title: "Thin pages worth expanding",
+        note: "Under 300 words. Too short to answer a real question or to rank for one.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label, n)} are under 300 words - too short to answer a real question, which is what Google is trying to reward. Pick the two or three that describe what you actually sell and give each one a proper answer.`,
+        filter: (it: DetailItem) => Number(it.extra?.words || 0) < 300,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(a.extra?.words || 0) - Number(b.extra?.words || 0),
+      },
+      {
+        title: "Untouched for over a year",
+        note: "Content decays. A page that has not been revisited in a year is usually losing ground to someone who did revisit theirs.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label, n)} have not been touched in over a year. Content decays - the competitor who refreshed theirs is the one gaining the ground you lose.`,
+        filter: (it: DetailItem) => Number(it.extra?.days_since_update || 0) > 365,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.days_since_update || 0) - Number(a.extra?.days_since_update || 0),
+      },
+      {
+        title: "No focus keyword set",
+        note: "Nothing tells the page what it is trying to rank for, so nothing is measuring whether it does.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label, n)} have no focus keyword, so nothing declares what they are trying to rank for and nothing is measuring whether they do.`,
+        filter: (it: DetailItem) => !it.extra?.focus_keyword || it.extra?.focus_keyword === "-",
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.words || 0) - Number(a.extra?.words || 0),
+      },
+      {
+        title: "Hidden from search on purpose",
+        note: "Marked noindex. Correct for thank-you and policy pages - worth a look if anything here should be earning traffic.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label, n)} are marked hidden from search. That is correct for thank-you and policy pages - check that nothing here is a page you expected to be earning traffic.`,
+        filter: (it: DetailItem) => Number(it.extra?.noindex) === 1,
+      },
+    ],
+    // The reason sits next to the page, not in a legend. Most severe first.
+    flag: (it: DetailItem) => {
+      if (Number(it.extra?.competing || 1) > 1) {
+        return `Competing with ${Number(it.extra?.competing) - 1} other page(s) for "${it.extra?.focus_keyword}"`;
+      }
+      if (Number(it.extra?.noindex) === 1) return "Hidden from search (noindex)";
+      if (Number(it.extra?.words || 0) < 300) return "Thin - under 300 words";
+      if (Number(it.extra?.days_since_update || 0) > 365) {
+        return `Not updated in ${Math.round(Number(it.extra?.days_since_update) / 30)} months`;
+      }
+      if (String(it.extra?.meta) === "Missing") return "No meta description";
+      return null;
+    },
+    weightKey: "words",
   },
 
   // ══ ARGUS ══

@@ -32,6 +32,14 @@ export interface DeepOpportunityDef {
   filter: (it: DetailItem) => boolean;
   sortBy?: (a: DetailItem, b: DetailItem) => number;
   limit?: number;
+  /**
+   * The "what this means for you" line when this list leads the report.
+   * The default phrasing assumes a NEAR MISS ("close enough that a small push
+   * gets them over the line") — right for striking-distance keywords, nonsense
+   * for a problem list like pages competing for the same keyword. Any list that
+   * is a defect rather than an opportunity must supply its own (2026-08-14).
+   */
+  lede?: (n: number, itemLabel: string) => string;
 }
 export interface DeepConfig {
   /** Value bands → "count of items per band per month" stacked chart (B). */
@@ -64,7 +72,7 @@ export interface DeepReportData {
   distribution?: DeepDistribution;
   movements: DeepMovementTable[];
   segments: DeepSegmentTable[];
-  opportunities: Array<{ title: string; note?: string; items: DetailItem[] }>;
+  opportunities: Array<{ title: string; note?: string; items: DetailItem[]; lede?: (n: number, itemLabel: string) => string }>;
   flags: Record<string, string>;
   itemStats: Record<string, DeepItemStats>;
   /** "What this means" — friendly interpretation derived from the same data. */
@@ -239,7 +247,7 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
   const opportunities = (cfg?.opportunities || []).map((def) => {
     let list = trendItems.filter(def.filter);
     if (def.sortBy) list = [...list].sort(def.sortBy);
-    return { title: def.title, note: def.note, items: list.slice(0, def.limit ?? 8) };
+    return { title: def.title, note: def.note, lede: def.lede, items: list.slice(0, def.limit ?? 8) };
   }).filter((o) => o.items.length);
 
   // D — per-item stats + flags
@@ -315,7 +323,7 @@ function buildMeaning(ctx: {
   entered: DetailItem[];
   dropped: DetailItem[];
   distribution?: DeepDistribution;
-  opportunities: Array<{ title: string; note?: string; items: DetailItem[] }>;
+  opportunities: Array<{ title: string; note?: string; items: DetailItem[]; lede?: (n: number, itemLabel: string) => string }>;
   flags: Record<string, string>;
   itemStats: Record<string, DeepItemStats>;
   seriesLen: number;
@@ -499,8 +507,10 @@ function buildMeaning(ctx: {
   const opp = opportunities[0];
   if (opp?.items.length) {
     out.push({
-      tone: "good",
-      text: `${opp.items.length} ${pluralize(report.itemLabel, opp.items.length)} qualify as "${opp.title}" — already close enough that a small push gets them over the line. These are usually the cheapest wins on this page.`,
+      tone: opp.lede ? "watch" : "good",
+      text: opp.lede
+        ? opp.lede(opp.items.length, report.itemLabel)
+        : `${opp.items.length} ${pluralize(report.itemLabel, opp.items.length)} qualify as "${opp.title}" — already close enough that a small push gets them over the line. These are usually the cheapest wins on this page.`,
     });
   }
 

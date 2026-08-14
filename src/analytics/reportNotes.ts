@@ -118,6 +118,10 @@ export const REPORT_NOTES: Record<string, ReportNote> = {
     "Searches where Google already shows your site sometimes — but you have no page that properly answers them.",
     "This is demand you're leaving on the table. Each row is a page worth creating; the impressions trend shows whether that demand is growing while you wait.",
   ),
+  content_library: N(
+    "Every page and post on your website, reviewed one by one — length, on-page SEO score, meta description, focus keyword, and how long since it was last touched.",
+    "This is the review a consultant would do by hand on day one. Start with the opportunity lists: pages competing for the same keyword are the most expensive problem (you're bidding against yourself), missing meta descriptions are the cheapest fix. Thin and stale pages matter most on the pages that describe what you actually sell.",
+  ),
 
   // ══ ARION — Technical ══
   pagespeed_history: N(
@@ -135,6 +139,10 @@ export const REPORT_NOTES: Record<string, ReportNote> = {
   broken_links: N(
     "Links on your site that lead nowhere.",
     "Each one wastes a visitor's click and a little of Google's trust. Fix or redirect them — it's fast, and it's pure cleanup win.",
+  ),
+  component_upkeep: N(
+    "Every plugin and theme on your site, with whether it's current, has an update waiting, or has been left switched off and forgotten.",
+    "Out-of-date plugins are the number-one way small-business sites get hacked, and a dormant plugin is just as exploitable as an active one — deactivating isn't removing. Update what's behind; delete what you've stopped using.",
   ),
 
   // ══ SPARK ══
