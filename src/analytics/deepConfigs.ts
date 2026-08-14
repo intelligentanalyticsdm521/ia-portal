@@ -139,6 +139,53 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
   },
   oliver_top_customers: { weightKey: "ltv" },
 
+  // ══ ARION — Website Upkeep (2026-08-14) ══
+  // Brandon's question: "are you actually maintaining your website properly."
+  //
+  // Each component's series holds its STATUS CODE, one point per snapshot day:
+  //   0 = current · 1 = update available · 2 = dormant + outdated
+  // The engine's band distribution reads it.series, so a `feed` (no series)
+  // would leave bands silently dead. With the code in the series the bands read
+  // as "composition of the site today", and become a real 12-month distribution
+  // as the nightly snapshot accumulates — same config, no change needed.
+  component_upkeep: {
+    bands: [
+      { label: "Current", color: "#15803d", test: (v) => v === 0 },
+      { label: "Update available", color: "#f59e0b", test: (v) => v === 1 },
+      { label: "Dormant + outdated", color: "#dc2626", test: () => true },
+    ],
+    segments: [
+      // Active vs inactive is the segment owners never think about: an inactive
+      // plugin still ships its code and still carries its vulnerabilities.
+      { label: "Active vs inactive", of: (it: DetailItem) => String(it.extra?.state || "Unknown") },
+      { label: "By status", of: (it: DetailItem) => String(it.extra?.status || "Unknown") },
+      { label: "By author", of: (it: DetailItem) => String(it.extra?.author || "Unknown") },
+    ],
+    opportunities: [
+      {
+        title: "Update these first — running and behind",
+        note: "Active components with a published update waiting. Each one is a fix that exists and has not been taken.",
+        filter: (it: DetailItem) => Number(it.extra?.needs_update) === 1 && Number(it.extra?.is_active) === 1,
+        sortBy: (a: DetailItem, b: DetailItem) => String(a.name).localeCompare(String(b.name)),
+      },
+      {
+        title: "Dormant risk — inactive but still installed",
+        note: "Deactivated code still sits on the server and still carries its vulnerabilities. Remove it or keep it patched; leaving it is the worst of both.",
+        filter: (it: DetailItem) => Number(it.extra?.is_active) === 0,
+        sortBy: (a: DetailItem, b: DetailItem) => String(a.name).localeCompare(String(b.name)),
+      },
+    ],
+    // Surfaced per row so the reason is next to the component, not in a legend.
+    flag: (it: DetailItem) => {
+      const needs = Number(it.extra?.needs_update) === 1;
+      const active = Number(it.extra?.is_active) === 1;
+      if (needs && !active) return "Inactive AND outdated — its code still ships with the site";
+      if (!active) return "Inactive — still installed, still a surface";
+      if (needs) return "Update published and not applied";
+      return null;
+    },
+  },
+
   // ══ ARGUS ══
   argus_impressions_by_channel: { composition: true },
   argus_leads_by_source: { composition: true },

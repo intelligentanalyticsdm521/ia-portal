@@ -146,25 +146,40 @@ export const ARION_DASHBOARDS: DashboardDef[] = [
     key: "technical", label: "Technical & Site Health",
     question: "Is the foundation solid, and what's it costing me?",
     sections: [
-      { key: "speed_cwv", label: "Speed & Core Web Vitals", weight: 0.35, metrics: [
+      { key: "speed_cwv", label: "Speed & Core Web Vitals", weight: 0.3, metrics: [
         m("psi_mobile_perf", "Mobile Performance", "score", "gauge", true, 0.3, "Google PageSpeed score on mobile.", { value: 90, kind: "absolute" }),
         m("cwv_pass", "Core Web Vitals Pass", "score", "gauge", true, 0.25, "Whether you pass Google's real-world speed & stability bar.", { value: 100, kind: "absolute" }),
         m("lcp_ms", "Largest Contentful Paint", "ms", "line", false, 0.2, "How long the main content takes to load.", { value: 2500, kind: "absolute" }),
         m("psi_desktop_perf", "Desktop Performance", "score", "gauge", true, 0.15, "PageSpeed score on desktop.", { value: 90, kind: "absolute" }),
         m("cls", "Layout Shift", "number", "line", false, 0.1, "How much the page jumps while loading.", { value: 0.1, kind: "absolute" }),
       ]},
-      { key: "health_seo", label: "Health & SEO Compliance", weight: 0.25, metrics: [
+      { key: "health_seo", label: "Health & SEO Compliance", weight: 0.2, metrics: [
         m("psi_accessibility", "Accessibility", "score", "gauge", true, 0.35, "How usable your site is for everyone.", { value: 90, kind: "absolute" }),
         m("psi_seo", "Technical SEO", "score", "gauge", true, 0.25, "PageSpeed's technical-SEO score.", { value: 90, kind: "absolute" }),
         m("audit_errors", "Audit Errors", "count", "bar", false, 0.25, "Critical issues found by the site audit."),
         m("audit_warnings", "Audit Warnings", "count", "line", false, 0.15, "Non-critical issues to clean up."),
       ]},
-      { key: "security", label: "Security", weight: 0.25, metrics: [
+      { key: "security", label: "Security", weight: 0.2, metrics: [
         m("security_vulns", "Known Vulnerabilities", "count", "bar", false, 0.45, "Unpatched security holes.", { value: 0, kind: "absolute" }),
         m("security_blocked", "Threats Blocked", "number", "line", true, 0.2, "Attacks stopped by your firewall."),
         m("ssl_valid", "SSL Valid", "score", "stat", true, 0.35, "Whether your certificate is valid.", { value: 100, kind: "absolute" }),
       ]},
-      { key: "crawl", label: "Crawl & Indexation", weight: 0.15, metrics: [
+      // Website Upkeep (2026-08-14) — Brandon's Website question #1: "are you
+      // actually maintaining your website properly." Fed by
+      // arion.site_plugin_snapshot, which began carrying rows 2026-08-14 when
+      // the snapshot job's auth bug was fixed; every series below therefore has
+      // ONE point today and deepens by one per night with no further change.
+      //
+      // All four are LOWER-is-better counts judged against an absolute zero —
+      // "some updates pending" is not an industry-relative question, it is a
+      // yes/no about whether the site is being looked after.
+      { key: "upkeep", label: "Software Upkeep", weight: 0.2, metrics: [
+        m("upkeep_updates_pending", "Updates Pending", "count", "bar", false, 0.4, "Plugins and themes running behind their latest release. Each one is a published fix you have not taken.", { value: 0, kind: "absolute" }),
+        m("upkeep_health_critical", "Critical Health Issues", "count", "bar", false, 0.3, "WordPress's own Site Health check, critical items only.", { value: 0, kind: "absolute" }),
+        m("upkeep_core_behind", "WordPress Core Behind", "count", "stat", false, 0.2, "Whether WordPress itself has an update waiting.", { value: 0, kind: "absolute" }),
+        m("upkeep_health_recommended", "Recommended Fixes", "count", "line", false, 0.1, "Site Health items worth clearing but not urgent."),
+      ]},
+      { key: "crawl", label: "Crawl & Indexation", weight: 0.1, metrics: [
         m("indexable_pages", "Indexable Pages", "count", "line", true, 0.4, "Pages Google can index."),
         m("broken_links", "Broken Links", "count", "bar", false, 0.35, "Dead links hurting users and crawl.", { value: 0, kind: "absolute" }),
         m("redirects", "Redirects", "count", "line", false, 0.25, "Redirect chains slowing crawl."),
