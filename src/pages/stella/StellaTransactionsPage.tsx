@@ -13,6 +13,13 @@
 //     hero links here).
 //   - Amount column carries a "Personal card" indigo tag on is_reimbursable
 //     rows; row click opens the TransactionDetailModal (IadmModal standard).
+//
+// 2026-08-13 (Task E) — register drill target: the Chart of Accounts page
+// links here as ?coa=<coa_account_id> (the QBO account-register pattern).
+// The param becomes a server-side ?coa_account_id API filter plus a
+// dismissible "Account: 6050 — Vehicle & Fuel ×" chip; clearing the chip
+// clears both the filter and the URL param (same URL-sync discipline as the
+// reimbursable pill below).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useStellaApi } from "../../hooks/useStellaApi";
@@ -110,6 +117,16 @@ export function StellaTransactionsPage() {
     else url.searchParams.delete("reimbursable");
     window.history.replaceState(null, "", url.pathname + url.search);
   }, []);
+  // Account filter — the COA register drill deep-links here as ?coa=<id>.
+  // Server-side (?coa_account_id on the API); cleared via the chip's ×, which
+  // also strips the URL param (same URL-sync pattern as the reimbursable pill).
+  const [coaFilter, setCoaFilterState] = useState<string | null>(() => new URLSearchParams(location.search).get("coa"));
+  const clearCoaFilter = useCallback(() => {
+    setCoaFilterState(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("coa");
+    window.history.replaceState(null, "", url.pathname + url.search);
+  }, []);
 
   // One fetch per page (house rule): transactions + COA + overview money-bar
   // together; recurring is allowed to 404 until the Ingestion phase and the
@@ -119,8 +136,12 @@ export function StellaTransactionsPage() {
     setError(null);
     try {
       const month = new Date().toISOString().slice(0, 7);
+      const qs = new URLSearchParams();
+      if (reimbOnly) qs.set("reimbursable", "open");
+      if (coaFilter) qs.set("coa_account_id", coaFilter);
+      const query = qs.toString();
       const [txns, accounts, ovw, rec] = await Promise.all([
-        get<StellaTransaction[]>(`/ledger/transactions${reimbOnly ? "?reimbursable=open" : ""}`),
+        get<StellaTransaction[]>(`/ledger/transactions${query ? `?${query}` : ""}`),
         get<CoaAccount[]>("/ledger/coa").catch(() => [] as CoaAccount[]),
         get<OverviewMoney>(`/ledger/overview?month=${month}`).catch(() => null),
         get<RecurringRow[]>("/ledger/recurring").catch(() => null),
@@ -134,7 +155,7 @@ export function StellaTransactionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [get, reimbOnly]);
+  }, [get, reimbOnly, coaFilter]);
 
   useEffect(() => {
     if (ready) reload();
@@ -145,6 +166,14 @@ export function StellaTransactionsPage() {
     for (const a of coa) m.set(a.coa_account_id, a.name);
     return m;
   }, [coa]);
+
+  // Chip label for the ?coa account filter — "6050 — Vehicle & Fuel".
+  const coaFilterLabel = useMemo(() => {
+    if (!coaFilter) return null;
+    const a = coa.find((x) => x.coa_account_id === coaFilter);
+    if (!a) return "Selected account";
+    return a.code ? `${a.code} — ${a.name}` : a.name;
+  }, [coa, coaFilter]);
 
   const filtered = useMemo(() => {
     let out = rows;
@@ -314,7 +343,7 @@ export function StellaTransactionsPage() {
             emptyMessage="No recurring templates yet."
           />
         )
-      ) : !rows.length && !loading && !reimbOnly && !search ? (
+      ) : !rows.length && !loading && !reimbOnly && !coaFilter && !search ? (
         <EmptyState
           title="No transactions yet"
           description="Transactions land here from bank feeds, receipts, recurring templates, and manual entry. Record your first income or expense with the + Record button above."
@@ -361,6 +390,41 @@ export function StellaTransactionsPage() {
                 </span>
               )}
             </button>
+            {coaFilter && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  padding: "6px 12px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  borderRadius: 99,
+                  border: `1px solid ${STELLA_INDIGO}`,
+                  background: `${STELLA_INDIGO}14`,
+                  color: STELLA_INDIGO,
+                }}
+              >
+                Account: {coaFilterLabel}
+                <button
+                  onClick={clearCoaFilter}
+                  aria-label="Clear account filter"
+                  title="Clear account filter"
+                  style={{
+                    background: "transparent",
+                    border: 0,
+                    padding: 0,
+                    lineHeight: 1,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: STELLA_INDIGO,
+                    cursor: "pointer",
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            )}
           </div>
           {filtered.length === 0 && reimbOnly ? (
             <EmptyState

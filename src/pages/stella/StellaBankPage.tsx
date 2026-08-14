@@ -39,6 +39,7 @@ interface PlaidItem {
   error_code?: string | null;
   last_synced_at?: string | null;
   created_at?: string | null;
+  is_personal_card?: boolean | number | null;
 }
 
 function fmtDateTime(d?: string | null): string | null {
@@ -90,7 +91,7 @@ function PlaidLinkLauncher({
 }
 
 export function StellaBankPage() {
-  const { get, post, ready } = useStellaApi();
+  const { get, post, patch, ready } = useStellaApi();
   const [status, setStatus] = useState<PlaidStatus | null>(null);
   const [items, setItems] = useState<PlaidItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,12 +101,12 @@ export function StellaBankPage() {
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [syncingItemId, setSyncingItemId] = useState<string | null>(null);
-  // PERSONAL-USE TODO: stella.raw_plaid_item has no designation column yet, so
-  // the "Personal card — business use" chip is UI-only local state (item_id →
-  // designated). Persisting it needs a backend field — likely account-level
-  // once /sync lands raw_plaid_account rows — then this becomes a PATCH.
-  // The hint under the list says so honestly; nothing pretends to save.
-  const [personalUse, setPersonalUse] = useState<Record<string, boolean>>({});
+  // Personal-card designation persists (migration 156: raw_plaid_item.
+  // is_personal_card) — the chip reflects the API row and toggles via
+  // PATCH /ledger/plaid/items/:rawPlaidItemId. New outflows promoted from a
+  // designated item default to needs-reimbursement. (The overnight verify
+  // caught the earlier UI-only local state that never saved.)
+  const [designating, setDesignating] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setError(null);
@@ -126,6 +127,24 @@ export function StellaBankPage() {
   useEffect(() => {
     if (ready) reload();
   }, [ready, reload]);
+
+  // Persisted personal-card designation — PATCH then reload so the chip, the
+  // Overview accounts card, and future promotions all reflect the same truth.
+  const toggleDesignation = useCallback(
+    async (it: PlaidItem) => {
+      setDesignating(it.raw_plaid_item_id);
+      setActionError(null);
+      try {
+        await patch(`/ledger/plaid/items/${it.raw_plaid_item_id}`, { is_personal_card: !it.is_personal_card });
+        await reload();
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : "Could not update the designation. Please try again.");
+      } finally {
+        setDesignating(null);
+      }
+    },
+    [patch, reload]
+  );
 
   // (b) live connect: link token → Plaid Link → exchange → reload.
   const startConnect = useCallback(async () => {
@@ -250,7 +269,7 @@ export function StellaBankPage() {
         ) : (
           <div style={{ marginTop: 6 }}>
             {items.map((it, i) => {
-              const designated = !!personalUse[it.item_id];
+              const designated = !!it.is_personal_card;
               const synced = fmtDateTime(it.last_synced_at);
               const syncing = syncingItemId === it.item_id;
               return (
@@ -278,8 +297,9 @@ export function StellaBankPage() {
                     </div>
                   </div>
                   <button
-                    onClick={() => setPersonalUse((p) => ({ ...p, [it.item_id]: !p[it.item_id] }))}
-                    title="Designate this as a personal card used for the business — its expenses default to needs-reimbursement"
+                    onClick={() => toggleDesignation(it)}
+                    disabled={designating === it.raw_plaid_item_id}
+                    title="Designate this as a personal card used for the business — its NEW expenses default to needs-reimbursement"
                     style={{
                       display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", fontSize: 10,
                       fontWeight: 700, borderRadius: 99, cursor: "pointer",
@@ -297,8 +317,9 @@ export function StellaBankPage() {
               );
             })}
             <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 8, lineHeight: 1.5 }}>
-              Personal-card designation isn't saved yet — the account-level field lands with the feeds schema, and
-              designated cards will then default their expenses to needs-reimbursement.
+              Personal-card designation saves instantly. New charges from a designated card default to
+              "needs reimbursement" and roll into the Owed to you total — already-imported transactions
+              are never re-flagged automatically.
             </div>
           </div>
         )}

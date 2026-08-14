@@ -35,12 +35,19 @@ interface LedgerOverview {
     amount?: number | string | null;
     next_date?: string | null;
   }>;
+  // Shape matches GET /ledger/overview accounts[] (flattened from the Plaid
+  // balances cache): institution_name/current/available — the overnight verify
+  // caught this interface expecting a nonexistent `balance`/`institution`.
   accounts: Array<{
     account_id?: string;
     name?: string | null;
-    institution?: string | null;
+    institution_name?: string | null;
     mask?: string | null;
-    balance?: number | string | null;
+    type?: string | null;
+    subtype?: string | null;
+    current?: number | string | null;
+    available?: number | string | null;
+    is_personal_card?: boolean | number | null;
   }>;
 }
 
@@ -281,11 +288,19 @@ export function StellaOverviewPage() {
                       <div>
                         <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>
                           {a.name || "Account"}{a.mask ? ` ••${a.mask}` : ""}
+                          {!!a.is_personal_card && (
+                            <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, color: STELLA_INDIGO, background: `${STELLA_INDIGO}14`, padding: "1px 6px", borderRadius: 99, verticalAlign: "middle" }}>Personal</span>
+                          )}
                         </div>
-                        {a.institution && <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 1 }}>{a.institution}</div>}
+                        {a.institution_name && <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 1 }}>{a.institution_name}</div>}
                       </div>
-                      {a.balance != null && (
-                        <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24", fontVariantNumeric: "tabular-nums" }}>{fmtMoney(toNum(a.balance))}</div>
+                      {a.current != null && (
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24", fontVariantNumeric: "tabular-nums" }}>{fmtMoney(toNum(a.current))}</div>
+                          {a.available != null && toNum(a.available) !== toNum(a.current) && (
+                            <div style={{ fontSize: 9, color: "#94A3B8", fontVariantNumeric: "tabular-nums" }}>{fmtMoney(toNum(a.available))} available</div>
+                          )}
+                        </div>
                       )}
                     </div>
                   ))}

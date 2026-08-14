@@ -1,43 +1,48 @@
 // StellaLedgerInboxPage — Ledger → Inbox.
 //
-// The needs-review queue (uncategorized / flagged / duplicate / OCR-pending) —
-// the core bookkeeping UX. QBO-inspired one-tap accept/reject, but reviewable.
-// Reads GET /ledger/inbox; accept/reject POST to /ledger/inbox/:id/accept|reject.
-// Row click opens the TransactionDetailModal (IadmModal standard) so a line
-// can be recategorized / memo'd / voided without leaving the queue.
+// The needs-review queue (status IN needs_categorization / flagged) — the core
+// bookkeeping UX. Reads GET /ledger/inbox (raw stella.[transaction] rows).
+// Quick-categorize: every needs_categorization row carries an inline compact
+// COA select (expense accounts first for outflows, revenue first for inflows)
+// plus a one-tap "Categorize" button that PATCHes /ledger/transactions/:id
+// with { coa_account_id, status: 'categorized' } — the row leaves the inbox on
+// success with a count-down flash. Row click opens the TransactionDetailModal
+// (IadmModal standard) so a line can be memo'd / voided / reimbursed without
+// leaving the queue (inline controls stopPropagation so they don't open it).
+// Duplicate / OCR-pending review reasons return with P3 receipt capture.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useStellaApi } from "../../hooks/useStellaApi";
 import { DataTable, EmptyState, Button, FilterBar, type Column } from "../../components/oliver/ui";
-import { CheckCircle2, XCircle } from "lucide-react";
-import { StellaShell, STELLA_INDIGO, fmtMoney } from "./StellaShell";
+import { CheckCircle2 } from "lucide-react";
+import { StellaShell, STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./StellaShell";
 import { TransactionDetailModal, type DetailTxn } from "./TransactionDetailModal";
+import type { CoaAccount } from "./RecordTransactionModal";
 
+// GET /ledger/inbox row — raw stella.[transaction] columns (subset we use).
 interface InboxItem {
   transaction_id: string;
-  txn_date: string;
-  counterparty_name: string | null;
-  suggested_account: string | null;
+  posted_date: string;
+  description: string | null;
   memo: string | null;
-  amount: number | string;
-  review_reason: string | null; // uncategorized | flagged | duplicate | ocr_pending
+  amount_signed: number | string;
+  direction: string; // inflow | outflow
+  status: string; // needs_categorization | flagged
+  coa_account_id: string | null;
+  raw_source?: string | null;
   trust_flags?: string[] | null;
   is_reimbursable?: boolean | number | null;
   reimbursed_at?: string | null;
 }
 
-const REASON_PILL: Record<string, { bg: string; color: string; label: string }> = {
-  uncategorized: { bg: "#FEF3C7", color: "#92400E", label: "Uncategorized" },
+const STATUS_PILL: Record<string, { bg: string; color: string; label: string }> = {
+  needs_categorization: { bg: "#FEF3C7", color: "#92400E", label: "Uncategorized" },
   flagged: { bg: "#FEE2E2", color: "#991B1B", label: "Flagged" },
-  duplicate: { bg: "#FCE7F3", color: "#9D174D", label: "Possible duplicate" },
-  ocr_pending: { bg: "#E0E7FF", color: "#3730A3", label: "OCR pending" },
 };
 
 const FILTER_PILLS = [
   { key: "all", label: "All" },
-  { key: "uncategorized", label: "Uncategorized" },
+  { key: "needs_categorization", label: "Uncategorized" },
   { key: "flagged", label: "Flagged" },
-  { key: "duplicate", label: "Duplicates" },
-  { key: "ocr_pending", label: "OCR pending" },
 ];
 
 function fmtDate(d?: string | null) {
@@ -53,14 +58,17 @@ function toNum(v: number | string | null | undefined): number {
 }
 
 export function StellaLedgerInboxPage() {
-  const { get, post, ready } = useStellaApi();
+  const { get, patch, ready } = useStellaApi();
   const [rows, setRows] = useState<InboxItem[]>([]);
+  const [coa, setCoa] = useState<CoaAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [filter, setFilter] = useState("all");
   const [busy, setBusy] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [detail, setDetail] = useState<InboxItem | null>(null);
+  // Per-row pending COA pick for the inline quick-categorize select.
+  const [picks, setPicks] = useState<Record<string, string>>({});
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -79,56 +87,105 @@ export function StellaLedgerInboxPage() {
     if (ready) reload();
   }, [ready, reload]);
 
+  // COA once per page — feeds every row's quick-categorize select AND the
+  // detail modal (which skips its own fetch when handed a list).
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    get<CoaAccount[]>("/ledger/coa")
+      .then((accounts) => { if (!cancelled) setCoa(accounts || []); })
+      .catch(() => { if (!cancelled) setCoa([]); });
+    return () => { cancelled = true; };
+  }, [get, ready]);
+
   const filtered = useMemo(() => {
     if (filter === "all") return rows;
-    return rows.filter((r) => (r.review_reason || "uncategorized") === filter);
+    return rows.filter((r) => (r.status || "needs_categorization") === filter);
   }, [rows, filter]);
 
   function flashMsg(m: string) {
     setFlash(m);
-    setTimeout(() => setFlash(null), 3000);
+    setTimeout(() => setFlash(null), 4000);
   }
 
-  async function act(id: string, verb: "accept" | "reject") {
-    setBusy(id);
+  const activeCoa = useMemo(
+    () => coa.filter((a) => a.is_active !== false && a.is_active !== 0),
+    [coa]
+  );
+
+  async function categorize(r: InboxItem) {
+    const coaAccountId = picks[r.transaction_id];
+    if (!coaAccountId) return;
+    setBusy(r.transaction_id);
     try {
-      await post(`/ledger/inbox/${id}/${verb}`);
-      flashMsg(verb === "accept" ? "Accepted into the ledger." : "Rejected.");
-      setRows((prev) => prev.filter((r) => r.transaction_id !== id));
+      await patch(`/ledger/transactions/${r.transaction_id}`, {
+        coa_account_id: coaAccountId,
+        status: "categorized",
+      });
+      const account = activeCoa.find((a) => a.coa_account_id === coaAccountId);
+      setRows((prev) => {
+        const next = prev.filter((x) => x.transaction_id !== r.transaction_id);
+        flashMsg(
+          `Categorized "${r.description || "transaction"}" → ${account?.name || "account"}. ` +
+          (next.length === 0 ? "Inbox zero — all caught up." : `${next.length} left to review.`)
+        );
+        return next;
+      });
+      setPicks((prev) => {
+        const { [r.transaction_id]: _gone, ...rest } = prev;
+        return rest;
+      });
     } catch (e) {
-      alert(e instanceof Error ? e.message : `${verb} failed`);
+      alert(e instanceof Error ? e.message : "Categorize failed");
     } finally {
       setBusy(null);
     }
   }
 
+  // Inline select options — the row's own direction leads (expense accounts
+  // first for outflows, revenue first for inflows), rest under "Other".
+  function coaOptions(r: InboxItem) {
+    const preferredType = r.direction === "inflow" ? "revenue" : "expense";
+    const preferred = activeCoa.filter((a) => a.type === preferredType);
+    const others = activeCoa.filter((a) => a.type !== preferredType);
+    const optionFor = (a: CoaAccount) => (
+      <option key={a.coa_account_id} value={a.coa_account_id}>
+        {a.code ? `${a.code} — ${a.name}` : a.name}
+      </option>
+    );
+    return (
+      <>
+        <option value="">Pick account…</option>
+        {preferred.length > 0 && (
+          <optgroup label={preferredType === "revenue" ? "Revenue" : "Expenses"}>{preferred.map(optionFor)}</optgroup>
+        )}
+        {others.length > 0 && <optgroup label="Other accounts">{others.map(optionFor)}</optgroup>}
+      </>
+    );
+  }
+
   const columns: Column<InboxItem>[] = [
     {
-      key: "txn_date",
+      key: "posted_date",
       header: "Date",
-      render: (r) => <span style={{ fontSize: 11, color: "#0B1C24" }}>{fmtDate(r.txn_date)}</span>,
+      render: (r) => <span style={{ fontSize: 11, color: "#0B1C24" }}>{fmtDate(r.posted_date)}</span>,
     },
     {
-      key: "counterparty_name",
-      header: "Counterparty",
+      key: "description",
+      header: "Description",
       render: (r) => (
         <div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>{r.counterparty_name || "—"}</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>{r.description || "—"}</div>
           {r.memo && <div style={{ fontSize: 10, color: "#94A3B8" }}>{r.memo}</div>}
         </div>
       ),
     },
     {
-      key: "suggested_account",
-      header: "Suggested category",
-      render: (r) => <span style={{ fontSize: 11, color: "#5A7A8A" }}>{r.suggested_account || "—"}</span>,
-    },
-    {
-      key: "amount",
+      key: "amount_signed",
       header: "Amount",
       align: "right",
       render: (r) => {
-        const n = toNum(r.amount);
+        const n = toNum(r.amount_signed);
         return (
           <span style={{ fontSize: 12, fontWeight: 600, color: n >= 0 ? "#047857" : "#0B1C24", fontVariantNumeric: "tabular-nums" }}>
             {n >= 0 ? "+" : "−"}
@@ -138,10 +195,10 @@ export function StellaLedgerInboxPage() {
       },
     },
     {
-      key: "review_reason",
+      key: "status",
       header: "Reason",
       render: (r) => {
-        const p = REASON_PILL[r.review_reason || "uncategorized"] || REASON_PILL.uncategorized;
+        const p = STATUS_PILL[r.status] || STATUS_PILL.needs_categorization;
         return (
           <span style={{ display: "inline-block", padding: "3px 9px", borderRadius: 99, background: p.bg, color: p.color, fontSize: 11, fontWeight: 600 }}>
             {p.label}
@@ -150,21 +207,42 @@ export function StellaLedgerInboxPage() {
       },
     },
     {
-      key: "actions",
-      header: "",
+      key: "categorize",
+      header: "Quick categorize",
       align: "right",
-      // stopPropagation so the one-tap buttons don't ALSO open the row's
+      // stopPropagation so the inline controls don't ALSO open the row's
       // detail modal (rows are clickable — see onRowClick below).
-      render: (r) => (
-        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
-          <Button variant="secondary" size="sm" onClick={() => act(r.transaction_id, "accept")} disabled={busy === r.transaction_id}>
-            <CheckCircle2 size={11} color="#059669" /> Accept
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => act(r.transaction_id, "reject")} disabled={busy === r.transaction_id}>
-            <XCircle size={11} color="#dc2626" />
-          </Button>
-        </div>
-      ),
+      render: (r) =>
+        r.status === "needs_categorization" ? (
+          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+            <select
+              value={picks[r.transaction_id] || ""}
+              onChange={(e) => setPicks((prev) => ({ ...prev, [r.transaction_id]: e.target.value }))}
+              disabled={busy === r.transaction_id || !activeCoa.length}
+              style={{
+                maxWidth: 190,
+                padding: "5px 6px",
+                fontSize: 11,
+                color: "#0B1C24",
+                background: "#fff",
+                border: `1px solid ${STELLA_LAVENDER}`,
+                borderRadius: 6,
+              }}
+            >
+              {coaOptions(r)}
+            </select>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => categorize(r)}
+              disabled={busy === r.transaction_id || !picks[r.transaction_id]}
+            >
+              <CheckCircle2 size={11} color="#059669" /> {busy === r.transaction_id ? "Saving…" : "Categorize"}
+            </Button>
+          </div>
+        ) : (
+          <span style={{ fontSize: 11, color: "#94A3B8" }}>Open to review</span>
+        ),
     },
   ];
 
@@ -172,12 +250,13 @@ export function StellaLedgerInboxPage() {
   function toDetailTxn(r: InboxItem): DetailTxn {
     return {
       transaction_id: r.transaction_id,
-      posted_date: r.txn_date,
-      counterparty_name: r.counterparty_name,
+      posted_date: r.posted_date,
+      counterparty_name: r.description,
       memo: r.memo,
-      amount_signed: r.amount,
-      coa_account_id: null,
-      status: r.review_reason === "flagged" ? "flagged" : "needs_categorization",
+      amount_signed: r.amount_signed,
+      coa_account_id: r.coa_account_id,
+      status: r.status,
+      raw_source: r.raw_source,
       is_reimbursable: r.is_reimbursable,
       reimbursed_at: r.reimbursed_at,
     };
@@ -186,7 +265,7 @@ export function StellaLedgerInboxPage() {
   return (
     <StellaShell
       title="Inbox"
-      subtitle="Review new transactions — accept them into the ledger or reject the noise. One tap, always reviewable."
+      subtitle="Review new transactions — pick an account and categorize in one tap, or open a row for the full detail."
       showRecord
       onRecorded={() => {
         reload();
@@ -204,7 +283,7 @@ export function StellaLedgerInboxPage() {
       {!rows.length && !loading ? (
         <EmptyState
           title="Inbox zero"
-          description="Nothing needs review right now. New transactions from bank feeds, receipts, and recurring templates will queue up here for a quick accept or reject."
+          description="Nothing needs review right now. New transactions from bank feeds, receipts, and recurring templates will queue up here for a quick categorize."
         />
       ) : (
         <>
@@ -222,6 +301,7 @@ export function StellaLedgerInboxPage() {
       {detail && (
         <TransactionDetailModal
           txn={toDetailTxn(detail)}
+          coa={coa.length ? coa : undefined}
           onClose={(changed) => {
             setDetail(null);
             if (changed) reload();
