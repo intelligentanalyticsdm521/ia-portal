@@ -203,6 +203,228 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
     },
   },
 
+  // ── SE Ranking: the competitor and backlink questions ─────────────────
+  // 403k position rows and 1,049 backlink rows fed two reports. The competitor
+  // column was never read, so "how do we compare to the people we lose work
+  // to" — the first thing a client asks — had no answer in the product.
+  competitor_rankings: {
+    bands: POSITION_BANDS,
+    segments: [
+      { label: "Who", of: (it: DetailItem) => String(it.extra?.is_you || "Competitor") },
+    ],
+    opportunities: [
+      {
+        title: "Ahead of you on page one",
+        note: "These domains hold more page-one positions than you do for the same searches.",
+        lede: (n: number, label: string) =>
+          `${n} competing ${pluralize(label.toLowerCase(), n)} hold more page-one positions than you do for the same searches. That is the gap in plain terms — and the keyword report tells you which specific searches to take back first.`,
+        filter: (it: DetailItem) => String(it.extra?.is_you) === "Competitor" && Number(it.extra?.top10 || 0) > 0,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.top10 || 0) - Number(a.extra?.top10 || 0),
+      },
+    ],
+    flag: (it: DetailItem) => (String(it.extra?.is_you) === "You" ? "This is you" : null),
+    weightKey: "keywords",
+  },
+
+  backlink_quality: {
+    bands: [
+      { label: "Strong (60+)", color: "#15803d", test: (v) => v >= 60 },
+      { label: "Decent (30-59)", color: "#65a30d", test: (v) => v >= 30 },
+      { label: "Weak (10-29)", color: "#f59e0b", test: (v) => v >= 10 },
+      { label: "Negligible", color: "#94a3b8", test: () => true },
+    ],
+    segments: [
+      { label: "Status", of: (it: DetailItem) => String(it.extra?.status || "unknown") },
+    ],
+    opportunities: [
+      {
+        title: "Links you have lost",
+        note: "These used to point at you and no longer do. A lost link from a strong domain is worth chasing.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} that used to link to you no longer do. A partner site redesigned, a directory pruned, an article was rewritten. A polite email recovers more of these than people expect, and it is cheaper than earning a new one.`,
+        filter: (it: DetailItem) => /lost|removed|broken/i.test(String(it.extra?.status)),
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.authority || 0) - Number(a.extra?.authority || 0),
+      },
+      {
+        title: "Your strongest links",
+        note: "The domains carrying the most weight. Worth keeping the relationship warm.",
+        filter: (it: DetailItem) => Number(it.extra?.authority || 0) >= 50,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.authority || 0) - Number(a.extra?.authority || 0),
+      },
+    ],
+    flag: (it: DetailItem) => (/lost|removed|broken/i.test(String(it.extra?.status)) ? `Lost — was authority ${it.extra?.authority}` : null),
+    weightKey: "authority",
+  },
+
+  // Anchors are a ranking signal AND a spam signal. The same commercial phrase
+  // over and over reads as bought links, and nothing else here would show it.
+  anchor_text_profile: {
+    segments: [
+      { label: "Anchor type", of: (it: DetailItem) => String(it.extra?.kind || "-") },
+    ],
+    opportunities: [
+      {
+        title: "One phrase dominates",
+        note: "A natural link profile is mostly your brand name and bare URLs. A commercial phrase taking a large share reads as bought links.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} take an outsized share of your links. A natural profile is mostly your business name and bare URLs; one commercial phrase repeated across many domains is what a paid-link pattern looks like to Google.`,
+        filter: (it: DetailItem) => Number(it.extra?.share || 0) >= 25 && String(it.extra?.kind) === "Keyword",
+      },
+    ],
+    flag: (it: DetailItem) =>
+      Number(it.extra?.share || 0) >= 25 && String(it.extra?.kind) === "Keyword"
+        ? `${it.extra?.share}% of all links use this exact phrase` : null,
+    weightKey: "links",
+  },
+
+  // ── PageSpeed, built out to mirror what Google itself reports ──────────
+  // Brandon 2026-08-14: "we can pull the full page speed insights, why aren't
+  // we just literally building out the same reporting that they have."
+  // Four categories, each a list of failing checks ordered by the weight
+  // Lighthouse gives them — which is the difference between a list and a
+  // priority order.
+  pagespeed_performance_audits: {
+    bands: [
+      { label: "High impact", color: "#dc2626", test: (v) => v >= 10 },
+      { label: "Moderate", color: "#f59e0b", test: (v) => v >= 3 },
+      { label: "Low", color: "#65a30d", test: (v) => v > 0 },
+      { label: "No weight", color: "#94a3b8", test: () => true },
+    ],
+    segments: [
+      { label: "Device", of: (it: DetailItem) => String(it.extra?.strategy || "-") },
+    ],
+    opportunities: [
+      {
+        title: "Fix these first",
+        note: "Ordered by how much each one costs the score. The top of this list is where an hour of developer time goes furthest.",
+        lede: (n: number, label: string) =>
+          `${n} speed ${pluralize("check", n)} are failing with real weight behind them. These are ordered by how much each one costs the score, so the top of the list is where an hour of developer time goes furthest.`,
+        filter: (it: DetailItem) => Number(it.extra?.impact || 0) >= 3,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.impact || 0) - Number(a.extra?.impact || 0),
+      },
+    ],
+    flag: (it: DetailItem) =>
+      Number(it.extra?.affected) > 1 ? `${it.extra?.affected} elements on the page` : null,
+    weightKey: "impact",
+  },
+
+  pagespeed_accessibility_audits: {
+    bands: [
+      { label: "High impact", color: "#dc2626", test: (v) => v >= 10 },
+      { label: "Moderate", color: "#f59e0b", test: (v) => v >= 3 },
+      { label: "Low", color: "#65a30d", test: (v) => v > 0 },
+      { label: "No weight", color: "#94a3b8", test: () => true },
+    ],
+    segments: [
+      { label: "Device", of: (it: DetailItem) => String(it.extra?.strategy || "-") },
+    ],
+    opportunities: [
+      {
+        title: "Fix these first",
+        note: "Ordered by how much each one costs the score. The top of this list is where an hour of developer time goes furthest.",
+        lede: (n: number, label: string) =>
+          `${n} accessibility ${pluralize("check", n)} are failing. Each one is somebody who cannot use part of your site — a screen reader announcing a button as \"button\", text nobody can read against its background. It is also the area most likely to attract a complaint.`,
+        filter: (it: DetailItem) => Number(it.extra?.impact || 0) >= 3,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.impact || 0) - Number(a.extra?.impact || 0),
+      },
+    ],
+    flag: (it: DetailItem) =>
+      Number(it.extra?.affected) > 1 ? `${it.extra?.affected} elements on the page` : null,
+    weightKey: "impact",
+  },
+
+  pagespeed_seo_audits: {
+    bands: [
+      { label: "High impact", color: "#dc2626", test: (v) => v >= 10 },
+      { label: "Moderate", color: "#f59e0b", test: (v) => v >= 3 },
+      { label: "Low", color: "#65a30d", test: (v) => v > 0 },
+      { label: "No weight", color: "#94a3b8", test: () => true },
+    ],
+    segments: [
+      { label: "Device", of: (it: DetailItem) => String(it.extra?.strategy || "-") },
+    ],
+    opportunities: [
+      {
+        title: "Fix these first",
+        note: "Ordered by how much each one costs the score. The top of this list is where an hour of developer time goes furthest.",
+        lede: (n: number, label: string) =>
+          `${n} technical SEO ${pluralize("check", n)} are failing. These are the mechanical things Google needs in order to read the page properly — not content problems, and usually quick.`,
+        filter: (it: DetailItem) => Number(it.extra?.impact || 0) >= 3,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.impact || 0) - Number(a.extra?.impact || 0),
+      },
+    ],
+    flag: (it: DetailItem) =>
+      Number(it.extra?.affected) > 1 ? `${it.extra?.affected} elements on the page` : null,
+    weightKey: "impact",
+  },
+
+  pagespeed_best_practice_audits: {
+    bands: [
+      { label: "High impact", color: "#dc2626", test: (v) => v >= 10 },
+      { label: "Moderate", color: "#f59e0b", test: (v) => v >= 3 },
+      { label: "Low", color: "#65a30d", test: (v) => v > 0 },
+      { label: "No weight", color: "#94a3b8", test: () => true },
+    ],
+    segments: [
+      { label: "Device", of: (it: DetailItem) => String(it.extra?.strategy || "-") },
+    ],
+    opportunities: [
+      {
+        title: "Fix these first",
+        note: "Ordered by how much each one costs the score. The top of this list is where an hour of developer time goes furthest.",
+        lede: (n: number, label: string) =>
+          `${n} best-practice ${pluralize("check", n)} are failing — security, deprecated APIs, console errors, out-of-date libraries. Individually small, and collectively the difference between a site that is maintained and one that is not.`,
+        filter: (it: DetailItem) => Number(it.extra?.impact || 0) >= 3,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.impact || 0) - Number(a.extra?.impact || 0),
+      },
+    ],
+    flag: (it: DetailItem) =>
+      Number(it.extra?.affected) > 1 ? `${it.extra?.affected} elements on the page` : null,
+    weightKey: "impact",
+  },
+
+  pagespeed_scores: {
+    bands: [
+      { label: "Good (90+)", color: "#15803d", test: (v) => v >= 90 },
+      { label: "Needs work (50-89)", color: "#f59e0b", test: (v) => v >= 50 },
+      { label: "Poor (under 50)", color: "#dc2626", test: () => true },
+    ],
+    segments: [
+      { label: "Device", of: (it: DetailItem) => String(it.extra?.strategy || "-") },
+      { label: "Verdict", of: (it: DetailItem) => String(it.extra?.verdict || "-") },
+    ],
+    opportunities: [
+      {
+        title: "Below Google's bar",
+        note: "Google calls anything under 90 short of good. Under 50 is where visitors notice.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} sit below what Google calls good. Mobile is the one to fix first — it is scored on a throttled connection because that is what most people are actually on.`,
+        filter: (it: DetailItem) => String(it.extra?.verdict) !== "Good",
+      },
+    ],
+    flag: (it: DetailItem) => (String(it.extra?.verdict) === "Poor" ? "Poor — visitors feel this" : null),
+  },
+
+  // Lab vs field is the distinction that settles most speed arguments: the lab
+  // score is one run on Google's hardware, CrUX is 28 days of real visitors and
+  // the number Google actually ranks on.
+  pagespeed_field_data: {
+    segments: [
+      { label: "Verdict", of: (it: DetailItem) => String(it.extra?.verdict || "-") },
+      { label: "Scope", of: (it: DetailItem) => String(it.extra?.scope || "-") },
+    ],
+    opportunities: [
+      {
+        title: "Real visitors are having a bad time",
+        note: "Measured from actual Chrome users over 28 days, not a lab test. This is the version Google ranks on.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} fail for real visitors, not just in the lab. Field data is 28 days of actual Chrome users and it is what Google uses for ranking — when the lab score looks fine and this does not, believe this one.`,
+        filter: (it: DetailItem) => String(it.extra?.verdict) !== "Good" && String(it.extra?.verdict) !== "-",
+      },
+    ],
+    flag: (it: DetailItem) => (String(it.extra?.verdict) === "Poor" ? `Poor for real visitors — Google wants ${it.extra?.good_at}` : null),
+  },
+
   // ── The four that had no config (2026-08-14) ─────────────────────────────
   // Produced since before today and rendering with engine defaults the whole
   // time: a table, a sparkline and a generic narrative, with none of the

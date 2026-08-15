@@ -16,8 +16,14 @@ export function SearchCoreWebVitals() {
   return (
     <>
       <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'pagespeed_scores', label: 'All four scores' },
         { id: 'core_web_vitals', label: 'Core Web Vitals' },
+        { id: 'pagespeed_field_data', label: 'Real visitor speed' },
+        { id: 'pagespeed_performance_audits', label: 'What is slowing it down' },
         { id: 'pagespeed_opportunities', label: 'Speed fixes' },
+        { id: 'pagespeed_accessibility_audits', label: 'Accessibility checks' },
+        { id: 'pagespeed_seo_audits', label: 'Technical SEO checks' },
+        { id: 'pagespeed_best_practice_audits', label: 'Best practice checks' },
         { id: 'pagespeed_history', label: 'Speed history' },
       ]} />
       <div className="stat-row">

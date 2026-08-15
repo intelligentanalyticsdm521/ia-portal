@@ -118,6 +118,42 @@ export const REPORT_NOTES: Record<string, ReportNote> = {
     "Searches where Google already shows your site sometimes — but you have no page that properly answers them.",
     "This is demand you're leaving on the table. Each row is a page worth creating; the impressions trend shows whether that demand is growing while you wait.",
   ),
+  competitor_rankings: N(
+    "Your average Google position against each competitor tracked for the same searches, with how many page-one and top-3 spots each of you holds.",
+    "This is the scoreboard. A competitor holding more page-one positions is taking work you could have — the keyword report tells you which specific searches to go after first. Your own row is flagged so the comparison is unambiguous.",
+  ),
+  backlink_quality: N(
+    "Every site linking to yours, with its authority, what it links to, the words it uses, and whether the link is still live.",
+    "A count of links tells you nothing; this tells you whether they are worth having. Chase the lost ones from strong domains first — a polite email recovers more than people expect and costs far less than earning a new link.",
+  ),
+  anchor_text_profile: N(
+    "The words other sites use when they link to you, grouped and shown as a share of your whole link profile.",
+    "A natural profile is mostly your business name and bare URLs. One commercial phrase taking a large share across many domains is what a paid-link pattern looks like to Google — worth diluting with normal links rather than adding more of the same.",
+  ),
+  pagespeed_scores: N(
+    "Google's four PageSpeed scores — Performance, Accessibility, Best Practices and SEO — for phone and desktop, with how many individual checks pass.",
+    "90+ is what Google calls good; under 50 is where visitors notice. Fix mobile before desktop: it is scored on a throttled connection because that is what most people are actually on.",
+  ),
+  pagespeed_field_data: N(
+    "Speed measured from real Chrome visitors over the last 28 days, rather than a single lab test.",
+    "When the lab score looks fine and this does not, believe this one — it is what Google uses for ranking and what your customers actually experienced. A missing row means too few visitors for Google to report, which is normal for a small site.",
+  ),
+  pagespeed_performance_audits: N(
+    "Every speed check Google runs that your site did not pass, ordered by how much each one costs the score.",
+    "The order is the point. Lighthouse weights these, so the top of the list is where an hour of developer time goes furthest — and the Elements affected column tells you whether it is a one-line fix or a pattern across the page.",
+  ),
+  pagespeed_accessibility_audits: N(
+    "Accessibility checks your site failed — contrast, labels, alt text, keyboard and screen-reader support.",
+    "Each row is somebody who cannot use part of your site: a screen reader announcing a button as just \"button\", text nobody can read against its background. It is also the area most likely to attract a complaint, and most of these are quick fixes.",
+  ),
+  pagespeed_seo_audits: N(
+    "The mechanical checks Google runs to see whether it can read and index your page properly.",
+    "These are not content problems — they are plumbing. Missing descriptions, blocked crawling, unreadable links. Usually fast to fix and they gate everything else you do on the page.",
+  ),
+  pagespeed_best_practice_audits: N(
+    "Security and correctness checks — HTTPS, console errors, deprecated APIs, out-of-date JavaScript libraries.",
+    "Individually small. Collectively they are the difference between a site that is maintained and one that is drifting, and an out-of-date library is the same class of risk as an out-of-date plugin.",
+  ),
   ctr_opportunity: N(
     "Searches where you rank well but get clicked less than that position normally earns, with how many clicks a month you are leaving behind.",
     "This is the cheapest fix in search: you already won the position, and the title and description are what is losing the click. Work down the potential column — each row is an afternoon of rewriting, not a content project.",

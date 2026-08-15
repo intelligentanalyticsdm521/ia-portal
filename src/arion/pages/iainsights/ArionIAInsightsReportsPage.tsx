@@ -49,6 +49,12 @@ const ANSWERS: Record<string, string> = {
   gbp_visibility_split: "Search or Maps? Phone or desktop?",
   gbp_actions: "What do people do after they find me?",
   core_web_vitals: "Am I passing what Google measures?",
+  pagespeed_scores: "What does Google actually score my site?",
+  pagespeed_field_data: "What did real visitors experience?",
+  pagespeed_performance_audits: "What exactly is slowing the site down?",
+  pagespeed_accessibility_audits: "Who cannot use my site?",
+  pagespeed_seo_audits: "What can Google not read?",
+  pagespeed_best_practice_audits: "Is the site being maintained properly?",
   pagespeed_opportunities: "What exactly would make my site faster?",
   media_library: "What is my media library doing to my speed?",
   keyword_movement: "Which keywords moved, and which ones matter?",
@@ -65,6 +71,9 @@ const ANSWERS: Record<string, string> = {
   conversion_by_source: "Which channels turn into enquiries?",
   gbp_search_keywords: "What did people type to find my listing?",
   referring_domains: "Who links to me?",
+  competitor_rankings: "How do I compare to who I lose work to?",
+  backlink_quality: "Are my links actually worth anything?",
+  anchor_text_profile: "What do other sites call me?",
 };
 
 export function ArionIAInsightsReportsPage() {

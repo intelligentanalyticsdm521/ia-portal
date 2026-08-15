@@ -46,21 +46,29 @@ export const ARION_DASHBOARDS: DashboardDef[] = [
     key: "search_visibility", label: "Search Visibility",
     question: "Am I found in search, and winning the searches that matter?",
     sections: [
-      { key: "keyword_rankings", label: "Keyword Rankings", weight: 0.35, metrics: [
+      { key: "keyword_rankings", label: "Keyword Rankings", weight: 0.30, metrics: [
         m("kw_top10", "Keywords in Top 10", "count", "bar", true, 0.35, "Tracked keywords ranking on page one.", undefined, 2),
         m("kw_top3", "Keywords in Top 3", "count", "bar", true, 0.25, "The premium positions that capture most clicks.", undefined, 1),
         m("kw_visibility", "Visibility Score", "score", "line", true, 0.25, "SE Ranking's weighted measure of how visible you are for your tracked terms."),
         m("kw_top30", "Keywords in Top 30", "count", "line", true, 0.15, "Everything with a foothold worth improving.", undefined, 2),
       ]},
-      { key: "search_traffic", label: "Search Traffic", weight: 0.35, metrics: [
+      { key: "search_traffic", label: "Search Traffic", weight: 0.30, metrics: [
         m("gsc_clicks", "Search Clicks", "number", "line", true, 0.45, "Visits earned from Google search.", undefined, 10),
         m("gsc_impressions", "Search Impressions", "number", "line", true, 0.30, "How often you appeared in search results."),
         m("bing_clicks", "Bing Clicks", "number", "line", true, 0.15, "Visits from Bing search.", undefined, 5),
         m("bing_impressions", "Bing Impressions", "number", "line", true, 0.10, "Appearances in Bing results."),
       ]},
-      { key: "click_through", label: "Click-Through", weight: 0.20, metrics: [
+      { key: "click_through", label: "Click-Through", weight: 0.15, metrics: [
         m("gsc_ctr", "Click-Through Rate", "percent", "gauge", true, 0.6, "Of everyone who saw you, how many clicked.", { value: 2.5, kind: "cohort" }),
         m("gsc_avg_position", "Average Position", "position", "line", false, 0.4, "Where you typically rank; lower is better.", { value: 8, kind: "absolute" }),
+      ]},
+      // Competitive Position (2026-08-14) — the competitor column in
+      // se_ranking_position_history had never been read, so "how do we compare
+      // to the people we lose work to" scored nothing at all.
+      // 0.30 + 0.30 + 0.15 + 0.10 + 0.15 = 1.0
+      { key: "competitive_position", label: "Competitive Position", weight: 0.15, metrics: [
+        m("comp_share_top10", "Page-One Share vs Competitors", "percent", "gauge", true, 0.6, "Of all the page-one positions available across your tracked searches, the share that is yours rather than a competitor's."),
+        m("comp_avg_gap", "Average Position Gap", "position", "line", false, 0.4, "How far behind (or ahead of) your closest competitor you sit on average."),
       ]},
       { key: "domain_authority", label: "Domain Authority", weight: 0.10, metrics: [
         m("referring_domains", "Referring Domains", "count", "line", true, 0.6, "Distinct sites linking to you — the strongest ranking signal.", undefined, 5),
@@ -133,6 +141,7 @@ export const ARION_DASHBOARDS: DashboardDef[] = [
         m("content_avg_age_days", "Average Content Age", "number", "line", false, 0.4, "Average days since a page was updated."),
       ]},
       { key: "content_quality", label: "Content Quality", weight: 0.25, metrics: [
+        m("media_alt_coverage", "Image Alt Text Coverage", "percent", "gauge", true, 0.15, "Share of images carrying alt text — what a screen reader announces and what Google reads.", { value: 90, kind: "absolute" }),
         m("content_rankmath_avg", "Avg SEO Score", "score", "gauge", true, 0.5, "Average RankMath on-page SEO score.", { value: 80, kind: "absolute" }),
         m("content_avg_words", "Average Depth", "number", "line", true, 0.3, "Average words per page.", { value: 800, kind: "cohort" }),
         m("content_thin_ratio", "Thin Content", "percent", "gauge", false, 0.2, "Share of pages too short to rank or convince.", { value: 15, kind: "cohort" }),
@@ -146,7 +155,7 @@ export const ARION_DASHBOARDS: DashboardDef[] = [
     key: "technical", label: "Technical & Site Health",
     question: "Is the foundation solid, and what's it costing me?",
     sections: [
-      { key: "speed_cwv", label: "Speed & Core Web Vitals", weight: 0.3, metrics: [
+      { key: "speed_cwv", label: "Speed & Core Web Vitals", weight: 0.25, metrics: [
         m("psi_mobile_perf", "Mobile Performance", "score", "gauge", true, 0.3, "Google PageSpeed score on mobile.", { value: 90, kind: "absolute" }),
         m("cwv_pass", "Core Web Vitals Pass", "score", "gauge", true, 0.25, "Whether you pass Google's real-world speed & stability bar.", { value: 100, kind: "absolute" }),
         m("lcp_ms", "Largest Contentful Paint", "ms", "line", false, 0.2, "How long the main content takes to load.", { value: 2500, kind: "absolute" }),
@@ -159,7 +168,7 @@ export const ARION_DASHBOARDS: DashboardDef[] = [
         m("audit_errors", "Audit Errors", "count", "bar", false, 0.25, "Critical issues found by the site audit."),
         m("audit_warnings", "Audit Warnings", "count", "line", false, 0.15, "Non-critical issues to clean up."),
       ]},
-      { key: "security", label: "Security", weight: 0.2, metrics: [
+      { key: "security", label: "Security", weight: 0.15, metrics: [
         m("security_vulns", "Known Vulnerabilities", "count", "bar", false, 0.45, "Unpatched security holes.", { value: 0, kind: "absolute" }),
         m("security_blocked", "Threats Blocked", "number", "line", true, 0.2, "Attacks stopped by your firewall."),
         m("ssl_valid", "SSL Valid", "score", "stat", true, 0.35, "Whether your certificate is valid.", { value: 100, kind: "absolute" }),
@@ -181,8 +190,18 @@ export const ARION_DASHBOARDS: DashboardDef[] = [
       ]},
       { key: "crawl", label: "Crawl & Indexation", weight: 0.1, metrics: [
         m("indexable_pages", "Indexable Pages", "count", "line", true, 0.4, "Pages Google can index."),
-        m("broken_links", "Broken Links", "count", "bar", false, 0.35, "Dead links hurting users and crawl.", { value: 0, kind: "absolute" }),
-        m("redirects", "Redirects", "count", "line", false, 0.25, "Redirect chains slowing crawl."),
+        m("content_broken_links", "Broken Internal Links", "count", "bar", false, 0.35, "Links on your own pages pointing at pages that no longer exist. Each one wastes a visitor's click and a little of Google's trust.", { value: 0, kind: "absolute" }),
+        m("content_orphan_ratio", "Orphan Pages", "percent", "bar", false, 0.25, "Share of pages nothing links to and no menu points at. A page nobody can reach is a page nobody finds.", { value: 0, kind: "absolute" }),
+      ]},
+      // Hosting & Domain (2026-08-14) — Brandon: "Hosting we don't have a
+      // single report, is that on purpose?" These are binary facts that take a
+      // business offline or send its mail to spam, so every one is judged
+      // against an absolute rather than the tenant's own history: there is no
+      // such thing as a relatively-valid certificate.
+      { key: "hosting", label: "Hosting & Domain", weight: 0.1, metrics: [
+        m("hosting_ssl_days", "SSL Days Remaining", "count", "line", true, 0.3, "Days until the certificate expires. A lapsed certificate takes the site off the internet.", { value: 30, kind: "absolute" }),
+        m("hosting_domain_days", "Domain Days Remaining", "count", "line", true, 0.3, "Days until the domain registration expires. Losing the domain loses the business.", { value: 60, kind: "absolute" }),
+        m("hosting_email_records", "Email Records Present", "percent", "gauge", true, 0.4, "SPF, DKIM and DMARC. Missing records are the usual answer to 'our email goes to spam'.", { value: 100, kind: "absolute" }),
       ]},
     ],
   },
