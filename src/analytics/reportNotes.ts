@@ -118,6 +118,14 @@ export const REPORT_NOTES: Record<string, ReportNote> = {
     "Searches where Google already shows your site sometimes — but you have no page that properly answers them.",
     "This is demand you're leaving on the table. Each row is a page worth creating; the impressions trend shows whether that demand is growing while you wait.",
   ),
+  ctr_opportunity: N(
+    "Searches where you rank well but get clicked less than that position normally earns, with how many clicks a month you are leaving behind.",
+    "This is the cheapest fix in search: you already won the position, and the title and description are what is losing the click. Work down the potential column — each row is an afternoon of rewriting, not a content project.",
+  ),
+  trend_breaks: N(
+    "Points where a number stopped drifting and stepped — a sharp change that then held at the new level.",
+    "A break has a cause with a date on it: a redesign, a migration, a plugin, a Google update. Look at what changed that month before treating it as a slow decline, because the fix is usually undoing one thing rather than working harder at everything.",
+  ),
   // ══ ARION — 2026-08-14 reports over the expanded integrations ══
   search_by_country: N(
     "Which countries your site is found from in Google, with clicks and impressions for each.",

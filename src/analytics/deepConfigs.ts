@@ -203,6 +203,141 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
     },
   },
 
+  // ── The four that had no config (2026-08-14) ─────────────────────────────
+  // Produced since before today and rendering with engine defaults the whole
+  // time: a table, a sparkline and a generic narrative, with none of the
+  // findings that make a report worth opening.
+
+  // Ranking well and not being clicked is a TITLE problem, not a ranking
+  // problem, and it is the cheapest fix in search — the page already won the
+  // position it needed.
+  ctr_opportunity: {
+    bands: [
+      { label: "Big gap (10pp+ under)", color: "#dc2626", test: () => false },
+      { label: "Under-performing", color: "#f59e0b", test: () => false },
+      { label: "At or above expected", color: "#15803d", test: () => true },
+    ],
+    segments: [
+      {
+        label: "Where it ranks",
+        of: (it: DetailItem) => {
+          const p = Number(it.extra?.position || 0);
+          if (p <= 3) return "Top 3";
+          if (p <= 10) return "Rest of page one";
+          return "Page two or worse";
+        },
+      },
+    ],
+    opportunities: [
+      {
+        title: "Rewrite these titles first",
+        note: "Ranking on page one and clicked far less than that position normally earns. The listing text is the thing losing the click.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} rank on page one and get clicked far less than that position normally earns. You already did the hard part — the position is won. What is losing the click is the title and description Google is showing, and rewriting those is an afternoon's work.`,
+        filter: (it: DetailItem) => Number(it.extra?.position || 99) <= 10 && Number(it.extra?.potential || 0) > 0,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.potential || 0) - Number(a.extra?.potential || 0),
+      },
+    ],
+    flag: (it: DetailItem) =>
+      Number(it.extra?.potential || 0) >= 10
+        ? `About ${Math.round(Number(it.extra?.potential))} more clicks a month if this matched its position`
+        : null,
+    weightKey: "impressions",
+  },
+
+  // A landing page is where a visit is won or lost. High traffic with weak
+  // engagement is the biggest silent leak a site can have.
+  engagement_by_page: {
+    bands: [
+      { label: "Holds attention (60%+)", color: "#15803d", test: (v) => v >= 60 },
+      { label: "Average (40-59%)", color: "#65a30d", test: (v) => v >= 40 },
+      { label: "Weak (20-39%)", color: "#f59e0b", test: (v) => v >= 20 },
+      { label: "Losing people (under 20%)", color: "#dc2626", test: () => true },
+    ],
+    opportunities: [
+      {
+        title: "Fix these landing pages first",
+        note: "People arrive here and leave without engaging. Whatever brought them promised something this page is not delivering.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} lose most of the people who land on them. This is the most expensive kind of problem on a website: you have already paid to get someone there. Fix the page people actually arrive on before writing a new one.`,
+        filter: (it: DetailItem) => {
+          const v = Number(it.series?.filter((x): x is number => x != null).slice(-1)[0] || 0);
+          return v > 0 && v < 30;
+        },
+      },
+    ],
+    flag: (it: DetailItem) => {
+      const v = Number(it.series?.filter((x): x is number => x != null).slice(-1)[0] || 0);
+      return v > 0 && v < 20 ? `Only ${v.toFixed(0)}% engage — most arrive and leave` : null;
+    },
+  },
+
+  // What people TYPED to find the listing. Google reports low-volume terms as a
+  // threshold rather than a count, which the report shows honestly rather than
+  // rounding to a number nobody can act on.
+  gbp_search_keywords: {
+    bands: [
+      { label: "Strong (100+)", color: "#15803d", test: (v) => v >= 100 },
+      { label: "Steady (25-99)", color: "#65a30d", test: (v) => v >= 25 },
+      { label: "Occasional (under 25)", color: "#f59e0b", test: () => true },
+    ],
+    segments: [
+      {
+        label: "Search type",
+        of: (it: DetailItem) => {
+          // A search containing the business name is someone who already knew
+          // you. Everything else is genuinely new discovery, and that is the
+          // number that says whether local SEO is working.
+          const n = String(it.name || "").toLowerCase();
+          return /\b(llc|inc|dental|dentist|co\b|company)\b/.test(n) ? "Looks branded" : "Discovery";
+        },
+      },
+    ],
+    opportunities: [
+      {
+        title: "Terms worth a page of their own",
+        note: "People are already finding your listing with these. A page on your site targeting the same term compounds it.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} bring people to your listing regularly. Each one is a proven demand signal — a page on your own site aimed at the same term turns one listing into two results.`,
+        filter: (it: DetailItem) => Number(it.series?.filter((x): x is number => x != null).slice(-1)[0] || 0) >= 25,
+        sortBy: (a: DetailItem, b: DetailItem) =>
+          Number(b.series?.filter((x): x is number => x != null).slice(-1)[0] || 0) -
+          Number(a.series?.filter((x): x is number => x != null).slice(-1)[0] || 0),
+      },
+    ],
+  },
+
+  // A step change is not the same thing as a trend, and it usually has a cause
+  // with a date — a redesign, a migration, an algorithm update.
+  trend_breaks: {
+    segments: [
+      { label: "Direction", of: (it: DetailItem) => (Number(it.extra?.changePct || 0) >= 0 ? "Stepped up" : "Stepped down") },
+      { label: "When", of: (it: DetailItem) => String(it.extra?.breakMonth || "-") },
+    ],
+    opportunities: [
+      {
+        title: "Something changed here — find out what",
+        note: "A sharp drop that held. Compare the month against anything you changed: a redesign, a migration, a plugin, a Google update.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} did not drift — they stepped down and stayed there. A break like this has a cause with a date on it. Look at what changed that month before treating it as a slow decline, because the fix is usually to undo one thing rather than to work harder at everything.`,
+        filter: (it: DetailItem) => Number(it.extra?.changePct || 0) <= -15,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(a.extra?.changePct || 0) - Number(b.extra?.changePct || 0),
+      },
+      {
+        title: "Something worked — find out what",
+        note: "A sharp rise that held. Worth knowing what caused it so it can be repeated.",
+        filter: (it: DetailItem) => Number(it.extra?.changePct || 0) >= 15,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.changePct || 0) - Number(a.extra?.changePct || 0),
+      },
+    ],
+    flag: (it: DetailItem) => {
+      const c = Number(it.extra?.changePct || 0);
+      if (c <= -15) return `Stepped down ${Math.abs(c).toFixed(0)}% in ${it.extra?.breakMonth}`;
+      if (c >= 15) return `Stepped up ${c.toFixed(0)}% in ${it.extra?.breakMonth}`;
+      return null;
+    },
+  },
+
   // ── 2026-08-14: reports over the newly captured integration dimensions ──
   // Bands and opportunity lists only where they say something an owner can act
   // on. A report that would only get a generic "top group" story is left with

@@ -2,8 +2,14 @@ import { useState } from 'react';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { Card, TierGate, EmptyPanel, Loading, PlatformTabs, ConsultingUpsell } from '../../components/Ui';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
 export function AnalyticsPages() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const tier = selectedSite?.arionTier || 'standard';
   const [provider] = useState<'google'>('google');
@@ -21,6 +27,11 @@ export function AnalyticsPages() {
 
   return (
     <TierGate currentTier={tier} requiredTier="pro" featureName="Page drill-down analytics">
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'top_pages', label: 'Top pages' },
+        { id: 'engagement_by_page', label: 'Engagement by page' },
+        { id: 'page_titles_read', label: 'What gets read' },
+      ]} />
       <PlatformTabs
         tabs={[{ key: 'google', label: 'Google' }]}
         active={provider}

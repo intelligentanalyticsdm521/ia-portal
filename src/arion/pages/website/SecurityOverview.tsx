@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 import {
   Card, Loading, ConsultingUpsell, StatCard, MiniGauge, DetailsModal,
 } from '../../components/Ui';
@@ -18,6 +20,10 @@ import {
  * all scan findings.
  */
 export function SecurityOverview() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
   const [modalOpen, setModalOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
@@ -180,6 +186,10 @@ export function SecurityOverview() {
 
   return (
     <div>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'vulnerabilities', label: 'Vulnerabilities' },
+        { id: 'component_upkeep', label: 'Software upkeep' },
+      ]} />
       {/* Storytelling band + action buttons at top (matches SEO page pattern) */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16 }}>
         <div style={{ ...toneStyle[storyBand.tone], flex: 1, padding: '14px 18px', borderRadius: 6 }}>

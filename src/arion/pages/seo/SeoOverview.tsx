@@ -32,6 +32,8 @@ import { AddonUpsell, EmptyPanel, Loading, ConsultingUpsell, ErrorBanner } from 
 import { SeoRangePicker, SeoStatCard, SeoFilterPills } from '../../components/SeoUi';
 import { GlossaryIcon } from '../../components/Glossary';
 import { canonicalEngineLabel } from '../../utils/engineLabel';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 import type {
   SeoRangeCode,
   SeoOverviewResponse,
@@ -44,6 +46,10 @@ import type {
 type EngineFilter = 'all' | string;
 
 export function SeoOverview() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const navigate = useNavigate();
   const [range, setRange] = React.useState<SeoRangeCode>('30d');
@@ -262,6 +268,11 @@ export function SeoOverview() {
 
   return (
     <div>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'keyword_movement', label: 'Keyword movement' },
+        { id: 'referring_domains', label: 'Referring domains' },
+        { id: 'share_of_voice', label: 'Share of voice' },
+      ]} />
       {/* Filter bar */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
         <SeoRangePicker value={range} onChange={setRange} />

@@ -20,10 +20,16 @@ import { AddonUpsell, EmptyPanel, Loading, InfoCard, ConsultingUpsell, ErrorBann
 import { SeoStatCard } from '../../components/SeoUi';
 import { GlossaryIcon } from '../../components/Glossary';
 import type { SeoCompetitorContentGapRow } from '../../../lib/arionApi';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
 type ModalTab = 'added' | 'trust-analysis' | 'content-gap' | 'share-of-voice' | 'add';
 
 export function SeoCompetitors() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const [activeTab, setActiveTab] = useState<ModalTab | null>(null);
   const [competitorDomain, setCompetitorDomain] = useState('');
@@ -97,6 +103,10 @@ export function SeoCompetitors() {
 
   return (
     <div>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'share_of_voice', label: 'Share of voice' },
+        { id: 'referring_domains', label: 'Referring domains' },
+      ]} />
       {compUpstreamErrors.length > 0 && (
         <ErrorBanner message={`SE Ranking returned errors for ${compUpstreamErrors.length} engine(s). The competitor list below may be incomplete until the upstream recovers.`} />
       )}

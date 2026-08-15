@@ -8,10 +8,16 @@ import { MultiLineChart } from '../../components/Charts';
 import PhoneInput from '../../../components/PhoneInput';
 import { IadmModal, IadmButton } from '../../../components/IadmModal';
 import type { GbpVerificationOption } from '../../../lib/arionApi';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
 function fmtNum(n: any): string { return n == null || isNaN(Number(n)) ? '--' : Number(n).toLocaleString(); }
 
 export function BusinessOverview() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const { data, loading, refetch } = useArionData(
     () => activeSiteId ? arionApi.getGbpBusiness(activeSiteId).catch(e => ({ error: e.message })) : Promise.resolve(null),
@@ -118,6 +124,11 @@ export function BusinessOverview() {
 
   return (
     <div>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'gbp_visibility_split', label: 'Where you\'re seen' },
+        { id: 'gbp_actions', label: 'What people do' },
+        { id: 'gbp_search_keywords', label: 'Search terms' },
+      ]} />
       <div className="stat-row" style={{ marginTop: 8 }}>
         <StatCard label="Impressions (30d)" value={fmtNum(metrics.impressions)} />
         <StatCard label="Website Clicks" value={fmtNum(metrics.websiteClicks)} />

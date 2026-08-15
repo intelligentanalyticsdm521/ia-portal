@@ -3,10 +3,16 @@ import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { Card, InfoCard, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
 import { GbpPendingVerificationCard } from './GbpStatusCard';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
 type PostType = 'STANDARD' | 'EVENT' | 'OFFER';
 
 export function BusinessPosts() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
 
   const { data, loading, refetch } = useArionData(
@@ -80,6 +86,9 @@ export function BusinessPosts() {
 
   return (
     <div>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'post_feed', label: 'Posts' },
+      ]} />
       {!composing && (
         <div style={{ marginBottom: 16 }}>
           <button className="abtn abtn-sky" onClick={() => setComposing(true)}>Create Post</button>

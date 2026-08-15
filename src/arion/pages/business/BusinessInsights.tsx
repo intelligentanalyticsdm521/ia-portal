@@ -4,10 +4,16 @@ import { useArionData } from '../../useArionData';
 import { MetricCard, Card, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
 import { MultiLineChart } from '../../components/Charts';
 import { GbpPendingVerificationCard, GbpStatusCard } from './GbpStatusCard';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
 function fmtNum(n: any): string { return n == null || isNaN(Number(n)) ? '--' : Number(n).toLocaleString(); }
 
 export function BusinessInsights() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const [period, setPeriod] = React.useState<number>(30);
 
@@ -40,6 +46,13 @@ export function BusinessInsights() {
 
   return (
     <div>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'gbp_visibility_split', label: 'Where you\'re seen' },
+        { id: 'gbp_actions', label: 'What people do' },
+        { id: 'gbp_search_keywords', label: 'Search terms' },
+        { id: 'gbp_discovery_split', label: 'Discovery split' },
+        { id: 'gbp_action_breakdown', label: 'Action breakdown' },
+      ]} />
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         {[30, 90].map(p => (
           <button key={p} onClick={() => setPeriod(p)} className={period === p ? 'abtn abtn-sky' : 'abtn'} style={{ fontSize: 12, padding: '6px 14px' }}>

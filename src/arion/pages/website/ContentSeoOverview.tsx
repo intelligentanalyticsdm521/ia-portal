@@ -3,6 +3,8 @@ import { ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, 
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { Card, Loading, ConsultingUpsell, InfoCard } from '../../components/Ui';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
 /**
  * Content SEO — the consolidated storytelling page.
@@ -19,6 +21,10 @@ import { Card, Loading, ConsultingUpsell, InfoCard } from '../../components/Ui';
  *   6. "See full details" button → modal with every page + post + filterable
  */
 export function ContentSeoOverview() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
   const [modalOpen, setModalOpen] = useState(false);
   const [drillDownType, setDrillDownType] = useState<'pages' | 'posts' | 'issues' | 'readability' | 'all'>('all');
@@ -223,6 +229,12 @@ export function ContentSeoOverview() {
 
   return (
     <div>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'content_library', label: 'Content library' },
+        { id: 'content_gap_keywords', label: 'Content gaps' },
+        { id: 'content_age', label: 'Content age' },
+        { id: 'word_count_dist', label: 'Content depth' },
+      ]} />
       {/* Hero stat tiles — compact summary numbers */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14 }}>
         <HeroTile

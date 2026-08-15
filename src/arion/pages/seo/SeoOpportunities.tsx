@@ -1,8 +1,14 @@
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { Card, AddonUpsell, EmptyPanel, Loading, InfoCard, ConsultingUpsell } from '../../components/Ui';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
 export function SeoOpportunities() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
 
   const { data: seo, loading: seoLoading } = useArionData(
@@ -31,6 +37,11 @@ export function SeoOpportunities() {
 
   return (
     <div>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'striking_distance', label: 'One push from page one' },
+        { id: 'content_gap_keywords', label: 'Content gaps' },
+        { id: 'ctr_opportunity', label: 'CTR opportunities' },
+      ]} />
       {connected && (
         <InfoCard title="Keyword Opportunities — Connected">
           <p style={{ margin: 0 }}>SE Ranking is analyzing keyword opportunities. Data will populate as rankings are tracked.</p>

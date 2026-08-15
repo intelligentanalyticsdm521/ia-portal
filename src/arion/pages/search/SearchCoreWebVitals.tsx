@@ -1,7 +1,13 @@
 import { useArionContext } from '../../useArionContext';
 import { StatCard, Card, InfoCard, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
 export function SearchCoreWebVitals() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId } = useArionContext();
   const tier = selectedSite?.arionTier || 'standard';
 
@@ -9,6 +15,11 @@ export function SearchCoreWebVitals() {
 
   return (
     <>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'core_web_vitals', label: 'Core Web Vitals' },
+        { id: 'pagespeed_opportunities', label: 'Speed fixes' },
+        { id: 'pagespeed_history', label: 'Speed history' },
+      ]} />
       <div className="stat-row">
         <StatCard label="LCP" value="--" delta="Largest Contentful Paint" />
         <StatCard label="INP" value="--" delta="Interaction to Next Paint" />
