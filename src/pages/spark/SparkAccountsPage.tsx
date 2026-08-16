@@ -8,6 +8,8 @@ import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
 import { SparkSearchBox } from "../../components/spark/SparkSearchBox";
 import { Building2, Users, ExternalLink, Plus, ArrowLeft, Edit3, Save, Trash2, X } from "lucide-react";
 
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 interface Account {
   id: number;
   name: string;
@@ -87,6 +89,7 @@ interface SparkAccountsPageProps {
 }
 
 export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps = {}) {
+  const insightsPayload = useProductInsightsPayload('spark');
   const { get, post, put, del, ready } = useSparkApi();
 
   // List state
@@ -442,6 +445,9 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
       loading={loading}
       error={error}
     >
+      <ReportBar product="spark" detail={insightsPayload?.detail} reports={[
+        { id: 'spark_accounts', label: 'Account health' },
+      ]} />
       <SparkTable<Account>
         rows={filtered}
         getRowKey={a => a.id}

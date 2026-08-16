@@ -116,6 +116,7 @@ const BusinessAppleOverview = lazyNamed(() => import('../arion/pages/business/Bu
 // v5.x IA Insights architecture — Health, Trends, Intelligence, Cross-Platform (ARGUS)
 const ArionIAInsightsHealthPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsHealthPage'), 'ArionIAInsightsHealthPage');
 const ArionIAInsightsTrendsPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsTrendsPage'), 'ArionIAInsightsTrendsPage');
+const ArionIAInsightsReportsPage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsReportsPage'), 'ArionIAInsightsReportsPage');
 const ArionIAInsightsIntelligencePage = lazyNamed(() => import('../arion/pages/iainsights/ArionIAInsightsIntelligencePage'), 'ArionIAInsightsIntelligencePage');
 const ArionServiceAreaPage = lazyNamed(() => import('../arion/pages/iainsights/ArionServiceAreaPage'), 'ArionServiceAreaPage');
 const ArgusIAInsightsPage = lazyNamed(() => import('./argus/ArgusIAInsightsPage'), 'ArgusIAInsightsPage');
@@ -129,10 +130,12 @@ const ArgusWorkflowAutomationsPage = lazyNamed(() => import('./argus/ArgusWorkfl
 // argus_cross_channel) resolve to the mirror-model ArgusIntelligencePage.
 const SparkIAInsightsHealthPage = lazyNamed(() => import('./spark/SparkIAInsightsHealthPage'), 'SparkIAInsightsHealthPage');
 const SparkIAInsightsTrendsPage = lazyNamed(() => import('./spark/SparkIAInsightsTrendsPage'), 'SparkIAInsightsTrendsPage');
+const SparkIAInsightsReportsPage = lazyNamed(() => import('./spark/SparkIAInsightsReportsPage'), 'SparkIAInsightsReportsPage');
 const ReportsHubPage = lazyNamed(() => import('../components/insights/ReportsHubPage'), 'ReportsHubPage');
 const SparkIAInsightsIntelligencePage = lazyNamed(() => import('./spark/SparkIAInsightsIntelligencePage'), 'SparkIAInsightsIntelligencePage');
 const OliverIAInsightsHealthPage = lazyNamed(() => import('./oliver/OliverIAInsightsHealthPage'), 'OliverIAInsightsHealthPage');
 const OliverIAInsightsTrendsPage = lazyNamed(() => import('./oliver/OliverIAInsightsTrendsPage'), 'OliverIAInsightsTrendsPage');
+const OliverIAInsightsReportsPage = lazyNamed(() => import('./oliver/OliverIAInsightsReportsPage'), 'OliverIAInsightsReportsPage');
 const OliverIAInsightsIntelligencePage = lazyNamed(() => import('./oliver/OliverIAInsightsIntelligencePage'), 'OliverIAInsightsIntelligencePage');
 
 // MY BRAND pages — re-added 2026-07-18 (Item 1 Task 3). The 10 pages under
@@ -521,6 +524,7 @@ export function ServiceRouter() {
       // v5.x IA Insights architecture
       case 'arion_ia_insights_health': arionPage = <ArionIAInsightsHealthPage />; break;
       case 'arion_ia_insights_trends': arionPage = <ArionIAInsightsTrendsPage />; break;
+      case 'arion_ia_insights_reports': arionPage = <ArionIAInsightsReportsPage />; break;
       case 'arion_ia_insights_intelligence': arionPage = <ArionIAInsightsIntelligencePage />; break;
       case 'arion_service_area': arionPage = <ArionServiceAreaPage />; break;
       case 'arion_usage': arionPage = <ArionUsagePage service={service} status={status} />; break;
@@ -692,7 +696,7 @@ export function ServiceRouter() {
       // v5.x IA Insights architecture
       case 'oliver_ia_insights_health': oliverPage = <OliverIAInsightsHealthPage />; break;
       case 'oliver_ia_insights_trends': oliverPage = <OliverIAInsightsTrendsPage />; break;
-      case 'oliver_ia_insights_reports': oliverPage = <ReportsHubPage platform="OLIVER" />; break;
+      case 'oliver_ia_insights_reports': oliverPage = <OliverIAInsightsReportsPage />; break;
       case 'oliver_ia_insights_intelligence': oliverPage = <OliverIAInsightsIntelligencePage />; break;
       // ARGUS pages also routed via OLIVER section since ARGUS doesn't have its own section yet
       case 'argus_ia_insights': oliverPage = <ArgusIAInsightsPage />; break;
@@ -848,7 +852,7 @@ export function ServiceRouter() {
       // v5.x IA Insights architecture
       case 'spark_ia_insights_health': sparkPage = <SparkIAInsightsHealthPage />; break;
       case 'spark_ia_insights_trends': sparkPage = <SparkIAInsightsTrendsPage />; break;
-      case 'spark_ia_insights_reports': sparkPage = <ReportsHubPage platform="SPARK" />; break;
+      case 'spark_ia_insights_reports': sparkPage = <SparkIAInsightsReportsPage />; break;
       case 'spark_ia_insights_intelligence': sparkPage = <SparkIAInsightsIntelligencePage />; break;
       case 'spark_service_category': sparkPage = <SparkServiceCategoryPage />; break;
       case 'spark_form_builder': sparkPage = <SparkFormBuilderPage />; break;

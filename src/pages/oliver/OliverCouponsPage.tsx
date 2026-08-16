@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 import {
   PageHeader, DataTable, EmptyState, Button, type Column,
 } from "../../components/oliver/ui";
@@ -46,6 +48,7 @@ function durationLabel(c: Coupon): string {
 }
 
 export function OliverCouponsPage() {
+  const insightsPayload = useProductInsightsPayload('oliver');
   const { get, post, patch, del, ready } = useOliverApi();
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(true);
@@ -188,6 +191,9 @@ export function OliverCouponsPage() {
 
   return (
     <OliverPageWrapper title="Coupons" subtitle="Discount codes synced with Stripe" error={error} loading={loading && !coupons.length}>
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
+        { id: 'oliver_coupons', label: 'Discount usage' },
+      ]} />
       <PageHeader
         title="Coupons"
         subtitle="Create discount codes that customers can apply at checkout. Synced bidirectionally with Stripe Promotion Codes."

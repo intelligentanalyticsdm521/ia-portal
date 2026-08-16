@@ -256,6 +256,16 @@ export const ARION_PAGES: PageContentMap = {
     body:
       "Whether we're receiving good data from everything we're connected to. If a number elsewhere looks wrong, check here first — it's usually a disconnected source, not a real drop.",
   },
+  // Standing convention: a feature build updates its own walkthrough in the
+  // same change. Journey steps are GENERATED from live nav, so a new page with
+  // no authored copy is reported by missingPageContent().
+  arion_ia_insights_reports: {
+    body: "Every report we produce for your site, in one place. Each one is the full analysis — not a summary. You can also reach any of them from the page it belongs to, or by drilling into a score on Trends; it is the same report either way.",
+    onPage: [
+      { title: "Grouped the way you think", body: "Reports are grouped by the part of your presence they cover — your website, your search visibility, your business listing — rather than by which tool the data came from." },
+      { title: "Open report", body: "Opens the full analysis: what changed, what it means, which items moved, and where the quickest wins are." },
+    ],
+  },
   arion_ia_insights_trends: {
     title: "Trends — six areas of your presence, scored",
     body:

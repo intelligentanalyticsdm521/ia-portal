@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 import {
   PageHeader, FilterBar, DataTable, EmptyState,
   TimeRangeSelector, rangeForPreset,
@@ -42,6 +44,10 @@ function rangeToQuery(r: TimeRange): string {
 }
 
 export function OliverCrewPerformancePage() {
+  // Reports covering THIS function (Brandon 2026-08-14). Above any early
+  // return — a hook below one runs on some renders only.
+  const insightsPayload = useProductInsightsPayload('oliver');
+
   const { get, ready } = useOliverApi();
   const [range, setRange] = useState<TimeRange>(() => rangeForPreset("last_30_days"));
   const [crew, setCrew] = useState<CrewStat[]>([]);
@@ -207,6 +213,9 @@ export function OliverCrewPerformancePage() {
 
   return (
     <OliverPageWrapper title="Team Performance" subtitle="Per-worker completion stats" error={error} loading={loading}>
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
+        { id: 'oliver_crew_roster', label: 'Crew and costs' },
+      ]} />
       <PageHeader
         title="Team Performance"
         subtitle="See assignment volume and completion rate per team member"

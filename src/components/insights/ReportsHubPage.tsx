@@ -24,9 +24,40 @@ const HUB: Record<string, { blurb: string; links: ReportLink[] }> = {
   },
 };
 
-export function ReportsHubPage({ platform }: { platform: "SPARK" | "OLIVER" }) {
+export function ReportsHubPage({ platform, bare = false }: { platform: "SPARK" | "OLIVER"; bare?: boolean }) {
   const navigate = useNavigate();
   const hub = HUB[platform];
+
+  // `bare` drops the page chrome so this can sit INSIDE the reports catalog as
+  // one more section. Stacking the full page under the catalog gave the client
+  // two competing "Reports" headings on one screen.
+  if (bare) {
+    return (
+      <section className="rounded-xl border border-slate-200 bg-white">
+        <div className="border-b border-slate-100 px-4 py-3">
+          <h2 className="text-sm font-bold text-slate-900">Operational records</h2>
+          <p className="text-[11px] text-slate-500">
+            The plain record behind the analysis above — activity as it happens, usage against your
+            limits, and who changed what.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-2 p-3 md:grid-cols-2">
+          {hub.links.map((l) => (
+            <button key={l.route} onClick={() => navigate(l.route)}
+              className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left hover:border-slate-300 hover:shadow-sm">
+              <BarChart2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-400" />
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-semibold text-slate-900">{l.label}</div>
+                <div className="mt-0.5 text-[11px] text-slate-500">{l.description}</div>
+              </div>
+              <ChevronRight className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-300" />
+            </button>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <div className="p-1">
       <div className="insights-shell mb-4">

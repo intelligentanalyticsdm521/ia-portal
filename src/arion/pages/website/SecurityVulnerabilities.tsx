@@ -3,6 +3,8 @@ import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { StatCard, Card, Loading, ErrorBanner, ConsultingUpsell, DetailsModal } from '../../components/Ui';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ZAxis, Cell } from 'recharts';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
 /**
  * Security Vulnerabilities — cross-references installed plugins against the
@@ -11,6 +13,10 @@ import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Responsive
  * is always actionable even when the Shield Security feed returns no matches.
  */
 export function SecurityVulnerabilities() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
@@ -137,6 +143,10 @@ export function SecurityVulnerabilities() {
 
   return (
     <div>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'component_upkeep', label: 'Vulnerabilities' },
+        { id: 'component_upkeep', label: 'Software upkeep' },
+      ]} />
       {notice && (
         <div style={{
           padding: '10px 14px', marginBottom: 12, borderRadius: 6,

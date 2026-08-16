@@ -20,6 +20,7 @@
 
 import type { DetailReport, DetailItem } from "./detail";
 import { itemMom, pluralize } from "./detail";
+
 import type { ValueFormat } from "./scoring";
 import { mirrorKindOf } from "./reportNotes";
 
@@ -32,6 +33,14 @@ export interface DeepOpportunityDef {
   filter: (it: DetailItem) => boolean;
   sortBy?: (a: DetailItem, b: DetailItem) => number;
   limit?: number;
+  /**
+   * The "what this means for you" line when this list leads the report.
+   * The default phrasing assumes a NEAR MISS ("close enough that a small push
+   * gets them over the line") — right for striking-distance keywords, nonsense
+   * for a problem list like pages competing for the same keyword. Any list that
+   * is a defect rather than an opportunity must supply its own (2026-08-14).
+   */
+  lede?: (n: number, itemLabel: string) => string;
 }
 export interface DeepConfig {
   /** Value bands → "count of items per band per month" stacked chart (B). */
@@ -44,6 +53,24 @@ export interface DeepConfig {
   flag?: (it: DetailItem, all: DetailItem[]) => string | null;
   /** extra[] key used to weight movement importance (default "volume", falls back to current value). */
   weightKey?: string;
+  /**
+   * The series is a STATE CODE, not a quantity — 1 = current, 2 = update
+   * available, 3 = dormant. Arithmetic on those numbers is meaningless: summing
+   * them produced "TOTAL STATUS 9", and a plugin going from current to needing
+   * an update read as "-50%, high volatility". Set this and the report drops
+   * every quantity-shaped derivation and talks in band changes instead, which
+   * is the only thing a state code can honestly say.
+   */
+  categorical?: boolean;
+  /**
+   * Index of the band to AIM FOR, when it is not the first one. Defaults to 0,
+   * which is right for every best-first set (Position 1-3, Pillar 2,000+).
+   * Set it when the bands run worst-first because that is the natural reading
+   * order — a media library is read heaviest-first, and its goal is the light
+   * end. Getting this wrong makes the report tell an owner to grow the number
+   * that is hurting them, so it is declared rather than guessed.
+   */
+  goalBand?: number;
 }
 
 // ── output ────────────────────────────────────────────────────────────────
@@ -64,14 +91,33 @@ export interface DeepReportData {
   distribution?: DeepDistribution;
   movements: DeepMovementTable[];
   segments: DeepSegmentTable[];
-  opportunities: Array<{ title: string; note?: string; items: DetailItem[] }>;
+  opportunities: Array<{
+    title: string; note?: string; items: DetailItem[];
+    /** How many items actually match. `items` is capped for display; this is not. */
+    total: number;
+    lede?: (n: number, itemLabel: string) => string;
+  }>;
   flags: Record<string, string>;
   itemStats: Record<string, DeepItemStats>;
   /** "What this means" — friendly interpretation derived from the same data. */
   meaning: MeaningItem[];
+  /** Mirrors DeepConfig.categorical so the view can drop numeric columns too. */
+  categorical?: boolean;
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
+/**
+ * Drop a leading capital so a standalone phrase reads inside a sentence,
+ * without touching any proper noun further along it. Left alone when the
+ * opening word is an acronym (GA4, SEO, CTR).
+ */
+function uncapitalize(s: string): string {
+  if (!s) return s;
+  const first = s.split(/\s/)[0];
+  if (first.length > 1 && first === first.toUpperCase() && /[A-Z]/.test(first)) return s;
+  return s[0].toLowerCase() + s.slice(1);
+}
+
 const COMPOSITION_COLORS = ["#0f766e", "#2563eb", "#7c3aed", "#db2777", "#ea580c", "#ca8a04", "#65a30d", "#0891b2", "#94a3b8"];
 
 export function fmtV(v: number | string | null | undefined, format: ValueFormat | "text"): string {
@@ -115,6 +161,27 @@ const lastVal = (s: Array<number | null>): number | null => {
   return null;
 };
 const isAvgFormat = (f: ValueFormat) => f === "percent" || f === "position" || f === "rating" || f === "score";
+
+/**
+ * Which band is the one to AIM FOR — declared, never inferred.
+ *
+ * Everything used to assume bands[0], and the Media Library report caught what
+ * that costs: its first band is "Huge (1MB+)", so the report told the owner
+ * "6 more than a year ago... this is the single number to keep growing." It was
+ * advising them to make their site slower.
+ *
+ * The obvious repair — "if lower-is-better, the goal is the last band" — is
+ * also wrong, and worse because it looks right. keyword_movement is
+ * lower-is-better AND declares "Position 1-3" first: inferring from the flag
+ * would have moved its goal to "Position 21+" and inverted every keyword
+ * report we have. Which end is good is a property of how the bands were
+ * written, not of the metric's direction, so a config that departs from
+ * best-first says so with goalBand.
+ */
+function goalBandIndex(cfg: DeepConfig | undefined, bands: DeepBand[]): number {
+  const g = cfg?.goalBand;
+  return g != null && g >= 0 && g < bands.length ? g : 0;
+}
 
 function bandIndex(bands: DeepBand[], v: number | null): number {
   if (v == null || !isFinite(v)) return -1;
@@ -163,12 +230,17 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
 
   // B — distribution
   let distribution: DeepDistribution | undefined;
-  if (cfg?.bands && trendItems.length) {
+  // Bands come from ALL items, not just those with a trend. The distribution
+  // is "how many items sit in each band", which is a fact about now — gating it
+  // on a 2+ point series meant every point-in-time report (segment sizes, tag
+  // usage, a service catalogue) rendered as a bare table with no chart at all.
+  // Same mistake the opportunity lists had.
+  if (cfg?.bands && items.length) {
     distribution = {
       kind: "bands",
       series: cfg.bands.map((b) => ({ label: b.label, color: b.color, values: new Array(seriesLen).fill(0) })),
     };
-    for (const it of trendItems) {
+    for (const it of items) {
       for (let m = 0; m < seriesLen; m++) {
         const bi = bandIndex(cfg.bands, it.series?.[m] ?? null);
         if (bi >= 0) distribution.series[bi].values[m]++;
@@ -196,23 +268,34 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
   }
 
   // C — movement tables
-  const row = (it: DetailItem) => ({ name: it.name, current: lastVal(it.series || []), momPct: itemMom(it) });
+  // A state code has nothing worth printing in a value column: "Elementor  1
+  // 0%" reads as a measurement when it is really just the code for "update
+  // available". The name alone is the whole finding in a band-change table.
+  const row = (it: DetailItem) => cfg?.categorical
+    ? { name: it.name, current: null, momPct: null }
+    : { name: it.name, current: lastVal(it.series || []), momPct: itemMom(it) };
   const movements: DeepMovementTable[] = [];
   const entered: DetailItem[] = [], dropped: DetailItem[] = [];
   if (cfg?.bands) {
-    const topBand = cfg.bands[0];
+    const gi = goalBandIndex(cfg, cfg.bands);
+    const topBand = cfg.bands[gi];
     const backIdx = Math.max(0, seriesLen - 4); // ~3 months ago
     for (const it of trendItems) {
-      const nowIn = bandIndex(cfg.bands, lastVal(it.series || [])) === 0;
-      const wasIn = bandIndex(cfg.bands, it.series?.[backIdx] ?? null) === 0;
+      const nowIn = bandIndex(cfg.bands, lastVal(it.series || [])) === gi;
+      const wasIn = bandIndex(cfg.bands, it.series?.[backIdx] ?? null) === gi;
       if (nowIn && !wasIn) entered.push(it);
       if (!nowIn && wasIn) dropped.push(it);
     }
     if (entered.length) movements.push({ title: `Entered ${topBand.label} (last 3 months)`, items: entered.map(row) });
     if (dropped.length) movements.push({ title: `Dropped from ${topBand.label}`, items: dropped.map(row) });
   }
-  if (gainers.length) movements.push({ title: "Biggest gainers (volume-weighted)", items: gainers.slice(0, 6).map((x) => row(x.it)) });
-  if (losers.length) movements.push({ title: "Biggest losers (volume-weighted)", items: losers.slice(0, 6).map((x) => row(x.it)) });
+  // "+50% this month" is a lie about a state code — the only honest movement
+  // is which band an item left and which one it landed in, and the band tables
+  // above already say that.
+  if (!cfg?.categorical) {
+    if (gainers.length) movements.push({ title: "Biggest gainers (volume-weighted)", items: gainers.slice(0, 6).map((x) => row(x.it)) });
+    if (losers.length) movements.push({ title: "Biggest losers (volume-weighted)", items: losers.slice(0, 6).map((x) => row(x.it)) });
+  }
 
   // E — segments
   const segments: DeepSegmentTable[] = (cfg?.segments || []).map((def) => {
@@ -226,26 +309,49 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
       const curs = its.map((it) => lastVal(it.series || [])).filter((v): v is number => v != null);
       const val = curs.length ? (isAvgFormat(report.format) ? curs.reduce((s, v) => s + v, 0) / curs.length : curs.reduce((s, v) => s + v, 0)) : null;
       const moms = its.map(itemMom).filter((v): v is number => v != null);
-      return {
-        name, count: its.length,
-        value: fmtV(val, report.format),
-        momPct: moms.length ? moms.reduce((s, v) => s + v, 0) / moms.length : null,
-      };
+      // Summing status codes gave "Active (11) → 5": the total of eleven
+      // 1s-and-2s, printed as though it measured something. The group's count
+      // is already in its name, so a categorical segment shows nothing else.
+      return cfg?.categorical
+        ? { name, count: its.length, value: "", momPct: null }
+        : {
+            name, count: its.length,
+            value: fmtV(val, report.format),
+            momPct: moms.length ? moms.reduce((s, v) => s + v, 0) / moms.length : null,
+          };
     }).sort((a, b) => b.count - a.count);
     return { title: def.label, rows };
   }).filter((s) => s.rows.length > 1);
 
   // F — opportunities
+  //
+  // Over ALL items, not just the ones with a trend. A page being an orphan, an
+  // image having no alt text, a post being published empty — none of those
+  // become true only after two months of history, and gating them on a series
+  // meant a freshly connected site showed an item table with every finding
+  // stripped out of it. Verified against production the day capture started:
+  // 30 orphans, 150 images with no alt text and 13 empty posts, all real, none
+  // of which would have appeared. Movement analysis still needs the series;
+  // "what is wrong right now" never did.
   const opportunities = (cfg?.opportunities || []).map((def) => {
-    let list = trendItems.filter(def.filter);
+    let list = items.filter(def.filter);
     if (def.sortBy) list = [...list].sort(def.sortBy);
-    return { title: def.title, note: def.note, items: list.slice(0, def.limit ?? 8) };
+    // The list is capped for display; the COUNT never is. Reporting the capped
+    // number as the finding is a lie the reader cannot detect: production has
+    // 150 images with no alt text and the narrative would have said 8.
+    return {
+      title: def.title, note: def.note, lede: def.lede,
+      total: list.length,
+      items: list.slice(0, def.limit ?? 8),
+    };
   }).filter((o) => o.items.length);
 
   // D — per-item stats + flags
   const itemStats: Record<string, DeepItemStats> = {};
   const flags: Record<string, string> = {};
-  for (const it of trendItems) {
+  // Same reasoning as the opportunities above: a warning is about the item's
+  // state now. itemStats genuinely needs history and guards for it below.
+  for (const it of items) {
     const vals = (it.series || []).filter((v): v is number => v != null && isFinite(v));
     if (vals.length >= 2) {
       const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
@@ -254,7 +360,8 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
         best: report.higherIsBetter ? Math.max(...vals) : Math.min(...vals),
         worst: report.higherIsBetter ? Math.min(...vals) : Math.max(...vals),
         avg,
-        volatilityPct: avg !== 0 ? (sd / Math.abs(avg)) * 100 : 0,
+        // Standard deviation over 1/2/3 measures nothing about a plugin.
+        volatilityPct: cfg?.categorical ? 0 : (avg !== 0 ? (sd / Math.abs(avg)) * 100 : 0),
       };
     }
     if (cfg?.flag) {
@@ -266,27 +373,45 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
   // Narrative + headline stats
   const flagged = Object.keys(flags).length;
   let narrative = `${items.length} ${pluralize(report.itemLabel, items.length)} tracked`;
-  if (trendItems.length) narrative += ` — ${gainers.length} improving, ${losers.length} declining this month`;
+  if (trendItems.length && !cfg?.categorical) narrative += ` — ${gainers.length} improving, ${losers.length} declining this month`;
   if (distribution?.kind === "bands" && cfg?.bands) {
-    const top = distribution.series[0];
+    const gi = goalBandIndex(cfg, cfg.bands);
+    const top = distribution.series[gi];
     const nowN = top.values[seriesLen - 1] ?? 0;
     const yearN = top.values[0] ?? 0;
-    narrative += `. ${nowN} in ${cfg.bands[0].label} (${nowN - yearN >= 0 ? "+" : ""}${nowN - yearN} vs a year ago)`;
+    narrative += `. ${nowN} in ${cfg.bands[gi].label} (${nowN - yearN >= 0 ? "+" : ""}${nowN - yearN} vs a year ago)`;
   }
   if (flagged) narrative += `. ${flagged} flagged for attention`;
   narrative += ".";
 
   const stats: DeepStat[] = [{ label: pluralize(report.itemLabel, 2), value: String(items.length) }];
-  if (aggCur != null) {
+  if (aggCur != null && !cfg?.categorical) {
     stats.push({
       label: `${isAvgFormat(report.format) ? "Avg" : "Total"} ${report.primaryLabel || "value"}`,
       value: fmtV(aggCur, report.format), momPct: aggMom,
     });
   }
   if (distribution?.kind === "bands" && cfg?.bands) {
-    const top = distribution.series[0];
+    const gi = goalBandIndex(cfg, cfg.bands);
+    const top = distribution.series[gi];
     const nowN = top.values[seriesLen - 1] ?? 0, yearN = top.values[0] ?? 0;
-    stats.push({ label: cfg.bands[0].label, value: String(nowN), sub: `${nowN - yearN >= 0 ? "+" : ""}${nowN - yearN} vs 12 mo ago` });
+    stats.push({ label: cfg.bands[gi].label, value: String(nowN), sub: `${nowN - yearN >= 0 ? "+" : ""}${nowN - yearN} vs 12 mo ago` });
+    // When the goal is NOT the first band, the first band is the problem band —
+    // and that is the number an owner needs in front of them, not buried in the
+    // chart legend.
+    if (gi !== 0 && distribution.series[0]) {
+      const worst = distribution.series[0];
+      const n = worst.values[seriesLen - 1] ?? 0;
+      if (n > 0) stats.push({ label: worst.label, value: String(n) });
+    }
+    // With no total to headline, the bands that need action carry the summary.
+    if (cfg.categorical) {
+      for (let i = 1; i < distribution.series.length; i++) {
+        const b = distribution.series[i];
+        const n = b.values[seriesLen - 1] ?? 0;
+        if (n > 0) stats.push({ label: b.label, value: String(n) });
+      }
+    }
   }
   if (gainers.length || losers.length) stats.push({ label: "Movers", value: `${gainers.length}▲ ${losers.length}▼` });
   if (flagged) stats.push({ label: "Flagged", value: String(flagged) });
@@ -297,7 +422,7 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
     distribution, opportunities, flags, itemStats, seriesLen,
   });
 
-  return { report, months, narrative, stats, distribution, movements, segments, opportunities, flags, itemStats, meaning };
+  return { report, months, narrative, stats, distribution, movements, segments, opportunities, flags, itemStats, meaning, categorical: cfg?.categorical };
 }
 
 // ── "What this means" ─────────────────────────────────────────────────────
@@ -315,7 +440,12 @@ function buildMeaning(ctx: {
   entered: DetailItem[];
   dropped: DetailItem[];
   distribution?: DeepDistribution;
-  opportunities: Array<{ title: string; note?: string; items: DetailItem[] }>;
+  opportunities: Array<{
+    title: string; note?: string; items: DetailItem[];
+    /** How many items actually match. `items` is capped for display; this is not. */
+    total: number;
+    lede?: (n: number, itemLabel: string) => string;
+  }>;
   flags: Record<string, string>;
   itemStats: Record<string, DeepItemStats>;
   seriesLen: number;
@@ -421,7 +551,9 @@ function buildMeaning(ctx: {
 
   // ── Trend reports ──
   // 1. The headline: is this area winning or losing overall?
-  if (total >= 3 && (gainers.length || losers.length)) {
+  //    Skipped for categorical reports — "8 improved this month" is measuring
+  //    the size of a status code, which means nothing.
+  if (total >= 3 && !cfg?.categorical && (gainers.length || losers.length)) {
     if (gainers.length >= losers.length * 2) {
       out.push({ tone: "good", text: `Momentum is on your side: ${gainers.length} of your ${total} ${nouns} improved this month, only ${losers.length} slipped. Whatever you're doing here, keep doing it.` });
     } else if (losers.length >= gainers.length * 2) {
@@ -433,22 +565,23 @@ function buildMeaning(ctx: {
 
   // 2. Band story: the count that matters, in plain terms.
   if (distribution?.kind === "bands" && cfg?.bands?.length) {
-    const top = distribution.series[0];
+    const gi = goalBandIndex(cfg, cfg.bands);
+    const top = distribution.series[gi];
     const nowN = top.values[seriesLen - 1] ?? 0;
     const yearN = top.values[0] ?? 0;
     const d = nowN - yearN;
     out.push({
       tone: d > 0 ? "good" : d < 0 ? "bad" : "info",
       text: d > 0
-        ? `You now have ${nowN} ${pluralize(report.itemLabel, nowN)} in "${top.label}" — ${d} more than a year ago. That top group does most of the work, so this is the single number to keep growing.`
+        ? `You now have ${nowN} ${pluralize(report.itemLabel, nowN)} in "${top.label}" — ${d} more than a year ago. That is the group worth growing — it is the one this report is trying to get you to.`
         : d < 0
-        ? `You're down to ${nowN} ${pluralize(report.itemLabel, nowN)} in "${top.label}" — ${Math.abs(d)} fewer than a year ago. The top group does most of the work, so winning those back matters more than anything else on this page.`
-        : `You have ${nowN} ${pluralize(report.itemLabel, nowN)} in "${top.label}" — the same as a year ago. Holding position isn't failure, but the fastest growth comes from moving more ${nouns} into that top group.`,
+        ? `You're down to ${nowN} ${pluralize(report.itemLabel, nowN)} in "${top.label}" — ${Math.abs(d)} fewer than a year ago. That is the group this report is trying to get you to, so winning those back matters more than anything else on this page.`
+        : `You have ${nowN} ${pluralize(report.itemLabel, nowN)} in "${top.label}" — the same as a year ago. Holding position isn't failure, but the gain here comes from moving more ${nouns} into that group.`,
     });
     if (entered.length) {
-      out.push({ tone: "good", text: `Fresh wins: ${entered.slice(0, 2).map((i) => i.name).join(" and ")} just moved into "${cfg.bands[0].label}" in the last three months. New arrivals are fragile — a little reinforcement now locks them in.` });
+      out.push({ tone: "good", text: `Fresh wins: ${entered.slice(0, 2).map((i) => i.name).join(" and ")} just moved into "${cfg.bands[goalBandIndex(cfg, cfg.bands)].label}" in the last three months. New arrivals are fragile — a little reinforcement now locks them in.` });
     } else if (dropped.length) {
-      out.push({ tone: "watch", text: `${dropped.slice(0, 2).map((i) => i.name).join(" and ")} recently fell out of "${cfg.bands[0].label}". Recent drops are usually the easiest to reverse — they were there a few weeks ago.` });
+      out.push({ tone: "watch", text: `${dropped.slice(0, 2).map((i) => i.name).join(" and ")} recently fell out of "${cfg.bands[goalBandIndex(cfg, cfg.bands)].label}". Recent drops are usually the easiest to reverse — they were there a few weeks ago.` });
     }
   }
 
@@ -483,24 +616,30 @@ function buildMeaning(ctx: {
     }
   }
 
-  // 4. The single most valuable fix (weight × decline).
-  if (losers.length) {
-    const worst = losers[0];
-    out.push({
-      tone: "bad",
-      text: `If you fix one thing, fix ${worst.it.name}: it moved the wrong way by ${pctOf(worst.imp)} and it carries more weight than anything else that declined. A small recovery there is worth more than big wins on minor ${nouns}.`,
-    });
-  } else if (gainers.length && out.length < 3) {
-    const best = gainers[0];
-    out.push({ tone: "good", text: `Your strongest mover is ${best.it.name}, improving ${pctOf(best.imp)} — and it's one of the heavyweights, so that gain shows up in your real results, not just this table.` });
+  // 4. The single most valuable fix (weight × decline). A percentage move on a
+  //    status code is not a fix worth naming, so categorical reports lean on
+  //    their opportunity lists instead.
+  if (!cfg?.categorical) {
+    if (losers.length) {
+      const worst = losers[0];
+      out.push({
+        tone: "bad",
+        text: `If you fix one thing, fix ${worst.it.name}: it moved the wrong way by ${pctOf(worst.imp)} and it carries more weight than anything else that declined. A small recovery there is worth more than big wins on minor ${nouns}.`,
+      });
+    } else if (gainers.length && out.length < 3) {
+      const best = gainers[0];
+      out.push({ tone: "good", text: `Your strongest mover is ${best.it.name}, improving ${pctOf(best.imp)} — and it's one of the heavyweights, so that gain shows up in your real results, not just this table.` });
+    }
   }
 
   // 5. Opportunities: name the low-hanging fruit.
   const opp = opportunities[0];
   if (opp?.items.length) {
     out.push({
-      tone: "good",
-      text: `${opp.items.length} ${pluralize(report.itemLabel, opp.items.length)} qualify as "${opp.title}" — already close enough that a small push gets them over the line. These are usually the cheapest wins on this page.`,
+      tone: opp.lede ? "watch" : "good",
+      text: opp.lede
+        ? opp.lede(opp.total, report.itemLabel)
+        : `${opp.total} ${pluralize(report.itemLabel, opp.total)} qualify as "${opp.title}" — already close enough that a small push gets them over the line. These are usually the cheapest wins on this page.`,
     });
   }
 
@@ -509,12 +648,16 @@ function buildMeaning(ctx: {
   if (flagNames.length) {
     out.push({
       tone: "watch",
-      text: `${flagNames.length} ${pluralize(report.itemLabel, flagNames.length)} carry a warning (look for the ⚠ in the table). For example ${flagNames[0]}: ${flags[flagNames[0]].toLowerCase()}`,
+      // Only the leading capital is dropped so the flag reads as part of the
+      // sentence. Lowercasing the whole string turned any name inside it into
+      // "79 days late — morgan marsh".
+      text: `${flagNames.length} ${pluralize(report.itemLabel, flagNames.length)} ${flagNames.length === 1 ? "carries" : "carry"} a warning (look for the ⚠ in the table). For example ${flagNames[0]}: ${uncapitalize(flags[flagNames[0]])}`,
     });
   }
 
-  // 7. Volatility, so one bad month doesn't cause panic.
-  if (out.length < 5) {
+  // 7. Volatility, so one bad month doesn't cause panic. Meaningless on a
+  //    state code, where volatilityPct is pinned to 0 anyway.
+  if (out.length < 5 && !cfg?.categorical) {
     const volatile = Object.entries(itemStats).sort((a, b) => b[1].volatilityPct - a[1].volatilityPct)[0];
     if (volatile && volatile[1].volatilityPct >= 50) {
       out.push({ tone: "info", text: `${volatile[0]} swings about ±${volatile[1].volatilityPct.toFixed(0)}% month to month — that's its normal personality. Judge it on the three-month picture, not any single month.` });

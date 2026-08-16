@@ -6,10 +6,16 @@ import { useAnalyticsData } from '../../analytics/useAnalyticsData';
 import { ARION_COLORS, ARION_PALETTE, CHART_FILLS, DELTA_COLORS, PERIOD_OPTIONS, formatNumber, formatPct, formatDuration, bounceColor } from '../../analytics/chartConfig';
 import { ConsultingUpsell } from '../../components/Ui';
 import { AnalyticsNotConnected } from '../../analytics/AnalyticsNotConnected';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip);
 
 export function AnalyticsConversions() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId } = useArionContext();
   const tier = (selectedSite?.arionTier || 'standard') as keyof typeof PERIOD_OPTIONS;
   const [period, setPeriod] = useState(30);
@@ -44,6 +50,9 @@ export function AnalyticsConversions() {
 
   return (
     <div>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'conversion_by_source', label: 'Conversions by source' },
+      ]} />
       {/* Period selector + comparison toggle */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <select

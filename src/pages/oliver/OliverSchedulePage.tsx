@@ -15,11 +15,14 @@ import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader } from "../../components/oliver/ui";
 import { UnifiedCalendarGrid, type UnifiedEvent } from "../../components/UnifiedCalendarGrid";
 
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export function OliverSchedulePage() {
+  const insightsPayload = useProductInsightsPayload('oliver');
   const { get, ready } = useOliverApi();
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,6 +70,10 @@ export function OliverSchedulePage() {
 
   return (
     <OliverPageWrapper title="Schedule" subtitle="Jobs + booking-page reservations" error={error} loading={loading}>
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
+        { id: 'oliver_booked_ahead', label: 'Booked ahead' },
+        { id: 'oliver_job_reliability', label: 'Ran clean vs not' },
+      ]} />
       <PageHeader title="Schedule" subtitle="Drag jobs in the Job Board; manage availability under Team. This view is read-only." />
 
       {/* KPI strip — last 7d to next 60d */}

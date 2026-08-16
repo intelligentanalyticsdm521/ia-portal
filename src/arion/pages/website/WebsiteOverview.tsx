@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
+import { ReportButton } from '../../../components/insights/ReportButton';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 import {
   Card, HealthRow, Loading, EmptyPanel, SidebarCard, ConsultingUpsell,
   HealthScoreRing, DetailsModal,
@@ -19,6 +21,9 @@ import {
  */
 export function WebsiteOverview() {
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
+  // With the other hooks, above any early return: a hook placed after one
+  // runs on some renders and not others, which is an instant crash.
+  const insights = useArionInsightsPayload();
   const [applyOpen, setApplyOpen] = useState(false);
   const [applyBusy, setApplyBusy] = useState(false);
   const [applyResult, setApplyResult] = useState<any>(null);
@@ -164,6 +169,10 @@ export function WebsiteOverview() {
 
   return (
     <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <ReportButton detail={insights?.detail} reportId="page_reachability" />
+      </div>
+
       {!pluginConnected && (
         <div style={{ background: '#FEF3C7', borderLeft: '4px solid #D97706', padding: '10px 14px', marginBottom: 14, borderRadius: 4, fontSize: 13 }}>
           <strong style={{ color: '#78350F' }}>⚠ IA Plugin not reachable</strong>

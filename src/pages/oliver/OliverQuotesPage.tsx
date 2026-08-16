@@ -7,6 +7,8 @@ import {
   StatusBadge, type Column,
 } from "../../components/oliver/ui";
 import { QuoteCreateForm } from "./QuoteCreateForm";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 import {
   ApproveMilestoneModal,
   type MilestoneShape,
@@ -67,6 +69,10 @@ function fmtDate(d?: string | null) {
 }
 
 export function OliverQuotesPage() {
+  // Reports covering THIS function (Brandon 2026-08-14). Above any early
+  // return — a hook below one runs on some renders only.
+  const insightsPayload = useProductInsightsPayload('oliver');
+
   const { get, post, patch, del, ready } = useOliverApi();
   const [rows, setRows] = useState<QuoteRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -244,6 +250,12 @@ export function OliverQuotesPage() {
 
   return (
     <OliverPageWrapper title="Quotes" subtitle="Quote management" error={error} loading={loading}>
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
+        { id: 'oliver_quotes_by_service', label: 'Quotes by service' },
+        { id: 'oliver_proposal_funnel', label: 'Proposal funnel' },
+        { id: 'oliver_service_catalog', label: 'What you sell' },
+        { id: 'oliver_win_drivers', label: 'What wins work' },
+      ]} />
       <PageHeader
         title="Quotes"
         subtitle="Send estimates, track acceptance, and convert into jobs"

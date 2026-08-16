@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 import {
   PageHeader, DataTable, EmptyState, Button, FilterBar, type Column,
 } from "../../components/oliver/ui";
@@ -58,6 +60,7 @@ const FILTER_PILLS = [
 ];
 
 export function OliverProjectsPage() {
+  const insightsPayload = useProductInsightsPayload('oliver');
   const { get, post, ready } = useOliverApi();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -198,6 +201,9 @@ export function OliverProjectsPage() {
 
   return (
     <OliverPageWrapper title="Projects" subtitle="Multi-job customer engagements" error={error} loading={loading && !projects.length}>
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
+        { id: 'oliver_projects', label: 'Project delivery' },
+      ]} />
       <PageHeader
         title="Projects"
         subtitle="Group multiple jobs under a single customer engagement (remodels, multi-day service, recurring work)."

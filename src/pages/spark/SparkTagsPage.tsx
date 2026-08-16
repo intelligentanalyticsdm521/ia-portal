@@ -4,6 +4,8 @@ import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { Plus, Tag as TagIcon, Users } from "lucide-react";
 
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 interface Tag {
   id: number;
   name: string;
@@ -23,6 +25,7 @@ const TAG_COLORS = [
 ];
 
 export function SparkTagsPage() {
+  const insightsPayload = useProductInsightsPayload('spark');
   const { get, post, ready } = useSparkApi();
   const [tags, setTags] = useState<Tag[]>([]);
   const [error, setError] = useState<unknown>(null);
@@ -72,6 +75,9 @@ export function SparkTagsPage() {
       loading={loading}
       error={error}
     >
+      <ReportBar product="spark" detail={insightsPayload?.detail} reports={[
+        { id: 'spark_tag_usage', label: 'Tag usage' },
+      ]} />
       {tags.length === 0 && !loading ? (
         <div className="spark-mini-card py-12 text-center">
           <div className="mx-auto w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mb-3">

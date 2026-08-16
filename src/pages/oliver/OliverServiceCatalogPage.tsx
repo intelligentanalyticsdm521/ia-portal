@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 import {
   PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState, Button,
   StatusBadge, type Column,
@@ -56,6 +58,7 @@ function fmtPrice(p: PriceVariant): string {
 }
 
 export function OliverServiceCatalogPage() {
+  const insightsPayload = useProductInsightsPayload('oliver');
   const { get, post, patch, del, ready } = useOliverApi();
   const [categories, setCategories] = useState<Category[]>([]);
   const [offerings, setOfferings] = useState<Offering[]>([]);
@@ -225,6 +228,10 @@ export function OliverServiceCatalogPage() {
 
   return (
     <OliverPageWrapper title="Service Catalog" subtitle="Tenant-defined services" error={error} loading={loading}>
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
+        { id: 'oliver_service_catalog', label: 'What you sell' },
+        { id: 'oliver_revenue_by_service', label: 'Revenue by service' },
+      ]} />
       <PageHeader
         title="Service Catalog"
         subtitle="What your business sells — services, products, subscriptions, coupons, shipping. Mirrors your Stripe account."

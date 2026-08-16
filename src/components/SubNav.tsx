@@ -321,8 +321,10 @@ const ARION_NAV: SubNavConfig = {
         { key: "arion_ia_insights_health", label: "Health", route: "/app/services/arion_ia_insights_health" },
         { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends", tag: { label: "ARION", color: "#38BDF8" } },
         // IA Insights model (see SPARK block): Health/Trends/Reports every tier,
-        // Intelligence = Pro. Brandon 2026-08-06.
+        // Intelligence = Pro. Brandon 2026-08-06. Reports entry added by the
+        // Insights build (Aug 14-16) — sits in the every-tier band per that model.
         { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#38BDF8" }, minTier: "pro" },
+        { key: "arion_ia_insights_reports", label: "Reports", route: "/app/services/arion_ia_insights_reports" },
       ],
     },
   ],

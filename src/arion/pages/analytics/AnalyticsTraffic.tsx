@@ -13,10 +13,16 @@ import {
   formatDelta,
 } from '../../analytics/chartConfig';
 import { Card, ConsultingUpsell } from '../../components/Ui';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip);
 
 export function AnalyticsTraffic() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId } = useArionContext();
   const tier = (selectedSite?.arionTier || 'standard') as keyof typeof PERIOD_OPTIONS;
   const [period, setPeriod] = useState(30);
@@ -87,6 +93,14 @@ export function AnalyticsTraffic() {
 
   return (
     <>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'channel_breakdown', label: 'By channel' },
+        { id: 'traffic_by_medium', label: 'By medium' },
+        { id: 'referral_sources', label: 'Referral sources' },
+        { id: 'campaign_performance', label: 'Campaigns' },
+        { id: 'traffic_by_hour', label: 'When people visit' },
+        { id: 'engagement_by_channel', label: 'Engagement by channel' },
+      ]} />
       {/* ── Period selector + comparison toggle ── */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <select

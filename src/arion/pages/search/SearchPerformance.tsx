@@ -4,6 +4,8 @@ import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { MetricCard, Card, PlatformTabs, WarnNotice, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
 import { BarChartViz, MultiLineChart } from '../../components/Charts';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
 // Format a raw country code to a readable label. GSC uses ISO 3166-1 alpha-3.
 function countryLabel(code: string): string {
@@ -19,6 +21,10 @@ function countryLabel(code: string): string {
 }
 
 export function SearchPerformance() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const tier = selectedSite?.arionTier || 'standard';
   const [provider, setProvider] = useState<string>('google');
@@ -66,6 +72,16 @@ export function SearchPerformance() {
 
   return (
     <>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'query_performance', label: 'Queries' },
+        { id: 'page_search_performance', label: 'Landing pages' },
+        { id: 'page_query_pairs', label: 'Page + search pairs' },
+        { id: 'ctr_by_query', label: 'Click-through by query' },
+        { id: 'ctr_opportunity', label: 'CTR opportunities' },
+        { id: 'search_device_split', label: 'By device' },
+        { id: 'search_by_country', label: 'By country' },
+        { id: 'search_appearance', label: 'Rich results' },
+      ]} />
       <PlatformTabs
         tabs={[{ key: 'google', label: 'Google' }, { key: 'bing', label: 'Bing' }]}
         active={provider}

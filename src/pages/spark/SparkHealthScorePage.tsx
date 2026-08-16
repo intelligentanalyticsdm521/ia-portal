@@ -7,6 +7,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 import {
   Award,
   Flame,
@@ -55,6 +57,7 @@ const TIER_META: Record<Tier, { label: string; color: string; icon: LucideIcon; 
 const TIER_ORDER: Tier[] = ["champion", "engaged", "warm", "cold", "at_risk"];
 
 export function SparkHealthScorePage() {
+  const insightsPayload = useProductInsightsPayload('spark');
   const { get, ready } = useSparkApi();
   const [dist, setDist] = useState<DistributionResponse["data"] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -166,6 +169,10 @@ export function SparkHealthScorePage() {
       loading={loading}
       error={error}
     >
+      <ReportBar product="spark" detail={insightsPayload?.detail} reports={[
+        { id: 'spark_contact_scoring', label: 'Engagement scores' },
+        { id: 'spark_list_health', label: 'List health' },
+      ]} />
       {lookupError && (
         <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           {lookupError}

@@ -9,6 +9,8 @@ import {
 import { useMsal } from "@azure/msal-react";
 import { oliverFetchRaw, oliverDownload } from "../../lib/oliverApi";
 import { InvoiceCreateForm } from "./InvoiceCreateForm";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,6 +78,10 @@ function fmtDate(d?: string | null) {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export function OliverInvoicesPage() {
+  // Reports covering THIS function (Brandon 2026-08-14). Above any early
+  // return — a hook below one runs on some renders only.
+  const insightsPayload = useProductInsightsPayload('oliver');
+
   const { get, post, patch, ready } = useOliverApi();
   const { instance, accounts } = useMsal();
   const [rows, setRows] = useState<InvoiceRow[]>([]);
@@ -284,6 +290,10 @@ export function OliverInvoicesPage() {
 
   return (
     <OliverPageWrapper title="Invoices" subtitle="Invoice management" error={error} loading={loading}>
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
+        { id: 'oliver_overdue_invoices', label: 'Who to chase' },
+        { id: 'oliver_invoice_aging', label: 'Receivables aging' },
+      ]} />
       <PageHeader
         title="Invoices"
         subtitle="Send, track, and reconcile invoices through Stripe"

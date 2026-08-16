@@ -4,6 +4,8 @@ import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { Card, StatCard, EmptyPanel, Loading, ConsultingUpsell } from '../../components/Ui';
 import { GbpPendingVerificationCard, GbpStatusCard } from './GbpStatusCard';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
 // Pro+ auto-reply automation — opt-in + minimum-star gate. Uses the ARION
 // IL model to reply automatically to new reviews (metered per reply).
@@ -67,6 +69,10 @@ function Stars({ n }: { n: number }) {
 }
 
 export function BusinessReviews() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const { data, loading, refetch } = useArionData(
     () => activeSiteId ? arionApi.getGbpReviewsLive(activeSiteId).catch((e: any) => ({ error: e.message })) : Promise.resolve(null),

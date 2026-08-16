@@ -39,32 +39,52 @@ function Spark({ series, up }: { series: Array<number | null>; up: boolean }) {
   return <svg width={w} height={h} aria-hidden="true"><path d={d} fill="none" stroke={up ? "#16a34a" : "#dc2626"} strokeWidth={1.5} strokeLinejoin="round" /></svg>;
 }
 
-/** Stacked 12-month distribution/composition chart. Pure SVG. */
+/**
+ * Stacked 12-month distribution/composition chart.
+ *
+ * Built from flex columns rather than a fixed-width SVG: the old version drew
+ * 42px bars into a hard-coded canvas, so it filled about half of a wide modal
+ * and overflowed a phone. These columns divide whatever width they are given,
+ * which is what makes the same chart work on a 1400px report and a 375px
+ * screen without a horizontal scrollbar.
+ */
 function StackedChart({ dist, months }: { dist: DeepDistribution; months: string[] }) {
   const n = months.length;
-  const colW = 42, gap = 8, h = 150, pad = 4, labelH = 16;
-  const w = n * (colW + gap);
   const totals = Array.from({ length: n }, (_, m) => dist.series.reduce((s, b) => s + (b.values[m] || 0), 0));
   const maxT = Math.max(...totals, 1);
+  // The SVG drew band 0 at the bottom of the stack. flex-col fills downward,
+  // so the order reverses to keep the same reading.
+  const stack = [...dist.series].reverse();
+
   return (
-    <div className="overflow-x-auto">
-      <svg width={w} height={h + labelH} aria-hidden="true">
-        {Array.from({ length: n }, (_, m) => {
-          let y = h - pad;
-          return (
-            <g key={m}>
-              {dist.series.map((b, bi) => {
-                const v = b.values[m] || 0;
-                const bh = (v / maxT) * (h - pad * 2);
-                y -= bh;
-                return bh > 0.5 ? <rect key={bi} x={m * (colW + gap)} y={y} width={colW} height={bh} fill={b.color} rx={1.5} /> : null;
-              })}
-              <text x={m * (colW + gap) + colW / 2} y={h + 12} textAnchor="middle" fontSize={9} fill="#94a3b8">{months[m]}</text>
-            </g>
-          );
-        })}
-      </svg>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
+    <div>
+      <div className="flex h-[130px] items-end gap-[3px] sm:h-[150px] sm:gap-1.5">
+        {Array.from({ length: n }, (_, m) => (
+          <div
+            key={m}
+            className="flex h-full flex-1 flex-col justify-end"
+            title={`${months[m]} — ${totals[m].toLocaleString()}`}
+          >
+            {stack.map((b, bi) => {
+              const v = b.values[m] || 0;
+              if (v <= 0) return null;
+              return (
+                <div
+                  key={bi}
+                  className="first:rounded-t-[2px]"
+                  style={{ height: `${(v / maxT) * 100}%`, background: b.color, minHeight: 1 }}
+                />
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 flex gap-[3px] sm:gap-1.5">
+        {months.map((mo, i) => (
+          <div key={i} className="flex-1 truncate text-center text-[8px] text-slate-400 sm:text-[9px]">{mo}</div>
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
         {dist.series.map((b) => (
           <span key={b.label} className="inline-flex items-center gap-1.5 text-[10px] text-slate-600">
             <span className="h-2.5 w-2.5 rounded-sm" style={{ background: b.color }} />{b.label}
@@ -90,15 +110,15 @@ function ItemRow({ it, deep }: { it: DetailItem; deep: DeepReportData }) {
   return (
     <>
       <tr className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 cursor-pointer" onClick={() => !isFeed && setOpen((o) => !o)}>
-        <td className="py-1.5 px-3 text-slate-700 truncate max-w-[220px]" title={it.name}>
+        <td className="max-w-[160px] truncate py-1.5 px-3 text-slate-700 sm:max-w-[320px]" title={it.name}>
           <span className="inline-flex items-center gap-1.5">
             {!isFeed && (open ? <ChevronDown className="h-3 w-3 text-slate-400" /> : <ChevronRight className="h-3 w-3 text-slate-300" />)}
             {it.name}
             {flag && <AlertTriangle className="h-3 w-3 text-amber-500" aria-label={flag} />}
           </span>
         </td>
-        {!isFeed && <td className="py-1.5 px-2 text-right tabular-nums font-medium text-slate-800">{fmtV(cur, report.format)}</td>}
-        {!isFeed && <td className="py-1.5 px-2 text-right"><Mom pct={mom} lowerBetter={lowerBetter} /></td>}
+        {!isFeed && !deep.categorical && <td className="py-1.5 px-2 text-right tabular-nums font-medium text-slate-800">{fmtV(cur, report.format)}</td>}
+        {!isFeed && !deep.categorical && <td className="py-1.5 px-2 text-right"><Mom pct={mom} lowerBetter={lowerBetter} /></td>}
         {!isFeed && <td className="py-1.5 px-2"><Spark series={it.series} up={up} /></td>}
         {cols.map((c: DetailColumn) => (
           <td key={c.key} className="py-1.5 px-2 text-right tabular-nums text-slate-600">{fmtV(it.extra?.[c.key] as any, c.format)}</td>
@@ -110,7 +130,8 @@ function ItemRow({ it, deep }: { it: DetailItem; deep: DeepReportData }) {
             {flag && (
               <p className="mb-2 flex items-center gap-1.5 text-[11px] text-amber-700"><AlertTriangle className="h-3.5 w-3.5" />{flag}</p>
             )}
-            <div className="grid gap-1 mb-3" style={{ gridTemplateColumns: `repeat(${months.length}, minmax(38px, 1fr))` }}>
+            <div className="mb-3 -mx-1 overflow-x-auto px-1">
+              <div className="grid min-w-[420px] gap-1" style={{ gridTemplateColumns: `repeat(${months.length}, minmax(0, 1fr))` }}>
               {months.map((mo, i) => (
                 <div key={i} className="text-center">
                   <div className={`rounded px-0.5 py-1 text-[10px] tabular-nums ${i === months.length - 1 ? "bg-slate-900 text-white font-semibold" : "bg-white border border-slate-200 text-slate-700"}`}>
@@ -119,6 +140,7 @@ function ItemRow({ it, deep }: { it: DetailItem; deep: DeepReportData }) {
                   <div className="text-[8px] text-slate-400 mt-0.5">{mo}</div>
                 </div>
               ))}
+              </div>
             </div>
             <div className="flex flex-wrap gap-x-5 gap-y-1 text-[10px] text-slate-500">
               {st && <>
@@ -157,7 +179,7 @@ function MiniMovementTable({ title, rows, format, lowerBetter }: { title: string
 }
 
 export function DeepReportView({ deep }: { deep: DeepReportData }) {
-  const { report, months, narrative, stats, distribution, movements, segments, opportunities, meaning } = deep;
+  const { report, months, narrative, stats, distribution, movements, segments, opportunities, meaning, categorical } = deep;
   const cols = report.columns || [];
   const isFeed = report.kind === "feed" || !report.items.some((it) => it.series?.length);
   const lowerBetter = !report.higherIsBetter;
@@ -166,6 +188,10 @@ export function DeepReportView({ deep }: { deep: DeepReportData }) {
   const rows = isFeed ? report.items : [...report.items].sort((a, b) => Math.abs(itemMom(b) ?? 0) - Math.abs(itemMom(a) ?? 0));
 
   const notes = reportNotesFor(report.id);
+
+  // Only pair them when both exist; a lone block keeps the full width rather
+  // than sitting in a half-width column beside a hole.
+  const pairTopBlocks = meaning.length > 0 && !!distribution;
 
   return (
     <div className="space-y-5">
@@ -185,7 +211,7 @@ export function DeepReportView({ deep }: { deep: DeepReportData }) {
       {/* 1 — summary */}
       <div>
         <p className="text-sm text-slate-600">{narrative}</p>
-        <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {stats.map((s) => (
             <div key={s.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
               <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-400">{s.label}</div>
@@ -199,38 +225,45 @@ export function DeepReportView({ deep }: { deep: DeepReportData }) {
         </div>
       </div>
 
-      {/* 1b — what this means, in plain business language */}
-      {meaning.length > 0 && (
-        <div className="rounded-lg border border-amber-200/70 bg-amber-50/50 p-4">
-          <div className="flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-wide text-amber-700 mb-3">
-            <Lightbulb className="h-3.5 w-3.5" /> What this means for you
+      {/* 1b + 2 — the interpretation and the chart it describes.
+          These are the same story told two ways, so on a wide screen they sit
+          side by side and the reader can check one against the other instead
+          of scrolling between two full-width bands of mostly empty space.
+          Either one alone still takes the full width. */}
+      {(meaning.length > 0 || distribution) && (
+      <div className={pairTopBlocks ? "grid gap-3 xl:grid-cols-2 xl:items-start" : "space-y-5"}>
+        {meaning.length > 0 && (
+          <div className="rounded-lg border border-amber-200/70 bg-amber-50/50 p-4">
+            <div className="flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-wide text-amber-700 mb-3">
+              <Lightbulb className="h-3.5 w-3.5" /> What this means for you
+            </div>
+            <div className="space-y-2.5">
+              {meaning.map((m, i) => (
+                <div key={i} className="flex gap-2.5">
+                  <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full" style={{ background: MEANING_TONES[m.tone] }} aria-hidden="true" />
+                  <p className="text-[12px] leading-relaxed text-slate-700">{m.text}</p>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="space-y-2.5">
-            {meaning.map((m, i) => (
-              <div key={i} className="flex gap-2.5">
-                <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full" style={{ background: MEANING_TONES[m.tone] }} aria-hidden="true" />
-                <p className="text-[12px] leading-relaxed text-slate-700">{m.text}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* 2 — distribution over time */}
-      {distribution && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">
-            {distribution.kind === "bands" ? `${report.itemLabel}s by band, 12 months` : "Composition, 12 months"}
+        {distribution && (
+          <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">
+              {distribution.kind === "bands" ? `${report.itemLabel}s by band, 12 months` : "Composition, 12 months"}
+            </div>
+            <StackedChart dist={distribution} months={months} />
           </div>
-          <StackedChart dist={distribution} months={months} />
-        </div>
+        )}
+      </div>
       )}
 
       {/* 3 — movement analysis */}
       {movements.length > 0 && (
         <div>
           <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">Movement analysis</div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {movements.map((mt) => <MiniMovementTable key={mt.title} title={mt.title} rows={mt.items} format={report.format} lowerBetter={lowerBetter} />)}
           </div>
         </div>
@@ -240,7 +273,7 @@ export function DeepReportView({ deep }: { deep: DeepReportData }) {
       {segments.length > 0 && (
         <div>
           <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">Segments</div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {segments.map((sg) => (
               <div key={sg.title} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                 <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-1.5">{sg.title}</div>
@@ -260,16 +293,25 @@ export function DeepReportView({ deep }: { deep: DeepReportData }) {
       {opportunities.length > 0 && (
         <div>
           <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">Opportunities</div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {opportunities.map((op) => (
               <div key={op.title} className="rounded-lg border border-lime-200 bg-lime-50/60 px-3 py-2">
-                <div className="text-[10px] uppercase font-semibold tracking-wide text-lime-800 mb-0.5">{op.title}</div>
+                <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                  <div className="text-[10px] uppercase font-semibold tracking-wide text-lime-800">{op.title}</div>
+                  {/* Never let a capped list read as the whole finding. */}
+                  <div className="text-[10px] font-semibold text-lime-700 flex-shrink-0">
+                    {op.total > op.items.length ? `${op.items.length} of ${op.total}` : op.total}
+                  </div>
+                </div>
                 {op.note && <div className="text-[10px] text-lime-700 mb-1.5">{op.note}</div>}
                 {op.items.map((it) => (
                   <div key={it.name} className="flex items-center justify-between gap-2 py-0.5 text-[11px]">
                     <span className="text-slate-700 truncate" title={it.name}>{it.name}</span>
                     <span className="flex items-center gap-2 flex-shrink-0">
-                      <span className="tabular-nums font-medium text-slate-800">{fmtV(it.series?.filter((v): v is number => v != null).slice(-1)[0] ?? null, report.format)}</span>
+                      {/* On a categorical report the series is a status code —
+                          printing "1" beside a plugin name reads as a
+                          measurement of something. */}
+                      {!categorical && <span className="tabular-nums font-medium text-slate-800">{fmtV(it.series?.filter((v): v is number => v != null).slice(-1)[0] ?? null, report.format)}</span>}
                       {it.extra?.volume != null && <span className="text-[10px] text-slate-400">{fmtV(it.extra.volume as any, "number")} vol</span>}
                     </span>
                   </div>
@@ -290,8 +332,14 @@ export function DeepReportView({ deep }: { deep: DeepReportData }) {
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-200">
                 <th className="py-1.5 px-3 font-semibold">{report.itemLabel}</th>
-                {!isFeed && <th className="py-1.5 px-2 font-semibold text-right">{report.primaryLabel || "Value"}</th>}
-                {!isFeed && <th className="py-1.5 px-2 font-semibold text-right">MoM</th>}
+                {/* A categorical report's series is a state code. Printing it as a
+                    value column, and a month-over-month percentage beside it,
+                    invents two measurements that do not exist — the state is
+                    already spelled out in the report's own columns. The
+                    sparkline stays: the SHAPE of the state changing over the
+                    year is real and readable. */}
+                {!isFeed && !categorical && <th className="py-1.5 px-2 font-semibold text-right">{report.primaryLabel || "Value"}</th>}
+                {!isFeed && !categorical && <th className="py-1.5 px-2 font-semibold text-right">MoM</th>}
                 {!isFeed && <th className="py-1.5 px-2 font-semibold">Trend</th>}
                 {cols.map((c) => <th key={c.key} className="py-1.5 px-2 font-semibold text-right">{c.label}</th>)}
               </tr>

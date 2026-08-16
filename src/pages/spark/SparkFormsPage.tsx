@@ -23,6 +23,8 @@ import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkFormBuilderModal } from "../../components/spark/SparkFormBuilderModal";
 import { ClipboardList, ExternalLink, Plus, BarChart3, ToggleRight } from "lucide-react";
 
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 interface SparkForm {
   id: string;
   name: string;
@@ -33,6 +35,7 @@ interface SparkForm {
 }
 
 export function SparkFormsPage() {
+  const insightsPayload = useProductInsightsPayload('spark');
   const { get, post, put, ready } = useSparkApi();
   const [searchParams, setSearchParams] = useSearchParams();
   const [forms, setForms] = useState<SparkForm[]>([]);
@@ -147,6 +150,9 @@ export function SparkFormsPage() {
       loading={loading}
       error={error}
     >
+      <ReportBar product="spark" detail={insightsPayload?.detail} reports={[
+        { id: 'spark_forms', label: 'Form performance' },
+      ]} />
       <SparkTable<SparkForm>
         rows={forms}
         getRowKey={(f) => f.id}

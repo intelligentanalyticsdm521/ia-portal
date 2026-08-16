@@ -23,6 +23,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Sparkles, MoreVertical, Search, X, CheckCircle2, Bell, ShieldCheck, ShieldX, ShieldAlert, ArrowUpDown } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 
 interface RecentRun {
   run_id: number;
@@ -121,6 +123,10 @@ const TIER_BADGE: Record<Tier, string> = {
 };
 
 export function SparkLeadsPage() {
+  // Reports covering THIS function (Brandon 2026-08-14). Above any early
+  // return — a hook below one runs on some renders only.
+  const insightsPayload = useProductInsightsPayload('spark');
+
   const { get, post, ready } = useSparkApi();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [meta, setMeta] = useState<LeadListResponse["meta"] | null>(null);
@@ -294,6 +300,10 @@ export function SparkLeadsPage() {
 
   return (
     <SparkPageShell title="Lead Inbox" subtitle="B2B leads — discovery, review, and CRM hand-off" error={error} loading={loading}>
+      <ReportBar product="spark" detail={insightsPayload?.detail} reports={[
+        { id: 'spark_lead_sources', label: 'Leads by source' },
+        { id: 'spark_stage_flow', label: 'Pipeline flow' },
+      ]} />
       <div className="p-6 space-y-4">
         {/* F-LG.6.6: "X new leads since your last visit" pill. Renders only
             when meta.since_last_visit_count > 0 AND the user hasn't dismissed

@@ -118,6 +118,123 @@ export const REPORT_NOTES: Record<string, ReportNote> = {
     "Searches where Google already shows your site sometimes — but you have no page that properly answers them.",
     "This is demand you're leaving on the table. Each row is a page worth creating; the impressions trend shows whether that demand is growing while you wait.",
   ),
+  competitor_rankings: N(
+    "Your average Google position against each competitor tracked for the same searches, with how many page-one and top-3 spots each of you holds.",
+    "This is the scoreboard. A competitor holding more page-one positions is taking work you could have — the keyword report tells you which specific searches to go after first. Your own row is flagged so the comparison is unambiguous.",
+  ),
+  backlink_quality: N(
+    "Every site linking to yours, with its authority, what it links to, the words it uses, and whether the link is still live.",
+    "A count of links tells you nothing; this tells you whether they are worth having. Chase the lost ones from strong domains first — a polite email recovers more than people expect and costs far less than earning a new link.",
+  ),
+  anchor_text_profile: N(
+    "The words other sites use when they link to you, grouped and shown as a share of your whole link profile.",
+    "A natural profile is mostly your business name and bare URLs. One commercial phrase taking a large share across many domains is what a paid-link pattern looks like to Google — worth diluting with normal links rather than adding more of the same.",
+  ),
+  pagespeed_scores: N(
+    "Google's four PageSpeed scores — Performance, Accessibility, Best Practices and SEO — for phone and desktop, with how many individual checks pass.",
+    "90+ is what Google calls good; under 50 is where visitors notice. Fix mobile before desktop: it is scored on a throttled connection because that is what most people are actually on.",
+  ),
+  pagespeed_field_data: N(
+    "Speed measured from real Chrome visitors over the last 28 days, rather than a single lab test.",
+    "When the lab score looks fine and this does not, believe this one — it is what Google uses for ranking and what your customers actually experienced. A missing row means too few visitors for Google to report, which is normal for a small site.",
+  ),
+  pagespeed_performance_audits: N(
+    "Every speed check Google runs that your site did not pass, ordered by how much each one costs the score.",
+    "The order is the point. Lighthouse weights these, so the top of the list is where an hour of developer time goes furthest — and the Elements affected column tells you whether it is a one-line fix or a pattern across the page.",
+  ),
+  pagespeed_accessibility_audits: N(
+    "Accessibility checks your site failed — contrast, labels, alt text, keyboard and screen-reader support.",
+    "Each row is somebody who cannot use part of your site: a screen reader announcing a button as just \"button\", text nobody can read against its background. It is also the area most likely to attract a complaint, and most of these are quick fixes.",
+  ),
+  pagespeed_seo_audits: N(
+    "The mechanical checks Google runs to see whether it can read and index your page properly.",
+    "These are not content problems — they are plumbing. Missing descriptions, blocked crawling, unreadable links. Usually fast to fix and they gate everything else you do on the page.",
+  ),
+  pagespeed_best_practice_audits: N(
+    "Security and correctness checks — HTTPS, console errors, deprecated APIs, out-of-date JavaScript libraries.",
+    "Individually small. Collectively they are the difference between a site that is maintained and one that is drifting, and an out-of-date library is the same class of risk as an out-of-date plugin.",
+  ),
+  ctr_opportunity: N(
+    "Searches where you rank well but get clicked less than that position normally earns, with how many clicks a month you are leaving behind.",
+    "This is the cheapest fix in search: you already won the position, and the title and description are what is losing the click. Work down the potential column — each row is an afternoon of rewriting, not a content project.",
+  ),
+  trend_breaks: N(
+    "Points where a number stopped drifting and stepped — a sharp change that then held at the new level.",
+    "A break has a cause with a date on it: a redesign, a migration, a plugin, a Google update. Look at what changed that month before treating it as a slow decline, because the fix is usually undoing one thing rather than working harder at everything.",
+  ),
+  // ══ ARION — 2026-08-14 reports over the expanded integrations ══
+  search_by_country: N(
+    "Which countries your site is found from in Google, with clicks and impressions for each.",
+    "For a local business, traffic from outside your service area is not a win — it inflates every other number without ever becoming a customer. What matters is whether the places you actually serve are growing.",
+  ),
+  page_query_pairs: N(
+    "Every page paired with the searches that brought someone to it, with the position that page holds for each one.",
+    "This is the only view that answers \"what is this page actually ranking for\" — which is a different question from what you meant it to rank for. Pairs sitting at 11-20 are the cheapest work available: the page exists and Google already connects it to that search, so it needs strengthening rather than replacing.",
+  ),
+  search_appearance: N(
+    "The presentation formats you earn in Google results — rich snippets, FAQs, videos, how-to steps.",
+    "A result with a rich format takes up more of the page and gets clicked more at the same rank. If this is empty, you are competing on plain blue links against people who are not.",
+  ),
+  audience_by_country: N(
+    "Where your visitors are, with how many are new, how long they stay, and how many leave immediately.",
+    "Growth from the places you serve is the number that counts. Out-of-area growth can completely mask a local decline, which is why the bounce column matters as much as the session count.",
+  ),
+  browser_experience: N(
+    "How your site behaves in each browser — sessions, bounce rate, and time on site.",
+    "One browser bouncing far harder than the rest almost always means the site is broken in it, not that it is unpopular. Open your site in that browser and look; this is a bug report, not a statistic.",
+  ),
+  device_os_split: N(
+    "Your visitors split by operating system, with how each one behaves.",
+    "Same logic as the browser view: a big gap between iOS and Android usually points at something rendering badly on one of them rather than a difference in the people.",
+  ),
+  new_vs_returning: N(
+    "How much of your traffic is people arriving for the first time versus people coming back.",
+    "Almost all new visitors means marketing is working and nothing is holding anyone. Almost all returning means you are talking to the same small group — good for loyalty, a ceiling on growth.",
+  ),
+  traffic_by_hour: N(
+    "What hour of the day people actually visit your site, across the whole week.",
+    "This is when someone should be available to answer the phone, and when a campaign should land. Sending at 9am because that is when you are at your desk is a guess; this is the answer.",
+  ),
+  traffic_by_medium: N(
+    "How people got to you — organic search, paid, referral, email, social — with how well each behaves once here.",
+    "Volume without engagement is not traffic worth buying. Compare the bounce column across mediums before deciding where the next pound goes.",
+  ),
+  campaign_performance: N(
+    "Each named campaign with the traffic it brought and what that traffic did.",
+    "A campaign with high sessions and high bounce is money buying a click and nothing else — usually because the landing page does not say what the ad said. Match the page to the promise before spending more.",
+  ),
+  page_titles_read: N(
+    "Your pages by what people actually read, with time on page and bounce rate.",
+    "High views with a high bounce means the title is doing its job and the page is not. That is a rewrite, not a traffic problem.",
+  ),
+  gbp_visibility_split: N(
+    "Where your Google listing gets seen — Search or Maps, on a phone or a desktop.",
+    "Maps views are high intent: those people are often ready to visit or call. If mobile is most of your visibility, the site your listing points at is being judged on a phone — which makes the speed report the next thing to look at.",
+  ),
+  gbp_actions: N(
+    "What people did after finding your listing — called, asked for directions, visited the site, sent a message, or booked.",
+    "These are the closest thing to a customer raising their hand. Messages and bookings especially: someone taking that step has already decided, and a slow reply is the only thing left that can lose them.",
+  ),
+  core_web_vitals: N(
+    "The three loading and stability measures Google ranks on, plus the supporting ones, for phone and desktop separately.",
+    "These are not vanity numbers — they are a ranking input and a direct measure of what a visitor puts up with before giving up. Phone and desktop are shown apart on purpose: averaging them hides whichever one is bad, and it is almost always the phone.",
+  ),
+  pagespeed_opportunities: N(
+    "Specific, named changes that would make the site faster, each with the time it saves.",
+    "This is the list to hand whoever maintains the site. It is specific enough to act on without anyone diagnosing anything first — start at the top, because the savings are ordered.",
+  ),
+  page_reachability: N(
+    "Every page with the number of other pages linking to it, whether it sits in a menu, and whether its own links still go anywhere.",
+    "A page nothing links to is a page nobody finds — Google included. Fix orphans by adding one link from a page that already gets traffic; it costs ten minutes and is the highest-return thing on this report. Broken links are listed with their targets, so that section is a to-do list, not a search.",
+  ),
+  media_library: N(
+    "Every file in your media library — size, dimensions, alt text, and whether any published page actually uses it.",
+    "Oversized images are the most common reason a small-business site feels slow on a phone, and the visitor pays for them in load time and data. Missing alt text costs accessibility and image search together. Unused files are usually years of uploads nobody removed — check before deleting, but they slow every backup you take.",
+  ),
+  content_library: N(
+    "Every page and post on your website, reviewed one by one — length, on-page SEO score, meta description, focus keyword, and how long since it was last touched.",
+    "This is the review a consultant would do by hand on day one. Start with the opportunity lists: pages competing for the same keyword are the most expensive problem (you're bidding against yourself), missing meta descriptions are the cheapest fix. Thin and stale pages matter most on the pages that describe what you actually sell.",
+  ),
 
   // ══ ARION — Technical ══
   pagespeed_history: N(
@@ -136,7 +253,84 @@ export const REPORT_NOTES: Record<string, ReportNote> = {
     "Links on your site that lead nowhere.",
     "Each one wastes a visitor's click and a little of Google's trust. Fix or redirect them — it's fast, and it's pure cleanup win.",
   ),
+  component_upkeep: N(
+    "Every plugin and theme on your site, with whether it's current, has an update waiting, or has been left switched off and forgotten.",
+    "Out-of-date plugins are the number-one way small-business sites get hacked, and a dormant plugin is just as exploitable as an active one — deactivating isn't removing. Update what's behind; delete what you've stopped using.",
+  ),
 
+  spark_segments: N(
+    "Every segment you have built and how many contacts it currently matches.",
+    "A CRM with one segment is a mailing list. Watch for segments matching nobody — send to one by mistake and the campaign goes nowhere with no error at all.",
+  ),
+  spark_tag_usage: N(
+    "Every tag and how many contacts actually carry it.",
+    "Tag sprawl is the commonest CRM mess: dozens created, a handful used. Unused tags clutter the picker your team sees, which is how tagging quietly stops happening — deleting them makes the useful ones get used more.",
+  ),
+  spark_email_events: N(
+    "What actually happened to your email — delivered, opened, clicked, bounced, complained — month by month.",
+    "The campaign report is per-send; this is the whole channel over time. Failures cost you twice: the message nobody read, and a mark against your sending reputation that means the next campaign reaches fewer inboxes. Spam complaints are the most damaging signal there is.",
+  ),
+  spark_automation_coverage: N(
+    "Automations you have built, grouped by type, with how many are actually switched on.",
+    "An automation built and left off is work already paid for that is not collecting — usually one toggle away from running. Compare built against active before deciding you need more automation.",
+  ),
+  spark_forms: N(
+    "Every form and how many submissions it has brought in.",
+    "A live form collecting nothing is either unreachable or broken. Submit one yourself to find out which — it takes a minute and it is the only way to tell from the outside.",
+  ),
+  spark_contact_scoring: N(
+    "Your contacts grouped by engagement score.",
+    "Scores let you prioritise, route and segment by value. A large unscored group means none of that is working for those contacts — they are invisible to every rule you have written.",
+  ),
+  spark_accounts: N(
+    "Your accounts with their health score, how many contacts each holds, and when you last heard from them.",
+    "An account that has gone quiet is rarely happy and quiet — it is normally one that has already started looking. A call now is worth more than a discount later.",
+  ),
+  oliver_service_catalog: N(
+    "Everything you sell, with its price, how long it takes, and how a customer can actually buy it.",
+    "Every service that needs a quote first is a delay and a chance for the customer to call someone else. Anything with a predictable price is a candidate for self-service booking — that is the single biggest lever on conversion in this list.",
+  ),
+  oliver_coupons: N(
+    "Your discount codes, how often each has been used, and whether it is still live.",
+    "An active code with no expiry keeps taking margin indefinitely — including from customers who would have paid full price, and from anyone who finds it on a voucher site. Set end dates.",
+  ),
+  oliver_job_reliability: N(
+    "Your jobs split by whether they ran clean, breached an SLA, or got rescheduled.",
+    "A job rescheduled three times is a customer losing patience, and this shows it before they tell you. SLA breaches are commitments you made and missed — worth knowing which, before the review appears.",
+  ),
+  oliver_automation_runs: N(
+    "Every automation rule that fired, with how many runs failed or were skipped.",
+    "A failing rule is a reminder not sent or a follow-up that never happened. The customer experiences that as you forgetting about them, and nothing else in the product would tell you.",
+  ),
+  oliver_proposal_funnel: N(
+    "Your proposals grouped by where they stopped — never sent, sent and never opened, opened with no answer, accepted, or declined.",
+    "Sent-and-never-opened is not a pricing objection: it never reached a human. Wrong address, spam folder, or buried in a thread — and a phone call resolves all three. Opened-and-gone-quiet is the one worth chasing today.",
+  ),
+  oliver_projects: N(
+    "Your projects with budget, target end date, and whether they have run past it.",
+    "A project past the date you gave the customer is a conversation you have not had yet. It is far easier before they notice than after.",
+  ),
+  oliver_crew_roster: N(
+    "Who is on your crew, their type and status, their rate, and their weekly hours.",
+    "Anyone without weekly hours set cannot be included in capacity planning, so the scheduler is working from a smaller team than you actually have. Inactive crew still occupy licences and still show up in pickers.",
+  ),
+  // ══ SPARK / OLIVER — 2026-08-14 ══
+  spark_list_health: N(
+    "Every contact grouped by whether you can actually reach them — invalid addresses, unsubscribes, people who have never engaged, and people who have gone quiet.",
+    "This explains a disappointing send before anyone blames the copy. Contacts you cannot email inflate your list and drag every rate down; contacts who never open teach inbox providers your mail is ignorable, which costs you delivery to the people who do care. Clean both, then judge your campaigns.",
+  ),
+  spark_lifecycle_stages: N(
+    "Where your contacts sit in the customer journey right now.",
+    "A stage holding most of the list is either your genuine bottleneck or a stage nobody maintains. Contacts with no stage set cannot be segmented or automated to at all.",
+  ),
+  oliver_subscription_health: N(
+    "Your recurring revenue by service, with how many subscriptions are active and how many are set to cancel.",
+    "The cancelling column is the most actionable number in the product: those customers have already decided to leave and have not told you, and the period has not ended yet. A phone call today still changes the outcome.",
+  ),
+  oliver_job_status: N(
+    "Your jobs grouped by where they are in the workflow.",
+    "A pile in one status is usually a bottleneck rather than a busy week. Watch for work sitting completed but uninvoiced — that is revenue you have earned and not billed.",
+  ),
   // ══ SPARK ══
   spark_contact_sources: N(
     "Where your new contacts come from each month.",

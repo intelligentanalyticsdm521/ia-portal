@@ -5,6 +5,8 @@ import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { AiBlockGenerator } from '../../components/AiBlockGenerator';
 import { AiPageAssembler } from '../../components/AiPageAssembler';
+import { ReportButton } from '../../../components/insights/ReportButton';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -22,6 +24,11 @@ export function WebsiteContent() {
   const [genOpen, setGenOpen] = useState(false);
   const [asmOpen, setAsmOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  // This page is the high-level view of the content library. The BUTTON is the
+  // depth: every page reviewed the way a consultant would — thin, stale, no
+  // meta description, competing focus keywords. Same report the Trends
+  // drill-down and the Reports catalog render (Brandon 2026-08-14).
+  const insights = useArionInsightsPayload();
 
   // F-AI-WB Phase 1 (2026-06-20) — Pro+ gate on the IL block generator.
   // Shows the buttons greyed-out with a link to the full AI Builder page
@@ -97,6 +104,10 @@ export function WebsiteContent() {
 
   return (
     <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <ReportButton detail={insights?.detail} reportId="content_library" />
+      </div>
+
       {/* F-AI-WB Phase 1 (2026-06-20) — IL block-generation entry points.
           Sits at top of the page so admins can launch the drawer or hop to
           the dedicated AI Builder workspace without scrolling past analytics. */}

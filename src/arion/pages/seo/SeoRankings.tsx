@@ -25,6 +25,8 @@ import { SeoDiagnosticPanel } from '../../components/SeoDiagnosticPanel';
 import { GlossaryIcon, GlossaryPanel } from '../../components/Glossary';
 import type { SeoRangeCode, SeoKeywordRecord, SeoRankingsResponse } from '../../../lib/arionApi';
 import { canonicalEngineLabel } from '../../utils/engineLabel';
+import { ReportBar } from '../../../components/insights/ReportBar';
+import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
 type SortKey = 'keyword' | 'currentPosition' | 'positionChange' | 'searchVolume' | 'cpc' | 'competition';
 
@@ -39,6 +41,10 @@ function engineFilterToParams(f: string): { provider: 'all' | 'google' | 'bing';
 }
 
 export function SeoRankings() {
+  // Reports covering THIS function (Brandon 2026-08-14). Declared above
+  // any early return — a hook below one runs on some renders only.
+  const insightsPayload = useArionInsightsPayload();
+
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const [range, setRange] = React.useState<SeoRangeCode>('30d');
   const [engineFilter, setEngineFilter] = React.useState<string>('all');
@@ -149,6 +155,10 @@ export function SeoRankings() {
 
   return (
     <div>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'keyword_movement', label: 'Keyword movement' },
+        { id: 'striking_distance', label: 'One push from page one' },
+      ]} />
       {/* Filter + See Full Details bar — consolidated engine picker (matches Overview) */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
         <SeoRangePicker value={range} onChange={setRange} />

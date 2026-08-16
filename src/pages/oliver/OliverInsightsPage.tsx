@@ -10,6 +10,8 @@ import {
   PageHeader, TimeRangeSelector, rangeForPreset, type TimeRange,
 } from "../../components/oliver/ui";
 import { ArgusInsightBox } from "../../components/oliver/ArgusInsightBox";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 
 // ── New category response types ────────────────────────────────────────────
 interface QuoteIntel {
@@ -116,6 +118,10 @@ function rangeToQuery(r: TimeRange): string {
 }
 
 export function OliverInsightsPage() {
+  // Reports covering THIS function (Brandon 2026-08-14). Above any early
+  // return — a hook below one runs on some renders only.
+  const insightsPayload = useProductInsightsPayload('oliver');
+
   const { get, ready } = useOliverApi();
   const [range, setRange] = useState<TimeRange>(() => rangeForPreset("last_30_days"));
   const [health, setHealth] = useState<CustomerHealth | null>(null);
@@ -362,6 +368,14 @@ export function OliverInsightsPage() {
 
   return (
     <OliverPageWrapper title="Insights" subtitle="What the data is telling you" error={error} loading={loading}>
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
+        { id: 'oliver_revenue_by_service', label: 'Revenue by service' },
+        { id: 'oliver_overdue_invoices', label: 'Who to chase' },
+        { id: 'oliver_job_status', label: 'Jobs by status' },
+        { id: 'oliver_subscription_health', label: 'Recurring revenue' },
+        { id: 'oliver_top_customers', label: 'Top customers' },
+        { id: 'oliver_win_drivers', label: 'What wins work' },
+      ]} />
       <PageHeader
         title="Insights"
         subtitle="Customer health, service profitability, and where your cash is heading."

@@ -6,6 +6,8 @@ import {
 } from "recharts";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 import {
   PageHeader, TimeRangeSelector, rangeForPreset, type TimeRange,
 } from "../../components/oliver/ui";
@@ -79,6 +81,10 @@ const METHOD_LABELS: Record<string, string> = {
 const METHOD_COLORS = ["#1A7DB5", "#0C4A60", "#10B981", "#F59E0B", "#9333EA", "#94A3B8"];
 
 export function OliverBillingOverviewPage() {
+  // Reports covering THIS function (Brandon 2026-08-14). Above any early
+  // return — a hook below one runs on some renders only.
+  const insightsPayload = useProductInsightsPayload('oliver');
+
   const { get, ready } = useOliverApi();
   const [range, setRange] = useState<TimeRange>(() => rangeForPreset("last_30_days"));
   const [billing, setBilling] = useState<BillingOverview | null>(null);
@@ -129,6 +135,12 @@ export function OliverBillingOverviewPage() {
 
   return (
     <OliverPageWrapper title="Billing Overview" subtitle="Where your money is" error={error} loading={loading}>
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
+        { id: 'oliver_revenue_by_service', label: 'Revenue by service' },
+        { id: 'oliver_overdue_invoices', label: 'Who to chase' },
+        { id: 'oliver_invoice_aging', label: 'Receivables aging' },
+        { id: 'oliver_subscription_health', label: 'Recurring revenue' },
+      ]} />
       <PageHeader
         title="Billing Overview"
         subtitle="Revenue trends, outstanding receivables, subscription health, and recent activity in one place."

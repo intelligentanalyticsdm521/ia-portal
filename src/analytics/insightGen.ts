@@ -20,6 +20,19 @@ function fmtPct(n: number): string {
   return `${a < 10 ? a.toFixed(1) : a.toFixed(0)}%`;
 }
 
+/**
+ * Which way the VALUE moved — not whether that was good news.
+ *
+ * movementPct is an improvement percentage (scoring.ts negates it for
+ * lower-is-better metrics), so for an inverted metric an improvement means the
+ * number came down. Reading the sign as a raw change produced sentences like
+ * "Outstanding Receivables rose 100%" next to a $3.8k → $0 drop.
+ */
+function verb(improvementPct: number, higherIsBetter: boolean): string {
+  const valueRose = improvementPct >= 0 === higherIsBetter;
+  return valueRose ? "rose" : "fell";
+}
+
 /** Recommendation text keyed by data-point key; falls back to a generic line. */
 const RECS: Record<string, string> = {
   gsc_clicks: "Focus on the queries losing clicks — refresh those page titles and meta descriptions first.",
@@ -83,6 +96,9 @@ export function deriveInsights(dash: DashboardScore, opts: { maxPriorities?: num
   }
   const unique = [...byKey.values()];
 
+  // movementPct is already an IMPROVEMENT percentage — movement() in scoring.ts
+  // negates it for lower-is-better metrics — so the sign alone settles good vs
+  // bad news here, whatever the metric's direction.
   const drops = unique.filter((c) => c.dp.movementPct! < 0).sort((a, b) => b.impact - a.impact);
   const gains = unique.filter((c) => c.dp.movementPct! > 0).sort((a, b) => b.impact - a.impact);
 
@@ -93,7 +109,7 @@ export function deriveInsights(dash: DashboardScore, opts: { maxPriorities?: num
       id: `drop:${c.sec.key}:${c.dp.key}`,
       severity: c.impact,
       priority: true,
-      insight: `${c.dp.label} fell ${fmtPct(c.dp.movementPct!)} this month (${c.sec.label}). This is one of the biggest drags on your ${dash.label} score.`,
+      insight: `${c.dp.label} ${verb(c.dp.movementPct!, c.dp.higherIsBetter)} ${fmtPct(c.dp.movementPct!)} this month (${c.sec.label}). This is one of the biggest drags on your ${dash.label} score.`,
       recommendation: recFor(c.dp),
     });
   }
@@ -105,8 +121,12 @@ export function deriveInsights(dash: DashboardScore, opts: { maxPriorities?: num
       id: `gain:${c.sec.key}:${c.dp.key}`,
       severity: c.impact,
       priority: false,
-      insight: `${c.dp.label} rose ${fmtPct(c.dp.movementPct!)} this month — the work in ${c.sec.label} is showing.`,
-      recommendation: `Keep doing what lifted ${c.dp.label.toLowerCase()}; it's moving the right way.`,
+      insight: `${c.dp.label} ${verb(c.dp.movementPct!, c.dp.higherIsBetter)} ${fmtPct(c.dp.movementPct!)} this month — the work in ${c.sec.label} is showing.`,
+      // "lifted" only makes sense when up is the good direction; for an
+      // inverted metric the win is that it came DOWN.
+      recommendation: c.dp.higherIsBetter
+        ? `Keep doing what lifted ${c.dp.label.toLowerCase()}; it's moving the right way.`
+        : `Keep doing what brought ${c.dp.label.toLowerCase()} down; it's moving the right way.`,
     });
   }
 
