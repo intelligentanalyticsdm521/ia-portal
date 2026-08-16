@@ -10,6 +10,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 import {
   BarChart3, LineChart, PieChart, Star, Share2, Play, Plus, Trash2, Pencil,
   X, Check, ArrowUp, ArrowDown,
@@ -86,6 +88,10 @@ function fmtDate(d: string | null) { return d ? new Date(d).toLocaleString() : "
 // ── Page ───────────────────────────────────────────────────────────────
 
 export function SparkAnalyticsReportsPage() {
+  // Reports covering THIS function (Brandon 2026-08-14). Above any early
+  // return — a hook below one runs on some renders only.
+  const insightsPayload = useProductInsightsPayload('spark');
+
   const { get, post, patch, del, ready } = useSparkApi();
 
   const [list, setList] = useState<AnalyticsReport[]>([]);
@@ -236,6 +242,15 @@ export function SparkAnalyticsReportsPage() {
       loading={loading}
       error={error}
     >
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'spark_campaigns', label: 'Campaign results' },
+        { id: 'spark_list_health', label: 'List health' },
+        { id: 'spark_contact_sources', label: 'By source' },
+        { id: 'spark_lead_sources', label: 'Leads by source' },
+        { id: 'spark_send_times', label: 'Best send times' },
+        { id: 'spark_bounce_domains', label: 'Bounces by domain' },
+        { id: 'spark_stage_flow', label: 'Pipeline flow' },
+      ]} />
       {editorOpen && (
         <ReportEditor
           mode={editorMode}

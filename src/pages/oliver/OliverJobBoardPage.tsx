@@ -8,6 +8,8 @@ import {
 } from "../../components/oliver/ui";
 import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
 import { NewEntityLauncher } from "../../components/oliver/customer/NewEntityLauncher";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 
 interface AssignedWorker {
   worker_id: string;
@@ -104,6 +106,10 @@ function fmtDate(d?: string | null) {
 }
 
 export function OliverJobBoardPage() {
+  // Reports covering THIS function (Brandon 2026-08-14). Above any early
+  // return — a hook below one runs on some renders only.
+  const insightsPayload = useProductInsightsPayload('oliver');
+
   const { get, post, patch, del, ready } = useOliverApi();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -267,6 +273,12 @@ export function OliverJobBoardPage() {
 
   return (
     <OliverPageWrapper title="Job Board" subtitle="Active and recent jobs" error={error} loading={loading}>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'oliver_job_status', label: 'Jobs by status' },
+        { id: 'oliver_jobs_by_service', label: 'Jobs by service' },
+        { id: 'oliver_booked_ahead', label: 'Booked ahead' },
+        { id: 'oliver_backlog_age', label: 'Backlog age' },
+      ]} />
       <PageHeader
         title="Job Board"
         subtitle="Track every job from inquiry to paid"

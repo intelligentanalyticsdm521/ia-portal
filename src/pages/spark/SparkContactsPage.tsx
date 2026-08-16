@@ -21,6 +21,8 @@ import { SparkLifecycleKanban } from "../../components/spark/SparkLifecycleKanba
 import { SparkAccountsPage } from "./SparkAccountsPage";
 import { readSpreadsheet, parseDelimited, gridToRows, toContact } from "../../lib/sheetImport";
 import { PhoneInput } from "../../components/PhoneInput";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 
 interface Contact {
   id: number;
@@ -77,6 +79,10 @@ type SortDir = "asc" | "desc";
 const PAGE_SIZE = 25;
 
 export function SparkContactsPage() {
+  // Reports covering THIS function (Brandon 2026-08-14). Above any early
+  // return — a hook below one runs on some renders only.
+  const insightsPayload = useProductInsightsPayload('spark');
+
   const { get, post, ready } = useSparkApi();
   const navigate = useNavigate();
 
@@ -581,6 +587,11 @@ export function SparkContactsPage() {
       loading={loading}
       error={error}
     >
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'spark_list_health', label: 'List health' },
+        { id: 'spark_contact_sources', label: 'By source' },
+        { id: 'spark_lifecycle_stages', label: 'By lifecycle stage' },
+      ]} />
       {/* Bulk action toolbar */}
       {selected.size > 0 && (
         <div className="mb-3 flex items-center justify-between gap-3 px-3 py-2 rounded-md bg-slate-900 text-white text-sm">

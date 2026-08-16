@@ -203,6 +203,157 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
     },
   },
 
+  // ── SPARK / OLIVER (2026-08-14) ────────────────────────────────────────
+  // Nine reports were produced from real data and rendering with engine
+  // defaults — a table and a generic narrative, no findings. Same gap ARION
+  // had. Only reports where the config genuinely adds a finding are here; a
+  // config that would just restate the table is worse than none.
+
+  // The report that explains a bad send before anyone blames the copy. A list
+  // that is a third undeliverable or unengaged underperforms whatever you write.
+  spark_list_health: {
+    segments: [
+      {
+        label: "Can you reach them",
+        of: (it: DetailItem) =>
+          /Invalid|Unsubscribed|No email/i.test(it.name) ? "Cannot email them"
+          : /Never engaged|Silent/i.test(it.name) ? "Can email, never responds"
+          : "Engaged",
+      },
+    ],
+    opportunities: [
+      {
+        title: "Dead weight on the list",
+        note: "Cannot be emailed at all — invalid, unsubscribed, or no address. They still count against your list size and your sender reputation.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} on this list cannot be emailed at all. They inflate your list size, drag your open rate down, and on some platforms they cost you money every month. Removing them makes every report about your sending honest.`,
+        filter: (it: DetailItem) => /Invalid|Unsubscribed|No email/i.test(it.name),
+      },
+      {
+        title: "Reachable but silent",
+        note: "Deliverable and not responding. A re-engagement send, then a decision — keeping people who never open teaches inbox providers to filter you.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} can be emailed and never respond. One re-engagement send, then a decision: keeping people who never open teaches inbox providers that your mail is ignorable, which costs you delivery to the people who do care.`,
+        filter: (it: DetailItem) => /Never engaged|Silent/i.test(it.name),
+      },
+    ],
+    flag: (it: DetailItem) =>
+      Number(it.extra?.share || 0) >= 25 && !/Engaged/i.test(it.name)
+        ? `${it.extra?.share}% of your whole list` : null,
+  },
+
+  spark_lifecycle_stages: {
+    opportunities: [
+      {
+        title: "Nobody has set a stage",
+        note: "Contacts with no lifecycle stage cannot be segmented, automated to, or reported on properly.",
+        filter: (it: DetailItem) => /unset|none|unknown/i.test(it.name),
+      },
+    ],
+  },
+
+  // Campaign-level send results. Open and click rates are the whole point, and
+  // an unsubscribe spike is the one number worth stopping for.
+  spark_campaigns: {
+    opportunities: [
+      {
+        title: "Drove people to unsubscribe",
+        note: "A campaign with an unsubscribe rate well above your norm said something the list did not want. Worth reading before sending anything similar.",
+        filter: (it: DetailItem) => Number(it.extra?.unsubRate || 0) >= 1,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.unsubRate || 0) - Number(a.extra?.unsubRate || 0),
+      },
+      {
+        title: "Opened and not clicked",
+        note: "The subject line worked and the content did not. That is a content fix, not a list problem.",
+        filter: (it: DetailItem) => Number(it.extra?.openRate || 0) >= 20 && Number(it.extra?.clickRate || 0) < 2,
+      },
+    ],
+  },
+
+  spark_send_times: {
+    bands: [
+      { label: "Best windows", color: "#15803d", test: (v) => v >= 30 },
+      { label: "Decent", color: "#65a30d", test: (v) => v >= 20 },
+      { label: "Weak", color: "#f59e0b", test: () => true },
+    ],
+  },
+
+  // The single most actionable report in OLIVER: named invoices, days overdue,
+  // and who owes it. Money already earned and not collected.
+  oliver_overdue_invoices: {
+    bands: [
+      { label: "Over 90 days", color: "#7f1d1d", test: () => false },
+      { label: "Overdue", color: "#dc2626", test: () => true },
+    ],
+    segments: [
+      {
+        label: "How late",
+        of: (it: DetailItem) => {
+          const d = Number(it.extra?.days || 0);
+          if (d > 90) return "Over 90 days";
+          if (d > 60) return "61-90 days";
+          if (d > 30) return "31-60 days";
+          return "Under 30 days";
+        },
+      },
+    ],
+    opportunities: [
+      {
+        title: "Chase these today",
+        note: "Over 30 days late. Collection rates fall sharply the longer an invoice sits.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} are more than 30 days late. This is money you have already earned and already spent the labour on. Collection rates drop hard past 60 days, so the order of this list is the order to make the calls in.`,
+        filter: (it: DetailItem) => Number(it.extra?.days || 0) > 30,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.days || 0) - Number(a.extra?.days || 0),
+      },
+    ],
+    flag: (it: DetailItem) =>
+      Number(it.extra?.days || 0) > 60 ? `${it.extra?.days} days late — ${it.extra?.who}` : null,
+  },
+
+  // Recurring revenue, and the customers who have already decided to leave.
+  oliver_subscription_health: {
+    segments: [
+      { label: "Status", of: (it: DetailItem) => (Number(it.extra?.leaving || 0) > 0 ? "Has cancellations pending" : "Stable") },
+    ],
+    opportunities: [
+      {
+        title: "Cancelling at the end of the period",
+        note: "These customers have already chosen to leave and have not told you. There is still time to ask why.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} have subscriptions set to cancel at the end of the current period. Those customers have already decided and not told you — and the period has not ended yet, so this is the only report in the product where a phone call today still changes the outcome.`,
+        filter: (it: DetailItem) => Number(it.extra?.leaving || 0) > 0,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.leaving || 0) - Number(a.extra?.leaving || 0),
+      },
+    ],
+    flag: (it: DetailItem) =>
+      Number(it.extra?.leaving || 0) > 0 ? `${it.extra?.leaving} cancelling at period end` : null,
+  },
+
+  oliver_recurring_contracts: {
+    opportunities: [
+      {
+        title: "Worth locking in",
+        note: "Recurring work is the most valuable revenue a service business has — it is predictable and it costs nothing to win twice.",
+        filter: () => true,
+      },
+    ],
+  },
+
+  oliver_job_status: {
+    opportunities: [
+      {
+        title: "Work sitting still",
+        note: "Jobs piled in one status are usually a bottleneck rather than a workload — and finished-but-uninvoiced work is revenue you have earned and not billed.",
+        lede: (n: number, label: string) =>
+          `${n} job ${pluralize("status", n)} hold work that is not moving. A pile in one place is normally a bottleneck rather than a busy week — and anything sitting completed-but-uninvoiced is money you have already earned.`,
+        filter: (it: DetailItem) => /pending|hold|await|draft|complete/i.test(it.name),
+      },
+    ],
+  },
+
+  oliver_win_drivers: {},
+
   // ── SE Ranking: the competitor and backlink questions ─────────────────
   // 403k position rows and 1,049 backlink rows fed two reports. The competitor
   // column was never read, so "how do we compare to the people we lose work

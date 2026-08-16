@@ -11,6 +11,8 @@ import {
 } from "../../components/oliver/ui";
 import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
 import { PhoneInput } from "../../components/PhoneInput";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 
 const CUSTOMER_PILLS = [
   { key: "", label: "All" },
@@ -72,6 +74,10 @@ function contactName(c: Contact) {
 }
 
 export function OliverContactsPage() {
+  // Reports covering THIS function (Brandon 2026-08-14). Above any early
+  // return — a hook below one runs on some renders only.
+  const insightsPayload = useProductInsightsPayload('oliver');
+
   const { get, post, patch, del, ready } = useOliverApi();
   const { instance, accounts } = useMsal();
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -202,6 +208,9 @@ export function OliverContactsPage() {
 
   return (
     <OliverPageWrapper title="Customers" subtitle="Customer database" error={error} loading={loading}>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'oliver_top_customers', label: 'Top customers' },
+      ]} />
       <PageHeader
         title="Customers"
         subtitle="Search any customer to see all their jobs, quotes, invoices, and payments"

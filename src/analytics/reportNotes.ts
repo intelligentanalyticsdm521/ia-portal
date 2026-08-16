@@ -258,6 +258,23 @@ export const REPORT_NOTES: Record<string, ReportNote> = {
     "Out-of-date plugins are the number-one way small-business sites get hacked, and a dormant plugin is just as exploitable as an active one — deactivating isn't removing. Update what's behind; delete what you've stopped using.",
   ),
 
+  // ══ SPARK / OLIVER — 2026-08-14 ══
+  spark_list_health: N(
+    "Every contact grouped by whether you can actually reach them — invalid addresses, unsubscribes, people who have never engaged, and people who have gone quiet.",
+    "This explains a disappointing send before anyone blames the copy. Contacts you cannot email inflate your list and drag every rate down; contacts who never open teach inbox providers your mail is ignorable, which costs you delivery to the people who do care. Clean both, then judge your campaigns.",
+  ),
+  spark_lifecycle_stages: N(
+    "Where your contacts sit in the customer journey right now.",
+    "A stage holding most of the list is either your genuine bottleneck or a stage nobody maintains. Contacts with no stage set cannot be segmented or automated to at all.",
+  ),
+  oliver_subscription_health: N(
+    "Your recurring revenue by service, with how many subscriptions are active and how many are set to cancel.",
+    "The cancelling column is the most actionable number in the product: those customers have already decided to leave and have not told you, and the period has not ended yet. A phone call today still changes the outcome.",
+  ),
+  oliver_job_status: N(
+    "Your jobs grouped by where they are in the workflow.",
+    "A pile in one status is usually a bottleneck rather than a busy week. Watch for work sitting completed but uninvoiced — that is revenue you have earned and not billed.",
+  ),
   // ══ SPARK ══
   spark_contact_sources: N(
     "Where your new contacts come from each month.",

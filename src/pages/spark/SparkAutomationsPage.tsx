@@ -7,6 +7,8 @@ import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { Plus, Settings, Zap, Trash2 } from "lucide-react";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 
 interface Automation {
   id: number;
@@ -20,6 +22,10 @@ interface Automation {
 }
 
 export function SparkAutomationsPage() {
+  // Reports covering THIS function (Brandon 2026-08-14). Above any early
+  // return — a hook below one runs on some renders only.
+  const insightsPayload = useProductInsightsPayload('spark');
+
   const { get, put, del, ready } = useSparkApi();
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,6 +86,9 @@ export function SparkAutomationsPage() {
 
   return (
     <SparkPageShell title="Automations" subtitle="Trigger-based workflows that run automatically" error={error} loading={loading}>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'spark_automations', label: 'Automation performance' },
+      ]} />
       <div className="p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex gap-1 rounded-lg bg-gray-100 p-1">

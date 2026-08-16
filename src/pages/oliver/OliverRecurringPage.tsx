@@ -9,6 +9,8 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, Legend,
 } from "recharts";
 import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 
 interface Subscription {
   id: string;
@@ -85,6 +87,10 @@ function fmtDate(d?: string) {
 }
 
 export function OliverRecurringPage() {
+  // Reports covering THIS function (Brandon 2026-08-14). Above any early
+  // return — a hook below one runs on some renders only.
+  const insightsPayload = useProductInsightsPayload('oliver');
+
   const { get, post, patch, del, ready } = useOliverApi();
   const [tab, setTab] = useState<Tab>("subscriptions");
   // drawer: legacy create/edit form (still used for "new"). Phase 1C added a
@@ -363,6 +369,10 @@ export function OliverRecurringPage() {
 
   return (
     <OliverPageWrapper title="Recurring & Subscriptions" subtitle="Manage Stripe subscriptions and recurring job templates" error={error} loading={loading}>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'oliver_subscription_health', label: 'Recurring revenue' },
+        { id: 'oliver_recurring_contracts', label: 'Recurring contracts' },
+      ]} />
       <PageHeader
         title="Recurring & Subscriptions"
         subtitle="Sync, monitor, and cancel customer subscriptions backed by Stripe"

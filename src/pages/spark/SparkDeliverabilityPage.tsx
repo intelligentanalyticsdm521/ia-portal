@@ -9,6 +9,8 @@ import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { TimeRangeSelector, rangeForPreset } from "../../components/oliver/ui";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { Mail, AlertCircle, Shield, Check, X, RefreshCw } from "lucide-react";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 
 interface Dashboard {
   overall: {
@@ -33,6 +35,10 @@ interface VerifyResp {
 }
 
 export function SparkDeliverabilityPage() {
+  // Reports covering THIS function (Brandon 2026-08-14). Above any early
+  // return — a hook below one runs on some renders only.
+  const insightsPayload = useProductInsightsPayload('spark');
+
   const { get, del, ready } = useSparkApi();
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [suppressions, setSuppressions] = useState<Suppression[]>([]);
@@ -142,6 +148,10 @@ export function SparkDeliverabilityPage() {
       loading={loading}
       error={error}
     >
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'spark_bounce_domains', label: 'Bounces by domain' },
+        { id: 'spark_list_health', label: 'List health' },
+      ]} />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Trend chart */}
         <div className="lg:col-span-2 spark-mini-card">

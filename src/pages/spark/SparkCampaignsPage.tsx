@@ -4,6 +4,8 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { EmbeddedReportChart, type ReportSeriesResponse } from "../../components/reporting/EmbeddedReportChart";
 import { SparkCampaignComposerModal } from "../../components/spark/SparkCampaignComposerModal";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 
 /** Open rate from the campaign's own counters. Shows "—" only when nothing
  *  has actually been sent yet, rather than for every row. */
@@ -34,6 +36,10 @@ interface Campaign {
 }
 
 export function SparkCampaignsPage() {
+  // Reports covering THIS function (Brandon 2026-08-14). Above any early
+  // return — a hook below one runs on some renders only.
+  const insightsPayload = useProductInsightsPayload('spark');
+
   const { get, ready } = useSparkApi();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [error, setError] = useState<unknown>(null);
@@ -108,6 +114,11 @@ export function SparkCampaignsPage() {
 
   return (
     <SparkPageShell title="Campaigns" subtitle="Email and SMS campaign management" error={error} loading={loading}>
+      <ReportBar detail={insightsPayload?.detail} reports={[
+        { id: 'spark_campaigns', label: 'Campaign results' },
+        { id: 'spark_send_times', label: 'Best send times' },
+        { id: 'spark_bounce_domains', label: 'Bounces by domain' },
+      ]} />
       <div className="p-6 space-y-4">
         {/* v7.2 — Embedded Campaign Performance from the IA Insights Trends
             engine. Date toggles + "View full report" link to the full
