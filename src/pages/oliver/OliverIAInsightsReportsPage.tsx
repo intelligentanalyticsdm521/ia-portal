@@ -4,7 +4,6 @@
 // existed and were reachable from their own pages, but there was no single
 // place to see everything the product produces.
 import { InsightsReportsCatalog } from "../../components/insights/InsightsReportsCatalog";
-import { ReportsHubPage } from "../../components/insights/ReportsHubPage";
 import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 import { OLIVER_DASHBOARDS } from "../../analytics/oliverDashboards";
 
@@ -47,7 +46,6 @@ export function OliverIAInsightsReportsPage() {
         dashboards={OLIVER_DASHBOARDS}
         featureLabel={FEATURE_LABEL}
         answers={ANSWERS}
-        footer={<ReportsHubPage platform="OLIVER" bare />}
         intro="Every report we produce for your operation, grouped by the part of the business it covers. Each one is the full analysis — the same report you reach from the page itself or by drilling into a score."
       />
     </div>

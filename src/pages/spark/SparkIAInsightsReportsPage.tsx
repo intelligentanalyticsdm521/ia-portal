@@ -4,7 +4,6 @@
 // their feature pages, but with no catalog there was nowhere to browse them —
 // which is exactly what Brandon hit looking for them.
 import { InsightsReportsCatalog } from "../../components/insights/InsightsReportsCatalog";
-import { ReportsHubPage } from "../../components/insights/ReportsHubPage";
 import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 import { SPARK_DASHBOARDS } from "../../analytics/sparkDashboards";
 
@@ -44,7 +43,6 @@ export function SparkIAInsightsReportsPage() {
         dashboards={SPARK_DASHBOARDS}
         featureLabel={FEATURE_LABEL}
         answers={ANSWERS}
-        footer={<ReportsHubPage platform="SPARK" bare />}
         intro="Every report we produce for your marketing, grouped by the part of it they cover. Each one is the full analysis — the same report you reach from the page itself or by drilling into a score."
       />
     </div>

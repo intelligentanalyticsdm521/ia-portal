@@ -223,7 +223,7 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
         title: "Empty segments",
         note: "A segment matching nobody is a filter that will silently send to no one.",
         lede: (n: number, label: string) =>
-          `${n} ${pluralize(label.toLowerCase(), n)} match nobody at all. Send to one by mistake and the campaign goes nowhere with no error — worth deleting or fixing the filter behind them.`,
+          `${n} ${pluralize(label.toLowerCase(), n)} ${n === 1 ? "matches" : "match"} nobody at all. Send to one by mistake and the campaign goes nowhere with no error — worth deleting or fixing the filter behind them.`,
         filter: (it: DetailItem) => Number(lastOf(it) || 0) === 0,
       },
     ],
@@ -244,7 +244,7 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
         title: "Tags nobody uses",
         note: "Created once and never applied. They clutter every picker and make the useful tags harder to find.",
         lede: (n: number, label: string) =>
-          `${n} ${pluralize(label.toLowerCase(), n)} have never been applied to anybody. Every one of them clutters the picker your team uses, which is how tagging quietly stops happening — delete them and the ones that matter get used more.`,
+          `${n} ${pluralize(label.toLowerCase(), n)} ${n === 1 ? "has" : "have"} never been applied to anybody. Every one of them clutters the picker your team uses, which is how tagging quietly stops happening — delete them and the ones that matter get used more.`,
         filter: (it: DetailItem) => Number(lastOf(it) || 0) === 0,
       },
     ],
@@ -295,7 +295,7 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
         title: "Forms bringing in nothing",
         note: "Live and collecting no submissions. Either nobody can find it, or something on it is broken.",
         lede: (n: number, label: string) =>
-          `${n} ${pluralize(label.toLowerCase(), n)} are live and have brought in nothing. A form that collects nothing is usually either unreachable or broken — worth submitting one yourself to find out which.`,
+          `${n} ${pluralize(label.toLowerCase(), n)} ${n === 1 ? "is" : "are"} live and ${n === 1 ? "has" : "have"} brought in nothing. A form that collects nothing is usually either unreachable or broken — worth submitting one yourself to find out which.`,
         filter: (it: DetailItem) => Number(lastOf(it) || 0) === 0 && String(it.extra?.state) === "Live",
       },
     ],
@@ -420,7 +420,7 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
         title: "Sent and never opened",
         note: "Not a pricing problem — the proposal never reached anyone. Wrong address, spam folder, or lost in a thread.",
         lede: (n: number, label: string) =>
-          `${n} ${pluralize(label.toLowerCase(), n)} were sent and never opened. That is not a pricing objection — it never reached a human. Wrong address, spam folder, or buried in a thread, and a phone call resolves all three.`,
+          `${n} ${pluralize(label.toLowerCase(), n)} ${n === 1 ? "was" : "were"} sent and never opened. That is not a pricing objection — it never reached a human. Wrong address, spam folder, or buried in a thread, and a phone call resolves all three.`,
         filter: (it: DetailItem) => /never opened/i.test(it.name),
       },
       {
@@ -550,7 +550,7 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
         title: "Opened and not clicked",
         note: "The subject line did its job and the content did not. That is a rewrite, not a list problem.",
         lede: (n: number, label: string) =>
-          `${n} ${pluralize(label.toLowerCase(), n)} got opened and barely clicked. The subject line did its job — people showed up. What they found did not give them a reason to act, and that is a content fix rather than anything to do with your list.`,
+          `${n} ${pluralize(label.toLowerCase(), n)} ${n === 1 ? "was" : "were"} opened and barely clicked. The subject line did its job — people showed up. What they found did not give them a reason to act, and that is a content fix rather than anything to do with your list.`,
         filter: (it: DetailItem) => Number(it.extra?.openRate || 0) >= 15 && Number(it.extra?.clickRate || 0) < 2,
         sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.sent || 0) - Number(a.extra?.sent || 0),
       },
@@ -558,7 +558,7 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
         title: "Barely opened",
         note: "Under 15% opened. Usually the subject line, the sender name, or a list that has stopped paying attention.",
         lede: (n: number, label: string) =>
-          `${n} ${pluralize(label.toLowerCase(), n)} were opened by almost nobody. That is nearly always one of three things: the subject line, the name it came from, or a list that stopped paying attention — and List Health tells you whether it is the third.`,
+          `${n} ${pluralize(label.toLowerCase(), n)} ${n === 1 ? "was" : "were"} opened by almost nobody. That is nearly always one of three things: the subject line, the name it came from, or a list that stopped paying attention — and List Health tells you whether it is the third.`,
         filter: (it: DetailItem) => Number(it.extra?.sent || 0) > 0 && Number(it.extra?.openRate || 0) < 15,
         sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.sent || 0) - Number(a.extra?.sent || 0),
       },
