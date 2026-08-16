@@ -580,10 +580,20 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
   // The single most actionable report in OLIVER: named invoices, days overdue,
   // and who owes it. Money already earned and not collected.
   oliver_overdue_invoices: {
+    // A band's test receives the VALUE — here the balance owed — so it cannot
+    // see how late an invoice is. The previous age bands were unreachable
+    // ("Over 90 days" tested `() => false`, so a 200-day invoice still read as
+    // merely "Overdue"). Age is the segments' job below; the bands triage by
+    // size, which is what the value can actually answer.
     bands: [
-      { label: "Over 90 days", color: "#7f1d1d", test: () => false },
-      { label: "Overdue", color: "#dc2626", test: () => true },
+      { label: "Over $1,000", color: "#7f1d1d", test: (v) => v > 1000 },
+      { label: "$250 - $1,000", color: "#dc2626", test: (v) => v > 250 },
+      { label: "Under $250", color: "#f59e0b", test: () => true },
     ],
+    // Worst first for the stacked chart, so the goal is the LAST band — the
+    // small balances. Without this the engine treats index 0 as the target and
+    // tells you to move more invoices into "Over $1,000".
+    goalBand: 2,
     segments: [
       {
         label: "How late",

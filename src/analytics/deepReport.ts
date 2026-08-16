@@ -20,6 +20,7 @@
 
 import type { DetailReport, DetailItem } from "./detail";
 import { itemMom, pluralize } from "./detail";
+
 import type { ValueFormat } from "./scoring";
 import { mirrorKindOf } from "./reportNotes";
 
@@ -105,6 +106,18 @@ export interface DeepReportData {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
+/**
+ * Drop a leading capital so a standalone phrase reads inside a sentence,
+ * without touching any proper noun further along it. Left alone when the
+ * opening word is an acronym (GA4, SEO, CTR).
+ */
+function uncapitalize(s: string): string {
+  if (!s) return s;
+  const first = s.split(/\s/)[0];
+  if (first.length > 1 && first === first.toUpperCase() && /[A-Z]/.test(first)) return s;
+  return s[0].toLowerCase() + s.slice(1);
+}
+
 const COMPOSITION_COLORS = ["#0f766e", "#2563eb", "#7c3aed", "#db2777", "#ea580c", "#ca8a04", "#65a30d", "#0891b2", "#94a3b8"];
 
 export function fmtV(v: number | string | null | undefined, format: ValueFormat | "text"): string {
@@ -635,7 +648,10 @@ function buildMeaning(ctx: {
   if (flagNames.length) {
     out.push({
       tone: "watch",
-      text: `${flagNames.length} ${pluralize(report.itemLabel, flagNames.length)} ${flagNames.length === 1 ? "carries" : "carry"} a warning (look for the ⚠ in the table). For example ${flagNames[0]}: ${flags[flagNames[0]].toLowerCase()}`,
+      // Only the leading capital is dropped so the flag reads as part of the
+      // sentence. Lowercasing the whole string turned any name inside it into
+      // "79 days late — morgan marsh".
+      text: `${flagNames.length} ${pluralize(report.itemLabel, flagNames.length)} ${flagNames.length === 1 ? "carries" : "carry"} a warning (look for the ⚠ in the table). For example ${flagNames[0]}: ${uncapitalize(flags[flagNames[0]])}`,
     });
   }
 
