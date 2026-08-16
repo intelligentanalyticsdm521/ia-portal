@@ -15,25 +15,42 @@
 // so a report can never say different things in different places. That is the
 // whole reason this is a shared component and not a per-page panel.
 //
+// 2026-08-16 — the button now opens the report's GROUP, focused on the tab for
+// the report it names. Sibling reports come along, so someone who opened
+// "Traffic by Channel" from the page can reach Medium and Referral Sources
+// without going back out to the catalog. Every call site is untouched: the
+// props are the same, only what opens changed.
+//
 // Renders NOTHING when the report has no data. Brandon's call: a dead button on
 // a client's screen is worse than no button.
 import { useMemo, useState } from "react";
 import { BarChart3 } from "lucide-react";
-import { IadmModal } from "../IadmModal";
-import { DeepReportView } from "./DeepReportView";
-import { deriveDeepReport } from "../../analytics/deepReport";
-import { deepConfigFor } from "../../analytics/deepConfigs";
+import { ReportGroupModal } from "./ReportGroupModal";
+import { buildReportGroups, findGroupFor } from "../../analytics/reportGroups";
+import { ARION_DASHBOARDS } from "../../analytics/arionDashboards";
+import { SPARK_DASHBOARDS } from "../../analytics/sparkDashboards";
+import { OLIVER_DASHBOARDS } from "../../analytics/oliverDashboards";
+import { ARGUS_DASHBOARDS } from "../../analytics/argusDashboards";
 import type { DetailPayload } from "../../analytics/detail";
+import type { DashboardDef } from "../../analytics/catalog";
+
+const DASHBOARDS: Record<string, DashboardDef[]> = {
+  arion: ARION_DASHBOARDS,
+  spark: SPARK_DASHBOARDS,
+  oliver: OLIVER_DASHBOARDS,
+  argus: ARGUS_DASHBOARDS,
+  stella: [],
+};
 
 export function ReportButton({
   detail, reportId, label = "See full details", subtitle, product = "arion",
 }: {
-  /** The `detail` map from the ARION insights payload. */
+  /** The `detail` map from the product's insights payload. */
   detail: DetailPayload | undefined;
   /** DetailReport id, e.g. "component_upkeep". */
   reportId: string;
   label?: string;
-  /** Overrides the modal subtitle; defaults to the item count. */
+  /** Kept for call-site compatibility; the group modal derives its own. */
   subtitle?: string;
   /** Which product's branding the modal wears. Was hardcoded to "arion", so
    *  every SPARK and OLIVER report opened under another product's badge. */
@@ -42,17 +59,16 @@ export function ReportButton({
   const [open, setOpen] = useState(false);
   const report = detail?.[reportId];
 
-  // Derive once per open, not per render — the engine walks every item's series.
-  const deep = useMemo(
-    () => (report && open ? deriveDeepReport(report, deepConfigFor(report.id)) : null),
-    [report, open],
-  );
+  // Grouping is cheap — it reads section strings, it does not derive reports —
+  // so it can run per render. The expensive derivation stays inside the modal
+  // and only for the visible tab.
+  const found = useMemo(() => {
+    if (!report?.items?.length) return null;
+    return findGroupFor(buildReportGroups(detail, DASHBOARDS[product] || []), reportId);
+  }, [detail, reportId, product, report]);
 
   // No data → no button. Never a disabled control promising a future release.
-  if (!report || !report.items?.length) return null;
-
-  const count = report.items.length;
-  const itemWord = count === 1 ? report.itemLabel : `${report.itemLabel}s`;
+  if (!report || !report.items?.length || !found) return null;
 
   return (
     <>
@@ -63,31 +79,15 @@ export function ReportButton({
       >
         <BarChart3 className="h-3.5 w-3.5" />
         {label}
-        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
-          {count}
-        </span>
       </button>
 
-      {open && deep && (
-        <IadmModal
-          open
-          onClose={() => setOpen(false)}
+      {open && (
+        <ReportGroupModal
+          group={found.group}
+          initialTab={found.tabIndex}
           product={product}
-          title={report.label}
-          subtitle={subtitle || `${count} ${itemWord.toLowerCase()} · full report`}
-          // "report" is the F-107 standard for this: min(1400px, 94vw). It was
-          // on "xl", the consultant-workspace size, which is a flat 90vw —
-          // every report stretched to the full width of whatever monitor it
-          // opened on, so a two-column table spanned 2,000px of empty space.
-          size="report"
-        >
-          {/* The modal body is already the scroll container; the inner
-              max-h/overflow here made a second one, so a long report scrolled
-              inside a scrollbar. */}
-          <div className="px-4 py-4 sm:px-5">
-            <DeepReportView deep={deep} />
-          </div>
-        </IadmModal>
+          onClose={() => setOpen(false)}
+        />
       )}
     </>
   );

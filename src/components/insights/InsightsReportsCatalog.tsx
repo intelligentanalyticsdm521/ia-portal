@@ -15,11 +15,14 @@
 // insights payload carries, so a report appears the moment its data does — and
 // a product with no data yet says so rather than showing a fabricated list.
 import type { ReactNode } from "react";
-import { useMemo } from "react";
-import { FileBarChart, Clock } from "lucide-react";
-import { ReportButton } from "./ReportButton";
+import { useMemo, useState } from "react";
+import { FileBarChart, BarChart3, Clock } from "lucide-react";
+import { ReportGroupModal } from "./ReportGroupModal";
+import { buildReportGroups, type ReportGroup } from "../../analytics/reportGroups";
 import type { DetailPayload } from "../../analytics/detail";
+import type { DashboardDef } from "../../analytics/catalog";
 
+/** @deprecated The catalog now needs full definitions — use DashboardDef. */
 export interface CatalogDashboard {
   key: string;
   label: string;
@@ -40,7 +43,7 @@ export function InsightsReportsCatalog({
   /** True while the payload is still being fetched. */
   loading: boolean;
   /** The product's dashboards, in nav order — drives grouping order. */
-  dashboards: CatalogDashboard[];
+  dashboards: DashboardDef[];
   /** dashboard key → the feature name a client recognises. */
   featureLabel: Record<string, string>;
   /** report id → the question it answers, in the owner's words. */
@@ -53,27 +56,29 @@ export function InsightsReportsCatalog({
   /** Product branding for the report modals opened from this catalog. */
   product?: "arion" | "spark" | "oliver" | "argus" | "stella";
 }) {
-  const groups = useMemo(() => {
-    const byFeature = new Map<string, Array<{ id: string; label: string; count: number; itemLabel: string }>>();
-    for (const rep of Object.values(detail || {})) {
-      const dashKey = String(rep.section || "").split(".")[0];
-      const feature = featureLabel[dashKey] || "Other";
+  // Reports are grouped by the SECTION they already carry, then those sections
+  // are bucketed by feature. Two levels, both of which already exist in the
+  // data — the catalog now mirrors the nav rather than inventing an order.
+  const features = useMemo(() => {
+    const sectionGroups = buildReportGroups(detail, dashboards);
+    const byFeature = new Map<string, ReportGroup[]>();
+    for (const g of sectionGroups) {
+      const feature = featureLabel[g.dashboardKey] || "Other";
       if (!byFeature.has(feature)) byFeature.set(feature, []);
-      byFeature.get(feature)!.push({
-        id: rep.id, label: rep.label, count: rep.items?.length || 0, itemLabel: rep.itemLabel,
-      });
+      byFeature.get(feature)!.push(g);
     }
-    // Feature order follows the dashboards, so the catalog reads like the nav.
     const order = dashboards.map((d) => featureLabel[d.key]).filter(Boolean);
     return [...byFeature.entries()]
       .sort((a, b) => {
         const ia = order.indexOf(a[0]), ib = order.indexOf(b[0]);
         return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
       })
-      .map(([feature, reports]) => ({ feature, reports: reports.sort((x, y) => x.label.localeCompare(y.label)) }));
+      .map(([feature, sections]) => ({ feature, sections }));
   }, [detail, dashboards, featureLabel]);
 
-  const total = groups.reduce((s, g) => s + g.reports.length, 0);
+  const total = features.reduce((n, f) => n + f.sections.reduce((m, g) => m + g.reports.length, 0), 0);
+  // Which group is open, and on which tab. One modal for the whole page.
+  const [open, setOpen] = useState<{ group: ReportGroup; tab: number } | null>(null);
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5 pb-10">
@@ -107,28 +112,42 @@ export function InsightsReportsCatalog({
           three abreast reads as a contact sheet of what exists rather than a
           long scroll — and it collapses back to one column on a phone. */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3 lg:items-start">
-      {groups.map((g) => (
-        <section key={g.feature} className="rounded-xl border border-slate-200 bg-white">
+      {features.map((f) => (
+        <section key={f.feature} className="rounded-xl border border-slate-200 bg-white">
           <div className="border-b border-slate-100 px-4 py-3">
-            <h2 className="text-sm font-bold text-slate-900">{g.feature}</h2>
+            <h2 className="text-sm font-bold text-slate-900">{f.feature}</h2>
             <p className="text-[11px] text-slate-500">
-              {g.reports.length} report{g.reports.length === 1 ? "" : "s"}
+              {f.sections.length} report{f.sections.length === 1 ? "" : "s"}
+              {" · "}
+              {f.sections.reduce((n, g) => n + g.reports.length, 0)} views
             </p>
           </div>
           <div className="divide-y divide-slate-100">
-            {g.reports.map((r) => (
-              <div key={r.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            {f.sections.map((g) => (
+              <div key={g.key} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <FileBarChart className="h-3.5 w-3.5 flex-shrink-0 text-slate-400" />
-                    <span className="truncate text-xs font-semibold text-slate-800">{r.label}</span>
+                    <span className="truncate text-xs font-semibold text-slate-800">{g.label}</span>
                   </div>
+                  {/* Naming the tabs is the point: the row has to say what is
+                      inside it, or grouping just hides things one level down. */}
                   <p className="mt-0.5 pl-5 text-[11px] text-slate-500">
-                    {answers[r.id] || `${r.count} ${r.itemLabel.toLowerCase()}${r.count === 1 ? "" : "s"} tracked`}
+                    {g.reports.length === 1
+                      ? (answers[g.reports[0].id]
+                          || `${g.reports[0].items.length} ${g.reports[0].itemLabel.toLowerCase()}${g.reports[0].items.length === 1 ? "" : "s"} tracked`)
+                      : g.reports.map((r) => r.label).join(" · ")}
                   </p>
                 </div>
                 <div className="flex-shrink-0 pl-5 sm:pl-0">
-                  <ReportButton detail={detail} reportId={r.id} label="Open report" product={product} />
+                  <button
+                    type="button"
+                    onClick={() => setOpen({ group: g, tab: 0 })}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:border-[#2D9CDB] hover:text-[#2D9CDB]"
+                  >
+                    <BarChart3 className="h-3.5 w-3.5" />
+                    Open report
+                  </button>
                 </div>
               </div>
             ))}
@@ -136,6 +155,15 @@ export function InsightsReportsCatalog({
         </section>
       ))}
       </div>
+
+      {open && (
+        <ReportGroupModal
+          group={open.group}
+          initialTab={open.tab}
+          product={product}
+          onClose={() => setOpen(null)}
+        />
+      )}
 
       {footer}
     </div>
