@@ -50,7 +50,7 @@ export function SparkIAInsightsReportsPage() {
           first because that is what someone opening "Reports" is after;
           the plain operational record stays underneath rather than being
           replaced by it. */}
-      <ReportsHubPage platform="SPARK" />
+      <ReportsHubPage platform="SPARK" bare />
     </div>
   );
 }
