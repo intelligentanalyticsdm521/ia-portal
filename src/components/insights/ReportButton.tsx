@@ -75,9 +75,16 @@ export function ReportButton({
           product={product}
           title={report.label}
           subtitle={subtitle || `${count} ${itemWord.toLowerCase()} · full report`}
-          size="xl"
+          // "report" is the F-107 standard for this: min(1400px, 94vw). It was
+          // on "xl", the consultant-workspace size, which is a flat 90vw —
+          // every report stretched to the full width of whatever monitor it
+          // opened on, so a two-column table spanned 2,000px of empty space.
+          size="report"
         >
-          <div className="max-h-[78vh] overflow-y-auto px-1 pb-2">
+          {/* The modal body is already the scroll container; the inner
+              max-h/overflow here made a second one, so a long report scrolled
+              inside a scrollbar. */}
+          <div className="px-4 py-4 sm:px-5">
             <DeepReportView deep={deep} />
           </div>
         </IadmModal>

@@ -328,7 +328,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
           return (
             <>
               <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">Detail reports — click one to open the full report</div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+              <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {reports.map((r) => {
                   const rs = scoreReport(r);
                   const agg = aggregateReportSeries(r);
@@ -401,7 +401,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
         </div>
 
         <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mt-5 mb-2">What's driving this score — click any section for the detail</div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
           {dash.sections.map((s) => (
             <button key={s.key} onClick={() => { setSecKey(s.key); setRepKey(null); }}
               className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left hover:border-slate-300 hover:bg-slate-50">
@@ -445,7 +445,7 @@ export function TrendDashboardView({ dashboards, platformLabel, detail, scoreNou
           <p className="text-xs text-slate-500">{dashboards.filter((d) => d.score != null).length} of {dashboards.length} areas measured · click any area to drill in</p>
         </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
         {dashboards.map((d) => (
           <button key={d.key} onClick={() => { if (d.score != null) { setDashKey(d.key); setSecKey(null); setRepKey(null); } }}
             className={`flex flex-col rounded-lg border border-slate-200 bg-white p-4 text-left ${d.score != null ? "hover:border-slate-300 hover:shadow-sm cursor-pointer" : "opacity-70 cursor-default"}`}>

@@ -76,7 +76,7 @@ export function InsightsReportsCatalog({
   const total = groups.reduce((s, g) => s + g.reports.length, 0);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 pb-10">
+    <div className="mx-auto max-w-[1500px] space-y-5 pb-10">
       <div>
         <h1 className="text-lg font-bold text-slate-900">Reports</h1>
         <p className="mt-1 text-sm text-slate-600">
@@ -103,6 +103,10 @@ export function InsightsReportsCatalog({
         </div>
       )}
 
+      {/* Sections tile across the width. Each is self-contained, so two or
+          three abreast reads as a contact sheet of what exists rather than a
+          long scroll — and it collapses back to one column on a phone. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3 lg:items-start">
       {groups.map((g) => (
         <section key={g.feature} className="rounded-xl border border-slate-200 bg-white">
           <div className="border-b border-slate-100 px-4 py-3">
@@ -113,7 +117,7 @@ export function InsightsReportsCatalog({
           </div>
           <div className="divide-y divide-slate-100">
             {g.reports.map((r) => (
-              <div key={r.id} className="flex items-center justify-between gap-4 px-4 py-3">
+              <div key={r.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <FileBarChart className="h-3.5 w-3.5 flex-shrink-0 text-slate-400" />
@@ -123,12 +127,15 @@ export function InsightsReportsCatalog({
                     {answers[r.id] || `${r.count} ${r.itemLabel.toLowerCase()}${r.count === 1 ? "" : "s"} tracked`}
                   </p>
                 </div>
-                <ReportButton detail={detail} reportId={r.id} label="Open report" product={product} />
+                <div className="flex-shrink-0 pl-5 sm:pl-0">
+                  <ReportButton detail={detail} reportId={r.id} label="Open report" product={product} />
+                </div>
               </div>
             ))}
           </div>
         </section>
       ))}
+      </div>
 
       {footer}
     </div>
