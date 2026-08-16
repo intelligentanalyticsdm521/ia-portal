@@ -14,6 +14,7 @@
 // This page never invents a report. It reads whatever `detail` the product's
 // insights payload carries, so a report appears the moment its data does — and
 // a product with no data yet says so rather than showing a fabricated list.
+import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { FileBarChart, Clock } from "lucide-react";
 import { ReportButton } from "./ReportButton";
@@ -31,6 +32,7 @@ export function InsightsReportsCatalog({
   featureLabel,
   answers = {},
   intro,
+  footer,
 }: {
   /** `detail` from the product's insights payload. */
   detail: DetailPayload | undefined;
@@ -43,6 +45,10 @@ export function InsightsReportsCatalog({
   /** report id → the question it answers, in the owner's words. */
   answers?: Record<string, string>;
   intro?: string;
+  /** Rendered INSIDE the page container, below the groups. Anything passed as a
+   *  sibling instead escapes the max-w-5xl wrapper and runs the full width of
+   *  the screen, which is what happened to the operational-records section. */
+  footer?: ReactNode;
 }) {
   const groups = useMemo(() => {
     const byFeature = new Map<string, Array<{ id: string; label: string; count: number; itemLabel: string }>>();
@@ -120,6 +126,8 @@ export function InsightsReportsCatalog({
           </div>
         </section>
       ))}
+
+      {footer}
     </div>
   );
 }

@@ -43,14 +43,9 @@ export function SparkIAInsightsReportsPage() {
         dashboards={SPARK_DASHBOARDS}
         featureLabel={FEATURE_LABEL}
         answers={ANSWERS}
+        footer={<ReportsHubPage platform="SPARK" bare />}
         intro="Every report we produce for your marketing, grouped by the part of it they cover. Each one is the full analysis — the same report you reach from the page itself or by drilling into a score."
       />
-
-      {/* The operational hub that lived here before. The analysis comes
-          first because that is what someone opening "Reports" is after;
-          the plain operational record stays underneath rather than being
-          replaced by it. */}
-      <ReportsHubPage platform="SPARK" bare />
     </div>
   );
 }
