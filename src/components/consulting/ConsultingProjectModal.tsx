@@ -230,7 +230,10 @@ interface WorkspaceResponse {
 export const TASK_STAGE_LABELS: Record<string, string> = {
   new: "New",
   in_progress: "In Progress",
-  client_review: "Client Review",
+  // Doubles as the internal QA lane: agency work that needs testing before it
+  // ships sits here too. Clients never see this map — they have their own
+  // CLIENT_STAGE_LABEL, which still reads simply "Client Review".
+  client_review: "Client Review / Internal Testing",
   revision: "Revision",
   client_revision_review: "Client Revision Review",
   approved: "Approved",
@@ -302,6 +305,23 @@ export const TASK_ACTIONS: Record<string, Array<{ value: string; label: string }
   completed: [{ value: "in_progress|in_progress", label: "Reopen" }],
   cancelled: [{ value: "in_progress|in_progress", label: "Revive → In Progress" }],
 };
+
+/** Moves allowed ONLY on agency-owned (internal) work. Internal work has no
+ *  client to review or approve it, so forcing it through Client Review meant
+ *  approving your own ticket on behalf of a client that doesn't exist. Mirrors
+ *  INTERNAL_EXTRA_EDGES in oliver-api routes/consultingRequests.js — the server
+ *  enforces the same rule, this just surfaces it. */
+export const INTERNAL_EXTRA_ACTIONS: Record<string, Array<{ value: string; label: string }>> = {
+  in_progress: [{ value: "completed|completed", label: "Mark Completed" }],
+};
+
+/** Legal actions for a stage, including internal-only shortcuts when the work
+ *  belongs to the agency itself. */
+export function taskActionsFor(stage: string, isInternal?: boolean): Array<{ value: string; label: string }> {
+  const base = TASK_ACTIONS[stage] || [];
+  if (!isInternal) return base;
+  return [...base, ...(INTERNAL_EXTRA_ACTIONS[stage] || [])];
+}
 
 // ─── Modal props ─────────────────────────────────────────────────────────
 
@@ -1826,6 +1846,9 @@ export interface TaskDeliverable {
   file_name?: string | null;
   file_url?: string | null;
   status: string;
+  /** 1 when the CLIENT uploaded it (their markup), not the agency. Returned by
+   *  GET /consulting/requests but was never declared here. */
+  is_client_supplied?: boolean | number | null;
 }
 
 export function TaskDetailModal({

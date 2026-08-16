@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { IadmModal } from "../../components/IadmModal";
 import { Plus, AlertCircle, LayoutGrid, List as ListIcon, ChevronDown, ChevronRight, Search, Settings } from "lucide-react";
-import { TASK_STAGE_LABELS, TASK_STATUS_LABELS, TASK_ACTIONS } from "../../components/consulting/ConsultingProjectModal";
+import { TASK_STAGE_LABELS, TASK_STATUS_LABELS, taskActionsFor } from "../../components/consulting/ConsultingProjectModal";
 import { TaskModal } from "./TaskModal";
 import {
   type WorkRow, type ReleaseRow, type WorkerRow, type WorkMeta,
@@ -148,7 +148,7 @@ export function ConsultingWorkBoardPage() {
    *  machine has no such transition (e.g. new -> approved). Prefers a non-cancel
    *  action so dropping on a column never silently cancels work. */
   const actionTo = (r: WorkRow, stage: string): string | null => {
-    const legal = (TASK_ACTIONS[r.stage] || []).filter((a) => a.value.split("|")[0] === stage);
+    const legal = taskActionsFor(r.stage, r.is_internal).filter((a) => a.value.split("|")[0] === stage);
     if (!legal.length) return null;
     return (legal.find((a) => !a.value.startsWith("cancelled|")) || legal[0]).value;
   };
@@ -339,7 +339,7 @@ export function ConsultingWorkBoardPage() {
           <option value={`${r.stage}|${r.status}`}>
             {TASK_STAGE_LABELS[r.stage] || r.stage} — {TASK_STATUS_LABELS[r.status] || r.status}
           </option>
-          {(TASK_ACTIONS[r.stage] || []).filter((a) => a.value !== `${r.stage}|${r.status}`)
+          {taskActionsFor(r.stage, r.is_internal).filter((a) => a.value !== `${r.stage}|${r.status}`)
             .map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
         </select>
       </div>

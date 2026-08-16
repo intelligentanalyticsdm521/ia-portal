@@ -11,11 +11,11 @@
 //
 // Deliberately NOT an extension of TaskDetailModal: that component is shared with
 // the CLIENT modal, and agency planning must never surface on a client screen.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { IadmModal } from "../../components/IadmModal";
 import {
-  TASK_STAGE_LABELS, TASK_STATUS_LABELS, TASK_ACTIONS,
+  TASK_STAGE_LABELS, TASK_STATUS_LABELS, taskActionsFor,
 } from "../../components/consulting/ConsultingProjectModal";
 import type { WorkRow, ReleaseRow, WorkerRow, WorkMeta } from "./workTypes";
 import { PLATFORM_LABEL } from "./workTypes";
@@ -42,7 +42,7 @@ export function TaskModal({ row, releases, workers, meta, projects, onClose, onS
   projects: Array<{ project_id: string; name: string }>;
   onClose: () => void; onSaved: () => void;
 }) {
-  const { getFounder, patchFounder, postFounder } = useOliverApi();
+  const { getFounder, patchFounder, postFounder, uploadFounder } = useOliverApi();
   const unit = meta?.estimate_unit || "hours";
   const [tab, setTab] = useState<"overview" | "details" | "activity">("overview");
 
@@ -116,6 +116,31 @@ export function TaskModal({ row, releases, workers, meta, projects, onClose, onS
       setComments(Array.isArray(d) ? d : []);
     } catch (e) { setErr((e as Error).message || "Could not add note."); }
     finally { setSending(null); }
+  };
+
+  // Attach a deliverable straight to the ticket. Same endpoint the project
+  // modal already used (ConsultingProjectModal), which the work board's modal
+  // never got — so a task created off a client request had no way to receive a
+  // document at all. The backend stamps service_request_id, the request's
+  // project_id, and the CLIENT's tenant_id, so one upload lands on the ticket,
+  // the linked project, and the client's Deliverables library at once.
+  const [file, setFile] = useState<File | null>(null);
+  const [attaching, setAttaching] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const attach = async () => {
+    if (!file || attaching) return;
+    setAttaching(true); setErr(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("title", file.name);
+      await uploadFounder(`/consulting/requests/${row.id}/deliverables`, form);
+      setFile(null);
+      if (fileRef.current) fileRef.current.value = "";
+      onSaved();   // refresh so the new deliverable shows on the card + modal
+    } catch (e) {
+      setErr((e as Error).message || "Could not attach the document.");
+    } finally { setAttaching(false); }
   };
 
   const changeStatus = async (value: string) => {
@@ -194,7 +219,7 @@ export function TaskModal({ row, releases, workers, meta, projects, onClose, onS
                 <option value={`${row.stage}|${row.status}`}>
                   {TASK_STAGE_LABELS[row.stage] || row.stage} — {TASK_STATUS_LABELS[row.status] || row.status}
                 </option>
-                {(TASK_ACTIONS[row.stage] || []).filter((a) => a.value !== `${row.stage}|${row.status}`)
+                {taskActionsFor(row.stage, row.is_internal).filter((a) => a.value !== `${row.stage}|${row.status}`)
                   .map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
               </select>
               {(row.days_in_stage ?? 0) > 0 && (
@@ -223,19 +248,48 @@ export function TaskModal({ row, releases, workers, meta, projects, onClose, onS
               Start and due together let capacity spread across days rather than spiking on one.
             </p>
 
-            {(row.deliverables || []).length > 0 && (
-              <div>
-                <label className={l}>Deliverables</label>
-                <ul className="space-y-1">
+            <div>
+              <label className={l}>
+                Deliverables{" "}
+                <span className="font-normal text-slate-400">
+                  (also files to the linked project and the client&apos;s library)
+                </span>
+              </label>
+              {(row.deliverables || []).length > 0 && (
+                <ul className="mb-2 space-y-1">
                   {(row.deliverables || []).map((d) => (
                     <li key={d.deliverable_id}
                       className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-700">
                       {d.title || d.file_name}
+                      {d.is_client_supplied ? (
+                        <span className="ml-2 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+                          from client
+                        </span>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
+              )}
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  className="block w-full text-xs text-slate-600 file:mr-2 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-2 file:py-1 file:text-xs file:font-semibold file:text-slate-700"
+                />
+                <button
+                  type="button"
+                  onClick={attach}
+                  disabled={!file || attaching}
+                  className="flex-shrink-0 rounded-md bg-[#EF6C33] px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-40"
+                >
+                  {attaching ? "Uploading…" : "Attach"}
+                </button>
               </div>
-            )}
+              <p className="mt-1 text-[10px] text-slate-400">
+                Uploads land as <strong>pending</strong> — send it for client review to share it.
+              </p>
+            </div>
           </div>
         ) : tab === "details" ? (
           <div className="space-y-3">

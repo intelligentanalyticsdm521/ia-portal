@@ -6,6 +6,7 @@ import {
   type AuthenticationResult,
   type AccountInfo
 } from '@azure/msal-browser';
+import { authScopes } from './msalConfig';
 
 let pca: IPublicClientApplication | null = null;
 let initPromise: Promise<void> | null = null;
@@ -138,35 +139,115 @@ export function clearStaleInteractionFlags(): void {
  * preferred_username / username when the optional claim isn't configured on the
  * app registration.
  *
+ * 2026-08-14 — AND THAT STILL WASN'T ENOUGH, because we are not on workforce
+ * Entra. Our authority is `iadmexternalid.ciamlogin.com` — Entra External ID
+ * (CIAM). `logout_hint` is a workforce-Entra parameter; CIAM's end-session
+ * endpoint skips the account picker on **`id_token_hint`**, which is the raw ID
+ * token, not an email. MSAL exposes it as `idTokenHint` on the logout request
+ * (verified in the installed @azure/msal-common: CommonEndSessionRequest has the
+ * field, and RequestParameterBuilder.addIdTokenHint writes `id_token_hint` onto
+ * the logout URL), and MSAL v3's AccountInfo carries the raw token as
+ * `account.idToken`.
+ *
+ * Both hints are sent. They're independent, cost nothing together, and this way
+ * the behaviour is right whichever authority a given environment points at.
+ *
  * Also clears interaction flags first: if a user ever abandoned the old picker
  * page, a stale `interaction_in_progress` would otherwise make this call throw
  * and leave them wedged (that's what locked Brandon out previously).
  */
-export function hardLogout(instance: IPublicClientApplication): Promise<void> {
+export async function hardLogout(instance: IPublicClientApplication): Promise<void> {
   const account =
     instance.getActiveAccount() ?? instance.getAllAccounts()[0] ?? undefined;
 
   const claims = (account?.idTokenClaims ?? {}) as Record<string, unknown>;
-  const logoutHint =
+  const loginHint =
     (typeof claims.login_hint === 'string' && claims.login_hint) ||
     (typeof claims.preferred_username === 'string' && claims.preferred_username) ||
     account?.username ||
     undefined;
 
-  clearStaleInteractionFlags();
+  // Get the RAW id token, trying every place MSAL can hold it. This is the
+  // parameter CIAM actually acts on, and each earlier attempt failed because
+  // the value silently came back undefined:
+  //   1. AccountInfo.idToken — declared in MSAL v3 but NOT populated by
+  //      getActiveAccount()/getAllAccounts(); those rebuild the account from
+  //      the account cache and only fill idTokenClaims.
+  //   2. acquireTokenSilent().idToken — correct, but throws if the token needs
+  //      a network refresh and the session is already half-gone.
+  //   3. the localStorage cache entry MSAL writes it to — the last resort, and
+  //      the only one that still works when the other two have given up.
+  const idToken = await resolveRawIdToken(instance, account);
 
-  return instance
-    .logoutRedirect({
-      account,
-      logoutHint,
-      postLogoutRedirectUri: window.location.origin,
-    })
-    .catch(() => {
-      // Never strand the user on a half-signed-out screen: drop local state
-      // and bounce to the landing page.
-      try { instance.clearCache?.(); } catch { /* ignore */ }
-      window.location.assign('/');
-    });
+  clearStaleInteractionFlags();
+  try { await instance.clearCache?.(); } catch { /* ignore */ }
+
+  // Build the end-session URL BY HAND rather than going through
+  // logoutRedirect().
+  //
+  // 2026-08-14 — three fixes in a row "shipped" and changed nothing, because
+  // each one handed MSAL a parameter that turned out to be undefined and MSAL
+  // silently omitted it. Constructing the URL here means what we intend to send
+  // is exactly what gets sent, and the log line below states it as fact instead
+  // of another assumption. This is the same lesson as the phantom-column sweep:
+  // stop trusting that a call did what it looked like it did.
+  const authority = String(import.meta.env.VITE_AUTH_AUTHORITY || '').replace(/\/+$/, '');
+  if (!authority) {
+    window.location.assign('/');
+    return;
+  }
+
+  const params = new URLSearchParams();
+  params.set('post_logout_redirect_uri', window.location.origin);
+  if (idToken) params.set('id_token_hint', idToken);
+  // Harmless on CIAM, and correct if an environment ever points at workforce Entra.
+  if (loginHint) params.set('logout_hint', loginHint);
+
+  const url = `${authority}/oauth2/v2.0/logout?${params.toString()}`;
+  console.info(
+    '[logout] id_token_hint:', idToken ? `present (${idToken.length} chars)` : 'MISSING',
+    '| logout_hint:', loginHint || 'MISSING',
+  );
+
+  window.location.assign(url);
+}
+
+/** Raw id token from wherever MSAL is actually keeping it. Never throws. */
+async function resolveRawIdToken(
+  instance: IPublicClientApplication,
+  account: AccountInfo | undefined,
+): Promise<string | undefined> {
+  if (account?.idToken) return account.idToken;
+
+  if (account) {
+    try {
+      const r = await instance.acquireTokenSilent({ account, scopes: authScopes });
+      if (r.idToken) return r.idToken;
+    } catch { /* fall through to the cache scan */ }
+  }
+
+  // MSAL stores credentials in localStorage under keys shaped like
+  // `<homeAccountId>-<env>-idtoken-<clientId>-<tenantId>---`, with the raw JWT
+  // on the entry's `secret` field. Prefer the entry belonging to THIS account;
+  // fall back to any id token if the account couldn't be resolved at all.
+  try {
+    const want = account?.homeAccountId?.toLowerCase();
+    let fallback: string | undefined;
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (!key || !key.toLowerCase().includes('-idtoken-')) continue;
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      let secret: string | undefined;
+      try { secret = JSON.parse(raw)?.secret; } catch { continue; }
+      if (!secret) continue;
+      if (want && key.toLowerCase().startsWith(want)) return secret;
+      fallback ??= secret;
+    }
+    return fallback;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
