@@ -87,7 +87,7 @@ export function SparkAutomationsPage() {
   return (
     <SparkPageShell title="Automations" subtitle="Trigger-based workflows that run automatically" error={error} loading={loading}>
       <ReportBar product="spark" detail={insightsPayload?.detail} reports={[
-        { id: 'spark_automations', label: 'Automation performance' },
+        { id: 'spark_automation_coverage', label: 'Built vs switched on' },
       ]} />
       <div className="p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">

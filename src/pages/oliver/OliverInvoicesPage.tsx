@@ -293,7 +293,6 @@ export function OliverInvoicesPage() {
       <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
         { id: 'oliver_overdue_invoices', label: 'Who to chase' },
         { id: 'oliver_invoice_aging', label: 'Receivables aging' },
-        { id: 'oliver_invoice_size', label: 'Invoice size' },
       ]} />
       <PageHeader
         title="Invoices"

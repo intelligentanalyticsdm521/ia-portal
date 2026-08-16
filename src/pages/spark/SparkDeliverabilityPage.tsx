@@ -150,6 +150,7 @@ export function SparkDeliverabilityPage() {
     >
       <ReportBar product="spark" detail={insightsPayload?.detail} reports={[
         { id: 'spark_bounce_domains', label: 'Bounces by domain' },
+        { id: 'spark_email_events', label: 'Email outcomes' },
         { id: 'spark_list_health', label: 'List health' },
       ]} />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

@@ -252,7 +252,8 @@ export function OliverQuotesPage() {
     <OliverPageWrapper title="Quotes" subtitle="Quote management" error={error} loading={loading}>
       <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
         { id: 'oliver_quotes_by_service', label: 'Quotes by service' },
-        { id: 'oliver_quote_size', label: 'Quote size' },
+        { id: 'oliver_proposal_funnel', label: 'Proposal funnel' },
+        { id: 'oliver_service_catalog', label: 'What you sell' },
         { id: 'oliver_win_drivers', label: 'What wins work' },
       ]} />
       <PageHeader

@@ -22,6 +22,8 @@ import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button } from "../../components/oliver/ui";
 import { Zap, Mail, MessageSquare, Bell, Lock, ChevronDown, ChevronRight } from "lucide-react";
 
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 interface AutomationRule {
   key: string;
   name: string;
@@ -72,6 +74,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 const CATEGORY_ORDER = ["customer_comms", "billing", "orchestration", "lifecycle"];
 
 export function OliverAutomationsPage() {
+  const insightsPayload = useProductInsightsPayload('oliver');
   const { get, patch, post, del, ready } = useOliverApi();
   const [tab, setTab] = useState<"rules" | "templates" | "runs">("rules");
   const [rules, setRules] = useState<AutomationRule[]>([]);
@@ -127,6 +130,9 @@ export function OliverAutomationsPage() {
 
   return (
     <OliverPageWrapper title="Workflow & Automations" subtitle="Rules + message templates" error={error} loading={loading && !rules.length && !templates.length && !runs.length}>
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
+        { id: 'oliver_automation_runs', label: 'Fired vs failed' },
+      ]} />
       <PageHeader
         title="Workflow & Automations"
         subtitle="Pre-built rules toggle on/off — automate booking confirmations, reminders, invoices, and more."

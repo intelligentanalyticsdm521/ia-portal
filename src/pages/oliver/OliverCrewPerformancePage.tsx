@@ -214,7 +214,7 @@ export function OliverCrewPerformancePage() {
   return (
     <OliverPageWrapper title="Team Performance" subtitle="Per-worker completion stats" error={error} loading={loading}>
       <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
-        { id: 'oliver_crew_performance', label: 'Crew performance' },
+        { id: 'oliver_crew_roster', label: 'Crew and costs' },
       ]} />
       <PageHeader
         title="Team Performance"

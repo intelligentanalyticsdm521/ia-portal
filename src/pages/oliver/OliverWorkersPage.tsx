@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import PhoneInput from "../../components/PhoneInput";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 import {
   PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState, Button,
   StatusBadge, type Column,
@@ -53,6 +55,7 @@ const FILTER_PILLS = [
 ];
 
 export function OliverWorkersPage() {
+  const insightsPayload = useProductInsightsPayload('oliver');
   const { get, post, patch, put, ready } = useOliverApi();
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,6 +125,9 @@ export function OliverWorkersPage() {
 
   return (
     <OliverPageWrapper title="Team" subtitle="Workers and availability" error={error} loading={loading}>
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
+        { id: 'oliver_crew_roster', label: 'Crew and costs' },
+      ]} />
       <PageHeader
         title="Team"
         subtitle="Manage your workers and their weekly availability"

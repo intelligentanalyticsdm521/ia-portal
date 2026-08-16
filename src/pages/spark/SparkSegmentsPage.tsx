@@ -6,6 +6,8 @@ import { SparkTable } from "../../components/spark/SparkTable";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { Plus, Filter, Users, Zap, Sparkles, AlertTriangle } from "lucide-react";
 
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 // SP-6 — a single campaign send is hard-capped at this many recipients
 // (campaigns.js SEG_HARD_CAP). A segment that evaluates larger can't be sent
 // as one campaign, so we warn the user where the count is known (the table)
@@ -31,6 +33,7 @@ const TEMPLATES = [
 ];
 
 export function SparkSegmentsPage() {
+  const insightsPayload = useProductInsightsPayload('spark');
   const { get, post, ready } = useSparkApi();
   const [segments, setSegments] = useState<Segment[]>([]);
   const [error, setError] = useState<unknown>(null);
@@ -95,6 +98,9 @@ export function SparkSegmentsPage() {
       loading={loading}
       error={error}
     >
+      <ReportBar product="spark" detail={insightsPayload?.detail} reports={[
+        { id: 'spark_segments', label: 'Segment sizes' },
+      ]} />
       {segments.length === 0 && !loading ? (
         <>
           <div className="spark-mini-card py-10 text-center">

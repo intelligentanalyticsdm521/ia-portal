@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { ReportBar } from '../../components/insights/ReportBar';
+import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 import {
   PageHeader, DataTable, DetailDrawer, EmptyState, Button, FilterBar, type Column,
 } from "../../components/oliver/ui";
@@ -101,6 +103,7 @@ function fmtDate(d?: string | null) {
 }
 
 export function OliverProposalsPage() {
+  const insightsPayload = useProductInsightsPayload('oliver');
   const { get, post, ready } = useOliverApi();
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -240,6 +243,10 @@ export function OliverProposalsPage() {
 
   return (
     <OliverPageWrapper title="Proposals" subtitle="Branded proposals with tracked send + click-to-accept" error={error} loading={loading && !proposals.length}>
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
+        { id: 'oliver_proposal_funnel', label: 'Proposal funnel' },
+        { id: 'oliver_win_drivers', label: 'What wins work' },
+      ]} />
       <PageHeader
         title="Proposals"
         subtitle="Create a branded proposal, send a tracked link, customer clicks to accept → OLIVER quote auto-created."

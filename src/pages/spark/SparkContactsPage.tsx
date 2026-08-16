@@ -591,6 +591,9 @@ export function SparkContactsPage() {
         { id: 'spark_list_health', label: 'List health' },
         { id: 'spark_contact_sources', label: 'By source' },
         { id: 'spark_lifecycle_stages', label: 'By lifecycle stage' },
+        { id: 'spark_segments', label: 'Segments' },
+        { id: 'spark_tag_usage', label: 'Tag usage' },
+        { id: 'spark_contact_scoring', label: 'Engagement scores' },
       ]} />
       {/* Bulk action toolbar */}
       {selected.size > 0 && (
