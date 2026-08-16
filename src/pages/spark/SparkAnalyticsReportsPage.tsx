@@ -242,7 +242,7 @@ export function SparkAnalyticsReportsPage() {
       loading={loading}
       error={error}
     >
-      <ReportBar detail={insightsPayload?.detail} reports={[
+      <ReportBar product="spark" detail={insightsPayload?.detail} reports={[
         { id: 'spark_campaigns', label: 'Campaign results' },
         { id: 'spark_list_health', label: 'List health' },
         { id: 'spark_contact_sources', label: 'By source' },

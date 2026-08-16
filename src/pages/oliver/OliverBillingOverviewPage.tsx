@@ -135,7 +135,7 @@ export function OliverBillingOverviewPage() {
 
   return (
     <OliverPageWrapper title="Billing Overview" subtitle="Where your money is" error={error} loading={loading}>
-      <ReportBar detail={insightsPayload?.detail} reports={[
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
         { id: 'oliver_revenue_by_service', label: 'Revenue by service' },
         { id: 'oliver_overdue_invoices', label: 'Who to chase' },
         { id: 'oliver_invoice_aging', label: 'Receivables aging' },

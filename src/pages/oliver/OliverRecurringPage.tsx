@@ -369,7 +369,7 @@ export function OliverRecurringPage() {
 
   return (
     <OliverPageWrapper title="Recurring & Subscriptions" subtitle="Manage Stripe subscriptions and recurring job templates" error={error} loading={loading}>
-      <ReportBar detail={insightsPayload?.detail} reports={[
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
         { id: 'oliver_subscription_health', label: 'Recurring revenue' },
         { id: 'oliver_recurring_contracts', label: 'Recurring contracts' },
       ]} />

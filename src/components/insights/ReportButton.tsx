@@ -26,7 +26,7 @@ import { deepConfigFor } from "../../analytics/deepConfigs";
 import type { DetailPayload } from "../../analytics/detail";
 
 export function ReportButton({
-  detail, reportId, label = "See full details", subtitle,
+  detail, reportId, label = "See full details", subtitle, product = "arion",
 }: {
   /** The `detail` map from the ARION insights payload. */
   detail: DetailPayload | undefined;
@@ -35,6 +35,9 @@ export function ReportButton({
   label?: string;
   /** Overrides the modal subtitle; defaults to the item count. */
   subtitle?: string;
+  /** Which product's branding the modal wears. Was hardcoded to "arion", so
+   *  every SPARK and OLIVER report opened under another product's badge. */
+  product?: "arion" | "spark" | "oliver" | "argus" | "stella";
 }) {
   const [open, setOpen] = useState(false);
   const report = detail?.[reportId];
@@ -69,7 +72,7 @@ export function ReportButton({
         <IadmModal
           open
           onClose={() => setOpen(false)}
-          product="arion"
+          product={product}
           title={report.label}
           subtitle={subtitle || `${count} ${itemWord.toLowerCase()} · full report`}
           size="xl"

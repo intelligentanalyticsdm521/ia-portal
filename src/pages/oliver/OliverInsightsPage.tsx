@@ -368,7 +368,7 @@ export function OliverInsightsPage() {
 
   return (
     <OliverPageWrapper title="Insights" subtitle="What the data is telling you" error={error} loading={loading}>
-      <ReportBar detail={insightsPayload?.detail} reports={[
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
         { id: 'oliver_revenue_by_service', label: 'Revenue by service' },
         { id: 'oliver_overdue_invoices', label: 'Who to chase' },
         { id: 'oliver_job_status', label: 'Jobs by status' },

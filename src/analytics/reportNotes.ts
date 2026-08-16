@@ -258,6 +258,62 @@ export const REPORT_NOTES: Record<string, ReportNote> = {
     "Out-of-date plugins are the number-one way small-business sites get hacked, and a dormant plugin is just as exploitable as an active one — deactivating isn't removing. Update what's behind; delete what you've stopped using.",
   ),
 
+  spark_segments: N(
+    "Every segment you have built and how many contacts it currently matches.",
+    "A CRM with one segment is a mailing list. Watch for segments matching nobody — send to one by mistake and the campaign goes nowhere with no error at all.",
+  ),
+  spark_tag_usage: N(
+    "Every tag and how many contacts actually carry it.",
+    "Tag sprawl is the commonest CRM mess: dozens created, a handful used. Unused tags clutter the picker your team sees, which is how tagging quietly stops happening — deleting them makes the useful ones get used more.",
+  ),
+  spark_email_events: N(
+    "What actually happened to your email — delivered, opened, clicked, bounced, complained — month by month.",
+    "The campaign report is per-send; this is the whole channel over time. Failures cost you twice: the message nobody read, and a mark against your sending reputation that means the next campaign reaches fewer inboxes. Spam complaints are the most damaging signal there is.",
+  ),
+  spark_automation_coverage: N(
+    "Automations you have built, grouped by type, with how many are actually switched on.",
+    "An automation built and left off is work already paid for that is not collecting — usually one toggle away from running. Compare built against active before deciding you need more automation.",
+  ),
+  spark_forms: N(
+    "Every form and how many submissions it has brought in.",
+    "A live form collecting nothing is either unreachable or broken. Submit one yourself to find out which — it takes a minute and it is the only way to tell from the outside.",
+  ),
+  spark_contact_scoring: N(
+    "Your contacts grouped by engagement score.",
+    "Scores let you prioritise, route and segment by value. A large unscored group means none of that is working for those contacts — they are invisible to every rule you have written.",
+  ),
+  spark_accounts: N(
+    "Your accounts with their health score, how many contacts each holds, and when you last heard from them.",
+    "An account that has gone quiet is rarely happy and quiet — it is normally one that has already started looking. A call now is worth more than a discount later.",
+  ),
+  oliver_service_catalog: N(
+    "Everything you sell, with its price, how long it takes, and how a customer can actually buy it.",
+    "Every service that needs a quote first is a delay and a chance for the customer to call someone else. Anything with a predictable price is a candidate for self-service booking — that is the single biggest lever on conversion in this list.",
+  ),
+  oliver_coupons: N(
+    "Your discount codes, how often each has been used, and whether it is still live.",
+    "An active code with no expiry keeps taking margin indefinitely — including from customers who would have paid full price, and from anyone who finds it on a voucher site. Set end dates.",
+  ),
+  oliver_job_reliability: N(
+    "Your jobs split by whether they ran clean, breached an SLA, or got rescheduled.",
+    "A job rescheduled three times is a customer losing patience, and this shows it before they tell you. SLA breaches are commitments you made and missed — worth knowing which, before the review appears.",
+  ),
+  oliver_automation_runs: N(
+    "Every automation rule that fired, with how many runs failed or were skipped.",
+    "A failing rule is a reminder not sent or a follow-up that never happened. The customer experiences that as you forgetting about them, and nothing else in the product would tell you.",
+  ),
+  oliver_proposal_funnel: N(
+    "Your proposals grouped by where they stopped — never sent, sent and never opened, opened with no answer, accepted, or declined.",
+    "Sent-and-never-opened is not a pricing objection: it never reached a human. Wrong address, spam folder, or buried in a thread — and a phone call resolves all three. Opened-and-gone-quiet is the one worth chasing today.",
+  ),
+  oliver_projects: N(
+    "Your projects with budget, target end date, and whether they have run past it.",
+    "A project past the date you gave the customer is a conversation you have not had yet. It is far easier before they notice than after.",
+  ),
+  oliver_crew_roster: N(
+    "Who is on your crew, their type and status, their rate, and their weekly hours.",
+    "Anyone without weekly hours set cannot be included in capacity planning, so the scheduler is working from a smaller team than you actually have. Inactive crew still occupy licences and still show up in pickers.",
+  ),
   // ══ SPARK / OLIVER — 2026-08-14 ══
   spark_list_health: N(
     "Every contact grouped by whether you can actually reach them — invalid addresses, unsubscribes, people who have never engaged, and people who have gone quiet.",

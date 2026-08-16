@@ -114,7 +114,7 @@ export function SparkCampaignsPage() {
 
   return (
     <SparkPageShell title="Campaigns" subtitle="Email and SMS campaign management" error={error} loading={loading}>
-      <ReportBar detail={insightsPayload?.detail} reports={[
+      <ReportBar product="spark" detail={insightsPayload?.detail} reports={[
         { id: 'spark_campaigns', label: 'Campaign results' },
         { id: 'spark_send_times', label: 'Best send times' },
         { id: 'spark_bounce_domains', label: 'Bounces by domain' },

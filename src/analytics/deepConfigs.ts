@@ -203,6 +203,267 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
     },
   },
 
+  // ── The 14 that shipped configless (2026-08-14) ────────────────────────
+  // Built and rendered as bare tables — the exact gap ARION had and I
+  // reintroduced. Each one below earns its depth the way ARION's Content
+  // Library does: bands to make the distribution mean something, segments to
+  // split it the way an owner thinks, and opportunity lists that name what to
+  // do. A report without these is a database query with a border on it.
+
+  spark_segments: {
+    bands: [
+      { label: "Large (500+)", color: "#15803d", test: (v) => v >= 500 },
+      { label: "Useful (50-499)", color: "#65a30d", test: (v) => v >= 50 },
+      { label: "Small (1-49)", color: "#f59e0b", test: (v) => v >= 1 },
+      { label: "Empty", color: "#dc2626", test: () => true },
+    ],
+    segments: [{ label: "Origin", of: (it: DetailItem) => String(it.extra?.kind || "-") }],
+    opportunities: [
+      {
+        title: "Empty segments",
+        note: "A segment matching nobody is a filter that will silently send to no one.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} match nobody at all. Send to one by mistake and the campaign goes nowhere with no error — worth deleting or fixing the filter behind them.`,
+        filter: (it: DetailItem) => Number(lastOf(it) || 0) === 0,
+      },
+    ],
+    flag: (it: DetailItem) => (Number(lastOf(it) || 0) === 0 ? "Matches nobody" : null),
+  },
+
+  // Tag sprawl is the commonest CRM mess: dozens created, a handful used.
+  spark_tag_usage: {
+    bands: [
+      { label: "Working hard (25+)", color: "#15803d", test: (v) => v >= 25 },
+      { label: "In use (5-24)", color: "#65a30d", test: (v) => v >= 5 },
+      { label: "Barely used (1-4)", color: "#f59e0b", test: (v) => v >= 1 },
+      { label: "Never used", color: "#dc2626", test: () => true },
+    ],
+    segments: [{ label: "Category", of: (it: DetailItem) => String(it.extra?.category || "(none)") }],
+    opportunities: [
+      {
+        title: "Tags nobody uses",
+        note: "Created once and never applied. They clutter every picker and make the useful tags harder to find.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} have never been applied to anybody. Every one of them clutters the picker your team uses, which is how tagging quietly stops happening — delete them and the ones that matter get used more.`,
+        filter: (it: DetailItem) => Number(lastOf(it) || 0) === 0,
+      },
+    ],
+    flag: (it: DetailItem) => (Number(lastOf(it) || 0) === 0 ? "Never applied" : null),
+  },
+
+  spark_email_events: {
+    segments: [
+      {
+        label: "Outcome",
+        of: (it: DetailItem) =>
+          /bounce|complain|spam|drop|fail/i.test(it.name) ? "Went wrong"
+          : /open|click/i.test(it.name) ? "Someone engaged" : "Delivered",
+      },
+    ],
+    opportunities: [
+      {
+        title: "Mail that did not arrive",
+        note: "Bounces, complaints and drops. Every one is both a lost message and a mark against your sender reputation.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} are failures rather than deliveries. Each one costs you twice: the message nobody read, and a mark against your sending reputation that makes the next campaign land in fewer inboxes.`,
+        filter: (it: DetailItem) => /bounce|complain|spam|drop|fail/i.test(it.name),
+      },
+    ],
+    flag: (it: DetailItem) => (/complain|spam/i.test(it.name) ? "Spam complaints — the most damaging signal there is" : null),
+  },
+
+  // An automation built and left switched off is work already paid for that is
+  // not collecting.
+  spark_automation_coverage: {
+    opportunities: [
+      {
+        title: "Built but switched off",
+        note: "Someone did the work of setting these up and they are not running.",
+        lede: (n: number, label: string) =>
+          `${n} automation ${pluralize(label.toLowerCase(), n)} contain automations that were built and never switched on. That is work already paid for and not collecting — usually one toggle away from running.`,
+        filter: (it: DetailItem) => Number(it.extra?.idle || 0) > 0,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.idle || 0) - Number(a.extra?.idle || 0),
+      },
+    ],
+    flag: (it: DetailItem) => (Number(it.extra?.idle || 0) > 0 ? `${it.extra?.idle} built and not running` : null),
+  },
+
+  spark_forms: {
+    segments: [{ label: "State", of: (it: DetailItem) => String(it.extra?.state || "-") }],
+    opportunities: [
+      {
+        title: "Forms bringing in nothing",
+        note: "Live and collecting no submissions. Either nobody can find it, or something on it is broken.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} are live and have brought in nothing. A form that collects nothing is usually either unreachable or broken — worth submitting one yourself to find out which.`,
+        filter: (it: DetailItem) => Number(lastOf(it) || 0) === 0 && String(it.extra?.state) === "Live",
+      },
+    ],
+    flag: (it: DetailItem) =>
+      Number(lastOf(it) || 0) === 0 && String(it.extra?.state) === "Live" ? "Live and collecting nothing" : null,
+  },
+
+  spark_contact_scoring: {
+    bands: [
+      { label: "Large group", color: "#15803d", test: (v) => v >= 100 },
+      { label: "Moderate", color: "#65a30d", test: (v) => v >= 20 },
+      { label: "Small", color: "#f59e0b", test: () => true },
+    ],
+    opportunities: [
+      {
+        title: "Contacts nobody has scored",
+        note: "No score means they cannot be prioritised, segmented by value, or routed automatically.",
+        filter: (it: DetailItem) => /unscored|none|unset/i.test(it.name),
+      },
+    ],
+  },
+
+  spark_accounts: {
+    bands: [
+      { label: "Healthy (75+)", color: "#15803d", test: (v) => v >= 75 },
+      { label: "Watch (50-74)", color: "#f59e0b", test: (v) => v >= 50 },
+      { label: "At risk (under 50)", color: "#dc2626", test: () => true },
+    ],
+    segments: [{ label: "Band", of: (it: DetailItem) => String(it.extra?.band || "-") }],
+    opportunities: [
+      {
+        title: "Accounts going quiet",
+        note: "Low health and no recent engagement. An account you stop hearing from is usually one already deciding to leave.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} are scoring low on health. An account that has gone quiet is rarely happy and quiet — it is normally one that has already started looking, and a call now is worth more than a discount later.`,
+        filter: (it: DetailItem) => Number(lastOf(it) || 0) < 50,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.contacts || 0) - Number(a.extra?.contacts || 0),
+      },
+    ],
+    flag: (it: DetailItem) => (Number(lastOf(it) || 0) < 50 ? `Health ${lastOf(it)} — last engaged ${it.extra?.seen}` : null),
+    weightKey: "contacts",
+  },
+
+  // ── OLIVER ─────────────────────────────────────────────────────────────
+  oliver_service_catalog: {
+    segments: [
+      { label: "How to buy", of: (it: DetailItem) => String(it.extra?.buy || "-") },
+      { label: "State", of: (it: DetailItem) => String(it.extra?.state || "-") },
+    ],
+    opportunities: [
+      {
+        title: "Needs a quote before anyone can buy",
+        note: "Every quote is a delay and a chance to lose the job. Anything with a predictable price could be bookable instead.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} cannot be bought without a quote first. Every quote is a delay and a chance for the customer to call someone else — anything with a predictable price is a candidate for self-service booking.`,
+        filter: (it: DetailItem) => String(it.extra?.buy) === "Needs a quote",
+      },
+      {
+        title: "Sitting inactive",
+        note: "In the catalogue and not sellable. Either retire it or switch it on.",
+        filter: (it: DetailItem) => String(it.extra?.state) === "Inactive",
+      },
+    ],
+    flag: (it: DetailItem) => (Number(lastOf(it) || 0) === 0 ? "No price set" : null),
+  },
+
+  oliver_coupons: {
+    segments: [{ label: "State", of: (it: DetailItem) => String(it.extra?.state || "-") }],
+    opportunities: [
+      {
+        title: "Discounts still live",
+        note: "An active code with no expiry keeps discounting forever, including to customers who would have paid full price.",
+        lede: (n: number, label: string) =>
+          `${n} discount ${pluralize(label.toLowerCase(), n)} are still active. A live code with no end date keeps taking margin indefinitely — including from customers who would have paid full price and from anyone who finds it on a voucher site.`,
+        filter: (it: DetailItem) => String(it.extra?.state) === "Active",
+        sortBy: (a: DetailItem, b: DetailItem) => Number(lastOf(b) || 0) - Number(lastOf(a) || 0),
+      },
+    ],
+    flag: (it: DetailItem) =>
+      String(it.extra?.state) === "Active" && String(it.extra?.expires) === "no expiry"
+        ? "Active with no expiry date" : null,
+  },
+
+  oliver_job_reliability: {
+    segments: [
+      {
+        label: "Outcome",
+        of: (it: DetailItem) => (/clean/i.test(it.name) ? "Went to plan" : "Did not"),
+      },
+    ],
+    opportunities: [
+      {
+        title: "Jobs that did not go to plan",
+        note: "SLA breaches and repeatedly moved appointments. Both are visible before the customer complains.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} cover work that did not go to plan — a missed commitment or an appointment moved more than once. A job rescheduled three times is a customer losing patience, and you can see it here before they tell you.`,
+        filter: (it: DetailItem) => !/clean/i.test(it.name),
+      },
+    ],
+    flag: (it: DetailItem) => (/breached/i.test(it.name) ? "A commitment you made and missed" : null),
+  },
+
+  oliver_automation_runs: {
+    opportunities: [
+      {
+        title: "Automations that are failing",
+        note: "A rule that errors is a message not sent or a step not taken, and nothing else tells you.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} are failing when they fire. Each failure is a reminder not sent or a follow-up that never happened, and the customer experiences it as you forgetting about them.`,
+        filter: (it: DetailItem) => Number(it.extra?.failed || 0) > 0,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.failed || 0) - Number(a.extra?.failed || 0),
+      },
+    ],
+    flag: (it: DetailItem) => (Number(it.extra?.failed || 0) > 0 ? `${it.extra?.failed} failed run(s)` : null),
+  },
+
+  // Sent-and-never-opened is a completely different problem from
+  // opened-and-declined, and only one of them is about the price.
+  oliver_proposal_funnel: {
+    opportunities: [
+      {
+        title: "Sent and never opened",
+        note: "Not a pricing problem — the proposal never reached anyone. Wrong address, spam folder, or lost in a thread.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} were sent and never opened. That is not a pricing objection — it never reached a human. Wrong address, spam folder, or buried in a thread, and a phone call resolves all three.`,
+        filter: (it: DetailItem) => /never opened/i.test(it.name),
+      },
+      {
+        title: "Opened and gone quiet",
+        note: "They read it and did not answer. That is the one worth a call today.",
+        filter: (it: DetailItem) => /no answer/i.test(it.name),
+      },
+    ],
+    flag: (it: DetailItem) => (/never opened/i.test(it.name) ? "Never reached the customer" : null),
+    weightKey: "value",
+  },
+
+  oliver_projects: {
+    segments: [{ label: "Status", of: (it: DetailItem) => String(it.extra?.status || "-") }],
+    opportunities: [
+      {
+        title: "Past their target date",
+        note: "Still open with the target end date behind them.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} are past the date you told the customer. Whether or not that is a problem, they have not heard it from you — and the call is far easier before they notice than after.`,
+        filter: (it: DetailItem) => String(it.extra?.late) === "YES",
+        sortBy: (a: DetailItem, b: DetailItem) => Number(lastOf(b) || 0) - Number(lastOf(a) || 0),
+      },
+    ],
+    flag: (it: DetailItem) => (String(it.extra?.late) === "YES" ? `Overdue — target was ${it.extra?.due}` : null),
+  },
+
+  oliver_crew_roster: {
+    segments: [
+      { label: "Type", of: (it: DetailItem) => String(it.extra?.type || "-") },
+      { label: "Status", of: (it: DetailItem) => String(it.extra?.status || "-") },
+    ],
+    opportunities: [
+      {
+        title: "On the roster, not working",
+        note: "Inactive crew still occupy licences and still appear in pickers and scheduling.",
+        filter: (it: DetailItem) => !/active/i.test(String(it.extra?.status || "")),
+      },
+    ],
+    flag: (it: DetailItem) =>
+      Number(it.extra?.hours || 0) === 0 ? "No weekly hours set — capacity planning cannot include them" : null,
+  },
+
   // ── SPARK / OLIVER (2026-08-14) ────────────────────────────────────────
   // Nine reports were produced from real data and rendering with engine
   // defaults — a table and a generic narrative, no findings. Same gap ARION
@@ -212,6 +473,11 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
   // The report that explains a bad send before anyone blames the copy. A list
   // that is a third undeliverable or unengaged underperforms whatever you write.
   spark_list_health: {
+    bands: [
+      { label: "Large group (100+)", color: "#dc2626", test: (v) => v >= 100 },
+      { label: "Moderate (25-99)", color: "#f59e0b", test: (v) => v >= 25 },
+      { label: "Small (under 25)", color: "#65a30d", test: () => true },
+    ],
     segments: [
       {
         label: "Can you reach them",
@@ -243,6 +509,11 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
   },
 
   spark_lifecycle_stages: {
+    bands: [
+      { label: "Most of the list (100+)", color: "#15803d", test: (v) => v >= 100 },
+      { label: "Meaningful (25-99)", color: "#65a30d", test: (v) => v >= 25 },
+      { label: "Thin (under 25)", color: "#f59e0b", test: () => true },
+    ],
     opportunities: [
       {
         title: "Nobody has set a stage",
@@ -255,19 +526,47 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
   // Campaign-level send results. Open and click rates are the whole point, and
   // an unsubscribe spike is the one number worth stopping for.
   spark_campaigns: {
-    opportunities: [
+    // Bands on OPEN RATE rather than send volume: a big send that nobody opens
+    // is not a good campaign, and volume bands would say it was.
+    bands: [
+      { label: "Strong (40%+ open)", color: "#15803d", test: () => false },
+      { label: "Healthy (25-39%)", color: "#65a30d", test: () => false },
+      { label: "Weak (under 25%)", color: "#f59e0b", test: () => true },
+    ],
+    segments: [
       {
-        title: "Drove people to unsubscribe",
-        note: "A campaign with an unsubscribe rate well above your norm said something the list did not want. Worth reading before sending anything similar.",
-        filter: (it: DetailItem) => Number(it.extra?.unsubRate || 0) >= 1,
-        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.unsubRate || 0) - Number(a.extra?.unsubRate || 0),
-      },
-      {
-        title: "Opened and not clicked",
-        note: "The subject line worked and the content did not. That is a content fix, not a list problem.",
-        filter: (it: DetailItem) => Number(it.extra?.openRate || 0) >= 20 && Number(it.extra?.clickRate || 0) < 2,
+        label: "How it landed",
+        of: (it: DetailItem) => {
+          const o = Number(it.extra?.openRate || 0);
+          if (o >= 40) return "Strong open rate";
+          if (o >= 25) return "Healthy open rate";
+          if (o > 0) return "Weak open rate";
+          return "Not sent yet";
+        },
       },
     ],
+    opportunities: [
+      {
+        title: "Opened and not clicked",
+        note: "The subject line did its job and the content did not. That is a rewrite, not a list problem.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} got opened and barely clicked. The subject line did its job — people showed up. What they found did not give them a reason to act, and that is a content fix rather than anything to do with your list.`,
+        filter: (it: DetailItem) => Number(it.extra?.openRate || 0) >= 15 && Number(it.extra?.clickRate || 0) < 2,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.sent || 0) - Number(a.extra?.sent || 0),
+      },
+      {
+        title: "Barely opened",
+        note: "Under 15% opened. Usually the subject line, the sender name, or a list that has stopped paying attention.",
+        lede: (n: number, label: string) =>
+          `${n} ${pluralize(label.toLowerCase(), n)} were opened by almost nobody. That is nearly always one of three things: the subject line, the name it came from, or a list that stopped paying attention — and List Health tells you whether it is the third.`,
+        filter: (it: DetailItem) => Number(it.extra?.sent || 0) > 0 && Number(it.extra?.openRate || 0) < 15,
+        sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.sent || 0) - Number(a.extra?.sent || 0),
+      },
+    ],
+    flag: (it: DetailItem) =>
+      Number(it.extra?.sent || 0) > 0 && Number(it.extra?.openRate || 0) < 10
+        ? `Only ${it.extra?.openRate}% opened it` : null,
+    weightKey: "sent",
   },
 
   spark_send_times: {

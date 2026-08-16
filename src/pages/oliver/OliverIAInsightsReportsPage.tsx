@@ -41,6 +41,7 @@ export function OliverIAInsightsReportsPage() {
   return (
     <div className="p-1">
       <InsightsReportsCatalog
+        product="oliver"
         detail={payload?.detail}
         loading={!payload}
         dashboards={OLIVER_DASHBOARDS}

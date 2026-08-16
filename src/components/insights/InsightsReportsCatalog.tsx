@@ -33,6 +33,7 @@ export function InsightsReportsCatalog({
   answers = {},
   intro,
   footer,
+  product = "arion",
 }: {
   /** `detail` from the product's insights payload. */
   detail: DetailPayload | undefined;
@@ -49,6 +50,8 @@ export function InsightsReportsCatalog({
    *  sibling instead escapes the max-w-5xl wrapper and runs the full width of
    *  the screen, which is what happened to the operational-records section. */
   footer?: ReactNode;
+  /** Product branding for the report modals opened from this catalog. */
+  product?: "arion" | "spark" | "oliver" | "argus" | "stella";
 }) {
   const groups = useMemo(() => {
     const byFeature = new Map<string, Array<{ id: string; label: string; count: number; itemLabel: string }>>();
@@ -120,7 +123,7 @@ export function InsightsReportsCatalog({
                     {answers[r.id] || `${r.count} ${r.itemLabel.toLowerCase()}${r.count === 1 ? "" : "s"} tracked`}
                   </p>
                 </div>
-                <ReportButton detail={detail} reportId={r.id} label="Open report" />
+                <ReportButton detail={detail} reportId={r.id} label="Open report" product={product} />
               </div>
             ))}
           </div>

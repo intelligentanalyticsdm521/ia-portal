@@ -273,7 +273,7 @@ export function OliverJobBoardPage() {
 
   return (
     <OliverPageWrapper title="Job Board" subtitle="Active and recent jobs" error={error} loading={loading}>
-      <ReportBar detail={insightsPayload?.detail} reports={[
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
         { id: 'oliver_job_status', label: 'Jobs by status' },
         { id: 'oliver_jobs_by_service', label: 'Jobs by service' },
         { id: 'oliver_booked_ahead', label: 'Booked ahead' },

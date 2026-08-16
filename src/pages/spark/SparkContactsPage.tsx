@@ -587,7 +587,7 @@ export function SparkContactsPage() {
       loading={loading}
       error={error}
     >
-      <ReportBar detail={insightsPayload?.detail} reports={[
+      <ReportBar product="spark" detail={insightsPayload?.detail} reports={[
         { id: 'spark_list_health', label: 'List health' },
         { id: 'spark_contact_sources', label: 'By source' },
         { id: 'spark_lifecycle_stages', label: 'By lifecycle stage' },

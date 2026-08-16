@@ -208,7 +208,7 @@ export function OliverContactsPage() {
 
   return (
     <OliverPageWrapper title="Customers" subtitle="Customer database" error={error} loading={loading}>
-      <ReportBar detail={insightsPayload?.detail} reports={[
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
         { id: 'oliver_top_customers', label: 'Top customers' },
       ]} />
       <PageHeader

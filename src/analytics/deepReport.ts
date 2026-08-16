@@ -217,12 +217,17 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
 
   // B — distribution
   let distribution: DeepDistribution | undefined;
-  if (cfg?.bands && trendItems.length) {
+  // Bands come from ALL items, not just those with a trend. The distribution
+  // is "how many items sit in each band", which is a fact about now — gating it
+  // on a 2+ point series meant every point-in-time report (segment sizes, tag
+  // usage, a service catalogue) rendered as a bare table with no chart at all.
+  // Same mistake the opportunity lists had.
+  if (cfg?.bands && items.length) {
     distribution = {
       kind: "bands",
       series: cfg.bands.map((b) => ({ label: b.label, color: b.color, values: new Array(seriesLen).fill(0) })),
     };
-    for (const it of trendItems) {
+    for (const it of items) {
       for (let m = 0; m < seriesLen; m++) {
         const bi = bandIndex(cfg.bands, it.series?.[m] ?? null);
         if (bi >= 0) distribution.series[bi].values[m]++;

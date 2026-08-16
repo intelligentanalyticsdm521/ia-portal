@@ -300,7 +300,7 @@ export function SparkLeadsPage() {
 
   return (
     <SparkPageShell title="Lead Inbox" subtitle="B2B leads — discovery, review, and CRM hand-off" error={error} loading={loading}>
-      <ReportBar detail={insightsPayload?.detail} reports={[
+      <ReportBar product="spark" detail={insightsPayload?.detail} reports={[
         { id: 'spark_lead_sources', label: 'Leads by source' },
         { id: 'spark_stage_flow', label: 'Pipeline flow' },
       ]} />

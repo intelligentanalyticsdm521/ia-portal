@@ -148,7 +148,7 @@ export function SparkDeliverabilityPage() {
       loading={loading}
       error={error}
     >
-      <ReportBar detail={insightsPayload?.detail} reports={[
+      <ReportBar product="spark" detail={insightsPayload?.detail} reports={[
         { id: 'spark_bounce_domains', label: 'Bounces by domain' },
         { id: 'spark_list_health', label: 'List health' },
       ]} />

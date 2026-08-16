@@ -23,11 +23,13 @@ export interface ReportBarItem {
 }
 
 export function ReportBar({
-  detail, reports, heading = "Full reports",
+  detail, reports, heading = "Full reports", product = "arion",
 }: {
   detail: DetailPayload | undefined;
   reports: ReportBarItem[];
   heading?: string;
+  /** Product branding for the modal these buttons open. */
+  product?: "arion" | "spark" | "oliver" | "argus" | "stella";
 }) {
   const live = reports.filter((r) => (detail?.[r.id]?.items?.length ?? 0) > 0);
   if (!live.length) return null;
@@ -39,7 +41,7 @@ export function ReportBar({
       </div>
       <div className="flex flex-wrap gap-2">
         {live.map((r) => (
-          <ReportButton key={r.id} detail={detail} reportId={r.id} label={r.label} />
+          <ReportButton key={r.id} detail={detail} reportId={r.id} label={r.label} product={product} />
         ))}
       </div>
     </div>

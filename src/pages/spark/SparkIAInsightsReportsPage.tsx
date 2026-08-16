@@ -38,6 +38,7 @@ export function SparkIAInsightsReportsPage() {
   return (
     <div className="p-1">
       <InsightsReportsCatalog
+        product="spark"
         detail={payload?.detail}
         loading={!payload}
         dashboards={SPARK_DASHBOARDS}
