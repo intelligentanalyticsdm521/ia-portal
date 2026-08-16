@@ -53,9 +53,25 @@ export const LEADGEN_ENABLED = false;
 // requireArionTier / oliver enforceTenantAccess) — real access control still
 // lives server-side. This flag only controls what the MENU does.
 //
-// Re-enable only after verifying, as the founder tenant, that ARION + OLIVER +
-// SPARK are all fully reachable.
-export const FEATURE_GATING_ENABLED = false;
+// RE-ENABLED 2026-08-16, after fixing the root cause rather than the symptom.
+//
+// The original failure was NOT the gating logic — it was that tier came
+// exclusively from live Stripe product names, so every manually-onboarded or
+// comped tenant (Intelligent Analytics, Rolling In It, Cold Start Test Co)
+// resolved to NO tier and therefore read as locked.
+//
+// Two independent protections now exist:
+//   1. oliver-api GET /billing/subscriptions (commit 3fd6ff1) grants a tier
+//      from core.tenants.subscription_tier for any product the tenant OWNS but
+//      has no Stripe subscription for. Ownership is still the gate; Stripe wins
+//      wherever a live subscription exists. Verified in prod: Cold Start =
+//      business on 5 products, Rolling In It = pro on 3, Midwest Ag = arion only.
+//   2. useProductTier still hard-bypasses to "business" for the founder inside
+//      his OWN tenant, so a hole in (1) cannot lock Brandon out again.
+//
+// If this ever needs killing again, set false and redeploy — but fix the tier
+// RESOLUTION, not this flag.
+export const FEATURE_GATING_ENABLED = true;
 
 // Service keys hidden from nav while LEADGEN_ENABLED is false. Kept here (not
 // inline in serviceCatalog) so the lock lives with the flag it depends on.
