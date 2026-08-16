@@ -947,14 +947,29 @@ export function SubNav({ config }: SubNavProps) {
     FEATURE_GATING_ENABLED &&
     !!needsKey && ownedProducts.size > 0 && !ownedProducts.has(needsKey);
 
+  // 2026-08-17 — SHOW-DON'T-HIDE applies to ENTITLEMENT ONLY.
+  //
+  // isVisible() returns false for three unrelated reasons: `hidden` (cut from
+  // the product), `merged` (folded into another surface), and unmet
+  // tier/add-on. The show-don't-hide change collapsed all three into
+  // `locked: true`, which RESURRECTED every merged and hidden item as a locked
+  // menu row — undoing the Phase 4b–5 SPARK consolidation and making ~13
+  // surfaces look "gated" even at business tier, where nothing should be.
+  //
+  // hidden/merged are product-STRUCTURE decisions, not entitlement, so they
+  // come out of the menu at every tier. Only tier/add-on gaps render as
+  // locked, which is the upsell the 2026-08-06 decision actually asked for.
+  // (merged routes still resolve — see isRoutable.)
   const gatedGroups = config.groups
     .map((g) => ({
       ...g,
-      items: g.items.map((it) =>
-        FEATURE_GATING_ENABLED && (productLocked || !isVisible(it, visCtx))
-          ? { ...it, locked: true as const }
-          : it
-      ),
+      items: g.items
+        .filter((it) => !it.hidden && !it.merged)
+        .map((it) =>
+          FEATURE_GATING_ENABLED && (productLocked || !isVisible(it, visCtx))
+            ? { ...it, locked: true as const }
+            : it
+        ),
     }))
     .filter((g) => g.items.length > 0);
   config = { ...config, groups: gatedGroups };
