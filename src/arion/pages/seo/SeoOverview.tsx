@@ -271,7 +271,7 @@ export function SeoOverview() {
       <ReportBar detail={insightsPayload?.detail} reports={[
         { id: 'keyword_movement', label: 'Keyword movement' },
         { id: 'referring_domains', label: 'Referring domains' },
-        { id: 'share_of_voice', label: 'Share of voice' },
+        { id: 'competitor_rankings', label: 'Share of voice' },
       ]} />
       {/* Filter bar */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>

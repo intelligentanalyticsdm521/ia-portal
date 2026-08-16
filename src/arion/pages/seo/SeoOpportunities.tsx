@@ -39,7 +39,7 @@ export function SeoOpportunities() {
     <div>
       <ReportBar detail={insightsPayload?.detail} reports={[
         { id: 'striking_distance', label: 'One push from page one' },
-        { id: 'content_gap_keywords', label: 'Content gaps' },
+        { id: 'content_library', label: 'Content gaps' },
         { id: 'ctr_opportunity', label: 'CTR opportunities' },
       ]} />
       {connected && (

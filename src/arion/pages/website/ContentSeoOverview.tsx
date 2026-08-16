@@ -231,9 +231,6 @@ export function ContentSeoOverview() {
     <div>
       <ReportBar detail={insightsPayload?.detail} reports={[
         { id: 'content_library', label: 'Content library' },
-        { id: 'content_gap_keywords', label: 'Content gaps' },
-        { id: 'content_age', label: 'Content age' },
-        { id: 'word_count_dist', label: 'Content depth' },
       ]} />
       {/* Hero stat tiles — compact summary numbers */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14 }}>

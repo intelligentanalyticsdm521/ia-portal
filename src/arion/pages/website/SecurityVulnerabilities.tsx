@@ -144,7 +144,7 @@ export function SecurityVulnerabilities() {
   return (
     <div>
       <ReportBar detail={insightsPayload?.detail} reports={[
-        { id: 'vulnerabilities', label: 'Vulnerabilities' },
+        { id: 'component_upkeep', label: 'Vulnerabilities' },
         { id: 'component_upkeep', label: 'Software upkeep' },
       ]} />
       {notice && (

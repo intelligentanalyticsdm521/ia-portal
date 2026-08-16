@@ -212,7 +212,7 @@ export function PerformanceCache() {
   return (
     <div>
       <ReportBar detail={insightsPayload?.detail} reports={[
-        { id: 'pagespeed_history', label: 'Speed history' },
+        { id: 'pagespeed_scores', label: 'Speed history' },
         { id: 'core_web_vitals', label: 'Core Web Vitals' },
         { id: 'pagespeed_opportunities', label: 'Speed fixes' },
       ]} />

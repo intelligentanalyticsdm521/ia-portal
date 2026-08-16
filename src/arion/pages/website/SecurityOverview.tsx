@@ -187,7 +187,7 @@ export function SecurityOverview() {
   return (
     <div>
       <ReportBar detail={insightsPayload?.detail} reports={[
-        { id: 'vulnerabilities', label: 'Vulnerabilities' },
+        { id: 'component_upkeep', label: 'Vulnerabilities' },
         { id: 'component_upkeep', label: 'Software upkeep' },
       ]} />
       {/* Storytelling band + action buttons at top (matches SEO page pattern) */}

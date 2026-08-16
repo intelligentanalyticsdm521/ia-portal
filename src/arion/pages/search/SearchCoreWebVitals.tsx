@@ -24,7 +24,6 @@ export function SearchCoreWebVitals() {
         { id: 'pagespeed_accessibility_audits', label: 'Accessibility checks' },
         { id: 'pagespeed_seo_audits', label: 'Technical SEO checks' },
         { id: 'pagespeed_best_practice_audits', label: 'Best practice checks' },
-        { id: 'pagespeed_history', label: 'Speed history' },
       ]} />
       <div className="stat-row">
         <StatCard label="LCP" value="--" delta="Largest Contentful Paint" />

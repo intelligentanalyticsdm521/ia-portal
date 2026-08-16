@@ -50,8 +50,7 @@ export function BusinessInsights() {
         { id: 'gbp_visibility_split', label: 'Where you\'re seen' },
         { id: 'gbp_actions', label: 'What people do' },
         { id: 'gbp_search_keywords', label: 'Search terms' },
-        { id: 'gbp_discovery_split', label: 'Discovery split' },
-        { id: 'gbp_action_breakdown', label: 'Action breakdown' },
+        { id: 'gbp_visibility_split', label: 'Discovery split' },
       ]} />
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         {[30, 90].map(p => (

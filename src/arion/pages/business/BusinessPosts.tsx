@@ -86,9 +86,6 @@ export function BusinessPosts() {
 
   return (
     <div>
-      <ReportBar detail={insightsPayload?.detail} reports={[
-        { id: 'post_feed', label: 'Posts' },
-      ]} />
       {!composing && (
         <div style={{ marginBottom: 16 }}>
           <button className="abtn abtn-sky" onClick={() => setComposing(true)}>Create Post</button>

@@ -104,7 +104,7 @@ export function SeoCompetitors() {
   return (
     <div>
       <ReportBar detail={insightsPayload?.detail} reports={[
-        { id: 'share_of_voice', label: 'Share of voice' },
+        { id: 'competitor_rankings', label: 'Share of voice' },
         { id: 'referring_domains', label: 'Referring domains' },
       ]} />
       {compUpstreamErrors.length > 0 && (

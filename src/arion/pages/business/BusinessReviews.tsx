@@ -146,9 +146,6 @@ export function BusinessReviews() {
 
   return (
     <div>
-      <ReportBar detail={insightsPayload?.detail} reports={[
-        { id: 'review_feed', label: 'Reviews' },
-      ]} />
       <div className="stat-row" style={{ marginTop: 8 }}>
         <StatCard label="Total Reviews" value={String(total)} />
         <StatCard label="Average Rating" value={avg > 0 ? avg.toFixed(1) : '--'} />
