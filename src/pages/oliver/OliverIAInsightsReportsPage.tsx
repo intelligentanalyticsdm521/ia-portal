@@ -14,6 +14,12 @@ const FEATURE_LABEL: Record<string, string> = {
   sales_pipeline: "Quotes & Pipeline",
   crew_capacity: "Crew & Capacity",
   customer_retention: "Customers & Retention",
+  // Intelligence dashboards — modelled rather than measured.
+  pipeline_revenue: "Pipeline Revenue (modelled)",
+  cash_pressure: "Cash Pressure",
+  demand_forecast: "Demand Forecast",
+  churn_retention: "Churn & Retention",
+  pipeline_value: "Pipeline & Customer Value",
 };
 
 /** What each report answers, in the owner's words. */

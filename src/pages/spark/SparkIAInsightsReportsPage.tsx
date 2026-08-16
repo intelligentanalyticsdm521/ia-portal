@@ -14,6 +14,13 @@ const FEATURE_LABEL: Record<string, string> = {
   campaign_performance: "Campaigns",
   deliverability: "Deliverability",
   automation_retention: "Automation & Retention",
+  // Intelligence dashboards. Reports filed here are modelled rather than
+  // measured — forecasts, anomalies, opportunity ranking — and belong under
+  // their own heading rather than falling into "Other".
+  campaign_roi: "Campaign ROI (modelled)",
+  list_growth: "List Growth Forecast",
+  churn_prediction: "Churn Prediction",
+  conversion_forecast: "Conversion Forecast",
 };
 
 /** What each report answers, in the owner's words. */
