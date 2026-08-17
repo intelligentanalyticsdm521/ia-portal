@@ -16,6 +16,7 @@ import {
 import { useProductTier } from "../hooks/useProductTier";
 import { useAppState } from "../app/AppState";
 import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
+import { productColor } from "../config/productTheme";
 
 export interface SubNavItem extends VisibilityRules {
   key: string;
@@ -1162,7 +1163,17 @@ export function SubNav({ config }: SubNavProps) {
                           <span
                             title={`Requires ${requirementLabel(item)}`}
                             aria-label={`Locked — requires ${requirementLabel(item)}`}
-                            style={{ flexShrink: 0, marginLeft: 'auto', display: 'inline-flex', opacity: 0.5 }}
+                            style={{
+                              flexShrink: 0,
+                              marginLeft: 'auto',
+                              display: 'inline-flex',
+                              // Brand color of the product this row belongs to,
+                              // so a locked SPARK row reads orange and a locked
+                              // ARION row reads blue. Muted so the lock stays a
+                              // hint rather than competing with the active item.
+                              color: productColor(productKey),
+                              opacity: 0.75,
+                            }}
                           >
                             <Lock size={11} />
                           </span>
