@@ -4,7 +4,7 @@ import {
   Monitor, Server, ShieldCheck, BarChart2, TrendingUp,
   Search as SearchIcon, MapPin, Star, ChevronDown, Settings,
   Users, Megaphone, Briefcase, Heart, Target, Sparkles,
-  Wrench, UserCircle, CreditCard, MessageSquare, LineChart, Zap, Palette,
+  Wrench, UserCircle, CreditCard, MessageSquare, LineChart, Zap, Palette, Lock,
 } from "lucide-react";
 import type { ProductKey } from "./IconRail";
 import {
@@ -913,6 +913,20 @@ export function productOfConfig(config: SubNavConfig): ProductKey | undefined {
     .find((k) => SUB_NAV_CONFIGS[k] === config);
 }
 
+/**
+ * Human-readable reason a nav row is locked, for the lock icon's tooltip.
+ * Mirrors the wording used by FeatureLocked on the page itself so the menu and
+ * the page never disagree about which plan a surface needs.
+ */
+export function requirementLabel(item: { minTier?: string; addon?: string }): string {
+  if (item.addon === 'leadgen') return 'the Lead Gen add-on';
+  if (item.minTier) {
+    const t = item.minTier;
+    return `SPARK ${t.charAt(0).toUpperCase()}${t.slice(1)}`;
+  }
+  return 'a higher plan';
+}
+
 export function SubNav({ config }: SubNavProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -1138,25 +1152,19 @@ export function SubNav({ config }: SubNavProps) {
                       >
                         <span className="h-1 w-1 flex-shrink-0 rounded-full bg-current opacity-50" />
                         <span className={`truncate${item.locked ? " opacity-60" : ""}`}>{item.label}</span>
-                        {/* 2026-08-06 — plan-locked features stay VISIBLE with an
-                            "Upgrade" pill so customers discover what they're
-                            missing. The API enforces the real block (403). */}
+                        {/* Plan-locked features stay VISIBLE so customers discover
+                            what they're missing. 2026-08-17 — a shouty orange
+                            UPGRADE pill on every locked row read as a storefront
+                            and drowned out the nav; a quiet lock says the same
+                            thing. The full pitch belongs on the page itself
+                            (FeatureLocked), not in the menu. API still 403s. */}
                         {item.locked && (
                           <span
-                            title="Not included in your plan — upgrade to unlock"
-                            style={{
-                              background: '#EF6C3322',
-                              color: '#EF6C33',
-                              fontSize: 9,
-                              fontWeight: 700,
-                              letterSpacing: '0.04em',
-                              padding: '1px 5px',
-                              borderRadius: 99,
-                              flexShrink: 0,
-                              marginLeft: 'auto',
-                            }}
+                            title={`Requires ${requirementLabel(item)}`}
+                            aria-label={`Locked — requires ${requirementLabel(item)}`}
+                            style={{ flexShrink: 0, marginLeft: 'auto', display: 'inline-flex', opacity: 0.5 }}
                           >
-                            UPGRADE
+                            <Lock size={11} />
                           </span>
                         )}
                         {item.tag && !item.locked && (
