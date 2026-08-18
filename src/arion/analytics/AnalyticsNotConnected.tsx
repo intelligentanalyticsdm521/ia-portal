@@ -21,7 +21,7 @@ export function AnalyticsNotConnected({
       <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: '#0B1C24' }}>{title}</div>
       <p style={{ fontSize: 13, color: '#5A7A8A', maxWidth: 420, margin: '0 auto 20px' }}>{body}</p>
       <a
-        href="/app/arion/integrations"
+        href="/app/settings/integrations"
         style={{
           display: 'inline-block',
           padding: '8px 24px',

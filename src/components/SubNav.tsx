@@ -1081,7 +1081,7 @@ export function SubNav({ config }: SubNavProps) {
           </div>
           <button
             type="button"
-            onClick={() => navigate("/app/settings/plan")}
+            onClick={() => navigate("/app/settings/plan-pricing")}
             className="mt-2 w-full rounded px-2 py-1 text-[10px] font-bold text-white"
             style={{ background: "#EF6C33" }}
           >

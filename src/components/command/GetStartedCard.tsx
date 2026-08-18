@@ -71,10 +71,10 @@ export function GetStartedCard() {
             : null;
           const ovBody = overviewRes && overviewRes.ok ? await overviewRes.json().catch(() => null) : null;
           const ov = ovBody?.data || ovBody;
-          next.push({ product: "ARION", label: "Connect Google Analytics 4", description: "Required for traffic, audience, and conversion trend reports.", route: "/app/settings/connections", completed: !!ov?.integrations?.googleAnalytics });
-          next.push({ product: "ARION", label: "Connect Google Search Console", description: "Powers the Search trend report (clicks, impressions, CTR, position).", route: "/app/settings/connections", completed: !!ov?.integrations?.googleSearchConsole });
+          next.push({ product: "ARION", label: "Connect Google Analytics 4", description: "Required for traffic, audience, and conversion trend reports.", route: "/app/settings/integrations", completed: !!ov?.integrations?.googleAnalytics });
+          next.push({ product: "ARION", label: "Connect Google Search Console", description: "Powers the Search trend report (clicks, impressions, CTR, position).", route: "/app/settings/integrations", completed: !!ov?.integrations?.googleSearchConsole });
           // GBP connect is gated off (dead-end until Workspace migration) — no nag.
-          if (GBP_ENABLED) next.push({ product: "ARION", label: "Connect Google Business Profile", description: "Enables Local Presence trend (reviews, calls, direction asks).", route: "/app/settings/connections", completed: !!ov?.integrations?.googleBusinessProfile });
+          if (GBP_ENABLED) next.push({ product: "ARION", label: "Connect Google Business Profile", description: "Enables Local Presence trend (reviews, calls, direction asks).", route: "/app/settings/integrations", completed: !!ov?.integrations?.googleBusinessProfile });
           next.push({ product: "ARION", label: "Configure your service area", description: "Drives the geographic relevance check in Visibility & Reach.", route: "/app/services/arion_service_area", completed: !!ov?.serviceArea?.city || !!ov?.serviceArea?.state });
         } catch { /* skip ARION */ }
       }

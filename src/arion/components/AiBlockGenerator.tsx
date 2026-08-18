@@ -675,7 +675,7 @@ function SectionConfigurator({
       </div>
       {!canAfford && (
         <div style={{ marginTop: 8, fontSize: 12, color: '#DC2626' }}>
-          You don&apos;t have enough credits for this section. <Link to="/app/argus/credits" style={{ color: '#DC2626', fontWeight: 600 }}>Top up your data plan</Link> or simplify the section to fit your balance.
+          You don&apos;t have enough credits for this section. <Link to="/app/settings/argus-data-plan" style={{ color: '#DC2626', fontWeight: 600 }}>Top up your data plan</Link> or simplify the section to fit your balance.
         </div>
       )}
     </div>
