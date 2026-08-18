@@ -41,14 +41,24 @@ interface Props {
 export function SparkListDetailModal({ open, onClose, listId, onChanged }: Props) {
   // API verified against routes/lists.js: GET /lists/:id, PUT /lists/:id
   // (NOT patch), DELETE /lists/:id, DELETE /lists/:id/contacts/:contact_id.
-  const { get, put, del, ready } = useSparkApi() as {
+  const { get, post, put, del, ready } = useSparkApi() as {
     get: <T>(p: string) => Promise<T>;
+    post: <T>(p: string, body?: unknown) => Promise<T>;
     put: <T>(p: string, body?: unknown) => Promise<T>;
     del: <T>(p: string) => Promise<T>;
     ready: boolean;
   };
 
   const [tab, setTab] = useState<Tab>("overview");
+  // Add-contacts picker. The API (POST /lists/:id/contacts) always existed —
+  // the UI just never called it, and told the user to go open each contact
+  // one at a time instead.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState("");
+  const [pickerRows, setPickerRows] = useState<Member[] | null>(null);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [adding, setAdding] = useState(false);
+  const [addResult, setAddResult] = useState<string | null>(null);
   const [list, setList] = useState<ContactList | null>(null);
   const [members, setMembers] = useState<Member[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -137,6 +147,52 @@ export function SparkListDetailModal({ open, onClose, listId, onChanged }: Props
       await reload();
     } catch (err) {
       setError(String((err as Error)?.message || err));
+    }
+  }
+
+  // Search the tenant's contacts for the picker. Nobody is filtered out — the
+  // API reports `skipped` for anyone already on the list, so re-adding is safe
+  // and the result line says so rather than appearing to do nothing.
+  const searchContacts = useCallback(async (q: string) => {
+    if (!ready) return;
+    setPickerRows(null);
+    try {
+      const qs = q.trim() ? `&search=${encodeURIComponent(q.trim())}` : "";
+      const r = await get<{ data: Member[] }>(`/api/v1/contacts?limit=25${qs}`);
+      setPickerRows(r.data || []);
+    } catch {
+      setPickerRows([]);
+    }
+  }, [get, ready]);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const t = setTimeout(() => { searchContacts(pickerQuery); }, 250);
+    return () => clearTimeout(t);
+  }, [pickerOpen, pickerQuery, searchContacts]);
+
+  async function handleAddPicked() {
+    if (!picked.size) return;
+    setAdding(true); setAddResult(null);
+    try {
+      const r = await post<{ data: { added: number; skipped: number; refused: number } }>(
+        `/api/v1/lists/${listId}/contacts`,
+        { contact_ids: [...picked] }
+      );
+      const d = r.data || { added: 0, skipped: 0, refused: 0 };
+      // Report skipped/refused explicitly. "Added 0" with no explanation is the
+      // pattern that has made half this platform look broken when it wasn't.
+      const bits = [`${d.added} added`];
+      if (d.skipped) bits.push(`${d.skipped} already on the list`);
+      if (d.refused) bits.push(`${d.refused} refused`);
+      setAddResult(bits.join(" · "));
+      setPicked(new Set());
+      await loadMembers();
+      if (onChanged) onChanged();
+    } catch (e) {
+      setAddResult(`Could not add contacts: ${(e as Error)?.message || "unknown error"}`);
+    } finally {
+      setAdding(false);
     }
   }
 
@@ -251,9 +307,70 @@ export function SparkListDetailModal({ open, onClose, listId, onChanged }: Props
           {tab === "members" && (
             <div>
               {members === null && <div className="text-sm text-slate-500">Loading…</div>}
-              {members && members.length === 0 && (
-                <div className="text-sm text-slate-500 italic">
-                  No contacts in this list yet. Open any contact and use the <strong>Lists</strong> tab to add them.
+              <div className="mb-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setPickerOpen((v) => !v); setAddResult(null); }}
+                  className="spark-btn spark-btn-accent text-xs"
+                >
+                  {pickerOpen ? "Done adding" : "Add contacts"}
+                </button>
+                {addResult && <span className="text-xs text-slate-600">{addResult}</span>}
+              </div>
+
+              {pickerOpen && (
+                <div className="mb-4 rounded-lg border border-slate-200 p-3">
+                  <input
+                    autoFocus
+                    value={pickerQuery}
+                    onChange={(e) => setPickerQuery(e.target.value)}
+                    placeholder="Search contacts by name, email, phone or company…"
+                    className="mb-2 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                  />
+                  <div className="max-h-56 overflow-y-auto">
+                    {pickerRows === null && <div className="p-2 text-sm text-slate-500">Searching…</div>}
+                    {pickerRows && pickerRows.length === 0 && (
+                      <div className="p-2 text-sm italic text-slate-500">No contacts match that search.</div>
+                    )}
+                    {pickerRows && pickerRows.map((c) => (
+                      <label key={c.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-slate-50">
+                        <input
+                          type="checkbox"
+                          checked={picked.has(c.id)}
+                          onChange={() => setPicked((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(c.id)) next.delete(c.id); else next.add(c.id);
+                            return next;
+                          })}
+                        />
+                        <span className="truncate">
+                          {[c.first_name, c.last_name].filter(Boolean).join(" ") || "(no name)"}
+                          {c.email && <span className="text-slate-500"> · {c.email}</span>}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={!picked.size || adding}
+                      onClick={handleAddPicked}
+                      className="spark-btn spark-btn-primary text-xs disabled:opacity-50"
+                    >
+                      {adding ? "Adding…" : picked.size ? `Add ${picked.size}` : "Add"}
+                    </button>
+                    {picked.size > 0 && (
+                      <button type="button" onClick={() => setPicked(new Set())} className="text-xs text-slate-500 underline">
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {members && members.length === 0 && !pickerOpen && (
+                <div className="text-sm italic text-slate-500">
+                  No contacts in this list yet — use <strong>Add contacts</strong> above.
                 </div>
               )}
               {members && members.length > 0 && (
