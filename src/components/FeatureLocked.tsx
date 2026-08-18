@@ -93,15 +93,23 @@ export default function FeatureLocked({
                 <strong className="font-semibold">{requiredPlan}</strong> to turn it on.
               </p>
               <div className="mt-5 flex flex-wrap items-center gap-3">
+                {/* /app/settings/billing does not exist either — the plans
+                    surface is settings/plan-pricing. Both links in this card
+                    were dead on the first write; see scripts/lint-dead-links.mjs. */}
                 <a
-                  href="/app/settings/billing"
+                  href="/app/settings/plan-pricing"
                   className="rounded-lg px-3.5 py-2 text-sm font-semibold text-white"
                   style={{ background: accent }}
                 >
                   View plans
                 </a>
+                {/* consulting_requests is not a real service key — it is not in
+                    SERVICE_CATALOG and not routed, so this landed on "Service
+                    not found". consulting_overview is the surface a CLIENT
+                    actually has; the other consulting keys are founder-only and
+                    get relocated to /app/admin/consulting/*. */}
                 <a
-                  href="/app/services/consulting_requests"
+                  href="/app/services/consulting_overview"
                   className="text-sm font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900"
                 >
                   Ask a question

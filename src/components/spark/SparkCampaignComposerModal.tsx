@@ -776,8 +776,18 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                         })}
                       </select>
                       {senders.length === 0 && (
+                        /* The link here pointed at /app/services/spark_settings, which
+                           does not exist — not in SERVICE_CATALOG, not routed, not in
+                           the nav. So the single escape route offered to someone with
+                           no sender landed on "Service not found". Sender Setup is the
+                           real start of the flow: verify a domain there, then name
+                           addresses on it under Senders. */
                         <p className="text-[11px] text-slate-500 mt-0.5">
-                          No senders yet. <a href="/app/services/spark_settings" className="text-[#EF6C33] hover:underline">Add one in Settings →</a>
+                          No senders yet — verify a sending domain in{" "}
+                          <a href="/app/services/spark_sender_domains" className="text-[#EF6C33] hover:underline">Sender Setup</a>,
+                          then add an address under{" "}
+                          <a href="/app/services/spark_senders" className="text-[#EF6C33] hover:underline">Senders</a>.
+                          Until then campaigns send from the Intelligent Analytics address.
                         </p>
                       )}
                       {fromEmail && (
