@@ -74,6 +74,9 @@ export function SparkSenderDomainsPage() {
   const [error, setError] = useState<unknown>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [autoRunning, setAutoRunning] = useState(false);
+  const [autoNote, setAutoNote] = useState<string | null>(null);
+  const [autoLog, setAutoLog] = useState<Array<{ record: string; action: string; before?: string; after?: string }> | null>(null);
 
   // Wizard state — replaces the old "+ Add domain" modal.
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -230,6 +233,36 @@ export function SparkSenderDomainsPage() {
     } catch {
       setAutoDnsState("failed");
     }
+  }
+
+  // Automatic path: register with the email provider, write the DNS ourselves,
+  // then verify. Only offered for zones we actually host — the API decides that
+  // with a live lookup and answers 409 + mode:"manual" when the domain is not
+  // on our account, so the button cannot be used to touch someone else's DNS.
+  async function autoConfigure(id: number) {
+    setAutoRunning(true); setAutoLog(null);
+    try {
+      const r = await post<{ data?: { changed: boolean; written: number; sendable: boolean; note?: string; log?: Array<{ record: string; action: string; before?: string; after?: string }> } }>(
+        `/api/v1/sender-domains/${id}/auto-configure`, {}
+      );
+      const d = r?.data;
+      setAutoLog(d?.log || []);
+      // Say what actually happened. "Configured" over a no-op is how a feature
+      // ends up looking done when it never ran.
+      setAutoNote(
+        d?.sendable ? "Verified — this domain can send now."
+        : d?.changed ? `${d.written} DNS record(s) written. ${d.note || "Verification can take a few minutes to propagate."}`
+        : "No DNS changes were needed."
+      );
+      await fetchAll();
+    } catch (err) {
+      const msg = (err as Error).message || "";
+      setAutoNote(
+        /409|manual/i.test(msg)
+          ? "We don't host DNS for this domain, so it has to be added manually — the records are listed below."
+          : `Could not configure automatically: ${msg}`
+      );
+    } finally { setAutoRunning(false); }
   }
 
   async function verifyNow(id: number) {
@@ -399,7 +432,12 @@ export function SparkSenderDomainsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button disabled={verifying} onClick={() => verifyNow(selectedId)}
+                  <button disabled={autoRunning || verifying} onClick={() => autoConfigure(selectedId)}
+                    title="Register the domain, write the DNS records, and verify — for domains we host"
+                    className="text-xs px-2.5 py-1 rounded border border-[#EF6C33] text-[#EF6C33] flex items-center gap-1 disabled:opacity-50">
+                    {autoRunning ? "Configuring…" : "Configure automatically"}
+                  </button>
+                  <button disabled={verifying || autoRunning} onClick={() => verifyNow(selectedId)}
                     className="text-xs px-2.5 py-1 rounded bg-[#EF6C33] text-white flex items-center gap-1 disabled:opacity-50">
                     <RefreshCw className="h-3 w-3" /> {verifying ? "Checking…" : "Verify"}
                   </button>
@@ -415,6 +453,28 @@ export function SparkSenderDomainsPage() {
                   </button>
                 </div>
               </div>
+
+              {/* What "Configure automatically" actually did. Reporting the
+                  per-record before/after matters here more than most places:
+                  this writes to a live DNS zone, and "Configured ✓" with no
+                  detail is indistinguishable from having done nothing. */}
+              {(autoNote || autoLog) && (
+                <div className="rounded border border-slate-200 bg-slate-50 p-3 text-xs">
+                  {autoNote && <div className="font-medium text-slate-800">{autoNote}</div>}
+                  {autoLog && autoLog.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {autoLog.map((l, i) => (
+                        <li key={i} className="font-mono text-[11px] text-slate-600">
+                          <span className="font-semibold uppercase">{l.record}</span>{" "}
+                          <span className="text-slate-500">{l.action}</span>
+                          {l.before && <div className="pl-4 text-slate-400">− {l.before}</div>}
+                          {l.after && <div className="pl-4 text-emerald-700">+ {l.after}</div>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
 
               {/* DNS records */}
               {records && (
