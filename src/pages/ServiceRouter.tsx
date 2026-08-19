@@ -157,7 +157,6 @@ const MyBrandSocialReportPage = lazyNamed(() => import('./myBrand/SocialReportPa
 const SparkOverviewPage = lazyNamed(() => import('./spark/SparkOverviewPage'), 'SparkOverviewPage');
 const SparkContactsPage = lazyNamed(() => import('./spark/SparkContactsPage'), 'SparkContactsPage');
 const SparkListsPage = lazyNamed(() => import('./spark/SparkListsPage'), 'SparkListsPage');
-const SparkTagsPage = lazyNamed(() => import('./spark/SparkTagsPage'), 'SparkTagsPage');
 const SparkSegmentsPage = lazyNamed(() => import('./spark/SparkSegmentsPage'), 'SparkSegmentsPage');
 const SparkCampaignsPage = lazyNamed(() => import('./spark/SparkCampaignsPage'), 'SparkCampaignsPage');
 const SparkFormsPage = lazyNamed(() => import('./spark/SparkFormsPage'), 'SparkFormsPage');
@@ -654,7 +653,6 @@ function ServiceRouterInner() {
       case 'spark_overview': sparkPage = <SparkOverviewPage />; break;
       case 'spark_contacts': sparkPage = <SparkContactsPage />; break;
       case 'spark_lists': sparkPage = <SparkListsPage />; break;
-      case 'spark_tags': sparkPage = <SparkTagsPage />; break;
       case 'spark_segments': sparkPage = <SparkSegmentsPage />; break;
       case 'spark_campaigns': sparkPage = <SparkCampaignsPage />; break;
       case 'spark_forms': sparkPage = <SparkFormsPage />; break;

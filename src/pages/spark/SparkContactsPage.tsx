@@ -6,6 +6,7 @@ import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkContactModal } from "../../components/spark/SparkContactModal";
 import { SparkQuickAddGrid } from "../../components/spark/SparkQuickAddGrid";
+import { SparkTagsModal } from "../../components/spark/SparkTagsModal";
 import { SparkTable, type SparkTableColumn } from "../../components/spark/SparkTable";
 import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
 import { SparkSearchBox } from "../../components/spark/SparkSearchBox";
@@ -78,7 +79,7 @@ type SortDir = "asc" | "desc";
 const PAGE_SIZE = 25;
 
 export function SparkContactsPage() {
-  const { get, post, ready } = useSparkApi();
+  const { get, post, put, del, ready } = useSparkApi();
   const navigate = useNavigate();
 
   // List state
@@ -116,6 +117,7 @@ export function SparkContactsPage() {
   // Drawer state
   const [drawer, setDrawer] = useState<"add" | "import" | "detail" | null>(null);
   const [quickAdd, setQuickAdd] = useState(false);
+  const [tagsOpen, setTagsOpen] = useState(false);
   const [detail, setDetail] = useState<Contact | null>(null);
   const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", company: "", title: "" });
   const [saving, setSaving] = useState(false);
@@ -555,6 +557,9 @@ export function SparkContactsPage() {
           <button data-tour="contact-import" onClick={() => setDrawer("import")} className="spark-btn spark-btn-secondary">
             <Upload className="h-3.5 w-3.5" /> Import
           </button>
+          <button onClick={() => setTagsOpen(true)} className="spark-btn spark-btn-secondary">
+            <TagIcon className="h-3.5 w-3.5" /> Tags
+          </button>
           <button onClick={() => setQuickAdd(true)} className="spark-btn spark-btn-secondary">
             <Rows3 className="h-3.5 w-3.5" /> Bulk add
           </button>
@@ -650,7 +655,7 @@ export function SparkContactsPage() {
                   <button
                     type="button"
                     data-tour="manage-tags"
-                    onClick={() => { setTagMenuOpen(false); navigate("/app/services/spark_tags"); }}
+                    onClick={() => { setTagMenuOpen(false); setTagsOpen(true); }}
                     className="mt-2 w-full rounded px-2 py-1 text-left text-[11px] text-slate-500 hover:bg-slate-50 hover:text-slate-700"
                   >
                     Manage all tags →
@@ -863,6 +868,17 @@ export function SparkContactsPage() {
           (when load was rebuilt between the modal mount and the save) could
           otherwise leave the row showing pre-edit values. Re-fetching on
           close is cheap and guarantees the list reflects the latest state. */}
+      <SparkTagsModal
+        open={tagsOpen}
+        onClose={() => setTagsOpen(false)}
+        get={get}
+        post={post}
+        put={put}
+        del={del}
+        ready={ready}
+        onChanged={() => { loadTags(); load(); }}
+      />
+
       <SparkQuickAddGrid
         open={quickAdd}
         onClose={() => { setQuickAdd(false); load(); }}

@@ -375,7 +375,6 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts", merged: true /* merged: Companies is now a view on Contacts (List | Kanban | Companies) — same component, not a copy */ },
         { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
         { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments", minTier: "pro" },
-        { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags", merged: true /* merged: apply/create tags inline on Contacts; 'Manage all tags' link opens the taxonomy */ },
         // MERGED into the contact record's Activity tab 2026-07-30 (phase 4).
         // Brandon: "Contact 360 - no clue what this is." Its only unique
         // content was email/SMS history + OLIVER jobs, which now render on the

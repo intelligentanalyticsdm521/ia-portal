@@ -129,10 +129,6 @@ export const SPARK_PAGES: PageContentMap = {
     body:
       "Write the rule once and it stays true — \"customers who haven't bought in six months\" is a segment you build today and mail every quarter without rebuilding. This is where a CRM starts paying you back.",
   },
-  spark_tags: {
-    body:
-      "Free-form labels — where someone came from, what they're interested in. Keep the vocabulary small; twenty tags used consistently beat two hundred used once each.",
-  },
   spark_contact_360: {
     body:
       "Everything about one person on a single screen — emails, jobs, invoices, notes, score. This is the page to open before you pick up the phone to someone.",

@@ -1040,7 +1040,7 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
               )}
 
               <p className="text-[11px] text-slate-500">
-                Manage tag taxonomy + auto-tag rules on the <a href="/app/services/spark_tags" className="text-[#EF6C33] hover:underline">Tags page</a>.
+                Rename, merge or delete tags with the <strong>Tags</strong> button on Contacts.
               </p>
             </div>
           )}
