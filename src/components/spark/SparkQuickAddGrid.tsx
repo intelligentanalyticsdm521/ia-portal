@@ -224,10 +224,23 @@ export function SparkQuickAddGrid({ open, onClose, listId, listName, onSaved }: 
         return kept.length ? kept : [blankRow(), blankRow(), blankRow()];
       });
 
-      setSummary({ created: data?.created || 0, merged: data?.merged || 0, failed: data?.failed || 0 });
-      if ((data?.created || 0) + (data?.merged || 0) > 0) {
-        onSaved?.({ created: data?.created || 0, merged: data?.merged || 0 });
-      }
+      const created = data?.created || 0;
+      const merged = data?.merged || 0;
+      const failed = data?.failed || 0;
+      setSummary({ created, merged, failed });
+      if (created + merged > 0) onSaved?.({ created, merged });
+
+      // A clean save closes the grid, matching the single-contact flow, which
+      // also closes and refreshes behind itself. The caller's onClose reloads,
+      // so Contacts shows the new people and a list drops back to its members.
+      //
+      // Anything that failed keeps the grid open: those rows are still on
+      // screen waiting to be corrected, and closing would throw away typing
+      // the save could not commit.
+      // Requiring a positive count as well as zero failures matters: a response
+      // that saved nothing would otherwise close the grid and throw the typing
+      // away while looking like success.
+      if (failed === 0 && created + merged > 0) onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save these contacts.");
     } finally {
