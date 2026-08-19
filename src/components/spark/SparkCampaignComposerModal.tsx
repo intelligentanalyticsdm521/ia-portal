@@ -383,6 +383,33 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     return payload;
   }
 
+  // Scheduling. lumen.campaign has always had scheduled_at; until 2026-08-19
+  // nothing wrote it, so the only options here were "send now" or "save a draft
+  // and remember to come back".
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState("");
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleMsg, setScheduleMsg] = useState<string | null>(null);
+
+  async function scheduleSend() {
+    if (!editCampaignId || !scheduleAt) return;
+    setScheduling(true); setScheduleMsg(null);
+    try {
+      // datetime-local has no timezone; it is wall-clock in the user's zone.
+      // new Date() reads it that way and toISOString converts to UTC, so the
+      // server stores the instant the user actually meant.
+      const iso = new Date(scheduleAt).toISOString();
+      await post(`/api/v1/campaigns/${editCampaignId}/schedule`, { scheduled_at: iso });
+      setScheduleMsg(`Scheduled for ${new Date(iso).toLocaleString()}.`);
+      setScheduleOpen(false);
+      if (onCreated && editCampaignId) onCreated(editCampaignId);
+    } catch (e) {
+      setScheduleMsg((e as Error).message || "Could not schedule this campaign.");
+    } finally {
+      setScheduling(false);
+    }
+  }
+
   async function saveDraft() {
     if (!channel || !canSave()) return;
     setSaving(true);
@@ -562,6 +589,15 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
           )}
           {step === "compose" && composeTab === "compose" && isEditMode && editStatus === "draft" && (
             <IadmButton
+              variant="ghost"
+              onClick={() => { setScheduleOpen((v) => !v); setScheduleMsg(null); }}
+              disabled={sending || saving || !canSave()}
+            >
+              {scheduleOpen ? "Cancel schedule" : "Schedule"}
+            </IadmButton>
+          )}
+          {step === "compose" && composeTab === "compose" && isEditMode && editStatus === "draft" && (
+            <IadmButton
               variant="accent"
               product="spark"
               onClick={sendNow}
@@ -574,6 +610,32 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
       }
     >
       <div className="relative p-5">
+          {scheduleOpen && (
+            <div className="mb-4 rounded-lg border border-[#EF6C33]/40 bg-[#EF6C33]/5 p-3">
+              <div className="text-sm font-medium text-slate-800">Schedule this campaign</div>
+              <p className="mt-1 text-xs text-slate-600">
+                It sends automatically at the time you pick. You can unschedule any time before then.
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <input
+                  type="datetime-local"
+                  value={scheduleAt}
+                  onChange={(e) => setScheduleAt(e.target.value)}
+                  className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={scheduleSend}
+                  disabled={!scheduleAt || scheduling}
+                  className="rounded bg-[#EF6C33] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  {scheduling ? "Scheduling…" : "Confirm schedule"}
+                </button>
+                <span className="text-xs text-slate-500">Times are in your local timezone.</span>
+              </div>
+              {scheduleMsg && <div className="mt-2 text-xs text-slate-700">{scheduleMsg}</div>}
+            </div>
+          )}
           {/* Delete confirm — inline overlay on top of the modal body, same
               pattern as SparkContactModal's cascade-delete confirm. A campaign
               has no trash to restore from, so the copy says "permanently"
