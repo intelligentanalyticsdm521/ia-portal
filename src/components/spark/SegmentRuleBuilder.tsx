@@ -12,8 +12,8 @@
 // implements. Offering one it does not would repeat the merge-tag defect,
 // where the picker listed tags the resolver could not fill and they silently
 // came out blank.
-import { useEffect, useMemo, useState } from "react";
 import { Plus, X, AlertTriangle } from "lucide-react";
+import { MultiSelectCombo, type ComboOption } from "./MultiSelectCombo";
 
 export interface SegmentRule {
   field: string;
@@ -217,49 +217,33 @@ function ValueInput({
 }) {
   const arr = Array.isArray(value) ? value : [];
 
-  if (kind === "tags" || kind === "lists") {
-    const options = kind === "tags"
-      ? tags.map((t) => ({ id: t, label: t }))
-      : lists.map((l) => ({ id: l.id, label: l.name }));
-    if (!options.length) {
-      return (
-        <span className="text-[11px] italic text-slate-400">
-          {kind === "tags" ? "No tags yet — create one on a contact first." : "No lists yet — create one first."}
-        </span>
-      );
-    }
-    const toggle = (id: string | number) =>
-      onChange(arr.includes(id) ? arr.filter((v) => v !== id) : [...arr, id]);
-    return (
-      <div className="flex flex-wrap gap-1">
-        {options.map((o) => {
-          const on = arr.includes(o.id);
-          return (
-            <button
-              key={String(o.id)}
-              onClick={() => toggle(o.id)}
-              aria-pressed={on}
-              className={`rounded-full px-2 py-0.5 text-[11px] border transition-colors ${
-                on ? "border-[#EF6C33] bg-[#EF6C33]/10 font-medium text-[#EF6C33]"
-                   : "border-slate-300 bg-white text-slate-600 hover:border-slate-400"
-              }`}
-            >
-              {o.label}
-            </button>
-          );
-        })}
-      </div>
-    );
-  }
+  // Anything that takes several values gets the same control, so the third box
+  // always reads as a dropdown beside the field and operator ones — whether it
+  // is picking from real tags, real lists, or free text.
+  const isMulti = kind === "tags" || kind === "lists" || op === "in" || op === "not in";
 
-  // "is any of" / "is none of" on a text field take a comma-separated list.
-  if (op === "in" || op === "not in") {
+  if (isMulti) {
+    const options: ComboOption[] =
+      kind === "tags"  ? tags.map((t) => ({ value: t, label: t }))
+    : kind === "lists" ? lists.map((l) => ({ value: l.id, label: l.name }))
+    : [];
     return (
-      <input
-        value={arr.join(", ")}
-        onChange={(e) => onChange(e.target.value.split(",").map((v) => v.trim()).filter(Boolean))}
-        placeholder="value, another value"
-        className="min-w-[10rem] flex-1 rounded border border-slate-300 px-2 py-1 text-xs"
+      <MultiSelectCombo
+        options={options}
+        selected={arr as Array<string | number>}
+        onChange={onChange}
+        // Free-text fields have no option list, so what you type IS the value.
+        creatable={kind !== "tags" && kind !== "lists"}
+        placeholder={
+          kind === "tags" ? "Choose tags…"
+          : kind === "lists" ? "Choose lists…"
+          : "Type a value…"
+        }
+        emptyHint={
+          kind === "tags" ? "No tags yet — add one on a contact first."
+          : kind === "lists" ? "No lists yet — create one first."
+          : undefined
+        }
       />
     );
   }
