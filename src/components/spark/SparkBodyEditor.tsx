@@ -30,6 +30,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
+import Image from "@tiptap/extension-image";
 import {
   Bold as BoldIcon,
   Italic as ItalicIcon,
@@ -39,6 +40,12 @@ import {
   Tag as TagIcon,
   ChevronDown,
   MousePointerClick,
+  Image as ImageIcon,
+  Quote as QuoteIcon,
+  Minus as MinusIcon,
+  Heading2,
+  Heading3,
+  Loader2,
 } from "lucide-react";
 import type { MergeTag } from "./MergeTagPicker";
 import { DEFAULT_MERGE_TAGS, mergeTagToUserFriendlyToken } from "./MergeTagPicker";
@@ -56,6 +63,22 @@ export interface SparkBodyEditorProps {
   onInsertCTA?: () => void;
   /** Optional minimum height in px for the editable surface. */
   minHeight?: number;
+  /**
+   * How much structure the writer gets.
+   *
+   * "email" (default) is a short campaign: prose, lists, links. Headings and
+   * rules stay off deliberately — a promo email is not a document.
+   *
+   * "newsletter" is a document: headings, pictures, pull quotes and section
+   * breaks, because an issue people read top to bottom needs somewhere for the
+   * eye to rest. Same editor, so anything written in one opens in the other.
+   */
+  richness?: "email" | "newsletter";
+  /**
+   * Uploads an image file and resolves to its public URL. Without it the image
+   * button still takes a URL — which covers pictures already on the website.
+   */
+  onUploadImage?: (file: File) => Promise<string>;
 }
 
 // ----- Toolbar button shell ---------------------------------------------------
@@ -83,6 +106,112 @@ function ToolbarButton({ onClick, active, title, children }: ToolbarButtonProps)
     >
       {children}
     </button>
+  );
+}
+
+// ----- Image popover ---------------------------------------------------------
+//
+// Two ways in, because both happen: paste the address of a picture already on
+// the website, or upload one from the machine. Upload only appears when the
+// caller supplied a handler, so the control never offers something that cannot
+// work.
+
+interface ImagePopoverProps {
+  editor: Editor;
+  onClose: () => void;
+  onUpload?: (file: File) => Promise<string>;
+}
+
+function ImagePopover({ editor, onClose, onUpload }: ImagePopoverProps) {
+  const [url, setUrl] = useState("");
+  const [alt, setAlt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function insert(src: string) {
+    // Relative paths break the moment the email leaves the building — a mail
+    // client has no origin to resolve them against.
+    if (!/^https?:\/\//i.test(src)) {
+      setErr("Use a full web address starting with https://");
+      return;
+    }
+    editor.chain().focus().setImage({ src, alt: alt.trim() || undefined }).run();
+    onClose();
+  }
+
+  async function pick(file: File | undefined) {
+    if (!file || !onUpload) return;
+    setBusy(true); setErr(null);
+    try {
+      insert(await onUpload(file));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "That image could not be uploaded.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="absolute left-0 top-full z-30 mt-1 w-80 rounded-md border border-slate-200 bg-white p-3 shadow-lg">
+      <div className="mb-2 text-xs font-semibold text-slate-800">Add a picture</div>
+
+      {onUpload && (
+        <>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={(e) => pick(e.target.files?.[0])}
+          />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy}
+            className="mb-2 flex w-full items-center justify-center gap-1.5 rounded border border-dashed border-slate-300 px-2 py-2 text-xs text-slate-600 hover:border-[#EF6C33] hover:text-[#EF6C33] disabled:opacity-60"
+          >
+            {busy ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading…</>
+                  : <><ImageIcon className="h-3.5 w-3.5" /> Upload from this computer</>}
+          </button>
+          <div className="mb-2 text-center text-[10px] uppercase tracking-wide text-slate-400">or</div>
+        </>
+      )}
+
+      <label className="mb-1 block text-[11px] font-medium text-slate-600">Image address</label>
+      <input
+        autoFocus
+        value={url}
+        onChange={(e) => { setUrl(e.target.value); setErr(null); }}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); insert(url.trim()); } }}
+        placeholder="https://yoursite.com/photo.jpg"
+        className="mb-2 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+      />
+
+      <label className="mb-1 block text-[11px] font-medium text-slate-600">
+        Describe it <span className="font-normal text-slate-400">— shown if the picture cannot load</span>
+      </label>
+      <input
+        value={alt}
+        onChange={(e) => setAlt(e.target.value)}
+        placeholder="Our team at the 2026 golf outing"
+        className="mb-2 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+      />
+
+      {err && <div className="mb-2 text-[11px] text-rose-600">{err}</div>}
+
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onClose} className="text-xs text-slate-500 hover:text-slate-700">Cancel</button>
+        <button
+          type="button"
+          onClick={() => insert(url.trim())}
+          disabled={!url.trim() || busy}
+          className="rounded bg-[#EF6C33] px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50"
+        >
+          Insert
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -326,8 +455,12 @@ export function SparkBodyEditor({
   mergeTagCatalog,
   onInsertCTA,
   minHeight = 200,
+  richness = "email",
+  onUploadImage,
+
 }: SparkBodyEditorProps) {
   const [linkOpen, setLinkOpen] = useState(false);
+  const [imageOpen, setImageOpen] = useState(false);
   const [tagOpen, setTagOpen] = useState(false);
   // "{{" keystroke trigger state. autoTrigger holds the floating-menu
   // anchor + filter when the user has just typed "{{" in the body. The
@@ -344,11 +477,22 @@ export function SparkBodyEditor({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        // Drop heading + code-block UI; body is prose, not a doc editor.
-        heading: false,
+        // A promo email is prose, not a document — so headings and rules stay
+        // off there. A newsletter IS a document and needs both, or every issue
+        // is an undifferentiated wall of text.
+        heading: richness === "newsletter" ? { levels: [2, 3] } : false,
         codeBlock: false,
-        horizontalRule: false,
+        horizontalRule: richness !== "newsletter" ? false : undefined,
       }),
+      ...(richness === "newsletter"
+        ? [Image.configure({
+            // Email clients ignore CSS width on images often enough that the
+            // attribute matters; the class keeps it responsive in the editor
+            // and in any client that does respect the stylesheet.
+            HTMLAttributes: { class: "max-w-full h-auto rounded", style: "max-width:100%;height:auto;" },
+            allowBase64: false, // an inlined image bloats every copy of the email
+          })]
+        : []),
       Link.configure({
         openOnClick: false,
         autolink: true,
@@ -516,6 +660,25 @@ export function SparkBodyEditor({
         >
           <ItalicIcon className="h-3.5 w-3.5" />
         </ToolbarButton>
+        {richness === "newsletter" && (
+          <>
+            <span className="mx-1 h-4 w-px bg-slate-300" />
+            <ToolbarButton
+              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+              active={editor.isActive("heading", { level: 2 })}
+              title="Section heading"
+            >
+              <Heading2 className="h-3.5 w-3.5" />
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+              active={editor.isActive("heading", { level: 3 })}
+              title="Sub-heading"
+            >
+              <Heading3 className="h-3.5 w-3.5" />
+            </ToolbarButton>
+          </>
+        )}
         <span className="mx-1 h-4 w-px bg-slate-300" />
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBulletList().run()}
@@ -545,6 +708,35 @@ export function SparkBodyEditor({
           </ToolbarButton>
           {linkOpen && <LinkPopover editor={editor} onClose={() => setLinkOpen(false)} />}
         </div>
+        {richness === "newsletter" && (
+          <>
+            <div className="relative">
+              <ToolbarButton
+                onClick={() => { setLinkOpen(false); setTagOpen(false); setImageOpen((v) => !v); }}
+                active={imageOpen || editor.isActive("image")}
+                title="Add a picture"
+              >
+                <ImageIcon className="h-3.5 w-3.5" />
+              </ToolbarButton>
+              {imageOpen && (
+                <ImagePopover editor={editor} onClose={() => setImageOpen(false)} onUpload={onUploadImage} />
+              )}
+            </div>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().toggleBlockquote().run()}
+              active={editor.isActive("blockquote")}
+              title="Pull quote"
+            >
+              <QuoteIcon className="h-3.5 w-3.5" />
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().setHorizontalRule().run()}
+              title="Section break"
+            >
+              <MinusIcon className="h-3.5 w-3.5" />
+            </ToolbarButton>
+          </>
+        )}
         <div className="relative">
           <ToolbarButton
             onClick={() => {
