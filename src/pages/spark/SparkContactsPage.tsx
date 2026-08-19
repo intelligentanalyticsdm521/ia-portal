@@ -544,7 +544,7 @@ export function SparkContactsPage() {
             <Upload className="h-3.5 w-3.5" /> Import
           </button>
           <button onClick={() => setQuickAdd(true)} className="spark-btn spark-btn-secondary">
-            <Rows3 className="h-3.5 w-3.5" /> Quick add
+            <Rows3 className="h-3.5 w-3.5" /> Bulk add
           </button>
           <button data-tour="new-contact" onClick={() => setDrawer("add")} className="spark-btn spark-btn-accent">
             <Plus className="h-3.5 w-3.5" /> New contact

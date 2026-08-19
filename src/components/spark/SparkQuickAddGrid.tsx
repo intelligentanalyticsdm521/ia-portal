@@ -243,7 +243,7 @@ export function SparkQuickAddGrid({ open, onClose, listId, listName, onSaved }: 
       onClose={onClose}
       product="spark"
       eyebrow="SPARK · CONTACTS"
-      title="Quick add contacts"
+      title="Bulk add contacts"
       subtitle={listName ? `New contacts are added to ${listName}` : "Tab across the fields — Tab on the last one starts a new row"}
       size="info"
       footer={

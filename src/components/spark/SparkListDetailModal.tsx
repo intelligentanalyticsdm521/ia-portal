@@ -315,7 +315,7 @@ export function SparkListDetailModal({ open, onClose, listId, onChanged }: Props
                   onClick={() => { setPickerOpen((v) => !v); setAddResult(null); }}
                   className="spark-btn spark-btn-accent text-xs"
                 >
-                  {pickerOpen ? "Done adding" : "Add existing contacts"}
+                  {pickerOpen ? "Done adding" : "Add from contacts"}
                 </button>
                 {/* The picker only finds people already in the CRM. Business
                     cards from an event are not in it yet, and making someone
@@ -325,7 +325,7 @@ export function SparkListDetailModal({ open, onClose, listId, onChanged }: Props
                   onClick={() => setQuickAddOpen(true)}
                   className="spark-btn spark-btn-secondary text-xs"
                 >
-                  Type in new contacts
+                  Add new
                 </button>
                 {addResult && <span className="text-xs text-slate-600">{addResult}</span>}
               </div>
