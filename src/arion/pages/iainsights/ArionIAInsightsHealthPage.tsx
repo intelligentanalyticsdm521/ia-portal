@@ -71,7 +71,7 @@ export function ArionIAInsightsHealthPage() {
       trendBreakdown: h.trendBreakdown,
       intelligenceBreakdown: h.intelligenceBreakdown,
       banners: !loading && !payload
-        ? [{ severity: "info" as const, message: "No trend data available for this site yet. Connect Google Analytics 4 and Search Console in Settings → Connected Accounts.", action: { label: "Open Settings", route: "/app/settings/connections" } }]
+        ? [{ severity: "info" as const, message: "No trend data available for this site yet. Connect Google Analytics 4 and Search Console in Settings → Connected Accounts.", action: { label: "Open Settings", route: "/app/settings/integrations" } }]
         : [],
       meta: { generatedAt: new Date().toISOString(), tier },
     };

@@ -4,7 +4,7 @@ import {
   Monitor, Server, ShieldCheck, BarChart2, TrendingUp,
   Search as SearchIcon, MapPin, Star, ChevronDown, Settings,
   Users, Megaphone, Briefcase, Heart, Target, Sparkles,
-  Wrench, UserCircle, CreditCard, MessageSquare, LineChart, Zap, Palette,
+  Wrench, UserCircle, CreditCard, MessageSquare, LineChart, Zap, Palette, Lock,
 } from "lucide-react";
 import type { ProductKey } from "./IconRail";
 import {
@@ -16,6 +16,7 @@ import {
 import { useProductTier } from "../hooks/useProductTier";
 import { useAppState } from "../app/AppState";
 import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
+import { productColor } from "../config/productTheme";
 
 export interface SubNavItem extends VisibilityRules {
   key: string;
@@ -376,7 +377,6 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts", merged: true /* merged: Companies is now a view on Contacts (List | Kanban | Companies) — same component, not a copy */ },
         { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
         { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments", minTier: "pro" },
-        { key: "spark_tags", label: "Tags", route: "/app/services/spark_tags", merged: true /* merged: apply/create tags inline on Contacts; 'Manage all tags' link opens the taxonomy */ },
         // MERGED into the contact record's Activity tab 2026-07-30 (phase 4).
         // Brandon: "Contact 360 - no clue what this is." Its only unique
         // content was email/SMS history + OLIVER jobs, which now render on the
@@ -996,6 +996,20 @@ export function productOfConfig(config: SubNavConfig): ProductKey | undefined {
     .find((k) => SUB_NAV_CONFIGS[k] === config);
 }
 
+/**
+ * Human-readable reason a nav row is locked, for the lock icon's tooltip.
+ * Mirrors the wording used by FeatureLocked on the page itself so the menu and
+ * the page never disagree about which plan a surface needs.
+ */
+export function requirementLabel(item: { minTier?: string; addon?: string }): string {
+  if (item.addon === 'leadgen') return 'the Lead Gen add-on';
+  if (item.minTier) {
+    const t = item.minTier;
+    return `SPARK ${t.charAt(0).toUpperCase()}${t.slice(1)}`;
+  }
+  return 'a higher plan';
+}
+
 export function SubNav({ config }: SubNavProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -1030,14 +1044,29 @@ export function SubNav({ config }: SubNavProps) {
     FEATURE_GATING_ENABLED &&
     !!needsKey && ownedProducts.size > 0 && !ownedProducts.has(needsKey);
 
+  // 2026-08-17 — SHOW-DON'T-HIDE applies to ENTITLEMENT ONLY.
+  //
+  // isVisible() returns false for three unrelated reasons: `hidden` (cut from
+  // the product), `merged` (folded into another surface), and unmet
+  // tier/add-on. The show-don't-hide change collapsed all three into
+  // `locked: true`, which RESURRECTED every merged and hidden item as a locked
+  // menu row — undoing the Phase 4b–5 SPARK consolidation and making ~13
+  // surfaces look "gated" even at business tier, where nothing should be.
+  //
+  // hidden/merged are product-STRUCTURE decisions, not entitlement, so they
+  // come out of the menu at every tier. Only tier/add-on gaps render as
+  // locked, which is the upsell the 2026-08-06 decision actually asked for.
+  // (merged routes still resolve — see isRoutable.)
   const gatedGroups = config.groups
     .map((g) => ({
       ...g,
-      items: g.items.map((it) =>
-        FEATURE_GATING_ENABLED && (productLocked || !isVisible(it, visCtx))
-          ? { ...it, locked: true as const }
-          : it
-      ),
+      items: g.items
+        .filter((it) => !it.hidden && !it.merged)
+        .map((it) =>
+          FEATURE_GATING_ENABLED && (productLocked || !isVisible(it, visCtx))
+            ? { ...it, locked: true as const }
+            : it
+        ),
     }))
     .filter((g) => g.items.length > 0);
   config = { ...config, groups: gatedGroups };
@@ -1134,7 +1163,7 @@ export function SubNav({ config }: SubNavProps) {
           </div>
           <button
             type="button"
-            onClick={() => navigate("/app/settings/plan")}
+            onClick={() => navigate("/app/settings/plan-pricing")}
             className="mt-2 w-full rounded px-2 py-1 text-[10px] font-bold text-white"
             style={{ background: "#EF6C33" }}
           >
@@ -1206,25 +1235,29 @@ export function SubNav({ config }: SubNavProps) {
                       >
                         <span className="h-1 w-1 flex-shrink-0 rounded-full bg-current opacity-50" />
                         <span className={`truncate${item.locked ? " opacity-60" : ""}`}>{item.label}</span>
-                        {/* 2026-08-06 — plan-locked features stay VISIBLE with an
-                            "Upgrade" pill so customers discover what they're
-                            missing. The API enforces the real block (403). */}
+                        {/* Plan-locked features stay VISIBLE so customers discover
+                            what they're missing. 2026-08-17 — a shouty orange
+                            UPGRADE pill on every locked row read as a storefront
+                            and drowned out the nav; a quiet lock says the same
+                            thing. The full pitch belongs on the page itself
+                            (FeatureLocked), not in the menu. API still 403s. */}
                         {item.locked && (
                           <span
-                            title="Not included in your plan — upgrade to unlock"
+                            title={`Requires ${requirementLabel(item)}`}
+                            aria-label={`Locked — requires ${requirementLabel(item)}`}
                             style={{
-                              background: '#EF6C3322',
-                              color: '#EF6C33',
-                              fontSize: 9,
-                              fontWeight: 700,
-                              letterSpacing: '0.04em',
-                              padding: '1px 5px',
-                              borderRadius: 99,
                               flexShrink: 0,
                               marginLeft: 'auto',
+                              display: 'inline-flex',
+                              // Brand color of the product this row belongs to,
+                              // so a locked SPARK row reads orange and a locked
+                              // ARION row reads blue. Muted so the lock stays a
+                              // hint rather than competing with the active item.
+                              color: productColor(productKey),
+                              opacity: 0.75,
                             }}
                           >
-                            UPGRADE
+                            <Lock size={11} />
                           </span>
                         )}
                         {item.tag && !item.locked && (

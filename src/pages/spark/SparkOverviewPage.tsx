@@ -106,46 +106,16 @@ export function SparkOverviewPage() {
     return () => { cancelled = true; };
   }, [get, ready]);
 
-  // G4-S8: auto-fire spark-basics walkthrough on first visit. Gates on lumen.walkthrough_progress (migration 110). If backend not deployed yet, the fetch 404s and the walkthrough auto-fires — which is the desired first-run behavior anyway.
-  useEffect(() => {
-    if (!lumenReady) return;
-    // (1) Never onboard a founder/consultant working inside a client's portal —
-    // they are not the client user. Fixes "fires every time I open a client's SPARK".
-    if (inConsultantWorkspace) return;
-    // (2) Per-USER once-only gate. Reads the logged-in USER (not the tenant): if
-    // this user has already been shown spark-basics, never re-fire. This is the
-    // durable gate — the backend lumen.walkthrough_progress is per-tenant and is
-    // NOT persisting in prod (0 rows), so the per-user marker is what actually
-    // stops the every-login loop.
-    try { if (localStorage.getItem(walkthroughSeenKey) === "1") return; } catch { /* ignore */ }
-    let cancelled = false;
-    (async () => {
-      try {
-        let row: WalkthroughProgressRow | null = null;
-        try {
-          const r = await lumenGet<WalkthroughProgressResponse>(
-            "/walkthrough-progress?walkthrough_id=spark-basics"
-          );
-          row = (r?.rows?.[0] ?? null) as WalkthroughProgressRow | null;
-        } catch {
-          // 404 / not-yet-deployed / transient — fall through to auto-fire.
-          row = null;
-        }
-        if (cancelled) return;
-        if (!row || !isSparkBasicsCompleted(row.status)) {
-          const w = findWalkthrough("spark-basics");
-          if (w) {
-            // Mark seen for THIS user so it shows at most once (first login).
-            try { localStorage.setItem(walkthroughSeenKey, "1"); } catch { /* ignore */ }
-            setActiveWalkthrough(w);
-          }
-        }
-      } catch {
-        // Never break the page render if the gate fails.
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [lumenGet, lumenReady, inConsultantWorkspace, walkthroughSeenKey]);
+  // Walkthroughs are NOT auto-fired any more (Brandon, 2026-08-19: "that needs
+  // to stop"). SPARK was the only product that pushed a modal at you on arrival,
+  // and it kept reappearing: the once-only gate lived in localStorage keyed by
+  // user, so a different browser, a cleared profile or a changed user id started
+  // it over, and the backing lumen.walkthrough_progress table has 0 rows in prod
+  // so the durable gate never worked either.
+  //
+  // Walkthroughs now live in Learn, where they are chosen rather than imposed.
+  // The spark-basics walkthrough itself is untouched and still runs from there.
+
 
   // Persist the walkthrough outcome so it doesn't re-fire on every visit.
   // Root cause of the loop: onComplete/onClose only closed the modal locally

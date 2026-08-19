@@ -13,6 +13,7 @@ import { useAppState } from "../../app/AppState";
 import { isPlatformOwner } from "../../lib/currentPlan";
 import { IadmModal, IadmButton } from "../IadmModal";
 import { MergeTagPicker, useMergeTagAutoComplete } from "./MergeTagPicker";
+import { MergeTagHint } from "./MergeTagHint";
 import { SparkSuggestionsPanel } from "./SparkSuggestionsPanel";
 import { SparkBodyEditor } from "./SparkBodyEditor";
 import { CTAEditorBlock, ctaToBlock, autoContrastColor, type CTAValue } from "./CTAEditorBlock";
@@ -185,7 +186,20 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
   // a read-only summary so the user can see what was queued without
   // clobbering it).
   const [editStatus, setEditStatus] = useState<string | null>(null);
-  const isEditMode = !!editCampaignId;
+  // Saving a NEW campaign used to close the composer, so Schedule and Send now
+  // — both gated on edit mode — could not be reached without finding the draft
+  // in the list and reopening it. Founder 2026-08-19: "I still don't see an
+  // actual scheduler from the campaign builder. It's still just save draft."
+  //
+  // Creating one now promotes this composer into edit mode in place, so the
+  // buttons appear the moment the draft exists. The load effect below stays
+  // keyed on the PROP, so promotion never triggers a refetch of what is
+  // already on screen.
+  const [createdId, setCreatedId] = useState<number | null>(null);
+  // The composer no longer closes on save, so it has to say so itself.
+  const [justSaved, setJustSaved] = useState(false);
+  const effectiveCampaignId = editCampaignId ?? createdId;
+  const isEditMode = !!effectiveCampaignId;
 
   // Refs for MergeTagPicker — used to insert tokens at the cursor position
   // of the input/textarea fields (subject + SMS body). The email body is
@@ -216,6 +230,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     setChannel(null);
     setComposeTab("compose");
     setHasSuggestions(false);
+    setCreatedId(null); setJustSaved(false);
     setName(""); setSubject(""); setFromName(""); setFromEmail(""); setReplyTo("");
     setContentHtml(""); setContentText(""); setContentSms(""); setListId("");
     setSenderId(""); setSignatureId("");
@@ -383,23 +398,78 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     return payload;
   }
 
+  // Scheduling. lumen.campaign has always had scheduled_at; until 2026-08-19
+  // nothing wrote it, so the only options here were "send now" or "save a draft
+  // and remember to come back".
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState("");
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleMsg, setScheduleMsg] = useState<string | null>(null);
+
+  async function scheduleSend() {
+    if (!scheduleAt || !canSave()) return;
+    setScheduling(true); setScheduleMsg(null);
+    try {
+      // Saves first when this campaign has never been saved, so Schedule works
+      // straight from a freshly composed campaign.
+      const id = await ensureSaved();
+      if (!id) { setScheduleMsg("Could not save this campaign, so it was not scheduled."); return; }
+      // datetime-local has no timezone; it is wall-clock in the user's zone.
+      // new Date() reads it that way and toISOString converts to UTC, so the
+      // server stores the instant the user actually meant.
+      const iso = new Date(scheduleAt).toISOString();
+      await post(`/api/v1/campaigns/${id}/schedule`, { scheduled_at: iso });
+      setScheduleMsg(`Scheduled for ${new Date(iso).toLocaleString()}.`);
+      setScheduleOpen(false);
+      setJustSaved(false);
+      setEditStatus("scheduled");
+      onCreated?.(id);
+    } catch (e) {
+      setScheduleMsg((e as Error).message || "Could not schedule this campaign.");
+    } finally {
+      setScheduling(false);
+    }
+  }
+
+  /**
+   * Make the campaign exist and hold the latest edits, then hand back its id.
+   *
+   * Save / Schedule / Send are three things you can do with a campaign, not
+   * three stages you pass through, so all three route through here and none of
+   * them requires having pressed another one first. Scheduling a campaign you
+   * never explicitly saved simply saves it on the way.
+   *
+   * PUT /campaigns/:id only accepts edits on a draft row; the backend rejects
+   * anything else, which is what keeps a sent campaign from being rewritten.
+   */
+  async function ensureSaved(): Promise<number | null> {
+    const payload = buildPayload();
+    if (effectiveCampaignId) {
+      await put<{ data: { id: number } }>(`/api/v1/campaigns/${effectiveCampaignId}`, payload);
+      onCreated?.(effectiveCampaignId);
+      return effectiveCampaignId;
+    }
+    const r = await post<{ data: { id: number } }>("/api/v1/campaigns", payload);
+    const newId = r?.data?.id ?? null;
+    if (newId) {
+      // Become an edit session for the row we just made, so reopening is not
+      // required and a second Save updates instead of creating a duplicate.
+      setCreatedId(newId);
+      setEditStatus("draft");
+      onCreated?.(newId);
+    }
+    return newId;
+  }
+
   async function saveDraft() {
     if (!channel || !canSave()) return;
     setSaving(true);
     setError(null);
     try {
-      const payload = buildPayload();
-      if (isEditMode && editCampaignId) {
-        // PUT /campaigns/:id only accepts edits on status='draft' rows; the
-        // row-click handler on the list page guards against non-draft, but
-        // the backend rejects too if it slips through.
-        await put<{ data: { id: number } }>(`/api/v1/campaigns/${editCampaignId}`, payload);
-        onCreated?.(editCampaignId);
-      } else {
-        const r = await post<{ data: { id: number } }>("/api/v1/campaigns", payload);
-        onCreated?.(r?.data?.id);
-      }
-      onClose();
+      const id = await ensureSaved();
+      // Stay open. Closing was what put Schedule and Send out of reach, so the
+      // composer says it saved rather than proving it by vanishing.
+      if (id) setJustSaved(true);
     } catch (err) {
       setError(String((err as Error)?.message || err));
     } finally {
@@ -419,13 +489,13 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
   // Unlike a contact, this is a HARD delete — there is no campaign trash — so
   // the confirm copy says so plainly rather than implying it's recoverable.
   async function deleteDraft() {
-    if (!isEditMode || !editCampaignId || editStatus !== "draft") return;
+    if (!isEditMode || !effectiveCampaignId || editStatus !== "draft") return;
     setDeleting(true);
     setError(null);
     try {
-      await del(`/api/v1/campaigns/${editCampaignId}`);
+      await del(`/api/v1/campaigns/${effectiveCampaignId}`);
       setDeleteConfirmOpen(false);
-      onCreated?.(editCampaignId); // parent reloads the list
+      onCreated?.(effectiveCampaignId); // parent reloads the list
       onClose();
     } catch (err) {
       // Surface it and stay put. Reporting a failed delete as success would
@@ -440,8 +510,24 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
   // Send a draft NOW — saves any pending edits first, then fires POST
   // /campaigns/:id/send. Only meaningful in edit mode for status='draft'.
   // The button is hidden otherwise.
+  /** Put a scheduled campaign back to draft so it can be edited or re-timed. */
+  async function unscheduleSend() {
+    if (!effectiveCampaignId) return;
+    setScheduling(true); setScheduleMsg(null); setError(null);
+    try {
+      await post(`/api/v1/campaigns/${effectiveCampaignId}/unschedule`, {});
+      setEditStatus("draft");
+      setScheduleMsg("Unscheduled — this is a draft again, so you can edit or re-time it.");
+      onCreated?.(effectiveCampaignId);
+    } catch (e) {
+      setError((e as Error).message || "Could not unschedule this campaign.");
+    } finally {
+      setScheduling(false);
+    }
+  }
+
   async function sendNow() {
-    if (!isEditMode || !editCampaignId) return;
+    if (!canSave()) return;
     if (!confirm("Send this campaign now? This will go to every recipient on the list.")) return;
     setSending(true);
     setError(null);
@@ -456,9 +542,10 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
       // "Campaign sent — 0 delivered". The `as any` casts hid the mismatch from
       // the compiler; the response is typed properly now so the contract is
       // checked at build time.
-      if (canSave()) {
-        await put<{ data: unknown }>(`/api/v1/campaigns/${editCampaignId}`, buildPayload());
-      }
+      // Creates the campaign when it has never been saved, and otherwise
+      // pushes the latest edits, so the send always uses what is on screen.
+      const id = await ensureSaved();
+      if (!id) { setError("Could not save this campaign, so nothing was sent."); return; }
       const r = await post<{
         data: {
           campaign_id: number;
@@ -468,8 +555,8 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
           failed: number;
           status: string;
         };
-      }>(`/api/v1/campaigns/${editCampaignId}/send`, {});
-      onCreated?.(editCampaignId);
+      }>(`/api/v1/campaigns/${id}/send`, {});
+      onCreated?.(id);
       onClose();
 
       const succeeded = r?.data?.succeeded ?? 0;
@@ -560,20 +647,91 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
               {saving ? "Saving…" : isEditMode ? "Save changes" : "Save draft"}
             </IadmButton>
           )}
-          {step === "compose" && composeTab === "compose" && isEditMode && editStatus === "draft" && (
+          {/* Schedule and Send used to require edit mode, which a brand-new
+              campaign is not — so composing one offered only Save draft, and
+              the scheduler could not be reached until you saved, closed, hunted
+              the draft down in the list and reopened it. They are peers of Save
+              now: each one saves on the way if it needs to. The condition
+              matches Save draft exactly, so a campaign already sent still
+              offers none of them. */}
+          {step === "compose" && composeTab === "compose" && (!isEditMode || editStatus === "draft") && (
+            <IadmButton
+              variant="ghost"
+              onClick={() => { setScheduleOpen((v) => !v); setScheduleMsg(null); }}
+              disabled={sending || saving || scheduling || !canSave()}
+            >
+              {scheduleOpen ? "Cancel schedule" : "Schedule"}
+            </IadmButton>
+          )}
+          {step === "compose" && composeTab === "compose" && (!isEditMode || editStatus === "draft") && (
             <IadmButton
               variant="accent"
               product="spark"
               onClick={sendNow}
-              disabled={sending || saving || !canSave()}
+              disabled={sending || saving || scheduling || !canSave()}
             >
               {sending ? "Sending…" : "Send now"}
+            </IadmButton>
+          )}
+          {/* A scheduled campaign is not editable, but the schedule panel has
+              always told people they "can unschedule any time before then" and
+              there was no control that did it. The endpoint existed. */}
+          {step === "compose" && isEditMode && editStatus === "scheduled" && (
+            <IadmButton
+              variant="ghost"
+              onClick={unscheduleSend}
+              disabled={scheduling}
+            >
+              {scheduling ? "Unscheduling…" : "Unschedule"}
             </IadmButton>
           )}
         </>
       }
     >
       <div className="relative p-5">
+          {/* The composer stays open after a save now, so it has to report the
+              save itself. Shown until the next edit, schedule or send. */}
+          {justSaved && !scheduleOpen && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+              <Sparkles className="mt-px h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+              <span>
+                <strong className="font-semibold">Draft saved.</strong> Keep editing, pick a time
+                with <strong className="font-semibold">Schedule</strong>, or use{" "}
+                <strong className="font-semibold">Send now</strong> — it is safe to close this too.
+              </span>
+            </div>
+          )}
+          {scheduleMsg && !scheduleOpen && (
+            <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+              {scheduleMsg}
+            </div>
+          )}
+          {scheduleOpen && (
+            <div className="mb-4 rounded-lg border border-[#EF6C33]/40 bg-[#EF6C33]/5 p-3">
+              <div className="text-sm font-medium text-slate-800">Schedule this campaign</div>
+              <p className="mt-1 text-xs text-slate-600">
+                It sends automatically at the time you pick. You can unschedule any time before then.
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <input
+                  type="datetime-local"
+                  value={scheduleAt}
+                  onChange={(e) => setScheduleAt(e.target.value)}
+                  className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={scheduleSend}
+                  disabled={!scheduleAt || scheduling}
+                  className="rounded bg-[#EF6C33] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  {scheduling ? "Scheduling…" : "Confirm schedule"}
+                </button>
+                <span className="text-xs text-slate-500">Times are in your local timezone.</span>
+              </div>
+              {scheduleMsg && <div className="mt-2 text-xs text-slate-700">{scheduleMsg}</div>}
+            </div>
+          )}
           {/* Delete confirm — inline overlay on top of the modal body, same
               pattern as SparkContactModal's cascade-delete confirm. A campaign
               has no trash to restore from, so the copy says "permanently"
@@ -732,9 +890,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                       />
                       {subjectAutoTag.menu}
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Type <span className="font-mono">{"{{"}</span> to insert a merge tag, or click Insert.
-                    </p>
+                    <MergeTagHint />
                   </div>
                   <div className="grid grid-cols-3 gap-3">
                     <div>
@@ -776,8 +932,18 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                         })}
                       </select>
                       {senders.length === 0 && (
+                        /* The link here pointed at /app/services/spark_settings, which
+                           does not exist — not in SERVICE_CATALOG, not routed, not in
+                           the nav. So the single escape route offered to someone with
+                           no sender landed on "Service not found". Sender Setup is the
+                           real start of the flow: verify a domain there, then name
+                           addresses on it under Senders. */
                         <p className="text-[11px] text-slate-500 mt-0.5">
-                          No senders yet. <a href="/app/services/spark_settings" className="text-[#EF6C33] hover:underline">Add one in Settings →</a>
+                          No senders yet — verify a sending domain in{" "}
+                          <a href="/app/services/spark_sender_domains" className="text-[#EF6C33] hover:underline">Sender Setup</a>,
+                          then add an address under{" "}
+                          <a href="/app/services/spark_senders" className="text-[#EF6C33] hover:underline">Senders</a>.
+                          Until then campaigns send from the Intelligent Analytics address.
                         </p>
                       )}
                       {fromEmail && (
@@ -839,9 +1005,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                         setCtaOpen(true);
                       }}
                     />
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Type <span className="font-mono">{"{{"}</span> or click <span className="font-semibold">Merge tag</span> to drop in personalization that fills automatically per recipient, or <span className="font-semibold">CTA</span> to add a call-to-action button.
-                    </p>
+                    <MergeTagHint buttonLabel="Merge tag" mentionCta />
                   </div>
                 </>
               )}
@@ -869,9 +1033,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                     <span>{contentSms.length}/480</span>
                     <span>~{Math.ceil(contentSms.length / 160) || 0} segment(s)</span>
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Type <span className="font-mono">{"{{"}</span> to insert a merge tag, or click Insert.
-                  </p>
+                  <MergeTagHint />
                 </div>
               )}
             </div>

@@ -5,7 +5,7 @@ import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkTable } from "../../components/spark/SparkTable";
 import { Plus, Newspaper, ExternalLink, Send, FileText, DownloadCloud, Check, Settings } from "lucide-react";
-import { ComingSoonBanner } from "../../components/ComingSoonBanner";
+import { SparkBodyEditor } from "../../components/spark/SparkBodyEditor";
 
 // 2026-06-13: per-tenant taxonomy config for "Import from ARION". Default
 // looks for posts tagged or categorized "newsletter"; each tenant can
@@ -17,6 +17,8 @@ const DEFAULT_IMPORT_CONFIG: ImportConfig = { type: "both", value: "newsletter" 
 interface NewsletterIssue {
   id: number; issue_number: number; edition_date: string; title: string; summary: string | null;
   wp_post_id: number | null; wp_post_url: string | null; published_at: string | null; created_at: string;
+  content_html?: string | null; content_text?: string | null; content_source?: string | null;
+  campaign_id?: number | null;
 }
 
 interface WpPost {
@@ -37,9 +39,14 @@ export function SparkNewsletterPage() {
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [drawer, setDrawer] = useState<"new" | "import" | "import_config" | null>(null);
+  const [editingIssue, setEditingIssue] = useState<NewsletterIssue | null>(null);
   const [form, setForm] = useState({
-    issue_number: 1, edition_date: new Date().toISOString().slice(0, 10),
-    title: "", summary: "",
+    issue_number: 1,
+    edition_date: new Date().toISOString().slice(0, 10),
+    title: "",
+    summary: "",
+    content_html: "",
+    content_text: "",
   });
   const [publishing, setPublishing] = useState<number | null>(null);
 
@@ -101,10 +108,67 @@ export function SparkNewsletterPage() {
   }
 
   async function create() {
-    await post("/api/v1/newsletters", form);
-    setForm({ issue_number: form.issue_number + 1, edition_date: new Date().toISOString().slice(0, 10), title: "", summary: "" });
+    if (editingIssue) {
+      await put(`/api/v1/newsletters/${editingIssue.id}`, form);
+    } else {
+      await post("/api/v1/newsletters", { ...form, content_source: "studio" });
+    }
+    setEditingIssue(null);
+    setForm({
+      issue_number: form.issue_number + 1,
+      edition_date: new Date().toISOString().slice(0, 10),
+      title: "", summary: "", content_html: "", content_text: "",
+    });
     setDrawer(null);
     await load();
+  }
+
+  function openIssue(issue: NewsletterIssue) {
+    setEditingIssue(issue);
+    setForm({
+      issue_number: issue.issue_number,
+      edition_date: (issue.edition_date || "").slice(0, 10),
+      title: issue.title,
+      summary: issue.summary || "",
+      content_html: issue.content_html || "",
+      content_text: issue.content_text || "",
+    });
+    setDrawer("new");
+  }
+
+  /**
+   * Upload a picture and hand its address back to the editor.
+   *
+   * Base64 rather than multipart, matching the endpoint — and matching how the
+   * My Brand media library already uploads, so both use one storage path.
+   */
+  const uploadImage = useCallback(async (file: File): Promise<string> => {
+    const dataUrl: string = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result));
+      fr.onerror = () => reject(new Error("That file could not be read."));
+      fr.readAsDataURL(file);
+    });
+    const r = await post<{ data?: { url?: string } }>("/api/v1/newsletters/assets/upload", {
+      data: dataUrl, filename: file.name,
+    });
+    const url = r?.data?.url;
+    if (!url) throw new Error("The image uploaded but no address came back for it.");
+    return url;
+  }, [post]);
+
+  /** Build the send for this issue, then hand the user to Campaigns. */
+  async function createSend(issue: NewsletterIssue) {
+    setPublishing(issue.id);
+    try {
+      await post(`/api/v1/newsletters/${issue.id}/campaign`, {});
+      await load();
+      alert(`A draft campaign is ready for "${issue.title}". Open CRM & Marketing → Campaigns to choose who gets it and when.`);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setPublishing(null);
+    }
   }
 
   async function publish(id: number) {
@@ -222,18 +286,6 @@ export function SparkNewsletterPage() {
       loading={loading}
       error={error}
     >
-      <ComingSoonBanner
-        feature="Newsletter Email Blast"
-        detail={
-          <>
-            Publish today pushes the issue to your WordPress site as a blog post — it does
-            NOT yet send an email blast to your subscriber list. Email-list delivery
-            (subscribers → SPARK contact segment) ships with v1.1. For now, manually
-            launch a Campaign to your newsletter list if you want the email side too.
-          </>
-        }
-        eta="v1.1"
-      />
       <SparkTable<NewsletterIssue>
         rows={list}
         getRowKey={n => n.id}
@@ -262,11 +314,28 @@ export function SparkNewsletterPage() {
               : <span className="text-xs text-slate-400">—</span>,
           },
         ]}
-        rowActions={n => !n.published_at ? (
-          <button onClick={() => publish(n.id)} disabled={publishing === n.id} className="spark-btn spark-btn-sm spark-btn-primary">
-            <Send className="h-3 w-3" /> {publishing === n.id ? "Publishing…" : "Publish"}
-          </button>
-        ) : null}
+        onRowClick={openIssue}
+        rowActions={n => (
+          <div className="flex items-center gap-1.5">
+            {/* Publish pushes the issue to the website. Create send builds the
+                email. They are separate on purpose: an issue can go to the site
+                only, to the list only, or to both. */}
+            {!n.published_at && (
+              <button onClick={(e) => { e.stopPropagation(); publish(n.id); }} disabled={publishing === n.id}
+                      className="spark-btn spark-btn-sm spark-btn-secondary">
+                <ExternalLink className="h-3 w-3" /> {publishing === n.id ? "Publishing…" : "Publish to site"}
+              </button>
+            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); createSend(n); }}
+              disabled={publishing === n.id || !n.content_html}
+              title={n.content_html ? "Build the email for this issue" : "Write or import the issue first"}
+              className="spark-btn spark-btn-sm spark-btn-primary"
+            >
+              <Send className="h-3 w-3" /> {n.campaign_id ? "New send" : "Create send"}
+            </button>
+          </div>
+        )}
       />
 
       <SparkDrawer
@@ -320,12 +389,12 @@ export function SparkNewsletterPage() {
       <SparkDrawer
         open={drawer === "new"}
         onClose={() => setDrawer(null)}
-        title="New newsletter issue"
-        subtitle="Draft creates a record. Click Publish on the row to push to WordPress."
+        title={editingIssue ? `Issue ${editingIssue.issue_number} — ${editingIssue.title}` : "New newsletter issue"}
+        subtitle="Write it here, or import it from your website. Publish pushes it to the site; Create send builds the email."
         footer={
           <>
             <button onClick={() => setDrawer(null)} className="spark-btn spark-btn-secondary">Cancel</button>
-            <button onClick={create} disabled={!form.title.trim()} className="spark-btn spark-btn-primary">Create draft</button>
+            <button onClick={create} disabled={!form.title.trim()} className="spark-btn spark-btn-primary">{editingIssue ? "Save issue" : "Create draft"}</button>
           </>
         }
       >
@@ -344,8 +413,25 @@ export function SparkNewsletterPage() {
           <input className="spark-field-input" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="January 2026 Update" autoFocus />
         </div>
         <div className="spark-field">
-          <label className="spark-field-label">Summary / intro</label>
-          <textarea className="spark-field-textarea" rows={5} value={form.summary} onChange={e => setForm({ ...form, summary: e.target.value })} placeholder="Lead paragraph for the newsletter…" />
+          <label className="spark-field-label">
+            Summary <span className="font-normal text-slate-400">— the one-line teaser, used in listings</span>
+          </label>
+          <textarea className="spark-field-textarea" rows={2} value={form.summary} onChange={e => setForm({ ...form, summary: e.target.value })} placeholder="What this issue is about, in a sentence." />
+        </div>
+        <div className="spark-field">
+          <label className="spark-field-label">The issue</label>
+          {/* richness="newsletter" turns on headings, pictures, pull quotes and
+              section breaks. The campaign composer stays on the plain "email"
+              mode, because a promo email is prose and a newsletter is a
+              document. Same editor either way, so an issue opens in both. */}
+          <SparkBodyEditor
+            value={form.content_html}
+            onChange={(html, text) => setForm({ ...form, content_html: html, content_text: text })}
+            placeholder="Write the issue. Add pictures, links and merge tags as you go."
+            richness="newsletter"
+            onUploadImage={uploadImage}
+            minHeight={320}
+          />
         </div>
       </SparkDrawer>
 

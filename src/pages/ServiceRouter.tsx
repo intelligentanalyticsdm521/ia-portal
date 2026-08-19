@@ -3,6 +3,8 @@ import { useParams, useLocation, Navigate } from 'react-router-dom';
 import { useIsFounder } from '../hooks/useIsFounder';
 import { SERVICE_VISIBILITY } from '../components/SubNav';
 import { activeAddons, isRoutable } from '../components/navVisibility';
+import FeatureLocked from '../components/FeatureLocked';
+import { productColor, productOfServiceKey } from '../config/productTheme';
 import { useProductTier } from '../hooks/useProductTier';
 
 // Lazy-load a named React export so it's compatible with React.lazy
@@ -158,7 +160,6 @@ const MyBrandSocialReportPage = lazyNamed(() => import('./myBrand/SocialReportPa
 const SparkOverviewPage = lazyNamed(() => import('./spark/SparkOverviewPage'), 'SparkOverviewPage');
 const SparkContactsPage = lazyNamed(() => import('./spark/SparkContactsPage'), 'SparkContactsPage');
 const SparkListsPage = lazyNamed(() => import('./spark/SparkListsPage'), 'SparkListsPage');
-const SparkTagsPage = lazyNamed(() => import('./spark/SparkTagsPage'), 'SparkTagsPage');
 const SparkSegmentsPage = lazyNamed(() => import('./spark/SparkSegmentsPage'), 'SparkSegmentsPage');
 const SparkCampaignsPage = lazyNamed(() => import('./spark/SparkCampaignsPage'), 'SparkCampaignsPage');
 const SparkFormsPage = lazyNamed(() => import('./spark/SparkFormsPage'), 'SparkFormsPage');
@@ -386,7 +387,7 @@ const CONSULTING_FOUNDER_RELOCATIONS: Record<string, string> = {
   consulting_documents: '/app/admin/consulting/document-library',
 };
 
-export function ServiceRouter() {
+function ServiceRouterInner() {
   const { serviceKey } = useParams<{ serviceKey: string }>();
   const { enabledServices } = useAppState();
   const isFounder = useIsFounder();
@@ -437,17 +438,11 @@ export function ServiceRouter() {
   // has to enforce the same rules or the "cut" surfaces stay reachable.
   // Same declarations the nav reads (SERVICE_VISIBILITY), so the two can't
   // disagree about what a tenant is allowed to see.
-  if (!navVisible) {
-    return (
-      <div className="p-6">
-        <h1 className="text-xl font-semibold text-slate-900">Not available on your plan</h1>
-        <p className="mt-2 max-w-prose text-sm text-slate-600">
-          This feature isn&apos;t part of your current plan. If you need it, get in touch —
-          it can be switched on for your account.
-        </p>
-      </div>
-    );
-  }
+  // Locked surfaces still RENDER — ServiceRouter (the exported wrapper below)
+  // greys the real page out and floats an explanation card over it. Rendering
+  // the genuine UI is the point: a customer should see the thing they don't
+  // have, not a placeholder. The API still 403s every call underneath, which
+  // is why the overlay blocks interaction.
 
   const status: ServiceStatus = resolveServiceStatus(service, enabledServices);
 
@@ -741,7 +736,6 @@ export function ServiceRouter() {
       case 'spark_overview': sparkPage = <SparkOverviewPage />; break;
       case 'spark_contacts': sparkPage = <SparkContactsPage />; break;
       case 'spark_lists': sparkPage = <SparkListsPage />; break;
-      case 'spark_tags': sparkPage = <SparkTagsPage />; break;
       case 'spark_segments': sparkPage = <SparkSegmentsPage />; break;
       case 'spark_campaigns': sparkPage = <SparkCampaignsPage />; break;
       case 'spark_forms': sparkPage = <SparkFormsPage />; break;
@@ -948,5 +942,49 @@ function GenericServicePage({ service, status }: { service: PortalService; statu
         <p className="mx-auto mt-2 max-w-xl text-sm text-slate-600">{body}</p>
       </div>
     </div>
+  );
+}
+
+
+/**
+ * Public ServiceRouter. Renders the real page, and when the tenant's plan
+ * doesn't include it, greys that page out behind a FeatureLocked card.
+ *
+ * Kept as a wrapper so the ~500-line section switch below stays untouched —
+ * it has many return points, and threading a "locked" flag through all of
+ * them would be far more fragile than composing at the boundary.
+ */
+export function ServiceRouter() {
+  const { serviceKey } = useParams<{ serviceKey: string }>();
+  const { tier: sparkTier } = useProductTier("spark");
+  const service = useMemo(
+    () => SERVICE_CATALOG.find((s) => s.key === serviceKey) ?? null,
+    [serviceKey]
+  );
+  const rules = serviceKey ? SERVICE_VISIBILITY[serviceKey] : undefined;
+  const locked = !isRoutable(rules, {
+    tier: sparkTier,
+    addons: activeAddons(),
+    gatingActive: true,
+  });
+
+  if (!locked || !service) return <ServiceRouterInner />;
+
+  const requiredPlan =
+    rules?.addon === "leadgen"
+      ? "the Lead Gen add-on"
+      : rules?.minTier
+        ? `SPARK ${rules.minTier.charAt(0).toUpperCase()}${rules.minTier.slice(1)}`
+        : "a higher plan";
+
+  return (
+    <FeatureLocked
+      name={service.displayName}
+      description={service.description}
+      requiredPlan={requiredPlan}
+      accent={productColor(productOfServiceKey(serviceKey))}
+    >
+      <ServiceRouterInner />
+    </FeatureLocked>
   );
 }

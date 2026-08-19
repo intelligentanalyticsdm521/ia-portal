@@ -5,13 +5,15 @@ import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkContactModal } from "../../components/spark/SparkContactModal";
+import { SparkQuickAddGrid } from "../../components/spark/SparkQuickAddGrid";
+import { SparkTagsModal } from "../../components/spark/SparkTagsModal";
 import { SparkTable, type SparkTableColumn } from "../../components/spark/SparkTable";
 import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
 import { SparkSearchBox } from "../../components/spark/SparkSearchBox";
 import { SparkTooltip } from "../../components/spark/SparkTooltip";
 import {
   Users, Plus, Upload, Download, Mail, Phone, Building2, Sparkles, Trash2,
-  Tag as TagIcon, ListPlus, Send, MoreHorizontal, AlertTriangle, ChevronUp, ChevronDown, Activity,
+  Rows3, Tag as TagIcon, ListPlus, Send, MoreHorizontal, AlertTriangle, ChevronUp, ChevronDown, Activity,
   LayoutList, Columns3,
 } from "lucide-react";
 // F5 (Brandon 2026-06-25) — Kanban view of lumen.contact rows grouped by
@@ -83,7 +85,8 @@ export function SparkContactsPage() {
   // return — a hook below one runs on some renders only.
   const insightsPayload = useProductInsightsPayload('spark');
 
-  const { get, post, ready } = useSparkApi();
+  // put/del are needed by the Tags modal, which manages tags from this page.
+  const { get, post, put, del, ready } = useSparkApi();
   const navigate = useNavigate();
 
   // List state
@@ -120,6 +123,8 @@ export function SparkContactsPage() {
 
   // Drawer state
   const [drawer, setDrawer] = useState<"add" | "import" | "detail" | null>(null);
+  const [quickAdd, setQuickAdd] = useState(false);
+  const [tagsOpen, setTagsOpen] = useState(false);
   const [detail, setDetail] = useState<Contact | null>(null);
   const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", company: "", title: "" });
   const [saving, setSaving] = useState(false);
@@ -158,6 +163,10 @@ export function SparkContactsPage() {
     let rows = contacts;
     if (filter === "subscribed") rows = rows.filter(c => !c.email_unsubscribed && !c.email_invalid);
     else if (filter === "unsubscribed") rows = rows.filter(c => c.email_unsubscribed);
+    // Bounced is its own filter, not a shade of unsubscribed: unsubscribed is
+    // a choice the person made and must be respected, bounced is a broken
+    // address you should go and replace.
+    else if (filter === "bounced") rows = rows.filter(c => c.email_invalid);
     else if (filter === "tier_x") rows = rows.filter(c => c.contact_intelligence_tier === "X");
     else if (filter === "tier_y") rows = rows.filter(c => c.contact_intelligence_tier === "Y");
     else if (filter === "tier_z") rows = rows.filter(c => c.contact_intelligence_tier === "Z");
@@ -457,7 +466,15 @@ export function SparkContactsPage() {
               <SubscriptionPill status={c.subscription_status} />
             </div>
             {c.email_unsubscribed && <div className="text-[10px] text-rose-600">Unsubscribed</div>}
-            {c.email_invalid && <div className="text-[10px] text-amber-600">Invalid email</div>}
+            {/* Amber, deliberately not rose: rose means unsubscribed — a choice
+                to respect — while amber means the address is broken and wants
+                a better one. "Bounced" says what happened; "Invalid email"
+                read like a validation complaint about something you typed. */}
+            {c.email_invalid && (
+              <div className="text-[10px] font-medium text-amber-600" title="Mail to this address hard-bounced. Get a current address for this contact.">
+                Bounced — needs a new address
+              </div>
+            )}
           </div>
         </div>
       ),
@@ -547,6 +564,12 @@ export function SparkContactsPage() {
           <button data-tour="contact-import" onClick={() => setDrawer("import")} className="spark-btn spark-btn-secondary">
             <Upload className="h-3.5 w-3.5" /> Import
           </button>
+          <button onClick={() => setTagsOpen(true)} className="spark-btn spark-btn-secondary">
+            <TagIcon className="h-3.5 w-3.5" /> Tags
+          </button>
+          <button onClick={() => setQuickAdd(true)} className="spark-btn spark-btn-secondary">
+            <Rows3 className="h-3.5 w-3.5" /> Bulk add
+          </button>
           <button data-tour="new-contact" onClick={() => setDrawer("add")} className="spark-btn spark-btn-accent">
             <Plus className="h-3.5 w-3.5" /> New contact
           </button>
@@ -557,7 +580,7 @@ export function SparkContactsPage() {
           { label: "Total contacts", value: stats.total.toLocaleString(), icon: Users },
           { label: "Tier X (top)", value: stats.tierX, accent: "emerald", icon: Sparkles },
           { label: "Unsubscribed", value: stats.unsubscribed, accent: stats.unsubscribed > 0 ? "rose" : "default" },
-          { label: "Invalid emails", value: stats.invalid, accent: stats.invalid > 0 ? "amber" : "default", icon: AlertTriangle },
+          { label: "Bounced", value: stats.invalid, accent: stats.invalid > 0 ? "amber" : "default", icon: AlertTriangle },
         ]} />
       }
       filters={
@@ -572,6 +595,7 @@ export function SparkContactsPage() {
             { key: "tier_z", label: "Tier Z" },
             { key: "unscored", label: "Unscored" },
             { key: "unsubscribed", label: "Unsubscribed", count: stats.unsubscribed },
+            { key: "bounced", label: "Bounced", count: stats.invalid },
             { key: "no_email", label: "No email" },
           ]}
           right={
@@ -646,7 +670,7 @@ export function SparkContactsPage() {
                   <button
                     type="button"
                     data-tour="manage-tags"
-                    onClick={() => { setTagMenuOpen(false); navigate("/app/services/spark_tags"); }}
+                    onClick={() => { setTagMenuOpen(false); setTagsOpen(true); }}
                     className="mt-2 w-full rounded px-2 py-1 text-left text-[11px] text-slate-500 hover:bg-slate-50 hover:text-slate-700"
                   >
                     Manage all tags →
@@ -859,6 +883,23 @@ export function SparkContactsPage() {
           (when load was rebuilt between the modal mount and the save) could
           otherwise leave the row showing pre-edit values. Re-fetching on
           close is cheap and guarantees the list reflects the latest state. */}
+      <SparkTagsModal
+        open={tagsOpen}
+        onClose={() => setTagsOpen(false)}
+        get={get}
+        post={post}
+        put={put}
+        del={del}
+        ready={ready}
+        onChanged={() => { loadTags(); load(); }}
+      />
+
+      <SparkQuickAddGrid
+        open={quickAdd}
+        onClose={() => { setQuickAdd(false); load(); }}
+        onSaved={() => { load(); }}
+      />
+
       <SparkContactModal
         contactId={drawer === "detail" && detail ? detail.id : null}
         open={drawer === "detail" && !!detail}
