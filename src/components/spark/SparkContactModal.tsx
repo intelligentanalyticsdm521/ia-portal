@@ -19,12 +19,13 @@
 //   - Same interaction model OLIVER uses → users recognise the pattern.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Mail, Phone, Building2, MapPin, Tag as TagIcon, List as ListIcon,
+  Mail, Phone, Building2, MapPin, Cake, Tag as TagIcon, List as ListIcon,
   Activity as ActivityIcon, FileText, AlertTriangle, Edit3, Save, Trash2,
   Plus, X,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal, IadmButton } from "../IadmModal";
+import { ContactCustomFields } from "./ContactCustomFields";
 import { PhoneInput } from "../PhoneInput";
 
 export interface ContactLite {
@@ -55,6 +56,10 @@ interface ContactFull extends ContactLite {
   address_city?: string;
   address_state?: string;
   address_zip?: string;
+  address_country?: string;
+  date_of_birth?: string | null;
+  mobile_phone?: string;
+  preferred_contact_method?: string;
   // F5 — lumen.contact.lifecycle_stage + optimistic-concurrency version
   // (migration 110). Surfaced in the modal as a dropdown; legal options
   // come from GET /lifecycle/preset (tenant-level preset visible set).
@@ -144,6 +149,8 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
   // Inline edit state — local copies while editing, commit on Save.
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Partial<ContactFull>>({});
+  // Custom field values staged while editing, committed by the same Save.
+  const [customDraft, setCustomDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   // Notes
@@ -320,13 +327,22 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
       const payload: Partial<ContactFull> = {};
       const fields: (keyof ContactFull)[] = [
         "display_name", "first_name", "last_name", "email", "phone", "company", "title",
-        "address_street", "address_city", "address_state", "address_zip",
+        "address_street", "address_city", "address_state", "address_zip", "address_country",
+        "date_of_birth", "mobile_phone", "preferred_contact_method",
       ];
       for (const f of fields) {
         if (draft[f] !== contact?.[f]) payload[f] = draft[f] as never;
       }
+      // Custom values are saved even when nothing standard changed — the early
+      // return below used to drop them on the floor in exactly that case.
+      if (Object.keys(customDraft).length) {
+        await put(`/api/v1/custom-fields/values/contact/${contactId}`, { values: customDraft });
+        setCustomDraft({});
+      }
       if (Object.keys(payload).length === 0) {
         setEditing(false);
+        await reload();
+        onChanged?.();
         return;
       }
       await put(`/api/v1/contacts/${contactId}`, payload);
@@ -593,9 +609,77 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
                       onChange={(v) => setDraft({ ...draft, address_state: v })} draft={draft.address_state} />
                     <Field label="ZIP" value={contact.address_zip} editing={editing}
                       onChange={(v) => setDraft({ ...draft, address_zip: v })} draft={draft.address_zip} />
+                    <Field label="Country" value={contact.address_country} editing={editing}
+                      onChange={(v) => setDraft({ ...draft, address_country: v })} draft={draft.address_country} />
                   </div>
                 </div>
               )}
+
+              {/* Personal details.
+                  Birthday is a real column rather than a custom field because
+                  the platform automates on it — "whose birthday falls this
+                  week" has to be an indexed date range, not a string compare
+                  over an EAV table. Mobile is separate from phone because SMS
+                  cannot tell whether the one phone number takes texts, so a
+                  landline gets attempted and counted as a failure. */}
+              {(editing || contact.date_of_birth || contact.mobile_phone || contact.preferred_contact_method) && (
+                <div>
+                  <h3 className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-2 flex items-center gap-1">
+                    <Cake className="h-3 w-3" /> Personal details
+                  </h3>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                    <div>
+                      <div className="text-[10px] uppercase text-slate-500 font-semibold">Date of birth</div>
+                      {editing ? (
+                        <input
+                          type="date"
+                          value={(draft.date_of_birth ?? "").slice(0, 10)}
+                          onChange={(e) => setDraft({ ...draft, date_of_birth: e.target.value })}
+                          className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]"
+                        />
+                      ) : (
+                        <div className="mt-0.5 text-sm text-slate-900">
+                          {contact.date_of_birth
+                            ? new Date(contact.date_of_birth).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })
+                            : <span className="text-slate-400 italic">—</span>}
+                        </div>
+                      )}
+                    </div>
+                    <Field label="Mobile (can receive texts)" value={contact.mobile_phone} editing={editing} as="phone"
+                      onChange={(v) => setDraft({ ...draft, mobile_phone: v })} draft={draft.mobile_phone} />
+                    <div>
+                      <div className="text-[10px] uppercase text-slate-500 font-semibold">Prefers to be contacted by</div>
+                      {editing ? (
+                        <select
+                          value={draft.preferred_contact_method ?? ""}
+                          onChange={(e) => setDraft({ ...draft, preferred_contact_method: e.target.value })}
+                          className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                        >
+                          <option value="">No preference</option>
+                          <option value="email">Email</option>
+                          <option value="sms">Text message</option>
+                          <option value="phone">Phone call</option>
+                          <option value="mail">Post</option>
+                        </select>
+                      ) : (
+                        <div className="mt-0.5 text-sm text-slate-900 capitalize">
+                          {contact.preferred_contact_method || <span className="text-slate-400 italic">—</span>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <ContactCustomFields
+                contactId={contactId!}
+                editing={editing}
+                draft={customDraft}
+                onDraftChange={setCustomDraft}
+                get={get}
+                post={post}
+                ready={ready}
+              />
 
               {/* F5 — Lifecycle dropdown (Brandon LOCK 2026-06-25). The
                   visible stage list is gated by the tenant's preset; LUMEN
