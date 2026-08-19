@@ -122,10 +122,42 @@ export function SparkJourneyBuilderPage() {
     return e;
   }, [steps]);
 
+  // "I can't create new journeys" — the page really could not. It listed
+  // automations and added steps to whichever one was selected, and the empty
+  // state told you to go to a different page to make one. POST /automations
+  // has always existed; nothing here called it.
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  async function createJourney() {
+    const name = newName.trim();
+    if (!name) return;
+    try {
+      const r = await post<{ data: { id: number } }>("/api/v1/automations", {
+        name,
+        // 'journey' is the multi-step type this page edits. Created paused, so
+        // an empty journey cannot start enrolling people the moment it exists.
+        type: "journey",
+        is_active: false,
+      });
+      setNewName("");
+      setCreating(false);
+      await fetchAutomations();
+      if (r?.data?.id) setSelectedId(r.data.id);
+    } catch (err) {
+      setError(err);
+    }
+  }
+
   return (
     <SparkPageShell
       title="Journey Builder"
       subtitle={`${automations.length} automation${automations.length === 1 ? "" : "s"}`}
+      actions={
+        <button onClick={() => setCreating(true)} className="spark-btn spark-btn-accent">
+          <Plus className="h-3.5 w-3.5" /> New journey
+        </button>
+      }
       help="Visual graph editor for multi-step automation journeys. Click a step to edit its config and wire its branch_yes / branch_no / default-next edges to specific step IDs. Branching steps (branch_score, branch_email_opened) use the yes/no edges."
       loading={loading}
       error={error}
@@ -144,10 +176,35 @@ export function SparkJourneyBuilderPage() {
           ))}
         </div>
 
+        {creating && (
+          <div className="lg:col-span-4 rounded border border-[#EF6C33]/40 bg-[#EF6C33]/5 p-3">
+            <div className="text-sm font-medium text-slate-800">Name this journey</div>
+            <p className="mt-0.5 text-xs text-slate-600">
+              It starts paused, so you can lay out the steps before anybody enters it.
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <input
+                autoFocus
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); createJourney(); } }}
+                placeholder="New OLIVER client onboarding"
+                className="min-w-[16rem] flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+              />
+              <button onClick={createJourney} disabled={!newName.trim()} className="spark-btn spark-btn-accent spark-btn-sm">
+                Create
+              </button>
+              <button onClick={() => { setCreating(false); setNewName(""); }} className="text-xs text-slate-500 hover:text-slate-700">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="lg:col-span-3">
           {!selectedId && (
             <div className="border border-slate-200 rounded p-12 text-center text-sm text-slate-500">
-              Select an automation to view its journey graph. (Create new automations from the Automation Builder page.)
+              Pick a journey on the left to see its steps — or start a new one with <strong>New journey</strong> above.
             </div>
           )}
           {selectedId && (
