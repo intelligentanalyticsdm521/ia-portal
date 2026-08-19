@@ -154,6 +154,10 @@ export function SparkContactsPage() {
     let rows = contacts;
     if (filter === "subscribed") rows = rows.filter(c => !c.email_unsubscribed && !c.email_invalid);
     else if (filter === "unsubscribed") rows = rows.filter(c => c.email_unsubscribed);
+    // Bounced is its own filter, not a shade of unsubscribed: unsubscribed is
+    // a choice the person made and must be respected, bounced is a broken
+    // address you should go and replace.
+    else if (filter === "bounced") rows = rows.filter(c => c.email_invalid);
     else if (filter === "tier_x") rows = rows.filter(c => c.contact_intelligence_tier === "X");
     else if (filter === "tier_y") rows = rows.filter(c => c.contact_intelligence_tier === "Y");
     else if (filter === "tier_z") rows = rows.filter(c => c.contact_intelligence_tier === "Z");
@@ -453,7 +457,15 @@ export function SparkContactsPage() {
               <SubscriptionPill status={c.subscription_status} />
             </div>
             {c.email_unsubscribed && <div className="text-[10px] text-rose-600">Unsubscribed</div>}
-            {c.email_invalid && <div className="text-[10px] text-amber-600">Invalid email</div>}
+            {/* Amber, deliberately not rose: rose means unsubscribed — a choice
+                to respect — while amber means the address is broken and wants
+                a better one. "Bounced" says what happened; "Invalid email"
+                read like a validation complaint about something you typed. */}
+            {c.email_invalid && (
+              <div className="text-[10px] font-medium text-amber-600" title="Mail to this address hard-bounced. Get a current address for this contact.">
+                Bounced — needs a new address
+              </div>
+            )}
           </div>
         </div>
       ),
@@ -556,7 +568,7 @@ export function SparkContactsPage() {
           { label: "Total contacts", value: stats.total.toLocaleString(), icon: Users },
           { label: "Tier X (top)", value: stats.tierX, accent: "emerald", icon: Sparkles },
           { label: "Unsubscribed", value: stats.unsubscribed, accent: stats.unsubscribed > 0 ? "rose" : "default" },
-          { label: "Invalid emails", value: stats.invalid, accent: stats.invalid > 0 ? "amber" : "default", icon: AlertTriangle },
+          { label: "Bounced", value: stats.invalid, accent: stats.invalid > 0 ? "amber" : "default", icon: AlertTriangle },
         ]} />
       }
       filters={
@@ -571,6 +583,7 @@ export function SparkContactsPage() {
             { key: "tier_z", label: "Tier Z" },
             { key: "unscored", label: "Unscored" },
             { key: "unsubscribed", label: "Unsubscribed", count: stats.unsubscribed },
+            { key: "bounced", label: "Bounced", count: stats.invalid },
             { key: "no_email", label: "No email" },
           ]}
           right={

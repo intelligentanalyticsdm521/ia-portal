@@ -18,7 +18,7 @@ interface Segment {
   name: string;
   filter_summary?: string;
   filters?: string;     // JSON
-  contact_count: number;
+  contact_count: number | null;
   created_at: string;
 }
 
@@ -187,7 +187,7 @@ export function SparkSegmentsPage() {
     setDrawerOpen(true);
   }
 
-  const totalContacts = segments.reduce((s, x) => s + (x.contact_count || 0), 0);
+  const totalContacts = segments.reduce((s, x) => s + (x.contact_count ?? 0), 0);
 
   return (
     <SparkPageShell
@@ -277,7 +277,14 @@ export function SparkSegmentsPage() {
             {
               key: "count", header: "Matches", width: "compact",
               cell: s => (
-                s.contact_count > SEND_CAP ? (
+                // The API answers null when a segment's filters could not be
+                // evaluated. Calling toLocaleString on that throws and takes
+                // the whole table with it.
+                s.contact_count == null ? (
+                  <span className="text-xs italic text-slate-400" title="This segment's rules could not be evaluated.">
+                    —
+                  </span>
+                ) : s.contact_count > SEND_CAP ? (
                   <span
                     className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium"
                     title={`Exceeds the ${SEND_CAP.toLocaleString()}-per-send cap — this segment can't be sent as one campaign. Split it into a static List or narrow the filter.`}
