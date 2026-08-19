@@ -4,7 +4,8 @@ import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkTable } from "../../components/spark/SparkTable";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
-import { Plus, Filter, Users, Zap, Sparkles, AlertTriangle } from "lucide-react";
+import { Plus, Filter, Users, Zap, Sparkles, AlertTriangle, Trash2 } from "lucide-react";
+import { SegmentRuleBuilder, matchesEveryone, SEGMENT_FIELDS, type SegmentFilters } from "../../components/spark/SegmentRuleBuilder";
 
 // SP-6 — a single campaign send is hard-capped at this many recipients
 // (campaigns.js SEG_HARD_CAP). A segment that evaluates larger can't be sent
@@ -21,23 +22,74 @@ interface Segment {
   created_at: string;
 }
 
-// Quick-start segment templates the user can pick from
-const TEMPLATES = [
-  { name: "Hot leads (Tier X)", summary: "Contact Intelligence Tier = X", description: "Your highest-scoring contacts — likely buyers and most engaged" },
-  { name: "Engaged in last 30 days", summary: "Last email opened within 30 days", description: "People who recently interacted with your campaigns" },
-  { name: "Dormant (no activity 60+ days)", summary: "No email opened in 60+ days AND email_subscribed = true", description: "Re-engagement candidates" },
-  { name: "Active newsletter readers", summary: "On Newsletter list AND email_unsubscribed = false", description: "Loyal newsletter audience" },
-  { name: "Has phone, no email", summary: "Phone IS NOT NULL AND email IS NULL", description: "SMS-only outreach targets" },
+// Quick-start templates. These used to be prose ("Contact Intelligence Tier =
+// X") that nothing parsed, so picking one produced a segment with no rules —
+// which matches every contact. Each now carries real rules the evaluator
+// implements, so a template is a working segment the moment it is saved.
+const TEMPLATES: Array<{ name: string; description: string; filters: SegmentFilters }> = [
+  { name: "Hot leads", description: "Your highest-scoring contacts — likely buyers and most engaged",
+    filters: { match: "all", rules: [{ field: "lead_score", op: ">=", value: 70 }] } },
+  { name: "Engaged in the last 30 days", description: "Opened or clicked a campaign recently",
+    filters: { match: "all", rules: [{ field: "email_opened_in_days", op: "<=", value: 30 }] } },
+  { name: "Gone quiet (60+ days)", description: "No activity in two months — re-engagement candidates",
+    filters: { match: "all", rules: [{ field: "last_seen_days", op: ">=", value: 60 }] } },
+  { name: "Has a phone, no email", description: "SMS-only outreach targets",
+    filters: { match: "all", rules: [
+      { field: "phone", op: "exists", value: "" },
+      { field: "email", op: "not_exists", value: "" },
+    ] } },
+  { name: "Customers", description: "Everyone whose lifecycle stage is customer",
+    filters: { match: "all", rules: [{ field: "stage", op: "=", value: "customer" }] } },
 ];
 
+/**
+ * One-line, readable summary of a saved segment's rules for the table.
+ *
+ * The row used to print `filter_summary`, the free-text field the old create
+ * form collected. Nothing parses that text and nothing writes it any more, so
+ * it would render blank on every segment made with the rule builder.
+ */
+function describeFilters(raw?: string): string {
+  let f: SegmentFilters | null = null;
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw || "{}") : (raw || {});
+    if (parsed && Array.isArray(parsed.rules)) f = parsed as SegmentFilters;
+  } catch { /* fall through to the unreadable case below */ }
+
+  if (!f) return "Filter could not be read";
+  // Said plainly, because it is true and it is the thing worth knowing.
+  if (!f.rules.length) return "No rules — matches every contact";
+
+  const join = f.match === "any" ? " or " : " and ";
+  return f.rules
+    .map((r) => {
+      const field = SEGMENT_FIELDS.find((x) => x.key === r.field)?.label || r.field;
+      if (r.op === "exists") return `${field} has a value`;
+      if (r.op === "not_exists") return `${field} is empty`;
+      const val = Array.isArray(r.value) ? r.value.join(", ") : String(r.value ?? "");
+      const op = r.op === "in" ? "is any of" : r.op === "not in" ? "is none of" : r.op;
+      return `${field} ${op} ${val}`;
+    })
+    .join(join);
+}
+
 export function SparkSegmentsPage() {
-  const { get, post, ready } = useSparkApi();
+  const { get, post, put, del, ready } = useSparkApi();
   const [segments, setSegments] = useState<Segment[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", filter_summary: "" });
+  const [form, setForm] = useState<{ name: string; filters: SegmentFilters }>({
+    name: "", filters: { match: "all", rules: [] },
+  });
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  // Choices for the tag / list rule pickers.
+  const [tags, setTags] = useState<string[]>([]);
+  const [lists, setLists] = useState<Array<{ id: number; name: string }>>([]);
+  // Live "who matches" count, so a rule is verifiable before it is saved.
+  const [matchCount, setMatchCount] = useState<number | null>(null);
+  const [counting, setCounting] = useState(false);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -49,19 +101,89 @@ export function SparkSegmentsPage() {
   }, [get, ready]);
   useEffect(() => { load(); }, [load]);
 
-  async function handleCreate() {
+  // Tags and lists for the rule pickers. Loaded once — a rule can only offer
+  // what the tenant actually has.
+  useEffect(() => {
+    if (!ready) return;
+    get<{ data: Array<{ name: string }> }>("/api/v1/tags")
+      .then((r) => setTags((r.data || []).map((t) => t.name).filter(Boolean)))
+      .catch(() => setTags([]));
+    get<{ data: Array<{ id: number; name: string }> }>("/api/v1/lists?limit=200")
+      .then((r) => setLists((r.data || []).map((l) => ({ id: l.id, name: l.name }))))
+      .catch(() => setLists([]));
+  }, [get, ready]);
+
+  // Count who matches, as the rules are edited. Debounced, because every
+  // keystroke in a value box would otherwise be a query.
+  useEffect(() => {
+    if (!drawerOpen || !ready) return;
+    if (!form.filters.rules.length) { setMatchCount(null); return; }
+    let cancelled = false;
+    setCounting(true);
+    const t = setTimeout(() => {
+      // POST /segments/preview answers { data: [...contacts], meta: { total } }
+      // — the count lives on meta, not data.
+      post<{ data: unknown[]; meta: { total: number } }>("/api/v1/segments/preview", { filters: form.filters })
+        .then((r) => { if (!cancelled) setMatchCount(r?.meta?.total ?? null); })
+        .catch(() => { if (!cancelled) setMatchCount(null); })
+        .finally(() => { if (!cancelled) setCounting(false); });
+    }, 450);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [form.filters, drawerOpen, ready, post]);
+
+  function openNew() {
+    setEditingId(null);
+    setForm({ name: "", filters: { match: "all", rules: [] } });
+    setMatchCount(null);
+    setDrawerOpen(true);
+  }
+
+  // Segments were previously create-only: there was no way to open one, so a
+  // typo in a rule meant deleting and rebuilding it.
+  function openEdit(seg: Segment) {
+    let parsed: SegmentFilters = { match: "all", rules: [] };
+    try {
+      const raw = typeof seg.filters === "string" ? JSON.parse(seg.filters || "{}") : (seg.filters || {});
+      if (raw && Array.isArray(raw.rules)) parsed = { match: raw.match === "any" ? "any" : "all", rules: raw.rules };
+    } catch { /* unparseable filters open as empty rather than blocking the edit */ }
+    setEditingId(seg.id);
+    setForm({ name: seg.name, filters: parsed });
+    setMatchCount(null);
+    setDrawerOpen(true);
+  }
+
+  async function handleSave() {
     if (!form.name.trim()) return;
+    // A segment with no rules matches every contact, and a segment can be a
+    // campaign's audience — so this is refused rather than warned about.
+    if (matchesEveryone(form.filters)) return;
     setSaving(true);
     try {
-      await post("/api/v1/segments", form);
+      const payload = { name: form.name.trim(), filters: form.filters };
+      if (editingId) await put(`/api/v1/segments/${editingId}`, payload);
+      else await post("/api/v1/segments", payload);
       setDrawerOpen(false);
-      setForm({ name: "", filter_summary: "" });
+      setEditingId(null);
+      setForm({ name: "", filters: { match: "all", rules: [] } });
       await load();
     } catch (err) { setError(err); } finally { setSaving(false); }
   }
 
+  async function handleDelete() {
+    if (!editingId) return;
+    if (!confirm("Delete this segment? Contacts are not affected — only the saved filter goes.")) return;
+    try {
+      await del(`/api/v1/segments/${editingId}`);
+      setDrawerOpen(false);
+      setEditingId(null);
+      await load();
+    } catch (err) { setError(err); }
+  }
+
   function useTemplate(t: typeof TEMPLATES[number]) {
-    setForm({ name: t.name, filter_summary: t.summary });
+    setEditingId(null);
+    setForm({ name: t.name, filters: t.filters });
+    setMatchCount(null);
     setDrawerOpen(true);
   }
 
@@ -82,7 +204,7 @@ export function SparkSegmentsPage() {
         </>
       }
       actions={
-        <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
+        <button onClick={openNew} className="spark-btn spark-btn-accent">
           <Plus className="h-3.5 w-3.5" /> New segment
         </button>
       }
@@ -124,7 +246,7 @@ export function SparkSegmentsPage() {
                   <div className="min-w-0 flex-1">
                     <div className="font-medium text-sm text-slate-900">{t.name}</div>
                     <div className="text-xs text-slate-500 mt-0.5">{t.description}</div>
-                    <div className="text-[10px] text-violet-700 font-mono mt-1.5 truncate">{t.summary}</div>
+                    <div className="text-[10px] text-violet-700 mt-1.5 truncate">{describeFilters(JSON.stringify(t.filters))}</div>
                   </div>
                 </div>
               </button>
@@ -135,6 +257,7 @@ export function SparkSegmentsPage() {
         <SparkTable<Segment>
           rows={segments}
           getRowKey={s => s.id}
+          onRowClick={openEdit}
           totalCount={segments.length}
           columns={[
             {
@@ -146,7 +269,7 @@ export function SparkSegmentsPage() {
                   </div>
                   <div className="min-w-0">
                     <div className="font-medium">{s.name}</div>
-                    {s.filter_summary && <div className="text-xs text-slate-500 truncate font-mono">{s.filter_summary}</div>}
+                    <div className="text-xs text-slate-500 truncate">{describeFilters(s.filters)}</div>
                   </div>
                 </div>
               ),
@@ -180,46 +303,73 @@ export function SparkSegmentsPage() {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         product="spark"
-        title="New segment"
-        subtitle="Visual filter builder coming in v2. For now, describe your filter in plain English — IA Intelligence will compile it."
+        eyebrow="SPARK · SEGMENT"
+        title={editingId ? "Edit segment" : "New segment"}
+        subtitle="Build the rule and see who matches before you save it."
         size="info"
         footer={
           <>
+            {editingId && (
+              <button
+                onClick={handleDelete}
+                className="mr-auto inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700"
+              >
+                <Trash2 className="h-3 w-3" /> Delete segment
+              </button>
+            )}
             <IadmButton variant="ghost" onClick={() => setDrawerOpen(false)}>Cancel</IadmButton>
-            <IadmButton variant="accent" product="spark" onClick={handleCreate} disabled={saving || !form.name.trim()}>
-              {saving ? "Creating…" : "Create segment"}
+            <IadmButton
+              variant="accent"
+              product="spark"
+              onClick={handleSave}
+              disabled={saving || !form.name.trim() || matchesEveryone(form.filters)}
+            >
+              {saving ? "Saving…" : editingId ? "Save changes" : "Create segment"}
             </IadmButton>
           </>
         }
       >
-        <div className="p-5 space-y-3">
+        <div className="p-5 space-y-4">
           <div className="spark-field">
             <label className="spark-field-label">Name</label>
-            <input className="spark-field-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="VIP customers in Texas" autoFocus />
+            <input
+              className="spark-field-input"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="Customers in Iowa who opened something recently"
+              autoFocus
+            />
           </div>
-          <div className="spark-field">
-            <label className="spark-field-label">Filter description</label>
-            <textarea className="spark-field-textarea" rows={4} value={form.filter_summary} onChange={e => setForm({ ...form, filter_summary: e.target.value })} placeholder='Plain English: "Contacts tagged VIP, in Texas, who opened an email in the last 30 days"' />
+
+          <div>
+            <label className="spark-field-label mb-1.5 block">Rules</label>
+            <SegmentRuleBuilder
+              value={form.filters}
+              onChange={(filters) => setForm({ ...form, filters })}
+              tags={tags}
+              lists={lists}
+              matchCount={matchCount}
+              counting={counting}
+            />
           </div>
-          <div className="text-xs text-slate-500 bg-violet-50 border border-violet-200 rounded-md p-3">
-            <div className="flex items-start gap-2">
-              <Sparkles className="h-3.5 w-3.5 text-violet-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <strong className="text-violet-900">Visual filter builder coming in v2</strong>
-                <p className="mt-1">Pick fields, operators, and values from dropdowns. AND/OR logic. Saved filter sets reusable across segments.</p>
+
+          {/* SP-6 — set the send-cap expectation up front, and only once the
+              count is actually known to exceed it. */}
+          {matchCount != null && matchCount > SEND_CAP && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-600" />
+                <div>
+                  <strong className="text-amber-900">
+                    This matches more than the {SEND_CAP.toLocaleString()}-per-campaign cap.
+                  </strong>
+                  <p className="mt-1">
+                    Narrow the rules, or split the audience into a list, before sending it as one campaign.
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-          {/* SP-6 — set the send-cap expectation up front. */}
-          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-3">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="h-3.5 w-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <strong className="text-amber-900">Sending cap: {SEND_CAP.toLocaleString()} contacts per campaign.</strong>
-                <p className="mt-1">If this segment matches more than that, you'll be prompted to split it into a static List (or narrow the filter) before it can be sent as one campaign.</p>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
       </IadmModal>
     </SparkPageShell>
