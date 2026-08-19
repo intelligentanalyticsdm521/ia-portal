@@ -60,7 +60,7 @@ export const DEFAULT_MERGE_TAGS: MergeTag[] = [
   // Business
   { key: "tenant.business_name", label: "Business name",   category: "Business", example: "Your Business",       description: "YOUR business name (the sender, not the recipient)." },
   { key: "tenant.website",       label: "Website",         category: "Business", example: "https://example.com", description: "Your business website URL." },
-  { key: "tenant.phone",         label: "Phone",           category: "Business", example: "(555) 555-1234",      description: "Your business phone number." },
+  { key: "tenant.phone",         label: "Business phone",  category: "Business", example: "(555) 555-1234",      description: "YOUR business phone number — the Contact one above is the recipient's." },
   { key: "tenant.owner_name",    label: "Owner name",      category: "Business", example: "Brandon Sheriff",     description: "Your name as the business owner. Use in signatures or 'from Brandon' lines." },
   { key: "tenant.address",       label: "Address",         category: "Business", example: "123 Main St",         description: "Your business mailing address." },
   // Setup Links — server resolves these per-send with the correct URL for the recipient + event.
@@ -69,9 +69,6 @@ export const DEFAULT_MERGE_TAGS: MergeTag[] = [
   { key: "vars.activation_link", label: "Activation link",  category: "Setup Links", example: "Activate a trial / feature", description: "Generic activation URL. Use for 'activate your trial', 'verify subscription', or 're-enable account' style emails. NOT the same as the welcome link — that's for first-time setup only." },
   { key: "vars.product_list",    label: "Product list",     category: "Setup Links", example: "ARION, SPARK, and OLIVER",  description: "Comma-separated list of products the recipient bought (e.g. 'ARION, SPARK, and OLIVER'). Renders as natural English in a sentence." },
   // Campaign
-  { key: "campaign.unsubscribe_url", label: "Unsubscribe link", category: "Campaign", example: "auto link",       description: "Per-recipient unsubscribe URL. REQUIRED BY LAW on marketing emails (CAN-SPAM). Auto-injected if missing." },
-  { key: "campaign.preferences_url", label: "Preferences link", category: "Campaign", example: "auto link",       description: "URL to the recipient's notification preferences page — they can turn off categories without unsubscribing entirely." },
-  { key: "campaign.view_in_browser_url", label: "View in browser", category: "Campaign", example: "auto link",   description: "URL to view this email in a browser (for recipients whose mail client mangles HTML)." },
   { key: "campaign.send_date",       label: "Send date",       category: "Campaign", example: "Jun 17, 2026",   description: "The date this campaign was sent (or scheduled to send)." },
 ];
 
