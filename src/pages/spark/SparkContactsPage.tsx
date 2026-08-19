@@ -5,13 +5,14 @@ import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkContactModal } from "../../components/spark/SparkContactModal";
+import { SparkQuickAddGrid } from "../../components/spark/SparkQuickAddGrid";
 import { SparkTable, type SparkTableColumn } from "../../components/spark/SparkTable";
 import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
 import { SparkSearchBox } from "../../components/spark/SparkSearchBox";
 import { SparkTooltip } from "../../components/spark/SparkTooltip";
 import {
   Users, Plus, Upload, Download, Mail, Phone, Building2, Sparkles, Trash2,
-  Tag as TagIcon, ListPlus, Send, MoreHorizontal, AlertTriangle, ChevronUp, ChevronDown, Activity,
+  Rows3, Tag as TagIcon, ListPlus, Send, MoreHorizontal, AlertTriangle, ChevronUp, ChevronDown, Activity,
   LayoutList, Columns3,
 } from "lucide-react";
 // F5 (Brandon 2026-06-25) — Kanban view of lumen.contact rows grouped by
@@ -114,6 +115,7 @@ export function SparkContactsPage() {
 
   // Drawer state
   const [drawer, setDrawer] = useState<"add" | "import" | "detail" | null>(null);
+  const [quickAdd, setQuickAdd] = useState(false);
   const [detail, setDetail] = useState<Contact | null>(null);
   const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", company: "", title: "" });
   const [saving, setSaving] = useState(false);
@@ -541,6 +543,9 @@ export function SparkContactsPage() {
           <button data-tour="contact-import" onClick={() => setDrawer("import")} className="spark-btn spark-btn-secondary">
             <Upload className="h-3.5 w-3.5" /> Import
           </button>
+          <button onClick={() => setQuickAdd(true)} className="spark-btn spark-btn-secondary">
+            <Rows3 className="h-3.5 w-3.5" /> Quick add
+          </button>
           <button data-tour="new-contact" onClick={() => setDrawer("add")} className="spark-btn spark-btn-accent">
             <Plus className="h-3.5 w-3.5" /> New contact
           </button>
@@ -845,6 +850,12 @@ export function SparkContactsPage() {
           (when load was rebuilt between the modal mount and the save) could
           otherwise leave the row showing pre-edit values. Re-fetching on
           close is cheap and guarantees the list reflects the latest state. */}
+      <SparkQuickAddGrid
+        open={quickAdd}
+        onClose={() => { setQuickAdd(false); load(); }}
+        onSaved={() => { load(); }}
+      />
+
       <SparkContactModal
         contactId={drawer === "detail" && detail ? detail.id : null}
         open={drawer === "detail" && !!detail}

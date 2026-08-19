@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Save, Trash2, Users, Edit3, X as XIcon, AlertTriangle } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal, IadmButton } from "../IadmModal";
+import { SparkQuickAddGrid } from "./SparkQuickAddGrid";
 
 interface ContactList {
   id: number;
@@ -54,6 +55,7 @@ export function SparkListDetailModal({ open, onClose, listId, onChanged }: Props
   // the UI just never called it, and told the user to go open each contact
   // one at a time instead.
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
   const [pickerRows, setPickerRows] = useState<Member[] | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
@@ -313,7 +315,17 @@ export function SparkListDetailModal({ open, onClose, listId, onChanged }: Props
                   onClick={() => { setPickerOpen((v) => !v); setAddResult(null); }}
                   className="spark-btn spark-btn-accent text-xs"
                 >
-                  {pickerOpen ? "Done adding" : "Add contacts"}
+                  {pickerOpen ? "Done adding" : "Add existing contacts"}
+                </button>
+                {/* The picker only finds people already in the CRM. Business
+                    cards from an event are not in it yet, and making someone
+                    create each contact elsewhere first is the long way round. */}
+                <button
+                  type="button"
+                  onClick={() => setQuickAddOpen(true)}
+                  className="spark-btn spark-btn-secondary text-xs"
+                >
+                  Type in new contacts
                 </button>
                 {addResult && <span className="text-xs text-slate-600">{addResult}</span>}
               </div>
@@ -403,6 +415,17 @@ export function SparkListDetailModal({ open, onClose, listId, onChanged }: Props
           )}
         </div>
       </div>
+
+      <SparkQuickAddGrid
+        open={quickAddOpen}
+        listId={list?.id}
+        listName={list?.name}
+        onClose={() => { setQuickAddOpen(false); loadMembers(); reload(); }}
+        onSaved={({ created, merged }) => {
+          const n = created + merged;
+          setAddResult(`Added ${n} contact${n === 1 ? "" : "s"} to this list.`);
+        }}
+      />
     </IadmModal>
   );
 }
