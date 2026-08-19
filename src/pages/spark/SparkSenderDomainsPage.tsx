@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { useAppState } from "../../app/AppState";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import {
@@ -93,6 +94,12 @@ export function SparkSenderDomainsPage() {
   // primary website (ARION hosting on Hostinger via API).
   const [senderMode, setSenderMode] = useState<"ia_default" | "white_label" | null>(null);
   const [hostingerManaged, setHostingerManaged] = useState<boolean>(false);
+  // Real product ownership, not the stored hostinger_managed flag — that flag is
+  // tenant-level and set at onboarding, so it goes stale. Whether we can write
+  // the DNS is decided per-domain and live by the API; this is only used to
+  // decide which message to show when we can't.
+  const { ownedProducts } = useAppState();
+  const hasArion = ownedProducts?.has?.("arion") ?? false;
   const [savingMode, setSavingMode] = useState(false);
   // Surfaced when persisting sender_mode fails. Previously a silent
   // .catch(()=>null) swallowed the 404 so a missing/broken /spark-settings
@@ -473,6 +480,31 @@ export function SparkSenderDomainsPage() {
                       ))}
                     </ul>
                   )}
+                </div>
+              )}
+
+              {/* Why are we asking you to do this by hand?
+                  Two very different reasons, and conflating them is why this
+                  screen read as broken: either the tenant has no ARION (so we
+                  don't hold their DNS and genuinely can't), or they do and the
+                  specific domain still isn't on our account. */}
+              {records && !hasArion && (
+                <div className="rounded-lg border p-3 text-xs" style={{ borderColor: "#38BDF855", background: "#38BDF80D" }}>
+                  <div className="font-semibold text-slate-800">Don&apos;t want to touch DNS?</div>
+                  <div className="mt-1 text-slate-600">
+                    Add <span className="font-semibold">Digital Presence</span> and our Intelligence Layer publishes these
+                    records for you — sender setup finishes on its own, and stays correct if anything changes later.
+                  </div>
+                  <a href="/app/settings/plan-pricing" className="mt-2 inline-block font-semibold" style={{ color: "#38BDF8" }}>
+                    See Digital Presence →
+                  </a>
+                </div>
+              )}
+              {records && hasArion && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-slate-700">
+                  <span className="font-semibold">This domain isn&apos;t on the DNS we manage.</span>{" "}
+                  You have Digital Presence, so we publish these automatically for any domain in your account — this one
+                  is hosted elsewhere. Move its DNS to us, or add the records below by hand.
                 </div>
               )}
 
