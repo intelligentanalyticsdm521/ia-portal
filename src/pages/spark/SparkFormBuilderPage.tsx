@@ -16,6 +16,7 @@
 // (/api/v1/forms/:id/public) returns the parsed schema so external sites
 // can mount the form without auth.
 import { useCallback, useEffect, useState } from "react";
+import { FormOutcomesEditor, EMPTY_OUTCOMES, outcomesFromSettings, settingsWithOutcomes, type FormOutcomes } from "../../components/spark/FormOutcomesEditor";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
@@ -67,6 +68,8 @@ export interface FormRow {
   slug: string | null;
   is_active: boolean;
   submission_count: number;
+  /** Free-form JSON. Carries the form's outcomes (tags / list / consent). */
+  settings?: string | null;
 }
 
 function uid(): string {
@@ -123,6 +126,9 @@ export function FormBuilderEditor({ formId, onSaved }: EditorProps) {
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [copied, setCopied] = useState(false);
   const [copyTarget, setCopyTarget] = useState<"submit" | "hosted" | null>(null);
+  // What happens to whoever fills this in — tags, list, consent. Stored on
+  // lumen.form.settings, which already existed as free-form JSON.
+  const [outcomes, setOutcomes] = useState<FormOutcomes>(EMPTY_OUTCOMES);
 
   const fetchForm = useCallback(async () => {
     if (!ready || !formId) { setLoading(false); return; }
@@ -136,6 +142,7 @@ export function FormBuilderEditor({ formId, onSaved }: EditorProps) {
       try { parsed = r.data.fields_schema ? JSON.parse(r.data.fields_schema) : []; } catch { parsed = []; }
       // Ensure every field has an id (older saves may not have one)
       setFields(parsed.map((f) => ({ ...f, id: f.id || uid() })));
+      setOutcomes(outcomesFromSettings(r.data.settings));
     } catch (err) { setError(err); }
     finally { setLoading(false); }
   }, [get, ready, formId]);
@@ -171,7 +178,14 @@ export function FormBuilderEditor({ formId, onSaved }: EditorProps) {
     if (!formRow) return;
     setSaving(true);
     try {
-      await put(`/api/v1/forms/${formRow.id}`, { name, fields_schema: fields, slug: slug.trim() || null });
+      await put(`/api/v1/forms/${formRow.id}`, {
+        name,
+        fields_schema: fields,
+        slug: slug.trim() || null,
+        // Merged rather than replaced: settings predates this and carries
+        // unrelated keys that would otherwise be dropped.
+        settings: settingsWithOutcomes(formRow.settings, outcomes),
+      });
       setSavedAt(new Date());
       onSaved?.();
     } catch (err) { alert(`Save failed: ${(err as Error).message}`); }
@@ -358,6 +372,14 @@ export function FormBuilderEditor({ formId, onSaved }: EditorProps) {
 
         {/* Field config panel */}
         <aside>
+          {/* What the form DOES, above what it looks like. Capturing a contact
+              and stopping there is why website subscription did not work: a
+              newsletter sign-up produced a contact indistinguishable from a
+              quote request. */}
+          <div className="mb-4 rounded-lg border border-slate-200 bg-white p-3">
+            <FormOutcomesEditor value={outcomes} onChange={setOutcomes} get={get} ready={ready} />
+          </div>
+
           <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wide mb-2">Field settings</div>
           {selectedField ? (
             <FieldConfigPanel field={selectedField} onChange={(patch) => updateField(selectedField.id, patch)} />
