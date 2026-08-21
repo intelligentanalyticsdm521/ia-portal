@@ -23,6 +23,7 @@ import { SeoStatCard } from '../../components/SeoUi';
 import { GlossaryIcon, GlossaryPanel } from '../../components/Glossary';
 import { MarketMonitorWatchlistModal } from './MarketMonitorWatchlistModal';
 import type { SeoMarketMonitorMove, SeoMarketMonitorBacklink, SeoMarketMonitorPageChange, SeoMarketMonitorJobStatus } from '../../../lib/arionApi';
+import { SEO_ADDON_REQUIRED } from '../../../lib/arionApi';
 
 type SubSection = 'backlinks' | 'page_changes' | 'competitor_moves';
 
@@ -32,7 +33,7 @@ export function SeoMarketMonitor() {
   const [showWatchlistModal, setShowWatchlistModal] = React.useState(false);
   const [refreshKey, setRefreshKey] = React.useState(0);
 
-  const { data: mm, loading } = useArionData(
+  const { data: mm, loading, errorCode } = useArionData(
     () => activeSiteId ? arionApi.getSeoMarketMonitor(activeSiteId, 30) : Promise.resolve(null),
     [activeSiteId, refreshKey]
   );
@@ -40,7 +41,7 @@ export function SeoMarketMonitor() {
   if (loading) return <Loading />;
   if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
 
-  const hasSeoAddon = selectedSite?.seoAddonTier != null;
+  const hasSeoAddon = selectedSite?.seoAddonTier != null && errorCode !== SEO_ADDON_REQUIRED;
   if (!hasSeoAddon) {
     return (
       <AddonUpsell

@@ -121,7 +121,8 @@ export function submitWaitlist(input: WaitlistSubmitInput) {
 
 /** F-108 — Multi-product cart checkout. Accepts 1–3 items spanning ARION/
  *  OLIVER/SPARK, returns a single Stripe Checkout Session URL covering all
- *  of them. Bundle discount auto-applied server-side (MP5R / MP7R). */
+ *  of them. Bundle discount auto-applied server-side: MP5R, 5% on any 2+
+ *  platforms (the 7% MP7R three-platform tier was retired 2026-08-21). */
 export interface SignupCartCheckoutInput {
   email: string;
   name?: string;
@@ -132,7 +133,7 @@ export interface SignupCartCheckoutInput {
     | { product: "arion"; plan: string; seo?: string | null }
   >;
   /** Founder-only: explicit Stripe coupon ID. Overrides the auto-applied
-   *  MP5R/MP7R bundle when present (Stripe subscription-level discounts are
+   *  MP5R bundle when present (Stripe subscription-level discounts are
    *  mutually exclusive — only one wins). */
   coupon_code?: string;
 }

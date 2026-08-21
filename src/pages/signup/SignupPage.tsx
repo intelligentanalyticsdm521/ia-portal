@@ -508,7 +508,7 @@ export function SignupPage() {
           <div className="text-center mb-10">
             <h1 className="text-4xl font-bold text-gray-900">Pick the platform that fits your business</h1>
             <p className="mt-3 text-lg text-gray-600">
-              Start with one. Add more later — bundle 2 platforms and save 5%, or 3+ and save 7%.
+              Start with one. Add more later — bundle 2 or more platforms and save 5%.
             </p>
           </div>
 
@@ -1132,7 +1132,7 @@ function CartBanner({
         <p className="text-[11px] text-gray-500">
           {bundle > 0
             ? `Bundle discount auto-applies at checkout — ${bundle}% off every recurring invoice for as long as you keep ${cart.length} platforms.`
-            : 'Add a second platform to unlock 5% off, or a third for 7% off.'}
+            : 'Add a second platform to unlock 5% off every recurring invoice.'}
         </p>
         <button
           type="button"

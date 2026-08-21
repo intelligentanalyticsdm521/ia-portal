@@ -705,7 +705,7 @@ export function ConsultingOnboardClientPageV2() {
     },
     2: {
       title: "Configure cart",
-      subtitle: `Step 2 of 7 · Live OLIVER catalog. Bundle discount auto-applies (5% for 2 platforms, 7% for 3+).`,
+      subtitle: `Step 2 of 7 · Live OLIVER catalog. Bundle discount auto-applies (5% on 2+ platforms).`,
       canNext: canProceedStep2,
       onNext: () => setStep(3),
       onBack: () => setStep(1),

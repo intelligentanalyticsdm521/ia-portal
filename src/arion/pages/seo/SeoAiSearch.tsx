@@ -48,6 +48,7 @@ import type {
   SeoAiSourcePage,
   SeoAiCompetitorMention,
 } from '../../../lib/arionApi';
+import { SEO_ADDON_REQUIRED } from '../../../lib/arionApi';
 
 // ────────────────────────────────────────────────────────────────
 // Constants & helpers
@@ -114,7 +115,7 @@ export function SeoAiSearch() {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const [activeTab, setActiveTab] = React.useState<DetailTab | null>(null);
 
-  const { data, loading } = useArionData<SeoAiSearchResponse | null>(
+  const { data, loading, errorCode } = useArionData<SeoAiSearchResponse | null>(
     () => (activeSiteId ? arionApi.getSeoAiSearch(activeSiteId) : Promise.resolve(null)),
     [activeSiteId],
   );
@@ -122,7 +123,7 @@ export function SeoAiSearch() {
   if (loading) return <Loading />;
   if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
 
-  const hasSeoAddon = selectedSite?.seoAddonTier != null;
+  const hasSeoAddon = selectedSite?.seoAddonTier != null && errorCode !== SEO_ADDON_REQUIRED;
   if (!hasSeoAddon) {
     return (
       <AddonUpsell
@@ -561,7 +562,11 @@ function EngineMiniHeroCard({
   const color = engineColor(baseName);
   if (locked) {
     const req = (tierRequired || 'growth').toLowerCase();
-    const reqLabel = req === 'authority' ? 'Authority' : req === 'consulting' ? 'IA Consulting' : 'Growth';
+    // Perplexity is never a self-serve tier — it comes with a Build Your Brand
+    // consulting engagement (AI engine model, 2026-08-21). Only Growth and
+    // Authority are upgrade targets.
+    const consultingOnly = req === 'consulting';
+    const reqLabel = req === 'authority' ? 'Authority' : 'Growth';
     return (
       <div
         style={{
@@ -577,8 +582,12 @@ function EngineMiniHeroCard({
       >
         <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>{label}</div>
         <div style={{ fontSize: 22, fontWeight: 700, color: '#94A3B8', marginTop: 6 }}>Locked</div>
-        <div style={{ fontSize: 11, color: '#5A7A8A', marginTop: 4 }}>Upgrade to {reqLabel}</div>
-        <div style={{ marginTop: 'auto', fontSize: 11, color: '#5A7A8A', fontStyle: 'italic' }}>Not tracked on current tier</div>
+        <div style={{ fontSize: 11, color: '#5A7A8A', marginTop: 4 }}>
+          {consultingOnly ? `${label} tracking is available through a Build Your Brand consulting engagement` : `Upgrade to ${reqLabel}`}
+        </div>
+        <div style={{ marginTop: 'auto', fontSize: 11, color: '#5A7A8A', fontStyle: 'italic' }}>
+          {consultingOnly ? 'Consulting only — not a self-serve tier' : 'Not tracked on current tier'}
+        </div>
       </div>
     );
   }

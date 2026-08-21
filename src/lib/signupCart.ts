@@ -108,10 +108,9 @@ export function writeBuyer(b: { email?: string; name?: string }): void {
 }
 
 /** Bundle discount preview — matches the server-side logic in
- *  /signup/checkout-cart. 2 distinct platforms → 5%, 3+ → 7%. */
+ *  /signup/checkout-cart: 5% (MP5R) on any 2+ distinct platforms. The 7%
+ *  three-platform tier (MP7R) was retired 2026-08-21 — one bundle rule. */
 export function bundleDiscountPercent(items: CartItem[]): number {
   const distinct = new Set(items.map((it) => it.product));
-  if (distinct.size >= 3) return 7;
-  if (distinct.size === 2) return 5;
-  return 0;
+  return distinct.size >= 2 ? 5 : 0;
 }

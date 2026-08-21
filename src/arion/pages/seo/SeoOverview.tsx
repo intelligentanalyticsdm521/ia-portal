@@ -42,6 +42,7 @@ import type {
   SeoMarketMonitorResponse,
   SeoCompetitorsResponse,
 } from '../../../lib/arionApi';
+import { SEO_ADDON_REQUIRED } from '../../../lib/arionApi';
 
 type EngineFilter = 'all' | string;
 
@@ -56,7 +57,7 @@ export function SeoOverview() {
   const [engineFilter, setEngineFilter] = React.useState<EngineFilter>('all');
   const [moversTab, setMoversTab] = React.useState<'jumped' | 'dropped'>('jumped');
 
-  const { data: overviewData, loading } = useArionData(
+  const { data: overviewData, loading, errorCode } = useArionData(
     () => activeSiteId ? arionApi.getSeoOverview(activeSiteId, range) : Promise.resolve(null),
     [activeSiteId, range]
   );
@@ -81,7 +82,7 @@ export function SeoOverview() {
   const comp = compData as SeoCompetitorsResponse | null;
   const mm = mmData as SeoMarketMonitorResponse | null;
   const connected = o?.connected === true;
-  const hasSeoAddon = selectedSite?.seoAddonTier != null;
+  const hasSeoAddon = selectedSite?.seoAddonTier != null && errorCode !== SEO_ADDON_REQUIRED;
 
   if (!connected && !hasSeoAddon) {
     return (
@@ -595,14 +596,14 @@ function AiHeroCard({ card, canonicalLabel, canonicalType, gate }: {
   // When gated OR no card data, show a compact gated-state card.
   if (gate !== 'available' || !card) {
     const messageTop = gate === 'consulting_only'
-      ? 'IA Consulting'
+      ? 'Consulting only'
       : gate === 'upgrade_growth'
         ? 'Upgrade to Growth'
         : gate === 'upgrade_authority'
           ? 'Upgrade to Authority'
           : 'Not configured';
     const messageBody = gate === 'consulting_only'
-      ? 'Perplexity tracking is handled through IA\u2019s consulting engagements — ask your strategist to enable it.'
+      ? 'Perplexity tracking is available through a Build Your Brand consulting engagement — it is never a self-serve tier.'
       : gate === 'upgrade_growth'
         ? `Upgrade to unlock ${canonicalLabel} insights — Google AI Overviews and AI Mode are included with Growth and Authority tiers.`
         : gate === 'upgrade_authority'

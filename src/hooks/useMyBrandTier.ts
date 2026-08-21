@@ -17,6 +17,14 @@
 // tierGate column drives navigation-level access; this hook drives the
 // in-page locked states for sub-features the catalog can't see (per-platform
 // connect, scheduling horizons, etc).
+//
+// NOTE (pricing rework 2026-08-21): LUMEN-API tierCheck.js now resolves every
+// My Brand feature from the My Brand tier = the HIGHER of the ARION tier and a
+// Standard floor granted by an active SPARK row. This hook still reads the
+// SPARK tier (useProductTier("spark")); switching it to the derived tier is a
+// follow-up — until then the server gate is the source of truth and the API
+// clients (lumenApi.ts / sparkApi.ts) surface its `tier_required` 403 as a
+// tier gate.
 import { useProductTier, tierMeets, type TierKey } from "./useProductTier";
 
 // Lower-case tier ranking — matches Portal RANK + LUMEN-API RANK.
@@ -47,8 +55,15 @@ export const MY_BRAND_FEATURE_TIERS: Record<string, FeatureMinTier> = {
   social_analytics_30d:       "standard",
   social_analytics_90d:       "pro",
   social_analytics_csv:       "business",
-  // Approval workflow
-  approval_workflow:          "business",
+  // Social approval workflow — the My Brand > Social settings "Approval
+  // Workflow" toggle (SocialChannelsPage) and the LUMEN
+  // /my-brand/social/settings gate. Business on the My Brand (ARION) tier.
+  // NOT the SPARK /approvals queue: that is keyed `approval_workflow` on the
+  // backend (SPARK Business) and is gated in the Portal by SubNav
+  // `spark_approvals` minTier + SparkPageShell's tier-gate 403 handling — it
+  // never reads this table. The two keys were split 2026-08-21 because sharing
+  // one key double-gated /approvals on the ARION tier.
+  social_approval_workflow:   "business",
 };
 
 export interface MyBrandTierGate {

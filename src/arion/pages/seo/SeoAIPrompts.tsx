@@ -41,6 +41,7 @@ import {
   ErrorBanner,
 } from '../../components/Ui';
 import type { SeoAIPromptsResponse, SeoAIPromptsByEngine } from '../../../lib/arionApi';
+import { SEO_ADDON_REQUIRED } from '../../../lib/arionApi';
 
 // Internal engine keys (what arion-api accepts) and SE Ranking AIRT base
 // names (what it returns) both resolve here.
@@ -86,7 +87,7 @@ export function SeoAIPrompts() {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const [refreshKey, setRefreshKey] = React.useState(0);
 
-  const { data, loading } = useArionData(
+  const { data, loading, errorCode } = useArionData(
     () => (activeSiteId ? arionApi.getAIPrompts(activeSiteId) : Promise.resolve(null)),
     [activeSiteId, refreshKey]
   );
@@ -104,7 +105,7 @@ export function SeoAIPrompts() {
   if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
 
   const r = data as SeoAIPromptsResponse | null;
-  const hasSeoAddon = selectedSite?.seoAddonTier != null;
+  const hasSeoAddon = selectedSite?.seoAddonTier != null && errorCode !== SEO_ADDON_REQUIRED;
   const tier = (r?.tier || selectedSite?.seoAddonTier || '').toLowerCase();
   const cap = r?.cap || 0; // prompts per engine
   const allowedEngines = r?.allowed_engines || [];

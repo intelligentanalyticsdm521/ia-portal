@@ -14,6 +14,12 @@ export interface TierGateError {
   type: "tier_gate";
   tierRequired: string;
   currentTier: string;
+  /** Backend feature key that tripped the gate (e.g. "social_approval_workflow"
+   *  for the My Brand social approval toggle, "approval_workflow" for the SPARK
+   *  /approvals queue), when the API sent one. */
+  feature?: string;
+  /** Product-aware upgrade copy from the API, when sent. */
+  message?: string;
 }
 
 export function isTierGateError(err: unknown): err is TierGateError {

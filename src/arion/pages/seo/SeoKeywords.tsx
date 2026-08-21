@@ -26,6 +26,7 @@ import type {
   SeoKeywordResearchResponse,
   SeoKeywordResearchRow,
 } from '../../../lib/arionApi';
+import { SEO_ADDON_REQUIRED } from '../../../lib/arionApi';
 
 type Tab = 'suggestions' | 'related' | 'longtail' | 'questions';
 
@@ -34,7 +35,7 @@ export function SeoKeywords() {
   const [refreshKey, setRefreshKey] = React.useState(0);
 
   // ── Tracked keywords (current SE Ranking project) ────────────────
-  const { data: trackedData, loading: loadingTracked } = useArionData(
+  const { data: trackedData, loading: loadingTracked, errorCode } = useArionData(
     () => (activeSiteId ? arionApi.getTrackedKeywords(activeSiteId) : Promise.resolve(null)),
     [activeSiteId, refreshKey]
   );
@@ -68,7 +69,7 @@ export function SeoKeywords() {
   if (!selectedSite) return <EmptyPanel message="No ARION site selected." />;
 
   const tracked = trackedData as SeoTrackedKeywordsResponse | null;
-  const hasSeoAddon = selectedSite?.seoAddonTier != null;
+  const hasSeoAddon = selectedSite?.seoAddonTier != null && errorCode !== SEO_ADDON_REQUIRED;
   const tier = (tracked?.tier || selectedSite?.seoAddonTier || '').toLowerCase();
   const TIER_CAPS: Record<string, number> = { starter: 10, essentials: 25, growth: 60, authority: 150 };
   const cap = TIER_CAPS[tier] || 0;

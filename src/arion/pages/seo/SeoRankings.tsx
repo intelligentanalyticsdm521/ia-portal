@@ -24,6 +24,7 @@ import {
 import { SeoDiagnosticPanel } from '../../components/SeoDiagnosticPanel';
 import { GlossaryIcon, GlossaryPanel } from '../../components/Glossary';
 import type { SeoRangeCode, SeoKeywordRecord, SeoRankingsResponse } from '../../../lib/arionApi';
+import { SEO_ADDON_REQUIRED } from '../../../lib/arionApi';
 import { canonicalEngineLabel } from '../../utils/engineLabel';
 import { ReportBar } from '../../../components/insights/ReportBar';
 import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
@@ -53,7 +54,7 @@ export function SeoRankings() {
   const [moversTab, setMoversTab] = React.useState<'jumped' | 'dropped' | 'unchanged'>('jumped');
 
   const { provider, device } = engineFilterToParams(engineFilter);
-  const { data, loading } = useArionData(
+  const { data, loading, errorCode } = useArionData(
     () => activeSiteId ? arionApi.getSeoRankings(activeSiteId, { range, provider, device }) : Promise.resolve(null),
     [activeSiteId, range, provider, device]
   );
@@ -63,7 +64,7 @@ export function SeoRankings() {
 
   const r = data as SeoRankingsResponse | null;
   const connected = r?.connected === true;
-  const hasSeoAddon = selectedSite?.seoAddonTier != null;
+  const hasSeoAddon = selectedSite?.seoAddonTier != null && errorCode !== SEO_ADDON_REQUIRED;
 
   if (!connected && !hasSeoAddon) {
     return (

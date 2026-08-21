@@ -96,11 +96,20 @@ async function lumenFetch<T>(
     if (res.status === 403) {
       try {
         const body = JSON.parse(text);
-        if (body.error === "feature_not_available") {
+        // LUMEN emits two shapes: tierCheck.js TierGateError.toJSON() →
+        // { error: "tier_required", feature, required_tier, current_tier,
+        // message } (feature = "social_approval_workflow" for the My Brand
+        // social approval toggle, "approval_workflow" for the SPARK /approvals
+        // queue), and requireSparkTier → { error: "tier_upgrade_required",
+        // feature, requiredTier, currentTier, message }. "feature_not_available"
+        // is the legacy name, kept for an older backend.
+        if (body.error === "tier_required" || body.error === "tier_upgrade_required" || body.error === "feature_not_available") {
           throw {
             type: "tier_gate" as const,
-            tierRequired: body.tier_required || "pro",
-            currentTier: body.current_tier || "standard",
+            tierRequired: body.tier_required || body.requiredTier || "pro",
+            currentTier: body.current_tier || body.currentTier || "standard",
+            feature: typeof body.feature === "string" ? body.feature : undefined,
+            message: typeof body.message === "string" ? body.message : undefined,
           };
         }
       } catch (e) {

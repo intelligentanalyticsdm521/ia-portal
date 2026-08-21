@@ -225,6 +225,14 @@ export class ArionApiError extends Error {
   }
 }
 
+/** 403 `{ error: { code } }` arion-api returns on every /arion/seo/* surface
+ *  for a site with no paid SEO add-on (middleware/requireSeoAddon.js, pricing
+ *  rework 2026-08-21). GET /arion/seo itself passes through and answers with
+ *  the upsell payload. useArionData exposes it as `errorCode`; the SEO pages
+ *  treat it as "no add-on" and render the AddonUpsell CTA instead of a
+ *  generic error state. */
+export const SEO_ADDON_REQUIRED = 'SEO_ADDON_REQUIRED';
+
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, '');
 }

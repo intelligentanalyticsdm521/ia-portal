@@ -856,7 +856,7 @@ export const ARION_QUICK_TOUR: TourDef = {
     },
     {
       title: "SEO — AI Search Results",
-      body: "How you show up in Google AI Mode, ChatGPT, Gemini, Perplexity. Tier-gated visibility.",
+      body: "How you show up in Google AI Overviews + AI Mode (SEO Growth) and ChatGPT + Gemini (SEO Authority).",
       targetSelector: "a[href='/app/services/arion_seo_ai_search']",
       placement: "right",
     },

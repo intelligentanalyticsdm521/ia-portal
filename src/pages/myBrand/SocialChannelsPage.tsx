@@ -30,6 +30,7 @@ import { useAppState } from "../../app/AppState";
 import { emergencyActAsHeaders } from "../../lib/emergencyActAs";
 import { useMyBrandTier, MY_BRAND_FEATURE_TIERS } from "../../hooks/useMyBrandTier";
 import { useLumenApi } from "../../hooks/useLumenApi";
+import { isTierGateError } from "../../hooks/useOliverApi";
 import { useUserAccess } from "../../hooks/useUserAccess";
 
 type Platform = "facebook" | "instagram" | "x" | "linkedin";
@@ -364,6 +365,9 @@ export function SocialChannelsPage() {
 // (separate from the wave-4 settings JSON in lumen.tenant_settings; the
 // dispatcher reads exclusively from the new table — see migration 057 +
 // LUMEN-API src/lib/myBrand/approvalGate.js).
+// Tier: enabling it is gated server-side on `social_approval_workflow` (My
+// Brand — ARION Business; tierCheck.js). Distinct from the SPARK
+// `approval_workflow` key that fronts the /approvals queue (SPARK Business).
 function ApprovalWorkflowToggle() {
   const lumen = useLumenApi();
   const access = useUserAccess();
@@ -415,7 +419,13 @@ function ApprovalWorkflowToggle() {
       });
     } catch (err) {
       setState((s) => ({ ...s, approval_required: prev })); // rollback
-      setError((err as Error)?.message || "Failed to save");
+      if (isTierGateError(err)) {
+        // 403 { error: "tier_required", feature: "social_approval_workflow" }.
+        const tierLabel = String(err.tierRequired || "business");
+        setError(err.message || `Approval Workflow requires the ARION ${tierLabel.charAt(0).toUpperCase()}${tierLabel.slice(1)} plan.`);
+      } else {
+        setError((err as Error)?.message || "Failed to save");
+      }
     } finally {
       setSaving(false);
     }

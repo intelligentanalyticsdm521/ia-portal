@@ -15,8 +15,22 @@ import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button } from "../../components/oliver/ui";
 import { SignupFormBuilder, type SignupConfig as SignupConfigFull } from "../../components/oliver/SignupFormBuilder";
 
+type RescheduleMode = "auto_confirm" | "admin_approval" | "disabled";
+
+// Customer-facing label per mode — used by the "running as" hint under Mode.
+const RESCHEDULE_MODE_LABELS: Record<RescheduleMode, string> = {
+  admin_approval: "Request (approval)",
+  auto_confirm: "Instant (auto-confirm)",
+  disabled: "Disabled",
+};
+
 interface WorkflowSettings {
-  reschedule_mode: "auto_confirm" | "admin_approval" | "disabled";
+  reschedule_mode: RescheduleMode;
+  /** GET-only, server-derived (oliver-api 2026-08-21): what a customer
+   *  reschedule will actually DO. `auto_confirm` is honoured on Pro+; a
+   *  Standard tenant that saved it runs as `admin_approval`. Falls back to
+   *  the stored mode. Never sent back on PATCH. */
+  effective_reschedule_mode?: RescheduleMode;
   reschedule_advance_notice_hours: number;
   reschedule_cutoff_hours: number;
   reschedule_max_count: number;
@@ -79,7 +93,12 @@ export function OliverWorkflowSettingsPage() {
     setWfMsg(null);
     setError(null);
     try {
-      await patch("/workflow-settings", wf);
+      // effective_reschedule_mode is server-derived — never send it back.
+      const body: Partial<WorkflowSettings> = { ...wf };
+      delete body.effective_reschedule_mode;
+      await patch("/workflow-settings", body);
+      // Re-read so the "running as" hint reflects the saved mode + tier.
+      setWf(await get<WorkflowSettings>("/workflow-settings"));
       setWfMsg("Saved.");
       setTimeout(() => setWfMsg(null), 4000);
     } catch (e) {
@@ -134,7 +153,12 @@ export function OliverWorkflowSettingsPage() {
             {wfMsg && <span style={{ fontSize: 12, color: "#059669", fontWeight: 600 }}>{wfMsg}</span>}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <Field label="Mode">
+            <Field
+              label="Mode"
+              hint={wf.effective_reschedule_mode && wf.effective_reschedule_mode !== wf.reschedule_mode
+                ? `Running as: ${RESCHEDULE_MODE_LABELS[wf.effective_reschedule_mode]} — instant auto-confirm is included with OLIVER Pro and above; on your plan customer reschedules go to your approval queue.`
+                : undefined}
+            >
               <select value={wf.reschedule_mode} onChange={(e) => setWfField("reschedule_mode", e.target.value as WorkflowSettings["reschedule_mode"])} className="input">
                 <option value="admin_approval">Admin approves each request</option>
                 <option value="auto_confirm">Auto-confirm if the new time is allowed</option>

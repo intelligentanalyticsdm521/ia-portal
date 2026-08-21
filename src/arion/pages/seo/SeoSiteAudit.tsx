@@ -20,6 +20,7 @@ import { useArionData } from '../../useArionData';
 import { AddonUpsell, EmptyPanel, Loading, ConsultingUpsell, ErrorBanner, InfoCard } from '../../components/Ui';
 import { GlossaryIcon } from '../../components/Glossary';
 import type { SeoAuditResponse, SeoAuditHistorySnapshot, SeoAuditTopIssue, SeoAuditPageDetail } from '../../../lib/arionApi';
+import { SEO_ADDON_REQUIRED } from '../../../lib/arionApi';
 
 type DetailTab = 'issue-report' | 'crawled-pages' | 'found-resources' | 'found-links' | 'audit-comparison';
 type HistoryTab = 'weekly' | 'monthly' | 'quarterly';
@@ -39,7 +40,7 @@ export function SeoSiteAudit() {
     setPageDetailId(String(id));
   }, []);
 
-  const { data, loading } = useArionData(
+  const { data, loading, errorCode } = useArionData(
     () => activeSiteId ? arionApi.getSeoAudit(activeSiteId) : Promise.resolve(null),
     [activeSiteId]
   );
@@ -49,7 +50,7 @@ export function SeoSiteAudit() {
 
   const a = data as SeoAuditResponse | null;
   const connected = a?.connected === true;
-  const hasSeoAddon = selectedSite?.seoAddonTier != null;
+  const hasSeoAddon = selectedSite?.seoAddonTier != null && errorCode !== SEO_ADDON_REQUIRED;
   const tier = (selectedSite?.seoAddonTier || 'starter').toLowerCase();
 
   if (!connected && !hasSeoAddon) {

@@ -110,11 +110,16 @@ async function oliverFetch<T>(
       // Parse tier-gate 403s into a structured error the UI can handle
       try {
         const body = JSON.parse(text);
-        if (body.error === "feature_not_available") {
+        // oliver-api emits "feature_not_available" from requireOliverAccess and
+        // "tier_upgrade_required" / "tier_required" from in-route gates (e.g.
+        // PATCH /workflow-settings refusing auto_confirm below Pro, with the
+        // tiers under `details`). All three are the same tier gate.
+        if (body.error === "feature_not_available" || body.error === "tier_upgrade_required" || body.error === "tier_required") {
           throw {
             type: "tier_gate" as const,
-            tierRequired: body.tier_required || "pro",
-            currentTier: body.current_tier || "standard",
+            tierRequired: body.tier_required || body.details?.required_tier || body.required_tier || "pro",
+            currentTier: body.current_tier || body.details?.current_tier || "standard",
+            message: typeof body.message === "string" ? body.message : undefined,
           };
         }
       } catch (e) {

@@ -20,6 +20,7 @@ import { AddonUpsell, EmptyPanel, Loading, InfoCard, ConsultingUpsell, ErrorBann
 import { SeoStatCard } from '../../components/SeoUi';
 import { GlossaryIcon } from '../../components/Glossary';
 import type { SeoCompetitorContentGapRow } from '../../../lib/arionApi';
+import { SEO_ADDON_REQUIRED } from '../../../lib/arionApi';
 import { ReportBar } from '../../../components/insights/ReportBar';
 import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 
@@ -42,7 +43,7 @@ export function SeoCompetitors() {
     () => activeSiteId ? arionApi.getSeo(activeSiteId) : Promise.resolve(null),
     [activeSiteId]
   );
-  const { data: compData, loading: compLoading, refetch: refetchComps } = useArionData(
+  const { data: compData, loading: compLoading, errorCode: compErrorCode, refetch: refetchComps } = useArionData(
     () => activeSiteId ? arionApi.getSeoCompetitors(activeSiteId) : Promise.resolve(null),
     [activeSiteId]
   );
@@ -52,7 +53,7 @@ export function SeoCompetitors() {
 
   const s = seo as Record<string, any> | null;
   const connected = (compData as any)?.connected === true || s?.connected === true;
-  const hasSeoAddon = selectedSite?.seoAddonTier != null;
+  const hasSeoAddon = selectedSite?.seoAddonTier != null && compErrorCode !== SEO_ADDON_REQUIRED;
   const competitors: any[] = ((compData as any)?.competitors as any[]) ?? [];
   const contentGap: SeoCompetitorContentGapRow[] = ((compData as any)?.contentGap as SeoCompetitorContentGapRow[]) ?? [];
   const compUpstreamErrors: any[] = ((compData as any)?.upstreamErrors as any[]) ?? [];

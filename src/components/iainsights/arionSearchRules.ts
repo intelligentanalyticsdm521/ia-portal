@@ -327,7 +327,7 @@ export const SEARCH_RULES: InsightRule[] = [
     dataSources: ["seo"],
     priority: 3,
     appliesWhen: (c) => c.seo?.connected !== true || c.seo?.aiOverviews == null,
-    observation: () => `AI Search Results (Google AI Mode, ChatGPT, Gemini, Perplexity) tracking requires the SE Ranking AI Search add-on. As LLM-driven search captures more queries (currently estimated at 5-15% of US English search), tracking your brand presence in those responses becomes the new equivalent of tracking SERP positions.`,
+    observation: () => `AI Search Results tracking (Google AI Overviews + AI Mode on the SEO Growth add-on; ChatGPT + Gemini on Authority) is not active for this site. As LLM-driven search captures more queries (currently estimated at 5-15% of US English search), tracking your brand presence in those responses becomes the new equivalent of tracking SERP positions.`,
   },
 
   // ─── Page-Level ──────────────────────────────────────────────────
