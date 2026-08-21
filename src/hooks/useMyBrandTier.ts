@@ -1,6 +1,6 @@
 // useMyBrandTier — Wave 3 (Brandon 2026-06-22).
 //
-// Thin wrapper over useProductTier("spark") that exposes the My Brand feature
+// Derives the My Brand tier (ARION, SPARK floor) and exposes the My Brand feature
 // gate matrix (mirrors the FEATURE_MIN_TIER table in
 // LUMEN-API/src/lib/myBrand/tierCheck.js). Lets a page write:
 //
@@ -18,13 +18,13 @@
 // in-page locked states for sub-features the catalog can't see (per-platform
 // connect, scheduling horizons, etc).
 //
-// NOTE (pricing rework 2026-08-21): LUMEN-API tierCheck.js now resolves every
-// My Brand feature from the My Brand tier = the HIGHER of the ARION tier and a
-// Standard floor granted by an active SPARK row. This hook still reads the
-// SPARK tier (useProductTier("spark")); switching it to the derived tier is a
-// follow-up — until then the server gate is the source of truth and the API
-// clients (lumenApi.ts / sparkApi.ts) surface its `tier_required` 403 as a
-// tier gate.
+// Pricing rework 2026-08-21: My Brand is governed by the ARION tier, with a
+// Standard floor whenever the tenant also holds an active SPARK subscription
+// (a SPARK tenant never loses My Brand by adding ARION Lite; SPARK-only
+// tenants get Standard-level My Brand). Mirrors LUMEN-API
+// src/lib/myBrand/tierCheck.js getTenantMyBrandTier(). Unresolved on both
+// products -> null (the server fails OPEN and logs; the UI shows nothing as
+// locked rather than walling a paying tenant behind a lookup failure).
 import { useProductTier, tierMeets, type TierKey } from "./useProductTier";
 
 // Lower-case tier ranking — matches Portal RANK + LUMEN-API RANK.
@@ -67,7 +67,7 @@ export const MY_BRAND_FEATURE_TIERS: Record<string, FeatureMinTier> = {
 };
 
 export interface MyBrandTierGate {
-  /** Active SPARK tier (My Brand lives on SPARK). May be null until ready. */
+  /** Derived My Brand tier: max(ARION tier, Standard floor if SPARK active). Null until ready / when unresolved. */
   tier: TierKey;
   /** True once Stripe lookup has resolved. */
   ready: boolean;
@@ -79,8 +79,16 @@ export interface MyBrandTierGate {
 }
 
 export function useMyBrandTier(): MyBrandTierGate {
-  const { tier, ready, error } = useProductTier("spark");
-
+  const arion = useProductTier("arion");
+  const spark = useProductTier("spark");
+  const ready = arion.ready && spark.ready;
+  const error = arion.error ?? spark.error;
+  // Derived My Brand tier = max(ARION tier, Standard floor if SPARK is active).
+  const sparkFloor: TierKey = spark.tier ? "standard" : null;
+  const tier: TierKey =
+    arion.tier && sparkFloor
+      ? ((RANK[String(arion.tier).toLowerCase()] ?? 0) >= RANK.standard ? arion.tier : "standard")
+      : (arion.tier ?? sparkFloor);
   return {
     tier,
     ready,
