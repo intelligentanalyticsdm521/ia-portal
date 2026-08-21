@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { withLocation } from "../../lib/oliverLocations";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader, DataTable, EmptyState, Button, type Column,
@@ -40,6 +42,8 @@ function liveDuration(startedAt: string): number {
 
 export function OliverTimeTrackingPage() {
   const { get, post, del, ready } = useOliverApi();
+  // Multi-location: the header picker scopes entries, jobs and workers.
+  const loc = useOliverLocations();
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [jobs, setJobs] = useState<JobLite[]>([]);
   const [workers, setWorkers] = useState<WorkerLite[]>([]);
@@ -53,16 +57,16 @@ export function OliverTimeTrackingPage() {
     setLoading(true); setError(null);
     try {
       const [e, j, w] = await Promise.all([
-        get<TimeEntry[]>("/time-entries"),
-        get<JobLite[]>("/jobs?per_page=100"),
-        get<WorkerLite[]>("/workers?per_page=100"),
+        get<TimeEntry[]>(withLocation("/time-entries", loc.selectedLocationId)),
+        get<JobLite[]>(withLocation("/jobs?per_page=100", loc.selectedLocationId)),
+        get<WorkerLite[]>(withLocation("/workers?per_page=100", loc.selectedLocationId)),
       ]);
       setEntries(e || []);
       setJobs(j || []);
       setWorkers(w || []);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
-  }, [get]);
+  }, [get, loc.selectedLocationId]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 

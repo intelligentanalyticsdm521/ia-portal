@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useOliverLocations } from "../../hooks/useOliverLocations";
 import { useOliverRole } from "../../hooks/useOliverRole";
-import { membershipUpdates, userLocationIds, type OliverLocation, type OliverLocationMembers } from "../../lib/oliverLocations";
+import { membershipUpdates, parseMembers, userLocationIds, type LocationMembership, type OliverLocation, type OliverLocationMembers } from "../../lib/oliverLocations";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader,
@@ -12,8 +12,10 @@ import {
   type Column,
 } from "../../components/oliver/ui";
 
+/** GET /tenant-users row. `tenantUserId` (core.tenant_users) is what /members stores — see MemberIdentity. */
 interface TenantUser {
   userId: string;
+  tenantUserId?: string | null;
   email: string;
   firstName: string | null;
   lastName: string | null;
@@ -49,7 +51,7 @@ export function OliverTeamAccessPage() {
   const loc = useOliverLocations();
   const { roleInfo } = useOliverRole();
   const scopeEnabled = loc.multi && roleInfo.role === "admin";
-  const [membership, setMembership] = useState<Record<string, string[]>>({});
+  const [membership, setMembership] = useState<LocationMembership>({});
   const [membershipLoaded, setMembershipLoaded] = useState(false);
   const [scopeUser, setScopeUser] = useState<TenantUser | null>(null);
   const [users, setUsers] = useState<TenantUser[]>([]);
@@ -81,7 +83,9 @@ export function OliverTeamAccessPage() {
     reload();
   }, [ready, reload]);
 
-  // location_id -> tenant_user_ids, one small GET per active location.
+  // location_id -> members, one small GET per active location. Entries are
+  // tenant_user_ids (core.tenant_users) — matched to a /tenant-users row via
+  // its tenantUserId, or its userId when the API joins user_ids.
   useEffect(() => {
     if (!ready || !scopeEnabled) return;
     let cancelled = false;
@@ -89,9 +93,9 @@ export function OliverTeamAccessPage() {
       const entries = await Promise.all(loc.activeLocations.map(async (l) => {
         try {
           const m = await get<OliverLocationMembers>(`/locations/${l.location_id}/members`);
-          return [l.location_id, (m?.tenant_user_ids || []).map(String)] as const;
+          return [l.location_id, parseMembers(m)] as const;
         } catch {
-          return [l.location_id, [] as string[]] as const;
+          return [l.location_id, parseMembers(null)] as const;
         }
       }));
       if (!cancelled) { setMembership(Object.fromEntries(entries)); setMembershipLoaded(true); }
@@ -214,7 +218,7 @@ export function OliverTeamAccessPage() {
       header: "Location scope",
       width: "200px",
       render: (u: TenantUser) => {
-        const ids = userLocationIds(membership, u.userId);
+        const ids = userLocationIds(membership, u);
         const label = !membershipLoaded ? "…" : ids.length === 0 ? "All locations" : `${ids.length} of ${loc.activeLocations.length}`;
         return (
           <button
@@ -314,16 +318,16 @@ export function OliverTeamAccessPage() {
         <LocationScopeModal
           user={scopeUser}
           locations={loc.activeLocations}
-          current={userLocationIds(membership, scopeUser.userId)}
+          current={userLocationIds(membership, scopeUser)}
           onClose={() => setScopeUser(null)}
           onSave={async (desired) => {
-            const updates = membershipUpdates(membership, scopeUser.userId, desired);
+            const updates = membershipUpdates(membership, scopeUser, desired);
             for (const u of updates) {
               await put(`/locations/${u.location_id}/members`, { tenant_user_ids: u.tenant_user_ids } satisfies OliverLocationMembers);
             }
             setMembership((prev) => {
               const next = { ...prev };
-              for (const u of updates) next[u.location_id] = u.tenant_user_ids;
+              for (const u of updates) next[u.location_id] = u.members;
               return next;
             });
             setScopeUser(null);

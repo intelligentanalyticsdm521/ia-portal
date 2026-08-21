@@ -5,6 +5,8 @@ import {
   PieChart, Pie, Cell,
 } from "recharts";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { withLocation } from "../../lib/oliverLocations";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
@@ -86,6 +88,8 @@ export function OliverBillingOverviewPage() {
   const insightsPayload = useProductInsightsPayload('oliver');
 
   const { get, ready } = useOliverApi();
+  // Multi-location: the header picker scopes the feed.
+  const loc = useOliverLocations();
   const [range, setRange] = useState<TimeRange>(() => rangeForPreset("last_30_days"));
   const [billing, setBilling] = useState<BillingOverview | null>(null);
   const [trend, setTrend] = useState<BillingTrendBucket[]>([]);
@@ -99,15 +103,15 @@ export function OliverBillingOverviewPage() {
       setLoading(true); setError(null);
       try {
         const [b, t] = await Promise.all([
-          get<BillingOverview>(`/overview/billing${qs}`),
-          get<BillingTrendBucket[]>(`/overview/billing-trend${qs}`),
+          get<BillingOverview>(withLocation(`/overview/billing${qs}`, loc.selectedLocationId)),
+          get<BillingTrendBucket[]>(withLocation(`/overview/billing-trend${qs}`, loc.selectedLocationId)),
         ]);
         setBilling(b);
         setTrend(t || []);
       } catch (err) { setError(err); }
       finally { setLoading(false); }
     })();
-  }, [get, ready, range]);
+  }, [get, ready, range, loc.selectedLocationId]);
 
   // Combined activity feed: merge recent payments + recent refunds (already
   // in recent_payments, differentiated by .type).

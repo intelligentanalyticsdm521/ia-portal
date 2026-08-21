@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { withLocation } from "../../lib/oliverLocations";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader, DataTable, EmptyState, Button, FilterBar, type Column,
@@ -53,6 +55,8 @@ const FILTER_PILLS = [
 
 export function OliverJobOffersPage() {
   const { get, post, ready } = useOliverApi();
+  // Multi-location: the header picker scopes the offer list and the broadcast pickers.
+  const loc = useOliverLocations();
   const [offers, setOffers] = useState<JobOffer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -64,11 +68,11 @@ export function OliverJobOffersPage() {
     setLoading(true); setError(null);
     try {
       const path = filter && filter !== "all" ? `/job-offers?status=${filter}` : "/job-offers";
-      const data = await get<JobOffer[]>(path);
+      const data = await get<JobOffer[]>(withLocation(path, loc.selectedLocationId));
       setOffers(data || []);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
-  }, [get, filter]);
+  }, [get, filter, loc.selectedLocationId]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
@@ -197,6 +201,7 @@ function BroadcastModal({ onClose, onCreated, api }: {
   onCreated: (msg: string) => void;
   api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T> };
 }) {
+  const loc = useOliverLocations();
   const [jobs, setJobs] = useState<JobLite[]>([]);
   const [workers, setWorkers] = useState<WorkerLite[]>([]);
   const [jobId, setJobId] = useState("");
@@ -209,14 +214,14 @@ function BroadcastModal({ onClose, onCreated, api }: {
     (async () => {
       try {
         const [j, w] = await Promise.all([
-          api.get<JobLite[]>("/jobs?status=unassigned&per_page=100"),
-          api.get<WorkerLite[]>("/workers?per_page=100"),
+          api.get<JobLite[]>(withLocation("/jobs?status=unassigned&per_page=100", loc.selectedLocationId)),
+          api.get<WorkerLite[]>(withLocation("/workers?per_page=100", loc.selectedLocationId)),
         ]);
         setJobs(j || []);
         setWorkers(w || []);
       } catch { /* ignore */ }
     })();
-  }, [api]);
+  }, [api, loc.selectedLocationId]);
 
   function toggleWorker(id: string) {
     const next = new Set(selectedWorkers);

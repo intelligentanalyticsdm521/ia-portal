@@ -20,7 +20,13 @@ import { productColor } from "../../config/productTheme";
 import {
   MULTI_LOCATION_PLAN_LABEL,
   isLocationTierError,
+  isMemberOf,
   locationAddressLine,
+  locationNeedsReassign,
+  locationUsageLabel,
+  membersPutBody,
+  parseMembers,
+  type LocationMember,
   type OliverLocation,
   type OliverLocationInput,
   type OliverLocationMembers,
@@ -35,8 +41,10 @@ const COMMON_TIMEZONES = [
   "America/Vancouver", "Europe/London", "Australia/Sydney",
 ];
 
+/** GET /tenant-users row. `tenantUserId` (core.tenant_users) is what /members stores — see MemberIdentity. */
 interface TenantUser {
   userId: string;
+  tenantUserId?: string | null;
   email: string;
   fullName: string | null;
   firstName: string | null;
@@ -106,7 +114,7 @@ export function OliverLocationsPage() {
       setActionError("This is the default location. Make another location the default before deactivating it.");
       return;
     }
-    if ((l.job_count || 0) > 0 || (l.worker_count || 0) > 0) { setReassign(l); return; }
+    if (locationNeedsReassign(l)) { setReassign(l); return; }
     if (!confirm(`Deactivate "${l.name}"? It stays in your records and can be reactivated later.`)) return;
     void deactivate(l, null);
   }
@@ -140,8 +148,15 @@ export function OliverLocationsPage() {
     },
     { key: "phone", header: "Phone", render: (l) => <span style={{ fontSize: 12, color: "#0B1C24" }}>{l.phone || "—"}</span> },
     { key: "timezone", header: "Timezone", render: (l) => <span style={{ fontSize: 11, color: "#5A7A8A", fontFamily: "monospace" }}>{l.timezone || "—"}</span> },
-    { key: "jobs", header: "Jobs", align: "right", sortable: true, sortAccessor: (l) => l.job_count || 0, render: (l) => <span style={{ fontFamily: "monospace", fontSize: 12 }}>{l.job_count ?? 0}</span> },
-    { key: "workers", header: "Workers", align: "right", sortable: true, sortAccessor: (l) => l.worker_count || 0, render: (l) => <span style={{ fontFamily: "monospace", fontSize: 12 }}>{l.worker_count ?? 0}</span> },
+    {
+      key: "jobs", header: "Jobs (open / total)", align: "right", sortable: true, sortAccessor: (l) => l.open_jobs || 0,
+      render: (l) => (
+        <span style={{ fontFamily: "monospace", fontSize: 12 }}>
+          {l.open_jobs ?? 0}<span style={{ color: "#5A7A8A" }}> / {l.total_jobs ?? 0}</span>
+        </span>
+      ),
+    },
+    { key: "workers", header: "Workers", align: "right", sortable: true, sortAccessor: (l) => l.workers || 0, render: (l) => <span style={{ fontFamily: "monospace", fontSize: 12 }}>{l.workers ?? 0}</span> },
     {
       key: "actions", header: "", align: "right",
       render: (l) => {
@@ -383,6 +398,10 @@ function MembersDrawer({ location, onClose, onSaved, api, ready }: {
   ready: boolean;
 }) {
   const [users, setUsers] = useState<TenantUser[]>([]);
+  // Current /members entries (tenant_user_id + joined user_id when the API
+  // sends it). Checkboxes are keyed by userId; membersPutBody maps each
+  // checked user back to the id the API stores.
+  const [members, setMembers] = useState<LocationMember[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -395,8 +414,11 @@ function MembersDrawer({ location, onClose, onSaved, api, ready }: {
         api.get<{ users: TenantUser[] }>("/tenant-users"),
         api.get<OliverLocationMembers>(`/locations/${location.location_id}/members`),
       ]);
-      setUsers(u?.users || []);
-      setSelected(new Set((m?.tenant_user_ids || []).map(String)));
+      const list = u?.users || [];
+      const current = parseMembers(m);
+      setUsers(list);
+      setMembers(current);
+      setSelected(new Set(list.filter((x) => isMemberOf(current, x)).map((x) => x.userId)));
     } catch (e) { setErr(e instanceof Error ? e.message : "Failed to load members"); }
     finally { setLoading(false); }
   }, [api, location.location_id]);
@@ -410,7 +432,7 @@ function MembersDrawer({ location, onClose, onSaved, api, ready }: {
   async function save() {
     setSaving(true); setErr(null);
     try {
-      await api.put(`/locations/${location.location_id}/members`, { tenant_user_ids: Array.from(selected) } satisfies OliverLocationMembers);
+      await api.put(`/locations/${location.location_id}/members`, membersPutBody(users, selected, members));
       onSaved(`Members of "${location.name}" saved.`);
     } catch (e) { setErr(e instanceof Error ? e.message : "Save failed"); }
     finally { setSaving(false); }
@@ -459,10 +481,7 @@ function ReassignModal({ location, targets, busy, onCancel, onConfirm }: {
   onConfirm: (targetId: string) => void;
 }) {
   const [target, setTarget] = useState(targets.find((t) => t.is_default)?.location_id ?? targets[0]?.location_id ?? "");
-  const counts = [
-    location.job_count ? `${location.job_count} job${location.job_count === 1 ? "" : "s"}` : null,
-    location.worker_count ? `${location.worker_count} worker${location.worker_count === 1 ? "" : "s"}` : null,
-  ].filter(Boolean).join(" and ");
+  const counts = locationUsageLabel(location);
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(11,28,36,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ width: 440, maxWidth: "94vw", background: "#fff", borderRadius: 8 }}>

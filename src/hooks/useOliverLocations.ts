@@ -68,7 +68,9 @@ async function loadScope(scope: string, get: Getter) {
   let list: OliverLocation[] = [];
   let error: unknown = null;
   try {
-    const r = await get<OliverLocation[] | { data?: OliverLocation[] }>("/locations");
+    // include_inactive: the Locations page shows deactivated rows (INACTIVE
+    // badge + Reactivate); every other consumer reads activeLocations.
+    const r = await get<OliverLocation[] | { data?: OliverLocation[] }>("/locations?include_inactive=1");
     list = Array.isArray(r) ? r : Array.isArray((r as { data?: OliverLocation[] })?.data) ? (r as { data: OliverLocation[] }).data : [];
   } catch (e) {
     // 404 (route not deployed), 403 (tier/role), network — all mean "no
@@ -135,6 +137,7 @@ export function useOliverLocations(opts: UseOliverLocationsOptions = {}) {
     const multi = isMultiLocation(locations);
     const tierResolved = tierReady && tier != null;
     const meetsBusiness = tier == null ? true : tierMeets(tier, "business"); // null → fail open
+    // `locations` includes inactive rows — the same count the API's POST gate uses.
     const canAddLocation = locations.length === 0 || meetsBusiness;
     // normalizeSelection already guarantees "all" for a single-location business.
     const selectedLocationId: LocationSelection = multi ? selected : ALL_LOCATIONS;

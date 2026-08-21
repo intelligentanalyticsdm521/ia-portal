@@ -4,15 +4,16 @@
 // exercised by scripts/test-oliver-locations.mjs without a DOM.
 //
 // Contract (oliver-api, feat/oliver-multi-location, 2026-08-21):
-//   GET    /locations                      → { data: OliverLocation[] }
+//   GET    /locations?include_inactive=1   → { data: OliverLocation[] } (counts: open_jobs / total_jobs / workers)
 //   POST   /locations                      → 402 tier_upgrade_required below Business once one exists
-//   PATCH  /locations/:id
+//   PATCH  /locations/:id                  is_active:true re-activates (same gate)
 //   POST   /locations/:id/default
-//   DELETE /locations/:id?reassign_to=<guid>
-//   GET/PUT /locations/:id/members         → { tenant_user_ids }
+//   DELETE /locations/:id?reassign_to=<guid>  → 409 location_in_use while open jobs reference it and no reassign_to
+//   GET/PUT /locations/:id/members         → { location_id, tenant_user_ids } — core.tenant_users.tenant_user_id,
+//                                            NOT core.users.user_id (GET /tenant-users `userId`); see MemberIdentity
 //   GET/PATCH /workers/:id                 carry location_ids
-//   every list/report endpoint             accepts ?location_id=<guid>
-//   reports                                accept ?group_by=location
+//   jobs / workers / invoices / schedule / dashboard / reports  accept ?location_id=<guid>
+//   reports revenue / jobs / completion / profit-distribution / crew   accept ?group_by=location (→ by_location[])
 //
 // If the backend shape drifts, fix it HERE — every consumer imports from this
 // file, so a mismatch is a one-line change.
@@ -28,8 +29,26 @@ export interface OliverLocation {
   timezone: string | null;
   is_active: boolean;
   is_default: boolean;
-  job_count: number;
-  worker_count: number;
+  /** Jobs in an open status (inquiry → completed) on this location. DELETE refuses while > 0 unless reassign_to is given. */
+  open_jobs: number;
+  total_jobs: number;
+  /** ACTIVE workers assigned here (oliver.worker_location). */
+  workers: number;
+}
+
+/** Deactivating needs a "move to" target while open jobs or active workers still reference the location. */
+export function locationNeedsReassign(l: Pick<OliverLocation, "open_jobs" | "workers">): boolean {
+  return (Number(l.open_jobs) || 0) > 0 || (Number(l.workers) || 0) > 0;
+}
+
+/** "3 open jobs and 1 worker" for the reassign prompt; "" when nothing references the location. */
+export function locationUsageLabel(l: Pick<OliverLocation, "open_jobs" | "workers">): string {
+  const jobs = Number(l.open_jobs) || 0;
+  const workers = Number(l.workers) || 0;
+  return [
+    jobs ? `${jobs} open job${jobs === 1 ? "" : "s"}` : null,
+    workers ? `${workers} worker${workers === 1 ? "" : "s"}` : null,
+  ].filter(Boolean).join(" and ");
 }
 
 /** Body for POST /locations and PATCH /locations/:id. */
@@ -37,10 +56,38 @@ export type OliverLocationInput = Partial<
   Pick<OliverLocation, "name" | "address_line1" | "city" | "region" | "postal_code" | "phone" | "timezone" | "is_active">
 >;
 
-/** GET/PUT /locations/:id/members */
+/**
+ * GET/PUT /locations/:id/members. The API stores core.tenant_users.tenant_user_id
+ * and validates a PUT against it. `user_ids` (core.users.user_id, parallel to
+ * tenant_user_ids) is present once the API joins it; see MemberIdentity.
+ */
 export interface OliverLocationMembers {
+  location_id?: string;
   tenant_user_ids: string[];
+  user_ids?: string[];
 }
+
+/**
+ * A tenant user as GET /tenant-users reports it, reduced to its two ids.
+ * `userId` is core.users.user_id (always there); `tenantUserId` is
+ * core.tenant_users.tenant_user_id — the id /members stores — once the API
+ * sends it. The helpers below send tenantUserId when they have it and fall
+ * back to userId (which the API resolves itself), so Team Access and the
+ * Locations members drawer work against either shape.
+ */
+export interface MemberIdentity {
+  userId: string;
+  tenantUserId?: string | null;
+}
+
+/** One /members entry as the Portal keeps it: the stored id plus the joined user_id when known. */
+export interface LocationMember {
+  tenant_user_id: string;
+  user_id: string | null;
+}
+
+/** location_id → members (Team Access loads one GET per active location). */
+export type LocationMembership = Record<string, LocationMember[]>;
 
 /** "all" = no scoping (business-wide); otherwise a location_id guid. */
 export type LocationSelection = "all" | string;
@@ -206,37 +253,93 @@ export function metricOf(row: Record<string, unknown> | null | undefined, keys: 
 }
 
 // ─── Team access: per-user scope ────────────────────────────────────────────
+//
+// Wire contract (oliver-api routes/locations.js + routes/tenantUsers.js):
+//   GET /tenant-users            → users[].userId = core.users.user_id
+//                                  (+ tenantUserId = core.tenant_users.tenant_user_id once the API sends it)
+//   GET /locations/:id/members   → tenant_user_ids = core.tenant_users.tenant_user_id (+ user_ids when joined)
+//   PUT /locations/:id/members   → validates tenant_user_ids against core.tenant_users → 400 unknown_tenant_user
+// The two id spaces are different GUIDs. Every helper here takes the whole
+// user row (MemberIdentity) and resolves the id the API stores itself.
+
+const sameId = (a: unknown, b: unknown): boolean =>
+  !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase();
+
+/** Normalise a /members body ({ tenant_user_ids, user_ids? }) into member entries. Anything else → []. */
+export function parseMembers(resp: unknown): LocationMember[] {
+  if (!resp || typeof resp !== "object") return [];
+  const r = resp as Record<string, unknown>;
+  const tenantUserIds = parseIdList(r.tenant_user_ids);
+  const userIds = parseIdList(r.user_ids);
+  return tenantUserIds.map((tenant_user_id, i) => ({ tenant_user_id, user_id: userIds[i] ?? null }));
+}
+
+/** Does this /members entry refer to `user`? By tenant_user_id when the row carries one, else by the joined user_id. */
+export function memberIs(m: LocationMember | null | undefined, user: MemberIdentity): boolean {
+  if (!m) return false;
+  return sameId(m.tenant_user_id, user.tenantUserId) || sameId(m.user_id, user.userId);
+}
+
+export function isMemberOf(members: LocationMember[] | null | undefined, user: MemberIdentity): boolean {
+  return (members || []).some((m) => memberIs(m, user));
+}
 
 /**
- * membership: location_id → tenant_user_ids. A user in NO location is
- * unscoped ("all locations"); otherwise they see only the listed ones.
+ * The id a PUT /members body must carry for `user`: its tenantUserId when the
+ * /tenant-users row has it; else the tenant_user_id an existing membership
+ * (any location) maps to its user_id; else its userId, which the API resolves.
  */
-export function userLocationIds(membership: Record<string, string[]>, userId: string): string[] {
-  const want = String(userId).toLowerCase();
+export function memberSendId(user: MemberIdentity, membership: LocationMembership | LocationMember[] | null | undefined): string {
+  if (user.tenantUserId) return String(user.tenantUserId);
+  const all = Array.isArray(membership) ? membership : Object.values(membership || {}).flat();
+  const hit = all.find((m) => sameId(m.user_id, user.userId));
+  return hit ? hit.tenant_user_id : String(user.userId);
+}
+
+/** Locations `user` is limited to. Empty = unscoped ("all locations"). */
+export function userLocationIds(membership: LocationMembership, user: MemberIdentity): string[] {
   return Object.entries(membership)
-    .filter(([, ids]) => (ids || []).some((u) => String(u).toLowerCase() === want))
+    .filter(([, members]) => isMemberOf(members, user))
     .map(([locationId]) => locationId);
 }
 
-/** Which locations need a PUT to move `userId` from `current` to `desired` scope. */
-export function membershipUpdates(
-  membership: Record<string, string[]>,
-  userId: string,
-  desired: string[],
-): Array<{ location_id: string; tenant_user_ids: string[] }> {
-  const want = new Set(desired.map((d) => d.toLowerCase()));
-  const uid = String(userId).toLowerCase();
-  const out: Array<{ location_id: string; tenant_user_ids: string[] }> = [];
-  for (const [locationId, ids] of Object.entries(membership)) {
-    const has = (ids || []).some((u) => String(u).toLowerCase() === uid);
+export interface MembershipUpdate {
+  location_id: string;
+  /** PUT body for this location. */
+  tenant_user_ids: string[];
+  /** The same list as member entries — what local state should hold after the PUT. */
+  members: LocationMember[];
+}
+
+/** Which locations need a PUT to move `user` from its current scope to `desired`. */
+export function membershipUpdates(membership: LocationMembership, user: MemberIdentity, desired: string[]): MembershipUpdate[] {
+  const want = new Set(desired.map((d) => String(d).toLowerCase()));
+  const out: MembershipUpdate[] = [];
+  for (const [locationId, members] of Object.entries(membership)) {
+    const has = isMemberOf(members, user);
     const should = want.has(locationId.toLowerCase());
     if (has === should) continue;
     const next = should
-      ? [...(ids || []), userId]
-      : (ids || []).filter((u) => String(u).toLowerCase() !== uid);
-    out.push({ location_id: locationId, tenant_user_ids: next });
+      ? [...(members || []), { tenant_user_id: memberSendId(user, membership), user_id: user.userId }]
+      : (members || []).filter((m) => !memberIs(m, user));
+    out.push({ location_id: locationId, tenant_user_ids: next.map((m) => m.tenant_user_id), members: next });
   }
   return out;
+}
+
+/**
+ * PUT body for the Locations members drawer: every checked user (by userId),
+ * plus any current member the user list does not show (an inactive user),
+ * so a save never silently drops them. De-duplicated, case-insensitive.
+ */
+export function membersPutBody(users: MemberIdentity[], checkedUserIds: Iterable<string>, members: LocationMember[]): OliverLocationMembers {
+  const checked = new Set(Array.from(checkedUserIds, (s) => String(s).toLowerCase()));
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  const push = (id: string) => { const k = id.toLowerCase(); if (!seen.has(k)) { seen.add(k); ids.push(id); } };
+  for (const u of users) if (checked.has(String(u.userId).toLowerCase())) push(memberSendId(u, members));
+  for (const m of members) if (!users.some((u) => memberIs(m, u))) push(m.tenant_user_id);
+  return { tenant_user_ids: ids };
 }
 
 // ─── Errors ─────────────────────────────────────────────────────────────────

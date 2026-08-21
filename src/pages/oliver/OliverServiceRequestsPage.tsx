@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { withLocation } from "../../lib/oliverLocations";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState,
@@ -48,6 +50,8 @@ function fmtRelative(d?: string) {
 
 export function OliverServiceRequestsPage() {
   const { get, patch, ready } = useOliverApi();
+  // Multi-location: the header picker scopes the inbox (both sources).
+  const loc = useOliverLocations();
   const navigate = useNavigate();
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,8 +70,8 @@ export function OliverServiceRequestsPage() {
       //   2. /booking/pending → Standard-tier booking submissions awaiting tenant confirmation.
       // Both flow into the same inbox so staff has one place to triage incoming demand.
       const [jobs, bookings] = await Promise.all([
-        get<ServiceRequest[]>("/jobs?status=inquiry").catch(() => [] as ServiceRequest[]),
-        get<ServiceRequest[]>("/booking/pending").catch(() => [] as ServiceRequest[]),
+        get<ServiceRequest[]>(withLocation("/jobs?status=inquiry", loc.selectedLocationId)).catch(() => [] as ServiceRequest[]),
+        get<ServiceRequest[]>(withLocation("/booking/pending", loc.selectedLocationId)).catch(() => [] as ServiceRequest[]),
       ]);
       const merged = [...(jobs || []), ...(bookings || [])].sort((a, b) => {
         const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -77,7 +81,7 @@ export function OliverServiceRequestsPage() {
       setRequests(merged);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
-  }, [get]);
+  }, [get, loc.selectedLocationId]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 

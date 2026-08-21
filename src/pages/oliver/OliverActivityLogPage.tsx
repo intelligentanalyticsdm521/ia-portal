@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { withLocation } from "../../lib/oliverLocations";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader, FilterBar, DataTable, EmptyState,
@@ -49,6 +51,8 @@ function fmtRelative(d?: string) {
 
 export function OliverActivityLogPage() {
   const { get, ready } = useOliverApi();
+  // Multi-location: the header picker scopes the feed.
+  const loc = useOliverLocations();
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -58,7 +62,7 @@ export function OliverActivityLogPage() {
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const data = await get<ActivityEvent[]>("/dashboard/activity");
+      const data = await get<ActivityEvent[]>(withLocation("/dashboard/activity", loc.selectedLocationId));
       // Normalize timestamp field (some endpoints return created_at)
       const normalized = (data || []).map((e) => ({
         ...e,
@@ -67,7 +71,7 @@ export function OliverActivityLogPage() {
       setEvents(normalized);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
-  }, [get]);
+  }, [get, loc.selectedLocationId]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
