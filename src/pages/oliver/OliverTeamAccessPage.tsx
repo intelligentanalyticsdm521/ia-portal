@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { useOliverRole } from "../../hooks/useOliverRole";
+import { membershipUpdates, userLocationIds, type OliverLocation, type OliverLocationMembers } from "../../lib/oliverLocations";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader,
@@ -40,7 +43,15 @@ function fmtDate(iso?: string | null) {
 }
 
 export function OliverTeamAccessPage() {
-  const { get, patch, ready } = useOliverApi();
+  const { get, patch, put, ready } = useOliverApi();
+  // Multi-location: admins can limit a user to specific locations. The
+  // column only exists for a business with 2+ active locations.
+  const loc = useOliverLocations();
+  const { roleInfo } = useOliverRole();
+  const scopeEnabled = loc.multi && roleInfo.role === "admin";
+  const [membership, setMembership] = useState<Record<string, string[]>>({});
+  const [membershipLoaded, setMembershipLoaded] = useState(false);
+  const [scopeUser, setScopeUser] = useState<TenantUser | null>(null);
   const [users, setUsers] = useState<TenantUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +80,24 @@ export function OliverTeamAccessPage() {
     if (!ready) return;
     reload();
   }, [ready, reload]);
+
+  // location_id -> tenant_user_ids, one small GET per active location.
+  useEffect(() => {
+    if (!ready || !scopeEnabled) return;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(loc.activeLocations.map(async (l) => {
+        try {
+          const m = await get<OliverLocationMembers>(`/locations/${l.location_id}/members`);
+          return [l.location_id, (m?.tenant_user_ids || []).map(String)] as const;
+        } catch {
+          return [l.location_id, [] as string[]] as const;
+        }
+      }));
+      if (!cancelled) { setMembership(Object.fromEntries(entries)); setMembershipLoaded(true); }
+    })();
+    return () => { cancelled = true; };
+  }, [ready, scopeEnabled, loc.activeLocations, get]);
 
   const changeRole = useCallback(
     async (user: TenantUser, role: "admin" | "accountant") => {
@@ -180,6 +209,26 @@ export function OliverTeamAccessPage() {
         );
       },
     },
+    ...(scopeEnabled ? [{
+      key: "locations",
+      header: "Location scope",
+      width: "200px",
+      render: (u: TenantUser) => {
+        const ids = userLocationIds(membership, u.userId);
+        const label = !membershipLoaded ? "…" : ids.length === 0 ? "All locations" : `${ids.length} of ${loc.activeLocations.length}`;
+        return (
+          <button
+            type="button"
+            disabled={!membershipLoaded}
+            onClick={() => setScopeUser(u)}
+            title="Limit this user to specific locations"
+            style={{ padding: "5px 12px", fontSize: 12, fontWeight: 600, borderRadius: 999, border: "1px solid #D5E2E8", background: "#fff", color: "#1A3A4A", cursor: membershipLoaded ? "pointer" : "wait" }}
+          >
+            {label}
+          </button>
+        );
+      },
+    } satisfies Column<TenantUser>] : []),
   ];
 
   // Surface a load failure through the wrapper so it gets the standard
@@ -254,7 +303,97 @@ export function OliverTeamAccessPage() {
         <div>
           <strong>Accountant</strong> — {ROLE_DESCRIPTION.accountant}
         </div>
+        {scopeEnabled && (
+          <div style={{ marginTop: 6 }}>
+            <strong>Location scope</strong> — limit a user to specific locations. Users with no limit see every location.
+          </div>
+        )}
       </div>
+
+      {scopeUser && (
+        <LocationScopeModal
+          user={scopeUser}
+          locations={loc.activeLocations}
+          current={userLocationIds(membership, scopeUser.userId)}
+          onClose={() => setScopeUser(null)}
+          onSave={async (desired) => {
+            const updates = membershipUpdates(membership, scopeUser.userId, desired);
+            for (const u of updates) {
+              await put(`/locations/${u.location_id}/members`, { tenant_user_ids: u.tenant_user_ids } satisfies OliverLocationMembers);
+            }
+            setMembership((prev) => {
+              const next = { ...prev };
+              for (const u of updates) next[u.location_id] = u.tenant_user_ids;
+              return next;
+            });
+            setScopeUser(null);
+          }}
+        />
+      )}
     </OliverPageWrapper>
+  );
+}
+
+// ─── Location scope modal ────────────────────────────────────────────────────
+function LocationScopeModal({ user, locations, current, onClose, onSave }: {
+  user: TenantUser;
+  locations: OliverLocation[];
+  current: string[];
+  onClose: () => void;
+  onSave: (desired: string[]) => Promise<void>;
+}) {
+  const [mode, setMode] = useState<"all" | "selected">(current.length ? "selected" : "all");
+  const [picked, setPicked] = useState<Set<string>>(new Set(current.map((s) => s.toLowerCase())));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const name = user.fullName || `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email;
+
+  function toggle(id: string) {
+    const k = id.toLowerCase();
+    setPicked((cur) => { const n = new Set(cur); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  }
+
+  async function save() {
+    setErr(null);
+    const desired = mode === "all" ? [] : locations.filter((l) => picked.has(l.location_id.toLowerCase())).map((l) => l.location_id);
+    if (mode === "selected" && desired.length === 0) { setErr("Pick at least one location, or choose All locations."); return; }
+    setSaving(true);
+    try { await onSave(desired); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Save failed"); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(11,28,36,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: 440, maxWidth: "94vw", background: "#fff", borderRadius: 8 }}>
+        <div style={{ padding: 18, borderBottom: "1px solid #E2E8F0" }}>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1A3A4A" }}>Location scope — {name}</h2>
+          <div style={{ fontSize: 12, color: "#5A7A8A", marginTop: 4 }}>Which locations this user can see and work in.</div>
+        </div>
+        <div style={{ padding: 18, display: "grid", gap: 10, fontSize: 13, color: "#334155" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input type="radio" checked={mode === "all"} onChange={() => setMode("all")} /> All locations
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input type="radio" checked={mode === "selected"} onChange={() => setMode("selected")} /> Only these locations
+          </label>
+          {mode === "selected" && (
+            <div style={{ border: "1px solid #E2E8F0", borderRadius: 6, padding: 8, marginLeft: 22 }}>
+              {locations.map((l) => (
+                <label key={l.location_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 2px", fontSize: 12 }}>
+                  <input type="checkbox" checked={picked.has(l.location_id.toLowerCase())} onChange={() => toggle(l.location_id)} />
+                  {l.name}{l.is_default ? " (default)" : ""}
+                </label>
+              ))}
+            </div>
+          )}
+          {err && <div style={{ padding: 10, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 6 }}>{err}</div>}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+            <Button variant="primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

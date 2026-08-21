@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { Button } from "../../components/oliver/ui";
 import { PhoneInput } from "../../components/PhoneInput";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
 
 interface ContactListItem {
   contact_id: string;
@@ -32,6 +33,14 @@ function contactName(c: ContactListItem) {
 
 export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
   const { get, post, ready } = useOliverApi();
+  // Multi-location: hidden for a single-location business (and then never
+  // sent). Defaults to the header picker's location, else the default one.
+  const loc = useOliverLocations();
+  const [locationId, setLocationId] = useState("");
+  useEffect(() => {
+    if (!loc.multi || locationId) return;
+    setLocationId(loc.selectedLocationId !== "all" ? loc.selectedLocationId : (loc.defaultLocation?.location_id ?? ""));
+  }, [loc.multi, loc.selectedLocationId, loc.defaultLocation, locationId]);
   const [mode, setMode] = useState<"existing" | "new">("existing");
   const [contacts, setContacts] = useState<ContactListItem[]>([]);
   const [addresses, setAddresses] = useState<Address[]>([]);
@@ -143,6 +152,7 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
       team_notes: teamNotes.trim() || null,
       customer_notes: customerNotes.trim() || null,
       source: "manual",
+      ...(loc.multi && locationId ? { location_id: locationId } : {}),
     };
 
     // Service address is OPTIONAL — consulting/agency/SaaS work doesn't
@@ -296,6 +306,18 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
           <input value={jobType} onChange={(e) => setJobType(e.target.value)} placeholder="e.g. Maintenance, Repair, Install" style={selectStyle} />
         </Field>
       </div>
+
+      {loc.multi && (
+        <div style={{ marginBottom: 12 }}>
+          <Field label="Location">
+            <select value={locationId} onChange={(e) => setLocationId(e.target.value)} style={selectStyle}>
+              {loc.activeLocations.map((l) => (
+                <option key={l.location_id} value={l.location_id}>{l.name}{l.is_default ? " (default)" : ""}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
         <Field label="Scheduled start (optional)">

@@ -3,6 +3,9 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { ByLocationToggle, LocationBreakdownCard } from "../../components/oliver/LocationBreakdown";
+import { withLocation, withQuery, extractLocationRows, type LocationBreakdownRow } from "../../lib/oliverLocations";
 import {
   PageHeader, FilterBar, DataTable, EmptyState,
   TimeRangeSelector, rangeForPreset,
@@ -49,6 +52,9 @@ export function OliverCrewPerformancePage() {
   const insightsPayload = useProductInsightsPayload('oliver');
 
   const { get, ready } = useOliverApi();
+  const loc = useOliverLocations();
+  const [byLocation, setByLocation] = useState(false);
+  const [locationRows, setLocationRows] = useState<LocationBreakdownRow[]>([]);
   const [range, setRange] = useState<TimeRange>(() => rangeForPreset("last_30_days"));
   const [crew, setCrew] = useState<CrewStat[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,13 +65,26 @@ export function OliverCrewPerformancePage() {
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const data = await get<CrewStat[]>(`/reports/crew${rangeToQuery(range)}`);
+      const data = await get<CrewStat[]>(withLocation(`/reports/crew${rangeToQuery(range)}`, loc.selectedLocationId));
       setCrew(data || []);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
-  }, [get, range]);
+  }, [get, range, loc.selectedLocationId]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
+
+  // "By location" — one extra call, only when the toggle is on (multi only).
+  useEffect(() => {
+    if (!ready || !byLocation || !loc.multi) { setLocationRows([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await get<unknown>(withQuery(`/reports/crew${rangeToQuery(range)}`, { group_by: "location" }));
+        if (!cancelled) setLocationRows(extractLocationRows(r));
+      } catch { if (!cancelled) setLocationRows([]); }
+    })();
+    return () => { cancelled = true; };
+  }, [get, ready, byLocation, loc.multi, range]);
 
   const filtered = useMemo(() => {
     let list = crew;
@@ -219,8 +238,29 @@ export function OliverCrewPerformancePage() {
       <PageHeader
         title="Team Performance"
         subtitle="See assignment volume and completion rate per team member"
-        actions={<TimeRangeSelector value={range} onChange={setRange} />}
+        actions={
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {loc.multi && <ByLocationToggle on={byLocation} onChange={setByLocation} />}
+            <TimeRangeSelector value={range} onChange={setRange} />
+          </div>
+        }
       />
+
+      {loc.multi && byLocation && (
+        <LocationBreakdownCard
+          title="Team performance by location"
+          subtitle="Assignments, completions and profit per location in the selected range"
+          rows={locationRows}
+          locations={loc.locations}
+          metrics={[
+            { label: "Assigned", keys: ["total_assignments", "assignments", "assigned"] },
+            { label: "Completed", keys: ["completed_jobs", "completed"] },
+            { label: "Revenue", keys: ["revenue_generated", "revenue", "total_revenue"], money: true },
+            { label: "Labor cost", keys: ["labor_cost", "total_labor_cost"], money: true },
+            { label: "Profit", keys: ["profit", "total_profit"], money: true },
+          ]}
+        />
+      )}
 
       <div className="stat-row">
         <div className="stat-card">

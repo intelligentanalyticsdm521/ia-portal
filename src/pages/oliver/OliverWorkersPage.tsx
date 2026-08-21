@@ -4,6 +4,8 @@ import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import PhoneInput from "../../components/PhoneInput";
 import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { withLocation, parseIdList, locationNameOf, type OliverLocation } from "../../lib/oliverLocations";
 import {
   PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState, Button,
   StatusBadge, type Column,
@@ -24,6 +26,8 @@ interface Worker {
   // tenant doesn't need to maintain a hard taxonomy for these.
   regions?: string[] | string | null;
   skills?: string[] | string | null;
+  /** Multi-location — locations this worker serves (GET/PATCH /workers/:id). */
+  location_ids?: string[] | string | null;
 }
 
 // F-74 — formal categories (drawn from oliver.service_category) the worker
@@ -57,6 +61,7 @@ const FILTER_PILLS = [
 export function OliverWorkersPage() {
   const insightsPayload = useProductInsightsPayload('oliver');
   const { get, post, patch, put, ready } = useOliverApi();
+  const loc = useOliverLocations();
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -67,11 +72,11 @@ export function OliverWorkersPage() {
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const data = await get<Worker[]>("/workers");
+      const data = await get<Worker[]>(withLocation("/workers", loc.selectedLocationId));
       setWorkers(data || []);
     } catch (e) { setError(e); }
     finally { setLoading(false); }
-  }, [get]);
+  }, [get, loc.selectedLocationId]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
@@ -121,6 +126,13 @@ export function OliverWorkersPage() {
         : <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>,
     },
     { key: "status", header: "Status", render: (w) => <StatusBadge status={w.status} /> },
+    ...(loc.multi ? [{
+      key: "locations", header: "Locations",
+      render: (w: Worker) => {
+        const names = parseIdList(w.location_ids).map((id) => locationNameOf(id, loc.locations)).filter(Boolean);
+        return <span className="text-xs text-slate-600">{names.length ? names.join(", ") : "—"}</span>;
+      },
+    } satisfies Column<Worker>] : []),
   ];
 
   return (
@@ -165,6 +177,8 @@ export function OliverWorkersPage() {
           onClose={() => setEditingId(null)}
           onSaved={() => { setEditingId(null); reload(); }}
           api={{ get, post, patch, put }}
+          locations={loc.multi ? loc.activeLocations : []}
+          defaultLocationId={loc.selectedLocationId !== "all" ? loc.selectedLocationId : (loc.defaultLocation?.location_id ?? null)}
         />
       )}
     </OliverPageWrapper>
@@ -193,7 +207,12 @@ function parseStringArray(v: Worker["regions"] | Worker["skills"]): string[] {
   return [];
 }
 
-function WorkerDrawer({ workerId, onClose, onSaved, api }: { workerId: string | "new"; onClose: () => void; onSaved: () => void; api: WorkerDrawerApi }) {
+function WorkerDrawer({ workerId, onClose, onSaved, api, locations, defaultLocationId }: {
+  workerId: string | "new"; onClose: () => void; onSaved: () => void; api: WorkerDrawerApi;
+  /** Active locations to offer — EMPTY for a single-location business, which hides the control and sends no location_ids. */
+  locations: OliverLocation[];
+  defaultLocationId: string | null;
+}) {
   const isNew = workerId === "new";
   const [worker, setWorker] = useState<Worker | null>(isNew ? { id: "", first_name: "", last_name: "", email: "", phone: "", type: "employee", status: "active", regions: [], skills: [] } : null);
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
@@ -206,6 +225,9 @@ function WorkerDrawer({ workerId, onClose, onSaved, api }: { workerId: string | 
   const [skills, setSkills] = useState<string[]>([]);
   const [allCategories, setAllCategories] = useState<ServiceCategory[]>([]);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+  // Multi-location — a new worker starts on the picker's location (or the default).
+  const multi = locations.length > 1;
+  const [locationIds, setLocationIds] = useState<string[]>(() => (isNew && multi && defaultLocationId ? [defaultLocationId] : []));
 
   useEffect(() => {
     (async () => {
@@ -221,6 +243,7 @@ function WorkerDrawer({ workerId, onClose, onSaved, api }: { workerId: string | 
         if (w) {
           setRegions(parseStringArray(w.regions));
           setSkills(parseStringArray(w.skills));
+          setLocationIds(parseIdList(w.location_ids));
         }
         const slotData = await api.get<AvailabilitySlot[]>(`/availability/workers/${workerId}`);
         setSlots(slotData || []);
@@ -260,6 +283,7 @@ function WorkerDrawer({ workerId, onClose, onSaved, api }: { workerId: string | 
         await api.patch(`/workers/${workerIdForSync}`, {
           regions,
           skills,
+          ...(multi ? { location_ids: locationIds } : {}),
         }).catch(() => null);
         if (slots.length) {
           await api.post(`/availability/workers/${workerIdForSync}`, { slots: slots.map((s) => ({ dayOfWeek: s.day_of_week, startTime: s.start_time, endTime: s.end_time })) });
@@ -277,6 +301,7 @@ function WorkerDrawer({ workerId, onClose, onSaved, api }: { workerId: string | 
           hourly_rate: worker!.hourly_rate ?? null,
           regions,
           skills,
+          ...(multi ? { location_ids: locationIds } : {}),
         });
         await api.post(`/availability/workers/${workerIdForSync}`, { slots: slots.map((s) => ({ dayOfWeek: s.day_of_week, startTime: s.start_time, endTime: s.end_time })) });
       }
@@ -388,6 +413,27 @@ function WorkerDrawer({ workerId, onClose, onSaved, api }: { workerId: string | 
             })}
           </div>
         </Field>
+
+        {multi && (
+          <Field label="Locations">
+            <div className="flex flex-wrap gap-1.5">
+              {locations.map((l) => {
+                const on = locationIds.includes(l.location_id);
+                return (
+                  <button
+                    type="button"
+                    key={l.location_id}
+                    onClick={() => setLocationIds((cur) => on ? cur.filter((x) => x !== l.location_id) : [...cur, l.location_id])}
+                    style={{ fontSize: 12, padding: "4px 10px", borderRadius: 99, border: `1px solid ${on ? "#1A3A4A" : "#cbd5e1"}`, background: on ? "#1A3A4A" : "#fff", color: on ? "#fff" : "#0B1C24", cursor: "pointer", fontWeight: on ? 600 : 500 }}
+                  >
+                    {l.name}{l.is_default ? " (default)" : ""}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">Which locations this worker can be scheduled at. Leave all off to keep them on the default location.</p>
+          </Field>
+        )}
 
         <Field label="Regions / territories (free text, comma separated)">
           <ChipInput

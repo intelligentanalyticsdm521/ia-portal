@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../ui";
 import { CatalogLineItemPicker, type LineItem } from "../CatalogLineItemPicker";
+import { useOliverLocations } from "../../../hooks/useOliverLocations";
 
 type Api = {
   get: <T>(p: string) => Promise<T>;
@@ -85,6 +86,15 @@ export function JobCreatePanel({
   const [recurring, setRecurring] = useState(false);
   const [title, setTitle] = useState("");
   const [jobType, setJobType] = useState("");
+  // Multi-location: the job lands on the header picker's location (or the
+  // default). Hidden and never sent for a single-location business.
+  const loc = useOliverLocations();
+  const [locationId, setLocationId] = useState("");
+  useEffect(() => {
+    if (!loc.multi || locationId) return;
+    setLocationId(loc.selectedLocationId !== "all" ? loc.selectedLocationId : (loc.defaultLocation?.location_id ?? ""));
+  }, [loc.multi, loc.selectedLocationId, loc.defaultLocation, locationId]);
+  const locationBody = loc.multi && locationId ? { location_id: locationId } : {};
   const [scheduledStart, setScheduledStart] = useState(prefillJob?.scheduled_start || "");
   const [scheduledEnd, setScheduledEnd] = useState(prefillJob?.scheduled_end || "");
   const [teamNotes, setTeamNotes] = useState("");
@@ -178,6 +188,7 @@ export function JobCreatePanel({
         team_notes: teamNotes.trim() || null,
         customer_notes: customerNotes.trim() || null,
         source: "manual",
+        ...locationBody,
       });
       const newId = (jobRes as any)?.job_id || (jobRes as any)?.id || (jobRes as any)?.data?.job_id;
       if (!newId) throw new Error("Draft saved but no id returned.");
@@ -274,6 +285,7 @@ export function JobCreatePanel({
         team_notes: teamNotes.trim() || null,
         customer_notes: customerNotes.trim() || null,
         source: "manual",
+        ...locationBody,
       });
       const newId = (jobRes as any)?.job_id || (jobRes as any)?.id || (jobRes as any)?.data?.job_id;
       if (!newId) throw new Error("Job created but no id returned.");
@@ -402,6 +414,17 @@ export function JobCreatePanel({
                   style={inputS} />
               </div>
             </div>
+
+            {loc.multi && (
+              <div style={{ marginTop: 10 }}>
+                <label style={labelS}>Location</label>
+                <select value={locationId} onChange={(e) => setLocationId(e.target.value)} style={inputS}>
+                  {loc.activeLocations.map((l) => (
+                    <option key={l.location_id} value={l.location_id}>{l.name}{l.is_default ? " (default)" : ""}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 10 }}>
               <div>

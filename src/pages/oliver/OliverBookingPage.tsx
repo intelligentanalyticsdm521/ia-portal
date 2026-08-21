@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { Copy, ExternalLink, Calendar as CalendarIcon, Link2, Globe, RefreshCw } from "lucide-react";
 
@@ -55,6 +56,10 @@ interface BookingPage {
   // 'fixed' = capacity_count attendees per slot, 'group' = unlimited.
   capacity_mode: "auto" | "fixed" | "group";
   capacity_count: number | null;
+  /** Multi-location — which location the public page books into. Only
+   *  sent when the business has 2+ active locations; the public renderer
+   *  offers the choice itself when several pages/locations exist. */
+  location_id?: string | null;
   url?: string;
 }
 
@@ -82,6 +87,7 @@ const JOB_CATEGORIES = [
 // ─────────────────────────────────────────────────────────────────────────────
 export function OliverBookingPage() {
   const { get, post, patch, del } = useOliverApi();
+  const loc = useOliverLocations();
 
   const [orgSettings, setOrgSettings] = useState<OrgSettings | null>(null);
   const [bookingPage, setBookingPage] = useState<BookingPage | null>(null);
@@ -180,6 +186,7 @@ export function OliverBookingPage() {
         capacity_count: draft.capacity_mode === "fixed" ? (draft.capacity_count || 1) : null,
         show_price_to_new_customer: draft.show_price_to_new_customer,
         show_price_to_returning_customer: draft.show_price_to_returning_customer,
+        ...(loc.multi ? { location_id: draft.location_id || loc.defaultLocation?.location_id || null } : {}),
       };
       if (bookingPage) {
         await patch(`/booking/pages/${bookingPage.booking_page_id}`, body);
@@ -194,7 +201,7 @@ export function OliverBookingPage() {
     } finally {
       setSaving(false);
     }
-  }, [draft, slugChanged, slugDraft, bookingPage, patch, post, load]);
+  }, [draft, slugChanged, slugDraft, bookingPage, patch, post, load, loc.multi, loc.defaultLocation]);
 
   // ── Subfield helpers ────────────────────────────────────────────────────────
   function setDraftField<K extends keyof BookingPage>(key: K, value: BookingPage[K]) {
@@ -368,6 +375,19 @@ export function OliverBookingPage() {
               ))}
             </select>
           </Field>
+          {loc.multi && (
+            <Field label="Location">
+              <select
+                value={draft?.location_id || loc.defaultLocation?.location_id || ""}
+                onChange={(e) => setDraftField("location_id", e.target.value || null)}
+                className={inputCls}
+              >
+                {loc.activeLocations.map((l) => (
+                  <option key={l.location_id} value={l.location_id}>{l.name}{l.is_default ? " (default)" : ""}</option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="Duration">
             <select
               value={draft?.duration_minutes || 30}

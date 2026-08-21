@@ -4,6 +4,9 @@ import {
   PieChart, Pie, Cell, Legend, LineChart, Line,
 } from "recharts";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { ByLocationToggle, LocationBreakdownCard } from "../../components/oliver/LocationBreakdown";
+import { withLocation, withQuery, extractLocationRows, type LocationBreakdownRow } from "../../lib/oliverLocations";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader,
@@ -59,6 +62,10 @@ function rangeToQuery(r: TimeRange): string {
 
 export function OliverReportsPage() {
   const { get, ready } = useOliverApi();
+  const loc = useOliverLocations();
+  const sel = loc.selectedLocationId;
+  const [byLocation, setByLocation] = useState(false);
+  const [locationRows, setLocationRows] = useState<LocationBreakdownRow[]>([]);
   const [range, setRange] = useState<TimeRange>(() => rangeForPreset("last_30_days"));
   const [rev, setRev] = useState<RevenueSummary | null>(null);
   const [jobs, setJobs] = useState<JobsReport | null>(null);
@@ -79,24 +86,48 @@ export function OliverReportsPage() {
       setLoading(true); setError(null);
       try {
         const [r, j, c, t, b, q, o, pd] = await Promise.all([
-          get<RevenueSummary>(`/reports/revenue${qs}`),
-          get<JobsReport>(`/reports/jobs${qs}`),
-          get<CompletionReport>(`/reports/completion${qs}`),
-          get<RevenueTrendBucket[]>(`/reports/revenue-trend${qs}`),
-          get<ServiceBreakdown[]>(`/reports/service-breakdown${qs}`),
-          get<QuoteConversion[]>(`/reports/quote-conversion${qs}`),
-          get<OfferingRevenue[]>(`/reports/offering-revenue${qs}`).catch(() => [] as OfferingRevenue[]),
-          get<{ buckets: ProfitBucket[] }>(`/reports/profit-distribution${qs}`).catch(() => ({ buckets: [] })),
+          get<RevenueSummary>(withLocation(`/reports/revenue${qs}`, sel)),
+          get<JobsReport>(withLocation(`/reports/jobs${qs}`, sel)),
+          get<CompletionReport>(withLocation(`/reports/completion${qs}`, sel)),
+          get<RevenueTrendBucket[]>(withLocation(`/reports/revenue-trend${qs}`, sel)),
+          get<ServiceBreakdown[]>(withLocation(`/reports/service-breakdown${qs}`, sel)),
+          get<QuoteConversion[]>(withLocation(`/reports/quote-conversion${qs}`, sel)),
+          get<OfferingRevenue[]>(withLocation(`/reports/offering-revenue${qs}`, sel)).catch(() => [] as OfferingRevenue[]),
+          get<{ buckets: ProfitBucket[] }>(withLocation(`/reports/profit-distribution${qs}`, sel)).catch(() => ({ buckets: [] })),
         ]);
         setRev(r); setJobs(j); setComp(c); setTrend(t || []); setBreakdown(b || []); setConversion(q || []); setOfferings(o || []); setProfitDist(pd?.buckets || []);
         try {
-          const top = await get<TopClient[]>(`/reports/top-clients${qs}`);
+          const top = await get<TopClient[]>(withLocation(`/reports/top-clients${qs}`, sel));
           setTopClients(top || []);
         } catch { /* tier-gated */ }
       } catch (err) { setError(err); }
       finally { setLoading(false); }
     })();
-  }, [get, ready, range]);
+  }, [get, ready, range, sel]);
+
+  // "By location" breakdown — three group_by=location calls merged per
+  // location_id. Only when the toggle is on, only for multi-location.
+  useEffect(() => {
+    if (!ready || !byLocation || !loc.multi) { setLocationRows([]); return; }
+    const qs = rangeToQuery(range);
+    let cancelled = false;
+    (async () => {
+      const [r, j, c] = await Promise.all([
+        get<unknown>(withQuery(`/reports/revenue${qs}`, { group_by: "location" })).catch(() => null),
+        get<unknown>(withQuery(`/reports/jobs${qs}`, { group_by: "location" })).catch(() => null),
+        get<unknown>(withQuery(`/reports/completion${qs}`, { group_by: "location" })).catch(() => null),
+      ]);
+      if (cancelled) return;
+      const merged = new Map<string, LocationBreakdownRow>();
+      for (const row of [...extractLocationRows(r), ...extractLocationRows(j), ...extractLocationRows(c)]) {
+        const key = row.location_id.toLowerCase();
+        const prev = merged.get(key);
+        merged.set(key, prev ? { ...prev, ...row, location_name: prev.location_name || row.location_name } : row);
+      }
+      setLocationRows(Array.from(merged.values()));
+    })();
+    return () => { cancelled = true; };
+  }, [get, ready, byLocation, loc.multi, range]);
 
   const completionPie = comp ? [
     { name: "Completed", value: comp.completed_jobs },
@@ -110,8 +141,29 @@ export function OliverReportsPage() {
       <PageHeader
         title="Reports"
         subtitle="Revenue, conversion, and operational performance"
-        actions={<TimeRangeSelector value={range} onChange={setRange} />}
+        actions={
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {loc.multi && <ByLocationToggle on={byLocation} onChange={setByLocation} />}
+            <TimeRangeSelector value={range} onChange={setRange} />
+          </div>
+        }
       />
+
+      {loc.multi && byLocation && (
+        <LocationBreakdownCard
+          title="By location"
+          subtitle="Revenue, jobs and completion per location in the selected range"
+          rows={locationRows}
+          locations={loc.locations}
+          metrics={[
+            { label: "Revenue", keys: ["total_revenue", "revenue"], money: true },
+            { label: "Outstanding", keys: ["total_outstanding", "outstanding"], money: true },
+            { label: "Jobs", keys: ["total", "total_jobs", "job_count", "jobs"] },
+            { label: "Completed", keys: ["completed_jobs", "completed"] },
+            { label: "Completion", keys: ["completion_rate_pct", "completion_pct", "completion_rate"], pct: true },
+          ]}
+        />
+      )}
 
       <div className="stat-row">
         <div className="stat-card">
