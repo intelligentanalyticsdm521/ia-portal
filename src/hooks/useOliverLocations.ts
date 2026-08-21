@@ -22,7 +22,8 @@
 // appearing for a single-location business whose tier is merely unknown.
 import { useCallback, useEffect, useMemo, useReducer } from "react";
 import { useOliverApi } from "./useOliverApi";
-import { tierMeets, useProductTier } from "./useProductTier";
+import { useProductTier } from "./useProductTier";
+import { tierMeets } from "../lib/tierRank";
 import { useEffectiveTenantId } from "../lib/tenantContext";
 import {
   ALL_LOCATIONS,
