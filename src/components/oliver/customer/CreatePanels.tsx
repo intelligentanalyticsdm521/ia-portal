@@ -239,6 +239,7 @@ export function JobCreatePanel({
           collection_method: collectionMethod,
           days_until_due: collectionMethod === "send_invoice" ? Number(daysUntilDue || 30) : undefined,
           auto_create_first_job: true,
+          ...locationBody, // multi-location: first invoice + first recurring job land here (API validates scope)
         });
         const subId = (subRes as any)?.subscription_id || (subRes as any)?.id || "";
         const firstJobId = (subRes as any)?.first_job_id || null;

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { withLocation } from "../../lib/oliverLocations";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState, Button,
@@ -74,6 +76,7 @@ export function OliverQuotesPage() {
   const insightsPayload = useProductInsightsPayload('oliver');
 
   const { get, post, patch, del, ready } = useOliverApi();
+  const loc = useOliverLocations(); // header location picker → list scope (quotes follow their job)
   const [rows, setRows] = useState<QuoteRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -127,11 +130,11 @@ export function OliverQuotesPage() {
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const data = await get<QuoteRow[]>("/quotes");
+      const data = await get<QuoteRow[]>(withLocation("/quotes", loc.selectedLocationId));
       setRows(data || []);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
-  }, [get]);
+  }, [get, loc.selectedLocationId]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 

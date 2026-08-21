@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMsal } from "@azure/msal-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { withLocation } from "../../lib/oliverLocations";
 import { oliverDownload } from "../../lib/oliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
@@ -64,6 +66,7 @@ function rangeToQuery(r: TimeRange): string {
 
 export function OliverPaymentsPage() {
   const { get, post, ready } = useOliverApi();
+  const loc = useOliverLocations(); // header location picker → list scope (payments follow their invoice)
   const { instance, accounts } = useMsal();
   const [range, setRange] = useState<TimeRange>(() => rangeForPreset("last_30_days"));
   const [rows, setRows] = useState<PaymentRow[]>([]);
@@ -100,7 +103,7 @@ export function OliverPaymentsPage() {
     setLoading(true);
     setError(null);
     try {
-      const env = await get<PaymentsEnvelope>(`/payments${rangeToQuery(range)}`);
+      const env = await get<PaymentsEnvelope>(withLocation(`/payments${rangeToQuery(range)}`, loc.selectedLocationId));
       // New shape: { rows, meta }. Old shape (defensive): direct array.
       if (env && Array.isArray((env as unknown as PaymentRow[]))) {
         const arr = env as unknown as PaymentRow[];
@@ -115,7 +118,7 @@ export function OliverPaymentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [get, range]);
+  }, [get, range, loc.selectedLocationId]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
