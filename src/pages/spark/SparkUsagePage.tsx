@@ -37,8 +37,8 @@ interface UsageResponse {
 //
 // SPARK Pro / Business are FEATURE add-ons; they DO NOT change the volume
 // bundle. Pro +$49.99 · Business +$99.99 (2026-08-21), also catalog-driven.
-// 350k has no Stripe price yet (Brandon: create ~$299.99 or drop) — it only
-// appears if the catalog returns it.
+// 350k: Stripe product created 2026-08-22 ($299.99 / $3,239.89) — listed
+// like every other volume once the catalog returns it.
 
 interface VolumeTier {
   key: string;
@@ -50,7 +50,7 @@ interface VolumeTier {
 
 const CONTACT_CAPS: Record<string, number> = {
   "5k": 1000, "10k": 2500, "15k": 5000, "25k": 10000, "50k": 20000,
-  "100k": 40000, "150k": 60000, "250k": 100000, "500k": 200000,
+  "100k": 40000, "150k": 60000, "250k": 100000, "350k": 140000, "500k": 200000,
 };
 const SMS_CAPS: Record<string, number> = {
   "5k": 100, "10k": 150, "15k": 200, "25k": 300, "50k": 500,
@@ -66,6 +66,7 @@ const FALLBACK_VOLUME_TIERS: VolumeTier[] = [
   { key: "100k", emails: 100000, contacts: CONTACT_CAPS["100k"], sms: SMS_CAPS["100k"], monthlyUsd: 129.99 },
   { key: "150k", emails: 150000, contacts: CONTACT_CAPS["150k"], sms: SMS_CAPS["150k"], monthlyUsd: 169.99 },
   { key: "250k", emails: 250000, contacts: CONTACT_CAPS["250k"], sms: SMS_CAPS["250k"], monthlyUsd: 229.99 },
+  { key: "350k", emails: 350000, contacts: CONTACT_CAPS["350k"], sms: SMS_CAPS["350k"], monthlyUsd: 299.99 },
   { key: "500k", emails: 500000, contacts: CONTACT_CAPS["500k"], sms: SMS_CAPS["500k"], monthlyUsd: 399.99 },
 ];
 
