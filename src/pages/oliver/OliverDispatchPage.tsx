@@ -4,6 +4,8 @@
 // with founder before deletion as part of task #174.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { withLocation, rowLocationId, rowLocationName, locationNameOf } from "../../lib/oliverLocations";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader, FilterBar, EmptyState,
@@ -47,6 +49,7 @@ function fmtDate(d?: string) {
 
 export function OliverDispatchPage() {
   const { get, post, ready } = useOliverApi();
+  const loc = useOliverLocations();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,14 +63,14 @@ export function OliverDispatchPage() {
     setLoading(true); setError(null);
     try {
       const [j, w] = await Promise.all([
-        get<Job[]>("/jobs?status=scheduled,dispatched,assigned"),
-        get<Worker[]>("/workers"),
+        get<Job[]>(withLocation("/jobs?status=scheduled,dispatched,assigned", loc.selectedLocationId)),
+        get<Worker[]>(withLocation("/workers", loc.selectedLocationId)),
       ]);
       setJobs(j || []);
       setWorkers(w || []);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
-  }, [get]);
+  }, [get, loc.selectedLocationId]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
@@ -182,6 +185,7 @@ export function OliverDispatchPage() {
                     <div style={{ fontSize: 13, fontWeight: 600, color: "#0B1C24" }}>{job.title || "(untitled)"}</div>
                     <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>
                       {job.customerName} · {fmtDate(job.scheduledDate)}
+                      {loc.multi && (() => { const n = locationNameOf(rowLocationId(job), loc.locations, rowLocationName(job)); return n ? <> · <span title="Location">{n}</span></> : null; })()}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
                       <StatusBadge status={job.status} />

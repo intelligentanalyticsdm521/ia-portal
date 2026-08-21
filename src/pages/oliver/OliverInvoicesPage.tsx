@@ -11,6 +11,8 @@ import { oliverFetchRaw, oliverDownload } from "../../lib/oliverApi";
 import { InvoiceCreateForm } from "./InvoiceCreateForm";
 import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { withLocation, rowLocationId, rowLocationName, locationNameOf } from "../../lib/oliverLocations";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -83,6 +85,7 @@ export function OliverInvoicesPage() {
   const insightsPayload = useProductInsightsPayload('oliver');
 
   const { get, post, patch, ready } = useOliverApi();
+  const loc = useOliverLocations();
   const { instance, accounts } = useMsal();
   const [rows, setRows] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -148,7 +151,7 @@ export function OliverInvoicesPage() {
     setExporting(true);
     try {
       const qs = filter ? `?status=${encodeURIComponent(filter)}` : "";
-      await oliverDownload(instance, account, `/exports/invoices.csv${qs}`, `invoices-${new Date().toISOString().slice(0, 10)}.csv`);
+      await oliverDownload(instance, account, withLocation(`/exports/invoices.csv${qs}`, loc.selectedLocationId), `invoices-${new Date().toISOString().slice(0, 10)}.csv`);
     } catch (e) {
       console.error(e);
     } finally {
@@ -160,14 +163,14 @@ export function OliverInvoicesPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await get<InvoiceRow[]>("/invoices");
+      const data = await get<InvoiceRow[]>(withLocation("/invoices", loc.selectedLocationId));
       setRows(data || []);
     } catch (err) {
       setError(err);
     } finally {
       setLoading(false);
     }
-  }, [get]);
+  }, [get, loc.selectedLocationId]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
@@ -254,6 +257,10 @@ export function OliverInvoicesPage() {
       header: "Job",
       render: (r) => <span className="text-sm text-slate-600 line-clamp-1">{r.jobTitle || "—"}</span>,
     },
+    ...(loc.multi ? [{
+      key: "location", header: "Location",
+      render: (r: InvoiceRow) => <span className="text-xs text-slate-600">{locationNameOf(rowLocationId(r), loc.locations, rowLocationName(r)) || "—"}</span>,
+    } satisfies Column<InvoiceRow>] : []),
     {
       key: "amount",
       header: "Amount",

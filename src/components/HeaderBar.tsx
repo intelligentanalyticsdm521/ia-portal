@@ -8,6 +8,7 @@ import { ArgusBalanceBadge } from './ArgusBalanceBadge';
 import { FounderTenantPicker } from './FounderTenantPicker';
 import { GlobalSearch } from './GlobalSearch';
 import { GuidedTourLauncher } from './GuidedTourLauncher';
+import { LocationPicker } from './oliver/LocationPicker';
 
 export function HeaderBar() {
   const { active, bootstrap } = useAppState();
@@ -54,6 +55,10 @@ export function HeaderBar() {
 
           {/* F-119 — guided tours launcher */}
           <GuidedTourLauncher />
+
+          {/* OLIVER multi-location — renders only on an OLIVER surface for a
+              business with 2+ active locations (or on Business). */}
+          <LocationPicker />
 
           {/* ARGUS AI credit balance badge — clickable popover w/ buy + usage */}
           <ArgusBalanceBadge />

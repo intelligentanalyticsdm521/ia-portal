@@ -13,6 +13,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { withLocation, rowLocationId, rowLocationName, locationNameOf } from "../../lib/oliverLocations";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader, DataTable, EmptyState, StatusBadge, type Column,
@@ -64,6 +66,7 @@ function toDateInput(d: Date | null): string {
 
 export function OliverJobsArchivePage() {
   const { get, ready } = useOliverApi();
+  const loc = useOliverLocations();
   const [jobs, setJobs] = useState<ArchiveJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -79,11 +82,11 @@ export function OliverJobsArchivePage() {
     try {
       // Pull a wide window; the page is filter-driven. Future iteration will
       // accept a server-side date range when the volume warrants it.
-      const data = await get<ArchiveJob[]>('/jobs?per_page=1000');
+      const data = await get<ArchiveJob[]>(withLocation('/jobs?per_page=1000', loc.selectedLocationId));
       setJobs((data || []).filter((j) => CLOSED_STATUSES.has(j.status)));
     } catch (e) { setError(e); }
     finally { setLoading(false); }
-  }, [get]);
+  }, [get, loc.selectedLocationId]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
@@ -143,6 +146,10 @@ export function OliverJobsArchivePage() {
       key: 'status', header: 'Status', sortable: true, sortAccessor: (j) => j.status,
       render: (j) => <StatusBadge status={j.status} />,
     },
+    ...(loc.multi ? [{
+      key: 'location', header: 'Location',
+      render: (j: ArchiveJob) => <span className="text-xs text-slate-600">{locationNameOf(rowLocationId(j), loc.locations, rowLocationName(j)) || '—'}</span>,
+    } satisfies Column<ArchiveJob>] : []),
     {
       // F-07 — use j.closedDate (paid_at for paid jobs, actual_end/updated_at
       // for cancelled) instead of j.scheduledDate which is when the job was

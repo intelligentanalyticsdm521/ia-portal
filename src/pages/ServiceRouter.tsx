@@ -294,6 +294,7 @@ const OliverRemindersPage = lazyNamed(() => import('./oliver/OliverRemindersPage
 // OliverOnboardingPage removed 2026-06-17 — unified flow via UnifiedSetupCard on Command Center.
 const OliverOnboardingPage = () => <Navigate to="/app" replace />;
 const OliverTeamAccessPage = lazyNamed(() => import('./oliver/OliverTeamAccessPage'), 'OliverTeamAccessPage');
+const OliverLocationsPage = lazyNamed(() => import('./oliver/OliverLocationsPage'), 'OliverLocationsPage');
 const OliverCouponsPage = lazyNamed(() => import('./oliver/OliverCouponsPage'), 'OliverCouponsPage');
 const OliverInsightsPage = lazyNamed(() => import('./oliver/OliverInsightsPage'), 'OliverInsightsPage');
 const OliverProjectsPage = lazyNamed(() => import('./oliver/OliverProjectsPage'), 'OliverProjectsPage');
@@ -650,6 +651,7 @@ function ServiceRouterInner() {
       case 'oliver_reminders': oliverPage = <OliverRemindersPage />; break;
       case 'oliver_onboarding': oliverPage = <OliverOnboardingPage />; break;
       case 'oliver_team_access': oliverPage = <OliverTeamAccessPage />; break;
+      case 'oliver_locations': oliverPage = <OliverLocationsPage />; break;
       case 'oliver_coupons': oliverPage = <OliverCouponsPage />; break;
       case 'oliver_insights': oliverPage = <OliverInsightsPage />; break;
       case 'oliver_projects': oliverPage = <OliverProjectsPage />; break;

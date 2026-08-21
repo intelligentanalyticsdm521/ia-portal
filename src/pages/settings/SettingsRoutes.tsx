@@ -161,6 +161,7 @@ const SETTINGS_TILES: Array<{
     group: 'OLIVER',
     items: [
       { to: '/app/services/oliver_team_access', label: 'Team Access (OLIVER)', description: 'Per-user OLIVER role + service access' },
+      { to: '/app/services/oliver_locations', label: 'Locations (OLIVER)', description: 'Business locations — second location needs Business' },
       { to: '/app/services/oliver_templates', label: 'Templates (OLIVER)', description: 'Quote, invoice, and message templates' },
       { to: '/app/services/oliver_booking', label: 'Booking Page (OLIVER)', description: 'Public booking config + availability' },
       { to: '/app/services/oliver_territories', label: 'Territories (OLIVER, Pro)', description: 'Service area zones' },

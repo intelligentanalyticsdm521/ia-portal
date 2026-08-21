@@ -36,6 +36,8 @@ interface Props {
   kinds?: string;
   /** Optional className for outer wrapper. */
   className?: string;
+  /** OLIVER multi-location: scope to one location_id. "all"/undefined = business-wide (unchanged). */
+  locationId?: string | null;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -66,7 +68,7 @@ function addDays(d: Date, n: number) {
   return r;
 }
 
-export function UnifiedCalendarGrid({ kinds, className }: Props) {
+export function UnifiedCalendarGrid({ kinds, className, locationId }: Props) {
   const { get, ready } = useOliverApi();
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
@@ -87,6 +89,7 @@ export function UnifiedCalendarGrid({ kinds, className }: Props) {
         end: ymd(gridEnd),
       });
       if (kinds) qs.set("kinds", kinds);
+      if (locationId && locationId !== "all") qs.set("location_id", locationId);
       // 2026-06-20 envelope fix: useOliverApi.get already strips the
       // {data:…} envelope (lib/oliverApi.ts:74 — see memory feedback
       // oliver_api_envelope_unwrap). Reading r.data?.events was always
@@ -112,7 +115,7 @@ export function UnifiedCalendarGrid({ kinds, className }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [get, ready, gridStart, gridEnd, kinds]);
+  }, [get, ready, gridStart, gridEnd, kinds, locationId]);
 
   useEffect(() => { load(); }, [load]);
 

@@ -73,7 +73,7 @@ const results = [];
 
 const filterPrefix = (k) =>
   PRODUCTS.some((p) => k.startsWith(p)) ||
-  ["oliver_settings", "oliver_workflow_settings", "oliver_service_categories", "oliver_team_access"].includes(k);
+  ["oliver_settings", "oliver_workflow_settings", "oliver_service_categories", "oliver_team_access", "oliver_locations"].includes(k);
 
 const navByKey = new Map();
 for (const e of navEntries) navByKey.set(e.key, e);

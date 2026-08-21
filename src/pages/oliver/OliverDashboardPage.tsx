@@ -5,6 +5,8 @@ import {
   ResponsiveContainer, AreaChart, Area, Tooltip,
 } from "recharts";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { withLocation } from "../../lib/oliverLocations";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button, StatusBadge } from "../../components/oliver/ui";
@@ -153,6 +155,9 @@ export function OliverDashboardPage() {
   // Job focus from Weekly Glance chip click — opens CustomerModal on that job
   const [focusJobId, setFocusJobId] = useState<string | null>(null);
   const { get, post, patch, del, ready } = useOliverApi();
+  // Multi-location: the header picker scopes the operational widgets.
+  const loc = useOliverLocations();
+  const sel = loc.selectedLocationId;
   const spark = useSparkApi();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
@@ -254,14 +259,14 @@ export function OliverDashboardPage() {
       setLoading(true); setError(null);
       try {
         const [s, a, b, o, ar, st, ob, t, ru] = await Promise.all([
-          get<DashboardStats>("/dashboard/stats"),
-          get<ActivityEvent[]>("/dashboard/activity"),
-          get<BillingOverview>("/overview/billing"),
-          get<OpsOverview>("/overview/operations"),
-          get<ArrearsCustomer[]>("/overview/arrears?limit=5").catch(() => [] as ArrearsCustomer[]),
+          get<DashboardStats>(withLocation("/dashboard/stats", sel)),
+          get<ActivityEvent[]>(withLocation("/dashboard/activity", sel)),
+          get<BillingOverview>(withLocation("/overview/billing", sel)),
+          get<OpsOverview>(withLocation("/overview/operations", sel)),
+          get<ArrearsCustomer[]>(withLocation("/overview/arrears?limit=5", sel)).catch(() => [] as ArrearsCustomer[]),
           get<StripeStatus>("/settings/stripe").catch(() => null),
           get<OnboardingStatus>("/onboarding/status").catch(() => null),
-          get<TodaySummary>("/dashboard/today").catch(() => null),
+          get<TodaySummary>(withLocation("/dashboard/today", sel)).catch(() => null),
           // FIX B4 (2026-06-22) — count enabled automation rules so the
           // "Turn on automations" SetupHint can read from real data
           // instead of a hardcoded `show: true`. Same endpoint OLIVER
@@ -274,7 +279,7 @@ export function OliverDashboardPage() {
       } catch (e) { setError(e); }
       finally { setLoading(false); }
     })();
-  }, [get, ready]);
+  }, [get, ready, sel]);
 
   // Prefer the guided onboarding banner when wizard hasn't been completed.
   // Falls back to the original Stripe-only banner if /onboarding/status fails.
@@ -923,6 +928,7 @@ function WeeklyGlance({
   onOpenJob: (jobId: string) => void;
 }) {
   const { get, ready } = useOliverApi();
+  const loc = useOliverLocations();
   const [events, setEvents] = useState<WeeklyGlanceEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -950,7 +956,7 @@ function WeeklyGlance({
     (async () => {
       setLoading(true);
       try {
-        const data = await get<WeeklyGlanceEvent[]>(`/schedule/calendar?start=${startStr}&end=${endStr}`);
+        const data = await get<WeeklyGlanceEvent[]>(withLocation(`/schedule/calendar?start=${startStr}&end=${endStr}`, loc.selectedLocationId));
         if (!cancelled) setEvents(data || []);
       } catch {
         if (!cancelled) setEvents([]);
@@ -959,7 +965,7 @@ function WeeklyGlance({
       }
     })();
     return () => { cancelled = true; };
-  }, [get, ready, startStr, endStr]);
+  }, [get, ready, startStr, endStr, loc.selectedLocationId]);
 
   // Backend returns one row per (job, worker_assignment) — a job assigned to 3
   // workers arrives as 3 rows with the same id. Dedupe by id for chip display

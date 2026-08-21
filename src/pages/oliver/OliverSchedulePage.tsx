@@ -11,6 +11,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { withLocation } from "../../lib/oliverLocations";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader } from "../../components/oliver/ui";
 import { UnifiedCalendarGrid, type UnifiedEvent } from "../../components/UnifiedCalendarGrid";
@@ -24,6 +26,7 @@ function ymd(d: Date) {
 export function OliverSchedulePage() {
   const insightsPayload = useProductInsightsPayload('oliver');
   const { get, ready } = useOliverApi();
+  const loc = useOliverLocations();
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -51,14 +54,14 @@ export function OliverSchedulePage() {
       // {data:...} envelope (lib/oliverApi.ts:74). Reading r.data?.events
       // was always undefined → KPI strip showed 0/0/0/0 and the schedule
       // grid stayed empty.
-      const r = await get<{ events: UnifiedEvent[] }>(`/calendar/unified?${qs}`);
+      const r = await get<{ events: UnifiedEvent[] }>(withLocation(`/calendar/unified?${qs}`, loc.selectedLocationId));
       setEvents(r?.events || []);
     } catch (err) {
       setError(err);
     } finally {
       setLoading(false);
     }
-  }, [get, ready, windowStart, windowEnd]);
+  }, [get, ready, windowStart, windowEnd, loc.selectedLocationId]);
 
   useEffect(() => { loadKpis(); }, [loadKpis]);
 
@@ -86,7 +89,7 @@ export function OliverSchedulePage() {
 
       <div className="iadm-card">
         <div className="iadm-card-body">
-          <UnifiedCalendarGrid kinds="job,booking" />
+          <UnifiedCalendarGrid kinds="job,booking" locationId={loc.selectedLocationId} />
         </div>
       </div>
     </OliverPageWrapper>

@@ -5,6 +5,8 @@ import {
   Cell,
 } from "recharts";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { withLocation } from "../../lib/oliverLocations";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
   PageHeader, TimeRangeSelector, rangeForPreset, type TimeRange,
@@ -123,6 +125,8 @@ export function OliverInsightsPage() {
   const insightsPayload = useProductInsightsPayload('oliver');
 
   const { get, ready } = useOliverApi();
+  const loc = useOliverLocations();
+  const sel = loc.selectedLocationId;
   const [range, setRange] = useState<TimeRange>(() => rangeForPreset("last_30_days"));
   const [health, setHealth] = useState<CustomerHealth | null>(null);
   const [offerings, setOfferings] = useState<OfferingRow[]>([]);
@@ -140,12 +144,12 @@ export function OliverInsightsPage() {
       setLoading(true); setError(null);
       try {
         const [h, o, c, qi, pp, sc] = await Promise.all([
-          get<CustomerHealth>("/reports/customer-health"),
-          get<{ offerings: OfferingRow[] }>(`/reports/service-profitability${qs}`),
-          get<CashFlow>("/reports/cash-flow-forecast"),
-          get<QuoteIntel>(`/reports/quote-conversion-intelligence${qs}`).catch(() => null),
-          get<ProposalPerf>(`/reports/proposal-performance${qs}`).catch(() => null),
-          get<SeasonalCrew>("/reports/seasonal-crew-performance").catch(() => null),
+          get<CustomerHealth>(withLocation("/reports/customer-health", sel)),
+          get<{ offerings: OfferingRow[] }>(withLocation(`/reports/service-profitability${qs}`, sel)),
+          get<CashFlow>(withLocation("/reports/cash-flow-forecast", sel)),
+          get<QuoteIntel>(withLocation(`/reports/quote-conversion-intelligence${qs}`, sel)).catch(() => null),
+          get<ProposalPerf>(withLocation(`/reports/proposal-performance${qs}`, sel)).catch(() => null),
+          get<SeasonalCrew>(withLocation("/reports/seasonal-crew-performance", sel)).catch(() => null),
         ]);
         setHealth(h);
         setOfferings(o.offerings || []);
@@ -156,7 +160,7 @@ export function OliverInsightsPage() {
       } catch (err) { setError(err); }
       finally { setLoading(false); }
     })();
-  }, [get, ready, range]);
+  }, [get, ready, range, sel]);
 
   const topOfferings = useMemo(() => offerings.slice(0, 8), [offerings]);
   const losingOfferings = useMemo(() => offerings.filter((o) => Number(o.profit) < 0), [offerings]);

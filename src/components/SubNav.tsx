@@ -753,6 +753,9 @@ const SETTINGS_NAV: SubNavConfig = {
         { key: "oliver_workflow_settings", label: "Workflow Settings", route: "/app/services/oliver_workflow_settings" },
         { key: "oliver_service_categories", label: "Service Categories", route: "/app/services/oliver_service_categories" },
         { key: "oliver_team_access", label: "Team Access", route: "/app/services/oliver_team_access" },
+        // Multi-location (Business earns the 2nd location; the default one is
+        // viewable/editable at every tier, so no minTier on the row).
+        { key: "oliver_locations", label: "Locations", route: "/app/services/oliver_locations" },
       ],
     },
     {
@@ -924,7 +927,7 @@ function getDefaultSection(path: string): string | null {
   // main nav (Templates, Webhooks, Audience Sync, Audit Log, Review Widget,
   // Coupons, Categories, Booking, etc.) are intentionally excluded —
   // they expand their main-nav group instead.
-  if (path.includes("/oliver_settings") || path.includes("/oliver_workflow_settings") || path.includes("/oliver_service_categories") || path.includes("/oliver_team_access")) return "settings_oliver";
+  if (path.includes("/oliver_settings") || path.includes("/oliver_workflow_settings") || path.includes("/oliver_service_categories") || path.includes("/oliver_team_access") || path.includes("/oliver_locations")) return "settings_oliver";
   if (path.includes("/arion_service_area") || path.includes("/arion_plugin_provisioning")) return "settings_arion";
   // My Brand is a FEATURE section in the ARION main nav (IA re-cut 2026-07-21)
   // — the hub (arion_brand) and every my_brand_* child expand it.

@@ -10,6 +10,8 @@ import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
 import { NewEntityLauncher } from "../../components/oliver/customer/NewEntityLauncher";
 import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
+import { useOliverLocations } from "../../hooks/useOliverLocations";
+import { withLocation, rowLocationId, rowLocationName, locationNameOf } from "../../lib/oliverLocations";
 
 interface AssignedWorker {
   worker_id: string;
@@ -37,6 +39,10 @@ interface Job {
    *  array. Rendered as initial bubbles on the Kanban card; "Unassigned"
    *  amber badge if empty AND the job is in a status that needs a worker. */
   assignedWorkers?: AssignedWorker[];
+  /** Multi-location: set client-side (from location_id) only when the
+   *  business has 2+ active locations, so single-location boards render
+   *  exactly as before. */
+  locationName?: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,6 +117,9 @@ export function OliverJobBoardPage() {
   const insightsPayload = useProductInsightsPayload('oliver');
 
   const { get, post, patch, del, ready } = useOliverApi();
+  // Multi-location: the header picker scopes the board (location_id on
+  // /jobs). "All locations" sends nothing — identical to today.
+  const loc = useOliverLocations();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -135,11 +144,11 @@ export function OliverJobBoardPage() {
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const data = await get<Job[]>("/jobs?per_page=200");
+      const data = await get<Job[]>(withLocation("/jobs?per_page=200", loc.selectedLocationId));
       setJobs(data || []);
     } catch (e) { setError(e); }
     finally { setLoading(false); }
-  }, [get]);
+  }, [get, loc.selectedLocationId]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
@@ -171,7 +180,11 @@ export function OliverJobBoardPage() {
     if (Number.isNaN(t)) return false;
     return t < cutoffMs;
   }
-  const boardJobs = useMemo(() => jobs.filter((j) => !isClosedAndStale(j)), [jobs, cutoffMs]);
+  const boardJobs = useMemo(() => {
+    const live = jobs.filter((j) => !isClosedAndStale(j));
+    if (!loc.multi) return live;
+    return live.map((j) => ({ ...j, locationName: locationNameOf(rowLocationId(j), loc.locations, rowLocationName(j)) }));
+  }, [jobs, cutoffMs, loc.multi, loc.locations]);
   const closedHidden = jobs.length - boardJobs.length;
 
   const filtered = useMemo(() => {
@@ -238,6 +251,10 @@ export function OliverJobBoardPage() {
       ),
     },
     { key: "status", header: "Status", sortable: true, sortAccessor: (j) => j.status, render: (j) => <StatusBadge status={j.status} /> },
+    ...(loc.multi ? [{
+      key: "location", header: "Location", sortable: true, sortAccessor: (j: Job) => j.locationName ?? "",
+      render: (j: Job) => <span className="text-xs text-slate-600">{j.locationName || "—"}</span>,
+    } satisfies Column<Job>] : []),
     {
       key: "scheduled", header: "Scheduled", sortable: true, sortAccessor: (j) => j.scheduledDate ?? "",
       render: (j) => <span className="text-sm text-slate-600">{j.scheduledDate ? new Date(j.scheduledDate).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—"}</span>,
@@ -747,6 +764,11 @@ function KanbanCard({
         {(job.isRecurring || job.recurringJobId) && (
           <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-purple-800">
             Recurring
+          </span>
+        )}
+        {job.locationName && (
+          <span className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-sky-800 ring-1 ring-sky-200" title="Location">
+            {job.locationName}
           </span>
         )}
         {needsWorker && workers.length === 0 && (
