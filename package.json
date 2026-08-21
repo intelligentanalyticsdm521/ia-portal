@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --import ./scripts/test-ts-loader.mjs --test test"
   },
   "dependencies": {
     "@azure/msal-browser": "^3.14.0",

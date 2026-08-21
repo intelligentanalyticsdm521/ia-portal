@@ -956,13 +956,13 @@ export function ServiceRouter() {
   const product = productOfServiceKey(serviceKey);
   const gatingActive = isGatedProduct(product);
   const { tier } = useProductTier(gatingActive ? product : "spark");
-  const addons = useNavAddons(gatingActive ? product : undefined);
+  const { addons, seoAddonTier } = useNavAddons(gatingActive ? product : undefined);
   const service = useMemo(
     () => SERVICE_CATALOG.find((s) => s.key === serviceKey) ?? null,
     [serviceKey]
   );
   const rules = serviceKey ? SERVICE_VISIBILITY[serviceKey] : undefined;
-  const locked = !isRoutable(rules, { tier, addons, gatingActive });
+  const locked = !isRoutable(rules, { tier, addons, seoAddonTier, gatingActive });
 
   if (!locked || !service) return <ServiceRouterInner />;
 

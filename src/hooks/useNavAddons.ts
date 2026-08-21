@@ -19,10 +19,15 @@
 //             first site) so a multi-site tenant sees the lock for the site
 //             they are looking at.
 //
-// Returns `null` while the answer is unknown (request in flight, arion-api
-// unreachable). navVisibility treats null as "fail open": an unresolved
-// add-on never locks anything — only a positively-resolved "not owned" does.
-// Standing rule since the 2026-08-17 incident.
+// Returns `addons: null` while the answer is unknown (request in flight,
+// arion-api unreachable). navVisibility treats null as "fail open": an
+// unresolved add-on never locks anything — only a positively-resolved "not
+// owned" does. Standing rule since the 2026-08-17 incident.
+//
+// `seoAddonTier` is the RUNG of the SEO add-on on the same site (starter /
+// essentials / growth / authority), for `addonTier` rules (Market Monitor =
+// Authority only). null = unresolved or not owned → fail open in the wall;
+// ownership itself is answered by `addons`.
 //
 // Only fetches when asked about ARION, so SPARK/OLIVER navs cost nothing.
 import { useEffect, useMemo, useState } from "react";
@@ -32,6 +37,14 @@ import { useAccessToken } from "../auth/useAccessToken";
 import { listArionSites, type ArionSiteSummary } from "../lib/arionApi";
 import { getViewAsTenantId, subscribeViewAsTenant } from "../lib/viewAsTenant";
 import { activeAddons, type GatedProduct, type NavAddon } from "../components/navVisibility";
+import { OWNER_DEFAULTS } from "../lib/currentPlan";
+
+export interface NavAddonsResult {
+  /** Owned add-ons, or null while unresolved (→ fail open). */
+  addons: NavAddon[] | null;
+  /** SEO add-on rung of the selected ARION site; null when unresolved / not owned. */
+  seoAddonTier: string | null;
+}
 
 const ARION_API_BASE_URL = import.meta.env.VITE_ARION_API_BASE_URL as string | undefined;
 
@@ -63,7 +76,7 @@ function loadSites(scope: string, load: () => Promise<ArionSiteSummary[]>): Prom
   return p;
 }
 
-export function useNavAddons(product: GatedProduct | undefined): NavAddon[] | null {
+export function useNavAddons(product: GatedProduct | undefined): NavAddonsResult {
   const appState = useAppState();
   const { activeTenantId } = appState;
   const { getToken } = useAccessToken();
@@ -114,11 +127,11 @@ export function useNavAddons(product: GatedProduct | undefined): NavAddon[] | nu
     return () => { cancelled = true; };
   }, [wantsArion, activeTenantId, inOwnTenant, scope, getToken]);
 
-  return useMemo<NavAddon[] | null>(() => {
+  return useMemo<NavAddonsResult>(() => {
     const base = activeAddons();
-    if (!wantsArion) return base;
-    if (inOwnTenant) return [...base, "seo"];
-    if (!state || state.scope !== scope || state.sites == null) return null; // unresolved
+    if (!wantsArion) return { addons: base, seoAddonTier: null };
+    if (inOwnTenant) return { addons: [...base, "seo"], seoAddonTier: OWNER_DEFAULTS.arion.addon };
+    if (!state || state.scope !== scope || state.sites == null) return { addons: null, seoAddonTier: null }; // unresolved
 
     // Mirror useArionContext's site selection exactly.
     const effectiveTenant = (viewAsTenantId || activeTenantId || "").toLowerCase();
@@ -127,6 +140,7 @@ export function useNavAddons(product: GatedProduct | undefined): NavAddon[] | nu
     const want = (urlSiteId || stored || "").toLowerCase();
     const site =
       state.sites.find((s) => (s.siteId || "").toLowerCase() === want) || state.sites[0] || null;
-    return site?.seoAddonTier != null ? [...base, "seo"] : base;
+    const seoAddonTier = site?.seoAddonTier != null ? String(site.seoAddonTier).toLowerCase() : null;
+    return { addons: seoAddonTier ? [...base, "seo"] : base, seoAddonTier };
   }, [wantsArion, inOwnTenant, state, scope, viewAsTenantId, activeTenantId, urlSiteId]);
 }

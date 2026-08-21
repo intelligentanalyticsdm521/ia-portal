@@ -37,7 +37,8 @@ import {
   Share2,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { useProductTier, tierMeets } from "../../hooks/useProductTier";
+import { useProductTier } from "../../hooks/useProductTier";
+import { tierMeets } from "../../lib/tierRank";
 import { useMyBrandTier } from "../../hooks/useMyBrandTier";
 import { MyBrandUpgradeGate } from "../../components/MyBrandUpgradeGate";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";

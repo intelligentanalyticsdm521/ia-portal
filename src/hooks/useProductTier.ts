@@ -13,6 +13,9 @@ import { fetchSubscriptions, type ProductSubscription } from "../lib/billingApi"
 import { useAccessToken } from "../auth/useAccessToken";
 import { useAppState } from "../app/AppState";
 import { DEV_AUTH } from "../lib/devAuth";
+// The tier ladder (TierKey / IntelMinTier / tierMeets) lives in lib/tierRank —
+// a pure module, so navVisibility and its node tests don't drag React in.
+import type { TierKey } from "../lib/tierRank";
 
 // Local-dev tier seam (2026-07-21). The tier is resolved from oliver-api's
 // Stripe-backed /billing/subscriptions, which the local dev stack doesn't run
@@ -21,29 +24,6 @@ import { DEV_AUTH } from "../lib/devAuth";
 // resolves to VITE_DEV_TIER (default "business") so every feature is
 // walkable. Build-time constant — tree-shaken out of prod builds.
 const DEV_TIER = (String(import.meta.env.VITE_DEV_TIER || "business").toLowerCase() as TierKey);
-
-export type TierKey = "lite" | "standard" | "pro" | "business" | "active" | null;
-// 2026-06-22 — Doc 64 §2 allows Standard-tier Intelligence reports
-// (simple_forecast/descriptive/basic_anomaly model classes). Adding
-// "standard" so per-report meta can declare a Standard floor without
-// the consumer falling through to bg-slate-200 fallback styling.
-export type IntelMinTier = "standard" | "pro" | "business";
-
-const RANK: Record<string, number> = {
-  lite: 1,
-  standard: 2,
-  active: 2,   // legacy "active" = paid-but-no-tier = treat as Standard
-  pro: 3,
-  business: 4,
-  enterprise: 5,
-};
-
-export function tierMeets(current: TierKey, required: IntelMinTier): boolean {
-  if (!current) return false;
-  const c = RANK[String(current).toLowerCase()] ?? 0;
-  const r = RANK[required] ?? 99;
-  return c >= r;
-}
 
 export function useProductTier(product: "oliver" | "spark" | "arion"): {
   tier: TierKey;

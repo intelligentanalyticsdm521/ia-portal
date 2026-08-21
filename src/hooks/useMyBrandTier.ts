@@ -25,7 +25,8 @@
 // src/lib/myBrand/tierCheck.js getTenantMyBrandTier(). Unresolved on both
 // products -> null (the server fails OPEN and logs; the UI shows nothing as
 // locked rather than walling a paying tenant behind a lookup failure).
-import { useProductTier, tierMeets, type TierKey } from "./useProductTier";
+import { useProductTier } from "./useProductTier";
+import { tierMeets, type TierKey } from "../lib/tierRank";
 
 // Lower-case tier ranking — matches Portal RANK + LUMEN-API RANK.
 export type FeatureMinTier = "lite" | "standard" | "pro" | "business";

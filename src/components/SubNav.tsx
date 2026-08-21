@@ -291,13 +291,10 @@ const ARION_NAV: SubNavConfig = {
         { key: "arion_seo_ai_prompts", label: "AI Prompts", route: "/app/services/arion_seo_ai_prompts", addon: "seo" },
         // Market Monitor moved OUT of ARION Business into the SEO add-on,
         // AUTHORITY tier only (PRICING_REWORK_DECISIONS_2026-08-21 §ARION 3b —
-        // it runs on SE Ranking page-change monitoring).
-        // TODO(pricing-rework-aug21): the nav model has no add-on-TIER concept
-        // (only add-on ownership), so the menu gates on the add-on and the
-        // page + arion-api enforce "Authority only" (SeoMarketMonitor
-        // authorityGated). Add an `addonTier` rule if a second Authority-only
-        // surface ever appears.
-        { key: "arion_seo_market_monitor", label: "Market Monitor", route: "/app/services/arion_seo_market_monitor", addon: "seo" },
+        // it runs on SE Ranking page-change monitoring). `addonTier` locks the
+        // menu row + route below Authority (Phase B1); arion-api enforces the
+        // same rung server-side (SeoMarketMonitor authorityGated).
+        { key: "arion_seo_market_monitor", label: "Market Monitor", route: "/app/services/arion_seo_market_monitor", addon: "seo", addonTier: "authority" },
       ],
     },
     {
@@ -1027,7 +1024,7 @@ export const SERVICE_VISIBILITY: Record<string, VisibilityRules> = (() => {
     for (const group of config.groups) {
       for (const item of group.items) {
         if (item.hidden || item.merged || item.addon || item.minTier) {
-          map[item.key] = { hidden: item.hidden, merged: item.merged, addon: item.addon, minTier: item.minTier };
+          map[item.key] = { hidden: item.hidden, merged: item.merged, addon: item.addon, addonTier: item.addonTier, minTier: item.minTier };
         }
       }
     }
@@ -1056,11 +1053,12 @@ export function SubNav({ config }: SubNavProps) {
   const productKey = productOfConfig(config);
   const gatingActive = isGatedProduct(productKey);
   const { tier } = useProductTier(gatingActive ? productKey : "spark");
-  // Add-on ownership (SPARK Lead Gen, ARION SEO). null = unresolved → the
-  // wall fails OPEN until the answer arrives (see navVisibility).
-  const addons = useNavAddons(gatingActive ? productKey : undefined);
+  // Add-on ownership (SPARK Lead Gen, ARION SEO) + the SEO rung for
+  // `addonTier` rows. null = unresolved → the wall fails OPEN until the
+  // answer arrives (see navVisibility).
+  const { addons, seoAddonTier } = useNavAddons(gatingActive ? productKey : undefined);
   const { ownedProducts } = useAppState();
-  const visCtx = { tier, addons, gatingActive };
+  const visCtx = { tier, addons, seoAddonTier, gatingActive };
 
   // 2026-08-06 (Brandon) — SHOW, DON'T HIDE. Features the tenant's plan doesn't
   // include stay VISIBLE and are marked "Upgrade", so they can see what they're

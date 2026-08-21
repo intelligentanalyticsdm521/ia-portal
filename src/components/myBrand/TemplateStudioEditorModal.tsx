@@ -50,7 +50,8 @@ import {
 } from "lucide-react";
 import { IadmModal, IadmButton } from "../IadmModal";
 import { useLumenApi } from "../../hooks/useLumenApi";
-import { useProductTier, tierMeets } from "../../hooks/useProductTier";
+import { useProductTier } from "../../hooks/useProductTier";
+import { tierMeets } from "../../lib/tierRank";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Canvas JSON types — match the backend renderer in
