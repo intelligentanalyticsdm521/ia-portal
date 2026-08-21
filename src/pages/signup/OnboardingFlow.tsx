@@ -227,8 +227,12 @@ function ArionOnboardingFlow() {
 }
 
 // ── Dispatcher ────────────────────────────────────────────────────────────
-// OLIVER/SPARK self-serve = simple post-payment flow (the single Stripe
-// account / oliver-api). ARION self-serve = the legacy website wizard above.
+// OLIVER/SPARK/STELLA self-serve = simple post-payment flow (the single
+// Stripe account / oliver-api; `/signup/complete` creates the tenant and
+// enables every purchased service, STELLA included). ARION self-serve = the
+// legacy website wizard above.
+const PRODUCT_FLOW_PRODUCTS = ['oliver', 'spark', 'stella'];
+
 export function OnboardingFlow() {
   const sessionId = useMemo(() => new URLSearchParams(window.location.search).get('session_id') || '', []);
   const [kind, setKind] = useState<'loading' | 'product' | 'arion'>('loading');
@@ -242,14 +246,14 @@ export function OnboardingFlow() {
       while (!cancelled && tries < 8) {
         try {
           const s = await fetchSignupSession(sessionId);
-          if ('product' in s && (s.product === 'oliver' || s.product === 'spark')) {
+          if ('product' in s && PRODUCT_FLOW_PRODUCTS.includes(s.product)) {
             if (!cancelled) { setSess({ email: s.email, product: s.product, plan: s.plan }); setKind('product'); }
             return;
           }
           if ('status' in s && (s as { status: string }).status === 'pending') {
             tries += 1; await new Promise((r) => setTimeout(r, 2000)); continue;
           }
-          if (!cancelled) setKind('arion'); // not an oliver/spark intent
+          if (!cancelled) setKind('arion'); // not an oliver/spark/stella intent
           return;
         } catch {
           // 404 / not a unified-signup session → it's the ARION flow.
@@ -269,13 +273,15 @@ export function OnboardingFlow() {
   return <ProductSignupFlow sessionId={sessionId} email={sess?.email || ''} product={sess?.product || 'oliver'} />;
 }
 
-// ── OLIVER/SPARK post-payment: company profile → create tenant → sign in ──
+// ── OLIVER/SPARK/STELLA post-payment: company profile → create tenant → sign in ──
 //
-// Website status — three answers we expect from a brand-new OLIVER/SPARK
-// customer. Drives whether we ask for a URL and whether onboarding should
-// later offer ARION provisioning. Persisted as `websiteStatus` in the
+// Website status — three answers we expect from a brand-new OLIVER/SPARK/
+// STELLA customer. Drives whether we ask for a URL and whether onboarding
+// should later offer ARION provisioning. Persisted as `websiteStatus` in the
 // `/signup/complete` payload; oliver-api stores it on core.tenants.
 type WebsiteStatus = '' | 'existing_ia' | 'migrate' | 'new';
+
+const PRODUCT_LABELS: Record<string, string> = { oliver: 'OLIVER', spark: 'SPARK', stella: 'STELLA' };
 
 function ProductSignupFlow({ sessionId, email, product }: { sessionId: string; email: string; product: string }) {
   const [businessName, setBusinessName] = useState('');
@@ -353,7 +359,7 @@ function ProductSignupFlow({ sessionId, email, product }: { sessionId: string; e
     setBusy(false);
   }
 
-  const productLabel = product === 'spark' ? 'SPARK' : 'OLIVER';
+  const productLabel = PRODUCT_LABELS[product] || 'OLIVER';
 
   if (done) {
     return (
@@ -364,6 +370,14 @@ function ProductSignupFlow({ sessionId, email, product }: { sessionId: string; e
           <p className="mt-2 text-gray-600">
             Your {productLabel} account is ready. We're redirecting you to create your password with <strong>{email}</strong>…
           </p>
+          {/* B3 (2026-08-22) — STELLA is enabled by /signup/complete (the
+              core.tenant_services row); the chart of accounts is seeded the
+              first time the Ledger is opened, so say what to expect. */}
+          {product === 'stella' && (
+            <p className="mt-2 text-sm text-gray-500">
+              STELLA is enabled — ledger + bank feeds. Your chart of accounts is created the first time you open the Ledger.
+            </p>
+          )}
           {/* Fallback link in case the MSAL redirect doesn't fire (popup blocker, MSAL init failed, etc.) */}
           <a href="/" className="inline-block mt-6 rounded-lg bg-[#EF6C33] px-6 py-3 text-white font-semibold hover:bg-[#d75a25]">
             Continue manually →

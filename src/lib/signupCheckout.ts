@@ -1,12 +1,14 @@
 // lib/signupCheckout.ts — PUBLIC self-serve checkout client.
 //
 // Talks to oliver-api (the single Stripe owner). No auth — guest checkout.
-// One endpoint serves OLIVER + SPARK; ARION keeps its own onboardingApi path.
+// `/signup/catalog` serves OLIVER + SPARK + STELLA plans (Stripe-price-driven);
+// ARION's plan catalog comes from arion-api (lib/onboardingApi.ts). Every
+// purchase, ARION included, goes through `/signup/checkout-cart` below.
 const OLIVER_API_BASE =
   (import.meta.env.VITE_OLIVER_API_BASE as string) ||
   "https://app-oliver-api-prod-eaffhyhqgrgbcfh0.centralus-01.azurewebsites.net";
 
-export type SignupProductU = "oliver" | "spark";
+export type SignupProductU = "oliver" | "spark" | "stella";
 export type BillingCycleU = "monthly" | "annual";
 
 // 2026-06-20 — every catalog row now ships with a `pricing` envelope so
@@ -58,7 +60,7 @@ export interface ArionSeoAddon {
 }
 export interface SignupCatalog {
   product: string;
-  plans?: OliverPlan[];                                   // oliver / arion
+  plans?: OliverPlan[];                                   // oliver / stella / arion
   volumes?: SparkVolume[];                                 // spark
   featureAddons?: Record<string, SparkFeatureAddon>;       // spark
   leads?: Record<string, SparkLeads>;                      // spark
@@ -99,12 +101,12 @@ export function createSignupCheckout(input: SignupCheckoutInput) {
 }
 
 // ─── F-110 — Waitlist capture (public, no auth) ─────────────────────────────
-// POSTs an interest signal for unreleased products (STELLA/FORGE/ARGUS).
-// Unauthenticated — the lead may not have a tenant yet, so no emergency
-// act-as concerns. Routed through this typed client so all unauth
-// oliver-api calls share one error/timeout pipeline.
+// POSTs an interest signal for unreleased products (FORGE/ARGUS; STELLA went
+// self-serve 2026-08-22). Unauthenticated — the lead may not have a tenant
+// yet, so no emergency act-as concerns. Routed through this typed client so
+// all unauth oliver-api calls share one error/timeout pipeline.
 export interface WaitlistSubmitInput {
-  product: string;          // "stella" | "forge" | "argus"
+  product: string;          // "forge" | "argus"
   email: string;
   name?: string;
   company?: string;
@@ -119,10 +121,11 @@ export function submitWaitlist(input: WaitlistSubmitInput) {
   });
 }
 
-/** F-108 — Multi-product cart checkout. Accepts 1–3 items spanning ARION/
- *  OLIVER/SPARK, returns a single Stripe Checkout Session URL covering all
- *  of them. Bundle discount auto-applied server-side: MP5R, 5% on any 2+
- *  platforms (the 7% MP7R three-platform tier was retired 2026-08-21). */
+/** F-108 — Multi-product cart checkout. Accepts one item per platform
+ *  (ARION / OLIVER / SPARK / STELLA), returns a single Stripe Checkout
+ *  Session URL covering all of them. Bundle discount auto-applied
+ *  server-side: MP5R, 5% on any 2+ platforms (the 7% MP7R three-platform
+ *  tier was retired 2026-08-21). */
 export interface SignupCartCheckoutInput {
   email: string;
   name?: string;
@@ -131,6 +134,7 @@ export interface SignupCartCheckoutInput {
     | { product: "oliver"; plan: string }
     | { product: "spark"; volume: string; featureAddon?: string | null; leads?: string | null; leadsSelected?: number }
     | { product: "arion"; plan: string; seo?: string | null }
+    | { product: "stella"; plan: string }
   >;
   /** Founder-only: explicit Stripe coupon ID. Overrides the auto-applied
    *  MP5R bundle when present (Stripe subscription-level discounts are
@@ -157,12 +161,19 @@ export function createSignupCartCheckout(input: SignupCartCheckoutInput) {
 }
 
 export interface SignupSession {
+  /** `product` is the FIRST platform of the cart (core.signup_intent.product). */
   email: string; product: string; plan: string;
   billing_cycle: string; status: string; tenant_id: string | null;
+  /** Every platform in the cart (core.signup_intent.cart_products), when the
+   *  API exposes it — CSV or array. Optional: older responses carry only
+   *  `product`, and sessionProducts() falls back to that. */
+  cart_products?: string | string[] | null;
 }
 export function fetchSignupSession(sessionId: string) {
   return j<SignupSession | { status: "pending" }>(`/signup/session?session_id=${encodeURIComponent(sessionId)}`);
 }
+// Which platforms a session covers → lib/signupCart.ts sessionProducts()
+// (kept there so it stays a pure, unit-testable helper).
 
 export interface SignupProfileInput {
   businessName: string;

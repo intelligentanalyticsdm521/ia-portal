@@ -1,9 +1,10 @@
 // WaitlistModal — F-110.
 //
-// Replaces the "Pricing announced soon" disabled state on the STELLA /
-// FORGE / ARGUS cards on /pricing with a real lead-capture flow. Sized
-// `nav` per the modal standards doc since this is a short focused form
-// (email + optional name + company + note).
+// Replaces the "Pricing announced soon" disabled state on the FORGE / ARGUS
+// cards on /pricing with a real lead-capture flow (STELLA used it too until
+// it went self-serve 2026-08-22). Sized `nav` per the modal standards doc
+// since this is a short focused form (email + optional name + company +
+// note).
 //
 // POSTs to oliver-api /api/v1/waitlist. No auth — the lead may not have a
 // tenant yet.
@@ -14,7 +15,7 @@ import { submitWaitlist } from "../../lib/signupCheckout";
 interface Props {
   open: boolean;
   onClose: () => void;
-  /** Lowercase product slug: "stella" | "forge" | "argus". */
+  /** Lowercase product slug: "forge" | "argus". */
   productKey: string;
   /** Display name shown in the modal title. */
   productName: string;
@@ -91,7 +92,7 @@ export function WaitlistModal({ open, onClose, productKey, productName, defaultE
             <div className="text-3xl mb-2">✓</div>
             <p className="text-sm text-slate-700">
               Thanks — we'll let you know when <strong>{productName}</strong> is ready. In the meantime,
-              feel free to start with ARION, SPARK, or OLIVER from the cards on this page.
+              feel free to start with ARION, SPARK, OLIVER, or STELLA from the cards on this page.
             </p>
           </div>
         ) : (

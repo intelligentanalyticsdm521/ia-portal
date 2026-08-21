@@ -602,6 +602,10 @@ export function ConsultingOnboardClientPageV2() {
       const cartItems = cart.map((it) => {
         if (it.product === "arion") return { product: "arion" as const, plan: it.plan, seo: it.seo || null };
         if (it.product === "oliver") return { product: "oliver" as const, plan: it.plan };
+        // STELLA joined the shared cart type 2026-08-22 (B3, /pricing). This
+        // wizard has no STELLA picker yet, so the row can't occur here today;
+        // forwarded as-is rather than dropped so it never silently vanishes.
+        if (it.product === "stella") return { product: "stella" as const, plan: it.plan };
         return {
           product: "spark" as const, volume: it.volume,
           featureAddon: it.featureAddon || null,
@@ -838,7 +842,9 @@ export function ConsultingOnboardClientPageV2() {
         tenantName={businessName}
         mode="onboarding"
         cart={[
-          ...cart.map((it) => it.product),
+          // Modal #2 has steps for ARION / SPARK / OLIVER only; STELLA (B3
+          // cart type) has no post-onboarding step there.
+          ...cart.map((it) => it.product).filter((p): p is "arion" | "spark" | "oliver" => p !== "stella"),
           ...(consultingPick ? (["consulting"] as const) : []),
         ]}
         onClose={() => setOpenWizardTid(null)}
@@ -2051,6 +2057,7 @@ function Step6Review({ cart, consultingPick, cycle, profile, account, businessNa
 }) {
   const labelFor = (it: CartItem): string => {
     if (it.product === "oliver") return `OLIVER ${it.plan}`;
+    if (it.product === "stella") return `STELLA ${it.plan}`;
     if (it.product === "arion")  return `ARION ${it.plan}${it.seo ? ` + SEO ${it.seo}` : ""}`;
     const fa = it.featureAddon ? ` + ${it.featureAddon}` : "";
     const lg = it.leads ? ` + Leads ${it.leads}${it.leadsSelected ? ` (${it.leadsSelected}/mo)` : ""}` : "";

@@ -11,10 +11,12 @@ const API_BASE = (import.meta.env.VITE_ARION_API_BASE_URL as string)
 
 export type BillingCycle = 'monthly' | 'annual';
 export type DomainMode = 'purchase' | 'byod';
-export type SignupProduct = 'arion' | 'oliver' | 'spark';
+// Self-serve platforms. STELLA joined 2026-08-22 (Phase B3): its plan catalog
+// is served by oliver-api `/signup/catalog?product=stella` like OLIVER/SPARK.
+export type SignupProduct = 'arion' | 'oliver' | 'spark' | 'stella';
 
 export interface PlanCatalogEntry {
-  key: string; // arion: lite|standard|pro|business · oliver: lite|standard|pro|business · spark: standard|pro|business · (SEO addon, separate: essentials|growth|authority)
+  key: string; // arion: lite|standard|pro|business · oliver: lite|standard|pro|business · spark: standard|pro|business · stella: standard|pro|business · (SEO addon, separate: starter|essentials|growth|authority)
   product?: SignupProduct;
   name: string;
   description: string;

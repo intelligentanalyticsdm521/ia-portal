@@ -4,10 +4,11 @@
  * Mounted at /pricing (was /signup pre-2026-05-20 — renamed per
  * IA_Portal_GetStarted_PlanManagement_Spec_v1_0).
  *
- * One page, every product. OLIVER + SPARK go through the unified oliver-api
- * /signup endpoint (the single Stripe account that holds all products'
- * prices). ARION keeps its existing arion-api onboarding path (website build).
- * Nothing server-side fires until Stripe checkout completes.
+ * One page, every product. OLIVER + SPARK + STELLA plans come from the
+ * unified oliver-api /signup/catalog (the single Stripe account that holds
+ * all products' prices); ARION's plan catalog comes from arion-api. Every
+ * purchase goes through oliver-api /signup/checkout-cart. Nothing
+ * server-side fires until Stripe checkout completes.
  *
  *   ?platform=arion|oliver|spark|stella|consulting (per spec param name)
  *   ?product=… (legacy param name; still honoured)
@@ -37,11 +38,12 @@ const PRODUCT_COPY: Record<SignupProduct, { title: string; sub: string }> = {
   arion:  { title: 'Get your AI-built website live in minutes', sub: "Pick a plan. Pay. Answer a few questions — we handle the rest." },
   oliver: { title: 'Run your field service on OLIVER', sub: 'Pick a plan and pay — a quick setup and you can send your first invoice.' },
   spark:  { title: 'Grow with SPARK CRM & marketing', sub: 'Choose your volume, pay, and start importing contacts and sending.' },
+  stella: { title: 'Keep your books next to your jobs with STELLA', sub: 'Pick a plan and pay — your ledger, reports and unit economics are ready right after setup.' },
 };
 
 /** Every platform that appears on State 1 (the selector grid). Only the
- *  three "real" platforms (arion/oliver/spark) flow through to State 2
- *  checkout — the rest are either greyed out (stella/forge/argus) or
+ *  four purchasable platforms (arion/oliver/spark/stella) flow through to
+ *  State 2 checkout — the rest are either waitlisted (forge/argus) or
  *  route off to the marketing site quote form (consulting). */
 type PlatformKey = 'arion' | 'spark' | 'oliver' | 'stella' | 'forge' | 'argus' | 'consulting';
 
@@ -96,13 +98,16 @@ const PLATFORM_CARDS: PlatformCardSpec[] = [
     select: { kind: 'state2', platform: 'oliver' },
   },
   {
+    // Self-serve from 2026-08-22 (Phase B3). The "From $X/mo" price is the
+    // live minimum of oliver-api /signup/catalog?product=stella (Standard
+    // $49.99), never a hardcoded number — same rule as the other three.
     key: 'stella',
     name: 'STELLA',
-    tagline: 'Customer-experience intelligence — coming soon.',
+    tagline: 'Bookkeeping + unit economics — books that live next to your jobs',
     fromUsd: null,
     accent: '#7C3AED',
-    status: 'coming-soon',
-    select: { kind: 'disabled', reason: 'Pricing announced soon.' },
+    status: 'active',
+    select: { kind: 'state2', platform: 'stella' },
   },
   {
     key: 'forge',
@@ -143,7 +148,7 @@ const PLATFORM_CARDS: PlatformCardSpec[] = [
 function readSelectedPlatform(): SignupProduct | null {
   const q = new URLSearchParams(window.location.search);
   const raw = (q.get('platform') || q.get('product') || '').toLowerCase();
-  if (raw === 'arion' || raw === 'spark' || raw === 'oliver') return raw;
+  if (raw === 'arion' || raw === 'spark' || raw === 'oliver' || raw === 'stella') return raw;
   return null;
 }
 
@@ -270,11 +275,11 @@ export function SignupPage() {
   // Starter is sold from 2026-08-21 ($24.99 — the tier already existed in code).
   const [arionSeo, setArionSeo] = useState<'' | 'starter' | 'essentials' | 'growth' | 'authority'>('');
 
-  // F-110 — waitlist modal state. STELLA/FORGE/ARGUS cards open this in
-  // place of being disabled.
+  // F-110 — waitlist modal state. FORGE/ARGUS cards open this in place of
+  // being disabled (STELLA did too until it went self-serve 2026-08-22).
   const [waitlist, setWaitlist] = useState<{ key: string; name: string } | null>(null);
 
-  // OLIVER / SPARK (unified oliver-api catalog)
+  // OLIVER / SPARK / STELLA (unified oliver-api catalog)
   const [cat, setCat] = useState<SignupCatalog | null>(null);
 
   // State 1 live "From $X/mo" prices — fetched once on mount so the selector
@@ -282,35 +287,33 @@ export function SignupPage() {
   // feedback_no_fabricated_catalog: ALWAYS pull from catalog APIs. The
   // resulting prices are the MIN monthly across each product's catalog,
   // applied to PLATFORM_CARDS.fromUsd at render time.
-  const [livePrices, setLivePrices] = useState<{ arion: number | null; oliver: number | null; spark: number | null }>({
-    arion: null, oliver: null, spark: null,
+  const [livePrices, setLivePrices] = useState<Record<SignupProduct, number | null>>({
+    arion: null, oliver: null, spark: null, stella: null,
   });
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [arionP, oliverP, sparkP] = await Promise.all([
+      const [arionP, oliverP, sparkP, stellaP] = await Promise.all([
         fetchPlanCatalog('arion').catch(() => []),
         fetchSignupCatalog('oliver', 'monthly').catch(() => null),
         fetchSignupCatalog('spark', 'monthly').catch(() => null),
+        fetchSignupCatalog('stella', 'monthly').catch(() => null),
       ]);
       if (cancelled) return;
-      const arionMin = arionP
-        .map((p: PlanCatalogEntry) => p.pricing?.monthly_usd ?? null)
-        .filter((n: number | null): n is number => typeof n === 'number')
-        .sort((a, b) => a - b)[0] ?? null;
-      const oliverMin = oliverP?.plans
-        ?.map((p) => p.monthly_usd)
-        .filter((n): n is number => typeof n === 'number')
-        .sort((a, b) => a - b)[0] ?? null;
-      const sparkMin = sparkP?.volumes
-        ?.map((v) => v.monthly_usd)
-        .filter((n): n is number => typeof n === 'number')
-        .sort((a, b) => a - b)[0] ?? null;
-      setLivePrices({ arion: arionMin, oliver: oliverMin, spark: sparkMin });
+      const minOf = (ns: Array<number | null | undefined> | undefined): number | null =>
+        (ns || []).filter((n): n is number => typeof n === 'number').sort((a, b) => a - b)[0] ?? null;
+      setLivePrices({
+        arion: minOf(arionP.map((p: PlanCatalogEntry) => p.pricing?.monthly_usd)),
+        oliver: minOf(oliverP?.plans?.map((p) => p.monthly_usd)),
+        spark: minOf(sparkP?.volumes?.map((v) => v.monthly_usd)),
+        stella: minOf(stellaP?.plans?.map((p) => p.monthly_usd)),
+      });
     })();
     return () => { cancelled = true; };
   }, []);
   const [oliverPlan, setOliverPlan] = useState<string>(params.plan || 'standard');
+  // STELLA — one base plan (standard | pro | business), no add-ons.
+  const [stellaPlan, setStellaPlan] = useState<string>(params.plan || 'standard');
   const [volume, setVolume] = useState<string>('5k');
   const [featureAddon, setFeatureAddon] = useState<'' | 'pro' | 'business'>('');
   const [leadsPkg, setLeadsPkg] = useState<'' | 'essentials' | 'growth' | 'authority'>('');
@@ -332,12 +335,13 @@ export function SignupPage() {
         })
         .catch((e) => setError(e.message)).finally(() => setLoading(false));
     } else {
-      fetchSignupCatalog(product as 'oliver' | 'spark', cycle)
+      fetchSignupCatalog(product, cycle)
         .then((d) => {
           setCat(d);
-          if (product === 'oliver') {
+          if (product === 'oliver' || product === 'stella') {
+            const setPlan = product === 'oliver' ? setOliverPlan : setStellaPlan;
             const valid = d.plans?.some((p) => p.key === params.plan);
-            if (!valid) setOliverPlan(d.plans?.some((p) => p.key === 'standard') ? 'standard' : (d.plans?.[0]?.key || ''));
+            if (!valid) setPlan(d.plans?.some((p) => p.key === 'standard') ? 'standard' : (d.plans?.[0]?.key || ''));
           } else if (product === 'spark') {
             const v = d.volumes?.[0]?.volume || '5k';
             setVolume(d.volumes?.some((x) => x.volume === '5k') ? '5k' : v);
@@ -359,6 +363,8 @@ export function SignupPage() {
       setArionSeo((existing.seo || '') as '' | 'essentials' | 'growth' | 'authority');
     } else if (existing.product === 'oliver') {
       setOliverPlan(existing.plan);
+    } else if (existing.product === 'stella') {
+      setStellaPlan(existing.plan);
     } else if (existing.product === 'spark') {
       setVolume(existing.volume);
       setFeatureAddon((existing.featureAddon || '') as '' | 'pro' | 'business');
@@ -407,6 +413,9 @@ export function SignupPage() {
     }
     if (product === 'oliver') {
       return { product: 'oliver', plan: oliverPlan };
+    }
+    if (product === 'stella') {
+      return { product: 'stella', plan: stellaPlan };
     }
     return {
       product: 'spark',
@@ -474,6 +483,7 @@ export function SignupPage() {
         items: baseCart.map((it) => {
           if (it.product === 'arion') return { product: 'arion', plan: it.plan, seo: it.seo || null };
           if (it.product === 'oliver') return { product: 'oliver', plan: it.plan };
+          if (it.product === 'stella') return { product: 'stella', plan: it.plan };
           return {
             product: 'spark', volume: it.volume,
             featureAddon: it.featureAddon || null,
@@ -540,10 +550,10 @@ export function SignupPage() {
               const cardPlatform = card.select.kind === 'state2' ? card.select.platform : null;
               const inCart = cardPlatform != null
                 && cart.some((it) => it.product === cardPlatform);
-              // F-110 — coming-soon / proposal-only cards (STELLA, FORGE,
-              // ARGUS) open the waitlist modal instead of being dead.
+              // F-110 — proposal-only cards (FORGE, ARGUS) open the waitlist
+              // modal instead of being dead.
               const waitlistKeys: Record<string, string> = {
-                stella: 'STELLA', forge: 'FORGE', argus: 'ARGUS',
+                forge: 'FORGE', argus: 'ARGUS',
               };
               const isWaitlist = disabled && waitlistKeys[card.key];
               const onSelect = () => {
@@ -584,10 +594,7 @@ export function SignupPage() {
                     // the static card.fromUsd (which is null for active
                     // products — they wait for the catalog). Coming-soon
                     // cards have no price and skip the block entirely.
-                    const live = card.key === 'arion' ? livePrices.arion
-                               : card.key === 'oliver' ? livePrices.oliver
-                               : card.key === 'spark' ? livePrices.spark
-                               : null;
+                    const live = cardPlatform ? livePrices[cardPlatform] : null;
                     const price = live ?? card.fromUsd;
                     if (price == null) {
                       // Active products that haven't loaded yet — show
@@ -629,7 +636,7 @@ export function SignupPage() {
           </p>
         </main>
 
-        {/* F-110 — waitlist capture for STELLA/FORGE/ARGUS */}
+        {/* F-110 — waitlist capture for FORGE/ARGUS */}
         <WaitlistModal
           open={waitlist !== null}
           onClose={() => setWaitlist(null)}
@@ -821,26 +828,46 @@ export function SignupPage() {
               })()}
             </div>
           </>
-        ) : product === 'oliver' ? (
-          <div className="grid gap-4 lg:grid-cols-4">
-            {(cat?.plans || []).map((p) => {
-              const perMo = perMonth(p, cycle);
-              const perYr = perYear(p, cycle);
-              return (
-                <button key={p.key} onClick={() => setOliverPlan(p.key)}
-                  className={`text-left rounded-xl p-6 border-2 transition ${oliverPlan === p.key ? 'border-[#EF6C33] bg-white shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
-                  <div className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{p.name}</div>
-                  <div className="mt-3 text-3xl font-bold text-gray-900">{money(perMo)}<span className="ml-1 text-sm text-gray-500">/mo</span></div>
-                  {cycle === 'annual' && (
-                    <div className="mt-1 text-xs text-gray-500">billed annually {money(perYr)}/yr</div>
-                  )}
-                  <p className="mt-3 text-sm text-gray-600">{p.description}</p>
-                  <ul className="mt-4 space-y-2 text-xs text-gray-700">{p.features.map((f) => <li key={f} className="flex gap-2"><span className="text-[#EF6C33]">✓</span><span>{f}</span></li>)}</ul>
-                </button>
-              );
-            })}
-            {(cat?.plans || []).length === 0 && <div className="col-span-4 text-center text-amber-600 text-sm">No plans available — Stripe prices not configured.</div>}
-          </div>
+        ) : product === 'oliver' || product === 'stella' ? (
+          // OLIVER + STELLA — plain plan cards from oliver-api
+          // /signup/catalog?product=<oliver|stella> (Stripe-price-driven).
+          (() => {
+            const selectedPlan = product === 'oliver' ? oliverPlan : stellaPlan;
+            const setPlan = product === 'oliver' ? setOliverPlan : setStellaPlan;
+            return (
+              <>
+                <div className="grid gap-4 lg:grid-cols-4">
+                  {(cat?.plans || []).map((p) => {
+                    const perMo = perMonth(p, cycle);
+                    const perYr = perYear(p, cycle);
+                    return (
+                      <button key={p.key} onClick={() => setPlan(p.key)}
+                        className={`text-left rounded-xl p-6 border-2 transition ${selectedPlan === p.key ? 'border-[#EF6C33] bg-white shadow-md' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                        <div className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{p.name}</div>
+                        <div className="mt-3 text-3xl font-bold text-gray-900">{money(perMo)}<span className="ml-1 text-sm text-gray-500">/mo</span></div>
+                        {cycle === 'annual' && (
+                          <div className="mt-1 text-xs text-gray-500">billed annually {money(perYr)}/yr</div>
+                        )}
+                        <p className="mt-3 text-sm text-gray-600">{p.description}</p>
+                        <ul className="mt-4 space-y-2 text-xs text-gray-700">{p.features.map((f) => <li key={f} className="flex gap-2"><span className="text-[#EF6C33]">✓</span><span>{f}</span></li>)}</ul>
+                      </button>
+                    );
+                  })}
+                  {(cat?.plans || []).length === 0 && <div className="col-span-4 text-center text-amber-600 text-sm">No plans available — Stripe prices not configured.</div>}
+                </div>
+                {/* STELLA tier gating (blueprint §13: bank-connection counts,
+                    SQL editor at Pro, multi-entity at Business) is a later
+                    item — at launch every STELLA plan gets everything live
+                    today. Say so rather than sell a gate that doesn't exist. */}
+                {product === 'stella' && (cat?.plans || []).length > 0 && (
+                  <p className="mt-4 text-center text-xs text-gray-500">
+                    Every STELLA plan includes the full ledger, bank feeds, reports and unit economics today.
+                    Pro and Business extras (more bank connections, SQL editor, multi-entity) are rolling out.
+                  </p>
+                )}
+              </>
+            );
+          })()
         ) : (
           // SPARK — F-135: volume slider (auto-selects the matching Standard
           // tier price) + Standard/Pro/Business upgrade cards + lead generation.
@@ -1066,12 +1093,13 @@ function CartBanner({
   const bundle = bundleDiscountPercent(cart);
   const labelFor = (it: CartItem): string => {
     if (it.product === 'oliver') return `OLIVER ${it.plan.charAt(0).toUpperCase()}${it.plan.slice(1)}`;
+    if (it.product === 'stella') return `STELLA ${it.plan.charAt(0).toUpperCase()}${it.plan.slice(1)}`;
     if (it.product === 'arion')  return `ARION ${it.plan.charAt(0).toUpperCase()}${it.plan.slice(1)}${it.seo ? ` + SEO ${it.seo}` : ''}`;
     const fa = it.featureAddon ? ` + ${it.featureAddon}` : '';
     const lg = it.leads ? ` + Leads ${it.leads}` : '';
     return `SPARK ${it.volume}${fa}${lg}`;
   };
-  const accentFor: Record<string, string> = { oliver: '#FEC82C', spark: '#EF6C33', arion: '#38BDF8' };
+  const accentFor: Record<string, string> = { oliver: '#FEC82C', spark: '#EF6C33', arion: '#38BDF8', stella: '#7C3AED' };
   return (
     <div className="mx-auto max-w-3xl mb-8 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
       <div className="border-b border-gray-100 bg-gradient-to-r from-[#0B1C24] to-[#1a3540] px-5 py-3 text-white">

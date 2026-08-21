@@ -9,11 +9,17 @@
 // + tier/volume/seo/etc.) — not just the platform key. The cart is the
 // payload we ship to /signup/checkout-cart on the backend.
 
-export type CartProduct = "oliver" | "spark" | "arion";
+export type CartProduct = "oliver" | "spark" | "arion" | "stella";
+const CART_PRODUCTS: readonly string[] = ["oliver", "spark", "arion", "stella"];
 
 export interface OliverItem {
   product: "oliver";
   plan: string;                 // lite | standard | pro | business
+}
+/** STELLA — self-serve from 2026-08-22 (Phase B3). One base plan, no add-ons. */
+export interface StellaItem {
+  product: "stella";
+  plan: string;                 // standard | pro | business
 }
 export interface SparkItem {
   product: "spark";
@@ -27,7 +33,7 @@ export interface ArionItem {
   plan: string;                 // lite | essentials | growth | authority
   seo?: "" | "starter" | "essentials" | "growth" | "authority";
 }
-export type CartItem = OliverItem | SparkItem | ArionItem;
+export type CartItem = OliverItem | SparkItem | ArionItem | StellaItem;
 
 const STORAGE_KEY = "iadm.signup.cart.v1";
 const CYCLE_KEY   = "iadm.signup.cart.cycle.v1";
@@ -43,7 +49,7 @@ export function readCart(): CartItem[] {
     const parsed = JSON.parse(raw) as CartItem[];
     if (!Array.isArray(parsed)) return [];
     return parsed.filter((it) => it && typeof it.product === "string"
-      && ["oliver", "spark", "arion"].includes(it.product));
+      && CART_PRODUCTS.includes(it.product));
   } catch {
     return [];
   }
@@ -108,9 +114,27 @@ export function writeBuyer(b: { email?: string; name?: string }): void {
 }
 
 /** Bundle discount preview — matches the server-side logic in
- *  /signup/checkout-cart: 5% (MP5R) on any 2+ distinct platforms. The 7%
- *  three-platform tier (MP7R) was retired 2026-08-21 — one bundle rule. */
+ *  /signup/checkout-cart: 5% (MP5R) on any 2+ distinct platforms (ARION,
+ *  OLIVER, SPARK and STELLA each count as one). The 7% three-platform tier
+ *  (MP7R) was retired 2026-08-21 — one bundle rule. */
 export function bundleDiscountPercent(items: CartItem[]): number {
   const distinct = new Set(items.map((it) => it.product));
   return distinct.size >= 2 ? 5 : 0;
+}
+
+/** Every platform a paid signup session covers (oliver-api /signup/session:
+ *  `product` = the cart's first platform, `cart_products` = all of them as
+ *  CSV or array when exposed) — lower-cased, de-duplicated, first product
+ *  first. Lets the post-checkout pages show a step for each product bought
+ *  in one cart (e.g. ARION + STELLA) instead of only the first. */
+export function sessionProducts(s: { product: string; cart_products?: string | string[] | null }): string[] {
+  const raw = Array.isArray(s.cart_products)
+    ? s.cart_products
+    : String(s.cart_products || "").split(",");
+  const out: string[] = [];
+  for (const p of [s.product, ...raw]) {
+    const k = String(p || "").trim().toLowerCase();
+    if (k && !out.includes(k)) out.push(k);
+  }
+  return out;
 }

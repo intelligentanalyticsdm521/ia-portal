@@ -16,10 +16,15 @@
  *   ARION:  10–30 min worst-case (Kodee AI build is the slow step)
  *   OLIVER: 5–15 min (Stripe Connect + customer import)
  *   SPARK:  ~5 min (sender domain + contact import)
- *   STELLA: TBD
+ *   STELLA: instant — the service is enabled when the signup completes
+ *           (core.tenant_services via oliver-api /signup/complete); the chart
+ *           of accounts is seeded on the first /ledger/coa call. Shown here as
+ *           one informational step when STELLA was in the same cart (B3).
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { fetchSignupSession } from '../../lib/signupCheckout';
+import { sessionProducts } from '../../lib/signupCart';
 
 const API_BASE = (import.meta.env.VITE_ARION_API_BASE_URL as string)
   || 'https://app-arion-api-prod-e6fuc9gzd8f3hqfe.centralus-01.azurewebsites.net';
@@ -183,6 +188,21 @@ export function ProvisioningStatus() {
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [sessionId]);
 
+  // B3 (2026-08-22) — which platforms this checkout covered, so a STELLA
+  // bought alongside the ARION site gets its own step. oliver-api
+  // /signup/session is public (no auth) and 404s for a legacy ARION-only
+  // session, which simply means no extra rows.
+  const [products, setProducts] = useState<string[]>([]);
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+    fetchSignupSession(sessionId)
+      .then((s) => { if (!cancelled && 'product' in s) setProducts(sessionProducts(s)); })
+      .catch(() => { /* not a unified-signup session → ARION-only page */ });
+    return () => { cancelled = true; };
+  }, [sessionId]);
+  const hasStella = products.includes('stella');
+
   // Redirect on ready after a brief celebration.
   useEffect(() => {
     if (status?.phase === 'ready' || status?.phase === 'ready_partial') {
@@ -252,44 +272,26 @@ export function ProvisioningStatus() {
             {VISIBLE_PHASES.map((p) => {
               const currentIdx = PHASE_INDEX[phase] ?? -1;
               const myIdx = PHASE_INDEX[p] ?? 999;
-              const reached = myIdx < currentIdx;
-              const isCurrent = myIdx === currentIdx;
               return (
-                <div
+                <StepRow
                   key={p}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg ${
-                    reached
-                      ? 'bg-emerald-50/60'
-                      : isCurrent
-                      ? 'bg-iadm-gold/5'
-                      : 'bg-slate-50'
-                  }`}
-                >
-                  <div
-                    className={`w-5 h-5 rounded-full flex items-center justify-center ${
-                      reached
-                        ? 'bg-emerald-500 text-white'
-                        : isCurrent
-                        ? 'bg-iadm-gold text-iadm-ink'
-                        : 'bg-slate-300 text-white'
-                    }`}
-                  >
-                    {reached ? <SmallCheck /> : isCurrent ? <DotPulse /> : null}
-                  </div>
-                  <span
-                    className={`text-sm ${
-                      reached
-                        ? 'text-emerald-700 font-medium'
-                        : isCurrent
-                        ? 'text-iadm-ink font-medium'
-                        : 'text-slate-500'
-                    }`}
-                  >
-                    {PHASE_LABEL[p]}
-                  </span>
-                </div>
+                  label={PHASE_LABEL[p] || p}
+                  reached={myIdx < currentIdx}
+                  isCurrent={myIdx === currentIdx}
+                />
               );
             })}
+            {/* STELLA (B3) — not an ARION phase: the enable is a single row
+                written when the signup completed, so it has nothing to poll.
+                Shown as the last step, done once the site is ready. */}
+            {hasStella && (
+              <StepRow
+                label="Enabling STELLA — ledger + bank feeds"
+                detail="Your chart of accounts is created the first time you open the Ledger."
+                reached={isReady}
+                isCurrent={!isReady}
+              />
+            )}
           </div>
         )}
 
@@ -328,6 +330,36 @@ export function ProvisioningStatus() {
             Connection hiccup: {pollError} (retrying)
           </p>
         )}
+      </div>
+    </div>
+  );
+}
+
+function StepRow({ label, detail, reached, isCurrent }: {
+  label: string; detail?: string; reached: boolean; isCurrent: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-center gap-3 px-3 py-2 rounded-lg ${
+        reached ? 'bg-emerald-50/60' : isCurrent ? 'bg-iadm-gold/5' : 'bg-slate-50'
+      }`}
+    >
+      <div
+        className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
+          reached ? 'bg-emerald-500 text-white' : isCurrent ? 'bg-iadm-gold text-iadm-ink' : 'bg-slate-300 text-white'
+        }`}
+      >
+        {reached ? <SmallCheck /> : isCurrent ? <DotPulse /> : null}
+      </div>
+      <div className="min-w-0">
+        <span
+          className={`text-sm ${
+            reached ? 'text-emerald-700 font-medium' : isCurrent ? 'text-iadm-ink font-medium' : 'text-slate-500'
+          }`}
+        >
+          {label}
+        </span>
+        {detail && <div className="text-xs text-slate-500">{detail}</div>}
       </div>
     </div>
   );
