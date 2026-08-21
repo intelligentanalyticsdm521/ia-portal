@@ -67,7 +67,13 @@ async function getJson<T>(path: string): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
-// Plan catalog + checkout
+// Plan catalog
+//
+// Checkout itself is NOT here: every self-serve purchase goes through
+// oliver-api `/signup/checkout-cart` (lib/signupCheckout.ts), the single
+// Stripe owner. The arion-api `/onboarding/checkout/create-session` client
+// that used to live here was deleted 2026-08-22 — it resolved prices via
+// STRIPE_PRICE_* env vars that exist on no App Service, so it could only 503.
 // ---------------------------------------------------------------------------
 export async function fetchPlanCatalog(product: SignupProduct = 'arion'): Promise<PlanCatalogEntry[]> {
   const data = await getJson<{ plans: PlanCatalogEntry[] }>(
@@ -93,22 +99,6 @@ export async function fetchArionSeoAddons(): Promise<Record<string, ArionSeoAddo
   const data = await getJson<{ seoAddons?: Record<string, ArionSeoAddonEntry> }>(
     `/onboarding/checkout/catalog?product=arion`);
   return data.seoAddons || {};
-}
-
-export interface CheckoutSessionInput {
-  email: string;
-  name?: string;
-  product?: SignupProduct;
-  plan: PlanCatalogEntry['key'];
-  billing_cycle: BillingCycle;
-  domain: { mode: DomainMode; name?: string; registration_price_usd?: number };
-}
-
-export async function createCheckoutSession(input: CheckoutSessionInput) {
-  return postJson<{ checkout_url: string; session_id: string }>(
-    '/onboarding/checkout/create-session',
-    input
-  );
 }
 
 // ---------------------------------------------------------------------------
