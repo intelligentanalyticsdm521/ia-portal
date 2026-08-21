@@ -3,13 +3,7 @@
  * when an OLIVER feature requires a higher tier plan.
  */
 
-const TIER_LABELS: Record<string, string> = {
-  lite: "Lite",
-  standard: "Standard",
-  pro: "Pro",
-  business: "Business",
-  enterprise: "Enterprise",
-};
+import { tierDisplayName } from "../lib/tierLabels";
 
 interface OliverUpgradeGateProps {
   tierRequired: string;
@@ -18,8 +12,9 @@ interface OliverUpgradeGateProps {
 }
 
 export function OliverUpgradeGate({ tierRequired, currentTier, featureName }: OliverUpgradeGateProps) {
-  const requiredLabel = TIER_LABELS[tierRequired] || tierRequired;
-  const currentLabel = TIER_LABELS[currentTier] || currentTier;
+  // "lite" renders as "Invoicing" (pricing rework 2026-08-21) — one label table for all of OLIVER.
+  const requiredLabel = tierDisplayName("oliver", tierRequired) || tierRequired;
+  const currentLabel = tierDisplayName("oliver", currentTier) || currentTier;
 
   return (
     <div className="relative">

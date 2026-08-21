@@ -8,12 +8,13 @@ import {
 } from "lucide-react";
 import type { ProductKey } from "./IconRail";
 import {
-  activeAddons,
   isGatedProduct,
   isVisible,
+  requirementLabel,
   type VisibilityRules,
 } from "./navVisibility";
 import { useProductTier } from "../hooks/useProductTier";
+import { useNavAddons } from "../hooks/useNavAddons";
 import { useAppState } from "../app/AppState";
 import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
 import { productColor } from "../config/productTheme";
@@ -82,6 +83,16 @@ export interface SubNavConfig {
 // Recurring jobs surface as a filter/tag inside the Job Board, not a
 // separate page. Subscriptions stay in Billing because they're a billing
 // concern (when do I get paid).
+//
+// TIER GATES (pricing rework, Brandon 2026-08-21 — PRICING_REWORK_DECISIONS):
+// the bottom tier is "OLIVER Invoicing" (plan key stays `lite`): quotes,
+// proposals, invoices + Stripe payment links, deposits / partial payments,
+// payments, 1 doc template, 30-day reporting, SPARK contact sync — and ZERO
+// jobs. So every jobs / scheduling / dispatch / customer-portal / crew / team
+// surface carries `minTier: "standard"`. Mirrors oliver-api
+// lib/tierFeatures.js (inquiry_capture, booking_pages, customer_portal_access,
+// crew_portal_access, team_management are all Standard+; Lite job cap → 0).
+// Same show-don't-hide rule as SPARK: the rows stay visible with a lock.
 // ─────────────────────────────────────────────────────────────────────────────
 const OLIVER_NAV: SubNavConfig = {
   productName: "OLIVER",
@@ -94,9 +105,14 @@ const OLIVER_NAV: SubNavConfig = {
     {
       label: "Customers", icon: UserCircle, collapsible: true, sectionId: "oliver_customers",
       items: [
+        // Contacts stay on Invoicing — quotes and invoices need a customer, and
+        // SPARK contact sync is part of the Invoicing tier.
         { key: "oliver_contacts", label: "Contacts", route: "/app/services/oliver_contacts" },
-        { key: "oliver_service_requests", label: "Service Requests", route: "/app/services/oliver_service_requests" },
-        { key: "oliver_booking", label: "Booking", route: "/app/services/oliver_booking" },
+        // Inquiry capture (portal "request work" + ARION form → inquiry) is
+        // stripped from Invoicing; Standard+ (tierFeatures inquiry_capture).
+        { key: "oliver_service_requests", label: "Service Requests", route: "/app/services/oliver_service_requests", minTier: "standard" },
+        // Public booking pages are Standard+ (tierFeatures booking_pages).
+        { key: "oliver_booking", label: "Booking", route: "/app/services/oliver_booking", minTier: "standard" },
       ],
     },
     {
@@ -105,11 +121,12 @@ const OLIVER_NAV: SubNavConfig = {
       // Schedule/Dispatch/Projects/Quotes-as-page absorbed into this board's
       // filters + the unified job modal (Phase 2). Archive lives as a
       // sub-page reached via a link from the board.
+      // Invoicing has zero jobs — the whole group is Standard+.
       label: "Jobs", icon: Wrench, collapsible: true, sectionId: "oliver_jobs",
       items: [
-        { key: "oliver_job_board", label: "Job Board", route: "/app/services/oliver_job_board" },
-        { key: "oliver_schedule", label: "Schedule", route: "/app/services/oliver_schedule" },
-        { key: "oliver_jobs_archive", label: "Archive", route: "/app/services/oliver_jobs_archive" },
+        { key: "oliver_job_board", label: "Job Board", route: "/app/services/oliver_job_board", minTier: "standard" },
+        { key: "oliver_schedule", label: "Schedule", route: "/app/services/oliver_schedule", minTier: "standard" },
+        { key: "oliver_jobs_archive", label: "Archive", route: "/app/services/oliver_jobs_archive", minTier: "standard" },
       ],
     },
     {
@@ -135,19 +152,21 @@ const OLIVER_NAV: SubNavConfig = {
         // because it's the templates library for that surface.
         { key: "oliver_proposal_templates", label: "Templates", route: "/app/oliver/quotes/templates" },
         { key: "oliver_invoices", label: "Invoices", route: "/app/services/oliver_invoices" },
-        { key: "oliver_recurring", label: "Subscriptions", route: "/app/services/oliver_recurring" },
+        // Recurring services are jobs (TIER_CAPS lite max_active_recurring = 0) → Standard+.
+        { key: "oliver_recurring", label: "Subscriptions", route: "/app/services/oliver_recurring", minTier: "standard" },
         { key: "oliver_payments", label: "Payments", route: "/app/services/oliver_payments" },
         { key: "oliver_templates", label: "Templates", route: "/app/services/oliver_templates" },
       ],
     },
     {
+      // Team page is Standard+ (tierFeatures team_management); Invoicing is single-seat.
       label: "Team", icon: Users, collapsible: true, sectionId: "oliver_team",
       items: [
-        { key: "oliver_workers", label: "Workers", route: "/app/services/oliver_workers" },
+        { key: "oliver_workers", label: "Workers", route: "/app/services/oliver_workers", minTier: "standard" },
         // F-44 (2026-05-26) — Time Tracking removed from nav per founder lock
         // "no time tracking until payroll later". Page + route still reachable
         // by URL for legacy data; not surfaced in OLIVER nav.
-        { key: "oliver_crew_performance", label: "Performance", route: "/app/services/oliver_crew_performance", gated: true },
+        { key: "oliver_crew_performance", label: "Performance", route: "/app/services/oliver_crew_performance", gated: true, minTier: "standard" },
       ],
     },
     {
@@ -155,11 +174,18 @@ const OLIVER_NAV: SubNavConfig = {
       // /app/services/oliver_automations but was missing from SubNav.
       label: "Workflow & Automations", icon: Zap, collapsible: true, sectionId: "oliver_workflow",
       items: [
-        { key: "oliver_automations", label: "Automations", route: "/app/services/oliver_automations" },
+        // Automations act on jobs / bookings / workers (booking confirmations,
+        // job reminders, auto-assign, auto-invoice on completion) — nothing to
+        // automate without jobs, so Standard+ in the menu. The Pro+
+        // orchestration rules (tierFeatures automations_engine) are still
+        // gated inside the page; Standard keeps its comms rules.
+        { key: "oliver_automations", label: "Automations", route: "/app/services/oliver_automations", minTier: "standard" },
         { key: "oliver_addons", label: "Add-ons", route: "/app/services/oliver_addons" },
         // F-114 — Portals hub replaces the standalone Portals & Domains page;
         // the old page stays reachable by URL but no longer surfaces in nav.
-        { key: "oliver_portals_hub", label: "Customer & Crew Portals", route: "/app/services/oliver_portals_hub" },
+        // Customer + crew portals are Standard+ / Pro+ (customer_portal_access,
+        // crew_portal_access); Invoicing customers get Stripe payment links only.
+        { key: "oliver_portals_hub", label: "Customer & Crew Portals", route: "/app/services/oliver_portals_hub", minTier: "standard" },
         // F-70 + F-72 + F-63 — reschedule policy, post-booking actions, signup form
       ],
     },
@@ -243,16 +269,35 @@ const ARION_NAV: SubNavConfig = {
       ],
     },
     {
+      // SEO is an ADD-ON, never a base-tier feature (Brandon 2026-08-06,
+      // re-affirmed in the 2026-08-21 pricing rework): every SE Ranking-powered
+      // surface is sold only through the SEO add-on ladder (Starter /
+      // Essentials / Growth / Authority), so each row carries `addon: "seo"`.
+      // Resolved from the selected site's seoAddonTier by hooks/useNavAddons —
+      // the same column arion-api guards its SE Ranking client on. "Content
+      // SEO" under Website is Rank Math (the IA plugin), not SE Ranking, and
+      // stays in the base plan.
       label: "SEO", icon: TrendingUp, collapsible: true, sectionId: "seo",
       items: [
-        { key: "arion_seo_overview", label: "Overview", route: "/app/services/arion_seo_overview" },
-        { key: "arion_seo_keywords", label: "Keywords", route: "/app/services/arion_seo_keywords" },
-        { key: "arion_seo_rankings", label: "Rankings", route: "/app/services/arion_seo_rankings" },
-        { key: "arion_seo_site_audit", label: "Site Audit", route: "/app/services/arion_seo_site_audit" },
-        { key: "arion_seo_competitors", label: "Competitors", route: "/app/services/arion_seo_competitors" },
-        { key: "arion_seo_ai_search", label: "AI Search Results", route: "/app/services/arion_seo_ai_search" },
-        { key: "arion_seo_ai_prompts", label: "AI Prompts", route: "/app/services/arion_seo_ai_prompts" },
-        { key: "arion_seo_market_monitor", label: "Market Monitor", route: "/app/services/arion_seo_market_monitor" },
+        { key: "arion_seo_overview", label: "Overview", route: "/app/services/arion_seo_overview", addon: "seo" },
+        { key: "arion_seo_keywords", label: "Keywords", route: "/app/services/arion_seo_keywords", addon: "seo" },
+        { key: "arion_seo_rankings", label: "Rankings", route: "/app/services/arion_seo_rankings", addon: "seo" },
+        { key: "arion_seo_site_audit", label: "Site Audit", route: "/app/services/arion_seo_site_audit", addon: "seo" },
+        { key: "arion_seo_competitors", label: "Competitors", route: "/app/services/arion_seo_competitors", addon: "seo" },
+        // AI Search Results / AI Prompts are Growth+ inside the add-on
+        // (Growth = Google AI Overviews + AI Mode; Authority adds ChatGPT +
+        // Gemini). The pages enforce the add-on TIER themselves.
+        { key: "arion_seo_ai_search", label: "AI Search Results", route: "/app/services/arion_seo_ai_search", addon: "seo" },
+        { key: "arion_seo_ai_prompts", label: "AI Prompts", route: "/app/services/arion_seo_ai_prompts", addon: "seo" },
+        // Market Monitor moved OUT of ARION Business into the SEO add-on,
+        // AUTHORITY tier only (PRICING_REWORK_DECISIONS_2026-08-21 §ARION 3b —
+        // it runs on SE Ranking page-change monitoring).
+        // TODO(pricing-rework-aug21): the nav model has no add-on-TIER concept
+        // (only add-on ownership), so the menu gates on the add-on and the
+        // page + arion-api enforce "Authority only" (SeoMarketMonitor
+        // authorityGated). Add an `addonTier` rule if a second Authority-only
+        // surface ever appears.
+        { key: "arion_seo_market_monitor", label: "Market Monitor", route: "/app/services/arion_seo_market_monitor", addon: "seo" },
       ],
     },
     {
@@ -996,19 +1041,9 @@ export function productOfConfig(config: SubNavConfig): ProductKey | undefined {
     .find((k) => SUB_NAV_CONFIGS[k] === config);
 }
 
-/**
- * Human-readable reason a nav row is locked, for the lock icon's tooltip.
- * Mirrors the wording used by FeatureLocked on the page itself so the menu and
- * the page never disagree about which plan a surface needs.
- */
-export function requirementLabel(item: { minTier?: string; addon?: string }): string {
-  if (item.addon === 'leadgen') return 'the Lead Gen add-on';
-  if (item.minTier) {
-    const t = item.minTier;
-    return `SPARK ${t.charAt(0).toUpperCase()}${t.slice(1)}`;
-  }
-  return 'a higher plan';
-}
+// The lock tooltip's "Requires …" text is navVisibility.requirementLabel —
+// shared with FeatureLocked (ServiceRouter) so the menu and the page never
+// disagree about which plan a surface needs.
 
 export function SubNav({ config }: SubNavProps) {
   const location = useLocation();
@@ -1021,8 +1056,11 @@ export function SubNav({ config }: SubNavProps) {
   const productKey = productOfConfig(config);
   const gatingActive = isGatedProduct(productKey);
   const { tier } = useProductTier(gatingActive ? productKey : "spark");
+  // Add-on ownership (SPARK Lead Gen, ARION SEO). null = unresolved → the
+  // wall fails OPEN until the answer arrives (see navVisibility).
+  const addons = useNavAddons(gatingActive ? productKey : undefined);
   const { ownedProducts } = useAppState();
-  const visCtx = { tier, addons: activeAddons(), gatingActive };
+  const visCtx = { tier, addons, gatingActive };
 
   // 2026-08-06 (Brandon) — SHOW, DON'T HIDE. Features the tenant's plan doesn't
   // include stay VISIBLE and are marked "Upgrade", so they can see what they're
@@ -1243,8 +1281,8 @@ export function SubNav({ config }: SubNavProps) {
                             (FeatureLocked), not in the menu. API still 403s. */}
                         {item.locked && (
                           <span
-                            title={`Requires ${requirementLabel(item)}`}
-                            aria-label={`Locked — requires ${requirementLabel(item)}`}
+                            title={`Requires ${requirementLabel(item, productKey)}`}
+                            aria-label={`Locked — requires ${requirementLabel(item, productKey)}`}
                             style={{
                               flexShrink: 0,
                               marginLeft: 'auto',

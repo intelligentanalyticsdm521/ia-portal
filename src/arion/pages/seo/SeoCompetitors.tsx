@@ -62,7 +62,7 @@ export function SeoCompetitors() {
       <AddonUpsell
         title="SEO Tools — Add-on not active"
         description="Track your competitors' keyword rankings, visibility scores, and content gaps."
-        price="$29"
+        price="$24.99"
         planName="Starter"
       />
     );

@@ -2,7 +2,8 @@ import { lazy, Suspense, useMemo } from 'react';
 import { useParams, useLocation, Navigate } from 'react-router-dom';
 import { useIsFounder } from '../hooks/useIsFounder';
 import { SERVICE_VISIBILITY } from '../components/SubNav';
-import { activeAddons, isRoutable } from '../components/navVisibility';
+import { isGatedProduct, isRoutable, requirementLabel } from '../components/navVisibility';
+import { useNavAddons } from '../hooks/useNavAddons';
 import FeatureLocked from '../components/FeatureLocked';
 import { productColor, productOfServiceKey } from '../config/productTheme';
 import { useProductTier } from '../hooks/useProductTier';
@@ -413,15 +414,6 @@ function ServiceRouterInner() {
     () => SERVICE_CATALOG.find((s) => s.key === serviceKey) ?? null,
     [serviceKey]
   );
-
-  // Resolve the feature wall for this route. Hooks run unconditionally, so the
-  // tier is always fetched; only the verdict is conditional.
-  const { tier: sparkTier } = useProductTier("spark");
-  const navVisible = isRoutable(serviceKey ? SERVICE_VISIBILITY[serviceKey] : undefined, {
-    tier: sparkTier,
-    addons: activeAddons(),
-    gatingActive: true,
-  });
 
   if (!service) {
     return (
@@ -956,33 +948,30 @@ function GenericServicePage({ service, status }: { service: PortalService; statu
  */
 export function ServiceRouter() {
   const { serviceKey } = useParams<{ serviceKey: string }>();
-  const { tier: sparkTier } = useProductTier("spark");
+  // Resolve the tier + add-ons of the PRODUCT this route belongs to. Until
+  // the 2026-08-21 pricing rework only SPARK carried rules, so the guard read
+  // the SPARK tier for everything; OLIVER (Invoicing) and ARION (SEO add-on)
+  // rules would have been judged against the wrong subscription. Hooks run
+  // unconditionally — non-gated products resolve but are never applied.
+  const product = productOfServiceKey(serviceKey);
+  const gatingActive = isGatedProduct(product);
+  const { tier } = useProductTier(gatingActive ? product : "spark");
+  const addons = useNavAddons(gatingActive ? product : undefined);
   const service = useMemo(
     () => SERVICE_CATALOG.find((s) => s.key === serviceKey) ?? null,
     [serviceKey]
   );
   const rules = serviceKey ? SERVICE_VISIBILITY[serviceKey] : undefined;
-  const locked = !isRoutable(rules, {
-    tier: sparkTier,
-    addons: activeAddons(),
-    gatingActive: true,
-  });
+  const locked = !isRoutable(rules, { tier, addons, gatingActive });
 
   if (!locked || !service) return <ServiceRouterInner />;
-
-  const requiredPlan =
-    rules?.addon === "leadgen"
-      ? "the Lead Gen add-on"
-      : rules?.minTier
-        ? `SPARK ${rules.minTier.charAt(0).toUpperCase()}${rules.minTier.slice(1)}`
-        : "a higher plan";
 
   return (
     <FeatureLocked
       name={service.displayName}
       description={service.description}
-      requiredPlan={requiredPlan}
-      accent={productColor(productOfServiceKey(serviceKey))}
+      requiredPlan={requirementLabel(rules, product)}
+      accent={productColor(product)}
     >
       <ServiceRouterInner />
     </FeatureLocked>

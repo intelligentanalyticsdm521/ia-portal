@@ -57,7 +57,7 @@ export function SeoSiteAudit() {
       <AddonUpsell
         title="SEO Tools — Add-on not active"
         description="Weekly site health monitoring, issue tracking, and historical trends. Powered by SE Ranking."
-        price="$29"
+        price="$24.99"
         planName="Starter"
       />
     );

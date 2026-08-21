@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { tierDisplayName } from "../../lib/tierLabels";
 
 interface FeeBreakdown {
   tier: string;
@@ -15,10 +16,8 @@ interface FeeBreakdown {
   blendedCard: { percent: number; flat: number; label: string };
 }
 
-const TIER_LABEL: Record<string, string> = {
-  lite: "Lite", standard: "Standard", pro: "Pro",
-  business: "Business", enterprise: "Enterprise",
-};
+// "lite" renders as "Invoicing" (pricing rework 2026-08-21).
+const tierLabel = (tier: string) => tierDisplayName("oliver", tier) || tier;
 
 export function OliverFeesPage() {
   const { get, ready } = useOliverApi();
@@ -89,7 +88,7 @@ export function OliverFeesPage() {
                   }`}
                 >
                   <td className="py-3 pr-3 font-semibold text-slate-800">
-                    {TIER_LABEL[r.tier] || r.tier}
+                    {tierLabel(r.tier)}
                     {mine && r.tier === mine.tier && (
                       <span className="ml-2 inline-block px-2 py-0.5 rounded bg-[#1A7DB5] text-white text-[10px] font-semibold align-middle">
                         YOUR PLAN
@@ -133,7 +132,7 @@ export function OliverFeesPage() {
             <div>
               <div className="card-ttl">What you pay today</div>
               <div className="card-sub">
-                Your account is on the {TIER_LABEL[mine.tier] || mine.tier} plan.
+                Your account is on the {tierLabel(mine.tier)} plan.
               </div>
             </div>
           </div>

@@ -70,7 +70,7 @@ export function SeoRankings() {
       <AddonUpsell
         title="SEO Tools — Add-on not active"
         description="Track keyword positions across Google, Bing, and AI search engines. Powered by SE Ranking."
-        price="$29"
+        price="$24.99"
         planName="Starter"
       />
     );

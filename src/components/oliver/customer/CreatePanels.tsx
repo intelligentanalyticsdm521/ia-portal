@@ -295,8 +295,10 @@ export function JobCreatePanel({
       onCreated(newId);
     } catch (e) {
       const msg = (e as Error).message || "";
+      // Pricing rework 2026-08-21: the Invoicing tier (plan key `lite`) has
+      // no jobs at all — Standard is the first tier with a jobs board.
       setErr(msg.includes("402") || msg.includes("job_limit_reached")
-        ? "You've hit your Lite-tier job limit (50 active jobs). Upgrade to Standard to add more."
+        ? "Jobs aren't included in OLIVER Invoicing. Upgrade to Standard to create and schedule jobs."
         : `Create failed: ${msg}`);
     } finally { setSubmitting(false); }
   }

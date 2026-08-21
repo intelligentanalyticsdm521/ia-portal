@@ -267,7 +267,8 @@ export function SignupPage() {
   // F-109 — optional ARION SEO add-on selected at signup. Auth'd
   // ArionUsagePage has its own picker; this is the public mirror so new
   // tenants can buy ARION + SEO in one go instead of post-signup upsell.
-  const [arionSeo, setArionSeo] = useState<'' | 'essentials' | 'growth' | 'authority'>('');
+  // Starter is sold from 2026-08-21 ($24.99 — the tier already existed in code).
+  const [arionSeo, setArionSeo] = useState<'' | 'starter' | 'essentials' | 'growth' | 'authority'>('');
 
   // F-110 — waitlist modal state. STELLA/FORGE/ARGUS cards open this in
   // place of being disabled.
@@ -767,11 +768,14 @@ export function SignupPage() {
                   the canonical pricing matrix (50_PRICING_TIER_MATRIX_CANONICAL.md §1B):
                   Starter = 10 / Essentials = 25 / Growth = 60 / Authority = 150. */}
               {(() => {
+                // Engines per the 2026-08-21 AI engine model: Growth = Google AI
+                // Overviews + AI Mode · Authority = + ChatGPT + Gemini, and
+                // Market Monitor moved into Authority.
                 const SEO_BLURBS: Record<string, string> = {
-                  starter: '10 keywords · site audit · monthly report',
-                  essentials: '25 keywords · competitors · monthly report',
-                  growth: '60 keywords · Google AI Mode · weekly digest',
-                  authority: '150 keywords · all AI engines · daily digest',
+                  starter: '10 keywords · 1 competitor · monthly ranks · site audit',
+                  essentials: '25 keywords · 3 competitors · weekly ranks',
+                  growth: '60 keywords · daily ranks · backlinks · Google AI Overviews + AI Mode',
+                  authority: '150 keywords · daily ranks · AI Overviews, AI Mode, ChatGPT + Gemini · Market Monitor',
                 };
                 const SEO_LABELS: Record<string, string> = {
                   starter: 'Starter', essentials: 'Essentials', growth: 'Growth', authority: 'Authority',
@@ -793,7 +797,7 @@ export function SignupPage() {
                             key={key}
                             type="button"
                             disabled={!row || perMo === 0}
-                            onClick={() => setArionSeo(key as 'essentials' | 'growth' | 'authority')}
+                            onClick={() => setArionSeo(key as 'starter' | 'essentials' | 'growth' | 'authority')}
                             className={`text-left rounded-lg border-2 p-3 transition ${
                               arionSeo === key ? 'border-[#38BDF8] bg-sky-50' : 'border-gray-200 bg-white hover:border-gray-300'
                             } ${!row || perMo === 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
@@ -885,8 +889,8 @@ export function SignupPage() {
                         ))}
                       </div>
                       <p className="mt-3 text-xs text-gray-500">
-                        Includes the full SPARK CRM (contacts, email + SMS campaigns, forms, automations).
-                        Adjustable anytime in Settings post-signup.
+                        Includes the full SPARK CRM (contacts, email campaigns, templates, forms + hosted pages, insights).
+                        SMS and automations unlock with Pro. Adjustable anytime in Settings post-signup.
                       </p>
                     </>
                   )}
@@ -898,7 +902,11 @@ export function SignupPage() {
                   <div className="grid gap-3 sm:grid-cols-3">
                     {/* Standard (included) */}
                     {/* Standard card — pull features from catalog 5k volume row.
-                        Falls back to canonical bullet list if catalog omits them. */}
+                        Falls back to the canonical bullet list if catalog omits
+                        them. Fallbacks mirror the SPARK nav gates (SubNav.tsx):
+                        SMS, segments, newsletter, landing pages, automations,
+                        pipelines are Pro; journeys, approvals, attribution,
+                        NPS/referrals are Business (pricing rework 2026-08-21). */}
                     <button
                       type="button"
                       onClick={() => setFeatureAddon('')}
@@ -907,7 +915,7 @@ export function SignupPage() {
                       <div className="text-xs font-bold uppercase tracking-wide text-gray-500">Standard</div>
                       <div className="mt-1 text-base font-bold text-gray-900">Included</div>
                       <ul className="mt-3 space-y-1.5 text-[11px] text-gray-700">
-                        {((cat?.volumes?.find((v) => v.volume === '5k')?.features) || ['Full CRM + contacts', 'Email + SMS campaigns', 'Forms + UTM tracking', 'ARION form → SPARK auto-flow']).map((f) => (
+                        {((cat?.volumes?.find((v) => v.volume === '5k')?.features) || ['Full CRM — contacts, companies, lists, tags', 'Email campaigns + templates + A/B tests', 'Forms with hosted page, embed + QR', 'Deliverability + IA Insights']).map((f) => (
                           <li key={f} className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>{f}</li>
                         ))}
                       </ul>
@@ -925,7 +933,7 @@ export function SignupPage() {
                         <div className="text-[10px] text-gray-500">+{money(perYear(proAddon, cycle))}/yr</div>
                       )}
                       <ul className="mt-3 space-y-1.5 text-[11px] text-gray-700">
-                        {(proAddon?.features || ['Sales Pipeline + Deals', 'Newsletter Studio + WP publish', 'Social scheduler', 'Landing pages, NPS, referrals']).map((f) => (
+                        {(proAddon?.features || ['Segments + Newsletter Studio', 'SMS campaigns + inbox', 'Landing pages + prebuilt automations', 'Pipelines, deals + tasks', 'IA Insights Intelligence']).map((f) => (
                           <li key={f} className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>{f}</li>
                         ))}
                       </ul>
@@ -943,7 +951,7 @@ export function SignupPage() {
                         <div className="text-[10px] text-gray-500">+{money(perYear(bizAddon, cycle))}/yr</div>
                       )}
                       <ul className="mt-3 space-y-1.5 text-[11px] text-gray-700">
-                        {(bizAddon?.features || ['Everything in Pro', 'AI Writer (full)', 'OLIVER-cross segments', 'Revenue attribution + B2B']).map((f) => (
+                        {(bizAddon?.features || ['Everything in Pro', 'Journeys + approvals', 'Attribution + audience sync', 'NPS, referrals + contact scoring']).map((f) => (
                           <li key={f} className="flex gap-1.5"><span className="text-[#EF6C33]">✓</span>{f}</li>
                         ))}
                       </ul>

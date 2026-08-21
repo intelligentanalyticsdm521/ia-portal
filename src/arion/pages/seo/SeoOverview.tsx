@@ -88,7 +88,7 @@ export function SeoOverview() {
       <AddonUpsell
         title="SEO Tools — Add-on not active"
         description="Full SEO intelligence across Google, Bing, and AI search engines. Powered by SE Ranking."
-        price="$29"
+        price="$24.99"
         planName="Starter"
       />
     );
@@ -143,34 +143,41 @@ export function SeoOverview() {
     value: Math.round((d.top1 || 0) * 0.27 + (d.top2_3 || 0) * 0.13 + (d.top4_5 || 0) * 0.075),
   }));
 
-  // Tier gating for AI cards (locked per product matrix 2026-04-20)
-  // - Google AI Mode: Growth and above
+  // Tier gating for AI cards — AI engine model AGREED 2026-08-21
+  // (PRICING_REWORK_DECISIONS_2026-08-21):
+  // - Google AI Overviews + Google AI Mode: Growth and above
   // - ChatGPT / Gemini: Authority
   // - Perplexity: IA Consulting only (never self-serve)
   const tier = (selectedSite?.seoAddonTier || '').toLowerCase();
   type AiGateReason = 'available' | 'upgrade_growth' | 'upgrade_authority' | 'consulting_only';
   const aiGateFor = (type: string | null): AiGateReason => {
     const t = (type || '').toLowerCase();
-    if (t === 'ai_mode' || t === 'aimode' || t === 'google_ai_mode') {
+    if (t === 'ai_mode' || t === 'aimode' || t === 'google_ai_mode' || t === 'ai_overview' || t === 'google_ai_overview') {
       return (tier === 'growth' || tier === 'authority') ? 'available' : 'upgrade_growth';
     }
     if (t === 'chatgpt') return tier === 'authority' ? 'available' : 'upgrade_authority';
     if (t === 'gemini') return tier === 'authority' ? 'available' : 'upgrade_authority';
     if (t === 'perplexity') return 'consulting_only';
-    // Legacy AI overview — treat like Authority
     return tier === 'authority' ? 'available' : 'upgrade_authority';
   };
 
-  // Canonical AI engine list — always render all 4 in this order regardless of
-  // whether SE Ranking has them configured on the project.
+  // Canonical AI engine list — always render all 5 in this order regardless of
+  // whether SE Ranking has them configured on the project (Perplexity shows
+  // its consulting-only state).
   const AI_CANONICAL: Array<{ type: string; label: string }> = [
+    { type: 'ai_overview', label: 'Google AI Overviews' },
     { type: 'ai_mode', label: 'Google AI Mode' },
     { type: 'chatgpt', label: 'ChatGPT' },
     { type: 'gemini', label: 'Gemini' },
     { type: 'perplexity', label: 'Perplexity' },
   ];
   const aiCanonicalCards = AI_CANONICAL.map((can) => {
-    const found = aiCards.find((c) => String(c.type || '').toLowerCase() === can.type);
+    const found = aiCards.find((c) => {
+      const t = String(c.type || '').toLowerCase();
+      if (can.type === 'ai_overview') return t === 'ai_overview' || t === 'google_ai_overview';
+      if (can.type === 'ai_mode') return t === 'ai_mode' || t === 'google_ai_mode' || t === 'aimode';
+      return t === can.type;
+    });
     return { canonical: can, card: found ?? null };
   });
 
@@ -313,7 +320,7 @@ export function SeoOverview() {
         ))}
       </div>
 
-      {/* AI Search Engines — always visible, always 4 cards in canonical order */}
+      {/* AI Search Engines — always visible, always 5 cards in canonical order */}
       <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary, #0B1C24)', marginTop: 24, marginBottom: 10, display: 'inline-flex', alignItems: 'center' }}>
         AI Search Engines
         <GlossaryIcon termKey="ai_mentions" size={12} />
@@ -597,7 +604,7 @@ function AiHeroCard({ card, canonicalLabel, canonicalType, gate }: {
     const messageBody = gate === 'consulting_only'
       ? 'Perplexity tracking is handled through IA\u2019s consulting engagements — ask your strategist to enable it.'
       : gate === 'upgrade_growth'
-        ? `Upgrade to unlock ${canonicalLabel} insights — AI Mode is included with Growth and Authority tiers.`
+        ? `Upgrade to unlock ${canonicalLabel} insights — Google AI Overviews and AI Mode are included with Growth and Authority tiers.`
         : gate === 'upgrade_authority'
           ? `Upgrade to unlock ${canonicalLabel} insights — included with the Authority tier.`
           : `Enable ${canonicalLabel} tracking in your SE Ranking project to see insights.`;

@@ -8,6 +8,7 @@ import { LogoPicker } from '../../components/oliver/LogoPicker';
 import { PhoneInput } from '../../components/PhoneInput';
 // F-106 — Plan & Pricing hub (SubscriptionBillingTab)
 import { PendingChangeBanner } from '../../components/PendingChangeBanner';
+import { tierDisplayName } from '../../lib/tierLabels';
 import {
   fetchSubscriptions, createPortalSession,
   type SubscriptionsResponse, type ProductSubscription,
@@ -507,7 +508,8 @@ export function SubscriptionBillingTab() {
           const sub = subByProduct.get(p.key);
           const isActive = !!sub;
           const isOwner = !!data?.owner;
-          const tierLabel = sub?.tier ? sub.tier.charAt(0).toUpperCase() + sub.tier.slice(1) : null;
+          // Product-aware: OLIVER "lite" is sold as "Invoicing" (pricing rework 2026-08-21).
+          const tierLabel = sub?.tier ? tierDisplayName(p.key, sub.tier) : null;
           return (
             <div
               key={p.key}

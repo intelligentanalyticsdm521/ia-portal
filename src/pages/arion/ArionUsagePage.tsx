@@ -1,11 +1,24 @@
-// @deprecated 2026-06-12 � orphan after refactor. Superseded by hamburger > Plan & Pricing � usage moved to global hamburger menu. Confirm with founder before deletion (task #174).
 // ArionUsagePage — ARION Plan & Pricing.
 //
-// Shows the tenant's CURRENT plan (base tier + SEO add-on) as tagged cards
-// and as billed line items; selecting a different tier previews the upgrade
-// (current struck-through, new total). The platform-owner/founder always
-// resolves to Business + SEO Authority (full access, never charged). No
-// one-time setup fee — self-serve; onboarding help is a paid consultation.
+// Reached from the global Plan & Pricing hub (hamburger > Plan & Pricing >
+// "Manage plan" → /app/services/arion_usage); it is no longer in the ARION
+// sub-nav (2026-07-21). Shows the tenant's CURRENT plan (base tier + SEO
+// add-on) as tagged cards and as billed line items; selecting a different
+// tier previews the upgrade (current struck-through, new total). The
+// platform-owner/founder always resolves to Business + SEO Authority (full
+// access, never charged). No one-time setup fee — self-serve; onboarding help
+// is a paid consultation.
+//
+// Pricing rework 2026-08-21 (Brandon, PRICING_REWORK_DECISIONS_2026-08-21):
+// SEO is an ADD-ON — base tiers are the website / hosting / analytics / GBP
+// product and promise NO keyword tracking, SE Ranking or AI search; every
+// SE Ranking-powered surface (incl. Market Monitor, Authority only) lives in
+// the four-tier SEO add-on ladder. Base: Lite $19.99 / Standard $34.99 /
+// Pro $69.99 / Business $129.99 (3 sites, +$29.99 each additional). SEO:
+// Starter $24.99 / Essentials $49.99 / Growth $99.99 / Authority $199.99.
+// Form → SPARK / OLIVER is a platform rule (own both products), not a tier
+// feature, so it is not listed on any tier. Stripe is the price authority —
+// these numbers are display fallbacks that must match the new Stripe Prices.
 import type { PortalService, ServiceStatus } from "../../config/serviceCatalog";
 import { useEffect, useMemo, useState } from "react";
 import { Check, AlertCircle, ChevronDown, ChevronUp, Search } from "lucide-react";
@@ -24,25 +37,31 @@ interface BaseTier { key: BaseKey; name: string; monthly: number; badge?: string
 
 const BASE_TIERS: BaseTier[] = [
   { key: "lite", name: "Lite", monthly: 19.99, sites: "1 site",
-    bullets: ["Managed WordPress + Elementor", "Hosting, SSL, domain & DNS", "Locked + maintained core plugins", "Basic contact form", "Support portal"] },
-  { key: "standard", name: "Standard", monthly: 29.99, sites: "1 site",
-    bullets: ["Everything in Lite", "Blog + advanced forms", "Form → SPARK auto-sync", "Google Analytics dashboard", "Basic SEO dashboard"] },
-  { key: "pro", name: "Pro", monthly: 49.99, badge: "Most Popular", highlight: true, sites: "1 site + staging",
-    bullets: ["Everything in Standard", "Staging environment + deploy controls", "Page-speed monitoring", "Form → OLIVER inquiry auto-flow", "Performance dashboard", "Priority support"] },
-  { key: "business", name: "Business", monthly: 99.99, sites: "Up to 3 sites",
-    bullets: ["Everything in Pro", "Multi-site management (up to 3)", "Role-based team access", "Centralized domain & SSL", "Additional sites: $29.99/mo each"] },
+    bullets: ["AI website builder + managed WordPress hosting", "Domain, DNS + SSL", "Backups + security monitoring", "IA Plugin + forms", "Basic Core Web Vitals", "IA Insights — Health, Trends + website reports"] },
+  { key: "standard", name: "Standard", monthly: 34.99, sites: "1 site",
+    bullets: ["Everything in Lite", "Google Analytics 4 + Search Console", "Bing Webmaster + IndexNow", "Hosting performance + vulnerability scans", "My Brand (Standard)", "GA4 / GSC reporting in IA Insights"] },
+  { key: "pro", name: "Pro", monthly: 69.99, badge: "Most Popular", highlight: true, sites: "1 site + staging",
+    bullets: ["Everything in Standard", "Google Business Profile suite (locations, reviews w/ AI replies, posts, services, performance)", "Bing Places + Apple Business Connect", "Staging environment", "My Brand Pro", "IA Insights Intelligence reports"] },
+  { key: "business", name: "Business", monthly: 129.99, sites: "3 sites included",
+    bullets: ["Everything in Pro", "3 sites included · additional sites $29.99/mo each", "Full Analytics + IA Insight Reports", "My Brand Business", "Roles, approvals + governance"] },
 ];
 
-type SeoKey = "essentials" | "growth" | "authority";
+// SEO add-on ladder — mirrors arion-api/lib/seoOnboarding.js TIER_CONFIG
+// (the enforced config) + the 2026-08-21 price sheet. Prompts count per
+// prompt × engine: Growth = 5 prompts × (Google AI Overviews + AI Mode),
+// Authority = the same 5 × (AI Overviews + AI Mode + ChatGPT + Gemini).
+type SeoKey = "starter" | "essentials" | "growth" | "authority";
 interface SeoTier { key: SeoKey; name: string; monthly: number; keywords: number; badge?: string; highlight?: boolean; bullets: string[]; }
 
 const SEO_TIERS: SeoTier[] = [
-  { key: "essentials", name: "SEO Essentials", monthly: 49, keywords: 10,
-    bullets: ["10 tracked keywords", "Monthly site audit", "Metadata optimization", "Rank tracking + monthly report", "Basic competitor view (top 3)"] },
-  { key: "growth", name: "SEO Growth", monthly: 99, keywords: 50, badge: "Most Popular", highlight: true,
-    bullets: ["50 tracked keywords", "Keyword strategy + content plans", "Technical SEO monitoring", "Backlink monitoring", "Google AI Mode result tracking", "Monthly strategy call"] },
-  { key: "authority", name: "SEO Authority", monthly: 149, keywords: 150,
-    bullets: ["150 tracked keywords", "All Growth features", "ChatGPT + Gemini AI result tracking", "Competitor monitoring (up to 20 domains)", "Market Monitor + IA Insights whitespace", "Quarterly strategy session"] },
+  { key: "starter", name: "SEO Starter", monthly: 24.99, keywords: 10,
+    bullets: ["10 tracked keywords · 1 competitor", "Monthly rank checks (Google desktop + Bing)", "Site audit every 30 days", "1 keyword group"] },
+  { key: "essentials", name: "SEO Essentials", monthly: 49.99, keywords: 25,
+    bullets: ["25 tracked keywords · 3 competitors", "Weekly rank checks (Google desktop + mobile, Bing)", "Site audit every 30 days", "1 keyword group"] },
+  { key: "growth", name: "SEO Growth", monthly: 99.99, keywords: 60, badge: "Most Popular", highlight: true,
+    bullets: ["60 tracked keywords · 5 competitors", "Daily rank checks", "Site audit every 14 days", "Backlink monitoring", "AI search tracking — Google AI Overviews + AI Mode (5 prompts)", "5 keyword groups"] },
+  { key: "authority", name: "SEO Authority", monthly: 199.99, keywords: 150,
+    bullets: ["150 tracked keywords · 10 competitors", "Daily rank checks", "Site audit every 7 days", "Backlink monitoring", "AI search tracking — AI Overviews + AI Mode + ChatGPT + Gemini (5 prompts)", "Market Monitor (competitor page changes, backlinks, ranking swings)", "15 keyword groups"] },
 ];
 
 const annualPrice = (m: number) => +(m * 0.9).toFixed(2);
@@ -54,35 +73,38 @@ function normBase(v: string | null | undefined): BaseKey | null {
 function normSeo(v: string | null | undefined): SeoKey | null {
   const s = String(v || "").toLowerCase();
   if (!s) return null;
-  return (["essentials", "growth", "authority"] as SeoKey[]).find(k => s.includes(k)) || null;
+  return (["starter", "essentials", "growth", "authority"] as SeoKey[]).find(k => s.includes(k)) || null;
 }
 
+// Base-tier feature matrix. No SEO / keyword / AI-search rows on purpose —
+// those are the add-on. `lite` = ARION Lite (ARION keeps the name).
 interface FeatureRow { label: string; lite: boolean; std: boolean; pro: boolean; biz: boolean; status?: "built" | "scaffold" | "v2"; }
 const FEATURE_SECTIONS: { section: string; rows: FeatureRow[] }[] = [
-  { section: "Hosting & WordPress", rows: [
-    { label: "Managed WordPress + hosting", lite: true, std: true, pro: true, biz: true, status: "built" },
-    { label: "SSL + domain + DNS", lite: true, std: true, pro: true, biz: true, status: "built" },
-    { label: "Locked core plugins + auto-updates", lite: true, std: true, pro: true, biz: true, status: "built" },
-    { label: "Daily backups + restore points", lite: true, std: true, pro: true, biz: true, status: "built" },
+  { section: "Website & Hosting", rows: [
+    { label: "AI website builder + managed WordPress hosting", lite: true, std: true, pro: true, biz: true, status: "built" },
+    { label: "Domain, DNS + SSL", lite: true, std: true, pro: true, biz: true, status: "built" },
+    { label: "Backups + restore points", lite: true, std: true, pro: true, biz: true, status: "built" },
+    { label: "Security monitoring + locked core plugins", lite: true, std: true, pro: true, biz: true, status: "built" },
+    { label: "IA Plugin + forms", lite: true, std: true, pro: true, biz: true, status: "built" },
+    { label: "Core Web Vitals", lite: true, std: true, pro: true, biz: true, status: "built" },
+    { label: "Hosting performance + vulnerability scans", lite: false, std: true, pro: true, biz: true, status: "built" },
     { label: "Staging environment", lite: false, std: false, pro: true, biz: true, status: "built" },
-    { label: "Multi-site management (up to 3)", lite: false, std: false, pro: false, biz: true, status: "built" } ] },
-  { section: "Content & Forms", rows: [
-    { label: "Pages + posts + media", lite: true, std: true, pro: true, biz: true, status: "built" },
-    { label: "Basic contact form", lite: true, std: true, pro: true, biz: true, status: "built" },
-    { label: "Blog + categories + tags", lite: false, std: true, pro: true, biz: true, status: "built" },
-    { label: "Advanced multi-step forms", lite: false, std: true, pro: true, biz: true, status: "built" },
-    { label: "Form → SPARK auto-sync", lite: false, std: true, pro: true, biz: true, status: "built" },
-    { label: "Form → OLIVER auto-flow", lite: false, std: false, pro: true, biz: true, status: "built" } ] },
-  { section: "Analytics & SEO", rows: [
-    { label: "Google Analytics dashboard", lite: false, std: true, pro: true, biz: true, status: "built" },
-    { label: "Basic SEO dashboard (Rank Math)", lite: false, std: true, pro: true, biz: true, status: "built" },
-    { label: "Page-speed monitoring", lite: false, std: false, pro: true, biz: true, status: "built" },
-    { label: "Performance dashboard", lite: false, std: false, pro: true, biz: true, status: "built" } ] },
+    { label: "3 sites included (+$29.99/mo each additional)", lite: false, std: false, pro: false, biz: true, status: "built" } ] },
+  { section: "Search & Analytics", rows: [
+    { label: "Google Analytics 4 dashboard", lite: false, std: true, pro: true, biz: true, status: "built" },
+    { label: "Google Search Console (performance, indexing, sitemaps)", lite: false, std: true, pro: true, biz: true, status: "built" },
+    { label: "Bing Webmaster + IndexNow", lite: false, std: true, pro: true, biz: true, status: "built" },
+    { label: "Full Analytics + IA Insight Reports", lite: false, std: false, pro: false, biz: true, status: "built" } ] },
+  { section: "Business Profile & Brand", rows: [
+    { label: "Google Business Profile suite (locations, reviews w/ AI replies, posts, services, performance)", lite: false, std: false, pro: true, biz: true, status: "built" },
+    { label: "Bing Places + Apple Business Connect", lite: false, std: false, pro: true, biz: true, status: "built" },
+    { label: "My Brand", lite: false, std: true, pro: true, biz: true, status: "built" } ] },
+  { section: "IA Insights", rows: [
+    { label: "Health + Trends + Reports (for the data your tier connects)", lite: true, std: true, pro: true, biz: true, status: "built" },
+    { label: "Intelligence reports", lite: false, std: false, pro: true, biz: true, status: "built" } ] },
   { section: "Team & Admin", rows: [
     { label: "Support portal", lite: true, std: true, pro: true, biz: true, status: "built" },
-    { label: "Priority support SLA", lite: false, std: false, pro: true, biz: true, status: "built" },
-    { label: "Role-based team access", lite: false, std: false, pro: false, biz: true, status: "built" },
-    { label: "Centralized domain & SSL", lite: false, std: false, pro: false, biz: true, status: "built" } ] },
+    { label: "Roles, approvals + governance", lite: false, std: false, pro: false, biz: true, status: "built" } ] },
 ];
 const STATUS_PILL: Record<string, { label: string; cls: string }> = {
   built: { label: "Available", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
@@ -179,8 +201,8 @@ export function ArionUsagePage(_: Props) {
         </div>
         <div className="px-1 pb-2 text-xs text-slate-600">
           <strong className="text-slate-800">How pricing works:</strong>{" "}
-          Your <strong>base tier</strong> covers managed WordPress, hosting, security, and the ARION dashboard.{" "}
-          The <strong>SEO add-on</strong> is optional — three tiers unlock more keywords, AI-search tracking, and competitor monitoring.{" "}
+          Your <strong>base tier</strong> covers the AI-built website, managed hosting, security, Google/Bing analytics and Business Profile — never keyword tracking.{" "}
+          The <strong>SEO add-on</strong> is optional and stacks on any tier — four tiers unlock keyword + rank tracking, site audits, competitor monitoring, AI-search tracking and (Authority) Market Monitor.{" "}
           Annual billing saves 10% on both. Self-serve — no setup fee (need hands-on onboarding? add a one-time consultation).
         </div>
       </div>
@@ -240,11 +262,11 @@ export function ArionUsagePage(_: Props) {
                   <Search className="h-4 w-4 text-[#1A7DB5]" /> SEO add-on
                   <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">Optional</span>
                 </h2>
-                <p className="text-xs text-slate-500 mt-1">SE Ranking-powered keyword tracking, AI-search visibility, and competitor intelligence. Available at any base tier.</p>
+                <p className="text-xs text-slate-500 mt-1">SE Ranking-powered keyword + rank tracking, site audits, competitor intelligence, AI-search visibility and Market Monitor. Available at any base tier.</p>
               </div>
               {seo && <button onClick={() => setSeo(null)} className="text-xs text-slate-500 hover:text-slate-700 underline">Remove</button>}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
               {SEO_TIERS.map(t => {
                 const isCurrent = curSeo === t.key;
                 return (

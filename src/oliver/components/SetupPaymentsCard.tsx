@@ -35,6 +35,7 @@
 import { useState, useEffect } from "react";
 import { CreditCard, AlertCircle } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { tierDisplayName } from "../../lib/tierLabels";
 
 // Mirrors feeBreakdown() in oliver-api lib/iaFee.js.
 interface FeeBreakdown {
@@ -258,7 +259,7 @@ export function SetupPaymentsCard() {
               <>
                 Payment processing is{" "}
                 <strong style={{ color: "#2A2A2A" }}>{fees.blendedCard.label}</strong> on your{" "}
-                {fees.tier.charAt(0).toUpperCase() + fees.tier.slice(1)} plan.{" "}
+                {tierDisplayName("oliver", fees.tier)} plan.{" "}
               </>
             ) : (
               <>Payment processing fees apply to each transaction. </>

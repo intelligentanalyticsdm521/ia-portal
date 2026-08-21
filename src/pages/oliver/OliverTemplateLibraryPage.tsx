@@ -1,7 +1,7 @@
 // OliverTemplateLibraryPage — real document template builder.
 // Create/edit named branded templates, assign each to Invoice / Quote /
 // Proposal / Recurring (those documents then render with it). Tier-capped
-// (Lite 1 / Standard 3 / Pro 10 / Business unlimited).
+// (Invoicing [lite] 1 / Standard 3 / Pro 10 / Business unlimited).
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";

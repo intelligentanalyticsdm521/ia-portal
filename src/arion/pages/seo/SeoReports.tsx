@@ -30,7 +30,7 @@ export function SeoReports() {
       <AddonUpsell
         title="SEO Tools — Add-on not active"
         description="Generate detailed SEO reports to share with your team or clients."
-        price="$29"
+        price="$24.99"
         planName="Starter — 10 keywords"
       />
     );

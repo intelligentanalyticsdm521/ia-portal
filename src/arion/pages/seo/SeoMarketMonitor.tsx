@@ -46,8 +46,8 @@ export function SeoMarketMonitor() {
       <AddonUpsell
         title="SEO Tools — Add-on not active"
         description="Market Monitor is included with the SEO Authority tier — watch backlinks, competitor page changes, and ranking swings."
-        price="$29"
-        planName="Starter"
+        price="$199.99"
+        planName="Authority"
       />
     );
   }

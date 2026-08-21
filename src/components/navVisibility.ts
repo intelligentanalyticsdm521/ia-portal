@@ -1,4 +1,4 @@
-// navVisibility.ts — the SPARK "feature wall".
+// navVisibility.ts — the product "feature wall" (SPARK, OLIVER, ARION).
 //
 // WHY THIS EXISTS
 // ---------------
@@ -16,6 +16,12 @@
 //   addon   → only for tenants who bought that add-on.
 //   minTier → only at or above that subscription tier.
 //
+// 2026-08-21 (pricing rework, Brandon): the same declarations now carry the
+// OLIVER tier gates (Invoicing = quotes/proposals/invoices/payments/reports
+// only — every jobs / scheduling / portal / crew / team surface is Standard+)
+// and the ARION SEO add-on gate (every SE Ranking-powered surface requires
+// the SEO add-on). See SubNav.tsx for the per-item declarations.
+//
 // NOTHING IS DELETED. Every page still exists and still routes; flipping a
 // declaration off in SUB_NAV_CONFIGS brings a surface straight back if a real
 // client turns out to need it.
@@ -24,13 +30,31 @@
 // needs to see exactly what they see — a founder bypass would hide the very
 // thing he's checking. Dev walks other tiers with VITE_DEV_TIER instead (see
 // useProductTier), which is a real tier change rather than a peek behind it.
+//
+// FAIL OPEN ON "UNKNOWN" (standing rule since the 2026-08-17 incident): a tier
+// or add-on we could not resolve — oliver-api down, arion-api down, the
+// request still in flight — is NOT a lower tier. Only a POSITIVELY resolved
+// lower tier / missing add-on locks a surface. The alternative locked every
+// customer out of their own product the moment one API hiccuped.
 import { tierMeets, type TierKey } from "../hooks/useProductTier";
 
 /** Tiers a nav surface can require. Mirrors useProductTier's ranking. */
 export type NavTier = "standard" | "pro" | "business";
 
-/** Add-ons sold separately from the subscription tiers. */
-export type NavAddon = "leadgen";
+/**
+ * Add-ons sold separately from the subscription tiers.
+ *   leadgen — SPARK Lead Gen (Lead Inbox).
+ *   seo     — ARION SEO add-on (Starter / Essentials / Growth / Authority).
+ *             Resolved from the selected ARION site's `seoAddonTier`, which is
+ *             the same column arion-api gates its SE Ranking calls on.
+ */
+export type NavAddon = "leadgen" | "seo";
+
+/** Customer-facing name of each add-on, for lock tooltips + FeatureLocked. */
+export const ADDON_LABELS: Record<NavAddon, string> = {
+  leadgen: "the Lead Gen add-on",
+  seo: "the ARION SEO add-on",
+};
 
 /** The visibility declaration a nav item may carry. */
 export interface VisibilityRules {
@@ -58,28 +82,41 @@ export interface VisibilityRules {
 }
 
 export interface VisibilityContext {
-  /** Resolved SPARK/OLIVER/ARION tier, or null when unknown. */
+  /** Resolved SPARK/OLIVER/ARION tier, or null when unknown (→ fail open). */
   tier: TierKey;
-  /** Add-ons this tenant has actually purchased. */
-  addons: NavAddon[];
+  /**
+   * Add-ons this tenant has actually purchased, or null while unresolved
+   * (→ fail open). Produced by hooks/useNavAddons so the nav and the route
+   * guard read the same answer.
+   */
+  addons: NavAddon[] | null;
   /**
    * Products we gate. Anything else (STELLA/FORGE/ARGUS placeholders,
-   * Settings, Consulting) passes through untouched — this wall is a SPARK
-   * simplification, not a portal-wide policy.
+   * Settings, Consulting) passes through untouched — this wall is a
+   * product-tier simplification, not a portal-wide policy.
    */
   gatingActive: boolean;
 }
 
 /**
- * A tenant's active add-ons.
+ * Add-ons that resolve WITHOUT a network call.
  *
  * Lead Gen is LOCKED per the map ("Currently LOCKED until the taxonomy is
- * fixed"), so this returns none today. When the add-on entitlement lands, this
- * is the ONE place to wire it — nav and route guard both read from here, so
- * they cannot drift apart.
+ * fixed"), so this never includes it. The SEO add-on needs the tenant's ARION
+ * site and is resolved in hooks/useNavAddons — this stays the synchronous
+ * baseline that hook starts from.
  */
 export function activeAddons(): NavAddon[] {
   return [];
+}
+
+// Fail-open events are logged once per rule so a 200-row nav doesn't flood
+// the console on every render while an API is down.
+const warned = new Set<string>();
+function warnFailOpen(what: string) {
+  if (warned.has(what)) return;
+  warned.add(what);
+  console.error(`[navVisibility] ${what} is unresolved — allowing access (fail open). Only a positively-resolved lower tier / missing add-on locks a surface.`);
 }
 
 /**
@@ -93,8 +130,14 @@ export function isVisible(rules: VisibilityRules | undefined, ctx: VisibilityCon
   if (!rules) return true;
   if (rules.hidden || rules.merged) return false;  // neither belongs in the menu
   if (!ctx.gatingActive) return true;       // non-gated product: tier/add-on don't apply
-  if (rules.addon && !ctx.addons.includes(rules.addon)) return false;
-  if (rules.minTier && !tierMeets(ctx.tier, rules.minTier)) return false;
+  if (rules.addon) {
+    if (ctx.addons == null) warnFailOpen(`add-on "${rules.addon}"`);
+    else if (!ctx.addons.includes(rules.addon)) return false;
+  }
+  if (rules.minTier) {
+    if (ctx.tier == null) warnFailOpen("subscription tier");
+    else if (!tierMeets(ctx.tier, rules.minTier)) return false;
+  }
   return true;
 }
 
@@ -116,4 +159,22 @@ export type GatedProduct = (typeof GATED_PRODUCTS)[number];
 
 export function isGatedProduct(p: string | undefined): p is GatedProduct {
   return !!p && (GATED_PRODUCTS as readonly string[]).includes(p);
+}
+
+/**
+ * Human-readable reason a surface is locked — "OLIVER Standard", "ARION Pro",
+ * "the ARION SEO add-on". Shared by the nav lock tooltip and FeatureLocked so
+ * the menu and the page never disagree about which plan a surface needs.
+ */
+export function requirementLabel(
+  rules: { minTier?: string; addon?: string } | undefined,
+  product: string | undefined,
+): string {
+  if (rules?.addon && rules.addon in ADDON_LABELS) return ADDON_LABELS[rules.addon as NavAddon];
+  if (rules?.minTier) {
+    const t = rules.minTier;
+    const brand = (product || "spark").toUpperCase();
+    return `${brand} ${t.charAt(0).toUpperCase()}${t.slice(1)}`;
+  }
+  return "a higher plan";
 }

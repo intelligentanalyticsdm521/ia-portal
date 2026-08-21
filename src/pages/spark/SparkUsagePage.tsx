@@ -3,6 +3,7 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { useAppState } from "../../app/AppState";
 import { isPlatformOwner } from "../../lib/currentPlan";
 import { changePlan } from "../../lib/billingApi";
+import { fetchSignupCatalog, type SignupCatalog } from "../../lib/signupCheckout";
 import { useAccessToken } from "../../auth/useAccessToken";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { PendingChangeBanner } from "../../components/PendingChangeBanner";
@@ -20,14 +21,24 @@ interface UsageResponse {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Pricing model — LOCKED 2026-06-12 founder volume-tier table
+// Pricing model — volume ladder × feature tier (pricing rework 2026-08-21)
 // ─────────────────────────────────────────────────────────────────────────────
-// 10 volume tiers; each bundles a specific emails/contacts/SMS allowance.
-// The previous derive-from-ratio formula (contacts=emails/5, sms=emails/50)
-// was WRONG — caps don't scale linearly. Hardcoded per founder table.
+// The volume ladder (which volumes exist + what they cost) is READ FROM THE
+// CATALOG — oliver-api GET /signup/catalog?product=spark, the same Stripe-
+// backed source the public /pricing page uses — so this page can never drift
+// from the Prices Brandon creates (feedback_no_fabricated_catalog). The
+// table below is the pre-load / offline FALLBACK and must mirror Stripe.
 //
-// SPARK Pro / Business add-ons are FEATURE add-ons; they DO NOT change the
-// volume bundle. Server-side caps in lumen-api/usage.js mirror this table.
+// Per-volume allowances (contacts / SMS) are not Stripe data; they mirror
+// LUMEN-API src/routes/usage.js SPARK_VOLUME_TIERS, which is what actually
+// enforces them. Contact caps tightened 2026-08-21 (contacts ≈ emails ÷ 2.5).
+// The SMS allowance only sends at Pro+ (§11 SMS → Pro); Standard shows
+// sms_per_month 0 on the live usage strip.
+//
+// SPARK Pro / Business are FEATURE add-ons; they DO NOT change the volume
+// bundle. Pro +$49.99 · Business +$99.99 (2026-08-21), also catalog-driven.
+// 350k has no Stripe price yet (Brandon: create ~$299.99 or drop) — it only
+// appears if the catalog returns it.
 
 interface VolumeTier {
   key: string;
@@ -37,37 +48,77 @@ interface VolumeTier {
   monthlyUsd: number;
 }
 
-const VOLUME_TIERS: VolumeTier[] = [
-  { key: "5k",   emails:   5000, contacts:   1000, sms:  100, monthlyUsd:  19 },
-  { key: "10k",  emails:  10000, contacts:   2500, sms:  150, monthlyUsd:  29 },
-  { key: "15k",  emails:  15000, contacts:  25000, sms:  200, monthlyUsd:  39 },
-  { key: "25k",  emails:  25000, contacts:  50000, sms:  300, monthlyUsd:  49 },
-  { key: "50k",  emails:  50000, contacts: 150000, sms:  500, monthlyUsd:  79 },
-  { key: "100k", emails: 100000, contacts: 150000, sms: 1000, monthlyUsd: 129 },
-  { key: "150k", emails: 150000, contacts: 250000, sms: 1500, monthlyUsd: 179 },
-  { key: "250k", emails: 250000, contacts: 250000, sms: 2500, monthlyUsd: 239 },
-  { key: "350k", emails: 350000, contacts: 500000, sms: 3500, monthlyUsd: 319 },
-  { key: "500k", emails: 500000, contacts: 500000, sms: 5000, monthlyUsd: 399 },
+const CONTACT_CAPS: Record<string, number> = {
+  "5k": 1000, "10k": 2500, "15k": 5000, "25k": 10000, "50k": 20000,
+  "100k": 40000, "150k": 60000, "250k": 100000, "500k": 200000,
+};
+const SMS_CAPS: Record<string, number> = {
+  "5k": 100, "10k": 150, "15k": 200, "25k": 300, "50k": 500,
+  "100k": 1000, "150k": 1500, "250k": 2500, "350k": 3500, "500k": 5000,
+};
+
+const FALLBACK_VOLUME_TIERS: VolumeTier[] = [
+  { key: "5k",   emails:   5000, contacts: CONTACT_CAPS["5k"],   sms: SMS_CAPS["5k"],   monthlyUsd:  19.99 },
+  { key: "10k",  emails:  10000, contacts: CONTACT_CAPS["10k"],  sms: SMS_CAPS["10k"],  monthlyUsd:  29.99 },
+  { key: "15k",  emails:  15000, contacts: CONTACT_CAPS["15k"],  sms: SMS_CAPS["15k"],  monthlyUsd:  39.99 },
+  { key: "25k",  emails:  25000, contacts: CONTACT_CAPS["25k"],  sms: SMS_CAPS["25k"],  monthlyUsd:  59.99 },
+  { key: "50k",  emails:  50000, contacts: CONTACT_CAPS["50k"],  sms: SMS_CAPS["50k"],  monthlyUsd:  89.99 },
+  { key: "100k", emails: 100000, contacts: CONTACT_CAPS["100k"], sms: SMS_CAPS["100k"], monthlyUsd: 129.99 },
+  { key: "150k", emails: 150000, contacts: CONTACT_CAPS["150k"], sms: SMS_CAPS["150k"], monthlyUsd: 169.99 },
+  { key: "250k", emails: 250000, contacts: CONTACT_CAPS["250k"], sms: SMS_CAPS["250k"], monthlyUsd: 229.99 },
+  { key: "500k", emails: 500000, contacts: CONTACT_CAPS["500k"], sms: SMS_CAPS["500k"], monthlyUsd: 399.99 },
 ];
 
-const EMAIL_STEPS = VOLUME_TIERS.map((t) => t.emails);
-
-function tierAt(idx: number): VolumeTier {
-  return VOLUME_TIERS[Math.max(0, Math.min(idx, VOLUME_TIERS.length - 1))];
+/** "5k" → 5000, "500k" → 500000. */
+function emailsFromVolumeKey(key: string): number | null {
+  const m = /^(\d+(?:\.\d+)?)k$/i.exec(String(key || "").trim());
+  if (m) return Math.round(Number(m[1]) * 1000);
+  const n = Number(key);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function basePriceForIdx(idx: number, cycle: "monthly" | "annual"): number {
-  const monthly = tierAt(idx).monthlyUsd;
+/** Volume ladder from the catalog, falling back to the static table. */
+function buildVolumeTiers(catalog: SignupCatalog | null): VolumeTier[] {
+  const rows = (catalog?.volumes || [])
+    .map((v): VolumeTier | null => {
+      const emails = emailsFromVolumeKey(v.volume);
+      const monthlyUsd = v.pricing?.monthly_usd ?? v.monthly_usd;
+      if (!emails || typeof monthlyUsd !== "number" || !(monthlyUsd > 0)) return null;
+      return {
+        key: v.volume,
+        emails,
+        contacts: CONTACT_CAPS[v.volume] ?? Math.round(emails / 2.5),
+        sms: SMS_CAPS[v.volume] ?? Math.round(emails / 100),
+        monthlyUsd,
+      };
+    })
+    .filter((r): r is VolumeTier => r !== null)
+    .sort((a, b) => a.emails - b.emails);
+  return rows.length > 0 ? rows : FALLBACK_VOLUME_TIERS;
+}
+
+function tierAt(tiers: VolumeTier[], idx: number): VolumeTier {
+  return tiers[Math.max(0, Math.min(idx, tiers.length - 1))];
+}
+
+function basePriceForIdx(tiers: VolumeTier[], idx: number, cycle: "monthly" | "annual"): number {
+  const monthly = tierAt(tiers, idx).monthlyUsd;
   return cycle === "annual" ? +(monthly * 0.9).toFixed(2) : monthly;
 }
 
-function contactsAtIdx(idx: number): number { return tierAt(idx).contacts; }
-function smsAtIdx(idx: number): number { return tierAt(idx).sms; }
-
-// Tier add-ons — monthly rates. Annual = 10% off.
-const TIER_ADDON_MONTHLY = { standard: 0, pro: 49, business: 89, enterprise: 150 } as const;
-function tierAddOn(t: keyof typeof TIER_ADDON_MONTHLY, cycle: "monthly" | "annual"): number {
-  const m = TIER_ADDON_MONTHLY[t];
+// Feature tier add-ons — monthly rates (fallback; catalog wins). Annual = 10% off.
+type FeatureTierKey = "standard" | "pro" | "business";
+const FALLBACK_TIER_ADDON_MONTHLY: Record<FeatureTierKey, number> = { standard: 0, pro: 49.99, business: 99.99 };
+function tierAddonMonthly(catalog: SignupCatalog | null): Record<FeatureTierKey, number> {
+  const live = (k: "pro" | "business") => {
+    const row = catalog?.featureAddons?.[k];
+    const m = row?.pricing?.monthly_usd ?? row?.monthly_usd;
+    return typeof m === "number" && m > 0 ? m : FALLBACK_TIER_ADDON_MONTHLY[k];
+  };
+  return { standard: 0, pro: live("pro"), business: live("business") };
+}
+function tierAddOn(table: Record<FeatureTierKey, number>, t: FeatureTierKey, cycle: "monthly" | "annual"): number {
+  const m = table[t];
   return cycle === "annual" ? +(m * 0.9).toFixed(2) : m;
 }
 
@@ -90,7 +141,7 @@ const TIER_FEATURES: { section: string; rows: TierFeature[] }[] = [
       { label: "Full CRM", desc: "Contacts, profiles, activity history, tags, custom fields", std: true, pro: true, biz: true, ent: true, status: "built" },
       { label: "Static lists + basic segmentation", std: true, pro: true, biz: true, ent: true, status: "built" },
       { label: "Forms + UTM source tracking", std: true, pro: true, biz: true, ent: true, status: "built" },
-      { label: "ARION form → SPARK auto-flow", desc: "Website form submissions auto-create SPARK contacts", std: true, pro: true, biz: true, ent: true, status: "built" },
+      { label: "ARION form → SPARK auto-flow", desc: "Platform rule, not a tier: automatic (with auto-reply) whenever you own ARION + SPARK", std: true, pro: true, biz: true, ent: true, status: "built" },
       { label: "Dynamic + behavioral segmentation", std: false, pro: true, biz: true, ent: true, status: "scaffold" },
       { label: "OLIVER data in segments", desc: "Filter by job history, open invoices — unique to IA", std: false, pro: false, biz: true, ent: true, status: "scaffold" },
       { label: "Web + event tracking segments", std: false, pro: false, biz: true, ent: true, status: "v2" },
@@ -100,7 +151,8 @@ const TIER_FEATURES: { section: string; rows: TierFeature[] }[] = [
     section: "Email & SMS",
     rows: [
       { label: "Email campaigns + builder", std: true, pro: true, biz: true, ent: true, status: "built" },
-      { label: "SMS campaigns + 2-way replies", std: true, pro: true, biz: true, ent: true, status: "scaffold" },
+      // SMS → Pro+ (Brandon 2026-08-21, FEATURE_TIER_MATRIX_FULL §11).
+      { label: "SMS campaigns + 2-way inbox", std: false, pro: true, biz: true, ent: true, status: "built" },
       { label: "Transactional email", desc: "Automated OLIVER job confirmations, ARION receipts, reminders", std: true, pro: true, biz: true, ent: true, status: "scaffold" },
       { label: "A/B testing", std: false, pro: true, biz: true, ent: true, status: "v2" },
       { label: "AI content + subject line suggestions", std: false, pro: true, biz: true, ent: true, status: "v2" },
@@ -252,6 +304,21 @@ export function SparkUsagePage() {
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
   const [showFullFeatures, setShowFullFeatures] = useState(false);
 
+  // Stripe-backed catalog (public endpoint, no auth) — drives the volume
+  // ladder + feature add-on prices. Null until it arrives / if it fails, in
+  // which case the static fallback tables render.
+  const [catalog, setCatalog] = useState<SignupCatalog | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchSignupCatalog("spark", "monthly")
+      .then((c) => { if (!cancelled) setCatalog(c); })
+      .catch((e) => { console.error("[SparkUsagePage] catalog unavailable — showing fallback prices", e); });
+    return () => { cancelled = true; };
+  }, []);
+  const volumeTiers = useMemo(() => buildVolumeTiers(catalog), [catalog]);
+  const emailSteps = useMemo(() => volumeTiers.map((t) => t.emails), [volumeTiers]);
+  const addonTable = useMemo(() => tierAddonMonthly(catalog), [catalog]);
+
   // Founder/platform-owner = always the top of SPARK (max volume + Business
   // feature tier + Authority Lead Gen), full access, never charged. Everyone
   // else shows their real current tier.
@@ -265,13 +332,15 @@ export function SparkUsagePage() {
   // ─ Derived ───────────────────────────────────────────────────────────────
   // Clamp emailsIdx defensively — if state ever gets out of range (e.g.
   // older session-storage value pointing past array end) the page would
-  // white-screen on EMAIL_STEPS[emailsIdx]. Now caps to bounds.
-  const safeIdx = Math.max(0, Math.min(emailsIdx, VOLUME_TIERS.length - 1));
-  const targetEmails = EMAIL_STEPS[safeIdx];
-  const targetContacts = contactsAtIdx(safeIdx);
-  const targetSms = smsAtIdx(safeIdx);
-  const basePrice = basePriceForIdx(safeIdx, billingCycle);
-  const tierPrice = tierAddOn(tier as keyof typeof TIER_ADDON_MONTHLY, billingCycle);
+  // white-screen on emailSteps[emailsIdx]. Now caps to bounds — which also
+  // keeps the founder's "max volume" pick on the top rung when the catalog
+  // arrives with a different number of volumes than the fallback table.
+  const safeIdx = Math.max(0, Math.min(emailsIdx, volumeTiers.length - 1));
+  const targetEmails = emailSteps[safeIdx];
+  const targetContacts = tierAt(volumeTiers, safeIdx).contacts;
+  const targetSms = tierAt(volumeTiers, safeIdx).sms;
+  const basePrice = basePriceForIdx(volumeTiers, safeIdx, billingCycle);
+  const tierPrice = tierAddOn(addonTable, tier, billingCycle);
 
   const lgTierObj = leadGenTier ? LEAD_GEN_TIERS.find(t => t.key === leadGenTier) : null;
   const lgExtras = lgTierObj ? leadExtras[lgTierObj.key] : 0;
@@ -297,8 +366,8 @@ export function SparkUsagePage() {
         if (!cancelled) {
           setUsage(raw.data || null);
           if (isPlatformOwner(activeTenantId)) {
-            // Founder: max everything.
-            setEmailsIdx(EMAIL_STEPS.length - 1);
+            // Founder: max everything (clamped to the last rung by safeIdx).
+            setEmailsIdx(Number.MAX_SAFE_INTEGER);
             setTier("business");
             setLeadGenTier("authority");
           } else if (raw.data?.tier === "pro") setTier("pro");
@@ -332,7 +401,7 @@ export function SparkUsagePage() {
           <strong className="block mb-1">How pricing works:</strong>
           Your <strong>base price</strong> comes from the email-volume slider — pick how much you'll send per month and you get a matching number of contacts + SMS at no extra cost.
           <br /><br />
-          <strong>Feature tier</strong> (Standard / Pro / Business) adds capability on top of the base. Pro adds Sales Pipeline, Newsletter Studio, advanced automations. Business adds AI Writer, OLIVER-cross segments, and revenue attribution.
+          <strong>Feature tier</strong> (Standard / Pro / Business) adds capability on top of the base. Standard is the manual CRM + email. Pro adds segments, SMS, Newsletter Studio, landing pages, automations and pipelines. Business adds journeys, approvals, attribution, audience sync, NPS and referrals.
           <br /><br />
           <strong>Lead Generation</strong> is a separate add-on — three tiers (Essentials / Growth / Authority) each with their own monthly lead allocation, overage rate, and unlocked extras. Available at any base tier.
           <br /><br />
@@ -391,15 +460,15 @@ export function SparkUsagePage() {
               </div>
             </div>
             <input
-              type="range" min={0} max={EMAIL_STEPS.length - 1} step={1}
-              value={emailsIdx}
+              type="range" min={0} max={emailSteps.length - 1} step={1}
+              value={safeIdx}
               onChange={e => setEmailsIdx(Number(e.target.value))}
               className="w-full accent-[#EF6C33]"
             />
             <div className="flex justify-between text-[10px] text-white/40 mt-1.5 font-mono">
-              {EMAIL_STEPS.map((s, i) => (
+              {emailSteps.map((s, i) => (
                 <button key={s} type="button" onClick={() => setEmailsIdx(i)}
-                  className={`hover:text-white transition ${i === emailsIdx ? "text-[#EF6C33] font-bold" : ""}`}>
+                  className={`hover:text-white transition ${i === safeIdx ? "text-[#EF6C33] font-bold" : ""}`}>
                   {s >= 1000 ? `${s / 1000}k` : s}
                 </button>
               ))}
@@ -418,7 +487,7 @@ export function SparkUsagePage() {
               </div>
               <div className="bg-white/5 border border-white/10 rounded-lg p-2.5 text-center">
                 <MessageSquare className="h-3.5 w-3.5 text-[#EF6C33] mx-auto" />
-                <div className="text-xs text-white/60 mt-1 uppercase tracking-wide">SMS/mo</div>
+                <div className="text-xs text-white/60 mt-1 uppercase tracking-wide">SMS/mo <span className="normal-case text-[#EF6C33]">(Pro+)</span></div>
                 <div className="text-base font-bold mt-0.5">{targetSms.toLocaleString()}</div>
               </div>
             </div>
@@ -438,23 +507,28 @@ export function SparkUsagePage() {
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              {/* Bullets mirror the SPARK nav gates in SubNav.tsx (the code truth):
+                  Pro = segments, Newsletter Studio, SMS, landing pages, automations,
+                  tasks, pipelines + deals, Intelligence · Business = journeys,
+                  approvals, anomaly alerts, audience sync, NPS, referrals,
+                  attribution, scoring / 360°. Pricing rework 2026-08-21. */}
               <TierCard
-                title="Standard" subtitle="The CRM essentials" addOn={0}
+                title="Standard" subtitle="Manual CRM + email" addOn={0}
                 active={tier === "standard"} onClick={() => setTier("standard")}
                 current={currentTier === "standard"}
-                bullets={["Contacts / Lists / Tags / Segments", "Email + SMS campaigns", "Forms + UTM tracking", "Basic Insights"]}
+                bullets={["Contacts, companies, lists + tags", "Email campaigns, templates + A/B tests", "Forms with hosted page, embed + QR", "Deliverability + IA Insights"]}
               />
               <TierCard
-                title="Pro" subtitle="Marketing power tools" addOn={tierAddOn("pro", billingCycle)}
+                title="Pro" subtitle="Marketing power tools" addOn={tierAddOn(addonTable, "pro", billingCycle)}
                 active={tier === "pro"} onClick={() => setTier("pro")} accent current={currentTier === "pro"}
-                bullets={["Sales Pipeline + Deals (Kanban)", "Newsletter Studio + WP auto-publish", "Social Scheduler + Calendar", "Landing Pages, NPS, Referrals", "Reputation Hub"]}
+                bullets={["Segments + Newsletter Studio", "SMS campaigns + inbox", "Landing pages + prebuilt automations", "Pipelines, deals + tasks", "IA Insights Intelligence"]}
                 more={2}
               />
               <TierCard
-                title="Business" subtitle="Pro + AI + B2B" addOn={tierAddOn("business", billingCycle)}
+                title="Business" subtitle="Journeys, attribution + governance" addOn={tierAddOn(addonTable, "business", billingCycle)}
                 active={tier === "business"} onClick={() => setTier("business")}
                 current={currentTier === "business"}
-                bullets={["Everything in Pro", "B2B Companies + account reporting", "AI Writer (full access)", "IA Intelligence monthly + on-demand", "Annual deep-dive AI report"]}
+                bullets={["Everything in Pro", "Journeys + approvals", "Attribution + audience sync", "NPS, referrals + anomaly alerts", "Contact scoring + 360°"]}
                 more={2}
               />
             </div>
@@ -631,7 +705,7 @@ function TierCard({ title, subtitle, addOn, active, onClick, bullets, accent, mo
           <div className="text-[11px] text-slate-500 mt-0.5">{subtitle}</div>
         </div>
         <div className={`text-lg font-bold ${active ? "text-[#EF6C33]" : "text-slate-900"}`}>
-          {addOn === 0 ? "Included" : `+$${addOn}`}
+          {addOn === 0 ? "Included" : `+$${addOn.toFixed(2)}`}
         </div>
       </div>
       <ul className="mt-3 space-y-1">

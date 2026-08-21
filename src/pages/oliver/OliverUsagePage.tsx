@@ -6,15 +6,24 @@
 //   https://intelligentanalyticsdm.com/platforms/oliver/oliver-pricing
 //
 // Tiers + monthly prices come LIVE from oliver-api GET /tier-limits/plan-pricing
-// (canonical source: lib/tierFeatures.js PLAN_PRICING — Lite $29 / Standard $39
-// / Pro $69 / Business $129 / Enterprise $249). Each card also shows ONE
-// combined processing-fee line (Stripe + IA blended); the cap + full split
-// live only on the standalone Fees page (owner decision 2026-05-18).
+// (canonical source: lib/tierFeatures.js PLAN_PRICING; the static `monthly`
+// below is only a pre-load fallback). Each card also shows ONE combined
+// processing-fee line (Stripe + IA blended); the cap + full split live only
+// on the standalone Fees page (owner decision 2026-05-18).
+//
+// Pricing rework 2026-08-21 (Brandon, PRICING_REWORK_DECISIONS_2026-08-21):
+// the bottom tier is "OLIVER Invoicing" (plan key stays `lite`) — quotes,
+// proposals, invoices + payment links, deposits / partial payments, 1 doc
+// template, 30-day reporting, SPARK contact sync, ZERO jobs. Standard $79.99 /
+// Pro $179.99 / Business $349.99. Unbuilt items (GPS / route optimisation /
+// offline mobile / BNPL / QuickBooks sync / multi-location) are OUT of the
+// copy until they exist.
 import { useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useAccessToken } from "../../auth/useAccessToken";
 import { useAppState } from "../../app/AppState";
 import { isPlatformOwner } from "../../lib/currentPlan";
+import { tierDisplayName } from "../../lib/tierLabels";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PendingChangeBanner } from "../../components/PendingChangeBanner";
 import { CheckoutResultFlash } from "../../components/CheckoutResultFlash";
@@ -63,65 +72,67 @@ interface TierDef {
 const TIERS: TierDef[] = [
   {
     key: "lite",
-    name: "Lite",
-    monthly: 29,
-    oneLiner: "You do the steps",
-    caps: { seats: 1, active_jobs: 9999, jobs_per_month: 50, active_recurring: 0, pricebook_items: 25, workflow_templates: 0 },
+    name: "Invoicing",
+    monthly: 19.99,
+    oneLiner: "Quote, invoice, get paid",
+    caps: { seats: 1, active_jobs: 0, jobs_per_month: 0, active_recurring: 0, pricebook_items: 25, workflow_templates: 0 },
     bullets: [
-      "Full job lifecycle (manual)",
-      "Calendar + scheduling",
-      "Invoices + Stripe Connect payments",
-      "View & pay customer portal",
+      "Quotes + proposals",
+      "Invoices + Stripe payment links",
+      "Deposits + partial payments",
       "Service catalog + price book",
+      "1 document template · 30-day reporting",
+      "SPARK contact sync",
     ],
   },
   {
     key: "standard",
     name: "Standard",
-    monthly: 39,
-    oneLiner: "Standard does it for you",
+    monthly: 79.99,
+    oneLiner: "Run the jobs",
     caps: { seats: 5, active_jobs: 9999, jobs_per_month: 9999, active_recurring: 25, pricebook_items: 100, workflow_templates: 25 },
     bullets: [
-      "Everything in Lite",
+      "Everything in Invoicing",
+      "Jobs board + kanban + scheduling calendar",
+      "Customer portal (view, accept, pay, request work)",
+      "Team + manual assignment + job offer queue",
       "Recurring jobs (approval queue)",
-      "Worker dispatch + assignments",
-      "Workflow template library",
-      "Support tickets + job offers",
-      "Reminders + automated nudges",
+      "Booking page (manual confirm) · reschedule requests",
+      "Signatures on quotes + invoices",
     ],
   },
   {
     key: "pro",
     name: "Pro",
-    monthly: 69,
+    monthly: 179.99,
     badge: "Most Popular",
     highlight: true,
-    oneLiner: "Growing operation",
+    oneLiner: "Automate + crew portal",
     caps: { seats: 10, active_jobs: 9999, jobs_per_month: 9999, active_recurring: 100, pricebook_items: 500, workflow_templates: 100 },
     bullets: [
       "Everything in Standard",
-      "Auto-scheduled recurring (no approval)",
+      "Automations engine (auto-assign, auto-invoice, reminders)",
+      "Crew portal + time clock",
+      "Field completion verification (photos / rating / signature)",
+      "Auto-scheduled recurring · instant-confirm booking",
       "Multi-option (good/better/best) quoting",
-      "Time tracking — timer + billable rollup",
-      "Expense tracking + reimbursements",
-      "Customer self-service reschedule",
-      "Branded proposals + e-signatures",
+      "Customer instant self-reschedule",
     ],
   },
   {
     key: "business",
     name: "Business",
-    monthly: 129,
-    oneLiner: "Multi-location operators",
+    monthly: 349.99,
+    oneLiner: "Dispatch, costing + governance",
     caps: { seats: 25, active_jobs: 9999, jobs_per_month: 9999, active_recurring: 500, pricebook_items: 9999, workflow_templates: 9999 },
     bullets: [
       "Everything in Pro",
-      "Job costing + margin reporting",
-      "Territories with primary + backup workers",
-      "SLA policies + breach reporting",
-      "BNPL / financing toggle",
-      "Stripe Connect tenant payouts",
-      "Advanced dispatch board",
+      "Dispatch board + territory / routing rules",
+      "SLA tracking + breach reporting",
+      "Job costing + profit reporting",
+      "Custom automation rules + FCFS broadcast",
+      "Stripe Connect payouts",
+      "Roles, permissions, approvals + audit logs",
     ],
   },
 ];
@@ -143,54 +154,67 @@ interface PlanPricingRow {
 // ─ Feature comparison table ──────────────────────────────────────────────────
 interface FeatureRow { label: string; desc?: string; lite: boolean; std: boolean; pro: boolean; biz: boolean; status?: "built" | "scaffold" | "v2"; }
 
+// Mirrors oliver-api/lib/tierFeatures.js TIER_FEATURES (the enforced matrix).
+// `lite` = the Invoicing tier.
 const FEATURE_SECTIONS: { section: string; rows: FeatureRow[] }[] = [
-  {
-    section: "Job lifecycle",
-    rows: [
-      { label: "Full job lifecycle (status flow)", lite: true, std: true, pro: true, biz: true, status: "built" },
-      { label: "Customer portal — view + accept", lite: true, std: true, pro: true, biz: true, status: "built" },
-      { label: "2-way messaging", lite: true, std: true, pro: true, biz: true, status: "built" },
-      { label: "Calendar + scheduling", lite: true, std: true, pro: true, biz: true, status: "built" },
-      { label: "Recurring jobs", lite: false, std: true, pro: true, biz: true, status: "built" },
-      { label: "Workflow template library", lite: false, std: true, pro: true, biz: true, status: "built" },
-      { label: "Support tickets w/ convert-to-job", lite: false, std: true, pro: true, biz: true, status: "built" },
-      { label: "Job offer broadcast (first to accept)", lite: false, std: true, pro: true, biz: true, status: "built" },
-    ],
-  },
   {
     section: "Quoting & invoicing",
     rows: [
-      { label: "Quotes + send to customer", lite: true, std: true, pro: true, biz: true, status: "built" },
-      { label: "Invoices + Stripe Connect", lite: true, std: true, pro: true, biz: true, status: "built" },
+      { label: "Quotes + proposals + send to customer", lite: true, std: true, pro: true, biz: true, status: "built" },
+      { label: "Invoices + Stripe payment links", lite: true, std: true, pro: true, biz: true, status: "built" },
+      { label: "Deposits + partial payments", lite: true, std: true, pro: true, biz: true, status: "built" },
+      { label: "Service catalog + price book", lite: true, std: true, pro: true, biz: true, status: "built" },
+      { label: "Document templates", desc: "Invoicing 1 · Standard 3 · Pro 10 · Business unlimited", lite: true, std: true, pro: true, biz: true, status: "built" },
       { label: "Coupons + discounts", lite: false, std: true, pro: true, biz: true, status: "built" },
+      { label: "Signatures on quotes + invoices", lite: false, std: true, pro: true, biz: true, status: "built" },
       { label: "Multi-option (good/better/best) quotes", lite: false, std: false, pro: true, biz: true, status: "built" },
-      { label: "Partial payments + deposits", lite: false, std: false, pro: true, biz: true, status: "built" },
-      { label: "Branded proposals w/ e-signatures", lite: false, std: false, pro: true, biz: true, status: "built" },
-      { label: "BNPL / Affirm financing", lite: false, std: false, pro: false, biz: true, status: "scaffold" },
     ],
   },
   {
-    section: "Team & operations",
+    section: "Jobs & scheduling",
     rows: [
-      { label: "User seats", desc: "Lite 1 · Std 5 · Pro 10 · Business 25", lite: true, std: true, pro: true, biz: true, status: "built" },
-      { label: "Worker dispatch + assignments", lite: false, std: true, pro: true, biz: true, status: "built" },
-      { label: "Roles + permissions (Admin / Accountant)", lite: false, std: true, pro: true, biz: true, status: "built" },
+      { label: "Jobs board + kanban (status flow)", lite: false, std: true, pro: true, biz: true, status: "built" },
+      { label: "Scheduling calendar + manual assignment", lite: false, std: true, pro: true, biz: true, status: "built" },
+      { label: "Inquiry capture (portal + website form)", lite: false, std: true, pro: true, biz: true, status: "built" },
+      { label: "Recurring jobs", desc: "Standard: approval queue · Pro+: auto-scheduled", lite: false, std: true, pro: true, biz: true, status: "built" },
+      { label: "Booking page", desc: "Standard: manual confirm · Pro+: instant confirm", lite: false, std: true, pro: true, biz: true, status: "built" },
+      { label: "Workflow template library", lite: false, std: true, pro: true, biz: true, status: "built" },
+      { label: "Support tickets w/ convert-to-job", lite: false, std: true, pro: true, biz: true, status: "built" },
+      { label: "Job offer queue (first to accept)", lite: false, std: true, pro: true, biz: true, status: "built" },
+      { label: "Field completion verification (photos / rating / signature)", lite: false, std: false, pro: true, biz: true, status: "built" },
       { label: "Time tracking (timer + billable)", lite: false, std: false, pro: true, biz: true, status: "built" },
-      { label: "Expense tracking + reimbursements", lite: false, std: false, pro: true, biz: true, status: "built" },
-      { label: "Customer self-service reschedule", lite: false, std: false, pro: true, biz: true, status: "built" },
-      { label: "Projects (multi-job engagements)", lite: false, std: false, pro: true, biz: true, status: "built" },
-      { label: "Territories + backup workers", lite: false, std: false, pro: false, biz: true, status: "built" },
+      { label: "Dispatch board + territory / routing rules", lite: false, std: false, pro: false, biz: true, status: "built" },
       { label: "SLA policies + breach reports", lite: false, std: false, pro: false, biz: true, status: "built" },
+    ],
+  },
+  {
+    section: "Customer & crew portals",
+    rows: [
+      { label: "Customer portal — view jobs, accept quotes, pay", lite: false, std: true, pro: true, biz: true, status: "built" },
+      { label: "2-way messaging", lite: false, std: true, pro: true, biz: true, status: "built" },
+      { label: "Customer reschedule", desc: "Standard: request + approval · Pro+: instant", lite: false, std: true, pro: true, biz: true, status: "built" },
+      { label: "Portal on your own domain", lite: false, std: true, pro: true, biz: true, status: "built" },
+      { label: "Crew portal + time clock", lite: false, std: false, pro: true, biz: true, status: "built" },
+    ],
+  },
+  {
+    section: "Team & automation",
+    rows: [
+      { label: "User seats", desc: "Invoicing 1 · Standard 5 · Pro 10 · Business 25", lite: true, std: true, pro: true, biz: true, status: "built" },
+      { label: "Team page (workers + availability)", lite: false, std: true, pro: true, biz: true, status: "built" },
+      { label: "Automations engine (auto-assign, auto-invoice, reminders)", lite: false, std: false, pro: true, biz: true, status: "built" },
+      { label: "Custom automation rules + FCFS broadcast", lite: false, std: false, pro: false, biz: true, status: "built" },
+      { label: "Roles, permissions, approvals + audit logs", lite: false, std: false, pro: false, biz: true, status: "built" },
+      { label: "Stripe Connect payouts", lite: false, std: false, pro: false, biz: true, status: "built" },
     ],
   },
   {
     section: "Reporting & insights",
     rows: [
-      { label: "Job + revenue reports", lite: true, std: true, pro: true, biz: true, status: "built" },
-      { label: "Billing overview dashboard", lite: false, std: true, pro: true, biz: true, status: "built" },
-      { label: "Customer health + retention insights", lite: false, std: false, pro: true, biz: true, status: "built" },
-      { label: "Job costing + margin analysis", lite: false, std: false, pro: false, biz: true, status: "built" },
-      { label: "ARGUS AI insight reports", lite: false, std: false, pro: true, biz: true, status: "scaffold" },
+      { label: "Revenue + payment reports", desc: "Invoicing: 30-day window", lite: true, std: true, pro: true, biz: true, status: "built" },
+      { label: "IA Insights — Health + Trends + Reports", lite: true, std: true, pro: true, biz: true, status: "built" },
+      { label: "IA Insights — Intelligence", lite: false, std: false, pro: true, biz: true, status: "built" },
+      { label: "Job costing + profit reporting", lite: false, std: false, pro: false, biz: true, status: "built" },
     ],
   },
 ];
@@ -293,7 +317,7 @@ export function OliverUsagePage() {
   }
 
   return (
-    <OliverPageWrapper title="Plan & Pricing" subtitle={usage?.tier ? `You're on the ${String(usage.tier).replace(/^\w/, c => c.toUpperCase())} plan` : "Pick your tier — usage tracked live"} error={error} loading={loading}>
+    <OliverPageWrapper title="Plan & Pricing" subtitle={usage?.tier ? `You're on the OLIVER ${tierDisplayName("oliver", usage.tier)} plan` : "Pick your tier — usage tracked live"} error={error} loading={loading}>
       <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} />
       <CheckoutResultFlash product="OLIVER" />
       {/* ── CURRENT USAGE STRIP ─────────────────────────────────────────── */}
@@ -302,7 +326,7 @@ export function OliverUsagePage() {
           <div className="card-hdr">
             <div>
               <div className="card-ttl">Live usage</div>
-              <div className="card-sub">Current tier: <strong>{usage.tier || "—"}</strong></div>
+              <div className="card-sub">Current tier: <strong>{tierDisplayName("oliver", usage.tier) || "—"}</strong></div>
             </div>
             <span className="text-xs text-slate-500">Resets on the 1st</span>
           </div>
@@ -575,7 +599,7 @@ function FullFeatureTable() {
           <thead>
             <tr className="text-left text-slate-600 border-b border-slate-200">
               <th className="py-2 pl-1 font-semibold">Feature</th>
-              <th className="text-center px-2 font-semibold">Lite</th>
+              <th className="text-center px-2 font-semibold">Invoicing</th>
               <th className="text-center px-2 font-semibold">Standard</th>
               <th className="text-center px-2 font-semibold">Pro</th>
               <th className="text-center px-2 font-semibold">Business</th>

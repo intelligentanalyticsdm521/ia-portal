@@ -1951,14 +1951,17 @@ function ArionSeoToolsSubsection({ hasSeoAddon, seoAddonTier, siteId, tenantId }
 
   // Tier feature blurbs for the green confirmation pill — kept short so the
   // pill stays one line on most screens. Tier names come from the canonical
-  // ARION SEO tier matrix (Essentials / Growth / Authority).
+  // ARION SEO tier ladder (Starter / Essentials / Growth / Authority; AI
+  // engine model + Market Monitor → Authority per the 2026-08-21 rework).
   const tierBlurb: Record<string, string> = {
-    essentials: "keyword tracking, on-page audits, competitor watch",
-    growth:     "+ Google AI Mode, deeper keyword sets, more audits",
-    authority:  "+ ChatGPT + Gemini AI search, full keyword set, unlimited audits",
+    starter:    "10 keywords, monthly ranks, 30-day audits",
+    essentials: "25 keywords, weekly ranks, competitor watch",
+    growth:     "+ daily ranks, backlinks, Google AI Overviews + AI Mode tracking",
+    authority:  "+ ChatGPT + Gemini AI search, Market Monitor, full keyword set",
   };
 
   const tierName: Record<string, string> = {
+    starter:    "Starter",
     essentials: "Essentials",
     growth:     "Growth",
     authority:  "Authority",

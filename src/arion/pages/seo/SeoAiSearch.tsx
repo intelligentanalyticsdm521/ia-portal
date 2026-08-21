@@ -1,8 +1,11 @@
 /**
  * Phase 3.5 AI Search Results — full rebuild (2026-04-19).
  *
- * Tracks presence across ChatGPT, Gemini, Google AI Mode, Google AI Overview,
- * and (Authority only) Perplexity via the AIRT (AI Result Tracker) endpoint.
+ * Tracks presence across Google AI Overviews + Google AI Mode (Growth) and
+ * ChatGPT + Gemini (Authority) via the AIRT (AI Result Tracker) endpoint —
+ * the AI engine model agreed 2026-08-21. Perplexity is consulting-only and
+ * never sold self-serve; its card only renders when the project actually
+ * has it unlocked.
  *
  * Layout mirrors Site Audit depth:
  *   1. Header InfoCard with metadata bar + "See Full Report" button
@@ -66,7 +69,8 @@ const ENGINE_LABELS: Record<string, string> = {
   perplexity: 'Perplexity',
 };
 
-const ALL_ENGINE_KEYS = ['chatgpt', 'gemini', 'ai_mode', 'ai_overview', 'perplexity'] as const;
+// Self-serve engines, in tier order (Growth pair first, Authority pair next).
+const SELF_SERVE_ENGINE_KEYS = ['ai_overview', 'ai_mode', 'chatgpt', 'gemini'] as const;
 
 function engineColor(baseName: string | undefined): string {
   return (baseName && ENGINE_COLORS[baseName]) || '#5A7A8A';
@@ -123,8 +127,8 @@ export function SeoAiSearch() {
     return (
       <AddonUpsell
         title="SEO Tools — Add-on not active"
-        description="AI Search Results are included with SEO Growth and Authority tiers."
-        price="$99"
+        description="AI Search Results are included with the SEO add-on at Growth (Google AI Overviews + AI Mode) and Authority (+ ChatGPT + Gemini)."
+        price="$99.99"
         planName="Growth"
       />
     );
@@ -155,7 +159,11 @@ export function SeoAiSearch() {
 
   const engines = data.engines ?? [];
   const agg = data.aggregate;
-  const totalEngines = 4 + (tierRank >= 3 ? 1 : 0); // Perplexity only at Authority
+  // Four self-serve engines. Perplexity is consulting-only — it joins the
+  // grid only when the project really has it unlocked (IA's own account).
+  const hasPerplexity = engines.some((e) => e.baseName === 'perplexity' && e.unlocked);
+  const heroEngineKeys: string[] = hasPerplexity ? [...SELF_SERVE_ENGINE_KEYS, 'perplexity'] : [...SELF_SERVE_ENGINE_KEYS];
+  const totalEngines = heroEngineKeys.length;
   const trackedCount = engines.filter((e) => e.unlocked).length;
 
   const totalMentions = agg?.totalMentions ?? 0;
@@ -222,7 +230,7 @@ export function SeoAiSearch() {
         <HeroStatCard
           label="Engines Tracked"
           value={`${trackedCount} / ${totalEngines}`}
-          sub={tierRank < 3 ? 'Upgrade to Authority for Perplexity' : 'All AI engines active'}
+          sub={tierRank < 3 ? 'Upgrade to Authority for ChatGPT + Gemini' : 'All AI engines active'}
           color="#1A73E8"
           onSeeDetails={() => setActiveTab('engines')}
         />
@@ -237,7 +245,7 @@ export function SeoAiSearch() {
 
       {/* Hero row 2 — per-engine mentions */}
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${totalEngines}, 1fr)`, gap: 12, marginTop: 12 }}>
-        {(tierRank >= 3 ? ALL_ENGINE_KEYS : ALL_ENGINE_KEYS.filter((k) => k !== 'perplexity')).map((key) => {
+        {heroEngineKeys.map((key) => {
           const eng = engineByBase.get(key);
           const locked = !eng || !eng.unlocked;
           return (
@@ -610,18 +618,19 @@ function EngineMiniHeroCard({
 // ────────────────────────────────────────────────────────────────
 
 function TierGatedPreview({ tier }: { tier: string }) {
+  // AI engine model (Brandon 2026-08-21): Growth = Google AI Overviews + AI
+  // Mode · Authority = + ChatGPT + Gemini · Perplexity = consulting only.
   const engines = [
-    { key: 'chatgpt', label: 'ChatGPT', min: 'Growth+' },
-    { key: 'gemini', label: 'Gemini', min: 'Growth+' },
-    { key: 'ai_mode', label: 'AI Mode', min: 'Growth+' },
-    { key: 'ai_overview', label: 'AI Overview', min: 'Growth+' },
-    { key: 'perplexity', label: 'Perplexity', min: 'Authority' },
+    { key: 'ai_overview', label: 'Google AI Overviews', min: 'Growth+' },
+    { key: 'ai_mode', label: 'Google AI Mode', min: 'Growth+' },
+    { key: 'chatgpt', label: 'ChatGPT', min: 'Authority' },
+    { key: 'gemini', label: 'Gemini', min: 'Authority' },
   ];
   return (
     <div>
       <InfoCard title="AI Search Results">
         <p style={{ margin: 0, fontSize: 12 }}>
-          Track how your brand appears in AI search responses from ChatGPT, Gemini, Google AI Mode, AI Overview, and Perplexity.
+          Track how your brand appears in AI search responses from Google AI Overviews, Google AI Mode, ChatGPT, and Gemini.
         </p>
       </InfoCard>
       <div style={{ marginTop: 16, padding: 48, background: '#F8FAFC', borderRadius: 12, textAlign: 'center' }}>
@@ -629,9 +638,9 @@ function TierGatedPreview({ tier }: { tier: string }) {
           AI Search Tracking is a Growth feature
         </div>
         <p style={{ fontSize: 13, color: '#5A7A8A', maxWidth: 520, margin: '0 auto 20px', lineHeight: 1.6 }}>
-          AI search is changing how customers discover businesses. ChatGPT, Gemini, and Google's AI Overview are increasingly the first stop. This tracker monitors whether your brand gets cited in their responses and which of your pages they reference as sources.
+          AI search is changing how customers discover businesses. Google's AI Overviews and AI Mode, ChatGPT, and Gemini are increasingly the first stop. This tracker monitors whether your brand gets cited in their responses and which of your pages they reference as sources.
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, maxWidth: 720, margin: '0 auto 24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, maxWidth: 640, margin: '0 auto 24px' }}>
           {engines.map((e) => (
             <div key={e.key} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '14px 10px', opacity: 0.7 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: '#0B1C24' }}>{e.label}</div>

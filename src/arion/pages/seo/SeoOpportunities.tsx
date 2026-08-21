@@ -29,7 +29,7 @@ export function SeoOpportunities() {
       <AddonUpsell
         title="SEO Tools — Add-on not active"
         description="Discover untapped keyword opportunities based on your current rankings and competitor gaps."
-        price="$29"
+        price="$24.99"
         planName="Starter — 10 keywords"
       />
     );
