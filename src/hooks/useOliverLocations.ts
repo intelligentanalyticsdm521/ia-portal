@@ -124,10 +124,14 @@ export function useOliverLocations(opts: UseOliverLocationsOptions = {}) {
     await loadScope(scope, get);
   }, [scope, ready, get]);
 
+  // Derived arrays keyed on `locations` ONLY — consumers list them in effect
+  // deps (Team Access fetches members per active location), so a tier or
+  // selection change must not hand them a new identity and refetch.
+  const active = useMemo(() => activeLocations(locations), [locations]);
+  const defaultLocation = useMemo(() => defaultLocationOf(locations), [locations]);
+
   return useMemo(() => {
-    const active = activeLocations(locations);
     const multi = isMultiLocation(locations);
-    const defaultLocation = defaultLocationOf(locations);
     const tierResolved = tierReady && tier != null;
     const meetsBusiness = tier == null ? true : tierMeets(tier, "business"); // null → fail open
     const canAddLocation = locations.length === 0 || meetsBusiness;
@@ -152,7 +156,7 @@ export function useOliverLocations(opts: UseOliverLocationsOptions = {}) {
       error,
       reload,
     };
-  }, [locations, selected, setSelected, reload, loaded, loading, error, tier, tierReady]);
+  }, [locations, active, defaultLocation, selected, setSelected, reload, loaded, loading, error, tier, tierReady]);
 }
 
 export type OliverLocationsState = ReturnType<typeof useOliverLocations>;
