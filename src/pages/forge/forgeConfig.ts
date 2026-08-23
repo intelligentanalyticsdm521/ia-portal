@@ -207,10 +207,23 @@ export const moneyExact = (v: unknown) =>
     ? '—'
     : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(v));
 
+/**
+ * Calendar dates (start/end of an assistance period, a service, an application
+ * deadline) are DATE columns — they carry no time and no zone. SQL Server sends
+ * them as midnight UTC, so rendering with the browser's local zone pushed every
+ * one of them back a day west of Greenwich: an assistance running 1 Jan–31 Dec
+ * displayed as 31 Dec–30 Dec. Format in UTC so a calendar date reads as the
+ * calendar date that was entered.
+ */
 export const shortDate = (v: unknown) => {
   if (!v) return '—';
-  const d = new Date(String(v));
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  const raw = String(v);
+  // Plain YYYY-MM-DD needs no parsing at all.
+  const plain = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  const d = plain ? new Date(Date.UTC(+plain[1], +plain[2] - 1, +plain[3])) : new Date(raw);
+  return Number.isNaN(d.getTime())
+    ? '—'
+    : d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
 };
 
 export const cellValue = (row: Record<string, unknown>, field: FieldDef) => {

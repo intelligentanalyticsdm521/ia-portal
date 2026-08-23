@@ -80,7 +80,7 @@ export function ForgeClientDetailPage() {
                 )}
               </Card>
 
-              <Card title="Service services">
+              <Card title="Services">
                 {!data.services.length ? <EmptyState>No services recorded.</EmptyState> : (
                   <Table
                     head={['Provider', 'Type', 'Status', 'Start', 'End', 'Payment', 'Est. monthly']}
