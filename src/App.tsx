@@ -111,6 +111,8 @@ const ConsultingClientsPageAdmin = lazy(() => import('./pages/consulting/Consult
 // 7-stage pipeline + OLIVER bridge). ConsultingTicketsBoardPage read the
 // abandoned lumen.consulting_ticket fork (0 rows in prod) and is retired.
 const ConsultingRequestsBoardPageAdmin = lazy(() => import('./pages/consulting/ConsultingWorkBoardPage'));
+// Sept-A F7 — founder-only client-facing error log viewer.
+const ErrorLogPageAdmin = lazy(() => import('./pages/admin/ErrorLogPage'));
 const ConsultingProjectsPageAdmin = lazy(() => import('./pages/consulting/ConsultingProjectsPage'));
 const ConsultingOnboardClientPageAdmin = lazy(() => import('./pages/consulting/ConsultingOnboardClientPageV2'));
 const ConsultingDocumentLibraryPageAdmin = lazy(() => import('./pages/consulting/ConsultingDocumentLibraryPage'));
@@ -247,6 +249,19 @@ export function App() {
             <Route path="admin/onboard-arion-existing" element={<ArionOnboardExistingPage />} />
             <Route path="admin/leadgen" element={LEADGEN_ENABLED ? <AdminLeadgenPage /> : <FeatureUnavailable name="Lead Gen admin" />} />
             <Route path="admin/infra-health" element={<InfraHealthPage />} />
+
+            {/* Sept-A F7 — founder-only client-facing error log (every 4xx/5xx
+                across all four APIs; backend 403s non-founders independently). */}
+            <Route path="admin/error-log" element={<RequireFounderRoute />}>
+              <Route
+                index
+                element={
+                  <Suspense fallback={<AdminRouteLoading />}>
+                    <ErrorLogPageAdmin />
+                  </Suspense>
+                }
+              />
+            </Route>
 
             {/* 2026-06-29 — Founder-side Consulting relocated to /app/admin/consulting/*.
                 RequireFounderRoute bounces non-founders to /app/overview. Old

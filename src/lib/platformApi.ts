@@ -632,3 +632,63 @@ export async function setConsultingManaged(params: {
   }
   return body as { managed: boolean };
 }
+// ── Sept 2026 Release A (F7): founder-only client-facing error log ─────────
+
+export interface ErrorLogRow {
+  id: number;
+  tenant_id: string | null;
+  tenant_name: string | null;
+  user_email: string | null;
+  api: string;
+  method: string;
+  path: string;
+  status: number;
+  error_code: string | null;
+  message: string | null;
+  request_id: string;
+  created_at: string;
+}
+
+export async function getErrorLog(params: {
+  baseUrl: string;
+  bearerToken: string;
+  tenantId: string;
+  filters?: {
+    tenant?: string;
+    api?: string;
+    status?: number;
+    from?: string;
+    to?: string;
+    q?: string;
+    limit?: number;
+    offset?: number;
+  };
+}): Promise<{ total: number; rows: ErrorLogRow[] }> {
+  const qs = new URLSearchParams();
+  const f = params.filters || {};
+  if (f.tenant) qs.set('tenant', f.tenant);
+  if (f.api) qs.set('api', f.api);
+  if (f.status) qs.set('status', String(f.status));
+  if (f.from) qs.set('from', f.from);
+  if (f.to) qs.set('to', f.to);
+  if (f.q) qs.set('q', f.q);
+  if (f.limit) qs.set('limit', String(f.limit));
+  if (f.offset) qs.set('offset', String(f.offset));
+  const url = `${normalizeBaseUrl(params.baseUrl)}/admin/error-log${qs.toString() ? `?${qs}` : ''}`;
+  const res = await fetchWithTimeout(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${params.bearerToken}`,
+      'Content-Type': 'application/json',
+      'x-tenant-key': params.tenantId,
+      ...emergencyActAsHeaders(),
+    },
+  });
+  const body = safeJsonParse(await res.text());
+  if (!res.ok) {
+    const msg = typeof body === 'object' && body && 'error' in body
+      ? String((body as any).error) : `Request failed (${res.status})`;
+    throw new PlatformApiError(msg, res.status, body);
+  }
+  return (body as { data: { total: number; rows: ErrorLogRow[] } }).data;
+}
