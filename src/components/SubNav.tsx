@@ -43,6 +43,11 @@ export interface SubNavItem extends VisibilityRules {
    * show, don't hide. Real enforcement is server-side (403).
    */
   locked?: boolean;
+  /**
+   * Optional outbound link. When set the row renders as an <a> instead of a
+   * NavLink — used for the FORGE catalogue pointer, which leaves the portal.
+   */
+  externalHref?: string;
 }
 
 export interface SubNavGroup {
@@ -597,6 +602,45 @@ const CONSULTING_NAV: SubNavConfig = {
   ],
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// FORGE — custom software built for individual clients.
+//
+// Unlike the platform products this is NOT one catalogue everybody could buy:
+// each entry is software built for a specific client. A tenant only ever sees
+// the build they own (gated on its own `forge_<software>` service key), so a
+// second client's software never appears in a first client's nav.
+//
+// HESTIA is the first: non-profit case management. MS Moments is tenant #1.
+// ─────────────────────────────────────────────────────────────────────────────
+const FORGE_NAV: SubNavConfig = {
+  productName: "Integrations & Software",
+  tagline: "FORGE",
+  groups: [
+    {
+      label: "HESTIA — Non-Profit Software",
+      collapsible: true,
+      sectionId: "forge_hestia",
+      landingRoute: "/app/services/forge_overview",
+      items: [
+        { key: "forge_overview", label: "Overview", route: "/app/services/forge_overview" },
+        { key: "forge_clients", label: "Clients", route: "/app/services/forge_clients" },
+        { key: "forge_assistance", label: "Assistance", route: "/app/services/forge_assistance" },
+        { key: "forge_services", label: "Services", route: "/app/services/forge_services" },
+        { key: "forge_providers", label: "Providers", route: "/app/services/forge_providers" },
+        { key: "forge_funders", label: "Funders", route: "/app/services/forge_funders" },
+        { key: "forge_applications", label: "Funding Applications", route: "/app/services/forge_applications" },
+        { key: "forge_volunteers", label: "Volunteers", route: "/app/services/forge_volunteers" },
+      ],
+    },
+    {
+      label: "",
+      items: [
+        { key: "forge_integrations", label: "Integrations", route: "/app/services/forge_integrations" },
+      ],
+    },
+  ],
+};
+
 const PLACEHOLDER_NAV = (name: string, tagline: string): SubNavConfig => ({
   productName: name,
   tagline,
@@ -866,7 +910,7 @@ export const SUB_NAV_CONFIGS: Record<ProductKey, SubNavConfig | null> = {
   spark: SPARK_NAV,
   consulting: CONSULTING_NAV,
   stella: STELLA_NAV,
-  forge: PLACEHOLDER_NAV("FORGE", "Integrations"),
+  forge: FORGE_NAV,
   argus: ARGUS_NAV,
   settings: SETTINGS_NAV,
 };
@@ -1108,7 +1152,44 @@ export function SubNav({ config }: SubNavProps) {
         ),
     }))
     .filter((g) => g.items.length > 0);
-  config = { ...config, groups: gatedGroups };
+
+  // FORGE does NOT follow show-don't-hide, and deliberately so.
+  //
+  // The platform products are one catalogue anybody could buy, so listing a
+  // locked SPARK feature is a genuine upsell. FORGE holds bespoke software
+  // built for individual clients — showing client A the software we built for
+  // client B is noise at best and a disclosure at worst. So: a tenant sees the
+  // FORGE software they own and nothing else, and a tenant who owns none gets
+  // one pointer to the public catalogue instead of a list of other people's
+  // builds. Software groups are identified by a `forge_<software>` sectionId,
+  // which is also the service key that grants them.
+  let visibleGroups = gatedGroups;
+  if (productKey === "forge") {
+    const isSoftware = (g: SubNavGroup) => !!g.sectionId && g.sectionId.startsWith("forge_");
+    const hadSoftware = gatedGroups.some(isSoftware);
+    visibleGroups = gatedGroups.filter(
+      (g) => !isSoftware(g) || ownedProducts.has(g.sectionId as string)
+    );
+    if (hadSoftware && !visibleGroups.some(isSoftware)) {
+      visibleGroups = [
+        {
+          label: "",
+          items: [
+            {
+              key: "forge_catalog",
+              label: "Explore custom software",
+              route: "/app/services/forge_coming",
+              externalHref:
+                (import.meta.env.VITE_FORGE_CATALOG_URL as string | undefined) ||
+                "https://intelligentanalyticsdm.com/forge",
+            },
+          ],
+        },
+        ...visibleGroups,
+      ];
+    }
+  }
+  config = { ...config, groups: visibleGroups };
   // Single-section-expanded mode for products that opt in via sectionId on groups.
   // ARION, SPARK, OLIVER all have sectionIds; STELLA/FORGE/ARGUS placeholders don't.
   const hasSectionIds = config.groups.some(g => !!g.sectionId);
@@ -1262,6 +1343,17 @@ export function SubNav({ config }: SubNavProps) {
                 <ul className="space-y-0.5">
                   {group.items.map((item, itemIdx) => (
                     <li key={item.key}>
+                      {item.externalHref ? (
+                        <a
+                          href={item.externalHref}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-2 rounded px-2 py-1.5 text-[13px] text-[#D5E8F0]/80 transition-colors hover:bg-white/5 hover:text-white"
+                        >
+                          <span className="h-1 w-1 flex-shrink-0 rounded-full bg-current opacity-50" />
+                          <span className="truncate">{item.label}</span>
+                        </a>
+                      ) : (
                       <NavLink
                         to={item.route}
                         className={({ isActive }) =>
@@ -1322,6 +1414,7 @@ export function SubNav({ config }: SubNavProps) {
                           </svg>
                         )}
                       </NavLink>
+                      )}
                     </li>
                   ))}
                 </ul>

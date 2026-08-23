@@ -106,6 +106,20 @@ function buildEnabledServices(active: SelectTenantResponse | null): Set<string> 
     keys.add('oliver_portals');
   }
 
+  // FORGE is a product LINE that can host several bespoke softwares. Nav is lit
+  // from the per-software key (`forge_hestia`), never from the line key, so a
+  // future FORGE client never sees another client's software.
+  if (activeServiceKeys.has('forge_hestia')) {
+    keys.add('forge_overview');
+    keys.add('forge_clients');
+    keys.add('forge_assistance');
+    keys.add('forge_services');
+    keys.add('forge_providers');
+    keys.add('forge_funders');
+    keys.add('forge_applications');
+    keys.add('forge_volunteers');
+  }
+
   for (const feature of active?.features || []) {
     const key = String(feature.featureKey || '').trim();
     if (key) keys.add(key);

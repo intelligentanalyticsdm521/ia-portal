@@ -1,0 +1,223 @@
+/**
+ * forgeConfig.ts — column/field configuration per HESTIA entity.
+ *
+ * One config drives the list grid, the filters and the create/edit form for
+ * every entity. Adding a screen is an entry here, not a new component — the
+ * same idea the legacy app used, kept because it was the right one.
+ */
+import type { EntityKey } from '../../lib/forgeApi';
+
+export type FieldType = 'text' | 'longtext' | 'date' | 'money' | 'number' | 'lookup' | 'entity';
+
+export interface FieldDef {
+  key: string;
+  label: string;
+  type: FieldType;
+  lookup?: string;          // lookup type_key when type === 'lookup'
+  entity?: EntityKey;       // referenced entity when type === 'entity'
+  displayKey?: string;      // joined display column for entity refs
+  inList?: boolean;
+  inForm?: boolean;
+  required?: boolean;
+  width?: string;
+}
+
+export interface EntityConfig {
+  key: EntityKey;
+  title: string;
+  singular: string;
+  subtitle: string;
+  pk: string;
+  primaryField: string;
+  detailRoute?: (id: string | number) => string;
+  fields: FieldDef[];
+}
+
+const f = (
+  key: string, label: string, type: FieldType = 'text', extra: Partial<FieldDef> = {}
+): FieldDef => ({ key, label, type, inList: true, inForm: true, ...extra });
+
+export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
+  clients: {
+    key: 'clients',
+    title: 'Clients',
+    singular: 'Client',
+    subtitle: 'People your organization serves.',
+    pk: 'client_id',
+    primaryField: 'full_name',
+    detailRoute: (id) => `/app/services/forge_clients/${id}`,
+    fields: [
+      f('full_name', 'Name', 'text', { required: true, width: 'w-64' }),
+      f('phone', 'Phone'),
+      f('email', 'Email'),
+      f('city', 'City'),
+      f('county', 'County'),
+      f('state_province', 'State', 'text', { inList: false }),
+      f('street', 'Street', 'text', { inList: false }),
+      f('postal_code', 'ZIP', 'text', { inList: false }),
+      f('additional_names', 'Additional names', 'text', { inList: false }),
+    ],
+  },
+
+  assistance: {
+    key: 'assistance',
+    title: 'Assistance',
+    singular: 'Assistance',
+    subtitle: 'Financial assistance committed to a client over a period.',
+    pk: 'assistance_id',
+    primaryField: 'client_name',
+    fields: [
+      f('client_id', 'Client', 'entity', { entity: 'clients', displayKey: 'client_name', required: true, width: 'w-56' }),
+      f('status', 'Status', 'lookup', { lookup: 'assistance_status' }),
+      f('start_date', 'Start', 'date'),
+      f('end_date', 'End', 'date'),
+      f('value_amount', 'Value', 'money'),
+      f('gl_reference', 'GL ref'),
+      f('referral_source', 'Referral source', 'text', { inList: false }),
+    ],
+  },
+
+  services: {
+    key: 'services',
+    title: 'Services',
+    singular: 'Service',
+    subtitle: 'A client receiving a service from a provider, paid from their assistance.',
+    pk: 'service_id',
+    primaryField: 'client_name',
+    fields: [
+      f('client_id', 'Client', 'entity', { entity: 'clients', displayKey: 'client_name', required: true, width: 'w-52' }),
+      f('provider_id', 'Provider', 'entity', { entity: 'providers', displayKey: 'provider_name', width: 'w-52' }),
+      f('assistance_id', 'Assistance', 'entity', { entity: 'assistance', displayKey: 'assistance_reference', inList: false }),
+      f('status', 'Status', 'lookup', { lookup: 'service_status' }),
+      f('service_type', 'Type', 'lookup', { lookup: 'service_type' }),
+      f('start_date', 'Start', 'date'),
+      f('end_date', 'End', 'date'),
+      f('payment_method', 'Payment method', 'lookup', { lookup: 'payment_method' }),
+      f('payment_frequency', 'Frequency', 'lookup', { lookup: 'payment_frequency' }),
+      f('estimated_monthly_cost', 'Est. monthly', 'money'),
+    ],
+  },
+
+  providers: {
+    key: 'providers',
+    title: 'Providers',
+    singular: 'Provider',
+    subtitle: 'Vendors delivering services to clients.',
+    pk: 'provider_id',
+    primaryField: 'name',
+    fields: [
+      f('name', 'Name', 'text', { required: true, width: 'w-56' }),
+      f('provider_type', 'Type', 'lookup', { lookup: 'provider_type' }),
+      f('city', 'City'),
+      f('primary_contact', 'Contact'),
+      f('primary_phone', 'Phone'),
+      f('primary_email', 'Email', 'text', { inList: false }),
+      f('website', 'Website', 'text', { inList: false }),
+      f('street', 'Street', 'text', { inList: false }),
+      f('state_province', 'State', 'text', { inList: false }),
+      f('postal_code', 'ZIP', 'text', { inList: false }),
+      f('county', 'County', 'text', { inList: false }),
+      f('secondary_contact', 'Secondary contact', 'text', { inList: false }),
+      f('secondary_phone', 'Secondary phone', 'text', { inList: false }),
+      f('secondary_email', 'Secondary email', 'text', { inList: false }),
+      f('options_text', 'Options', 'longtext', { inList: false }),
+    ],
+  },
+
+  funders: {
+    key: 'funders',
+    title: 'Funders',
+    singular: 'Funder',
+    subtitle: 'Foundations and grantors your organization applies to.',
+    pk: 'funder_id',
+    primaryField: 'name',
+    fields: [
+      f('name', 'Name', 'text', { required: true, width: 'w-56' }),
+      f('primary_contact', 'Contact'),
+      f('primary_email', 'Email'),
+      f('apply_deadline', 'Deadline'),
+      f('grant_max', 'Grant max', 'money'),
+      f('primary_phone', 'Phone', 'text', { inList: false }),
+      f('website', 'Website', 'text', { inList: false }),
+      f('individuals_served', 'Individuals served', 'longtext', { inList: false }),
+      f('area_served', 'Area served', 'longtext', { inList: false }),
+      f('services_provided', 'Services provided', 'longtext', { inList: false }),
+      f('other_notes', 'Other', 'longtext', { inList: false }),
+    ],
+  },
+
+  applications: {
+    key: 'applications',
+    title: 'Funding Applications',
+    singular: 'Application',
+    subtitle: 'Applications your organization has made to funders.',
+    pk: 'application_id',
+    primaryField: 'funder_name',
+    fields: [
+      f('funder_id', 'Funder', 'entity', { entity: 'funders', displayKey: 'funder_name', width: 'w-52' }),
+      f('applied_date', 'Applied', 'date'),
+      f('decision_type', 'Decision', 'lookup', { lookup: 'decision_type' }),
+      f('decision_date', 'Decided', 'date'),
+      f('amount_applied_for', 'Applied for', 'money'),
+      f('amount_awarded', 'Awarded', 'money'),
+      f('money_received_date', 'Received', 'date'),
+      f('reporting_due_date', 'Reporting due', 'date'),
+      f('stipulations', 'Stipulations', 'longtext', { inList: false }),
+    ],
+  },
+
+  volunteers: {
+    key: 'volunteers',
+    title: 'Volunteers',
+    singular: 'Volunteer',
+    subtitle: 'People who give their time.',
+    pk: 'volunteer_id',
+    primaryField: 'name',
+    fields: [
+      f('name', 'Name', 'text', { required: true, width: 'w-56' }),
+      f('status', 'Status', 'lookup', { lookup: 'volunteer_status' }),
+      f('phone', 'Phone'),
+      f('email', 'Email'),
+    ],
+  },
+
+  relationships: {
+    key: 'relationships',
+    title: 'Relationships',
+    singular: 'Relationship',
+    subtitle: 'People connected to a client.',
+    pk: 'relationship_id',
+    primaryField: 'related_name',
+    fields: [
+      f('client_id', 'Client', 'entity', { entity: 'clients', required: true }),
+      f('related_name', 'Related person', 'text', { required: true }),
+      f('relationship', 'Relationship'),
+    ],
+  },
+};
+
+export const money = (v: unknown) =>
+  v === null || v === undefined || v === ''
+    ? '—'
+    : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+        .format(Number(v));
+
+export const moneyExact = (v: unknown) =>
+  v === null || v === undefined || v === ''
+    ? '—'
+    : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(v));
+
+export const shortDate = (v: unknown) => {
+  if (!v) return '—';
+  const d = new Date(String(v));
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+};
+
+export const cellValue = (row: Record<string, unknown>, field: FieldDef) => {
+  if (field.type === 'entity' && field.displayKey) return (row[field.displayKey] as string) || '—';
+  const v = row[field.key];
+  if (v === null || v === undefined || v === '') return '—';
+  if (field.type === 'money') return money(v);
+  if (field.type === 'date') return shortDate(v);
+  return String(v);
+};

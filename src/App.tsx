@@ -92,6 +92,7 @@ import { ConsultingTenantWorkspacePage } from './pages/consulting/ConsultingTena
 // path param. Client lands here from a SPARK email link after the founder
 // hits "Send Intake" on a project.
 import { ConsultingIntakeFormPage } from './pages/consulting/ConsultingIntakeFormPage';
+import { ForgeClientDetailPage } from './pages/forge/ForgeClientDetailPage';
 
 // Consultant workspace entry — captures /c/:tid → sessionStorage → /app.
 import { ConsultantWorkspaceEntry } from './app/ConsultantWorkspaceEntry';
@@ -334,6 +335,13 @@ export function App() {
             <Route
               path="services/consulting/tenant-workspace/:tenantId"
               element={<ConsultingTenantWorkspacePage />}
+            />
+
+            {/* FORGE › HESTIA — client detail. Outside the
+                /services/:serviceKey router because it carries a path param. */}
+            <Route
+              path="services/forge_clients/:id"
+              element={<ForgeClientDetailPage />}
             />
 
             {/* F4 (Consulting Rework 2026-06-25) — client-facing intake form

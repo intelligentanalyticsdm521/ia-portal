@@ -396,6 +396,16 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'argus_coming', displayName: 'ARGUS Overview', section: 'ARGUS', defaultStatus: 'coming_soon', route: '/app/services/argus_coming', description: 'ARGUS AI agents — coming soon. Autonomous AI doing work on your behalf under your guardrails.' },
   { key: 'spark_workflow_triggers', displayName: 'Workflow Triggers', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_workflow_triggers', description: 'Per-contact triggers (health tier change / lead score threshold / activity silence / tag added) that fire an action.' },
   { key: 'spark_config_backup', displayName: 'Configuration Backup', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_config_backup', description: 'Export and import the tenant SPARK configuration (dashboards, reports, fields, rules, templates).' },
+  // ── FORGE › HESTIA — non-profit case management (MS Moments is tenant #1) ──
+  // Gated on the per-software key `forge_hestia`, not the `forge` line key.
+  { key: 'forge_overview', displayName: 'Overview', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_overview', description: 'Case management at a glance — people served, services delivered, funding pipeline.' },
+  { key: 'forge_clients', displayName: 'Clients', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_clients', description: 'People your organization serves.' },
+  { key: 'forge_assistance', displayName: 'Assistance', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_assistance', description: 'Financial assistance committed to a client over a period.' },
+  { key: 'forge_services', displayName: 'Services', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_services', description: 'A client receiving a service from a provider, paid from their assistance.' },
+  { key: 'forge_providers', displayName: 'Providers', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_providers', description: 'Vendors delivering services to clients.' },
+  { key: 'forge_funders', displayName: 'Funders', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_funders', description: 'Foundations and grantors your organization applies to.' },
+  { key: 'forge_applications', displayName: 'Funding Applications', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_applications', description: 'Applications your organization has made to funders.' },
+  { key: 'forge_volunteers', displayName: 'Volunteers', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_volunteers', description: 'People who give their time.' },
   {
     key: 'forge_integrations',
     displayName: 'Integrations',

@@ -32,6 +32,20 @@ import { SERVICE_CATALOG, resolveServiceStatus, type PortalService, type Service
 import { ArionPageWrapper } from '../arion/ArionPageWrapper';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { ComingSoonBanner } from '../components/ComingSoonBanner';
+import { ForgeOverviewPage } from './forge/ForgeOverviewPage';
+import { ForgeEntityPage } from './forge/ForgeEntityPage';
+import type { EntityKey } from '../lib/forgeApi';
+
+// FORGE › HESTIA. One component serves every entity screen, driven by config.
+const FORGE_ENTITY_BY_KEY: Record<string, EntityKey> = {
+  forge_clients: 'clients',
+  forge_assistance: 'assistance',
+  forge_services: 'services',
+  forge_providers: 'providers',
+  forge_funders: 'funders',
+  forge_applications: 'applications',
+  forge_volunteers: 'volunteers',
+};
 
 // Business Profile un-gated 2026-07-22 — GBP Connect (client-owned OAuth +
 // create + in-portal verification) shipped and walked; the 2026-06-28
@@ -617,6 +631,13 @@ function ServiceRouterInner() {
         </PageErrorBoundary>
       );
     }
+  }
+
+  // FORGE › HESTIA — the first FORGE software.
+  if (service.section === 'FORGE') {
+    if (service.key === 'forge_overview') return <ForgeOverviewPage />;
+    const forgeEntity = FORGE_ENTITY_BY_KEY[service.key];
+    if (forgeEntity) return <ForgeEntityPage entity={forgeEntity} />;
   }
 
   if (service.section === 'OLIVER') {
