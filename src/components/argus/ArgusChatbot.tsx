@@ -43,6 +43,11 @@ interface Message {
   help?: HelpOffer;
   /** Near-miss alternatives the user can pick instead. */
   alsoTry?: HelpOffer[];
+  /** Sept-A F3 — "Did that answer your question?" chips under an answer.
+      Carries the user's original question so a "no" can prefill a ticket. */
+  feedback?: { question: string };
+  /** Sept-A F3 — explicit ticket offer after a "no", with prefill. */
+  ticketOffer?: { subject: string; description: string };
 }
 
 interface TicketDraft {
@@ -78,6 +83,10 @@ export function ArgusChatbot() {
   const [ticketOpen, setTicketOpen] = useState(false);
   const [activeTour, setActiveTour] = useState<TourDef | null>(null);
   const [greeted, setGreeted] = useState(false);
+  // Sept-A F3 — feedback loop state: which answers were rated (and how), and
+  // the prefill the ticket form opens with after a "no".
+  const [feedbackDone, setFeedbackDone] = useState<Record<string, "yes" | "no">>({});
+  const [ticketPrefill, setTicketPrefill] = useState<{ subject: string; description: string } | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const spark = useSparkApi();
 
@@ -174,6 +183,11 @@ export function ArgusChatbot() {
         "I didn't quite catch that. Try naming the thing you're trying to do — \"create an email list\", \"send an invoice\", \"claim my Google listing\" — or hit \"I'm stuck\" to reach the founder directly.";
     }
 
+    // Sept-A F3 — ask "did that answer your question?" under real answers.
+    // Not under smalltalk (nothing was answered), not when a ticket form or a
+    // tour is already the next step (the user is mid-flow).
+    const askFeedback = !m.smalltalk && !openTicket && !tourId && (help !== undefined || intent !== null);
+
     const argusMsg: Message = {
       id: uid(),
       sender: "argus",
@@ -183,6 +197,7 @@ export function ArgusChatbot() {
       openTicket,
       help,
       alsoTry,
+      feedback: askFeedback ? { question: text } : undefined,
     };
     setMessages((m2) => [...m2, argusMsg]);
     if (openTicket) setTicketOpen(true);
@@ -204,6 +219,44 @@ export function ArgusChatbot() {
   const handleCtaClick = (to: string) => {
     navigate(to);
     setOpen(false);
+  };
+
+  // Sept-A F3 — the feedback → ticket flow. "Yes" closes the loop politely;
+  // "no" offers a founder ticket with the question already attached, so the
+  // user never re-types what they just asked.
+  const handleFeedback = (messageId: string, answer: "yes" | "no", question: string) => {
+    setFeedbackDone((d) => ({ ...d, [messageId]: answer }));
+    if (answer === "yes") {
+      setMessages((m) => [
+        ...m,
+        { id: uid(), sender: "argus", text: "Great! If anything else comes up, just ask." },
+      ]);
+      return;
+    }
+    setMessages((m) => [
+      ...m,
+      {
+        id: uid(),
+        sender: "argus",
+        text: "Sorry that didn't get you there. Would you like to submit a support ticket? It goes straight to the founder, and I'll attach your question.",
+        ticketOffer: {
+          subject: question.slice(0, 255),
+          description: `I asked ARGUS: "${question}" — the answer didn't resolve it.\n\nWhat I'm actually trying to do:\n`,
+        },
+      },
+    ]);
+  };
+
+  const handleTicketOffer = (offer: { subject: string; description: string }) => {
+    setTicketPrefill(offer);
+    setTicketOpen(true);
+  };
+
+  const handleTicketDeclined = () => {
+    setMessages((m) => [
+      ...m,
+      { id: uid(), sender: "argus", text: "No problem — I'm here if you change your mind. You can also say \"I'm stuck\" any time to reach the founder." },
+    ]);
   };
 
   // Launch a journey step in either mode. Close the panel first so the chat
@@ -276,6 +329,10 @@ export function ArgusChatbot() {
                 onCta={handleCtaClick}
                 onStartTicket={() => setTicketOpen(true)}
                 onHelp={handleHelp}
+                feedbackState={feedbackDone[m.id]}
+                onFeedback={handleFeedback}
+                onTicketOffer={handleTicketOffer}
+                onTicketDeclined={handleTicketDeclined}
               />
             ))}
             {!ticketOpen && messages.length <= 2 && (
@@ -294,8 +351,11 @@ export function ArgusChatbot() {
                 </div>
               </div>
             )}
-            {ticketOpen && <InlineTicketForm onClose={() => setTicketOpen(false)} onSubmitted={(id) => {
-              setMessages((m) => [...m, { id: uid(), sender: "argus", text: `Your ticket #${id} has been submitted. I emailed the founder — you'll get a reply at your account email.` }]);
+            {ticketOpen && <InlineTicketForm prefill={ticketPrefill} onClose={() => { setTicketOpen(false); setTicketPrefill(null); }} onSubmitted={(id) => {
+              // D7 (2026-08-23): the backend returns a GUID — show the short
+              // reference form so the user has something they can quote back.
+              const ref = String(id).replace(/-/g, "").slice(0, 8).toUpperCase();
+              setMessages((m) => [...m, { id: uid(), sender: "argus", text: `Your ticket #${ref} has been submitted. I emailed the founder — you'll get a reply at your account email. Keep that reference if you want to follow up.` }]);
             }} />}
           </div>
 
@@ -338,12 +398,16 @@ export function ArgusChatbot() {
 }
 
 function ChatBubble({
-  message, onCta, onStartTicket, onHelp,
+  message, onCta, onStartTicket, onHelp, feedbackState, onFeedback, onTicketOffer, onTicketDeclined,
 }: {
   message: Message;
   onCta: (to: string) => void;
   onStartTicket: () => void;
   onHelp: (stepId: string, mode: "explain" | "doIt") => void;
+  feedbackState?: "yes" | "no";
+  onFeedback: (messageId: string, answer: "yes" | "no", question: string) => void;
+  onTicketOffer: (offer: { subject: string; description: string }) => void;
+  onTicketDeclined: () => void;
 }) {
   const isUser = message.sender === "user";
   return (
@@ -418,13 +482,65 @@ function ChatBubble({
             </button>
           </div>
         )}
+        {/* Sept-A F3 — "Did that answer your question?" chips. Once answered,
+            the chips collapse to a quiet acknowledgement so the thread stays
+            readable. */}
+        {message.feedback && !isUser && (
+          <div className="mt-2 border-t border-slate-100 pt-1.5">
+            {feedbackState ? (
+              <div className="text-[10px] text-slate-400 italic">
+                {feedbackState === "yes" ? "Marked as answered ✓" : "Marked as not answered"}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-slate-500">Did that answer your question?</span>
+                <button
+                  onClick={() => onFeedback(message.id, "yes", message.feedback!.question)}
+                  className="rounded-full border border-slate-300 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                >
+                  Yes
+                </button>
+                <button
+                  onClick={() => onFeedback(message.id, "no", message.feedback!.question)}
+                  className="rounded-full border border-slate-300 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                >
+                  No
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        {/* Sept-A F3 — explicit ticket offer after a "no", question attached. */}
+        {message.ticketOffer && !isUser && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <button
+              onClick={() => onTicketOffer(message.ticketOffer!)}
+              className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold text-white"
+              style={{ background: "#84CC16" }}
+            >
+              <Ticket className="h-3 w-3" /> Submit a support ticket
+            </button>
+            <button
+              onClick={onTicketDeclined}
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              No thanks
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function InlineTicketForm({ onClose, onSubmitted }: { onClose: () => void; onSubmitted: (id: string | number) => void }) {
-  const [draft, setDraft] = useState<TicketDraft>({ subject: "", description: "", severity: "medium" });
+function InlineTicketForm({ prefill, onClose, onSubmitted }: { prefill?: { subject: string; description: string } | null; onClose: () => void; onSubmitted: (id: string | number) => void }) {
+  // Sept-A F3 — a "no" on the feedback chips opens this form with the user's
+  // question already attached, so nothing gets re-typed.
+  const [draft, setDraft] = useState<TicketDraft>({
+    subject: prefill?.subject || "",
+    description: prefill?.description || "",
+    severity: "medium",
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const apiBase = useMemo(() => (import.meta.env.VITE_LUMEN_API_BASE_URL || "").replace(/\/$/, ""), []);

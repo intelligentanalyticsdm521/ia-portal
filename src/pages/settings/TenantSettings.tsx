@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { useAccessToken } from '../../auth/useAccessToken';
-import { connectGoogle, getGoogleProperties, selectGoogleProperties, listArionSites, listGbpLocations, selectGbpLocation, disconnectGbp } from '../../lib/arionApi';
+import { connectGoogle, getGoogleProperties, selectGoogleProperties, listArionSites, listGbpLocations, selectGbpLocation, disconnectGbp, getInternalIps, addInternalIp, removeInternalIp, type InternalIpEntry } from '../../lib/arionApi';
 import { useOliverApi } from '../../hooks/useOliverApi';
 import { LogoPicker } from '../../components/oliver/LogoPicker';
 import { PhoneInput } from '../../components/PhoneInput';
@@ -1227,6 +1227,11 @@ export function ConnectedAccountsTab() {
           </div>
         </div>
 
+        {/* Sept-A F4 — Exclude internal traffic. One-click "Exclude my current
+            network" (the server reads the caller's IP — nothing to look up or
+            paste) + manual entries. IA platform entries render read-only. */}
+        <InternalTrafficCard siteId={siteId} />
+
         {/* Bing Webmaster Tools — one-click auto-connect via master Bing account.
             Behind the scenes: adds the site under our master Bing account, writes a
             verification CNAME via Hostinger DNS, polls Bing until verified. Client
@@ -1426,6 +1431,137 @@ interface NotifRule {
 // dead-end; full design + Workspace move tracked as a future enhancement.
 // Existing tenant GBP data continues to flow via prior OAuth pulls.
 const GBP_PICKER_ENABLED = false;
+
+// ─── Sept-A F4: Exclude internal traffic card ──────────────────────────────
+// Your own visits (and IA's) inflate every GA number this platform reports.
+// This card keeps a per-site exclusion list: the plugin's gtag bootstrap asks
+// /visitor-flags per browser and disables GA4 for listed networks. "Exclude
+// my current network" needs zero copy-paste — the server sees the caller's IP.
+function InternalTrafficCard({ siteId }: { siteId: string | null }) {
+  const { activeTenantId } = useAppState();
+  const { getToken } = useAccessToken();
+  const apiBaseUrl = import.meta.env.VITE_ARION_API_BASE_URL as string;
+
+  const [entries, setEntries] = useState<InternalIpEntry[]>([]);
+  const [callerIp, setCallerIp] = useState<string>('');
+  const [ga4Connected, setGa4Connected] = useState(true);
+  const [manualIp, setManualIp] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const loadedRef = useRef(false);
+  useEffect(() => {
+    if (loadedRef.current || !siteId || !activeTenantId || !apiBaseUrl) return;
+    loadedRef.current = true;
+    (async () => {
+      try {
+        const token = await getToken();
+        const r = await getInternalIps({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId });
+        setEntries(r.data.entries);
+        setCallerIp(r.data.caller_ip);
+        setGa4Connected(r.data.ga4_connected);
+      } catch (e) {
+        console.warn('[InternalTraffic] load failed:', e);
+      }
+    })();
+  }, [siteId, activeTenantId, apiBaseUrl, getToken]);
+
+  const add = async (ip?: string) => {
+    if (!siteId || !activeTenantId) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const token = await getToken();
+      const r = await addInternalIp({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId, ip });
+      setEntries(r.data.entries);
+      setManualIp('');
+      setNote(r.data.push.pushed ? 'Saved and pushed to your website.' : 'Saved. It will reach your website with the next Google Analytics sync.');
+    } catch (e: any) {
+      setNote(e?.message || 'Could not save that address.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (ip: string) => {
+    if (!siteId || !activeTenantId) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const token = await getToken();
+      const r = await removeInternalIp({ baseUrl: apiBaseUrl, bearerToken: token.accessToken, tenantId: activeTenantId, siteId, ip });
+      setEntries(r.data.entries);
+    } catch (e: any) {
+      setNote(e?.message || 'Could not remove that address.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const alreadyExcluded = !!callerIp && entries.some((e) => e.ip === callerIp);
+
+  return (
+    <div className="rounded-lg border bg-white p-4">
+      <div className="text-sm font-semibold text-gray-900">Exclude internal traffic</div>
+      <p className="mt-1 text-xs text-gray-500">
+        Keep your own visits out of your website analytics so the numbers reflect real customers.
+        {!ga4Connected && ' (Takes effect once Google Analytics is connected.)'}
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={busy || !siteId || alreadyExcluded}
+          onClick={() => add()}
+          title={callerIp ? `Your current network: ${callerIp}` : undefined}
+          className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+        >
+          {alreadyExcluded ? 'This network is excluded ✓' : 'Exclude my current network'}
+        </button>
+        <input
+          type="text"
+          value={manualIp}
+          onChange={(e) => setManualIp(e.target.value)}
+          placeholder="Or add an IP / range manually"
+          className="rounded-md border border-gray-300 px-2.5 py-1.5 text-xs"
+          style={{ minWidth: 180 }}
+        />
+        <button
+          type="button"
+          disabled={busy || !manualIp.trim() || !siteId}
+          onClick={() => add(manualIp.trim())}
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          Add
+        </button>
+      </div>
+
+      {note && <div className="mt-2 text-[11px] text-gray-600">{note}</div>}
+
+      {entries.length > 0 && (
+        <div className="mt-3 space-y-1">
+          {entries.map((e) => (
+            <div key={e.ip} className="flex items-center justify-between rounded border border-gray-100 bg-gray-50 px-2.5 py-1.5">
+              <span className="font-mono text-[11px] text-gray-700">{e.ip}</span>
+              {e.source === 'platform' ? (
+                <span className="text-[10px] text-gray-400" title="Managed by Intelligent Analytics for every site">Intelligent Analytics</span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => remove(e.ip)}
+                  className="text-[10px] font-medium text-rose-600 hover:underline disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function GbpIntegrationCard({ siteId, gaConnected, gaConnecting, onConnectGoogle }: {
   siteId: string | null;

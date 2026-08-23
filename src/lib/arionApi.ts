@@ -2366,3 +2366,32 @@ export async function putIaInsightsServiceArea(params: {
     body: params.body,
   });
 }
+
+// ─── Sept-A F4: internal-traffic exclusion (GA self/client-traffic blocking) ─
+
+export interface InternalIpEntry { ip: string; source: 'platform' | 'site' }
+export interface InternalIpsResponse {
+  data: { entries: InternalIpEntry[]; caller_ip: string; ga4_connected: boolean };
+}
+
+export async function getInternalIps(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<InternalIpsResponse>({ ...params, path: `/arion/sites/${params.siteId}/internal-ips` });
+}
+
+/** No ip in the body ⇒ the server records the CALLER's network ("Exclude my current network"). */
+export async function addInternalIp(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; ip?: string }) {
+  return requestJson<{ data: { added: string; entries: InternalIpEntry[]; push: { pushed: boolean; reason: string | null } } }>({
+    ...params,
+    path: `/arion/sites/${params.siteId}/internal-ips`,
+    method: 'POST',
+    body: params.ip ? { ip: params.ip } : {},
+  });
+}
+
+export async function removeInternalIp(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; ip: string }) {
+  return requestJson<{ data: { removed: string; entries: InternalIpEntry[]; push: { pushed: boolean; reason: string | null } } }>({
+    ...params,
+    path: `/arion/sites/${params.siteId}/internal-ips?ip=${encodeURIComponent(params.ip)}`,
+    method: 'DELETE',
+  });
+}
