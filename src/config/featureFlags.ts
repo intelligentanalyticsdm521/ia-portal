@@ -37,7 +37,14 @@ export const GBP_ENABLED = false;
 // touch acquired-lead viewing (Lead Inbox) or any data. Re-enable once the
 // taxonomy is hand-curated per category (or the category→term mapping is
 // weighted and pruned) and a real search is verified end-to-end.
-export const LEADGEN_ENABLED = false;
+// Sept-A F8 (2026-08-23): flipped TRUE on the release branch so Brandon can
+// walk the rescued surfaces in DEV (founder term-review queue now functional —
+// platform.keyword_relation exists via LUMEN migration 136; worker registry
+// via 044). MERGE GATE: this flip ships to prod ONLY after the prod E2E
+// passes — Google Custom Search enabled on GCP (E2), one real capped search
+// on the IA tenant producing lumen.lead rows + a leadgen_billing record. If
+// E2 isn't done at merge time, revert this line to false before pushing.
+export const LEADGEN_ENABLED = true;
 
 // KILL SWITCH for the 2026-08-06 subscription/tier gating (product rail lock,
 // per-item "UPGRADE" pills, product-not-owned banner).
