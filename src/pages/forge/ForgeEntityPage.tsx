@@ -198,6 +198,13 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
 
       {(creating || editing) && (
         <EntityForm
+          /* A NEW component instance per record. EntityForm seeds its fields
+             from `row` in a useState initializer, which React runs only on
+             mount — so any path that reuses the instance leaves the previous
+             (or empty) values on screen. That is how the edit modal came up
+             blank. The key makes reuse impossible; the effect inside the form
+             is the second belt. */
+          key={editing ? `edit-${String(editing[cfg.pk])}` : 'new'}
           cfg={cfg}
           row={editing}
           lookups={lookups}
@@ -228,6 +235,26 @@ function EntityForm({ cfg, row, lookups, onCancel, onSave }: {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Re-seed if `row` ever changes under a surviving instance. Belt and braces
+  // alongside the key above — a blank edit form is not a cosmetic bug, it is a
+  // save away from wiping a client's record.
+  useEffect(() => {
+    const next: Record<string, unknown> = {};
+    for (const f of formFields) {
+      const v = row?.[f.key];
+      next[f.key] = f.type === 'date' && v ? String(v).slice(0, 10) : (v ?? '');
+    }
+    setValues(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row]);
+
+  // Escape closes, matching every other modal in the portal.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+
   const submit = async () => {
     const missing = formFields.find((f) => f.required && !String(values[f.key] ?? '').trim());
     if (missing) { setErr(`${missing.label} is required.`); return; }
@@ -241,8 +268,16 @@ function EntityForm({ cfg, row, lookups, onCancel, onSave }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-6">
-      <div className="w-full max-w-3xl rounded-2xl bg-white shadow-xl">
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-6"
+      role="dialog"
+      aria-modal="true"
+      /* Backdrop click closes. onMouseDown, not onClick: a drag that STARTS on
+         an input and ends on the backdrop (selecting text, say) fires a click
+         on the backdrop and would otherwise discard the edit. */
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+    >
+      <div className="w-full max-w-3xl rounded-2xl bg-white shadow-xl" onMouseDown={(e) => e.stopPropagation()}>
         <div className="border-b border-slate-100 px-6 py-4">
           <h2 className="text-lg font-semibold text-slate-900">
             {row ? `Edit ${cfg.singular}` : `New ${cfg.singular}`}
@@ -285,12 +320,22 @@ function FormField({ field, value, lookups, onChange }: {
   const cls = 'mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 shadow-sm';
 
   if (field.type === 'lookup') {
+    const options = lookups[field.lookup ?? '']?.values ?? [];
+    const current = String(value ?? '');
     return (
       <label className={field.type === 'lookup' ? '' : 'sm:col-span-2'}>
         {label}
         <select className={cls} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)}>
           <option value="">—</option>
-          {(lookups[field.lookup ?? '']?.values ?? []).map((v) => (
+          {/* A <select> silently shows nothing when its value is not among the
+              options, and the next save then writes that nothing back. If the
+              record holds a value the list no longer contains — a lookup entry
+              renamed or deactivated after the fact — keep it as an option so it
+              stays visible and survives an unrelated edit. */}
+          {current && !options.some((v) => v.value === current) && (
+            <option value={current}>{humanizeValue(current)} (not in list)</option>
+          )}
+          {options.map((v) => (
             <option key={v.id} value={v.value}>{humanizeValue(v.value)}</option>
           ))}
         </select>
