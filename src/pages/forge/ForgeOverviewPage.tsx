@@ -36,6 +36,7 @@ export function ForgeOverviewPage() {
   }, [ready, withParams, q]);
 
   const s = data?.stats;
+  const fr = data?.fundraising;
 
   return (
     <ForgeLayout
@@ -90,6 +91,66 @@ export function ForgeOverviewPage() {
             />
           )}
         </div>
+      )}
+
+      {/* Fundraising sits on the same page as the program work, because the
+          two halves are the same organization and a director should not have
+          to know which screen holds which number. */}
+      {fr && fr.fiscal_year !== null && (
+        <Card title={`Fundraising — FY${fr.fiscal_year}`}>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatTile
+              label="Raised this year"
+              value={money(fr.raised_this_fy)}
+              hint={fr.year_over_year_percent === null
+                // Nothing had come in this far into last year, so a percentage
+                // would be division by zero. The prior year's total is shown
+                // instead rather than leaving the tile without context.
+                ? `${fr.donors_this_fy} donors · FY${(fr.fiscal_year ?? 1) - 1} finished at ${money(fr.raised_last_fy)}`
+                : `${fr.donors_this_fy} donors · ${fr.year_over_year_percent >= 0 ? '+' : ''}${fr.year_over_year_percent}% on the same point in FY${(fr.fiscal_year ?? 1) - 1}`}
+            />
+            <StatTile
+              label="Acknowledgements due"
+              value={fr.acknowledgements_outstanding.toLocaleString()}
+              tone={fr.acknowledgements_outstanding > 0 ? 'warn' : 'default'}
+              hint="Gifts of $250+ with no written acknowledgement"
+            />
+            <StatTile
+              label="Pledges outstanding"
+              value={money(fr.pledges_outstanding)}
+              hint="Promised but not yet received"
+            />
+            <StatTile
+              label="Recurring donors"
+              value={fr.active_recurring.toLocaleString()}
+              tone={fr.failed_recurring > 0 ? 'warn' : 'default'}
+              hint={fr.failed_recurring > 0
+                ? `${fr.failed_recurring} failed and need attention`
+                : 'all collecting normally'}
+            />
+            <StatTile
+              label="Lapsed donors"
+              value={fr.lapsed_donors.toLocaleString()}
+              hint="Gave before, not this year"
+            />
+            <StatTile
+              label="Grants pending"
+              value={fr.grants_pending.toLocaleString()}
+              hint="Applied, awaiting a decision"
+            />
+            <StatTile
+              label="Grant reports due"
+              value={fr.grant_reports_due.toLocaleString()}
+              tone={fr.grant_reports_due > 0 ? 'warn' : 'default'}
+              hint="Due within 60 days"
+            />
+            <StatTile
+              label="People served"
+              value={fr.people_served_all_time.toLocaleString()}
+              hint="All time"
+            />
+          </div>
+        </Card>
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

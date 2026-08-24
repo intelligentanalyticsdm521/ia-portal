@@ -34,6 +34,9 @@ import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { ComingSoonBanner } from '../components/ComingSoonBanner';
 import { ForgeOverviewPage } from './forge/ForgeOverviewPage';
 import { ForgeEntityPage } from './forge/ForgeEntityPage';
+import { ForgeReportsPage } from './forge/ForgeReportsPage';
+import { ForgeReceiptsPage } from './forge/ForgeReceiptsPage';
+import { ForgeSetupPage } from './forge/ForgeSetupPage';
 import type { EntityKey } from '../lib/forgeApi';
 
 // FORGE › HESTIA. One component serves every entity screen, driven by config.
@@ -45,6 +48,12 @@ const FORGE_ENTITY_BY_KEY: Record<string, EntityKey> = {
   forge_funders: 'funders',
   forge_applications: 'applications',
   forge_volunteers: 'volunteers',
+  forge_people: 'people',
+  forge_donations: 'donations',
+  forge_campaigns: 'campaigns',
+  forge_funds: 'funds',
+  forge_pledges: 'pledges',
+  forge_recurring: 'recurring',
 };
 
 // Business Profile un-gated 2026-07-22 — GBP Connect (client-owned OAuth +
@@ -636,6 +645,9 @@ function ServiceRouterInner() {
   // FORGE › HESTIA — the first FORGE software.
   if (service.section === 'FORGE') {
     if (service.key === 'forge_overview') return <ForgeOverviewPage />;
+    if (service.key === 'forge_reports') return <ForgeReportsPage />;
+    if (service.key === 'forge_receipts') return <ForgeReceiptsPage />;
+    if (service.key === 'forge_setup') return <ForgeSetupPage />;
     const forgeEntity = FORGE_ENTITY_BY_KEY[service.key];
     if (forgeEntity) return <ForgeEntityPage entity={forgeEntity} />;
   }

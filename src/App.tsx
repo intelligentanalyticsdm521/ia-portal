@@ -93,6 +93,8 @@ import { ConsultingTenantWorkspacePage } from './pages/consulting/ConsultingTena
 // hits "Send Intake" on a project.
 import { ConsultingIntakeFormPage } from './pages/consulting/ConsultingIntakeFormPage';
 import { ForgeClientDetailPage } from './pages/forge/ForgeClientDetailPage';
+import { ForgeDonationDetailPage } from './pages/forge/ForgeDonationDetailPage';
+import { ForgePersonDetailPage } from './pages/forge/ForgePersonDetailPage';
 
 // Consultant workspace entry — captures /c/:tid → sessionStorage → /app.
 import { ConsultantWorkspaceEntry } from './app/ConsultantWorkspaceEntry';
@@ -342,6 +344,14 @@ export function App() {
             <Route
               path="services/forge_clients/:id"
               element={<ForgeClientDetailPage />}
+            />
+            <Route
+              path="services/forge_people/:id"
+              element={<ForgePersonDetailPage />}
+            />
+            <Route
+              path="services/forge_donations/:id"
+              element={<ForgeDonationDetailPage />}
             />
 
             {/* F4 (Consulting Rework 2026-06-25) — client-facing intake form

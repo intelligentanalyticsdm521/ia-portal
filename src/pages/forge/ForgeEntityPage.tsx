@@ -10,7 +10,7 @@ import {
   type EntityKey, type ListResult,
 } from '../../lib/forgeApi';
 import { Button, Card, EmptyState, ForgeLayout, Pill, statusTone } from './ForgeLayout';
-import { FORGE_ENTITIES, cellValue, type FieldDef } from './forgeConfig';
+import { FORGE_ENTITIES, cellValue, humanizeValue, type FieldDef } from './forgeConfig';
 import { describeError, useDebounced, useForgeApi, useForgeLookups } from './useForge';
 
 const PAGE_SIZE = 25;
@@ -107,7 +107,7 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
               >
                 <option value="">All</option>
                 {(lookups[field.lookup ?? '']?.values ?? []).map((v) => (
-                  <option key={v.id} value={v.value}>{v.value}</option>
+                  <option key={v.id} value={v.value}>{humanizeValue(v.value)}</option>
                 ))}
               </select>
             </label>
@@ -278,7 +278,7 @@ function FormField({ field, value, lookups, onChange }: {
         <select className={cls} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)}>
           <option value="">—</option>
           {(lookups[field.lookup ?? '']?.values ?? []).map((v) => (
-            <option key={v.id} value={v.value}>{v.value}</option>
+            <option key={v.id} value={v.value}>{humanizeValue(v.value)}</option>
           ))}
         </select>
       </label>

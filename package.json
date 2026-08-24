@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "node --import ./scripts/test-ts-loader.mjs --test test"
+    "test": "node --import ./scripts/test-ts-loader.mjs --test test",
+    "dev:hestia2": "vite --mode hestia2 --port 5175 --strictPort"
   },
   "dependencies": {
     "@azure/msal-browser": "^3.14.0",

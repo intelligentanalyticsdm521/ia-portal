@@ -57,6 +57,16 @@ export interface SubNavGroup {
   icon?: ComponentType<{ className?: string }>;
   sectionId?: string; // used for auto-collapse matching
   /**
+   * FORGE only. The `forge_<software>` service key that grants this group.
+   * Set it on EVERY group belonging to one piece of software, including its
+   * sub-sections, so a tenant sees all of it or none of it.
+   *
+   * This used to be inferred from a `forge_` sectionId prefix, which meant a
+   * new sub-section of an existing build looked like a separate product the
+   * tenant did not own, and vanished from the nav.
+   */
+  softwareKey?: string;
+  /**
    * Optional explicit "landing" route for this section. When a user clicks the
    * collapsible section header, they navigate here AND the section expands.
    * If omitted we fall back to the first item's route (which by convention is
@@ -620,6 +630,7 @@ const FORGE_NAV: SubNavConfig = {
       label: "HESTIA — Non-Profit Software",
       collapsible: true,
       sectionId: "forge_hestia",
+      softwareKey: "forge_hestia",
       landingRoute: "/app/services/forge_overview",
       items: [
         { key: "forge_overview", label: "Overview", route: "/app/services/forge_overview" },
@@ -630,6 +641,31 @@ const FORGE_NAV: SubNavConfig = {
         { key: "forge_funders", label: "Funders", route: "/app/services/forge_funders" },
         { key: "forge_applications", label: "Funding Applications", route: "/app/services/forge_applications" },
         { key: "forge_volunteers", label: "Volunteers", route: "/app/services/forge_volunteers" },
+      ],
+    },
+    {
+      label: "Fundraising",
+      collapsible: true,
+      sectionId: "forge_hestia_fundraising",
+      softwareKey: "forge_hestia",
+      items: [
+        { key: "forge_people", label: "People", route: "/app/services/forge_people" },
+        { key: "forge_donations", label: "Donations", route: "/app/services/forge_donations" },
+        { key: "forge_campaigns", label: "Campaigns", route: "/app/services/forge_campaigns" },
+        { key: "forge_funds", label: "Funds", route: "/app/services/forge_funds" },
+        { key: "forge_pledges", label: "Pledges", route: "/app/services/forge_pledges" },
+        { key: "forge_recurring", label: "Recurring Gifts", route: "/app/services/forge_recurring" },
+        { key: "forge_receipts", label: "Acknowledgements", route: "/app/services/forge_receipts" },
+      ],
+    },
+    {
+      label: "Reporting",
+      collapsible: true,
+      sectionId: "forge_hestia_reporting",
+      softwareKey: "forge_hestia",
+      items: [
+        { key: "forge_reports", label: "Reports", route: "/app/services/forge_reports" },
+        { key: "forge_setup", label: "Organization Setup", route: "/app/services/forge_setup" },
       ],
     },
     {
@@ -1161,14 +1197,17 @@ export function SubNav({ config }: SubNavProps) {
   // client B is noise at best and a disclosure at worst. So: a tenant sees the
   // FORGE software they own and nothing else, and a tenant who owns none gets
   // one pointer to the public catalogue instead of a list of other people's
-  // builds. Software groups are identified by a `forge_<software>` sectionId,
-  // which is also the service key that grants them.
+  // builds. A software group declares its `softwareKey` explicitly — the
+  // `forge_<software>` service key that grants it. One piece of software can
+  // span several groups (HESTIA has Case Management, Fundraising and
+  // Reporting); they all carry the same softwareKey and so appear or vanish
+  // together.
   let visibleGroups = gatedGroups;
   if (productKey === "forge") {
-    const isSoftware = (g: SubNavGroup) => !!g.sectionId && g.sectionId.startsWith("forge_");
+    const isSoftware = (g: SubNavGroup) => !!g.softwareKey;
     const hadSoftware = gatedGroups.some(isSoftware);
     visibleGroups = gatedGroups.filter(
-      (g) => !isSoftware(g) || ownedProducts.has(g.sectionId as string)
+      (g) => !isSoftware(g) || ownedProducts.has(g.softwareKey as string)
     );
     if (hadSoftware && !visibleGroups.some(isSoftware)) {
       visibleGroups = [

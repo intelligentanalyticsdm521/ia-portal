@@ -181,6 +181,131 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     ],
   },
 
+  /* ---------- Phase 2 ---------- */
+
+  people: {
+    key: 'people',
+    title: 'People',
+    singular: 'Person',
+    subtitle: 'One record per person or organization — donor, volunteer, board member, or someone you serve.',
+    pk: 'person_id',
+    primaryField: 'full_name',
+    detailRoute: (id) => `/app/services/forge_people/${id}`,
+    fields: [
+      f('full_name', 'Name', 'text', { required: true, width: 'w-64' }),
+      f('organization', 'Organization'),
+      f('email', 'Email'),
+      f('phone', 'Phone'),
+      f('city', 'City'),
+      f('state_province', 'State', 'text', { inList: false }),
+      f('street', 'Street', 'text', { inList: false }),
+      f('postal_code', 'ZIP', 'text', { inList: false }),
+      f('county', 'County', 'text', { inList: false }),
+      f('additional_names', 'Additional names', 'text', { inList: false }),
+    ],
+  },
+
+  donations: {
+    key: 'donations',
+    title: 'Donations',
+    singular: 'Donation',
+    subtitle: 'Every gift received, with what is deductible and where it was designated.',
+    pk: 'donation_id',
+    primaryField: 'donor_name',
+    detailRoute: (id) => `/app/services/forge_donations/${id}`,
+    fields: [
+      f('person_id', 'Donor', 'entity', { entity: 'people', displayKey: 'donor_name', required: true, width: 'w-56' }),
+      f('received_on', 'Received', 'date', { required: true }),
+      f('amount', 'Amount', 'money'),
+      // Read-only in the form: the database computes it, so a form that let
+      // someone type it would be offering to be wrong.
+      f('deductible_amount', 'Deductible', 'money', { inForm: false }),
+      f('campaign_id', 'Campaign', 'entity', { entity: 'campaigns', displayKey: 'campaign_name', width: 'w-48' }),
+      f('payment_method', 'Method', 'lookup', { lookup: 'payment_method' }),
+      f('status', 'Status', 'lookup', { lookup: 'donation_status' }),
+      f('non_deductible_value', 'Value received back', 'money', { inList: false }),
+      f('gift_kind', 'Gift kind', 'lookup', { lookup: 'gift_kind', inList: false }),
+      f('in_kind_description', 'In-kind description', 'longtext', { inList: false }),
+      f('check_number', 'Check number', 'text', { inList: false }),
+      f('processor_fee', 'Processing fee', 'money', { inList: false }),
+      f('notes', 'Notes', 'longtext', { inList: false }),
+    ],
+  },
+
+  campaigns: {
+    key: 'campaigns',
+    title: 'Campaigns',
+    singular: 'Campaign',
+    subtitle: 'Appeals and events — what you asked for, what it cost, what came in.',
+    pk: 'campaign_id',
+    primaryField: 'name',
+    fields: [
+      f('name', 'Name', 'text', { required: true, width: 'w-56' }),
+      f('campaign_type', 'Type', 'lookup', { lookup: 'campaign_type' }),
+      f('channel', 'Channel', 'lookup', { lookup: 'campaign_channel' }),
+      f('start_date', 'Start', 'date'),
+      f('end_date', 'End', 'date'),
+      f('goal_amount', 'Goal', 'money'),
+      f('cost_amount', 'Cost', 'money'),
+      f('fund_id', 'Default fund', 'entity', { entity: 'funds', displayKey: 'fund_name', inList: false }),
+      f('code', 'Code', 'text', { inList: false }),
+    ],
+  },
+
+  funds: {
+    key: 'funds',
+    title: 'Funds',
+    singular: 'Fund',
+    subtitle: 'Where gifts are designated, and whether the donor restricted them.',
+    pk: 'fund_id',
+    primaryField: 'name',
+    fields: [
+      f('name', 'Name', 'text', { required: true, width: 'w-56' }),
+      f('code', 'Code'),
+      f('restriction', 'Restriction', 'lookup', { lookup: 'fund_restriction' }),
+      f('purpose', 'Purpose', 'longtext'),
+    ],
+  },
+
+  pledges: {
+    key: 'pledges',
+    title: 'Pledges',
+    singular: 'Pledge',
+    subtitle: 'Promises to give, and how much of each is still outstanding.',
+    pk: 'pledge_id',
+    primaryField: 'donor_name',
+    fields: [
+      f('person_id', 'Donor', 'entity', { entity: 'people', displayKey: 'donor_name', required: true, width: 'w-56' }),
+      f('total_amount', 'Pledged', 'money'),
+      f('pledged_on', 'Pledged on', 'date'),
+      f('due_by', 'Due by', 'date'),
+      f('status', 'Status', 'lookup', { lookup: 'pledge_status' }),
+      f('campaign_id', 'Campaign', 'entity', { entity: 'campaigns', displayKey: 'campaign_name', width: 'w-48' }),
+      f('fund_id', 'Fund', 'entity', { entity: 'funds', inList: false }),
+      f('notes', 'Notes', 'longtext', { inList: false }),
+    ],
+  },
+
+  recurring: {
+    key: 'recurring',
+    title: 'Recurring Gifts',
+    singular: 'Recurring Gift',
+    subtitle: 'Standing gifts, when each next runs, and which ones have failed.',
+    pk: 'recurring_gift_id',
+    primaryField: 'donor_name',
+    fields: [
+      f('person_id', 'Donor', 'entity', { entity: 'people', displayKey: 'donor_name', required: true, width: 'w-56' }),
+      f('amount', 'Amount', 'money'),
+      f('frequency', 'Frequency', 'lookup', { lookup: 'recurring_frequency' }),
+      f('status', 'Status', 'lookup', { lookup: 'recurring_status' }),
+      f('next_run_on', 'Next run', 'date'),
+      f('started_on', 'Started', 'date'),
+      f('ended_on', 'Ended', 'date', { inList: false }),
+      f('fund_id', 'Fund', 'entity', { entity: 'funds', inList: false }),
+      f('campaign_id', 'Campaign', 'entity', { entity: 'campaigns', inList: false }),
+    ],
+  },
+
   relationships: {
     key: 'relationships',
     title: 'Relationships',
@@ -194,6 +319,23 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
       f('relationship', 'Relationship'),
     ],
   },
+};
+
+/**
+ * Lookup values are stored lower_snake_case so that a value picked in the UI is
+ * byte-identical to the value every report and every CHECK constraint tests
+ * against. That is right for storage and wrong for a dropdown, so the label —
+ * and only the label — is turned back into English here.
+ */
+const ACRONYMS: Record<string, string> = { ach: 'ACH', ein: 'EIN', sms: 'SMS' };
+
+export const humanizeValue = (v: string) => {
+  // Only touch values that are clearly machine identifiers. A value someone
+  // typed themselves ("Bathroom modification", "Approved") is left exactly as
+  // they typed it — this is a display nicety, not an editor.
+  if (!/^[a-z][a-z0-9]*(_[a-z0-9]+)*$/.test(v)) return v;
+  if (ACRONYMS[v]) return ACRONYMS[v];
+  return v.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 };
 
 export const money = (v: unknown) =>
