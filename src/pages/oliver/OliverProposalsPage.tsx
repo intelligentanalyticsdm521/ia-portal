@@ -394,8 +394,8 @@ export function CreateProposalDrawer({
   // backend contract (and the public accept page, and the PDF) is unchanged.
   type Block =
     | { key: number; kind: "text"; heading: string; body: string }
-    | { key: number; kind: "service"; name: string; description: string; features: string[]; quantity: number; unit_price: number }
-    | { key: number; kind: "line"; description: string; quantity: number; unit_price: number };
+    | { key: number; kind: "service"; name: string; description: string; features: string[]; quantity: number; unit_price: number; recommended?: boolean }
+    | { key: number; kind: "line"; description: string; quantity: number; unit_price: number; recommended?: boolean };
 
   const keyRef = useRef(1);
   const nextKey = () => keyRef.current++;
@@ -542,6 +542,10 @@ export function CreateProposalDrawer({
         quantity: Number(b.quantity) || 1,
         unit_price: Number(b.unit_price) || 0,
         line_total: (Number(b.quantity) || 1) * (Number(b.unit_price) || 0),
+        // Rides through line_items_json untouched; the customer page renders
+        // it as the "Recommended" pill — the founder's own reference proposal
+        // (MS Moments PDF) buckets services exactly this way.
+        recommended: !!b.recommended,
       }));
   }
 
@@ -611,6 +615,16 @@ export function CreateProposalDrawer({
   const blockToolbar = (b: Block, label: string, color: string) => (
     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
       <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color }}>{label}</span>
+      {b.kind !== "text" && (
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 600, color: b.recommended ? "#B45309" : "#8AA6B4", cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={!!b.recommended}
+            onChange={(e) => patchBlock(b.key, { recommended: e.target.checked } as Partial<Block>)}
+          />
+          Recommended
+        </label>
+      )}
       <span style={{ marginLeft: "auto", display: "flex", gap: 2 }}>
         <button onClick={() => moveBlock(b.key, -1)} title="Move up" style={miniBtn}>↑</button>
         <button onClick={() => moveBlock(b.key, 1)} title="Move down" style={miniBtn}>↓</button>
