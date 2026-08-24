@@ -46,9 +46,11 @@ function defaultPrice(o: CatalogOffering): number {
   const pick = list.find((p) => p.is_default) || list[0];
   const amount = Number(pick?.unit_amount);
   if (!Number.isFinite(amount)) return 0;
-  // service_offering_price stores minor units (cents), like every other money
-  // column in OLIVER. Dividing here keeps the editor in dollars.
-  return Math.round(amount) / 100;
+  // service_offering_price.unit_amount is stored in DOLLARS, not cents —
+  // verified against prod 2026-08-19: a 2-3" plow push is unit_amount=525,
+  // i.e. $525. The first version divided by 100 on the assumption every money
+  // column is minor units, and quoted the founder's $525 service at $5.25.
+  return amount;
 }
 
 /** Features are stored as JSON; malformed data must not break the picker. */
@@ -131,12 +133,14 @@ export function ProposalCatalogPicker({ get, ready, onPick }: Props) {
       <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderBottom: "1px solid #E8F0F4" }}>
         <Search className="h-3 w-3" style={{ color: "#8AA6B4" }} />
         <input
-          autoFocus
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Find a service"
           style={{ flex: 1, border: 0, background: "transparent", fontSize: 12, outline: "none" }}
         />
+        <span style={{ fontSize: 10, color: "#8AA6B4", whiteSpace: "nowrap" }}>
+          {offerings ? `${filtered.length} of ${offerings.length}` : ""}
+        </span>
         <button onClick={() => setOpen(false)} style={{ border: 0, background: "none", color: "#8AA6B4", cursor: "pointer", fontSize: 11 }}>
           Done
         </button>

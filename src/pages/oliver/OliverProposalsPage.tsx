@@ -530,9 +530,9 @@ export function CreateProposalDrawer({
   }
 
   async function submit() {
-    if (!title.trim()) { setErr("Title is required"); return; }
+    if (!title.trim()) { setErr("Type a title at the top of the document first."); return; }
     const line_items = collectLineItems();
-    if (!line_items.length) { setErr("Add at least one priced service or line"); return; }
+    if (!line_items.length) { setErr("Add at least one service or priced line."); return; }
     setErr(null); setSaving(true);
     try {
       const res = await api.post<{ proposal_id: string; proposal_number: string }>("/proposals", {
@@ -622,8 +622,16 @@ export function CreateProposalDrawer({
           >
             {savingTemplate ? "Saving template…" : "Save as template"}
           </button>
+          {/* Greyed-out-with-no-reason is what made this un-shippable at
+              10pm with a customer waiting: the title box on the page reads as
+              a heading, so an empty title silently disabled everything. The
+              button is always live now; submit() says exactly what is missing,
+              here in the footer where it cannot scroll out of view. */}
+          {err && (
+            <span style={{ fontSize: 12, color: "#B91C1C", marginRight: 4 }}>{err}</span>
+          )}
           <IadmButton variant="ghost" onClick={onClose} disabled={saving}>Cancel</IadmButton>
-          <IadmButton variant="primary" product="oliver" onClick={submit} disabled={saving || !title.trim()}>
+          <IadmButton variant="primary" product="oliver" onClick={submit} disabled={saving}>
             {saving ? "Creating…" : sendImmediately ? "Create & send" : "Save draft"}
           </IadmButton>
         </>
@@ -674,10 +682,11 @@ export function CreateProposalDrawer({
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Your Platform Proposal"
+              placeholder="Proposal title (required) — e.g. Your Platform Proposal"
               style={{
                 width: "100%", border: 0, outline: "none", background: "transparent",
-                fontSize: 24, fontWeight: 800, color: "#0B1C24", marginBottom: 12, padding: 0,
+                borderBottom: "2px dashed #CBD5E1",
+                fontSize: 24, fontWeight: 800, color: "#0B1C24", marginBottom: 12, padding: "0 0 4px",
               }}
             />
 

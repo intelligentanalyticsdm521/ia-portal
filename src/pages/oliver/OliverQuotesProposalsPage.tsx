@@ -3,6 +3,8 @@ import { FileText, ScrollText } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { DataTable, EmptyState, FilterBar, type Column } from "../../components/oliver/ui";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
+import { ReportBar } from "../../components/insights/ReportBar";
+import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 import { IadmModal } from "../../components/IadmModal";
 import { DocumentBrandFrame } from "../../components/oliver/DocumentBrandFrame";
 import { QuoteCreateForm } from "./QuoteCreateForm";
@@ -58,6 +60,7 @@ const fmtMoney = (n?: number | null) =>
   `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export function OliverQuotesProposalsPage() {
+  const insightsPayload = useProductInsightsPayload("oliver");
   const { get, post, patch, del, ready } = useOliverApi();
   const api = useMemo(() => ({ get, post, patch, del }), [get, post, patch, del]);
 
@@ -240,6 +243,15 @@ export function OliverQuotesProposalsPage() {
       error={error}
       loading={loading && !quotes.length && !proposals.length}
     >
+
+      {/* The full-report links both old pages carried — union of the two, so
+          nothing that was reachable before the merge got lost in it. */}
+      <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
+        { id: "oliver_proposal_funnel", label: "Proposal funnel" },
+        { id: "oliver_quotes_by_service", label: "Quotes by service" },
+        { id: "oliver_service_catalog", label: "What you sell" },
+        { id: "oliver_win_drivers", label: "What wins work" },
+      ]} />
 
       {flash && (
         <div style={{ margin: "0 0 12px", padding: 10, fontSize: 12, background: "#D1FAE5", color: "#047857", border: "1px solid #A7F3D0", borderRadius: 6 }}>
