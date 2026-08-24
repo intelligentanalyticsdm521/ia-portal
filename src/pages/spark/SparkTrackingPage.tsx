@@ -122,7 +122,11 @@ export function SparkTrackingPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
         <Card title="1. Cookie drop" body="Sets a first-party __ia_vid cookie so we can stitch repeat visits before the visitor identifies themselves." />
         <Card title="2. Email correlation" body="When a visitor arrives via a campaign link with ?em=jane@acme.com, that email is cached and used to look up their contact record." />
-        <Card title="3. Touchpoint + scoring" body="Every pageview creates an attribution_touchpoint and fires any page.visited scoring rule whose url_contains condition matches." />
+        {/* Sept-A F5: sessionized. Was "every pageview creates a touchpoint",
+            which stopped being true when repeat views on one channel started
+            collapsing into a single touch — otherwise a visitor reading ten
+            pages would swamp the attribution models. */}
+        <Card title="3. Touchpoint + scoring" body="A visit records an attribution touchpoint — repeat views on the same channel within 30 minutes count once, so a browsing session is a single touch. Each pageview still fires any page.visited scoring rule whose url_contains condition matches." />
       </div>
 
       {/* Recent activity */}
