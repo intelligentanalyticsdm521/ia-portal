@@ -17,6 +17,8 @@ import {
 
 export interface Proposal {
   proposal_id: string;
+  /** The quote auto-created when this proposal was accepted (OL-1). */
+  quote_id?: string | null;
   proposal_number: string;
   title: string;
   status: "draft" | "sent" | "viewed" | "accepted" | "declined" | "expired";

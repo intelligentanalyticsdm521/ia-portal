@@ -116,7 +116,15 @@ export function OliverQuotesProposalsPage() {
       status: p.status,
       createdAt: p.created_at,
     }));
-    let all = [...qs, ...ps].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    // An accepted proposal auto-creates its quote (OL-1) so invoicing has
+    // something to bill from. In ONE merged list that plumbing quote shows up
+    // as a duplicate row at the same value — the founder accepted PROP-00004
+    // and immediately saw "$349.98" twice. The child quote is hidden here;
+    // the proposal row carries the Accepted status, and the quote still
+    // exists underneath for invoicing.
+    const childQuoteIds = new Set(proposals.map((p) => p.quote_id).filter(Boolean));
+    const visibleQuotes = qs.filter((q) => !childQuoteIds.has(q.id));
+    let all = [...visibleQuotes, ...ps].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
     if (kindFilter !== "all") all = all.filter((r) => r.kind === kindFilter);
     if (statusFilter) {
       all = statusFilter === "declined"
@@ -136,8 +144,9 @@ export function OliverQuotesProposalsPage() {
   // ── combined value stats (always the WHOLE pipeline, unaffected by the
   //    filter — the filter narrows the list, not the business) ─────────────
   const stats = useMemo(() => {
+    const childIds = new Set(proposals.map((p) => p.quote_id).filter(Boolean));
     const all = [
-      ...quotes.map((q) => ({ status: q.status, total: Number(q.amount) || 0 })),
+      ...quotes.filter((q) => !childIds.has(q.id)).map((q) => ({ status: q.status, total: Number(q.amount) || 0 })),
       ...proposals.map((p) => ({ status: p.status, total: Number(p.total) || 0 })),
     ];
     const open = all.filter((r) => r.status === "sent" || r.status === "viewed");
