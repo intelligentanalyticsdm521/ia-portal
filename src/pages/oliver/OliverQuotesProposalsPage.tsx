@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileText, ScrollText } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
-import { PageHeader, DataTable, EmptyState, type Column } from "../../components/oliver/ui";
+import { DataTable, EmptyState, FilterBar, type Column } from "../../components/oliver/ui";
+import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { IadmModal } from "../../components/IadmModal";
 import { DocumentBrandFrame } from "../../components/oliver/DocumentBrandFrame";
 import { QuoteCreateForm } from "./QuoteCreateForm";
@@ -65,6 +66,10 @@ export function OliverQuotesProposalsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [kindFilter, setKindFilter] = useState<"all" | "quote" | "proposal">("all");
+  // The status pills the old pages had and the rewrite dropped — founder
+  // noticed inside ten minutes, which is how essential they are.
+  const [statusFilter, setStatusFilter] = useState("");
+  const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState<null | "quote" | "proposal">(null);
   const [detail, setDetail] = useState<null | { kind: "quote" | "proposal"; id: string }>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -108,9 +113,22 @@ export function OliverQuotesProposalsPage() {
       status: p.status,
       createdAt: p.created_at,
     }));
-    const all = [...qs, ...ps].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-    return kindFilter === "all" ? all : all.filter((r) => r.kind === kindFilter);
-  }, [quotes, proposals, kindFilter]);
+    let all = [...qs, ...ps].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    if (kindFilter !== "all") all = all.filter((r) => r.kind === kindFilter);
+    if (statusFilter) {
+      all = statusFilter === "declined"
+        ? all.filter((r) => r.status === "declined" || r.status === "rejected")
+        : all.filter((r) => r.status === statusFilter);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      all = all.filter((r) =>
+        r.title.toLowerCase().includes(q) ||
+        r.number.toLowerCase().includes(q) ||
+        r.customer.toLowerCase().includes(q));
+    }
+    return all;
+  }, [quotes, proposals, kindFilter, statusFilter, search]);
 
   // ── combined value stats (always the WHOLE pipeline, unaffected by the
   //    filter — the filter narrows the list, not the business) ─────────────
@@ -212,11 +230,16 @@ export function OliverQuotesProposalsPage() {
   });
 
   return (
-    <div style={{ padding: 16 }}>
-      <PageHeader
-        title="Quotes & Proposals"
-        subtitle="Every document you've priced or pitched, in one pipeline"
-      />
+    // OliverPageWrapper renders the .arion-page class every OLIVER style is
+    // scoped to (.stat-row, .stat-card, table chrome, pills). The first cut of
+    // this page used a bare div and every one of those styles fell away — the
+    // stats rendered as a vertical text list and the table as bare rows.
+    <OliverPageWrapper
+      title="Quotes & Proposals"
+      subtitle="Every document you've priced or pitched, in one pipeline"
+      error={error}
+      loading={loading && !quotes.length && !proposals.length}
+    >
 
       {flash && (
         <div style={{ margin: "0 0 12px", padding: 10, fontSize: 12, background: "#D1FAE5", color: "#047857", border: "1px solid #A7F3D0", borderRadius: 6 }}>
@@ -273,20 +296,32 @@ export function OliverQuotesProposalsPage() {
         </button>
       </div>
 
-      {/* Optional narrowing — the default is the whole pipeline. */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <button style={filterPill(kindFilter === "all")} onClick={() => setKindFilter("all")}>All</button>
-        <button style={filterPill(kindFilter === "quote")} onClick={() => setKindFilter("quote")}>Quotes</button>
-        <button style={filterPill(kindFilter === "proposal")} onClick={() => setKindFilter("proposal")}>Proposals</button>
-      </div>
+      {/* Kind on the left, status + search on the right — the default is the
+          whole pipeline. */}
+      <FilterBar
+        pills={[
+          { key: "", label: "All statuses" },
+          { key: "draft", label: "Drafts" },
+          { key: "sent", label: "Sent" },
+          { key: "viewed", label: "Viewed" },
+          { key: "accepted", label: "Accepted" },
+          { key: "declined", label: "Declined" },
+        ]}
+        activePill={statusFilter}
+        onPillChange={setStatusFilter}
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search documents…"
+        rightSlot={
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={filterPill(kindFilter === "all")} onClick={() => setKindFilter("all")}>All</button>
+            <button style={filterPill(kindFilter === "quote")} onClick={() => setKindFilter("quote")}>Quotes</button>
+            <button style={filterPill(kindFilter === "proposal")} onClick={() => setKindFilter("proposal")}>Proposals</button>
+          </div>
+        }
+      />
 
-      {loading ? (
-        <div style={{ padding: 30, fontSize: 13, color: "#5A7A8A" }}>Loading…</div>
-      ) : error ? (
-        <div style={{ padding: 12, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 6 }}>
-          {(error as Error)?.message || "Could not load documents."}
-        </div>
-      ) : rows.length === 0 ? (
+      {rows.length === 0 ? (
         <EmptyState
           title={kindFilter === "all" ? "Nothing here yet" : `No ${kindFilter}s yet`}
           description="Create a quote to price a job, or a proposal to pitch the work — both land in this pipeline."
@@ -348,6 +383,6 @@ export function OliverQuotesProposalsPage() {
           api={api}
         />
       )}
-    </div>
+    </OliverPageWrapper>
   );
 }
