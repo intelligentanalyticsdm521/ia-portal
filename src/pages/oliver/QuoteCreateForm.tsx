@@ -105,6 +105,10 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
   const [validUntil, setValidUntil] = useState("");
   const [notes, setNotes] = useState("");
   const [docType, setDocType] = useState<"quote" | "proposal">("quote");
+  // A proposal is a named document — POST /proposals rejects one without a
+  // title. This form never had the field, so switching the tab to Proposal and
+  // saving always answered 400 "title required". A quote does not need one.
+  const [title, setTitle] = useState("");
   const [coupons, setCoupons] = useState<CouponLite[]>([]);
   const [taxMode, setTaxMode] = useState<"percent" | "amount">("percent");
   const [taxRate, setTaxRate] = useState("");
@@ -241,6 +245,12 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
         valid_until: validUntil || null,
         notes: notes.trim() || null,
       };
+      if (docType === "proposal") {
+        body.title = title.trim();
+        // The narrative is what makes it a proposal rather than a quote, so
+        // the notes double as the scope until the block builder lands.
+        body.scope_html = notes.trim() || null;
+      }
       if (mode === "job") body.job_id = selectedJobId;
       else body.contact_id = selectedContactId;
       await post(docType === "proposal" ? "/proposals" : "/quotes", body);
@@ -266,6 +276,17 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
         <button className={`ptab${docType === "quote" ? " active" : ""}`} onClick={() => setDocType("quote")}>Quote</button>
         <button className={`ptab${docType === "proposal" ? " active" : ""}`} onClick={() => setDocType("proposal")}>Proposal</button>
       </div>
+
+      {docType === "proposal" && (
+        <Field label="Proposal title" style={{ marginBottom: 12 }}>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Platform Proposal — Autumn 2026"
+            style={inputStyle}
+          />
+        </Field>
+      )}
 
       {templates.length > 0 && (
         <Field label="Start from template (optional)" style={{ marginBottom: 12 }}>
@@ -435,7 +456,9 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
         <Button
           variant="primary"
           onClick={submit}
-          disabled={submitting || (mode === "job" ? !selectedJobId : !selectedContactId) || !items.length}
+          // A proposal without a title is a guaranteed 400, so the button
+          // refuses rather than letting the request go and fail.
+          disabled={submitting || (mode === "job" ? !selectedJobId : !selectedContactId) || !items.length || (docType === "proposal" && !title.trim())}
         >
           {submitting ? "Creating…" : `Create ${docType} (draft)`}
         </Button>

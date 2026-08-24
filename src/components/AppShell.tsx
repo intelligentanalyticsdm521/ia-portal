@@ -100,9 +100,6 @@ function deriveProduct(pathname: string): ProductKey {
   // the moment you entered Image Studio (Brandon's "nav bar doesn't work").
   if (keyMatch && keyMatch[1].startsWith("my_brand_")) return "arion";
 
-  const match = pathname.match(/\/app\/services\/([a-z]+)_/);
-  if (!match) return "overview";
-  const prefix = match[1];
   const map: Record<string, ProductKey> = {
     arion: "arion",
     oliver: "oliver",
@@ -113,7 +110,24 @@ function deriveProduct(pathname: string): ProductKey {
     argus: "argus",
     consulting: "consulting",
   };
-  return map[prefix] ?? "overview";
+
+  // NESTED form first: /app/services/<product>/<feature>/<function>.
+  //
+  // FORGE moved here so one product line can host a build per client
+  // (/app/services/forge/hestia/clients), and the other products are following.
+  // The flat matcher below requires an UNDERSCORE after the product name, so a
+  // nested path matched nothing, this returned "overview", and the entire
+  // SubNav unmounted the moment you clicked a FORGE nav item — which reads as
+  // the navigation closing itself. Same failure mode as the My Brand and
+  // OLIVER-templates fixes above; this is the third time, hence the general
+  // rule rather than another special case.
+  const nested = pathname.match(/^\/app\/services\/([a-z]+)(?:\/|$)/);
+  if (nested && map[nested[1]]) return map[nested[1]];
+
+  // FLAT form: /app/services/<product>_<screen>.
+  const match = pathname.match(/\/app\/services\/([a-z]+)_/);
+  if (!match) return "overview";
+  return map[match[1]] ?? "overview";
 }
 
 /** Get the default route for a product (first nav item).
