@@ -104,11 +104,6 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
   const [items, setItems] = useState<LineItemDraft[]>([{ ...blankItem }]);
   const [validUntil, setValidUntil] = useState("");
   const [notes, setNotes] = useState("");
-  const [docType, setDocType] = useState<"quote" | "proposal">("quote");
-  // A proposal is a named document — POST /proposals rejects one without a
-  // title. This form never had the field, so switching the tab to Proposal and
-  // saving always answered 400 "title required". A quote does not need one.
-  const [title, setTitle] = useState("");
   const [coupons, setCoupons] = useState<CouponLite[]>([]);
   const [taxMode, setTaxMode] = useState<"percent" | "amount">("percent");
   const [taxRate, setTaxRate] = useState("");
@@ -245,15 +240,9 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
         valid_until: validUntil || null,
         notes: notes.trim() || null,
       };
-      if (docType === "proposal") {
-        body.title = title.trim();
-        // The narrative is what makes it a proposal rather than a quote, so
-        // the notes double as the scope until the block builder lands.
-        body.scope_html = notes.trim() || null;
-      }
       if (mode === "job") body.job_id = selectedJobId;
       else body.contact_id = selectedContactId;
-      await post(docType === "proposal" ? "/proposals" : "/quotes", body);
+      await post("/quotes", body);
       onCreated();
     } catch (e) {
       setError(`Create failed: ${(e as Error).message}`);
@@ -266,27 +255,27 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
     <div className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
         <div>
-          <div className="card-ttl">New {docType}</div>
-          <div className="card-sub">{docType === "proposal" ? "A proposal is a quote with narrative + notes — same line items & pricing." : "Itemized pricing the customer can accept; convert to an invoice."}</div>
+          <div className="card-ttl">New quote</div>
+          <div className="card-sub">Itemized pricing the customer can accept; convert to an invoice.</div>
         </div>
         <button onClick={onCancel} style={{ background: "none", border: "none", color: "#5A7A8A", cursor: "pointer", fontSize: 12 }}>Cancel</button>
       </div>
 
-      <div className="ptabs" style={{ marginBottom: 12 }}>
-        <button className={`ptab${docType === "quote" ? " active" : ""}`} onClick={() => setDocType("quote")}>Quote</button>
-        <button className={`ptab${docType === "proposal" ? " active" : ""}`} onClick={() => setDocType("proposal")}>Proposal</button>
+      {/* The Proposal tab is gone.
+          It posted to /proposals with no title, which that endpoint requires,
+          so every proposal saved from here answered 400 "title required" — and
+          the form had no field to put one in. A proposal is not a quote with a
+          different label either: it carries a narrative, terms, a tracked send
+          and click-to-accept, none of which this form collects.
+          The real editor lives on the Proposals page, which had no nav row
+          until today and so could not be found. */}
+      <div style={{ marginBottom: 12, padding: "8px 10px", borderRadius: 6, background: "#F4F8FA", border: "1px solid #E2ECF1", fontSize: 12, color: "#3A5A6A" }}>
+        Writing a proposal instead?{" "}
+        <a href="/app/services/oliver_proposals" style={{ color: "#0B6E8C", fontWeight: 600 }}>
+          Open the proposal editor
+        </a>{" "}
+        — it adds a narrative, terms, tracked sending and click-to-accept.
       </div>
-
-      {docType === "proposal" && (
-        <Field label="Proposal title" style={{ marginBottom: 12 }}>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Platform Proposal — Autumn 2026"
-            style={inputStyle}
-          />
-        </Field>
-      )}
 
       {templates.length > 0 && (
         <Field label="Start from template (optional)" style={{ marginBottom: 12 }}>
@@ -427,7 +416,7 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
             </div>
           )}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0", gap: 8 }}>
-            <span style={{ color: "#5A7A8A", whiteSpace: "nowrap" }}>{docType === "proposal" ? "Proposal" : "Quote"} discount</span>
+            <span style={{ color: "#5A7A8A", whiteSpace: "nowrap" }}>Quote discount</span>
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <DiscountPicker d={invDisc} coupons={coupons} onChange={setInvDisc} />
               <span style={{ width: 64, textAlign: "right", color: "#059669" }}>{totals.invDiscount > 0 ? `−$${totals.invDiscount.toFixed(2)}` : "—"}</span>
@@ -456,11 +445,9 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
         <Button
           variant="primary"
           onClick={submit}
-          // A proposal without a title is a guaranteed 400, so the button
-          // refuses rather than letting the request go and fail.
-          disabled={submitting || (mode === "job" ? !selectedJobId : !selectedContactId) || !items.length || (docType === "proposal" && !title.trim())}
+          disabled={submitting || (mode === "job" ? !selectedJobId : !selectedContactId) || !items.length}
         >
-          {submitting ? "Creating…" : `Create ${docType} (draft)`}
+          {submitting ? "Creating…" : "Create quote (draft)"}
         </Button>
       </div>
     </div>

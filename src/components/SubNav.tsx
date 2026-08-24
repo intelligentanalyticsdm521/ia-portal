@@ -164,14 +164,17 @@ const OLIVER_NAV: SubNavConfig = {
       label: "Billing", icon: CreditCard, collapsible: true, sectionId: "oliver_billing",
       items: [
         { key: "oliver_quotes", label: "Quotes & Proposals", route: "/app/services/oliver_quotes" },
-        // #77 — Proposal Templates. Sits directly under Quotes & Proposals
-        // because it's the templates library for that surface.
-        { key: "oliver_proposal_templates", label: "Templates", route: "/app/oliver/quotes/templates" },
+        // The real proposal editor — contact + template picker, title, scope,
+        // terms, line items, tracked send and click-to-accept. It had a route
+        // and a catalog entry but NO nav row, so it was unreachable: everyone
+        // landed on the quote form's Proposal tab instead, which could not
+        // create a proposal at all (no title field -> 400 on every save).
+        { key: "oliver_proposals", label: "Proposals", route: "/app/services/oliver_proposals" },
         { key: "oliver_invoices", label: "Invoices", route: "/app/services/oliver_invoices" },
         // Recurring services are jobs (TIER_CAPS lite max_active_recurring = 0) → Standard+.
         { key: "oliver_recurring", label: "Subscriptions", route: "/app/services/oliver_recurring", minTier: "standard" },
         { key: "oliver_payments", label: "Payments", route: "/app/services/oliver_payments" },
-        { key: "oliver_templates", label: "Templates", route: "/app/services/oliver_templates" },
+
       ],
     },
     {
@@ -819,9 +822,15 @@ const SETTINGS_NAV: SubNavConfig = {
         // REMOVED: oliver_portal_domains (feature, in main nav W&A)
         // REMOVED: oliver_coupons (feature, in main nav Products & Services)
         // REMOVED: oliver_categories (feature, in main nav Products & Services)
-        // REMOVED: oliver_templates (feature → moved to main nav Billing)
+        // oliver_templates came back here 2026-08-19, reversing F-93. It is how
+        // your documents LOOK — letterhead, colours, which template an invoice
+        // or proposal renders with. That is configuration you set once, and it
+        // belongs beside the invoice template in Business Setup rather than in
+        // Billing, where it sat four rows from a different row also called
+        // "Templates" and nothing on screen said which was which.
         // REMOVED: oliver_addons (feature, in main nav W&A)
         { key: "oliver_settings", label: "Business Setup", route: "/app/services/oliver_settings" },
+        { key: "oliver_templates", label: "Document Design", route: "/app/services/oliver_templates" },
         { key: "oliver_workflow_settings", label: "Workflow Settings", route: "/app/services/oliver_workflow_settings" },
         { key: "oliver_service_categories", label: "Service Categories", route: "/app/services/oliver_service_categories" },
         { key: "oliver_team_access", label: "Team Access", route: "/app/services/oliver_team_access" },
@@ -999,7 +1008,7 @@ function getDefaultSection(path: string): string | null {
   // main nav (Templates, Webhooks, Audience Sync, Audit Log, Review Widget,
   // Coupons, Categories, Booking, etc.) are intentionally excluded —
   // they expand their main-nav group instead.
-  if (path.includes("/oliver_settings") || path.includes("/oliver_workflow_settings") || path.includes("/oliver_service_categories") || path.includes("/oliver_team_access") || path.includes("/oliver_locations")) return "settings_oliver";
+  if (path.includes("/oliver_settings") || path.includes("/oliver_templates") || path.includes("/oliver_workflow_settings") || path.includes("/oliver_service_categories") || path.includes("/oliver_team_access") || path.includes("/oliver_locations")) return "settings_oliver";
   if (path.includes("/arion_service_area") || path.includes("/arion_plugin_provisioning")) return "settings_arion";
   // My Brand is a FEATURE section in the ARION main nav (IA re-cut 2026-07-21)
   // — the hub (arion_brand) and every my_brand_* child expand it.
@@ -1070,8 +1079,10 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/oliver_contacts") || path.includes("/oliver_service_requests") || path.includes("/oliver_booking")) return "oliver_customers";
   if (path.includes("/oliver_catalog") || path.includes("/oliver_categories") || path.includes("/oliver_service_categories") || path.includes("/oliver_coupons")) return "oliver_products";
   if (path.includes("/oliver_expenses") || path.includes("/oliver_job_costing")) return "oliver_expenses";
-  // F-93 — oliver_templates moved from Settings → Billing main nav.
-  if (path.includes("/oliver_quotes") || path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders") || path.includes("/oliver_templates") || path.includes("/oliver/quotes/templates")) return "oliver_billing";
+  // 2026-08-19 — oliver_templates went back to Settings (Document Design), so
+  // it must NOT resolve to the Billing section any more or the wrong nav group
+  // opens. oliver_proposals is Billing.
+  if (path.includes("/oliver_quotes") || path.includes("/oliver_proposals") || path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders")) return "oliver_billing";
   // F-114 — Portals hub + legacy Portal Designer / Portals & Domains all live in the W&A group.
   if (path.includes("/oliver_portals_hub") || path.includes("/oliver_portal_designer") || path.includes("/oliver_portal_domains") || path.includes("/oliver_automations") || path.includes("/oliver_addons") || path.includes("/oliver_workflow_settings")) return "oliver_workflow";
   if (path.includes("/oliver_ia_insights")) return "oliver_ia_insights";

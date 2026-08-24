@@ -50,8 +50,6 @@ import { InfraHealthPage } from './pages/admin/InfraHealthPage';
 import { SparkPricingPage } from './pages/spark/SparkPricingPage';
 
 // #77 — Proposal Templates. Explicit route because the desired URL
-// (/app/oliver/quotes/templates) doesn't fit the /services/:serviceKey shape.
-import { OliverProposalTemplatesPage } from './pages/oliver/OliverProposalTemplatesPage';
 
 // Tenant contact-intelligence weight tuning page. Lives at a dedicated
 // /app/spark/contact-scoring route (rather than the service-key router)
@@ -390,11 +388,6 @@ export function App() {
                 }
               />
             </Route>
-
-            {/* #77 — Proposal Templates (Quotes → Templates). Explicit
-                route so the URL is /app/oliver/quotes/templates rather than
-                the service-key catch-all. Must come BEFORE the catch-all. */}
-            <Route path="oliver/quotes/templates" element={<OliverProposalTemplatesPage />} />
 
             {/* All feature-specific pages routed by service key */}
             <Route path="services/:serviceKey" element={<ServiceRouter />} />

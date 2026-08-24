@@ -82,7 +82,7 @@ function deriveProduct(pathname: string): ProductKey {
   //
   // Brandon 2026-08-06: "OLIVER templates is working but for some reason it's
   // closing the nav page." Quotes & Proposals templates live at
-  // /app/oliver/quotes/templates, which doesn't match the /app/services/<key>
+  // a non-/services route, which doesn't match the /app/services/<key>
   // pattern below — so this function fell through to "overview" and the whole
   // OLIVER SubNav disappeared while you were still inside OLIVER.
   if (/^\/app\/oliver(\/|$)/.test(pathname)) return "oliver";

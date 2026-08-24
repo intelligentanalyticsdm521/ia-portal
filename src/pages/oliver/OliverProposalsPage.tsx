@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ProposalCatalogPicker, type PickedService } from "../../components/oliver/ProposalCatalogPicker";
 import { useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
@@ -358,15 +359,39 @@ function CreateProposalDrawer({
     post: <T>(p: string, body?: unknown) => Promise<T>;
   };
 }) {
+  // ── The block model ───────────────────────────────────────────────────────
+  //
+  // Founder 2026-08-19: "Proposals should be expanded to be able to add like
+  // real text field descriptions, pull in the specific line items plus their
+  // descriptions... make it look like a fucking proposal. Not just a quote
+  // with the word proposal."
+  //
+  // So a proposal is a SEQUENCE OF SECTIONS, not a scope textarea over a price
+  // grid:
+  //   text    — a heading and a paragraph. The pitch, the situation, the
+  //             recommendation. Carries no price.
+  //   service — pulled from the product catalogue: name, description and
+  //             feature bullets arrive pre-written, price attached. Editable
+  //             here without touching the catalogue.
+  //   line    — a plain priced row for one-off amounts that need no story.
+  //
+  // scope_html and line_items are RENDERED from the blocks at save, so the
+  // backend contract (and the public accept page, and the PDF) is unchanged.
+  type Block =
+    | { key: number; kind: "text"; heading: string; body: string }
+    | { key: number; kind: "service"; name: string; description: string; features: string[]; quantity: number; unit_price: number }
+    | { key: number; kind: "line"; description: string; quantity: number; unit_price: number };
+
+  const keyRef = useRef(1);
+  const nextKey = () => keyRef.current++;
+
   const [contacts, setContacts] = useState<Array<{ contact_id: string; first_name?: string; last_name?: string; email?: string; company_name?: string }>>([]);
   const [contactId, setContactId] = useState("");
-  // #77 — Proposal template picker. Fetched alongside contacts; canonical
-  // template.body shape:
-  //   { title?, scope?, terms?, line_items?, tax_rate?, valid_until_days? }
+  // Template body shape (v2): { title?, terms?, tax_rate?, blocks? }.
+  // Legacy bodies ({ scope?, line_items? }) are mapped on load below.
   const [templates, setTemplates] = useState<Array<{ template_id: string; name: string; body: any; is_default?: boolean }>>([]);
   const [templateId, setTemplateId] = useState("");
   const [title, setTitle] = useState("");
-  const [scope, setScope] = useState("");
   const [terms, setTerms] = useState("Payment due within 30 days of acceptance.");
   const [validUntil, setValidUntil] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() + 30);
@@ -374,93 +399,130 @@ function CreateProposalDrawer({
   });
   const [taxRate, setTaxRate] = useState("0");
   const [discount, setDiscount] = useState("0");
-  const [items, setItems] = useState<Array<{ description: string; quantity: number; unit_price: number }>>([
-    { description: "", quantity: 1, unit_price: 0 },
-  ]);
+  const [sendImmediately, setSendImmediately] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [sendImmediately, setSendImmediately] = useState(true);
+  const [blocks, setBlocks] = useState<Block[]>([]);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const r = await api.get<Array<{ contact_id: string; first_name?: string; last_name?: string; email?: string; company_name?: string }>>("/contacts?per_page=200");
-        setContacts(Array.isArray(r) ? r : []);
-      } catch { setContacts([]); }
-      try {
-        const t = await api.get<Array<{ template_id: string; name: string; body: any; is_default?: boolean }>>("/proposal-templates");
-        const list = Array.isArray(t) ? t : [];
+    api.get<{ data: any[] }>("/contacts?limit=200")
+      .then((r) => setContacts(r.data || []))
+      .catch(() => setContacts([]));
+    api.get<{ data: any[] }>("/proposal-templates")
+      .then((r) => {
+        const list = (r.data || []).map((t: any) => ({
+          template_id: t.proposal_template_id || t.template_id,
+          name: t.name,
+          is_default: !!t.is_default,
+          body: typeof t.body_json === "string" ? safeJson(t.body_json) : (t.body_json || t.body || {}),
+        }));
         setTemplates(list);
-        // Auto-pick the default template on mount, if any.
-        if (list.length > 0) {
-          const def = list.find((x) => x.is_default);
-          if (def) {
-            setTemplateId((prev) => {
-              if (prev) return prev;
-              applyTemplate(def);
-              return def.template_id;
-            });
-          }
-        }
-      } catch { setTemplates([]); }
-    })();
+      })
+      .catch(() => setTemplates([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api]);
+  }, []);
 
-  function applyTemplate(t: { template_id: string; name: string; body: any }) {
-    const b = t.body || {};
-    if (typeof b.title === "string" && b.title.trim()) setTitle(b.title);
-    if (typeof b.scope === "string") setScope(b.scope);
-    if (typeof b.terms === "string") setTerms(b.terms);
-    if (typeof b.tax_rate === "number") setTaxRate(String(b.tax_rate));
-    if (Array.isArray(b.line_items) && b.line_items.length > 0) {
-      setItems(b.line_items.map((it: any) => ({
-        description: String(it?.description ?? ""),
-        quantity: Number(it?.quantity ?? 1),
-        unit_price: Number(it?.unit_price ?? 0),
-      })));
-    }
-    if (typeof b.valid_until_days === "number" && b.valid_until_days > 0) {
-      const d = new Date();
-      d.setDate(d.getDate() + b.valid_until_days);
-      setValidUntil(d.toISOString().slice(0, 10));
-    }
+  function safeJson(s: string): any {
+    try { return JSON.parse(s || "{}"); } catch { return {}; }
   }
 
   function onSelectTemplate(id: string) {
     setTemplateId(id);
-    if (!id) return;
     const t = templates.find((x) => x.template_id === id);
-    if (t) applyTemplate(t);
+    if (!t) return;
+    const b = t.body || {};
+    if (b.title) setTitle(String(b.title));
+    if (b.terms) setTerms(String(b.terms));
+    if (b.tax_rate != null) setTaxRate(String(Number(b.tax_rate) <= 1 ? Number(b.tax_rate) * 100 : Number(b.tax_rate)));
+    if (Array.isArray(b.blocks) && b.blocks.length) {
+      // v2 template: restore the sections exactly as they were saved.
+      setBlocks(b.blocks.map((blk: any) => ({ ...blk, key: nextKey() })));
+      return;
+    }
+    // Legacy template: a scope string becomes one text section, line items
+    // become plain priced rows. Nothing is lost, it just arrives un-split.
+    const legacy: Block[] = [];
+    if (b.scope) legacy.push({ key: nextKey(), kind: "text", heading: "Overview", body: String(b.scope) });
+    for (const it of Array.isArray(b.line_items) ? b.line_items : []) {
+      legacy.push({ key: nextKey(), kind: "line", description: String(it.description || ""), quantity: Number(it.quantity) || 1, unit_price: Number(it.unit_price) || 0 });
+    }
+    if (legacy.length) setBlocks(legacy);
   }
 
-  const subtotal = items.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price || 0), 0);
+  // ── Block operations ─────────────────────────────────────────────────────
+  const patchBlock = (key: number, patch: Partial<Block>) =>
+    setBlocks((prev) => prev.map((b) => (b.key === key ? ({ ...b, ...patch } as Block) : b)));
+  const removeBlock = (key: number) => setBlocks((prev) => prev.filter((b) => b.key !== key));
+  const moveBlock = (key: number, dir: -1 | 1) =>
+    setBlocks((prev) => {
+      const i = prev.findIndex((b) => b.key === key);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+
+  const addText = () => setBlocks((p) => [...p, { key: nextKey(), kind: "text", heading: "", body: "" }]);
+  const addLine = () => setBlocks((p) => [...p, { key: nextKey(), kind: "line", description: "", quantity: 1, unit_price: 0 }]);
+  const addServiceFromCatalog = (picked: PickedService) =>
+    setBlocks((p) => [...p, {
+      key: nextKey(), kind: "service",
+      name: picked.parts.name,
+      description: picked.parts.description,
+      features: picked.parts.features,
+      quantity: 1,
+      unit_price: picked.parts.unit_price,
+    }]);
+
+  // ── Derived money ────────────────────────────────────────────────────────
+  const priced = blocks.filter((b): b is Extract<Block, { unit_price: number }> => b.kind !== "text");
+  const subtotal = priced.reduce((s, b) => s + (Number(b.quantity) || 0) * (Number(b.unit_price) || 0), 0);
   const tax = subtotal * (Number(taxRate) / 100);
   const total = Math.max(0, subtotal + tax - Number(discount || 0));
 
-  function updateItem(i: number, patch: Partial<{ description: string; quantity: number; unit_price: number }>) {
-    setItems((prev) => prev.map((it, idx) => idx === i ? { ...it, ...patch } : it));
+  // ── Render blocks to the wire shape ──────────────────────────────────────
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const paras = (s: string) => s.split(/\n{2,}/).map((p) => `<p>${esc(p.trim()).replace(/\n/g, "<br/>")}</p>`).join("\n");
+
+  function renderScopeHtml(): string {
+    return blocks.map((b) => {
+      if (b.kind === "text") {
+        return [b.heading.trim() ? `<h3>${esc(b.heading.trim())}</h3>` : "", b.body.trim() ? paras(b.body) : ""].filter(Boolean).join("\n");
+      }
+      if (b.kind === "service") {
+        return [
+          `<h3>${esc(b.name)}</h3>`,
+          b.description.trim() ? paras(b.description) : "",
+          b.features.length ? `<ul>${b.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>` : "",
+        ].filter(Boolean).join("\n");
+      }
+      return ""; // plain priced rows appear in the totals table, not the narrative
+    }).filter(Boolean).join("\n\n");
   }
-  function addItem() { setItems((prev) => [...prev, { description: "", quantity: 1, unit_price: 0 }]); }
-  function removeItem(i: number) { setItems((prev) => prev.filter((_, idx) => idx !== i)); }
+
+  function collectLineItems() {
+    return priced
+      .filter((b) => (b.kind === "service" ? b.name.trim() : b.description.trim()))
+      .map((b) => ({
+        description: (b.kind === "service" ? b.name : b.description).trim(),
+        quantity: Number(b.quantity) || 1,
+        unit_price: Number(b.unit_price) || 0,
+        line_total: (Number(b.quantity) || 1) * (Number(b.unit_price) || 0),
+      }));
+  }
 
   async function submit() {
     if (!title.trim()) { setErr("Title is required"); return; }
-    if (!items.length || items.every((it) => !it.description.trim())) { setErr("Add at least one line item"); return; }
+    const line_items = collectLineItems();
+    if (!line_items.length) { setErr("Add at least one priced service or line"); return; }
     setErr(null); setSaving(true);
     try {
-      const line_items = items
-        .filter((it) => it.description.trim())
-        .map((it) => ({
-          description: it.description.trim(),
-          quantity: Number(it.quantity),
-          unit_price: Number(it.unit_price),
-          line_total: Number(it.quantity) * Number(it.unit_price),
-        }));
       const res = await api.post<{ proposal_id: string; proposal_number: string }>("/proposals", {
         contact_id: contactId || null,
         title: title.trim(),
-        scope_html: scope.trim() || null,
+        scope_html: renderScopeHtml() || null,
         terms_html: terms.trim() || null,
         line_items,
         tax_rate: Number(taxRate) / 100,
@@ -473,21 +535,59 @@ function CreateProposalDrawer({
           const sendRes = await api.post<{ url: string }>(`/proposals/${res.proposal_id}/send`);
           msg += ` Sent — public URL: ${sendRes.url}`;
         } catch (e) {
-          msg += ` (auto-send failed: ${(e as Error).message})`;
+          msg += ` Send failed: ${(e as Error).message}`;
         }
       }
       onCreated(msg);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed");
+      setErr(`Create failed: ${(e as Error).message}`);
     } finally {
       setSaving(false);
     }
   }
 
+  // Save what is on screen as a reusable template, sections and all.
+  // "Standard snow removal proposal" is picked next winter, prices adjusted,
+  // sent — not retyped.
+  async function saveAsTemplate() {
+    const name = window.prompt("Name this template", title.trim() || "Untitled proposal");
+    if (!name || !name.trim()) return;
+    setSavingTemplate(true); setErr(null);
+    try {
+      await api.post("/proposal-templates", {
+        name: name.trim(),
+        description: title.trim() ? `Saved from “${title.trim()}”` : null,
+        body: {
+          title: title.trim() || null,
+          terms: terms.trim() || null,
+          tax_rate: Number(taxRate) || 0,
+          blocks: blocks.map(({ key: _k, ...rest }) => rest),
+        },
+      });
+      window.alert(`Saved “${name.trim()}”. It's in the template picker for your next proposal.`);
+    } catch (e) {
+      setErr(`Could not save the template: ${(e as Error).message}`);
+    } finally {
+      setSavingTemplate(false);
+    }
+  }
+
+  const blockShell: React.CSSProperties = { border: "1px solid #E2E8F0", borderRadius: 8, padding: 12, background: "#fff" };
+  const blockToolbar = (b: Block, label: string, color: string) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color }}>{label}</span>
+      <span style={{ marginLeft: "auto", display: "flex", gap: 2 }}>
+        <button onClick={() => moveBlock(b.key, -1)} title="Move up" style={miniBtn}>↑</button>
+        <button onClick={() => moveBlock(b.key, 1)} title="Move down" style={miniBtn}>↓</button>
+        <button onClick={() => removeBlock(b.key)} title="Remove section" style={{ ...miniBtn, color: "#B91C1C" }}>×</button>
+      </span>
+    </div>
+  );
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(11,28,36,0.4)", zIndex: 1000, display: "flex", justifyContent: "flex-end" }}>
-      <div style={{ width: 560, height: "100%", background: "#fff", overflowY: "auto", boxShadow: "-4px 0 24px rgba(0,0,0,0.1)" }}>
-        <div style={{ padding: 20, borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ width: 720, maxWidth: "100vw", height: "100%", background: "#F8FAFC", overflowY: "auto", boxShadow: "-4px 0 24px rgba(0,0,0,0.1)" }}>
+        <div style={{ padding: 20, borderBottom: "1px solid #E2E8F0", background: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 5 }}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#1A3A4A" }}>New proposal</h2>
           <button onClick={onClose} style={{ background: "transparent", border: 0, fontSize: 22, color: "#5A7A8A", cursor: "pointer" }}>×</button>
         </div>
@@ -507,71 +607,118 @@ function CreateProposalDrawer({
             </label>
           )}
 
-          <label style={{ display: "block" }}>
-            <span style={pLabel}>Proposal title</span>
-            <input type="text" style={pInput}
-              placeholder="Kitchen Remodel Proposal — Smith Residence"
-              value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
-          </label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <label style={{ display: "block" }}>
+              <span style={pLabel}>Title</span>
+              <input style={pInput} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Your Platform Proposal" />
+            </label>
+            <label style={{ display: "block" }}>
+              <span style={pLabel}>Customer</span>
+              <select style={pInput} value={contactId} onChange={(e) => setContactId(e.target.value)}>
+                <option value="">— Choose later —</option>
+                {contacts.map((c) => (
+                  <option key={c.contact_id} value={c.contact_id}>
+                    {[c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || c.company_name || c.contact_id.slice(0, 8)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
 
-          <label style={{ display: "block" }}>
-            <span style={pLabel}>Customer (optional)</span>
-            <select style={pInput} value={contactId} onChange={(e) => setContactId(e.target.value)}>
-              <option value="">No customer linked</option>
-              {contacts.map((c) => (
-                <option key={c.contact_id} value={c.contact_id}>
-                  {c.company_name || `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || c.email || "(no name)"}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label style={{ display: "block" }}>
-            <span style={pLabel}>Scope of work</span>
-            <textarea rows={4} style={{ ...pInput, resize: "vertical" }}
-              placeholder="Describe what's included in this proposal…"
-              value={scope} onChange={(e) => setScope(e.target.value)} />
-          </label>
-
-          {/* Line items */}
+          {/* ── The document ───────────────────────────────────────────── */}
           <div>
-            <span style={pLabel}>Line items</span>
-            <div style={{ border: "1px solid #E2E8F0", borderRadius: 6 }}>
-              {items.map((it, i) => (
-                <div key={i} style={{
-                  display: "grid", gridTemplateColumns: "1fr 70px 100px 32px",
-                  gap: 6, padding: 8, alignItems: "center",
-                  borderBottom: i < items.length - 1 ? "1px solid #F1F5F9" : "none",
-                }}>
-                  <input type="text" placeholder="Description" value={it.description}
-                    onChange={(e) => updateItem(i, { description: e.target.value })}
-                    style={{ padding: "5px 8px", fontSize: 12, border: "1px solid #D5E2E8", borderRadius: 4 }} />
-                  <input type="number" min="0" step="0.5" value={it.quantity}
-                    onChange={(e) => updateItem(i, { quantity: Number(e.target.value) })}
-                    style={{ padding: "5px 8px", fontSize: 12, border: "1px solid #D5E2E8", borderRadius: 4, textAlign: "right" }} />
-                  <input type="number" min="0" step="0.01" value={it.unit_price}
-                    onChange={(e) => updateItem(i, { unit_price: Number(e.target.value) })}
-                    style={{ padding: "5px 8px", fontSize: 12, border: "1px solid #D5E2E8", borderRadius: 4, textAlign: "right" }} />
-                  <button onClick={() => removeItem(i)} title="Remove"
-                    style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: 16 }}>×</button>
+            <span style={pLabel}>Proposal sections</span>
+            <div style={{ display: "grid", gap: 10 }}>
+              {blocks.length === 0 && (
+                <div style={{ padding: 20, border: "1px dashed #CBD5E1", borderRadius: 8, textAlign: "center", fontSize: 12, color: "#64748B", background: "#fff" }}>
+                  Build the proposal from sections: written parts for the pitch, services pulled
+                  from your catalogue with their descriptions, and plain priced lines.
+                </div>
+              )}
+
+              {blocks.map((b) => (
+                <div key={b.key} style={blockShell}>
+                  {b.kind === "text" && (
+                    <>
+                      {blockToolbar(b, "Written section", "#7C3AED")}
+                      <input
+                        style={{ ...pInput, fontWeight: 600, marginBottom: 6 }}
+                        placeholder="Section heading — e.g. Your Recommended Path"
+                        value={b.heading}
+                        onChange={(e) => patchBlock(b.key, { heading: e.target.value })}
+                      />
+                      <textarea
+                        style={{ ...pInput, minHeight: 88, resize: "vertical", lineHeight: 1.5 }}
+                        placeholder="The words that sell it. Blank line starts a new paragraph."
+                        value={b.body}
+                        onChange={(e) => patchBlock(b.key, { body: e.target.value })}
+                      />
+                    </>
+                  )}
+
+                  {b.kind === "service" && (
+                    <>
+                      {blockToolbar(b, "Service — from your catalogue", "#0B6E8C")}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 84px 110px", gap: 8, marginBottom: 6 }}>
+                        <input style={{ ...pInput, fontWeight: 600 }} value={b.name}
+                          onChange={(e) => patchBlock(b.key, { name: e.target.value })} />
+                        <input style={{ ...pInput, textAlign: "right" }} type="number" min={0} step={0.5} value={b.quantity}
+                          onChange={(e) => patchBlock(b.key, { quantity: Number(e.target.value) })} title="Quantity" />
+                        <input style={{ ...pInput, textAlign: "right" }} type="number" min={0} step={0.01} value={b.unit_price}
+                          onChange={(e) => patchBlock(b.key, { unit_price: Number(e.target.value) })} title="Unit price" />
+                      </div>
+                      <textarea
+                        style={{ ...pInput, minHeight: 64, resize: "vertical", lineHeight: 1.5, marginBottom: 6 }}
+                        placeholder="What this service is and why it's worth having."
+                        value={b.description}
+                        onChange={(e) => patchBlock(b.key, { description: e.target.value })}
+                      />
+                      <textarea
+                        style={{ ...pInput, minHeight: 48, resize: "vertical", fontSize: 12 }}
+                        placeholder={"What's included — one bullet per line"}
+                        value={b.features.join("\n")}
+                        onChange={(e) => patchBlock(b.key, { features: e.target.value.split("\n") })}
+                        onBlur={(e) => patchBlock(b.key, { features: e.target.value.split("\n").map((f) => f.trim()).filter(Boolean) })}
+                      />
+                      <div style={{ marginTop: 4, fontSize: 10, color: "#8AA6B4" }}>
+                        Edits here change this proposal only — the catalogue keeps its own wording.
+                      </div>
+                    </>
+                  )}
+
+                  {b.kind === "line" && (
+                    <>
+                      {blockToolbar(b, "Priced line", "#B45309")}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 84px 110px", gap: 8 }}>
+                        <input style={pInput} placeholder="Description" value={b.description}
+                          onChange={(e) => patchBlock(b.key, { description: e.target.value })} />
+                        <input style={{ ...pInput, textAlign: "right" }} type="number" min={0} step={0.5} value={b.quantity}
+                          onChange={(e) => patchBlock(b.key, { quantity: Number(e.target.value) })} title="Quantity" />
+                        <input style={{ ...pInput, textAlign: "right" }} type="number" min={0} step={0.01} value={b.unit_price}
+                          onChange={(e) => patchBlock(b.key, { unit_price: Number(e.target.value) })} title="Unit price" />
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
-            <button onClick={addItem} style={{ fontSize: 11, fontWeight: 600, color: "#1A7DB5", background: "transparent", border: 0, cursor: "pointer", marginTop: 8, padding: 0 }}>
-              + Add line item
-            </button>
+
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 8 }}>
+              <button onClick={addText} style={addBtn}>+ Written section</button>
+              <button onClick={addLine} style={addBtn}>+ Priced line</button>
+              <ProposalCatalogPicker get={api.get} ready onPick={addServiceFromCatalog} />
+            </div>
           </div>
 
+          {/* ── Money ──────────────────────────────────────────────────── */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
             <label style={{ display: "block" }}>
               <span style={pLabel}>Tax rate (%)</span>
-              <input type="number" min="0" step="0.01" style={pInput}
-                value={taxRate} onChange={(e) => setTaxRate(e.target.value)} />
+              <input type="number" min="0" step="0.01" style={pInput} value={taxRate} onChange={(e) => setTaxRate(e.target.value)} />
             </label>
             <label style={{ display: "block" }}>
               <span style={pLabel}>Discount ($)</span>
-              <input type="number" min="0" step="0.01" style={pInput}
-                value={discount} onChange={(e) => setDiscount(e.target.value)} />
+              <input type="number" min="0" step="0.01" style={pInput} value={discount} onChange={(e) => setDiscount(e.target.value)} />
             </label>
             <label style={{ display: "block" }}>
               <span style={pLabel}>Valid until</span>
@@ -579,8 +726,7 @@ function CreateProposalDrawer({
             </label>
           </div>
 
-          {/* Totals preview */}
-          <div style={{ padding: 12, background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12 }}>
+          <div style={{ padding: 12, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
               <span style={{ color: "#5A7A8A" }}>Subtotal</span>
               <span style={{ color: "#0B1C24", fontFamily: "monospace" }}>{fmtMoney(subtotal)}</span>
@@ -591,19 +737,19 @@ function CreateProposalDrawer({
             </div>
             {Number(discount) > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ color: "#059669" }}>Discount</span>
-                <span style={{ color: "#059669", fontFamily: "monospace" }}>−{fmtMoney(Number(discount))}</span>
+                <span style={{ color: "#5A7A8A" }}>Discount</span>
+                <span style={{ color: "#0B1C24", fontFamily: "monospace" }}>-{fmtMoney(Number(discount))}</span>
               </div>
             )}
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, paddingTop: 6, borderTop: "1px solid #E2E8F0" }}>
-              <span style={{ color: "#1A3A4A", fontWeight: 700 }}>Total</span>
-              <span style={{ color: "#1A3A4A", fontFamily: "monospace", fontWeight: 700 }}>{fmtMoney(total)}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, borderTop: "1px solid #E2E8F0", paddingTop: 6 }}>
+              <span>Total</span>
+              <span style={{ fontFamily: "monospace" }}>{fmtMoney(total)}</span>
             </div>
           </div>
 
           <label style={{ display: "block" }}>
-            <span style={pLabel}>Terms & conditions</span>
-            <textarea rows={2} style={{ ...pInput, resize: "vertical" }}
+            <span style={pLabel}>Terms</span>
+            <textarea style={{ ...pInput, minHeight: 56, resize: "vertical" }}
               value={terms} onChange={(e) => setTerms(e.target.value)} />
           </label>
 
@@ -616,7 +762,15 @@ function CreateProposalDrawer({
             <div style={{ padding: 10, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 6 }}>{err}</div>
           )}
 
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              onClick={saveAsTemplate}
+              disabled={savingTemplate || (!blocks.length && !title.trim())}
+              style={{ ...addBtn, marginRight: "auto" }}
+              title="Save these sections as a reusable template"
+            >
+              {savingTemplate ? "Saving template…" : "Save as template"}
+            </button>
             <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
             <Button variant="primary" onClick={submit} disabled={saving || !title.trim()}>
               {saving ? "Creating…" : sendImmediately ? "Create & send" : "Save draft"}
@@ -627,6 +781,9 @@ function CreateProposalDrawer({
     </div>
   );
 }
+
+const miniBtn: React.CSSProperties = { border: "1px solid #E2E8F0", background: "#fff", borderRadius: 4, width: 22, height: 22, fontSize: 12, color: "#5A7A8A", cursor: "pointer", lineHeight: 1 };
+const addBtn: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: "#1A7DB5", background: "transparent", border: 0, cursor: "pointer", padding: 0 };
 
 const pLabel: React.CSSProperties = { display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 };
 const pInput: React.CSSProperties = {
