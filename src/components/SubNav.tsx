@@ -519,7 +519,6 @@ const SPARK_NAV: SubNavConfig = {
         { key: "spark_lead_inbox", label: "Lead Inbox", route: "/app/services/spark_lead_inbox", addon: "leadgen" },
         { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines", minTier: "pro" /* PRO: moved out of the Lead Gen add-on into the package */},
         { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals", minTier: "pro" /* PRO: deals + pipelines are what ActiveCampaign gates too */},
-        { key: "spark_attribution", label: "Attribution", route: "/app/services/spark_attribution", minTier: "business" /* BUSINESS (tier matrix 2026-08-06): multi-touch revenue attribution sits with the advanced reporting tier */},
       ],
     },
     {
@@ -1024,7 +1023,7 @@ function getDefaultSection(path: string): string | null {
   // expand the right group.
   if (path.includes("/spark_workflows_automations") || path.includes("/spark_tasks") || path.includes("/spark_automations") || path.includes("/spark_journey_") || path.includes("/spark_ab_tests") || path.includes("/spark_approvals") || path.includes("/spark_workflow_triggers") || path.includes("/spark_anomaly_alerts") || path.includes("/spark_webhooks") || path.includes("/spark_inbound_webhooks") || path.includes("/spark_webhook_deliveries") || path.includes("/spark_audience_sync") || path.includes("/spark_rules") || path.includes("/spark_scoring_rules") || path.includes("/spark_routing_rules") || path.includes("/spark_autotag_rules") || path.includes("/spark_lead_suppression") || path.includes("/spark_lead_territories")) return "spark_workflow";
   if (path.includes("/spark_forms") || path.includes("/spark_form_") || path.includes("/spark_landing_pages") || path.includes("/spark_qr_codes")) return "spark_capture";
-  if (path.includes("/spark_leads") || path.includes("/spark_pipelines") || path.includes("/spark_deals") || path.includes("/spark_attribution")) return "spark_sales";
+  if (path.includes("/spark_leads") || path.includes("/spark_pipelines") || path.includes("/spark_deals")) return "spark_sales";
   if (path.includes("/spark_nps") || path.includes("/spark_reviews") || path.includes("/spark_review_") || path.includes("/spark_referrals")) return "spark_customer_success";
   if (path.includes("/spark_ai_writer") || path.includes("/spark_intelligence") || path.includes("/spark_activity_stream")) return "spark_intelligence";
   if (path.includes("/spark_ia_insights_") || path.includes("/spark_stella")) return "spark_ia_insights";

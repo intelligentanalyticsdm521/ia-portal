@@ -343,7 +343,7 @@ export const SPARK_PAGES: PageContentMap = {
   },
   spark_attribution: {
     body:
-      "Which channel actually produced each deal. Expect a surprise — most businesses over-credit the last click and under-credit whatever introduced them in the first place.",
+      "Which channel actually produced each deal — now a tabbed report under IA Insights > Trends > Lead Pipeline > Attribution (first-touch, last-touch, linear and U-shaped models). Expect a surprise — most businesses over-credit the last click and under-credit whatever introduced them in the first place.",
   },
 
   // ── Customer Success ────────────────────────────────────────────────────

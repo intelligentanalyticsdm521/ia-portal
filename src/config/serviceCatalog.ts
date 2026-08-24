@@ -336,7 +336,8 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_competitor_watch', displayName: 'Competitor Watch', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_competitor_watch', description: 'Track competitor domains for new-hire and funding signals.' },
   { key: 'spark_scoring_rules', displayName: 'Scoring Rules', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_scoring_rules', description: 'Rules-based lead scoring engine — assign points on event triggers (Business).' },
   { key: 'spark_routing_rules', displayName: 'Routing Rules', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_routing_rules', description: 'Round-robin / weighted / territory routing for new leads (Business).' },
-  { key: 'spark_attribution', displayName: 'Attribution', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_attribution', description: 'Multi-touch attribution — first/last/linear/u-shaped models with per-contact journey viewer (Business).' },
+  // Sept-A F5: spark_attribution retired as a standalone service — attribution is a
+  // tabbed report group under IA Insights Trends > Lead Pipeline (route redirects).
   // 2026-07-26 — spark_stella stays routable (deep links) but is out of the
   // nav: its analysis ships as the spark_send_times report in SPARK
   // Intelligence. The Reports hubs are the IA Insights "general reporting" bucket.

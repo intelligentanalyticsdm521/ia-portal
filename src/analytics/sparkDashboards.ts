@@ -36,17 +36,26 @@ export const SPARK_DASHBOARDS: DashboardDef[] = [
     key: "lead_pipeline", label: "Lead Pipeline",
     question: "Are leads coming in and converting?",
     sections: [
-      { key: "inflow", label: "Lead Inflow", weight: 0.35, metrics: [
+      { key: "inflow", label: "Lead Inflow", weight: 0.30, metrics: [
         met("leads_new", "New Leads", "count", "line", true, 0.6, "Fresh leads captured this month.", undefined, 3),
         met("leads_sources", "Active Lead Sources", "count", "bar", true, 0.4, "Distinct sources bringing leads in.", undefined, 1),
       ]},
-      { key: "progression", label: "Progression", weight: 0.35, metrics: [
+      { key: "progression", label: "Progression", weight: 0.30, metrics: [
         met("leads_qualified", "Qualified Leads", "count", "line", true, 0.5, "Leads that reached a qualified stage.", undefined, 2),
         met("pipeline_velocity", "Pipeline Velocity", "number", "line", false, 0.5, "Average days from lead to customer; lower is better."),
       ]},
-      { key: "conversion", label: "Conversion", weight: 0.30, metrics: [
+      { key: "conversion", label: "Conversion", weight: 0.25, metrics: [
         met("lead_conversion_rate", "Lead → Customer Rate", "percent", "gauge", true, 0.6, "Share of leads that became paying customers.", { value: 10, kind: "cohort" }),
         met("customers_new", "New Customers", "count", "line", true, 0.4, "Leads that converted this month.", undefined, 2),
+      ]},
+      // Sept-A F5 — Attribution moved into the reports system (the standalone
+      // SPARK page is retired). The four model reports (first/last/linear/
+      // u-shaped) group under this section in the catalog; these two metrics
+      // are the scoring feed so the section moves the Trend score instead of
+      // being detail that feeds nothing (the Aug-20 rework's lesson).
+      { key: "attribution", label: "Attribution", weight: 0.15, metrics: [
+        met("attributed_conversions", "Tracked Conversions", "count", "line", true, 0.6, "Won deals whose customer journey was tracked — conversions your marketing can explain.", undefined, 1),
+        met("attribution_channels", "Credited Channels", "count", "bar", true, 0.4, "Distinct marketing channels earning conversion credit this month.", undefined, 1),
       ]},
     ],
   },
@@ -136,6 +145,9 @@ export function demoSparkMetrics(seed: string): MetricsPayload {
     automation_conversion:{ base: 9, drift: 0.006, noise: 0.08, dir: 1 },
     retention_high:   { base: 42, drift: 0.005, noise: 0.04, max: 100 },
     retention_at_risk:{ base: 24, drift: -0.004, noise: 0.05, dir: 1, max: 100 },
+    // Sept-A F5 — Attribution section demo feed.
+    attributed_conversions:{ base: 7, drift: 0.03, dir: 1, integer: true, noise: 0.2 },
+    attribution_channels:  { base: 4, drift: 0.01, noise: 0.12, integer: true },
   };
   return buildDemoPayload(`spark:${seed}`, specs, (M) => ({
     email_coverage:      M.contacts_total.map((t, i) => Number(Math.min(100, 88 + (i % 3)).toFixed(1))),

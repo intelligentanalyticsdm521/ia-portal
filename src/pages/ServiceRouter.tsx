@@ -228,7 +228,6 @@ const SparkAutoTagRulesPage = lazyNamed(() => import('./spark/SparkAutoTagRulesP
 const SparkCompetitorWatchPage = lazyNamed(() => import('./spark/SparkCompetitorWatchPage'), 'SparkCompetitorWatchPage');
 const SparkScoringRulesPage = lazyNamed(() => import('./spark/SparkScoringRulesPage'), 'SparkScoringRulesPage');
 const SparkRoutingRulesPage = lazyNamed(() => import('./spark/SparkRoutingRulesPage'), 'SparkRoutingRulesPage');
-const SparkAttributionPage = lazyNamed(() => import('./spark/SparkAttributionPage'), 'SparkAttributionPage');
 const SparkStellaPage = lazyNamed(() => import('./spark/SparkStellaPage'), 'SparkStellaPage');
 const SparkScheduledReportsPage = lazyNamed(() => import('./spark/SparkScheduledReportsPage'), 'SparkScheduledReportsPage');
 const SparkAudienceSyncPage = lazyNamed(() => import('./spark/SparkAudienceSyncPage'), 'SparkAudienceSyncPage');
@@ -821,7 +820,10 @@ function ServiceRouterInner() {
       case 'spark_competitor_watch': sparkPage = <SparkCompetitorWatchPage />; break;
       case 'spark_scoring_rules': sparkPage = <SparkScoringRulesPage />; break;
       case 'spark_routing_rules': sparkPage = <SparkRoutingRulesPage />; break;
-      case 'spark_attribution': sparkPage = <SparkAttributionPage />; break;
+      // Sept-A F5 — Attribution lives in the reports system now (Trends >
+      // Lead Pipeline > Attribution, four model tabs). The standalone page is
+      // retired; the old route redirects so no Business-tier bookmark 404s.
+      case 'spark_attribution': sparkPage = <Navigate to="/app/services/spark_ia_insights_trends" replace />; break;
       case 'spark_stella': sparkPage = <SparkStellaPage />; break;
       case 'spark_scheduled_reports': sparkPage = <SparkScheduledReportsPage />; break;
       case 'spark_audience_sync': sparkPage = <SparkAudienceSyncPage />; break;
