@@ -95,8 +95,9 @@ export function ProposalCatalogPicker({ get, ready, onPick }: Props) {
 
   useEffect(() => {
     if (!open || !ready || offerings) return;
-    get<{ data: CatalogOffering[] }>("/catalog/offerings?include_prices=1")
-      .then((r) => setOfferings(r.data || []))
+    // The oliver api client auto-unwraps { data: ... }; tolerate both shapes.
+    get<any>("/catalog/offerings?include_prices=1")
+      .then((r) => setOfferings(Array.isArray(r) ? r : (r as any)?.data ?? []))
       .catch(() => setOfferings([]));
   }, [open, ready, offerings, get]);
 

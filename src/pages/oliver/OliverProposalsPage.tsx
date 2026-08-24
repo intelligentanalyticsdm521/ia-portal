@@ -15,7 +15,7 @@ import {
   type MilestoneShape,
 } from "../../components/oliver/ApproveMilestoneModal";
 
-interface Proposal {
+export interface Proposal {
   proposal_id: string;
   proposal_number: string;
   title: string;
@@ -105,7 +105,7 @@ function fmtDate(d?: string | null) {
   return new Date(d).toLocaleDateString();
 }
 
-export function OliverProposalsPage({ embedded = false, createSignal = 0 }: { embedded?: boolean; createSignal?: number } = {}) {
+export function OliverProposalsPage({ embedded = false, createSignal = 0, createCards }: { embedded?: boolean; createSignal?: number; createCards?: React.ReactNode } = {}) {
   const insightsPayload = useProductInsightsPayload('oliver');
   const { get, post, ready } = useOliverApi();
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -294,6 +294,10 @@ export function OliverProposalsPage({ embedded = false, createSignal = 0 }: { em
         </div>
       </div>
 
+      {/* Founder sketch 2026-08-19: the big create cards sit HERE — below the
+          value stats, above the list — supplied by the combined page. */}
+      {createCards}
+
       {!proposals.length && !loading ? (
         <EmptyState
           title="No proposals yet"
@@ -355,7 +359,7 @@ export function OliverProposalsPage({ embedded = false, createSignal = 0 }: { em
 }
 
 // ─── Create drawer ──────────────────────────────────────────────────────────
-function CreateProposalDrawer({
+export function CreateProposalDrawer({
   onClose, onCreated, api,
 }: {
   onClose: () => void;
@@ -412,12 +416,18 @@ function CreateProposalDrawer({
   const [blocks, setBlocks] = useState<Block[]>([]);
 
   useEffect(() => {
-    api.get<{ data: any[] }>("/contacts?limit=200")
-      .then((r) => setContacts(r.data || []))
+    // useOliverApi auto-unwraps the { data: ... } envelope (lib/oliverApi.ts
+    // — documented at the top of that file). Reading r.data here therefore
+    // got undefined from an already-unwrapped array, which emptied the
+    // customer dropdown, the template picker AND the catalogue picker in one
+    // go. Tolerate both shapes so a future un-unwrapped caller still works.
+    const rows = (r: any): any[] => (Array.isArray(r) ? r : r?.data ?? []);
+    api.get<any>("/contacts?limit=200")
+      .then((r) => setContacts(rows(r)))
       .catch(() => setContacts([]));
-    api.get<{ data: any[] }>("/proposal-templates")
+    api.get<any>("/proposal-templates")
       .then((r) => {
-        const list = (r.data || []).map((t: any) => ({
+        const list = rows(r).map((t: any) => ({
           template_id: t.proposal_template_id || t.template_id,
           name: t.name,
           is_default: !!t.is_default,
@@ -866,7 +876,7 @@ function statusBadgeStyle(status: string): React.CSSProperties {
   };
 }
 
-function ProposalDetailDrawer({
+export function ProposalDetailDrawer({
   proposalId,
   proposalSummary,
   onClose,

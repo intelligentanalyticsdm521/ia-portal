@@ -72,7 +72,7 @@ function fmtDate(d?: string | null) {
   return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
-export function OliverQuotesPage({ embedded = false, createSignal = 0 }: { embedded?: boolean; createSignal?: number } = {}) {
+export function OliverQuotesPage({ embedded = false, createSignal = 0, createCards }: { embedded?: boolean; createSignal?: number; createCards?: React.ReactNode } = {}) {
   // Reports covering THIS function (Brandon 2026-08-14). Above any early
   // return — a hook below one runs on some renders only.
   const insightsPayload = useProductInsightsPayload('oliver');
@@ -300,6 +300,10 @@ export function OliverQuotesPage({ embedded = false, createSignal = 0 }: { embed
         </div>
       </div>
 
+      {/* Founder sketch 2026-08-19: the big create cards sit HERE — below the
+          value stats, above the list — supplied by the combined page. */}
+      {createCards}
+
       {/* Funnel — visual hierarchy of where quotes are stuck */}
       {rows.length > 0 && (
         <div className="card">
@@ -508,7 +512,7 @@ function statusBadgeStyle(status: string): React.CSSProperties {
   };
 }
 
-function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: string; onClose: () => void; onChanged: () => void; api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T>; patch: <T>(p: string, b: unknown) => Promise<T>; del: <T>(p: string) => Promise<T> }; }) {
+export function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: string; onClose: () => void; onChanged: () => void; api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T>; patch: <T>(p: string, b: unknown) => Promise<T>; del: <T>(p: string) => Promise<T> }; }) {
   const [q, setQ] = useState<QuoteDetail | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);

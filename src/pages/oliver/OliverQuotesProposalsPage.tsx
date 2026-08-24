@@ -1,35 +1,201 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileText, ScrollText } from "lucide-react";
-import { OliverQuotesPage } from "./OliverQuotesPage";
-import { OliverProposalsPage } from "./OliverProposalsPage";
+import { useOliverApi } from "../../hooks/useOliverApi";
+import { PageHeader, DataTable, EmptyState, type Column } from "../../components/oliver/ui";
+import { IadmModal } from "../../components/IadmModal";
+import { DocumentBrandFrame } from "../../components/oliver/DocumentBrandFrame";
+import { QuoteCreateForm } from "./QuoteCreateForm";
+import { QuoteDetailDrawer } from "./OliverQuotesPage";
+import { CreateProposalDrawer, ProposalDetailDrawer, type Proposal } from "./OliverProposalsPage";
 
-// One nav destination for Quotes + Proposals.
+// ONE list for quotes and proposals — the whole point of combining the pages.
 //
-// Founder 2026-08-19: the page leads with TWO big card buttons — create a
-// quote, create a proposal — each saying when you'd reach for it. Before this,
-// the visible create buttons were both quote-shaped (the Quotes tab's header
-// button and its empty-state button) and the proposal editor could only be
-// found by switching tabs first. The cards drive whichever editor is asked
-// for and switch the tab underneath so the new document lands in view.
+// Founder 2026-08-19: "this is supposed to be one full list... it either says
+// quote or proposal in the description." The earlier tabbed version kept two
+// separate pages under a switcher, which is exactly what he was rejecting: a
+// customer's documents live in one pipeline, so they belong in one table, in
+// date order, with a Type pill saying which is which and an optional
+// All/Quotes/Proposals filter on top.
+//
+// The two big create cards sit below the value stats and above the list, per
+// the sketch. Both editors and both detail drawers are owned here now — there
+// are no tabs left to own them.
+
+interface QuoteRowRaw {
+  id: string;
+  jobTitle: string;
+  customerName?: string;
+  amount: number;
+  status: string;
+  createdAt: string;
+  validUntil?: string | null;
+}
+
+interface Row {
+  kind: "quote" | "proposal";
+  id: string;
+  title: string;
+  number: string;
+  customer: string;
+  total: number;
+  status: string;
+  createdAt: string;
+}
+
+const STATUS_PILL: Record<string, { label: string; bg: string; color: string }> = {
+  draft:    { label: "Draft",    bg: "#F1F5F9", color: "#5A7A8A" },
+  sent:     { label: "Sent",     bg: "#DBEAFE", color: "#1E40AF" },
+  viewed:   { label: "Viewed",   bg: "#E0E7FF", color: "#4338CA" },
+  accepted: { label: "Accepted", bg: "#D1FAE5", color: "#047857" },
+  declined: { label: "Declined", bg: "#FEE2E2", color: "#991B1B" },
+  rejected: { label: "Declined", bg: "#FEE2E2", color: "#991B1B" },
+  expired:  { label: "Expired",  bg: "#F1F5F9", color: "#94A3B8" },
+  invoiced: { label: "Invoiced", bg: "#D1FAE5", color: "#047857" },
+};
+
+const fmtMoney = (n?: number | null) =>
+  `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 export function OliverQuotesProposalsPage() {
-  const [tab, setTab] = useState<"quotes" | "proposals">("quotes");
-  // Bump-to-open signals for the child pages' modal editors. Zero = untouched.
-  const [quoteSignal, setQuoteSignal] = useState(0);
-  const [proposalSignal, setProposalSignal] = useState(0);
+  const { get, post, patch, del, ready } = useOliverApi();
+  const api = useMemo(() => ({ get, post, patch, del }), [get, post, patch, del]);
 
-  function createQuote() {
-    setTab("quotes");
-    setQuoteSignal((n) => n + 1);
-  }
-  function createProposal() {
-    setTab("proposals");
-    setProposalSignal((n) => n + 1);
-  }
+  const [quotes, setQuotes] = useState<QuoteRowRaw[]>([]);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<unknown>(null);
+  const [kindFilter, setKindFilter] = useState<"all" | "quote" | "proposal">("all");
+  const [createOpen, setCreateOpen] = useState<null | "quote" | "proposal">(null);
+  const [detail, setDetail] = useState<null | { kind: "quote" | "proposal"; id: string }>(null);
+  const [flash, setFlash] = useState<string | null>(null);
 
-  // Founder sketch 2026-08-19: two big square-ish cards, centred, as THE way
-  // in — not a small header button.
+  const reload = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      // The oliver api client auto-unwraps { data: ... }; /quotes answers a
+      // bare array, /proposals answers { proposals, summary }. Tolerate all.
+      const [q, p] = await Promise.all([
+        get<any>("/quotes"),
+        get<any>("/proposals"),
+      ]);
+      setQuotes(Array.isArray(q) ? q : q?.data ?? []);
+      setProposals(Array.isArray(p?.proposals) ? p.proposals : Array.isArray(p) ? p : []);
+    } catch (err) { setError(err); }
+    finally { setLoading(false); }
+  }, [get]);
+
+  useEffect(() => { if (ready) reload(); }, [ready, reload]);
+
+  // ── the merged list ──────────────────────────────────────────────────────
+  const rows = useMemo<Row[]>(() => {
+    const qs: Row[] = quotes.map((q) => ({
+      kind: "quote" as const,
+      id: q.id,
+      title: q.jobTitle || "Quote",
+      number: String(q.id).slice(0, 8).toUpperCase(),
+      customer: q.customerName || "—",
+      total: Number(q.amount) || 0,
+      status: q.status,
+      createdAt: q.createdAt,
+    }));
+    const ps: Row[] = proposals.map((p) => ({
+      kind: "proposal" as const,
+      id: p.proposal_id,
+      title: p.title || "Proposal",
+      number: p.proposal_number,
+      customer: p.customer_company || p.customer_name || "—",
+      total: Number(p.total) || 0,
+      status: p.status,
+      createdAt: p.created_at,
+    }));
+    const all = [...qs, ...ps].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    return kindFilter === "all" ? all : all.filter((r) => r.kind === kindFilter);
+  }, [quotes, proposals, kindFilter]);
+
+  // ── combined value stats (always the WHOLE pipeline, unaffected by the
+  //    filter — the filter narrows the list, not the business) ─────────────
+  const stats = useMemo(() => {
+    const all = [
+      ...quotes.map((q) => ({ status: q.status, total: Number(q.amount) || 0 })),
+      ...proposals.map((p) => ({ status: p.status, total: Number(p.total) || 0 })),
+    ];
+    const open = all.filter((r) => r.status === "sent" || r.status === "viewed");
+    const accepted = all.filter((r) => r.status === "accepted" || r.status === "invoiced");
+    const decided = all.filter((r) => ["accepted", "invoiced", "declined", "rejected"].includes(r.status));
+    return {
+      openValue: open.reduce((s, r) => s + r.total, 0),
+      openCount: open.length,
+      acceptedValue: accepted.reduce((s, r) => s + r.total, 0),
+      acceptedCount: accepted.length,
+      conversion: decided.length ? Math.round((accepted.length / decided.length) * 100) : null,
+      drafts: all.filter((r) => r.status === "draft").length,
+    };
+  }, [quotes, proposals]);
+
+  const columns: Column<Row>[] = [
+    {
+      key: "kind",
+      header: "Type",
+      render: (r) => (
+        <span style={{
+          display: "inline-flex", alignItems: "center", gap: 5,
+          fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999,
+          background: r.kind === "proposal" ? "#F1EDFB" : "#E8F3F8",
+          color: r.kind === "proposal" ? "#7C3AED" : "#1A7DB5",
+        }}>
+          {r.kind === "proposal" ? <ScrollText size={12} /> : <FileText size={12} />}
+          {r.kind === "proposal" ? "Proposal" : "Quote"}
+        </span>
+      ),
+    },
+    {
+      key: "title",
+      header: "Document",
+      sortable: true,
+      sortAccessor: (r) => r.title,
+      render: (r) => (
+        <div>
+          <div style={{ fontWeight: 600, color: "#1A3A4A" }}>{r.title}</div>
+          <div style={{ fontSize: 11, color: "#5A7A8A", fontFamily: "monospace" }}>{r.number}</div>
+        </div>
+      ),
+    },
+    {
+      key: "customer",
+      header: "Customer",
+      render: (r) => <span style={{ fontSize: 12, color: "#0B1C24" }}>{r.customer}</span>,
+    },
+    {
+      key: "total",
+      header: "Total",
+      align: "right",
+      sortable: true,
+      sortAccessor: (r) => r.total,
+      render: (r) => <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{fmtMoney(r.total)}</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (r) => {
+        const pill = STATUS_PILL[r.status] || STATUS_PILL.draft;
+        return (
+          <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 999, background: pill.bg, color: pill.color }}>
+            {pill.label}
+          </span>
+        );
+      },
+    },
+    {
+      key: "created",
+      header: "Created",
+      sortable: true,
+      sortAccessor: (r) => r.createdAt,
+      render: (r) => <span style={{ fontSize: 12, color: "#5A7A8A" }}>{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "—"}</span>,
+    },
+  ];
+
   const card: React.CSSProperties = {
-    width: 320, minHeight: 150, textAlign: "left", cursor: "pointer",
+    width: 320, minHeight: 140, textAlign: "left", cursor: "pointer",
     background: "#fff", border: "1px solid #DBE7ED", borderRadius: 12,
     padding: "20px 22px", display: "flex", flexDirection: "column", gap: 10,
     alignItems: "flex-start", boxShadow: "0 1px 4px rgba(11,28,36,0.08)",
@@ -38,33 +204,65 @@ export function OliverQuotesProposalsPage() {
     width: 38, height: 38, borderRadius: 8, display: "flex",
     alignItems: "center", justifyContent: "center", flexShrink: 0,
   };
+  const filterPill = (active: boolean): React.CSSProperties => ({
+    padding: "5px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer",
+    border: "1px solid " + (active ? "#1A7DB5" : "#DBE7ED"),
+    borderRadius: 999, background: active ? "#1A7DB5" : "#fff",
+    color: active ? "#fff" : "#5A7A8A",
+  });
 
   return (
-    <div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, padding: "20px 16px 4px", justifyContent: "center" }}>
-        <button style={card} onClick={createQuote}>
-          <span style={{ ...iconWrap, background: "#E8F3F8", color: "#1A7DB5" }}>
-            <FileText size={18} />
-          </span>
+    <div style={{ padding: 16 }}>
+      <PageHeader
+        title="Quotes & Proposals"
+        subtitle="Every document you've priced or pitched, in one pipeline"
+      />
+
+      {flash && (
+        <div style={{ margin: "0 0 12px", padding: 10, fontSize: 12, background: "#D1FAE5", color: "#047857", border: "1px solid #A7F3D0", borderRadius: 6 }}>
+          {flash}
+        </div>
+      )}
+
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-lbl">Open value</div>
+          <div className="stat-val">{fmtMoney(stats.openValue)}</div>
+          <div className="stat-delta neu">{stats.openCount} awaiting a decision</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Accepted value</div>
+          <div className="stat-val" style={{ color: "#059669" }}>{fmtMoney(stats.acceptedValue)}</div>
+          <div className="stat-delta neu">{stats.acceptedCount} accepted</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Conversion rate</div>
+          <div className="stat-val">{stats.conversion != null ? `${stats.conversion}%` : "—"}</div>
+          <div className="stat-delta neu">accepted ÷ decided</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-lbl">Drafts</div>
+          <div className="stat-val">{stats.drafts}</div>
+          <div className="stat-delta neu">not yet sent</div>
+        </div>
+      </div>
+
+      {/* Founder sketch: the two big create cards, below the stats, above the list. */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, margin: "14px 0", justifyContent: "center" }}>
+        <button style={card} onClick={() => setCreateOpen("quote")}>
+          <span style={{ ...iconWrap, background: "#E8F3F8", color: "#1A7DB5" }}><FileText size={18} /></span>
           <span>
-            <span style={{ display: "block", fontSize: 14, fontWeight: 700, color: "#0B1C24" }}>
-              Create a quote
-            </span>
+            <span style={{ display: "block", fontSize: 14, fontWeight: 700, color: "#0B1C24" }}>Create a quote</span>
             <span style={{ display: "block", fontSize: 11.5, color: "#5A7A8A", marginTop: 3, lineHeight: 1.45 }}>
               A price for a known job — line items and totals the customer can
               accept. Accepted quotes flow straight to a job and an invoice.
             </span>
           </span>
         </button>
-
-        <button style={card} onClick={createProposal}>
-          <span style={{ ...iconWrap, background: "#F1EDFB", color: "#7C3AED" }}>
-            <ScrollText size={18} />
-          </span>
+        <button style={card} onClick={() => setCreateOpen("proposal")}>
+          <span style={{ ...iconWrap, background: "#F1EDFB", color: "#7C3AED" }}><ScrollText size={18} /></span>
           <span>
-            <span style={{ display: "block", fontSize: 14, fontWeight: 700, color: "#0B1C24" }}>
-              Create a proposal
-            </span>
+            <span style={{ display: "block", fontSize: 14, fontWeight: 700, color: "#0B1C24" }}>Create a proposal</span>
             <span style={{ display: "block", fontSize: 11.5, color: "#5A7A8A", marginTop: 3, lineHeight: 1.45 }}>
               A pitch document — written sections, services pulled from your
               catalogue with their descriptions, tracked send and
@@ -75,23 +273,81 @@ export function OliverQuotesProposalsPage() {
         </button>
       </div>
 
-      <div className="ptabs" style={{ padding: "12px 16px 0", display: "flex", gap: 4 }}>
-        <button
-          className={`ptab${tab === "quotes" ? " active" : ""}`}
-          onClick={() => setTab("quotes")}
-        >
-          Quotes
-        </button>
-        <button
-          className={`ptab${tab === "proposals" ? " active" : ""}`}
-          onClick={() => setTab("proposals")}
-        >
-          Proposals
-        </button>
+      {/* Optional narrowing — the default is the whole pipeline. */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <button style={filterPill(kindFilter === "all")} onClick={() => setKindFilter("all")}>All</button>
+        <button style={filterPill(kindFilter === "quote")} onClick={() => setKindFilter("quote")}>Quotes</button>
+        <button style={filterPill(kindFilter === "proposal")} onClick={() => setKindFilter("proposal")}>Proposals</button>
       </div>
-      {tab === "quotes"
-        ? <OliverQuotesPage embedded createSignal={quoteSignal} />
-        : <OliverProposalsPage embedded createSignal={proposalSignal} />}
+
+      {loading ? (
+        <div style={{ padding: 30, fontSize: 13, color: "#5A7A8A" }}>Loading…</div>
+      ) : error ? (
+        <div style={{ padding: 12, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 6 }}>
+          {(error as Error)?.message || "Could not load documents."}
+        </div>
+      ) : rows.length === 0 ? (
+        <EmptyState
+          title={kindFilter === "all" ? "Nothing here yet" : `No ${kindFilter}s yet`}
+          description="Create a quote to price a job, or a proposal to pitch the work — both land in this pipeline."
+        />
+      ) : (
+        <DataTable<Row>
+          rows={rows}
+          rowKey={(r) => `${r.kind}:${r.id}`}
+          columns={columns}
+          onRowClick={(r) => setDetail({ kind: r.kind, id: r.id })}
+        />
+      )}
+
+      {/* ── create editors, both owned here ─────────────────────────────── */}
+      {createOpen === "quote" && (
+        <IadmModal
+          open
+          onClose={() => setCreateOpen(null)}
+          product="oliver"
+          eyebrow="OLIVER · QUOTES & PROPOSALS"
+          title="New quote"
+          subtitle="What you see here is what the customer receives."
+          size="info"
+        >
+          <div style={{ padding: 20, background: "#EEF3F6" }}>
+            <DocumentBrandFrame get={get} docLabel="QUOTE">
+              <QuoteCreateForm
+                onCreated={() => { setCreateOpen(null); setFlash("Quote created."); reload(); }}
+                onCancel={() => setCreateOpen(null)}
+              />
+            </DocumentBrandFrame>
+          </div>
+        </IadmModal>
+      )}
+
+      {createOpen === "proposal" && (
+        <CreateProposalDrawer
+          onClose={() => setCreateOpen(null)}
+          onCreated={(msg) => { setCreateOpen(null); setFlash(msg); reload(); }}
+          api={api}
+        />
+      )}
+
+      {/* ── detail drawers ──────────────────────────────────────────────── */}
+      {detail?.kind === "quote" && (
+        <QuoteDetailDrawer
+          quoteId={detail.id}
+          onClose={() => setDetail(null)}
+          onChanged={reload}
+          api={api}
+        />
+      )}
+      {detail?.kind === "proposal" && (
+        <ProposalDetailDrawer
+          proposalId={detail.id}
+          proposalSummary={proposals.find((p) => p.proposal_id === detail.id) || null}
+          onClose={() => setDetail(null)}
+          onChanged={reload}
+          api={api}
+        />
+      )}
     </div>
   );
 }
