@@ -72,7 +72,7 @@ function fmtDate(d?: string | null) {
   return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
-export function OliverQuotesPage() {
+export function OliverQuotesPage({ embedded = false, createSignal = 0 }: { embedded?: boolean; createSignal?: number } = {}) {
   // Reports covering THIS function (Brandon 2026-08-14). Above any early
   // return — a hook below one runs on some renders only.
   const insightsPayload = useProductInsightsPayload('oliver');
@@ -86,6 +86,10 @@ export function OliverQuotesPage() {
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  // The combined Quotes & Proposals page owns the two big create cards and
+  // drives this page's editor through a counter — bump = open. Zero is the
+  // mount value and must not open anything.
+  useEffect(() => { if (createSignal > 0) setShowCreate(true); }, [createSignal]);
   const [initialJobId, setInitialJobId] = useState<string | undefined>();
   const [initialContactId, setInitialContactId] = useState<string | undefined>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -264,7 +268,7 @@ export function OliverQuotesPage() {
       <PageHeader
         title="Quotes"
         subtitle="Send estimates, track acceptance, and convert into jobs"
-        actions={!showCreate && <Button variant="primary" onClick={() => setShowCreate(true)}>+ Create quote</Button>}
+        actions={!embedded && !showCreate && <Button variant="primary" onClick={() => setShowCreate(true)}>+ Create quote</Button>}
       />
 
       <div className="stat-row">
@@ -382,7 +386,7 @@ export function OliverQuotesPage() {
         <EmptyState
           title="No quotes yet"
           description="Create your first quote to send pricing to a customer. Accepted quotes auto-flow to invoices."
-          action={<Button variant="primary" onClick={() => setShowCreate(true)}>+ Create quote</Button>}
+          action={!embedded ? <Button variant="primary" onClick={() => setShowCreate(true)}>+ Create quote</Button> : undefined}
         />
       ) : !rows.length && showCreate ? null : (
         <>

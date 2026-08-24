@@ -105,7 +105,7 @@ function fmtDate(d?: string | null) {
   return new Date(d).toLocaleDateString();
 }
 
-export function OliverProposalsPage() {
+export function OliverProposalsPage({ embedded = false, createSignal = 0 }: { embedded?: boolean; createSignal?: number } = {}) {
   const insightsPayload = useProductInsightsPayload('oliver');
   const { get, post, ready } = useOliverApi();
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -115,6 +115,10 @@ export function OliverProposalsPage() {
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  // The combined Quotes & Proposals page owns the two big create cards and
+  // drives this page's editor through a counter — bump = open. Zero is the
+  // mount value and must not open anything.
+  useEffect(() => { if (createSignal > 0) setShowCreate(true); }, [createSignal]);
   const [flash, setFlash] = useState<string | null>(null);
   // F2 — focus detail drawer (Payment Splits). Driven by ?focus=<proposal_id>
   // so deep-links survive page reloads and the row click already sets it.
@@ -253,7 +257,7 @@ export function OliverProposalsPage() {
       <PageHeader
         title="Proposals"
         subtitle="Create a branded proposal, send a tracked link, customer clicks to accept → OLIVER quote auto-created."
-        actions={<Button variant="primary" onClick={() => setShowCreate(true)}>+ New proposal</Button>}
+        actions={!embedded ? <Button variant="primary" onClick={() => setShowCreate(true)}>+ New proposal</Button> : undefined}
       />
 
       {flash && (
@@ -294,7 +298,7 @@ export function OliverProposalsPage() {
         <EmptyState
           title="No proposals yet"
           description="Send your first branded proposal. The customer gets a tracked link they click to accept — OLIVER auto-creates the quote on acceptance."
-          action={<Button variant="primary" onClick={() => setShowCreate(true)}>+ Create your first proposal</Button>}
+          action={!embedded ? <Button variant="primary" onClick={() => setShowCreate(true)}>+ Create your first proposal</Button> : undefined}
         />
       ) : (
         <>
