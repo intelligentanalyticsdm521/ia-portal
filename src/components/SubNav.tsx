@@ -16,6 +16,7 @@ import {
 import { useProductTier } from "../hooks/useProductTier";
 import { useNavAddons } from "../hooks/useNavAddons";
 import { useAppState } from "../app/AppState";
+import { FORGE_SOFTWARE, screenRoute, softwareRoot } from "../pages/forge/forgeSoftware";
 import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
 import { productColor } from "../config/productTheme";
 
@@ -626,50 +627,41 @@ const FORGE_NAV: SubNavConfig = {
   productName: "Integrations & Software",
   tagline: "FORGE",
   groups: [
-    {
-      label: "HESTIA — Non-Profit Software",
+    // ONE collapsible section per BUILD, generated from the software registry
+    // (pages/forge/forgeSoftware.ts) rather than written out here.
+    //
+    // FORGE is a product LINE, not a product: it can host a build per client,
+    // each with its own `forge_<slug>` entitlement so one client never sees
+    // another's software. Hand-maintaining sections here would mean editing
+    // this file for every new build — and an earlier revision that split ONE
+    // build across three sibling sections showed the failure mode: with two
+    // builds you get HESTIA, Fundraising, Reporting, OtherBuild, Fundraising…
+    // and no way to tell which section belongs to which software.
+    ...FORGE_SOFTWARE.map((sw) => ({
+      label: `${sw.name} — ${sw.tagline}`,
+      icon: Heart,
       collapsible: true,
-      sectionId: "forge_hestia",
-      softwareKey: "forge_hestia",
-      landingRoute: "/app/services/forge_overview",
-      items: [
-        { key: "forge_overview", label: "Overview", route: "/app/services/forge_overview" },
-        { key: "forge_clients", label: "Clients", route: "/app/services/forge_clients" },
-        { key: "forge_assistance", label: "Assistance", route: "/app/services/forge_assistance" },
-        { key: "forge_services", label: "Services", route: "/app/services/forge_services" },
-        { key: "forge_providers", label: "Providers", route: "/app/services/forge_providers" },
-        { key: "forge_funders", label: "Funders", route: "/app/services/forge_funders" },
-        { key: "forge_applications", label: "Funding Applications", route: "/app/services/forge_applications" },
-        { key: "forge_volunteers", label: "Volunteers", route: "/app/services/forge_volunteers" },
-      ],
-    },
+      sectionId: `forge_${sw.slug}`,
+      softwareKey: sw.serviceKey,
+      landingRoute: softwareRoot(sw.slug),
+      items: sw.screens
+        .filter((sc) => !sc.hidden)
+        .map((sc) => ({
+          key: `forge_${sw.slug}_${sc.path || "overview"}`,
+          label: sc.label,
+          route: screenRoute(sw.slug, sc.path),
+        })),
+    })),
+    // Integrations belongs to the FORGE LINE, not to any one build, so it is
+    // its own top-level section — a sibling of the software sections, never a
+    // child of one. It carries no softwareKey, so it stays visible to a tenant
+    // who owns no builds at all.
     {
-      label: "Fundraising",
+      label: "Integrations",
+      icon: Server,
       collapsible: true,
-      sectionId: "forge_hestia_fundraising",
-      softwareKey: "forge_hestia",
-      items: [
-        { key: "forge_people", label: "People", route: "/app/services/forge_people" },
-        { key: "forge_donations", label: "Donations", route: "/app/services/forge_donations" },
-        { key: "forge_campaigns", label: "Campaigns", route: "/app/services/forge_campaigns" },
-        { key: "forge_funds", label: "Funds", route: "/app/services/forge_funds" },
-        { key: "forge_pledges", label: "Pledges", route: "/app/services/forge_pledges" },
-        { key: "forge_recurring", label: "Recurring Gifts", route: "/app/services/forge_recurring" },
-        { key: "forge_receipts", label: "Acknowledgements", route: "/app/services/forge_receipts" },
-      ],
-    },
-    {
-      label: "Reporting",
-      collapsible: true,
-      sectionId: "forge_hestia_reporting",
-      softwareKey: "forge_hestia",
-      items: [
-        { key: "forge_reports", label: "Reports", route: "/app/services/forge_reports" },
-        { key: "forge_setup", label: "Organization Setup", route: "/app/services/forge_setup" },
-      ],
-    },
-    {
-      label: "",
+      sectionId: "forge_line_integrations",
+      landingRoute: "/app/services/forge_integrations",
       items: [
         { key: "forge_integrations", label: "Integrations", route: "/app/services/forge_integrations" },
       ],

@@ -4,6 +4,7 @@ import { getDashboard, globalSearch, type DashboardResponse } from '../../lib/fo
 import { Card, EmptyState, ForgeLayout, Pill, StatTile, statusTone } from './ForgeLayout';
 import { money, moneyExact, shortDate } from './forgeConfig';
 import { describeError, useDebounced, useForgeApi } from './useForge';
+import { screenRoute } from './forgeSoftware';
 
 export function ForgeOverviewPage() {
   const { ready, withParams } = useForgeApi();
@@ -37,6 +38,9 @@ export function ForgeOverviewPage() {
 
   const s = data?.stats;
   const fr = data?.fundraising;
+  // Every tile links to the records behind the number. Built from the software
+  // registry so the paths move with the routes rather than being retyped here.
+  const R = (screen: string) => screenRoute('hestia', screen);
 
   return (
     <ForgeLayout
@@ -59,7 +63,7 @@ export function ForgeOverviewPage() {
               <li key={`${h.entity}-${h.id}`} className="flex items-center justify-between px-3 py-2 text-sm">
                 <span>
                   {h.entity === 'clients' ? (
-                    <Link to={`/app/services/forge_clients/${h.id}`} className="font-medium text-slate-900 hover:underline">
+                    <Link to={R(`clients/${h.id}`)} className="font-medium text-slate-900 hover:underline">
                       {h.label}
                     </Link>
                   ) : (
@@ -76,18 +80,20 @@ export function ForgeOverviewPage() {
 
       {s && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatTile label="Clients" value={s.clients.toLocaleString()} />
-          <StatTile label="Active assistance" value={s.active_assistance.toLocaleString()} hint={money(s.total_assistance_value) + ' awarded all time'} />
-          <StatTile label="Active services" value={s.active_services.toLocaleString()} hint={moneyExact(s.active_monthly_cost) + ' / month'} />
-          <StatTile label="Providers" value={s.providers.toLocaleString()} />
-          <StatTile label="Funders" value={s.funders.toLocaleString()} />
-          <StatTile label="Volunteers" value={s.volunteers.toLocaleString()} />
+          <StatTile label="Clients" value={s.clients.toLocaleString()} to={R('clients')} />
+          <StatTile label="Active assistance" value={s.active_assistance.toLocaleString()} hint={money(s.total_assistance_value) + ' awarded all time'} to={R('assistance')} />
+          <StatTile label="Active services" value={s.active_services.toLocaleString()} hint={moneyExact(s.active_monthly_cost) + ' / month'} to={R('services')} />
+          <StatTile label="Providers" value={s.providers.toLocaleString()} to={R('providers')} />
+          <StatTile label="Funders" value={s.funders.toLocaleString()} to={R('funders')} />
+          <StatTile label="Volunteers" value={s.volunteers.toLocaleString()} to={R('volunteers')} />
           {s.needs_review > 0 && (
             <StatTile
               label="Needs review"
               value={s.needs_review.toLocaleString()}
               tone="warn"
               hint="Services whose assistance link could not be confirmed during migration"
+              // Straight to the flagged rows, not the full services list.
+              to={`${R('services')}?needs_review=1`}
             />
           )}
         </div>
@@ -108,18 +114,21 @@ export function ForgeOverviewPage() {
                 // instead rather than leaving the tile without context.
                 ? `${fr.donors_this_fy} donors · FY${(fr.fiscal_year ?? 1) - 1} finished at ${money(fr.raised_last_fy)}`
                 : `${fr.donors_this_fy} donors · ${fr.year_over_year_percent >= 0 ? '+' : ''}${fr.year_over_year_percent}% on the same point in FY${(fr.fiscal_year ?? 1) - 1}`}
-            />
+            to={R('donations')}
+              />
             <StatTile
               label="Acknowledgements due"
               value={fr.acknowledgements_outstanding.toLocaleString()}
               tone={fr.acknowledgements_outstanding > 0 ? 'warn' : 'default'}
               hint="Gifts of $250+ with no written acknowledgement"
-            />
+            to={R('acknowledgements')}
+              />
             <StatTile
               label="Pledges outstanding"
               value={money(fr.pledges_outstanding)}
               hint="Promised but not yet received"
-            />
+            to={R('pledges')}
+              />
             <StatTile
               label="Recurring donors"
               value={fr.active_recurring.toLocaleString()}
@@ -127,28 +136,33 @@ export function ForgeOverviewPage() {
               hint={fr.failed_recurring > 0
                 ? `${fr.failed_recurring} failed and need attention`
                 : 'all collecting normally'}
-            />
+            to={R('recurring')}
+              />
             <StatTile
               label="Lapsed donors"
               value={fr.lapsed_donors.toLocaleString()}
               hint="Gave before, not this year"
-            />
+            to={`${R('reports')}`}
+              />
             <StatTile
               label="Grants pending"
               value={fr.grants_pending.toLocaleString()}
               hint="Applied, awaiting a decision"
-            />
+            to={R('applications')}
+              />
             <StatTile
               label="Grant reports due"
               value={fr.grant_reports_due.toLocaleString()}
               tone={fr.grant_reports_due > 0 ? 'warn' : 'default'}
               hint="Due within 60 days"
-            />
+            to={R('applications')}
+              />
             <StatTile
               label="People served"
               value={fr.people_served_all_time.toLocaleString()}
               hint="All time"
-            />
+            to={R('clients')}
+              />
           </div>
         </Card>
       )}

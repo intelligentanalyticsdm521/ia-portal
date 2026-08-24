@@ -118,6 +118,18 @@ function buildEnabledServices(active: SelectTenantResponse | null): Set<string> 
     keys.add('forge_funders');
     keys.add('forge_applications');
     keys.add('forge_volunteers');
+    // Phase 2 — fundraising, acknowledgements, reporting. These must be listed
+    // here or ServiceRouter resolves them to 'coming_soon' and renders the
+    // not-subscribed page to a tenant that does own HESTIA.
+    keys.add('forge_people');
+    keys.add('forge_donations');
+    keys.add('forge_campaigns');
+    keys.add('forge_funds');
+    keys.add('forge_pledges');
+    keys.add('forge_recurring');
+    keys.add('forge_receipts');
+    keys.add('forge_reports');
+    keys.add('forge_setup');
   }
 
   for (const feature of active?.features || []) {

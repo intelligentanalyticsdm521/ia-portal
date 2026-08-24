@@ -15,6 +15,7 @@ import {
 import { Button, Card, EmptyState, ForgeLayout, Pill, StatTile } from './ForgeLayout';
 import { moneyExact, shortDate } from './forgeConfig';
 import { describeError, useForgeApi } from './useForge';
+import { screenRoute } from './forgeSoftware';
 
 interface DonationRow extends Record<string, unknown> {
   donation_id: number;
@@ -114,7 +115,7 @@ export function ForgeDonationDetailPage() {
       loading={loading}
       loadingLabel="Loading donation…"
       error={error}
-      actions={<Link to="/app/services/forge_donations"><Button>← All donations</Button></Link>}
+      actions={<Link to={screenRoute('hestia', 'donations')}><Button>← All donations</Button></Link>}
     >
       {gift && (
         <>
@@ -259,7 +260,7 @@ export function ForgeDonationDetailPage() {
           <Card title="Donor">
             <div className="flex flex-wrap items-center gap-3">
               <Link
-                to={`/app/services/forge_people/${gift.person_id}`}
+                to={screenRoute('hestia', `people/${gift.person_id}`)}
                 className="text-sm font-medium text-slate-900 underline underline-offset-2"
               >
                 {gift.donor_name}

@@ -1,5 +1,7 @@
 import { lazy, Suspense, useMemo } from 'react';
-import { useParams, useLocation, Navigate } from 'react-router-dom';
+import { ForgeLinePage } from './forge/ForgeLinePage';
+import { LEGACY_FORGE_ROUTES } from './forge/forgeSoftware';
+import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { useIsFounder } from '../hooks/useIsFounder';
 import { SERVICE_VISIBILITY } from '../components/SubNav';
 import { isGatedProduct, isRoutable, requirementLabel } from '../components/navVisibility';
@@ -32,29 +34,7 @@ import { SERVICE_CATALOG, resolveServiceStatus, type PortalService, type Service
 import { ArionPageWrapper } from '../arion/ArionPageWrapper';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { ComingSoonBanner } from '../components/ComingSoonBanner';
-import { ForgeOverviewPage } from './forge/ForgeOverviewPage';
-import { ForgeEntityPage } from './forge/ForgeEntityPage';
-import { ForgeReportsPage } from './forge/ForgeReportsPage';
-import { ForgeReceiptsPage } from './forge/ForgeReceiptsPage';
-import { ForgeSetupPage } from './forge/ForgeSetupPage';
-import type { EntityKey } from '../lib/forgeApi';
 
-// FORGE › HESTIA. One component serves every entity screen, driven by config.
-const FORGE_ENTITY_BY_KEY: Record<string, EntityKey> = {
-  forge_clients: 'clients',
-  forge_assistance: 'assistance',
-  forge_services: 'services',
-  forge_providers: 'providers',
-  forge_funders: 'funders',
-  forge_applications: 'applications',
-  forge_volunteers: 'volunteers',
-  forge_people: 'people',
-  forge_donations: 'donations',
-  forge_campaigns: 'campaigns',
-  forge_funds: 'funds',
-  forge_pledges: 'pledges',
-  forge_recurring: 'recurring',
-};
 
 // Business Profile un-gated 2026-07-22 — GBP Connect (client-owned OAuth +
 // create + in-portal verification) shipped and walked; the 2026-06-28
@@ -644,12 +624,18 @@ function ServiceRouterInner() {
 
   // FORGE › HESTIA — the first FORGE software.
   if (service.section === 'FORGE') {
-    if (service.key === 'forge_overview') return <ForgeOverviewPage />;
-    if (service.key === 'forge_reports') return <ForgeReportsPage />;
-    if (service.key === 'forge_receipts') return <ForgeReceiptsPage />;
-    if (service.key === 'forge_setup') return <ForgeSetupPage />;
-    const forgeEntity = FORGE_ENTITY_BY_KEY[service.key];
-    if (forgeEntity) return <ForgeEntityPage entity={forgeEntity} />;
+    // FORGE software no longer lives behind service keys — it lives under
+    // /app/services/forge/<software>/<screen> (see forgeSoftware.ts), which is
+    // what lets one product line host a build per client. What remains here is
+    // the LINE landing page: an invitation to commission software, plus a way
+    // into whatever builds this tenant owns. It reads no client data, so every
+    // tenant may see it.
+    if (service.key === 'forge_overview') return <ForgeLinePage />;
+    // Every other legacy forge_* key is a screen that moved under
+    // /app/services/forge/<software>/. Redirect so an old bookmark or an
+    // emailed link lands on the real page instead of a generic stub.
+    const moved = LEGACY_FORGE_ROUTES[service.key];
+    if (moved) return <Navigate to={moved} replace />;
   }
 
   if (service.section === 'OLIVER') {

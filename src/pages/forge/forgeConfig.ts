@@ -6,6 +6,7 @@
  * same idea the legacy app used, kept because it was the right one.
  */
 import type { EntityKey } from '../../lib/forgeApi';
+import { screenRoute } from './forgeSoftware';
 
 export type FieldType = 'text' | 'longtext' | 'date' | 'money' | 'number' | 'lookup' | 'entity';
 
@@ -45,7 +46,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'People your organization serves.',
     pk: 'client_id',
     primaryField: 'full_name',
-    detailRoute: (id) => `/app/services/forge_clients/${id}`,
+    detailRoute: (id) => screenRoute('hestia', `clients/${id}`),
     fields: [
       f('full_name', 'Name', 'text', { required: true, width: 'w-64' }),
       f('phone', 'Phone'),
@@ -95,6 +96,10 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
       f('payment_method', 'Payment method', 'lookup', { lookup: 'payment_method' }),
       f('payment_frequency', 'Frequency', 'lookup', { lookup: 'payment_frequency' }),
       f('estimated_monthly_cost', 'Est. monthly', 'money'),
+      // Not shown in the grid or the form, but declared so it can be FILTERED:
+      // the overview's "Needs review" tile links to ?needs_review=1 and the
+      // list only accepts query keys the entity declares.
+      f('needs_review', 'Needs review', 'number', { inList: false, inForm: false }),
     ],
   },
 
@@ -190,7 +195,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'One record per person or organization — donor, volunteer, board member, or someone you serve.',
     pk: 'person_id',
     primaryField: 'full_name',
-    detailRoute: (id) => `/app/services/forge_people/${id}`,
+    detailRoute: (id) => screenRoute('hestia', `people/${id}`),
     fields: [
       f('full_name', 'Name', 'text', { required: true, width: 'w-64' }),
       f('organization', 'Organization'),
@@ -212,7 +217,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'Every gift received, with what is deductible and where it was designated.',
     pk: 'donation_id',
     primaryField: 'donor_name',
-    detailRoute: (id) => `/app/services/forge_donations/${id}`,
+    detailRoute: (id) => screenRoute('hestia', `donations/${id}`),
     fields: [
       f('person_id', 'Donor', 'entity', { entity: 'people', displayKey: 'donor_name', required: true, width: 'w-56' }),
       f('received_on', 'Received', 'date', { required: true }),

@@ -16,6 +16,7 @@ import {
 import { Button, Card, EmptyState, ForgeLayout, Pill, StatTile } from './ForgeLayout';
 import { moneyExact, shortDate } from './forgeConfig';
 import { describeError, useForgeApi } from './useForge';
+import { screenRoute } from './forgeSoftware';
 
 interface PersonRow extends Record<string, unknown> {
   person_id: number;
@@ -132,7 +133,7 @@ export function ForgePersonDetailPage() {
       loading={loading}
       loadingLabel="Loading person…"
       error={error}
-      actions={<Link to="/app/services/forge_people"><Button>← All people</Button></Link>}
+      actions={<Link to={screenRoute('hestia', 'people')}><Button>← All people</Button></Link>}
     >
       {person && (
         <>
@@ -222,7 +223,7 @@ export function ForgePersonDetailPage() {
                       <tr key={g.donation_id} className="hover:bg-slate-50">
                         <td className="whitespace-nowrap py-2 pr-4">
                           <Link
-                            to={`/app/services/forge_donations/${g.donation_id}`}
+                            to={screenRoute('hestia', `donations/${g.donation_id}`)}
                             className="font-medium text-slate-900 underline underline-offset-2"
                           >
                             {shortDate(g.received_on)}

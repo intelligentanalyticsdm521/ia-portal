@@ -6,6 +6,7 @@ import { IconRail, type ProductKey } from "./IconRail";
 import { SubNav, SUB_NAV_CONFIGS, SETTINGS_KEYS, type SubNavConfig } from "./SubNav";
 import { useOliverRole } from "../hooks/useOliverRole";
 import { useAppState } from "../app/AppState";
+import { isActingAsClient } from "../lib/actingAsClient";
 import { ArgusChatbot } from "./argus/ArgusChatbot";
 import { EmergencyActAsBanner } from "./EmergencyActAsBanner";
 import { EmergencyActAsToast } from "./EmergencyActAsToast";
@@ -181,10 +182,28 @@ export function AppShell() {
   // We do NOT use useClientTenantIdOverride()/activeTenantId-vs-home checks —
   // those are too broad and caused the 2026-06-28 regression where founder nav
   // disappeared in Brandon's own IA tenant.
-  const actingAsClient = (() => {
-    try { return sessionStorage.getItem('iadm.portal.consultantWorkspace.v1') === 'true'; }
-    catch { return false; }
-  })();
+  //
+  // 2026-08-24 — the flag alone was not enough. It is set ONLY by entering
+  // through /c/:tid (the Access Portal button). A founder who reaches a client
+  // tenant any other legitimate way — notably the "Switch Tenant" control on
+  // the access-error screen — carried no flag, so the portal still treated him
+  // as founder while his active tenant was the client's: clicking Consulting
+  // went to /app/admin/consulting/clients (the founder Clients board) instead
+  // of the client surface, and the client's projects, deliverables and work
+  // tasks were nowhere to be seen.
+  //
+  // So ALSO treat "my active tenant is not my own tenant" as acting-as-client.
+  // The 2026-06-28 regression this file warns about — founder nav vanishing in
+  // Brandon's own IA tenant — came from a check that had nothing to compare
+  // against. `homeTenantId` is that missing piece: /session/verify returns the
+  // founder tenant for IA team members, so in his own tenant the two ids are
+  // equal and founder nav is untouched. Both ids must be present before this
+  // can fire, so it cannot trip while bootstrap is still resolving.
+  const actingAsClient = isActingAsClient(
+    isFounder,
+    appState.activeTenantId,
+    appState.bootstrap?.homeTenantId
+  );
   const effectiveIsFounder = isFounder && !actingAsClient;
 
   const handleProductSelect = useCallback(
