@@ -4,7 +4,7 @@ import { getDashboard, globalSearch, type DashboardResponse } from '../../lib/fo
 import { Card, EmptyState, ForgeLayout, Pill, StatTile, statusTone } from './ForgeLayout';
 import { money, moneyExact, shortDate } from './forgeConfig';
 import { describeError, useDebounced, useForgeApi } from './useForge';
-import { screenRoute } from './forgeSoftware';
+import { phase2Enabled, screenRoute } from './forgeSoftware';
 
 export function ForgeOverviewPage() {
   const { ready, withParams } = useForgeApi();
@@ -102,7 +102,7 @@ export function ForgeOverviewPage() {
       {/* Fundraising sits on the same page as the program work, because the
           two halves are the same organization and a director should not have
           to know which screen holds which number. */}
-      {fr && fr.fiscal_year !== null && (
+      {phase2Enabled && fr && fr.fiscal_year !== null && (
         <Card title={`Fundraising — FY${fr.fiscal_year}`}>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatTile

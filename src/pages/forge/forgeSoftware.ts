@@ -31,6 +31,14 @@ export interface ForgeScreen {
   entity?: EntityKey;
   /** Hidden from the nav but still routable (detail pages, deep links). */
   hidden?: boolean;
+  /**
+   * Screens whose API is not in production yet. HESTIA Phase 2 (fundraising,
+   * acknowledgements, reporting) is built and tested, but its routes and the
+   * views they read do not exist in the production database — rendering them
+   * there would show a client a screen that errors. Off unless
+   * VITE_FORGE_HESTIA_PHASE2=1, which flips on the same deploy as the API.
+   */
+  unreleased?: boolean;
 }
 
 export interface ForgeSoftware {
@@ -62,22 +70,35 @@ export const FORGE_SOFTWARE: ForgeSoftware[] = [
       { path: 'volunteers', label: 'Volunteers', kind: 'entity', entity: 'volunteers' },
 
       // Fundraising — where the money comes from.
-      { path: 'people', label: 'People', kind: 'entity', entity: 'people' },
-      { path: 'donations', label: 'Donations', kind: 'entity', entity: 'donations' },
-      { path: 'campaigns', label: 'Campaigns', kind: 'entity', entity: 'campaigns' },
-      { path: 'funds', label: 'Funds', kind: 'entity', entity: 'funds' },
-      { path: 'pledges', label: 'Pledges', kind: 'entity', entity: 'pledges' },
-      { path: 'recurring', label: 'Recurring Gifts', kind: 'entity', entity: 'recurring' },
+      { path: 'people', label: 'People', kind: 'entity', entity: 'people', unreleased: true },
+      { path: 'donations', label: 'Donations', kind: 'entity', entity: 'donations', unreleased: true },
+      { path: 'campaigns', label: 'Campaigns', kind: 'entity', entity: 'campaigns', unreleased: true },
+      { path: 'funds', label: 'Funds', kind: 'entity', entity: 'funds', unreleased: true },
+      { path: 'pledges', label: 'Pledges', kind: 'entity', entity: 'pledges', unreleased: true },
+      { path: 'recurring', label: 'Recurring Gifts', kind: 'entity', entity: 'recurring', unreleased: true },
       { path: 'funders', label: 'Funders', kind: 'entity', entity: 'funders' },
       { path: 'applications', label: 'Funding Applications', kind: 'entity', entity: 'applications' },
 
       // Obligations and reporting.
-      { path: 'acknowledgements', label: 'Acknowledgements', kind: 'receipts' },
-      { path: 'reports', label: 'Reports', kind: 'reports' },
-      { path: 'setup', label: 'Organization Setup', kind: 'setup' },
+      { path: 'acknowledgements', label: 'Acknowledgements', kind: 'receipts', unreleased: true },
+      { path: 'reports', label: 'Reports', kind: 'reports', unreleased: true },
+      { path: 'setup', label: 'Organization Setup', kind: 'setup', unreleased: true },
     ],
   },
 ];
+
+/**
+ * Screens the tenant can actually reach. Phase 2 screens are filtered out
+ * until their API ships — see `unreleased`.
+ */
+const PHASE2_ON = String(import.meta.env.VITE_FORGE_HESTIA_PHASE2 ?? '') === '1';
+/** One switch for the whole Phase 2 surface — screens AND the dashboard block.
+  * The overview used to hide its fundraising tiles only because the production
+  * API happened not to return that data. Depending on an absence is not a
+  * release gate; this is. */
+export const phase2Enabled = PHASE2_ON;
+export const visibleScreens = (sw: ForgeSoftware): ForgeScreen[] =>
+  sw.screens.filter((sc) => PHASE2_ON || !sc.unreleased);
 
 export const softwareBySlug = (slug: string): ForgeSoftware | null =>
   FORGE_SOFTWARE.find((s) => s.slug === slug) ?? null;

@@ -24,7 +24,7 @@ import { ForgeDonationDetailPage } from './ForgeDonationDetailPage';
 import { ForgePersonDetailPage } from './ForgePersonDetailPage';
 import { ForgePage } from './ForgePage';
 import { Card, ForgeLayout } from './ForgeLayout';
-import { softwareBySlug, softwareRoot } from './forgeSoftware';
+import { softwareBySlug, softwareRoot, visibleScreens } from './forgeSoftware';
 
 /** Screens that take a record id: /forge/hestia/clients/42 */
 const DETAIL_PAGES: Record<string, () => JSX.Element> = {
@@ -70,12 +70,17 @@ export function ForgeSoftwareRouter() {
   const rest = (params['*'] ?? '').split('/').filter(Boolean);
   const [screenPath = '', maybeId] = rest;
 
-  // Detail pages first: /clients/42 is the clients screen with an id.
-  if (maybeId && DETAIL_PAGES[screenPath]) {
+  // Detail pages first: /clients/42 is the clients screen with an id. Gated on
+  // the same visibility as the list — otherwise an unreleased screen stays
+  // reachable through its detail URL.
+  const visible = visibleScreens(software);
+  if (maybeId && DETAIL_PAGES[screenPath] && visible.some((s) => s.path === screenPath)) {
     return <ForgePage>{DETAIL_PAGES[screenPath]()}</ForgePage>;
   }
 
-  const screen = software.screens.find((s) => s.path === screenPath);
+  // visibleScreens, not screens: an unreleased screen must not be reachable
+  // by URL either, or the flag only hides the nav link.
+  const screen = visible.find((s) => s.path === screenPath);
   if (!screen) return <Navigate to={softwareRoot(slug)} replace />;
 
   const body = (() => {

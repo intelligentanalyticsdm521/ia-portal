@@ -16,7 +16,7 @@ import {
 import { useProductTier } from "../hooks/useProductTier";
 import { useNavAddons } from "../hooks/useNavAddons";
 import { useAppState } from "../app/AppState";
-import { FORGE_SOFTWARE, screenRoute, softwareRoot } from "../pages/forge/forgeSoftware";
+import { FORGE_SOFTWARE, screenRoute, softwareRoot, visibleScreens } from "../pages/forge/forgeSoftware";
 import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
 import { productColor } from "../config/productTheme";
 
@@ -644,7 +644,7 @@ const FORGE_NAV: SubNavConfig = {
       sectionId: `forge_${sw.slug}`,
       softwareKey: sw.serviceKey,
       landingRoute: softwareRoot(sw.slug),
-      items: sw.screens
+      items: visibleScreens(sw)
         .filter((sc) => !sc.hidden)
         .map((sc) => ({
           key: `forge_${sw.slug}_${sc.path || "overview"}`,
