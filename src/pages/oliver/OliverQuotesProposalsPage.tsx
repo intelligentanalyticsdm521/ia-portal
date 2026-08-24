@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileText, ScrollText } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
-import { DataTable, EmptyState, FilterBar, type Column } from "../../components/oliver/ui";
+import { DataTable, EmptyState, FilterBar, PageHeader, type Column } from "../../components/oliver/ui";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { ReportBar } from "../../components/insights/ReportBar";
 import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
@@ -252,6 +252,14 @@ export function OliverQuotesProposalsPage() {
         { id: "oliver_service_catalog", label: "What you sell" },
         { id: "oliver_win_drivers", label: "What wins work" },
       ]} />
+
+      {/* OliverPageWrapper only renders its title in the loading/error/gate
+          states — the visible page header has always been THIS component,
+          which the unified rewrite dropped. */}
+      <PageHeader
+        title="Quotes & Proposals"
+        subtitle="Every document you've priced or pitched, in one pipeline"
+      />
 
       {flash && (
         <div style={{ margin: "0 0 12px", padding: 10, fontSize: 12, background: "#D1FAE5", color: "#047857", border: "1px solid #A7F3D0", borderRadius: 6 }}>
