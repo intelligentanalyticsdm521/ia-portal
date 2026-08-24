@@ -362,10 +362,13 @@ export function OliverProposalsPage({ embedded = false, createSignal = 0, create
 
 // ─── Create drawer ──────────────────────────────────────────────────────────
 export function CreateProposalDrawer({
-  onClose, onCreated, api,
+  onClose, onCreated, api, initialTemplateId,
 }: {
   onClose: () => void;
   onCreated: (msg: string) => void;
+  /** Pre-apply this template the moment the list loads — the New/Template
+      chooser on Quotes & Proposals passes the pick through here. */
+  initialTemplateId?: string | null;
   api: {
     get: <T>(p: string) => Promise<T>;
     post: <T>(p: string, body?: unknown) => Promise<T>;
@@ -436,6 +439,12 @@ export function CreateProposalDrawer({
           body: typeof t.body_json === "string" ? safeJson(t.body_json) : (t.body_json || t.body || {}),
         }));
         setTemplates(list);
+        // Chooser pick: apply it now, against the freshly fetched list —
+        // onSelectTemplate reads state that has not committed yet.
+        if (initialTemplateId) {
+          const t = list.find((x: any) => x.template_id === initialTemplateId);
+          if (t) applyTemplateBody(t);
+        }
       })
       .catch(() => setTemplates([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -449,6 +458,11 @@ export function CreateProposalDrawer({
     setTemplateId(id);
     const t = templates.find((x) => x.template_id === id);
     if (!t) return;
+    applyTemplateBody(t);
+  }
+
+  function applyTemplateBody(t: { template_id: string; body: any }) {
+    setTemplateId(t.template_id);
     const b = t.body || {};
     if (b.title) setTitle(String(b.title));
     if (b.terms) setTerms(String(b.terms));
