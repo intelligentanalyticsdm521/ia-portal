@@ -164,12 +164,9 @@ const OLIVER_NAV: SubNavConfig = {
       label: "Billing", icon: CreditCard, collapsible: true, sectionId: "oliver_billing",
       items: [
         { key: "oliver_quotes", label: "Quotes & Proposals", route: "/app/services/oliver_quotes" },
-        // The real proposal editor — contact + template picker, title, scope,
-        // terms, line items, tracked send and click-to-accept. It had a route
-        // and a catalog entry but NO nav row, so it was unreachable: everyone
-        // landed on the quote form's Proposal tab instead, which could not
-        // create a proposal at all (no title field -> 400 on every save).
-        { key: "oliver_proposals", label: "Proposals", route: "/app/services/oliver_proposals" },
+        // ONE destination for both documents (founder 2026-08-19): the page
+        // tabs between Quotes and Proposals, and each create opens its own
+        // branded modal editor. A second "Proposals" nav row lasted a day.
         { key: "oliver_invoices", label: "Invoices", route: "/app/services/oliver_invoices" },
         // Recurring services are jobs (TIER_CAPS lite max_active_recurring = 0) → Standard+.
         { key: "oliver_recurring", label: "Subscriptions", route: "/app/services/oliver_recurring", minTier: "standard" },

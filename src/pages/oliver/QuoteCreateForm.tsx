@@ -252,14 +252,11 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
   }
 
   return (
-    <div className="card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-        <div>
-          <div className="card-ttl">New quote</div>
-          <div className="card-sub">Itemized pricing the customer can accept; convert to an invoice.</div>
-        </div>
-        <button onClick={onCancel} style={{ background: "none", border: "none", color: "#5A7A8A", cursor: "pointer", fontSize: 12 }}>Cancel</button>
-      </div>
+    // No card chrome or own header any more — this form always renders inside
+    // the branded document modal now, which carries the title, the business
+    // header and the close control. A second "New quote" heading and a second
+    // Cancel inside the page were the doubled chrome the modal move removes.
+    <div>
 
       {/* The Proposal tab is gone.
           It posted to /proposals with no title, which that endpoint requires,

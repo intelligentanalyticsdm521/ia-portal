@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { IadmModal } from "../../components/IadmModal";
+import { DocumentBrandFrame } from "../../components/oliver/DocumentBrandFrame";
 import { useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useOliverLocations } from "../../hooks/useOliverLocations";
@@ -351,12 +353,29 @@ export function OliverQuotesPage() {
       )}
 
       {showCreate && (
-        <QuoteCreateForm
-          onCreated={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); reload(); }}
-          onCancel={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); }}
-          initialJobId={initialJobId}
-          initialContactId={initialContactId}
-        />
+        /* Founder 2026-08-19: quotes are edited in a pop-up modal ON the
+           branded document — the same accent bar, logo and footer the customer
+           receives — not in an inline card that looks nothing like the send. */
+        <IadmModal
+          open
+          onClose={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); }}
+          product="oliver"
+          eyebrow="OLIVER · QUOTES & PROPOSALS"
+          title="New quote"
+          subtitle="What you see here is what the customer receives."
+          size="info"
+        >
+          <div style={{ padding: 20, background: "#EEF3F6" }}>
+            <DocumentBrandFrame get={get} docLabel="QUOTE">
+              <QuoteCreateForm
+                onCreated={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); reload(); }}
+                onCancel={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); }}
+                initialJobId={initialJobId}
+                initialContactId={initialContactId}
+              />
+            </DocumentBrandFrame>
+          </div>
+        </IadmModal>
       )}
 
       {!rows.length && !showCreate ? (

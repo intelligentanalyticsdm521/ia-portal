@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ProposalCatalogPicker, type PickedService } from "../../components/oliver/ProposalCatalogPicker";
+import { DocumentBrandFrame } from "../../components/oliver/DocumentBrandFrame";
+import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
@@ -584,15 +586,36 @@ function CreateProposalDrawer({
     </div>
   );
 
+  // Founder 2026-08-19: no side bars — the editor is a pop-up modal, and you
+  // edit ON the branded document: the same accent bar, logo, business name and
+  // footer the customer receives, live while the words are typed.
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(11,28,36,0.4)", zIndex: 1000, display: "flex", justifyContent: "flex-end" }}>
-      <div style={{ width: 720, maxWidth: "100vw", height: "100%", background: "#F8FAFC", overflowY: "auto", boxShadow: "-4px 0 24px rgba(0,0,0,0.1)" }}>
-        <div style={{ padding: 20, borderBottom: "1px solid #E2E8F0", background: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 5 }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#1A3A4A" }}>New proposal</h2>
-          <button onClick={onClose} style={{ background: "transparent", border: 0, fontSize: 22, color: "#5A7A8A", cursor: "pointer" }}>×</button>
-        </div>
-
-        <div style={{ padding: 20, display: "grid", gap: 14 }}>
+    <IadmModal
+      open
+      onClose={onClose}
+      product="oliver"
+      eyebrow="OLIVER · QUOTES & PROPOSALS"
+      title="New proposal"
+      subtitle="What you see here is what the customer receives."
+      size="info"
+      footer={
+        <>
+          <button
+            onClick={saveAsTemplate}
+            disabled={savingTemplate || (!blocks.length && !title.trim())}
+            style={{ ...addBtn, marginRight: "auto" }}
+            title="Save these sections as a reusable template"
+          >
+            {savingTemplate ? "Saving template…" : "Save as template"}
+          </button>
+          <IadmButton variant="ghost" onClick={onClose} disabled={saving}>Cancel</IadmButton>
+          <IadmButton variant="primary" product="oliver" onClick={submit} disabled={saving || !title.trim()}>
+            {saving ? "Creating…" : sendImmediately ? "Create & send" : "Save draft"}
+          </IadmButton>
+        </>
+      }
+    >
+        <div style={{ padding: 20, display: "grid", gap: 14, background: "#EEF3F6" }}>
           {templates.length > 0 && (
             <label style={{ display: "block" }}>
               <span style={pLabel}>Start from template (optional)</span>
@@ -607,11 +630,7 @@ function CreateProposalDrawer({
             </label>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <label style={{ display: "block" }}>
-              <span style={pLabel}>Title</span>
-              <input style={pInput} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Your Platform Proposal" />
-            </label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
             <label style={{ display: "block" }}>
               <span style={pLabel}>Customer</span>
               <select style={pInput} value={contactId} onChange={(e) => setContactId(e.target.value)}>
@@ -623,7 +642,30 @@ function CreateProposalDrawer({
                 ))}
               </select>
             </label>
+            <label style={{ display: "block" }}>
+              <span style={pLabel}>Valid until</span>
+              <input type="date" style={pInput} value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
+            </label>
+            <label style={{ display: "flex", alignItems: "flex-end", gap: 8, fontSize: 12, color: "#0B1C24", paddingBottom: 8 }}>
+              <input type="checkbox" checked={sendImmediately} onChange={(e) => setSendImmediately(e.target.checked)} />
+              Send immediately
+            </label>
           </div>
+
+          {/* ── The document, AS THE CUSTOMER GETS IT ─────────────────────
+              Everything below is edited in place on the branded page — accent
+              bar, logo, business name, footer — so what is on screen while
+              typing IS the send. */}
+          <DocumentBrandFrame get={api.get} docLabel="PROPOSAL">
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Your Platform Proposal"
+              style={{
+                width: "100%", border: 0, outline: "none", background: "transparent",
+                fontSize: 24, fontWeight: 800, color: "#0B1C24", marginBottom: 12, padding: 0,
+              }}
+            />
 
           {/* ── The document ───────────────────────────────────────────── */}
           <div>
@@ -711,7 +753,7 @@ function CreateProposalDrawer({
           </div>
 
           {/* ── Money ──────────────────────────────────────────────────── */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <label style={{ display: "block" }}>
               <span style={pLabel}>Tax rate (%)</span>
               <input type="number" min="0" step="0.01" style={pInput} value={taxRate} onChange={(e) => setTaxRate(e.target.value)} />
@@ -719,10 +761,6 @@ function CreateProposalDrawer({
             <label style={{ display: "block" }}>
               <span style={pLabel}>Discount ($)</span>
               <input type="number" min="0" step="0.01" style={pInput} value={discount} onChange={(e) => setDiscount(e.target.value)} />
-            </label>
-            <label style={{ display: "block" }}>
-              <span style={pLabel}>Valid until</span>
-              <input type="date" style={pInput} value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
             </label>
           </div>
 
@@ -753,32 +791,13 @@ function CreateProposalDrawer({
               value={terms} onChange={(e) => setTerms(e.target.value)} />
           </label>
 
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#0B1C24" }}>
-            <input type="checkbox" checked={sendImmediately} onChange={(e) => setSendImmediately(e.target.checked)} />
-            Send immediately after creating
-          </label>
+          </DocumentBrandFrame>
 
           {err && (
             <div style={{ padding: 10, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 6 }}>{err}</div>
           )}
-
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button
-              onClick={saveAsTemplate}
-              disabled={savingTemplate || (!blocks.length && !title.trim())}
-              style={{ ...addBtn, marginRight: "auto" }}
-              title="Save these sections as a reusable template"
-            >
-              {savingTemplate ? "Saving template…" : "Save as template"}
-            </button>
-            <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
-            <Button variant="primary" onClick={submit} disabled={saving || !title.trim()}>
-              {saving ? "Creating…" : sendImmediately ? "Create & send" : "Save draft"}
-            </Button>
-          </div>
         </div>
-      </div>
-    </div>
+    </IadmModal>
   );
 }
 
