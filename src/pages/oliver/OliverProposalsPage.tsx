@@ -531,6 +531,9 @@ export function CreateProposalDrawer({
 
   async function submit() {
     if (!title.trim()) { setErr("Type a title at the top of the document first."); return; }
+    // Send-immediately needs somewhere to send. Catching this here beats the
+    // API's 400 — the customer picker is right above the document.
+    if (sendImmediately && !contactId) { setErr("Pick a customer to send it to, or untick Send immediately and share the link from the draft."); return; }
     const line_items = collectLineItems();
     if (!line_items.length) { setErr("Add at least one service or priced line."); return; }
     setErr(null); setSaving(true);
