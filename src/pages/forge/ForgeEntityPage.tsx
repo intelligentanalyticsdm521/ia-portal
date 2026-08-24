@@ -4,13 +4,14 @@
  * PHP files; this is that idea with types, real pagination and a proper form.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import {
   archiveEntityRow, createEntityRow, listEntity, updateEntityRow,
   type EntityKey, type ListResult,
 } from '../../lib/forgeApi';
 import { Button, Card, EmptyState, ForgeLayout, Pill, statusTone } from './ForgeLayout';
-import { FORGE_ENTITIES, cellValue, type FieldDef } from './forgeConfig';
+import { FORGE_ENTITIES, cellValue, humanizeValue, type FieldDef } from './forgeConfig';
 import { describeError, useDebounced, useForgeApi, useForgeLookups } from './useForge';
 
 const PAGE_SIZE = 25;
@@ -26,7 +27,19 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [includeArchived, setIncludeArchived] = useState(false);
-  const [filters, setFilters] = useState<Record<string, string>>({});
+  // Seed filters from the URL so a link can point at a SUBSET, not just a
+  // screen. The overview's "Needs review" tile links to
+  // .../services?needs_review=1 and must land on those rows — a tile that
+  // counts three records and then shows all ninety is worse than not
+  // linking at all. Only keys the entity actually declares are accepted, so
+  // a stray query string cannot inject a filter the API will reject.
+  const [searchParams] = useSearchParams();
+  const [filters, setFilters] = useState<Record<string, string>>(() => {
+    const seeded: Record<string, string> = {};
+    const known = new Set(FORGE_ENTITIES[entity].fields.map((f) => f.key));
+    searchParams.forEach((value, key) => { if (known.has(key)) seeded[key] = value; });
+    return seeded;
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
@@ -107,7 +120,7 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
               >
                 <option value="">All</option>
                 {(lookups[field.lookup ?? '']?.values ?? []).map((v) => (
-                  <option key={v.id} value={v.value}>{v.value}</option>
+                  <option key={v.id} value={v.value}>{humanizeValue(v.value)}</option>
                 ))}
               </select>
             </label>
@@ -278,7 +291,7 @@ function FormField({ field, value, lookups, onChange }: {
         <select className={cls} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)}>
           <option value="">—</option>
           {(lookups[field.lookup ?? '']?.values ?? []).map((v) => (
-            <option key={v.id} value={v.value}>{v.value}</option>
+            <option key={v.id} value={v.value}>{humanizeValue(v.value)}</option>
           ))}
         </select>
       </label>

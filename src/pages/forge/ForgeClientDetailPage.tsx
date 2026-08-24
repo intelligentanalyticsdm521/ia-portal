@@ -9,6 +9,7 @@ import { addNote, getClientOverview, type ClientOverview } from '../../lib/forge
 import { Button, Card, EmptyState, ForgeLayout, Pill, StatTile, statusTone } from './ForgeLayout';
 import { money, moneyExact, shortDate } from './forgeConfig';
 import { describeError, useForgeApi } from './useForge';
+import { screenRoute } from './forgeSoftware';
 
 export function ForgeClientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -54,7 +55,7 @@ export function ForgeClientDetailPage() {
       error={error}
       loading={loading && !data}
       loadingLabel="Loading client…"
-      actions={<Link to="/app/services/forge_clients"><Button>← All clients</Button></Link>}
+      actions={<Link to={screenRoute('hestia', 'clients')}><Button>← All clients</Button></Link>}
     >
       {data && (
         <>

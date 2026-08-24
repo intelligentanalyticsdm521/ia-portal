@@ -406,6 +406,17 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'forge_funders', displayName: 'Funders', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_funders', description: 'Foundations and grantors your organization applies to.' },
   { key: 'forge_applications', displayName: 'Funding Applications', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_applications', description: 'Applications your organization has made to funders.' },
   { key: 'forge_volunteers', displayName: 'Volunteers', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_volunteers', description: 'People who give their time.' },
+  // Phase 2 — fundraising, acknowledgements and reporting. Same gating as the
+  // rest of HESTIA: the per-software `forge_hestia` key, not the FORGE line.
+  { key: 'forge_people', displayName: 'People', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_people', description: 'One record per person or organization — donor, volunteer, board member, or someone you serve.' },
+  { key: 'forge_donations', displayName: 'Donations', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_donations', description: 'Every gift received, with what is deductible and where it was designated.' },
+  { key: 'forge_campaigns', displayName: 'Campaigns', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_campaigns', description: 'Appeals and events — what you asked for, what it cost, what came in.' },
+  { key: 'forge_funds', displayName: 'Funds', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_funds', description: 'Where gifts are designated, and whether the donor restricted them.' },
+  { key: 'forge_pledges', displayName: 'Pledges', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_pledges', description: 'Promises to give, and how much of each is still outstanding.' },
+  { key: 'forge_recurring', displayName: 'Recurring Gifts', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_recurring', description: 'Standing gifts, when each next runs, and which ones have failed.' },
+  { key: 'forge_receipts', displayName: 'Acknowledgements', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_receipts', description: 'Written acknowledgements and year-end giving statements, to the IRS rules.' },
+  { key: 'forge_reports', displayName: 'Reports', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_reports', description: 'Fundraising, program and financial reporting — the questions a board, a funder and the IRS ask.' },
+  { key: 'forge_setup', displayName: 'Organization Setup', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_setup', description: 'Legal identity, fiscal year, receipt wording and payment setup.' },
   {
     key: 'forge_integrations',
     displayName: 'Integrations',

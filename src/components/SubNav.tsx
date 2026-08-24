@@ -16,6 +16,7 @@ import {
 import { useProductTier } from "../hooks/useProductTier";
 import { useNavAddons } from "../hooks/useNavAddons";
 import { useAppState } from "../app/AppState";
+import { FORGE_SOFTWARE, screenRoute, softwareRoot, visibleScreens } from "../pages/forge/forgeSoftware";
 import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
 import { productColor } from "../config/productTheme";
 
@@ -56,6 +57,16 @@ export interface SubNavGroup {
   collapsible?: boolean;
   icon?: ComponentType<{ className?: string }>;
   sectionId?: string; // used for auto-collapse matching
+  /**
+   * FORGE only. The `forge_<software>` service key that grants this group.
+   * Set it on EVERY group belonging to one piece of software, including its
+   * sub-sections, so a tenant sees all of it or none of it.
+   *
+   * This used to be inferred from a `forge_` sectionId prefix, which meant a
+   * new sub-section of an existing build looked like a separate product the
+   * tenant did not own, and vanished from the nav.
+   */
+  softwareKey?: string;
   /**
    * Optional explicit "landing" route for this section. When a user clicks the
    * collapsible section header, they navigate here AND the section expands.
@@ -616,24 +627,41 @@ const FORGE_NAV: SubNavConfig = {
   productName: "Integrations & Software",
   tagline: "FORGE",
   groups: [
-    {
-      label: "HESTIA — Non-Profit Software",
+    // ONE collapsible section per BUILD, generated from the software registry
+    // (pages/forge/forgeSoftware.ts) rather than written out here.
+    //
+    // FORGE is a product LINE, not a product: it can host a build per client,
+    // each with its own `forge_<slug>` entitlement so one client never sees
+    // another's software. Hand-maintaining sections here would mean editing
+    // this file for every new build — and an earlier revision that split ONE
+    // build across three sibling sections showed the failure mode: with two
+    // builds you get HESTIA, Fundraising, Reporting, OtherBuild, Fundraising…
+    // and no way to tell which section belongs to which software.
+    ...FORGE_SOFTWARE.map((sw) => ({
+      label: `${sw.name} — ${sw.tagline}`,
+      icon: Heart,
       collapsible: true,
-      sectionId: "forge_hestia",
-      landingRoute: "/app/services/forge_overview",
-      items: [
-        { key: "forge_overview", label: "Overview", route: "/app/services/forge_overview" },
-        { key: "forge_clients", label: "Clients", route: "/app/services/forge_clients" },
-        { key: "forge_assistance", label: "Assistance", route: "/app/services/forge_assistance" },
-        { key: "forge_services", label: "Services", route: "/app/services/forge_services" },
-        { key: "forge_providers", label: "Providers", route: "/app/services/forge_providers" },
-        { key: "forge_funders", label: "Funders", route: "/app/services/forge_funders" },
-        { key: "forge_applications", label: "Funding Applications", route: "/app/services/forge_applications" },
-        { key: "forge_volunteers", label: "Volunteers", route: "/app/services/forge_volunteers" },
-      ],
-    },
+      sectionId: `forge_${sw.slug}`,
+      softwareKey: sw.serviceKey,
+      landingRoute: softwareRoot(sw.slug),
+      items: visibleScreens(sw)
+        .filter((sc) => !sc.hidden)
+        .map((sc) => ({
+          key: `forge_${sw.slug}_${sc.path || "overview"}`,
+          label: sc.label,
+          route: screenRoute(sw.slug, sc.path),
+        })),
+    })),
+    // Integrations belongs to the FORGE LINE, not to any one build, so it is
+    // its own top-level section — a sibling of the software sections, never a
+    // child of one. It carries no softwareKey, so it stays visible to a tenant
+    // who owns no builds at all.
     {
-      label: "",
+      label: "Integrations",
+      icon: Server,
+      collapsible: true,
+      sectionId: "forge_line_integrations",
+      landingRoute: "/app/services/forge_integrations",
       items: [
         { key: "forge_integrations", label: "Integrations", route: "/app/services/forge_integrations" },
       ],
@@ -1161,14 +1189,17 @@ export function SubNav({ config }: SubNavProps) {
   // client B is noise at best and a disclosure at worst. So: a tenant sees the
   // FORGE software they own and nothing else, and a tenant who owns none gets
   // one pointer to the public catalogue instead of a list of other people's
-  // builds. Software groups are identified by a `forge_<software>` sectionId,
-  // which is also the service key that grants them.
+  // builds. A software group declares its `softwareKey` explicitly — the
+  // `forge_<software>` service key that grants it. One piece of software can
+  // span several groups (HESTIA has Case Management, Fundraising and
+  // Reporting); they all carry the same softwareKey and so appear or vanish
+  // together.
   let visibleGroups = gatedGroups;
   if (productKey === "forge") {
-    const isSoftware = (g: SubNavGroup) => !!g.sectionId && g.sectionId.startsWith("forge_");
+    const isSoftware = (g: SubNavGroup) => !!g.softwareKey;
     const hadSoftware = gatedGroups.some(isSoftware);
     visibleGroups = gatedGroups.filter(
-      (g) => !isSoftware(g) || ownedProducts.has(g.sectionId as string)
+      (g) => !isSoftware(g) || ownedProducts.has(g.softwareKey as string)
     );
     if (hadSoftware && !visibleGroups.some(isSoftware)) {
       visibleGroups = [
