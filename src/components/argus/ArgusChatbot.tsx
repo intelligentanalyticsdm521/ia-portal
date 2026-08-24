@@ -17,7 +17,6 @@ import { MessageSquare, Send, X, ExternalLink, Play, Ticket, MousePointerClick }
 import { matchIntent, type ArgusIntent } from "./argusIntents";
 import { ALL_TOURS, GuidedTour, type TourDef } from "../GuidedTour";
 import { useAppState } from "../../app/AppState";
-import { emergencyActAsHeaders } from "../../lib/emergencyActAs";
 import { searchJourneySteps } from "../../journeys";
 import { launchJourneyStep } from "../walkthroughs/walkthroughLaunchBus";
 import { useSparkApi } from "../../hooks/useSparkApi";
@@ -87,6 +86,10 @@ export function ArgusChatbot() {
   // the prefill the ticket form opens with after a "no".
   const [feedbackDone, setFeedbackDone] = useState<Record<string, "yes" | "no">>({});
   const [ticketPrefill, setTicketPrefill] = useState<{ subject: string; description: string } | null>(null);
+  // Remount key for the ticket form: prefill is read in a useState
+  // initializer, so an already-open form would silently keep the OLD
+  // question when a different offer is clicked (adversarial-review finding).
+  const [prefillNonce, setPrefillNonce] = useState(0);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const spark = useSparkApi();
 
@@ -249,6 +252,15 @@ export function ArgusChatbot() {
 
   const handleTicketOffer = (offer: { subject: string; description: string }) => {
     setTicketPrefill(offer);
+    setPrefillNonce((n) => n + 1);
+    setTicketOpen(true);
+  };
+
+  // "I'm stuck" / intent-driven ticket open: always a BLANK form, even if a
+  // prefilled one is already mounted from an earlier "no".
+  const handleStartTicketBlank = () => {
+    setTicketPrefill(null);
+    setPrefillNonce((n) => n + 1);
     setTicketOpen(true);
   };
 
@@ -327,7 +339,7 @@ export function ArgusChatbot() {
                 key={m.id}
                 message={m}
                 onCta={handleCtaClick}
-                onStartTicket={() => setTicketOpen(true)}
+                onStartTicket={handleStartTicketBlank}
                 onHelp={handleHelp}
                 feedbackState={feedbackDone[m.id]}
                 onFeedback={handleFeedback}
@@ -351,7 +363,7 @@ export function ArgusChatbot() {
                 </div>
               </div>
             )}
-            {ticketOpen && <InlineTicketForm prefill={ticketPrefill} onClose={() => { setTicketOpen(false); setTicketPrefill(null); }} onSubmitted={(id) => {
+            {ticketOpen && <InlineTicketForm key={prefillNonce} prefill={ticketPrefill} onClose={() => { setTicketOpen(false); setTicketPrefill(null); }} onSubmitted={(id) => {
               // D7 (2026-08-23): the backend returns a GUID — show the short
               // reference form so the user has something they can quote back.
               const ref = String(id).replace(/-/g, "").slice(0, 8).toUpperCase();
@@ -543,8 +555,14 @@ function InlineTicketForm({ prefill, onClose, onSubmitted }: { prefill?: { subje
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const apiBase = useMemo(() => (import.meta.env.VITE_LUMEN_API_BASE_URL || "").replace(/\/$/, ""), []);
   const { active } = useAppState();
+  // Sept-A F3 fix (found in dev verification): the old raw fetch sent NO
+  // bearer, NO tenant header, and credentials:'include' against LUMEN's
+  // wildcard CORS — the preflight failed in every environment, so every
+  // chatbot ticket silently fell back to the mailto: path. The spark client
+  // (already used above for engagement alerts) attaches auth + tenant + dev
+  // headers correctly.
+  const spark = useSparkApi();
 
   // F-127 — enrich the ticket with business + user context so the
   // founder doesn't have to guess who/where from.
@@ -566,20 +584,7 @@ function InlineTicketForm({ prefill, onClose, onSubmitted }: { prefill?: { subje
     setSubmitting(true); setError(null);
     try {
       const payload = { ...draft, context };
-      const res = await fetch(`${apiBase}/api/v1/argus/tickets`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          // Founder emergency act-as: ticket creation is a write — if the
-          // founder is in 30-min read-only mode, LUMEN-API will 403 once its
-          // middleware lands (followup). No-op outside emergency mode.
-          ...emergencyActAsHeaders(),
-        },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = await res.json();
+      const body = await spark.post<{ ticket_id?: string; id?: string }>("/api/v1/argus/tickets", payload);
       onSubmitted(body?.ticket_id || body?.id || "pending");
       onClose();
     } catch (err) {

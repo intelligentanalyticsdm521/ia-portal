@@ -424,6 +424,15 @@ function ServiceRouterInner() {
     return <Navigate to="/app/overview" replace />;
   }
 
+  // Sept-A F5 — Attribution moved into the reports system (Trends > Lead
+  // Pipeline > Attribution). MUST redirect BEFORE the catalog lookup: the
+  // spark_attribution catalog row is retired, so the switch-case below is
+  // unreachable and a bookmark would dead-end on "Service not found"
+  // (adversarial-review finding).
+  if (serviceKey === 'spark_attribution') {
+    return <Navigate to="/app/services/spark_ia_insights_trends" replace />;
+  }
+
   const service: PortalService | null = useMemo(
     () => SERVICE_CATALOG.find((s) => s.key === serviceKey) ?? null,
     [serviceKey]
@@ -820,10 +829,8 @@ function ServiceRouterInner() {
       case 'spark_competitor_watch': sparkPage = <SparkCompetitorWatchPage />; break;
       case 'spark_scoring_rules': sparkPage = <SparkScoringRulesPage />; break;
       case 'spark_routing_rules': sparkPage = <SparkRoutingRulesPage />; break;
-      // Sept-A F5 — Attribution lives in the reports system now (Trends >
-      // Lead Pipeline > Attribution, four model tabs). The standalone page is
-      // retired; the old route redirects so no Business-tier bookmark 404s.
-      case 'spark_attribution': sparkPage = <Navigate to="/app/services/spark_ia_insights_trends" replace />; break;
+      // Sept-A F5 — spark_attribution redirects before the catalog lookup
+      // (see ServiceRouterInner top); no case needed here.
       case 'spark_stella': sparkPage = <SparkStellaPage />; break;
       case 'spark_scheduled_reports': sparkPage = <SparkScheduledReportsPage />; break;
       case 'spark_audience_sync': sparkPage = <SparkAudienceSyncPage />; break;

@@ -96,7 +96,11 @@ export default function ErrorLogPage() {
         <AlertTriangle size={22} style={{ color: "#dc2626" }} />
         <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Client-Facing Error Log</h1>
         <button
-          onClick={() => { setOffset(0); load(false); }}
+          // When offset > 0, setOffset(0) alone re-triggers the effect at the
+          // new offset; calling load(false) directly too would race a stale
+          // offset-200 replace-fetch against the offset-0 one
+          // (adversarial-review finding).
+          onClick={() => { if (offset === 0) load(false); else setOffset(0); }}
           disabled={loading}
           style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", cursor: "pointer" }}
         >
