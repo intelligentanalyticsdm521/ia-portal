@@ -278,7 +278,12 @@ export function WebsiteUpdates() {
           { label: 'Aging (1-2y)', count: buckets.aging, color: '#D97706' },
           { label: 'Stale (>2y)', count: buckets.stale, color: '#D85A30' },
         ];
-        const logs: any[] = (logData as any)?.data?.logs || [];
+        // 2026-08-24 — this read `data.logs`; arion-api routes/arion.js:7438
+        // returns `data.entries`. The card had therefore been permanently empty
+        // since it shipped, while the correctly-keyed card at :153 rendered the
+        // same history just below it. Reuse logEntries rather than re-deriving,
+        // so there is one reader of that payload instead of two that can drift.
+        const logs: any[] = logEntries;
         return (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
             <Card title="Plugin freshness (upstream)">
