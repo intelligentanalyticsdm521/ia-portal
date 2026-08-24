@@ -249,14 +249,10 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
   }
 
   return (
-    <div className="card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-        <div>
-          <div className="card-ttl">New invoice</div>
-          <div className="card-sub">Bill a customer directly or convert a completed job into an invoice</div>
-        </div>
-        <button onClick={onCancel} style={{ background: "none", border: "none", color: "#5A7A8A", cursor: "pointer", fontSize: 12 }}>Cancel</button>
-      </div>
+    // No card chrome or own header — this form always renders inside the
+    // branded document modal now (same treatment as the quote form), which
+    // carries the title, the business header and the close control.
+    <div>
 
       {error && (
         <div style={{
