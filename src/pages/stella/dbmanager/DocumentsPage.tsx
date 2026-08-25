@@ -11,7 +11,7 @@ import { stellaUpload } from "../../../lib/stellaApi";
 import { useMsal } from "@azure/msal-react";
 import { useActiveAccount } from "../../../auth/useAccessToken";
 import { useClientTenantIdOverride } from "../../../lib/clientTenantContext";
-import { STELLA_API_BASE_FOR_DOWNLOAD, downloadStellaFile } from "./downloadHelper";
+import { downloadStellaFile } from "./downloadHelper";
 import {
   DbCard, DbError, DbLoading, DbButton, DbInput, DbSelect, DbField, DbEmpty,
   DbNotice, useNotice, Pill, DbModal, DbTable,
@@ -187,5 +187,3 @@ export function StellaDocumentsPage() {
     </StellaShell>
   );
 }
-
-export { STELLA_API_BASE_FOR_DOWNLOAD };

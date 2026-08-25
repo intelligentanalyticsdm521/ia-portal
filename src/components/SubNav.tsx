@@ -706,7 +706,9 @@ const STELLA_NAV: SubNavConfig = {
         { key: "stella_ledger_transactions", label: "Transactions", route: "/app/services/stella_ledger_transactions" },
         { key: "stella_ledger_vendors", label: "Vendors & Customers", route: "/app/services/stella_ledger_vendors" },
         { key: "stella_ledger_coa", label: "Chart of Accounts", route: "/app/services/stella_ledger_coa" },
+        { key: "stella_ledger_receipts", label: "Receipts", route: "/app/services/stella_ledger_receipts" },
         { key: "stella_ledger_mileage_materials", label: "Mileage & Materials", route: "/app/services/stella_ledger_mileage_materials" },
+        { key: "stella_ledger_accounting", label: "Accounting", route: "/app/services/stella_ledger_accounting" },
       ],
     },
     {

@@ -14,6 +14,7 @@ import {
   CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import { useStellaApi } from "../../hooks/useStellaApi";
+import { BalanceSheetReport, TrialBalanceReport, GeneralLedgerReport, type Basis } from "./accounting/AccountingReports";
 import { StellaShell, StellaScaffoldCard, StellaTabs, STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./StellaShell";
 
 // GET /ledger/pnl response (oliver-api routes/stellaLedger.js).
@@ -62,7 +63,11 @@ interface Ten99 { year: number; threshold: number; vendors: Ten99Vendor[] }
 
 const REPORTS = [
   { key: "pnl", label: "P&L" },
+  // Balance Sheet is LIVE as of the double-entry ledger (M3) — it is no longer
+  // a placeholder, and Trial Balance + General Ledger arrived with it.
   { key: "balance_sheet", label: "Balance Sheet" },
+  { key: "trial_balance", label: "Trial Balance" },
+  { key: "general_ledger", label: "General Ledger" },
   { key: "cash_flow", label: "Cash Flow" },
   { key: "ar_aging", label: "AR Aging" },
   { key: "ap_aging", label: "AP Aging" },
@@ -70,19 +75,18 @@ const REPORTS = [
   { key: "1099", label: "1099" },
 ];
 
+// The three journal-backed reports render themselves; the rest of this page
+// reads the register directly and is cash-only by construction.
+const JOURNAL_REPORTS = new Set(["balance_sheet", "trial_balance", "general_ledger"]);
+
 // The two remaining placeholders — same page, honest copy, no fake data.
 // Walkthrough finding (Brandon, 2026-08-14): the Pro badge here read as "my
 // plan is blocking this" — it isn't. Balance Sheet is a PHASE gap, not a tier
 // gate, so the section carries no tier badge and says so plainly.
 const PLACEHOLDERS: Record<string, { title: string; note: string; bullets: string[]; tier?: "Pro" }> = {
-  balance_sheet: {
-    title: "Balance Sheet",
-    note: "Balance Sheet arrives with accrual accounting in a later STELLA phase — every plan gets it, no upgrade needed. A point-in-time statement of what your business owns, owes, and is worth, derived from your ledger.",
-    bullets: ["Assets · Liabilities · Equity", "As-of date picker", "Arrives for every plan — no upgrade needed"],
-  },
   ap_aging: {
     title: "AP Aging",
-    note: "What you owe and when it's due — current, 30, 60, 90+ day buckets across your vendors. Data lands in P2.",
+    note: "What you owe and when it's due — current, 30, 60, 90+ day buckets across your vendors. Arrives with Bill Pay, which adds vendor bills to the ledger.",
     bullets: ["Current / 30 / 60 / 90+ buckets", "Per-vendor breakdown", "Prioritize what to pay next"],
   },
 };
@@ -120,6 +124,9 @@ function fmtDate(d?: string | null) {
 export function StellaReportsPage() {
   const { get, ready } = useStellaApi();
   const [report, setReport] = useState("pnl");
+  // Shared across the journal-backed reports: having picked accrual on the
+  // Balance Sheet, you should still be on accrual when you open the GL.
+  const [basis, setBasis] = useState<Basis>("cash");
   const [month, setMonth] = useState(currentMonth());
   // Year picker shared by Sales Tax + 1099 (both are calendar-year reports).
   const [year, setYear] = useState(new Date().getFullYear());
@@ -133,6 +140,9 @@ export function StellaReportsPage() {
 
   const reload = useCallback(async () => {
     if (PLACEHOLDERS[report]) return; // placeholder tabs fetch nothing
+    // The journal-backed reports load their own data (they have their own
+    // basis + as-of controls), so this page must not fetch or spin for them.
+    if (JOURNAL_REPORTS.has(report)) { setLoading(false); return; }
     setLoading(true);
     setError(null);
     try {
@@ -172,6 +182,7 @@ export function StellaReportsPage() {
     .sort((a, b) => b.amount - a.amount);
 
   const placeholder = PLACEHOLDERS[report];
+  const isJournalReport = JOURNAL_REPORTS.has(report);
   const hasData =
     report === "pnl" ? !!pnl
     : report === "cash_flow" ? !!cashFlow
@@ -186,7 +197,7 @@ export function StellaReportsPage() {
   return (
     <StellaShell
       title="Reports"
-      subtitle="Your financial statements in one place — P&L, Cash Flow, AR Aging, Sales Tax, and 1099 are live."
+      subtitle="Your financial statements in one place — P&L, Balance Sheet, Trial Balance, General Ledger, Cash Flow, AR Aging, Sales Tax and 1099."
       showRecord
       onRecorded={() => reload()}
       actions={
@@ -209,10 +220,14 @@ export function StellaReportsPage() {
           </select>
         ) : undefined
       }
-      error={!placeholder ? error : undefined}
-      loading={!placeholder && loading && !hasData}
+      error={!placeholder && !isJournalReport ? error : undefined}
+      loading={!placeholder && !isJournalReport && loading && !hasData}
     >
       <StellaTabs tabs={REPORTS} active={report} onChange={setReport} dataTour="stella-reports-tabs" />
+
+      {report === "balance_sheet" && <BalanceSheetReport basis={basis} onBasis={setBasis} />}
+      {report === "trial_balance" && <TrialBalanceReport basis={basis} onBasis={setBasis} />}
+      {report === "general_ledger" && <GeneralLedgerReport basis={basis} onBasis={setBasis} />}
 
       {report === "pnl" && pnl && (
         <>

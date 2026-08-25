@@ -33,7 +33,11 @@ export function DbCard({ title, actions, children, style }: {
 }
 
 export function DbButton({ children, onClick, variant = "primary", disabled, type = "button", title }: {
-  children: ReactNode; onClick?: () => void; variant?: "primary" | "ghost" | "danger";
+  children: ReactNode;
+  // Receives the event so a button rendered INSIDE a clickable table row can
+  // stopPropagation() — otherwise a row-level Delete also opens the row.
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  variant?: "primary" | "ghost" | "danger";
   disabled?: boolean; type?: "button" | "submit"; title?: string;
 }) {
   const styles: Record<string, React.CSSProperties> = {
