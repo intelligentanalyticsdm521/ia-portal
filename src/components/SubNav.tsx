@@ -735,16 +735,16 @@ const STELLA_NAV: SubNavConfig = {
       // opens the STELLA coming-soon sheet (StellaComingSoonPage).
       label: "Database Manager", icon: Server, collapsible: true, sectionId: "stella_db",
       items: [
-        { key: "stella_db_registry", label: "View Registry", route: "/app/services/stella_db_registry", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_entry", label: "Manual Entry", route: "/app/services/stella_db_entry", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_registry", label: "View Registry", route: "/app/services/stella_db_registry", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_entry", label: "Manual Entry", route: "/app/services/stella_db_entry", tag: { label: "S", color: STELLA_TAG } },
         // Import History folded into the Upload surface (batch list + rollback
         // live on the same page per master §5.3) — keeps this group at the 8 cap.
-        { key: "stella_db_upload", label: "Uploads & Import History", route: "/app/services/stella_db_upload", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_tags", label: "Tags", route: "/app/services/stella_db_tags", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_custom_fields", label: "Custom Fields", route: "/app/services/stella_db_custom_fields", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_documents", label: "Documents", route: "/app/services/stella_db_documents", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_compliance", label: "Compliance Reminders", route: "/app/services/stella_db_compliance", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_warnings", label: "Data Engineer Warnings", route: "/app/services/stella_db_warnings", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_upload", label: "Uploads & Import History", route: "/app/services/stella_db_upload", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_tags", label: "Tags", route: "/app/services/stella_db_tags", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_custom_fields", label: "Custom Fields", route: "/app/services/stella_db_custom_fields", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_documents", label: "Documents", route: "/app/services/stella_db_documents", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_compliance", label: "Compliance Reminders", route: "/app/services/stella_db_compliance", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_warnings", label: "Data Engineer Warnings", route: "/app/services/stella_db_warnings", tag: { label: "S", color: STELLA_TAG } },
       ],
     },
     {

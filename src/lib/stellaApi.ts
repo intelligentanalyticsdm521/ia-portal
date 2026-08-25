@@ -23,7 +23,7 @@ import { OLIVER_API_BASE } from "./oliverApi";
 // constant, one URL to maintain); VITE_STELLA_API_BASE overrides for local
 // dev (the folded oliver-api on a loopback port — devAuth.ts attaches
 // x-dev-tenant to loopback calls automatically).
-const STELLA_API_BASE =
+export const STELLA_API_BASE =
   (import.meta.env.VITE_STELLA_API_BASE as string) || OLIVER_API_BASE;
 
 // Delegates to the one shared token seam so the dev-auth short-circuit lives in
@@ -69,7 +69,10 @@ async function stellaFetch<T>(
   account: AccountInfo,
   path: string,
   init?: RequestInit,
-  tenantOverride?: string | null
+  tenantOverride?: string | null,
+  // Layer 3: keep the whole envelope. Defaults to false so every existing
+  // caller behaves exactly as before.
+  raw = false
 ): Promise<T> {
   const token = await getToken(msal, account);
   // Precedence:
@@ -129,6 +132,7 @@ async function stellaFetch<T>(
   if (res.status === 204) return undefined as T;
 
   const json = await res.json();
+  if (raw) return json as T;
   return (json && typeof json === "object" && "data" in json ? json.data : json) as T;
 }
 
@@ -159,4 +163,100 @@ export function stellaPut<T>(msal: IPublicClientApplication, account: AccountInf
 
 export function stellaDelete<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, tenantOverride?: string | null) {
   return stellaFetch<T>(msal, account, path, { method: "DELETE" }, tenantOverride);
+}
+
+// ── Layer 3 additions (Database Manager / Custom Reporting) ──────────────────
+
+/**
+ * stellaGetFull — a GET that does NOT unwrap the { data } envelope.
+ *
+ * stellaFetch strips the envelope and returns `json.data`, which is right for
+ * the Ledger's list endpoints. Layer 3 responses carry siblings that matter —
+ * `columns`, `pagination`, `meta` (tier + caps) — and unwrapping throws all of
+ * them away, silently, leaving a table that cannot page and a cap the UI
+ * cannot show. Same trap as the oliver-api envelope auto-unwrap.
+ */
+export async function stellaGetFull<T>(
+  msal: IPublicClientApplication,
+  account: AccountInfo,
+  path: string,
+  tenantOverride?: string | null
+): Promise<T> {
+  return stellaFetch<T>(msal, account, path, { method: "GET" }, tenantOverride, true);
+}
+
+/**
+ * stellaUpload — multipart POST.
+ *
+ * Content-Type is deleted deliberately: the browser must set it itself so the
+ * multipart boundary is included. Inheriting stellaFetch's application/json
+ * header produces a body multer cannot parse and a 400 that reads like a
+ * validation failure.
+ */
+export async function stellaUpload<T>(
+  msal: IPublicClientApplication,
+  account: AccountInfo,
+  path: string,
+  form: FormData,
+  tenantOverride?: string | null
+): Promise<T> {
+  const token = await getToken(msal, account);
+  const bypass = tenantOverride === BYPASS_TENANT_OVERRIDE;
+  const contextTid = bypass ? null : getCurrentTenantOverride();
+  const explicit = bypass ? null : tenantOverride;
+  const tenantId =
+    (explicit && explicit.trim()) ||
+    (contextTid && contextTid.trim()) ||
+    (bypass ? "" : readActiveTenantId()) ||
+    getTenantId(token);
+
+  const res = await fetch(`${STELLA_API_BASE}${path}`, {
+    method: "POST",
+    body: form,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "x-tenant-key": tenantId,
+      ...emergencyActAsHeaders(),
+    },
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    let parsed: { error?: string; details?: string[]; tier_required?: string; current_tier?: string } | null = null;
+    try { parsed = JSON.parse(text); } catch { /* non-JSON body falls through */ }
+    if (res.status === 403 && parsed?.error === "feature_not_available") {
+      throw { type: "tier_gate" as const, tierRequired: parsed.tier_required || "standard", currentTier: parsed.current_tier || "standard" };
+    }
+    // Preserve `details` so the caller can list each validation line instead of
+    // showing one opaque "header_mismatch".
+    const err = new Error(parsed?.error ? `${parsed.error}` : `STELLA API ${res.status}: ${text}`) as Error & { details?: string[] };
+    if (parsed?.details) err.details = parsed.details;
+    throw err;
+  }
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
+/**
+ * getStellaAuthHeaders — the Authorization + tenant headers on their own.
+ *
+ * For responses that are NOT JSON (a document download streams bytes), so the
+ * caller can fetch directly and still be authenticated and tenant-scoped.
+ * Same precedence stellaFetch uses; kept here so there is one place that
+ * decides which tenant a STELLA request belongs to.
+ */
+export async function getStellaAuthHeaders(
+  msal: IPublicClientApplication,
+  account: AccountInfo,
+  tenantOverride?: string | null
+): Promise<Record<string, string>> {
+  const token = await getToken(msal, account);
+  const bypass = tenantOverride === BYPASS_TENANT_OVERRIDE;
+  const contextTid = bypass ? null : getCurrentTenantOverride();
+  const explicit = bypass ? null : tenantOverride;
+  const tenantId =
+    (explicit && explicit.trim()) ||
+    (contextTid && contextTid.trim()) ||
+    (bypass ? "" : readActiveTenantId()) ||
+    getTenantId(token);
+  return { Authorization: `Bearer ${token}`, "x-tenant-key": tenantId, ...emergencyActAsHeaders() };
 }

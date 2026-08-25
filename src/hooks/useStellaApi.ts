@@ -9,7 +9,7 @@
 import { useCallback, useMemo } from "react";
 import { useMsal } from "@azure/msal-react";
 import { useActiveAccount } from "../auth/useAccessToken";
-import { stellaGet, stellaPost, stellaPatch, stellaPut, stellaDelete } from "../lib/stellaApi";
+import { stellaGet, stellaGetFull, stellaPost, stellaPatch, stellaPut, stellaDelete } from "../lib/stellaApi";
 import { useClientTenantIdOverride } from "../lib/clientTenantContext";
 
 // Re-export the shared tier-gate helpers so STELLA pages don't duplicate them.
@@ -26,6 +26,14 @@ export function useStellaApi() {
 
   const get = useCallback(
     <T>(path: string) => stellaGet<T>(instance, account, path, tenantOverride),
+    [instance, account, tenantOverride]
+  );
+
+  // Layer 3 (Database Manager / Custom Reporting): keeps the whole envelope.
+  // Those endpoints return `columns`, `pagination` and `meta` alongside `data`,
+  // and the unwrapping `get` throws all three away.
+  const getFull = useCallback(
+    <T>(path: string) => stellaGetFull<T>(instance, account, path, tenantOverride),
     [instance, account, tenantOverride]
   );
 
@@ -52,7 +60,7 @@ export function useStellaApi() {
   // Stable object identity — prevents consumers keyed on this hook's result
   // from re-fetching on every render (fetch once per page, not per render).
   return useMemo(
-    () => ({ get, post, patch, put, del, ready: !!account }),
-    [get, post, patch, put, del, account]
+    () => ({ get, getFull, post, patch, put, del, ready: !!account }),
+    [get, getFull, post, patch, put, del, account]
   );
 }
