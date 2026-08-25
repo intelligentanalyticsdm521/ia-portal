@@ -753,12 +753,12 @@ const STELLA_NAV: SubNavConfig = {
       // Layer 3b — LOCKED.
       label: "Custom Reporting", icon: BarChart2, collapsible: true, sectionId: "stella_report",
       items: [
-        { key: "stella_report_library", label: "Report Library", route: "/app/services/stella_report_library", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_report_builder", label: "Report Builder", route: "/app/services/stella_report_builder", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_report_dashboards", label: "Dashboards", route: "/app/services/stella_report_dashboards", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_report_scheduled", label: "Scheduled Reports", route: "/app/services/stella_report_scheduled", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_report_sql", label: "SQL Editor", route: "/app/services/stella_report_sql", gated: true, tag: { label: "Pro", color: STELLA_TAG } },
-        { key: "stella_report_exports", label: "Exports", route: "/app/services/stella_report_exports", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_library", label: "Report Library", route: "/app/services/stella_report_library", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_builder", label: "Report Builder", route: "/app/services/stella_report_builder", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_dashboards", label: "Dashboards", route: "/app/services/stella_report_dashboards", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_scheduled", label: "Scheduled Reports", route: "/app/services/stella_report_scheduled", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_sql", label: "SQL Editor", route: "/app/services/stella_report_sql", tag: { label: "Pro", color: STELLA_TAG } },
+        { key: "stella_report_exports", label: "Exports", route: "/app/services/stella_report_exports", tag: { label: "S", color: STELLA_TAG } },
       ],
     },
   ],

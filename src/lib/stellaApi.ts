@@ -176,6 +176,20 @@ export function stellaDelete<T>(msal: IPublicClientApplication, account: Account
  * them away, silently, leaving a table that cannot page and a cap the UI
  * cannot show. Same trap as the oliver-api envelope auto-unwrap.
  */
+/** POST that keeps the whole envelope — same reason as stellaGetFull. */
+export async function stellaPostFull<T>(
+  msal: IPublicClientApplication,
+  account: AccountInfo,
+  path: string,
+  body?: unknown,
+  tenantOverride?: string | null
+): Promise<T> {
+  return stellaFetch<T>(msal, account, path, {
+    method: "POST",
+    body: body ? JSON.stringify(body) : undefined,
+  }, tenantOverride, true);
+}
+
 export async function stellaGetFull<T>(
   msal: IPublicClientApplication,
   account: AccountInfo,

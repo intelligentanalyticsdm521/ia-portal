@@ -347,6 +347,13 @@ const StellaAccountingPage = lazyNamed(() => import('./stella/accounting/Account
 const StellaReceiptsPage = lazyNamed(() => import('./stella/accounting/ReceiptsPage'), 'StellaReceiptsPage');
 const StellaMileageMaterialsRealPage = lazyNamed(() => import('./stella/accounting/MileageMaterialsPage'), 'StellaMileageMaterialsPage');
 const StellaPeriodCloseRealPage = lazyNamed(() => import('./stella/accounting/PeriodClosePage'), 'StellaPeriodClosePage');
+// M2 Custom Reporting — the six surfaces that replace the coming-soon sheet.
+const StellaReportLibraryPage = lazyNamed(() => import('./stella/reporting/ReportLibraryPage'), 'StellaReportLibraryPage');
+const StellaReportBuilderPage = lazyNamed(() => import('./stella/reporting/ReportBuilderPage'), 'StellaReportBuilderPage');
+const StellaDashboardsPage = lazyNamed(() => import('./stella/reporting/DashboardsPage'), 'StellaDashboardsPage');
+const StellaScheduledReportsPage = lazyNamed(() => import('./stella/reporting/ScheduledReportsPage'), 'StellaScheduledReportsPage');
+const StellaSqlEditorPage = lazyNamed(() => import('./stella/reporting/SqlEditorPage'), 'StellaSqlEditorPage');
+const StellaExportsPage = lazyNamed(() => import('./stella/reporting/ExportsPage'), 'StellaExportsPage');
 // Live Ledger shells (2026-07-30 consolidation — 8-item nav cap): Mileage &
 // Materials is one two-tab page; Bank + Period Close are Settings-hub pages.
 const StellaMileageMaterialsPage = lazyNamed(() => import('./stella/StellaLedgerShellPages'), 'StellaMileageMaterialsPage');
@@ -612,13 +619,16 @@ function ServiceRouterInner() {
       // Database Manager + Custom Reporting (Layer 3 — locked / coming soon).
       // Every db_/report_ key renders the STELLA coming-soon sheet (padlock +
       // tier badge driven by the catalog row).
-      case 'stella_report_library':
-      case 'stella_report_builder':
-      case 'stella_report_dashboards':
-      case 'stella_report_scheduled':
-      case 'stella_report_sql':
-      case 'stella_report_exports':
         stellaPage = <StellaComingSoonPage service={service} />; break;
+
+      // ── Custom Reporting (Layer 3b) — LIVE ───────────────────────────────
+      case 'stella_report_library': stellaPage = <StellaReportLibraryPage />; break;
+      case 'stella_report_builder': stellaPage = <StellaReportBuilderPage />; break;
+      case 'stella_report_dashboards': stellaPage = <StellaDashboardsPage />; break;
+      case 'stella_report_scheduled': stellaPage = <StellaScheduledReportsPage />; break;
+      // Pro+ — the page itself renders the upgrade panel from the API's 403.
+      case 'stella_report_sql': stellaPage = <StellaSqlEditorPage />; break;
+      case 'stella_report_exports': stellaPage = <StellaExportsPage />; break;
 
       // ── Database Manager (Layer 3a) — LIVE ───────────────────────────────
       // Tier floor is enforced by the API (standard+, decision D2); the pages
