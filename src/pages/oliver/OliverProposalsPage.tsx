@@ -394,7 +394,15 @@ export function CreateProposalDrawer({
   // backend contract (and the public accept page, and the PDF) is unchanged.
   type Block =
     | { key: number; kind: "text"; heading: string; body: string }
-    | { key: number; kind: "service"; name: string; description: string; features: string[]; quantity: number; unit_price: number; recommended?: boolean }
+    | { key: number; kind: "service"; name: string; description: string; features: string[]; quantity: number; unit_price: number; recommended?: boolean;
+        // Which catalogue price this line came from. Quotes, jobs and invoices
+        // have always recorded these; proposals recorded neither, so an
+        // accepted proposal could not be traced back to the price it quoted.
+        offering_id?: string; price_id?: string | null;
+        // "billed monthly" / "billed annually". 98 of 114 active prices are
+        // recurring, and without this the customer reads a bare "$29.99" as
+        // the entire cost of the engagement.
+        cadence?: string | null }
     | { key: number; kind: "line"; description: string; quantity: number; unit_price: number; recommended?: boolean };
 
   const keyRef = useRef(1);
@@ -506,6 +514,9 @@ export function CreateProposalDrawer({
       features: picked.parts.features,
       quantity: 1,
       unit_price: picked.parts.unit_price,
+      offering_id: picked.parts.offering_id,
+      price_id: picked.parts.price_id,
+      cadence: picked.parts.cadence,
     }]);
 
   // ── Derived money ────────────────────────────────────────────────────────
@@ -538,10 +549,20 @@ export function CreateProposalDrawer({
     return priced
       .filter((b) => (b.kind === "service" ? b.name.trim() : b.description.trim()))
       .map((b) => ({
-        description: (b.kind === "service" ? b.name : b.description).trim(),
+        // A recurring price must SAY it is recurring. The amount column shows
+        // a bare number, so "$29.99" with no cadence reads as the whole cost.
+        description: (() => {
+          const base = (b.kind === "service" ? b.name : b.description).trim();
+          const cadence = b.kind === "service" ? b.cadence : null;
+          return cadence && !base.includes(cadence) ? `${base} (${cadence})` : base;
+        })(),
         quantity: Number(b.quantity) || 1,
         unit_price: Number(b.unit_price) || 0,
         line_total: (Number(b.quantity) || 1) * (Number(b.unit_price) || 0),
+        // Ride through line_items_json untouched (parseLineItems passes the
+        // array straight through), so this needs no API or migration change.
+        ...(b.kind === "service" && b.offering_id ? { service_offering_id: b.offering_id } : {}),
+        ...(b.kind === "service" && b.price_id ? { service_price_id: b.price_id } : {}),
         // Rides through line_items_json untouched; the customer page renders
         // it as the "Recommended" pill — the founder's own reference proposal
         // (MS Moments PDF) buckets services exactly this way.
