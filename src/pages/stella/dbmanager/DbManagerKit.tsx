@@ -300,11 +300,21 @@ export function DbLoading() {
   return <div style={{ padding: 28, textAlign: "center", fontSize: 12, color: "#5A7A8A" }}>Loading…</div>;
 }
 
-/** A hook-free helper for the "used / limit" line every capped surface shows. */
-export function CapLine({ used, limit, noun }: { used: number; limit: number | null; noun: string }) {
+/**
+ * The "used / limit" line every capped surface shows.
+ *
+ * `noun` is given plural; one of something reads "1 dashboard", not
+ * "1 dashboards". Only the regular -s / -ies cases appear here, and passing an
+ * explicit `singular` covers anything irregular.
+ */
+export function CapLine({ used, limit, noun, singular }: {
+  used: number; limit: number | null; noun: string; singular?: string;
+}) {
+  const one = singular || (noun.endsWith("ies") ? `${noun.slice(0, -3)}y` : noun.replace(/s$/, ""));
+  const word = used === 1 ? one : noun;
   return (
     <div style={{ fontSize: 11, color: limit !== null && used >= limit ? "#B54708" : "#5A7A8A" }}>
-      {used} {noun}{limit === null ? " · unlimited on your plan" : ` of ${limit} on your plan`}
+      {used} {word}{limit === null ? " · unlimited on your plan" : ` of ${limit} on your plan`}
     </div>
   );
 }
