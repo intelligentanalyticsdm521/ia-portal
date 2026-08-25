@@ -193,6 +193,18 @@ export function renderCell(value: unknown, type?: string): ReactNode {
   }
 }
 
+// The id-ish field a row can be keyed on, if it has one.
+const ID_KEYS = ["id", "_id", "report_run_id", "audit_log_id", "journal_line_id", "journal_entry_id"];
+function rowKey(r: Record<string, unknown>, i: number): string {
+  for (const k of Object.keys(r)) {
+    if (k.endsWith("_id") || ID_KEYS.includes(k)) {
+      const v = r[k];
+      if (v !== null && v !== undefined && typeof v !== "object") return `${String(v)}-${i}`;
+    }
+  }
+  return String(i);
+}
+
 /**
  * The data table. Horizontal scroll lives on the wrapper, not the page — a
  * wide view must never make the whole shell scroll sideways.
@@ -229,7 +241,11 @@ export function DbTable({ columns, rows, onRowClick, sort, dir, onSort, empty }:
         <tbody>
           {rows.map((r, i) => (
             <tr
-              key={String(r[columns[0].key] ?? i)}
+              // The first column is NOT a reliable key: on the Exports page it
+              // is run_at, and two runs a second apart share a timestamp, which
+              // React reports as duplicate keys and may render as a dropped
+              // row. Prefer an explicit id, and always fall back to the index.
+              key={rowKey(r, i)}
               onClick={onRowClick ? () => onRowClick(r) : undefined}
               style={{ borderBottom: "1px solid #F1F5F9", cursor: onRowClick ? "pointer" : "default" }}
             >
