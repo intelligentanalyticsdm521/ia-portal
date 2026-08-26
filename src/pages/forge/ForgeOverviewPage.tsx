@@ -195,21 +195,26 @@ export function ForgeOverviewPage() {
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <th className="px-3 py-2">Funder</th>
-                    <th className="px-3 py-2">Applied</th>
-                    <th className="px-3 py-2">Decision</th>
-                    <th className="px-3 py-2">Applied for</th>
-                    <th className="px-3 py-2">Awarded</th>
+                    <th className="px-2 py-2">Funder</th>
+                    <th className="px-2 py-2">Applied</th>
+                    <th className="px-2 py-2">Decision</th>
+                    <th className="px-2 py-2">Applied for</th>
+                    <th className="px-2 py-2">Awarded</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.recentApplications.map((a) => (
                     <tr key={String(a.application_id)} className="border-b border-slate-100 last:border-0">
-                      <td className="px-3 py-2 text-slate-800">{a.funder_name ?? '—'}</td>
-                      <td className="px-3 py-2 text-slate-700">{shortDate(a.applied_date)}</td>
-                      <td className="px-3 py-2"><Pill tone={statusTone(a.decision_type)}>{a.decision_type ?? '—'}</Pill></td>
-                      <td className="px-3 py-2 text-slate-700">{moneyExact(a.amount_applied_for)}</td>
-                      <td className="px-3 py-2 text-slate-700">{moneyExact(a.amount_awarded)}</td>
+                      {/* Capped and truncated: this table lives in a half-width
+                          dashboard column, and one long foundation name was
+                          enough to push the AWARDED column past the clip edge. */}
+                      <td className="px-2 py-2 text-slate-800">
+                        <div className="max-w-[130px] truncate" title={a.funder_name ?? undefined}>{a.funder_name ?? '—'}</div>
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-2 text-slate-700">{shortDate(a.applied_date)}</td>
+                      <td className="px-2 py-2"><Pill tone={statusTone(a.decision_type)}>{a.decision_type ?? '—'}</Pill></td>
+                      <td className="whitespace-nowrap px-2 py-2 text-slate-700">{moneyExact(a.amount_applied_for)}</td>
+                      <td className="whitespace-nowrap px-2 py-2 text-slate-700">{moneyExact(a.amount_awarded)}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -3,7 +3,7 @@
  * entity, driven by forgeConfig. The legacy app had thirteen near-identical
  * PHP files; this is that idea with types, real pagination and a proper form.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import {
@@ -11,7 +11,7 @@ import {
   type EntityKey, type ListResult,
 } from '../../lib/forgeApi';
 import { Button, Card, EmptyState, ForgeLayout, Pill, statusTone } from './ForgeLayout';
-import { FORGE_ENTITIES, cellValue, humanizeValue, money, type FieldDef } from './forgeConfig';
+import { FORGE_ENTITIES, cellValue, humanizeValue, isNumericField, money, type FieldDef } from './forgeConfig';
 import { ForgeEntityPicker } from './ForgeEntityPicker';
 import { ForgeRecordModal } from './ForgeRecordModal';
 import { describeError, useDebounced, useForgeApi, useForgeLookups } from './useForge';
@@ -84,6 +84,22 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
 
   useEffect(() => { setPage(1); }, [q, includeArchived, filters, sort, entity]);
 
+  /* Drop the previous screen's rows the instant the entity changes.
+     Without this the fetch effect set `result` but never cleared it, and the
+     loading branch below is `loading && !result` — so Providers rendered the
+     CLIENT rows still sitting in state, under the Providers heading and the
+     Providers column headers. Worse than a flicker: the stale <tr>s all keyed
+     on `row[cfg.pk]`, which is undefined for the wrong entity, so React saw
+     duplicate keys, refused to reconcile them away and orphaned them into the
+     DOM permanently — every nav click stacking another screen's rows on top.
+     That is the "providers page is showing clients" report, and the
+     mismatched cell counts in those ghost rows are also what made the action
+     buttons appear at two different x positions in one column.
+     The router now also keys this component per entity (ForgeSoftwareRouter),
+     which remounts it; this is the second belt, for any caller that swaps
+     `entity` on a surviving instance. */
+  useEffect(() => { setResult(null); }, [entity]);
+
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
@@ -119,6 +135,29 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
   }, [withParams, entity, cfg.pk, refresh]);
 
   const totalPages = result ? Math.max(1, Math.ceil(result.total / PAGE_SIZE)) : 1;
+
+  /* The Actions column is pinned to the right edge of the scroll box (below),
+     so Open/Edit/Archive are reachable however wide the table gets. Its
+     left-edge shadow is the only cue that columns continue underneath it: this
+     wrapper reserves ZERO layout height for a scrollbar (measured — the platform
+     uses overlay scrollbars) and the page itself never scrolls sideways, so
+     there is otherwise nothing on screen saying there is more to the right.
+     Drawing that shadow when nothing is hidden would be a lie, so it is measured
+     rather than always on. */
+  const scrollBox = useRef<HTMLDivElement | null>(null);
+  const [canScrollX, setCanScrollX] = useState(false);
+  useEffect(() => {
+    const el = scrollBox.current;
+    if (!el) return;
+    const measure = () => setCanScrollX(el.scrollWidth - el.clientWidth > 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    // The table, not just the box: a column can get wider without the box
+    // changing size at all, and that is exactly the case worth catching.
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, [result, listCols]);
 
   return (
     <ForgeLayout
@@ -208,19 +247,23 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
         ) : !result?.data.length ? (
           <EmptyState>No {cfg.title.toLowerCase()} match this view.</EmptyState>
         ) : (
-          <div className="overflow-x-auto">
+          /* -mx-6 lets the table use the card's padding as table padding
+             instead of losing it: 48px of width back on every screen, which is
+             most of a column. The first and last cells carry px-6 so the text
+             still lines up with the card's own title. */
+          <div ref={scrollBox} className="-mx-6 overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  {listCols.map((f) => {
+                  {listCols.map((f, i) => {
                     const active = sort?.col === f.key;
-                    const numeric = f.type === "money" || f.type === "number";
+                    const numeric = isNumericField(f);
                     return (
-                      <th key={f.key} className={`px-3 py-2 ${numeric ? "text-right" : ""}`}>
+                      <th key={f.key} className={`px-2.5 py-2 ${i === 0 ? "pl-5" : ""} ${numeric ? "text-right" : ""}`}>
                         <button
                           type="button"
                           onClick={() => toggleSort(f.key)}
-                          className={`inline-flex items-center gap-1 uppercase tracking-wide ${active ? "text-slate-900" : "hover:text-slate-700"}`}
+                          className={`inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-wide ${active ? "text-slate-900" : "hover:text-slate-700"}`}
                           title={`Sort by ${f.label} — empty values always last`}
                         >
                           {f.label}
@@ -231,7 +274,8 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
                       </th>
                     );
                   })}
-                  <th className="px-3 py-2 text-right">Actions</th>
+                  {/* Pinned, and opaque, or the scrolled columns show through it. */}
+                  <th className="sticky right-0 z-20 bg-white px-2.5 py-2 pr-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -252,56 +296,83 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
                         if (el.closest('a,button')) return;
                         openRecord(id);
                       }}
-                      className={`cursor-pointer border-b border-slate-100 hover:bg-slate-50 ${archived ? 'opacity-60' : ''}`}
+                      /* `group` so the pinned Actions cell can repaint itself on
+                         row hover — it needs its own opaque background to hide
+                         the columns sliding under it, which otherwise swallows
+                         the row highlight on exactly the cell you are aiming at. */
+                      className={`group cursor-pointer border-b border-slate-100 hover:bg-slate-50 ${archived ? 'opacity-60' : ''}`}
                     >
-                      {listCols.map((f, i) => (
-                        <td
-                          key={f.key}
-                          /* align-top + a fixed line height keeps every row the
-                             same height whether a cell holds text, a dash or a
-                             pill — mixed content was making the action buttons
-                             sit at different heights down the column. */
-                          className={`px-3 py-2 align-middle leading-6 text-slate-700 ${
-                            f.type === "money" || f.type === "number" ? "text-right tabular-nums" : ""
-                          } ${f.width ?? ""}`}
-                        >
-                          <span className="inline-flex items-center gap-2 whitespace-nowrap">
-                            {fkHref(f, row) ? (
-                              /* A NAME links to the thing it names. On a
-                                 service row the client column opens the
-                                 CLIENT, not the service — that is what a
-                                 reader expects, and the row keeps its own
-                                 way in via the Open action. */
-                              <Link to={fkHref(f, row) as string} className="font-medium text-slate-900 hover:underline">
-                                {cellValue(row, f)}
-                              </Link>
-                            ) : i === 0 ? (
-                              /* Not a foreign key — this cell IS the record's
-                                 own name, so it opens the record modal. */
-                              <button
-                                type="button"
-                                onClick={() => openRecord(id)}
-                                className="font-medium text-slate-900 hover:underline"
-                              >
-                                {cellValue(row, f)}
-                              </button>
-                            ) : f.type === 'lookup' && f.lookup?.includes('status') ? (
-                              <Pill tone={statusTone(row[f.key] as string)}>{cellValue(row, f)}</Pill>
-                            ) : (
-                              <span>{cellValue(row, f)}</span>
-                            )}
-                            {i === 0 && archived && <Pill>Archived</Pill>}
-                            {i === 0 && Boolean(row.needs_review) && <Pill tone="amber">Needs review</Pill>}
+                      {listCols.map((f, i) => {
+                        const numeric = isNumericField(f);
+                        const text = cellValue(row, f);
+                        return (
+                          <td
+                            key={f.key}
+                            /* align-middle + a fixed line height keeps every row
+                               the same height whether a cell holds text, a dash
+                               or a pill — mixed content was making the action
+                               buttons sit at different heights down the column. */
+                            className={`px-2.5 py-2 align-middle leading-6 text-slate-700 ${i === 0 ? "pl-5" : ""} ${
+                              numeric ? "text-right tabular-nums" : ""
+                            }`}
+                          >
+                            {/* The cap lives on this wrapper, not the <td>: under
+                                `table-layout: auto` a max-width on the cell is a
+                                suggestion, but a max-width on a block INSIDE it
+                                really does cap the column's max-content width.
+                                min-w-0 is what lets the value shrink far enough
+                                to ellipsise inside a flex row. */}
+                            <div
+                              className={`flex items-center gap-2 ${numeric ? "ml-auto justify-end" : ""} ${f.maxW ?? "max-w-[150px]"}`}
+                              title={numeric ? undefined : text}
+                            >
+                              {fkHref(f, row) ? (
+                                /* A NAME links to the thing it names. On a
+                                   service row the client column opens the
+                                   CLIENT, not the service — that is what a
+                                   reader expects, and the row keeps its own
+                                   way in via the Open action. */
+                                <Link to={fkHref(f, row) as string} className="min-w-0 truncate font-medium text-slate-900 hover:underline">
+                                  {text}
+                                </Link>
+                              ) : i === 0 ? (
+                                /* Not a foreign key — this cell IS the record's
+                                   own name, so it opens the record modal. */
+                                <button
+                                  type="button"
+                                  onClick={() => openRecord(id)}
+                                  className="min-w-0 truncate font-medium text-slate-900 hover:underline"
+                                >
+                                  {text}
+                                </button>
+                              ) : f.type === 'lookup' && f.lookup?.includes('status') ? (
+                                <Pill tone={statusTone(row[f.key] as string)}>{text}</Pill>
+                              ) : (
+                                <span className="min-w-0 truncate">{text}</span>
+                              )}
+                              {i === 0 && archived && <Pill>Archived</Pill>}
+                              {i === 0 && Boolean(row.needs_review) && <Pill tone="amber">Needs review</Pill>}
+                            </div>
+                          </td>
+                        );
+                      })}
+                      <td
+                        className={`sticky right-0 z-10 whitespace-nowrap bg-white px-2.5 py-2 pr-4 text-right align-middle group-hover:bg-slate-50 ${
+                          canScrollX ? 'shadow-[-10px_0_10px_-10px_rgba(15,23,42,0.35)]' : ''
+                        }`}
+                      >
+                        <div className="inline-flex items-center justify-end gap-1.5">
+                          <Button size="sm" onClick={() => openRecord(id)}>Open</Button>
+                          {/* Below `sm` the pinned column would eat 224px of a
+                              308px scroll box and leave 84px for the data. Only
+                              Open stays; Edit and Archive are on the record,
+                              which is where a phone should be doing this anyway. */}
+                          <span className="hidden items-center gap-1.5 sm:inline-flex">
+                            <Button size="sm" onClick={() => setEditing(row)}>Edit</Button>
+                            <Button size="sm" variant={archived ? 'secondary' : 'danger'} onClick={() => toggleArchive(row)}>
+                              {archived ? 'Restore' : 'Archive'}
+                            </Button>
                           </span>
-                        </td>
-                      ))}
-                      <td className="whitespace-nowrap px-3 py-2 text-right align-middle">
-                        <div className="inline-flex justify-end gap-2">
-                          <Button onClick={() => openRecord(id)}>Open</Button>
-                          <Button onClick={() => setEditing(row)}>Edit</Button>
-                          <Button variant={archived ? 'secondary' : 'danger'} onClick={() => toggleArchive(row)}>
-                            {archived ? 'Restore' : 'Archive'}
-                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -319,6 +390,9 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
           entity={entity}
           recordId={openRecordId}
           onClose={closeRecord}
+          /* Editing or archiving from inside the record used to leave the list
+             behind it showing the values it had before. */
+          onChanged={refresh}
         />
       )}
 
@@ -400,7 +474,12 @@ export function EntityForm({ cfg, row, initial, lookups, onCancel, onSave }: {
     <div
       /* z-[70]: above the record modal (z-[60]) it opens from, which is in
          turn above the nav drawer (z-50). */
-      className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-900/40 p-6"
+      /* The BACKDROP no longer scrolls. It used to be `overflow-y-auto` with the
+         card sized to its fields, so a long form ran to 859px at 1440x900 —
+         bottom edge at 907, past the fold — and scrolling to reach Save took
+         the heading and the Save button off screen with it. The card scrolls
+         its own fields now, so the title and the buttons never move. */
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-4"
       role="dialog"
       aria-modal="true"
       /* Backdrop click closes. onMouseDown, not onClick: a drag that STARTS on
@@ -408,25 +487,35 @@ export function EntityForm({ cfg, row, initial, lookups, onCancel, onSave }: {
          on the backdrop and would otherwise discard the edit. */
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
     >
-      <div className="w-full max-w-3xl rounded-2xl bg-white shadow-xl" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="border-b border-slate-100 px-6 py-4">
+      <div
+        /* Deliberately the SAME box as ForgeRecordModal: 880 x 640. This form
+           opens from inside that modal, and a different width there meant the
+           panel visibly jumped the moment you pressed Edit — which is the
+           complaint that started this, just one layer down. */
+        className="flex h-[min(640px,calc(100dvh-2rem))] w-full max-w-[880px] flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="shrink-0 border-b border-slate-100 px-6 py-4">
           <h2 className="text-lg font-semibold text-slate-900">
             {row ? `Edit ${cfg.singular}` : `New ${cfg.singular}`}
           </h2>
         </div>
-        <div className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2">
-          {formFields.map((field) => (
-            <FormField
-              key={field.key}
-              field={field}
-              value={values[field.key]}
-              lookups={lookups}
-              onChange={(v) => setValues((s) => ({ ...s, [field.key]: v }))}
-            />
-          ))}
+        {/* min-h-0 is what makes a flex child scroll instead of overflowing. */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {formFields.map((field) => (
+              <FormField
+                key={field.key}
+                field={field}
+                value={values[field.key]}
+                lookups={lookups}
+                onChange={(v) => setValues((s) => ({ ...s, [field.key]: v }))}
+              />
+            ))}
+          </div>
         </div>
-        {err && <div className="px-6 pb-2 text-sm text-red-600">{err}</div>}
-        <div className="flex justify-end gap-2 border-t border-slate-100 px-6 py-4">
+        {err && <div className="shrink-0 px-6 pb-2 text-sm text-red-600">{err}</div>}
+        <div className="flex shrink-0 justify-end gap-2 border-t border-slate-100 px-6 py-4">
           <Button onClick={onCancel}>Cancel</Button>
           <Button variant="primary" onClick={submit} disabled={saving}>
             {saving ? 'Saving…' : row ? 'Save changes' : `Create ${cfg.singular}`}

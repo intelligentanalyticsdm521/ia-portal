@@ -78,7 +78,16 @@ export function ForgeSoftwareRouter() {
       case 'reports': return <ForgeReportsPage />;
       case 'receipts': return <ForgeReceiptsPage />;
       case 'setup': return <ForgeSetupPage />;
-      case 'entity': return screen.entity ? <ForgeEntityPage entity={screen.entity} /> : null;
+      /* KEYED BY ENTITY, so moving between screens REMOUNTS the list instead of
+         reusing one instance. Without the key, React reconciled Clients and
+         Providers into the same component and none of its state was cleared:
+         the previous screen's rows kept rendering under the new screen's
+         heading and headers, and because those stale <tr>s all keyed on a
+         primary key the new entity does not have, React saw duplicate keys and
+         orphaned them into the DOM for good — every nav click stacking another
+         screen's rows. Search, sort, filters and the page number leaked the
+         same way; the rows were only the visible part. */
+      case 'entity': return screen.entity ? <ForgeEntityPage key={screen.entity} entity={screen.entity} /> : null;
       default: return null;
     }
   })();

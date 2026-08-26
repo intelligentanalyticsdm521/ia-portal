@@ -16,7 +16,7 @@
 import { useEffect, type ReactNode } from "react";
 import { X } from "lucide-react";
 
-export type IadmModalProduct = "spark" | "oliver" | "arion" | "argus" | "stella";
+export type IadmModalProduct = "spark" | "oliver" | "arion" | "argus" | "stella" | "forge";
 
 /**
  * IadmModalSize — F-107 modal size standards (LOCKED 2026-05-29).
@@ -65,6 +65,14 @@ interface Props {
   footer?: ReactNode;
   /** "md" = 800px × 70vh.  "lg" (default) = 1200px × 80vh.  "xl" = 90vw × 90vh (consultant workspace). */
   size?: IadmModalSize;
+  /**
+   * Raise the modal above a same-layer element. The backdrop is z-50, which
+   * ties with any nav drawer also at z-50 — and a tie is decided by DOM order,
+   * which is not something a caller controls. FORGE hits this: its drawer
+   * stays mounted off-screen at desktop widths, so it kept an invisible hit
+   * area over the modal's tab strip. Opt-in, so no existing call site moves.
+   */
+  z?: number;
   children: ReactNode;
 }
 
@@ -94,6 +102,9 @@ export const PRODUCT_ACCENT: Record<IadmModalProduct, string> = {
   // 2026-07-30 — STELLA has its own locked identity (Indigo #4C5BD4, matching
   // IconRail/SubNav tags); it no longer borrows the SPARK orange.
   stella: "#4C5BD4",
+  // 2026-08-26 — FORGE (custom software; HESTIA is its first build) uses the
+  // teal already carried by productTheme and the IconRail.
+  forge: "#0F766E",
 };
 
 /** Tailwind blue-600 — the "Core Blue" primary across the platform. */
@@ -101,7 +112,7 @@ export const CORE_BLUE = "#2563eb";
 
 export function IadmModal({
   open, onClose, product, eyebrow, title, subtitle,
-  headerActions, footer, size = "lg", children,
+  headerActions, footer, size = "lg", z, children,
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -135,7 +146,7 @@ export function IadmModal({
       role="dialog"
       aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.5)" }}
+      style={{ background: "rgba(0,0,0,0.5)", ...(z === undefined ? null : { zIndex: z }) }}
       onMouseDown={onBackdropDown}
       onMouseUp={onBackdropUp}
     >

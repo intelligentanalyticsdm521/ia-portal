@@ -87,10 +87,22 @@ export function StatTile({ label, value, hint, tone = 'default', to }: {
   );
 }
 
-export function Button({ children, onClick, variant = 'secondary', type = 'button', disabled }: PropsWithChildren<{
-  onClick?: () => void; variant?: 'primary' | 'secondary' | 'danger'; type?: 'button' | 'submit'; disabled?: boolean;
+export function Button({ children, onClick, variant = 'secondary', size = 'md', type = 'button', disabled }: PropsWithChildren<{
+  onClick?: () => void;
+  variant?: 'primary' | 'secondary' | 'danger';
+  /**
+   * `sm` exists for the row-action block in a list. That block is the LAST
+   * column of the table, so it is the first thing pushed past the right edge
+   * when the columns get wide — three default buttons cost 224px of a scroll
+   * box that is 731px at 1280. At `sm` the same three cost about 90px less.
+   */
+  size?: 'sm' | 'md';
+  type?: 'button' | 'submit';
+  disabled?: boolean;
 }>) {
-  const base = 'rounded-lg px-3 py-2 text-sm font-medium shadow-sm transition disabled:opacity-50';
+  const base = `rounded-lg font-medium shadow-sm transition disabled:opacity-50 ${
+    size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3 py-2 text-sm'
+  }`;
   const styles = {
     primary: 'bg-slate-900 text-white hover:bg-slate-800',
     secondary: 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
@@ -110,7 +122,12 @@ export function Pill({ children, tone = 'slate' }: PropsWithChildren<{ tone?: 's
     amber: 'bg-amber-100 text-amber-800',
     red: 'bg-red-100 text-red-700',
   }[tone];
-  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${styles}`}>{children}</span>;
+  /* shrink-0 + nowrap: in a list cell the pill sits beside a name in a flex row
+     with a max width, and without these it was the pill that gave way — "Needs
+     review" wrapped to two lines and took that row from 43px to 53px, which is
+     exactly the ragged-rows, staggered-buttons effect this pass exists to
+     remove. The NAME is the thing that should truncate. */
+  return <span className={`inline-flex shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${styles}`}>{children}</span>;
 }
 
 export function statusTone(status?: string | null): 'slate' | 'green' | 'amber' | 'red' {

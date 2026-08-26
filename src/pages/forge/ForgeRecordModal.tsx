@@ -22,10 +22,11 @@
  * system and would restyle the cards inside this modal.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { IadmModal } from '../../components/IadmModal';
 import { Link } from 'react-router-dom';
 import {
-  addNote, createEntityRow, getActivity, getEntityRow, getNotes, listEntity, updateEntityRow,
-  type ActivityRow, type EntityKey, type NoteRow,
+  addNote, archiveEntityRow, createEntityRow, getActivity, getEntityRow, getNotes, listEntity,
+  updateEntityRow, type ActivityRow, type EntityKey, type NoteRow,
 } from '../../lib/forgeApi';
 import { Button, EmptyState, Pill, statusTone } from './ForgeLayout';
 import { FORGE_ENTITIES, cellValue, humanizeValue, shortDate } from './forgeConfig';
@@ -35,8 +36,14 @@ import { describeError, useForgeApi, useForgeLookups } from './useForge';
 type Row = Record<string, unknown>;
 
 export function ForgeRecordModal({
-  entity, recordId, onClose,
-}: { entity: EntityKey; recordId: string; onClose: () => void }) {
+  entity, recordId, onClose, onChanged,
+}: {
+  entity: EntityKey;
+  recordId: string;
+  onClose: () => void;
+  /** Told when this record was written, so the list underneath can refetch. */
+  onChanged?: () => void;
+}) {
   const cfg = FORGE_ENTITIES[entity];
   const { ready, withParams } = useForgeApi();
   const { lookups } = useForgeLookups();
@@ -93,14 +100,36 @@ export function ForgeRecordModal({
     await withParams((p) => updateEntityRow(p, entity, recordId, values));
     setEditing(false);
     setRefreshKey((k) => k + 1);
-  }, [withParams, entity, recordId]);
+    onChanged?.();
+  }, [withParams, entity, recordId, onChanged]);
+
+  /* Archive lives HERE as well as in the list row, and that is not a
+     convenience. The row's Archive button is the last control in the last
+     column, so on six of seven screens it sat past the right edge of the
+     table's scroll box — and this modal offered Edit and Close and nothing
+     else. Archiving a record was therefore unreachable without discovering a
+     horizontal scrollbar the platform does not draw. It is also the only
+     archive path left on a phone, where the row keeps just Open. */
+  const [archiving, setArchiving] = useState(false);
+  const archived = Boolean(row?.is_archived);
+  const toggleArchive = useCallback(async () => {
+    if (!row) return;
+    setArchiving(true);
+    try {
+      await withParams((p) => archiveEntityRow(p, entity, recordId, Boolean(row.is_archived)));
+      setRefreshKey((k) => k + 1);
+      onChanged?.();
+    } catch (err) { setError(describeError(err, `this ${cfg.singular.toLowerCase()}`)); console.error(err); }
+    finally { setArchiving(false); }
+  }, [withParams, entity, recordId, row, cfg.singular, onChanged]);
 
   const createChild = useCallback(async (values: Row) => {
     if (!creating) return;
     await withParams((p) => createEntityRow(p, creating.entity, values));
     setCreating(null);
     setRefreshKey((k) => k + 1);
-  }, [withParams, creating]);
+    onChanged?.();
+  }, [withParams, creating, onChanged]);
 
   const submitNote = useCallback(async () => {
     if (!noteText.trim()) return;
@@ -126,46 +155,65 @@ export function ForgeRecordModal({
   };
 
   return (
-    <div
-      /* z-[60], above the nav drawer. That drawer is `fixed … z-50` and stays
-         mounted off-screen at desktop widths, so at z-40 it sat ON TOP of this
-         modal and swallowed clicks on the tabs. Caught by the walkthrough, not
-         by looking at it — the drawer is invisible, only its hit area is not. */
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${cfg.singular} details`}
-      // onMouseDown, not onClick: releasing a text selection outside the card
-      // must not discard the record.
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        className="flex max-h-[85vh] w-full max-w-[1200px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
-        onMouseDown={(e) => e.stopPropagation()}
+    <>
+      {/* IadmModal, not a bespoke card. This modal was hand-rolled, which is
+          why it never matched the OLIVER customer modal: its own chrome, its
+          own sizing rules, and a canvas that re-measured itself on every tab.
+          F-107 already settled this — "info" is 1200 x 80vh, fixed, the same
+          box every open, whitespace on a light record by design. Sharing the
+          component is what makes Clients, Services, Providers and Funders
+          identical without anyone maintaining four copies of the rule.
+          z={60} because the nav drawer is also z-50 and stays mounted
+          off-screen at desktop widths — a tie is broken by DOM order, which is
+          not ours to control, and the losing side is an invisible hit area
+          sitting over the tab strip. */}
+      <IadmModal
+        open
+        onClose={onClose}
+        product="forge"
+        eyebrow={cfg.singular}
+        title={title}
+        subtitle={row && Boolean(row.is_archived) ? 'Archived' : undefined}
+        size="info"
+        z={60}
+        headerActions={
+          <>
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/20"
+            >
+              Edit
+            </button>
+            {row && (
+              <button
+                type="button"
+                onClick={toggleArchive}
+                disabled={archiving}
+                className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/20 disabled:opacity-50"
+              >
+                {archiving ? 'Saving…' : archived ? 'Restore' : 'Archive'}
+              </button>
+            )}
+          </>
+        }
       >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-4">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{cfg.singular}</div>
-            <h2 className="mt-0.5 text-xl font-semibold text-slate-900">{title}</h2>
-            {row && Boolean(row.is_archived) && <Pill>Archived</Pill>}
-          </div>
-          <div className="flex shrink-0 gap-2">
-            <Button variant="primary" onClick={() => setEditing(true)}>Edit</Button>
-            <Button onClick={onClose}>Close</Button>
-          </div>
-        </div>
-
         {/* Tabs — same shape as the platform's .ptab row, written in Tailwind
-            so this modal doesn't inherit ARION's page-level design system. */}
-        <div className="border-b border-slate-100 px-6 pt-3">
-          <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+            so this modal doesn't inherit ARION's page-level design system.
+            The strip SCROLLS sideways rather than squashing: as flex items with
+            no shrink control the buttons compressed on a phone and their labels
+            wrapped to two and three lines, so "Funding applications (2)" alone
+            rendered 60px tall and pushed the strip from 43px to 75px. */}
+        {/* sticky, not shrink-0: IadmModal gives its children ONE scrolling
+            box, so a plain strip would scroll away with the content. */}
+        <div className="sticky top-0 z-10 overflow-x-auto border-b border-slate-100 bg-white px-6 pt-3">
+          <div className="inline-flex flex-nowrap overflow-hidden rounded-lg border border-slate-200">
             {tabs.map((t) => (
               <button
                 key={t.key}
                 type="button"
                 onClick={() => setTab(t.key)}
-                className={`px-3.5 py-1.5 text-xs font-medium transition ${
+                className={`shrink-0 whitespace-nowrap px-3.5 py-1.5 text-xs font-medium transition ${
                   tab === t.key ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
                 }`}
               >
@@ -176,7 +224,7 @@ export function ForgeRecordModal({
         </div>
 
         {/* Body */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div className="px-6 py-5">
           {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
           {loading ? (
             <div className="py-10 text-center text-sm text-slate-500">Loading {cfg.singular.toLowerCase()}…</div>
@@ -194,8 +242,13 @@ export function ForgeRecordModal({
                       onResolved={() => setRefreshKey((k) => k + 1)}
                     />
                   )}
-                  <dl className="grid gap-4 sm:grid-cols-3">
-                    {cfg.fields.filter((f) => f.key !== 'needs_review').map((f) => {
+                  <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    {/* daterange is a LIST convenience — one column instead of
+                        two on the screens that could least afford the width. The
+                        record shows the two real fields it folds together, so
+                        skipping it here is what keeps Start and End from being
+                        printed twice. */}
+                    {cfg.fields.filter((f) => f.key !== 'needs_review' && f.type !== 'daterange').map((f) => {
                       const href = linkFor(f, row[f.key]);
                       return (
                         <div key={f.key}>
@@ -227,26 +280,33 @@ export function ForgeRecordModal({
                       </Button>
                     </div>
                     {rows.length === 0 ? <EmptyState>No {def.title.toLowerCase()} recorded.</EmptyState> : (
-                      <table className="min-w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                            {cols.map((f) => <th key={f.key} className="py-2 pr-4 font-semibold">{f.label}</th>)}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {rows.map((r) => (
-                            <tr key={String(r[rcfg.pk])} className="hover:bg-slate-50">
-                              {cols.map((f) => (
-                                <td key={f.key} className="whitespace-nowrap py-2 pr-4 text-slate-700">
-                                  {f.type === 'lookup' && f.lookup?.includes('status') && r[f.key]
-                                    ? <Pill tone={statusTone(r[f.key] as string)}>{humanizeValue(String(r[f.key]))}</Pill>
-                                    : cellValue(r, f)}
-                                </td>
-                              ))}
+                      /* The TABLE scrolls sideways, not the modal body. Without
+                         this wrapper a six-column child table (610px natural)
+                         made the whole 358px body scroll horizontally on a
+                         phone, taking the field labels with it. The list screen
+                         has always wrapped its table; this one did not. */
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                              {cols.map((f) => <th key={f.key} className="whitespace-nowrap py-2 pr-4 font-semibold">{f.label}</th>)}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {rows.map((r) => (
+                              <tr key={String(r[rcfg.pk])} className="hover:bg-slate-50">
+                                {cols.map((f) => (
+                                  <td key={f.key} className="whitespace-nowrap py-2 pr-4 text-slate-700">
+                                    {f.type === 'lookup' && f.lookup?.includes('status') && r[f.key]
+                                      ? <Pill tone={statusTone(r[f.key] as string)}>{humanizeValue(String(r[f.key]))}</Pill>
+                                      : cellValue(r, f)}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                   </div>
                 );
@@ -294,7 +354,7 @@ export function ForgeRecordModal({
             </>
           )}
         </div>
-      </div>
+      </IadmModal>
 
       {editing && row && (
         <EntityForm
@@ -317,7 +377,7 @@ export function ForgeRecordModal({
           onSave={createChild}
         />
       )}
-    </div>
+    </>
   );
 }
 

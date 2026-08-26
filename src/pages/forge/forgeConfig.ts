@@ -8,7 +8,8 @@
 import type { EntityKey } from '../../lib/forgeApi';
 import { screenRoute } from './forgeSoftware';
 
-export type FieldType = 'text' | 'longtext' | 'date' | 'money' | 'number' | 'lookup' | 'entity';
+export type FieldType =
+  | 'text' | 'longtext' | 'date' | 'daterange' | 'money' | 'number' | 'percent' | 'lookup' | 'entity';
 
 export interface FieldDef {
   key: string;
@@ -17,10 +18,26 @@ export interface FieldDef {
   lookup?: string;          // lookup type_key when type === 'lookup'
   entity?: EntityKey;       // referenced entity when type === 'entity'
   displayKey?: string;      // joined display column for entity refs
+  /**
+   * The far end of a 'daterange'. Such a field deliberately keeps the START
+   * column's own key: the grid sorts by the column key and the API only
+   * allow-lists real column names, so a Period whose key were 'period' would
+   * render a sort caret that silently did nothing.
+   */
+  endKey?: string;
   inList?: boolean;
   inForm?: boolean;
   required?: boolean;
-  width?: string;
+  /**
+   * A MAX width for the cell, not a width. Every list cell used to be
+   * `whitespace-nowrap`, so each column was sized to its longest value and no
+   * column could ever compress — which is what pushed the Actions block off the
+   * right edge of the scroll box on six of seven screens. Cells now truncate at
+   * this cap instead. The old fixed `w-64`/`w-56` classes were inert under
+   * `table-layout: auto` (clients declared w-64 and rendered 168px), so they are
+   * gone rather than converted.
+   */
+  maxW?: string;
 }
 
 export interface EntityConfig {
@@ -56,9 +73,8 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     related: [{ entity: 'assistance', foreignKey: 'client_id', title: 'Assistance' }, { entity: 'services', foreignKey: 'client_id', title: 'Services' }],
     detailRoute: (id) => `${screenRoute('hestia', 'clients')}?record=${id}`,
     fields: [
-      f('full_name', 'Name', 'text', { required: true, width: 'w-64' }),
+      f('full_name', 'Name', 'text', { required: true, maxW: 'max-w-[170px]' }),
       f('phone', 'Phone'),
-      f('email', 'Email'),
       f('city', 'City'),
       f('county', 'County'),
       // Rollups from the API. The list's job is "who do we serve, and are we
@@ -66,7 +82,11 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
       // Read-only: computed server-side, never posted back.
       f('assistance_count', 'Assistance', 'number', { inForm: false }),
       f('service_count', 'Services', 'number', { inForm: false }),
-      f('total_awarded', 'Total awarded', 'money', { inForm: false }),
+      f('total_awarded', 'Awarded', 'money', { inForm: false }),
+      // The grid can afford ONE contact column and phone is the one that is
+      // populated; email was a column of em-dashes paying 71px for its header.
+      // Still on the record and still in the form.
+      f('email', 'Email', 'text', { inList: false }),
       f('state_province', 'State', 'text', { inList: false }),
       f('street', 'Street', 'text', { inList: false }),
       f('postal_code', 'ZIP', 'text', { inList: false }),
@@ -84,14 +104,21 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     related: [{ entity: 'services', foreignKey: 'assistance_id', title: 'Services delivered' }],
     detailRoute: (id) => `${screenRoute('hestia', 'assistance')}?record=${id}`,
     fields: [
-      f('client_id', 'Client', 'entity', { entity: 'clients', displayKey: 'client_name', required: true, width: 'w-56' }),
+      /* Lead with the AWARD's own identity, not the client's name. Leading with
+         a person made this screen read as a third client list — you identified
+         the human before you identified the thing the screen is about. `award_ref`
+         is the GL reference, falling back to A-<id> so the column is never a
+         wall of dashes on the (many) awards booked without one. */
+      f('award_ref', 'Award', 'text', { inForm: false, maxW: 'max-w-[130px]' }),
+      f('client_id', 'Client', 'entity', { entity: 'clients', displayKey: 'client_name', required: true, maxW: 'max-w-[170px]' }),
       f('status', 'Status', 'lookup', { lookup: 'assistance_status' }),
-      f('start_date', 'Start', 'date'),
-      f('end_date', 'End', 'date'),
+      f('start_date', 'Period', 'daterange', { endKey: 'end_date', inForm: false, maxW: 'max-w-[190px]' }),
       f('value_amount', 'Value', 'money'),
       // Is this award actually being drawn down, or approved and untouched?
       f('service_count', 'Services', 'number', { inForm: false }),
-      f('gl_reference', 'GL ref'),
+      f('start_date', 'Start', 'date', { inList: false }),
+      f('end_date', 'End', 'date', { inList: false }),
+      f('gl_reference', 'GL ref', 'text', { inList: false }),
       f('referral_source', 'Referral source', 'text', { inList: false }),
     ],
   },
@@ -105,16 +132,22 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     primaryField: 'client_name',
     detailRoute: (id) => `${screenRoute('hestia', 'services')}?record=${id}`,
     fields: [
-      f('client_id', 'Client', 'entity', { entity: 'clients', displayKey: 'client_name', required: true, width: 'w-52' }),
-      f('provider_id', 'Provider', 'entity', { entity: 'providers', displayKey: 'provider_name', width: 'w-52' }),
-      f('assistance_id', 'Assistance', 'entity', { entity: 'assistance', displayKey: 'assistance_reference', inList: false }),
+      /* Six columns, down from ten. This was the widest table in HESTIA (1357px
+         intrinsic inside an 859px box), so its Actions block started 275px past
+         the clip edge — Open/Edit/Archive were invisible at rest. Payment method
+         and Frequency are administration, not identity: they say nothing about
+         who is getting what from whom, and they live on the record instead. */
+      f('client_id', 'Client', 'entity', { entity: 'clients', displayKey: 'client_name', required: true, maxW: 'max-w-[130px]' }),
+      f('provider_id', 'Provider', 'entity', { entity: 'providers', displayKey: 'provider_name', maxW: 'max-w-[120px]' }),
+      f('service_type', 'Type', 'lookup', { lookup: 'service_type', maxW: 'max-w-[95px]' }),
       f('status', 'Status', 'lookup', { lookup: 'service_status' }),
-      f('service_type', 'Type', 'lookup', { lookup: 'service_type' }),
-      f('start_date', 'Start', 'date'),
-      f('end_date', 'End', 'date'),
-      f('payment_method', 'Payment method', 'lookup', { lookup: 'payment_method' }),
-      f('payment_frequency', 'Frequency', 'lookup', { lookup: 'payment_frequency' }),
-      f('estimated_monthly_cost', 'Est. monthly', 'money'),
+      f('start_date', 'Period', 'daterange', { endKey: 'end_date', inForm: false, maxW: 'max-w-[190px]' }),
+      f('estimated_monthly_cost', 'Monthly', 'money'),
+      f('assistance_id', 'Assistance', 'entity', { entity: 'assistance', displayKey: 'assistance_reference', inList: false }),
+      f('start_date', 'Start', 'date', { inList: false }),
+      f('end_date', 'End', 'date', { inList: false }),
+      f('payment_method', 'Payment method', 'lookup', { lookup: 'payment_method', inList: false }),
+      f('payment_frequency', 'Frequency', 'lookup', { lookup: 'payment_frequency', inList: false }),
       // Not shown in the grid or the form, but declared so it can be FILTERED:
       // the overview's "Needs review" tile links to ?needs_review=1 and the
       // list only accepts query keys the entity declares.
@@ -132,13 +165,22 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     related: [{ entity: 'services', foreignKey: 'provider_id', title: 'Services delivered' }],
     detailRoute: (id) => `${screenRoute('hestia', 'providers')}?record=${id}`,
     fields: [
-      f('name', 'Name', 'text', { required: true, width: 'w-56' }),
-      f('provider_type', 'Type', 'lookup', { lookup: 'provider_type' }),
-      // How much work do we actually send them?
-      f('service_count', 'Services', 'number', { inForm: false }),
+      /* A VENDOR ledger, not a fourth list of names. Brandon looked at this
+         screen and asked what it was for — fairly: Name / Type / City with an
+         empty Contact and an empty Phone is a stripped-down person list, and
+         three of its six columns were null on every row. What makes a provider
+         a provider is the volume and cost of the work we send it, so that is
+         what the row states now. Contact and Phone are on the record. */
+      f('name', 'Name', 'text', { required: true, maxW: 'max-w-[190px]' }),
+      f('provider_type', 'Type', 'lookup', { lookup: 'provider_type', maxW: 'max-w-[130px]' }),
+      f('client_count', 'Clients', 'number', { inForm: false }),
+      // SUM of the ACTIVE arrangements only — what this vendor costs us a month
+      // right now, not what it has ever cost.
+      f('monthly_committed', 'Committed / mo', 'money', { inForm: false }),
       f('city', 'City'),
-      f('primary_contact', 'Contact'),
-      f('primary_phone', 'Phone'),
+      f('service_count', 'Services', 'number', { inList: false, inForm: false }),
+      f('primary_contact', 'Contact', 'text', { inList: false }),
+      f('primary_phone', 'Phone', 'text', { inList: false }),
       f('primary_email', 'Email', 'text', { inList: false }),
       f('website', 'Website', 'text', { inList: false }),
       f('street', 'Street', 'text', { inList: false }),
@@ -162,14 +204,23 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     related: [{ entity: 'applications', foreignKey: 'funder_id', title: 'Funding applications' }],
     detailRoute: (id) => `${screenRoute('hestia', 'funders')}?record=${id}`,
     fields: [
-      f('name', 'Name', 'text', { required: true, width: 'w-56' }),
-      f('primary_contact', 'Contact'),
-      f('primary_email', 'Email'),
-      f('apply_deadline', 'Deadline'),
-      f('grant_max', 'Grant max', 'money'),
-      // Have we applied, and what came of it?
+      /* Money IN, from the other direction of travel. The identity was designed
+         into this screen and then rendered away: Contact, Email and Deadline
+         were null on every row, so a funder read "Blackhawk Community Trust |
+         — | — | — | $25,000 | — | —" and looked like one more list with names
+         in it. Every column here is a grantmaker fact a client row cannot
+         carry, and Success rate in particular is the one no person record
+         could ever imitate. */
+      f('name', 'Name', 'text', { required: true, maxW: 'max-w-[190px]' }),
       f('application_count', 'Applications', 'number', { inForm: false }),
-      f('total_awarded', 'Awarded to date', 'money', { inForm: false }),
+      f('total_awarded', 'Awarded', 'money', { inForm: false }),
+      f('grant_max', 'Grant max', 'money'),
+      f('apply_deadline', 'Deadline', 'text', { maxW: 'max-w-[130px]' }),
+      // Dollars awarded over dollars asked for, across every application to
+      // this funder — "is it worth applying here again".
+      f('award_rate', 'Success rate', 'percent', { inForm: false }),
+      f('primary_contact', 'Contact', 'text', { inList: false }),
+      f('primary_email', 'Email', 'text', { inList: false }),
       f('primary_phone', 'Phone', 'text', { inList: false }),
       f('website', 'Website', 'text', { inList: false }),
       f('individuals_served', 'Individuals served', 'longtext', { inList: false }),
@@ -188,14 +239,16 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     primaryField: 'funder_name',
     detailRoute: (id) => `${screenRoute('hestia', 'applications')}?record=${id}`,
     fields: [
-      f('funder_id', 'Funder', 'entity', { entity: 'funders', displayKey: 'funder_name', width: 'w-52' }),
+      f('funder_id', 'Funder', 'entity', { entity: 'funders', displayKey: 'funder_name', maxW: 'max-w-[180px]' }),
       f('applied_date', 'Applied', 'date'),
-      f('decision_type', 'Decision', 'lookup', { lookup: 'decision_type' }),
-      f('decision_date', 'Decided', 'date'),
+      f('decision_type', 'Decision', 'lookup', { lookup: 'decision_type', maxW: 'max-w-[130px]' }),
       f('amount_applied_for', 'Applied for', 'money'),
       f('amount_awarded', 'Awarded', 'money'),
-      f('money_received_date', 'Received', 'date'),
+      // The date that is a DEADLINE stays in the grid; the two that merely
+      // record when something already happened move to the record.
       f('reporting_due_date', 'Reporting due', 'date'),
+      f('decision_date', 'Decided', 'date', { inList: false }),
+      f('money_received_date', 'Received', 'date', { inList: false }),
       f('stipulations', 'Stipulations', 'longtext', { inList: false }),
     ],
   },
@@ -209,7 +262,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     primaryField: 'name',
     detailRoute: (id) => `${screenRoute('hestia', 'volunteers')}?record=${id}`,
     fields: [
-      f('name', 'Name', 'text', { required: true, width: 'w-56' }),
+      f('name', 'Name', 'text', { required: true, maxW: 'max-w-[190px]' }),
       f('status', 'Status', 'lookup', { lookup: 'volunteer_status' }),
       f('phone', 'Phone'),
       f('email', 'Email'),
@@ -228,7 +281,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     related: [{ entity: 'donations', foreignKey: 'person_id', title: 'Donations' }, { entity: 'pledges', foreignKey: 'person_id', title: 'Pledges' }],
     detailRoute: (id) => `${screenRoute('hestia', 'people')}?record=${id}`,
     fields: [
-      f('full_name', 'Name', 'text', { required: true, width: 'w-64' }),
+      f('full_name', 'Name', 'text', { required: true, maxW: 'max-w-[190px]' }),
       f('organization', 'Organization'),
       f('email', 'Email'),
       f('phone', 'Phone'),
@@ -250,13 +303,13 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     primaryField: 'donor_name',
     detailRoute: (id) => `${screenRoute('hestia', 'donations')}?record=${id}`,
     fields: [
-      f('person_id', 'Donor', 'entity', { entity: 'people', displayKey: 'donor_name', required: true, width: 'w-56' }),
+      f('person_id', 'Donor', 'entity', { entity: 'people', displayKey: 'donor_name', required: true, maxW: 'max-w-[190px]' }),
       f('received_on', 'Received', 'date', { required: true }),
       f('amount', 'Amount', 'money'),
       // Read-only in the form: the database computes it, so a form that let
       // someone type it would be offering to be wrong.
       f('deductible_amount', 'Deductible', 'money', { inForm: false }),
-      f('campaign_id', 'Campaign', 'entity', { entity: 'campaigns', displayKey: 'campaign_name', width: 'w-48' }),
+      f('campaign_id', 'Campaign', 'entity', { entity: 'campaigns', displayKey: 'campaign_name', maxW: 'max-w-[160px]' }),
       f('payment_method', 'Method', 'lookup', { lookup: 'payment_method' }),
       f('status', 'Status', 'lookup', { lookup: 'donation_status' }),
       f('non_deductible_value', 'Value received back', 'money', { inList: false }),
@@ -278,7 +331,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     related: [{ entity: 'donations', foreignKey: 'campaign_id', title: 'Donations' }],
     detailRoute: (id) => `${screenRoute('hestia', 'campaigns')}?record=${id}`,
     fields: [
-      f('name', 'Name', 'text', { required: true, width: 'w-56' }),
+      f('name', 'Name', 'text', { required: true, maxW: 'max-w-[190px]' }),
       f('campaign_type', 'Type', 'lookup', { lookup: 'campaign_type' }),
       f('channel', 'Channel', 'lookup', { lookup: 'campaign_channel' }),
       f('start_date', 'Start', 'date'),
@@ -300,7 +353,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     related: [{ entity: 'donations', foreignKey: 'fund_id', title: 'Donations' }],
     detailRoute: (id) => `${screenRoute('hestia', 'funds')}?record=${id}`,
     fields: [
-      f('name', 'Name', 'text', { required: true, width: 'w-56' }),
+      f('name', 'Name', 'text', { required: true, maxW: 'max-w-[190px]' }),
       f('code', 'Code'),
       f('restriction', 'Restriction', 'lookup', { lookup: 'fund_restriction' }),
       f('purpose', 'Purpose', 'longtext'),
@@ -316,12 +369,12 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     primaryField: 'donor_name',
     detailRoute: (id) => `${screenRoute('hestia', 'pledges')}?record=${id}`,
     fields: [
-      f('person_id', 'Donor', 'entity', { entity: 'people', displayKey: 'donor_name', required: true, width: 'w-56' }),
+      f('person_id', 'Donor', 'entity', { entity: 'people', displayKey: 'donor_name', required: true, maxW: 'max-w-[190px]' }),
       f('total_amount', 'Pledged', 'money'),
       f('pledged_on', 'Pledged on', 'date'),
       f('due_by', 'Due by', 'date'),
       f('status', 'Status', 'lookup', { lookup: 'pledge_status' }),
-      f('campaign_id', 'Campaign', 'entity', { entity: 'campaigns', displayKey: 'campaign_name', width: 'w-48' }),
+      f('campaign_id', 'Campaign', 'entity', { entity: 'campaigns', displayKey: 'campaign_name', maxW: 'max-w-[160px]' }),
       f('fund_id', 'Fund', 'entity', { entity: 'funds', inList: false }),
       f('notes', 'Notes', 'longtext', { inList: false }),
     ],
@@ -336,7 +389,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     primaryField: 'donor_name',
     detailRoute: (id) => `${screenRoute('hestia', 'recurring')}?record=${id}`,
     fields: [
-      f('person_id', 'Donor', 'entity', { entity: 'people', displayKey: 'donor_name', required: true, width: 'w-56' }),
+      f('person_id', 'Donor', 'entity', { entity: 'people', displayKey: 'donor_name', required: true, maxW: 'max-w-[190px]' }),
       f('amount', 'Amount', 'money'),
       f('frequency', 'Frequency', 'lookup', { lookup: 'recurring_frequency' }),
       f('status', 'Status', 'lookup', { lookup: 'recurring_status' }),
@@ -412,9 +465,26 @@ export const shortDate = (v: unknown) => {
 
 export const cellValue = (row: Record<string, unknown>, field: FieldDef) => {
   if (field.type === 'entity' && field.displayKey) return (row[field.displayKey] as string) || '—';
+  /* A period is ONE fact. Start and End were two columns and two headers to say
+     what "Sep 8, 2025 → " says, on the two screens that could least afford the
+     width. An open end reads as ongoing rather than as a missing value, because
+     that is what it is — most awards and arrangements have no end date yet. */
+  if (field.type === 'daterange') {
+    const from = row[field.key];
+    const to = field.endKey ? row[field.endKey] : null;
+    if (!from && !to) return '—';
+    if (!to) return `${shortDate(from)} →`;
+    if (!from) return `→ ${shortDate(to)}`;
+    return `${shortDate(from)} – ${shortDate(to)}`;
+  }
   const v = row[field.key];
   if (v === null || v === undefined || v === '') return '—';
   if (field.type === 'money') return money(v);
+  if (field.type === 'percent') return `${Math.round(Number(v))}%`;
   if (field.type === 'date') return shortDate(v);
   return String(v);
 };
+
+/** Right-aligned, tabular columns — a number should line up with the number above it. */
+export const isNumericField = (f: FieldDef) =>
+  f.type === 'money' || f.type === 'number' || f.type === 'percent';
