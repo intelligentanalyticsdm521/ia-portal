@@ -16,6 +16,7 @@ import { Navigate, useParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { ForgeEntityPage } from './ForgeEntityPage';
 import { ForgeOverviewPage } from './ForgeOverviewPage';
+import { ForgeAttentionPage } from './ForgeAttentionPage';
 import { ForgeReceiptsPage } from './ForgeReceiptsPage';
 import { ForgeReportsPage } from './ForgeReportsPage';
 import { ForgeSetupPage } from './ForgeSetupPage';
@@ -75,6 +76,7 @@ export function ForgeSoftwareRouter() {
   const body = (() => {
     switch (screen.kind) {
       case 'overview': return <ForgeOverviewPage />;
+      case 'attention': return <ForgeAttentionPage />;
       case 'reports': return <ForgeReportsPage />;
       case 'receipts': return <ForgeReceiptsPage />;
       case 'setup': return <ForgeSetupPage />;

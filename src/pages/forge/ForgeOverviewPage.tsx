@@ -195,10 +195,14 @@ export function ForgeOverviewPage() {
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {/* Four columns, not five. This table sits in a half-width
+                        dashboard column — 426px at 1280 — and five could not fit
+                        in it at any sensible width. "Applied for" is the one the
+                        Funders screen now answers better anyway, as a success
+                        rate across every application to that funder. */}
                     <th className="px-2 py-2">Funder</th>
                     <th className="px-2 py-2">Applied</th>
                     <th className="px-2 py-2">Decision</th>
-                    <th className="px-2 py-2">Applied for</th>
                     <th className="px-2 py-2">Awarded</th>
                   </tr>
                 </thead>
@@ -209,11 +213,10 @@ export function ForgeOverviewPage() {
                           dashboard column, and one long foundation name was
                           enough to push the AWARDED column past the clip edge. */}
                       <td className="px-2 py-2 text-slate-800">
-                        <div className="max-w-[130px] truncate" title={a.funder_name ?? undefined}>{a.funder_name ?? '—'}</div>
+                        <div className="max-w-[110px] truncate" title={a.funder_name ?? undefined}>{a.funder_name ?? '—'}</div>
                       </td>
                       <td className="whitespace-nowrap px-2 py-2 text-slate-700">{shortDate(a.applied_date)}</td>
                       <td className="px-2 py-2"><Pill tone={statusTone(a.decision_type)}>{a.decision_type ?? '—'}</Pill></td>
-                      <td className="whitespace-nowrap px-2 py-2 text-slate-700">{moneyExact(a.amount_applied_for)}</td>
                       <td className="whitespace-nowrap px-2 py-2 text-slate-700">{moneyExact(a.amount_awarded)}</td>
                     </tr>
                   ))}

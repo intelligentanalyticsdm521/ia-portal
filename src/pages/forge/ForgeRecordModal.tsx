@@ -85,15 +85,14 @@ export function ForgeRecordModal({
     return () => { cancelled = true; };
   }, [ready, withParams, entity, recordId, refreshKey, relatedDefs, cfg]);
 
-  // Escape closes — unless a nested form is open, which closes itself first.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (editing || creating) return;
-      onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+  /* Escape and the backdrop belong to IadmModal now, but its handler is
+     unconditional and this modal can have a form open on top of it — one
+     Escape would otherwise dismiss both, throwing away the edit AND the record
+     behind it. Guarding here rather than in IadmModal keeps every other call
+     site untouched. */
+  const closeUnlessNested = useCallback(() => {
+    if (editing || creating) return;
+    onClose();
   }, [onClose, editing, creating]);
 
   const saveRecord = useCallback(async (values: Row) => {
@@ -169,7 +168,7 @@ export function ForgeRecordModal({
           sitting over the tab strip. */}
       <IadmModal
         open
-        onClose={onClose}
+        onClose={closeUnlessNested}
         product="forge"
         eyebrow={cfg.singular}
         title={title}

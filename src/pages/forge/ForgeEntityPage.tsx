@@ -4,6 +4,7 @@
  * PHP files; this is that idea with types, real pagination and a proper form.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { IadmModal } from '../../components/IadmModal';
 import { useSearchParams } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import {
@@ -451,13 +452,6 @@ export function EntityForm({ cfg, row, initial, lookups, onCancel, onSave }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row]);
 
-  // Escape closes, matching every other modal in the portal.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onCancel]);
-
   const submit = async () => {
     const missing = formFields.find((f) => f.required && !String(values[f.key] ?? '').trim());
     if (missing) { setErr(`${missing.label} is required.`); return; }
@@ -471,58 +465,49 @@ export function EntityForm({ cfg, row, initial, lookups, onCancel, onSave }: {
   };
 
   return (
-    <div
-      /* z-[70]: above the record modal (z-[60]) it opens from, which is in
-         turn above the nav drawer (z-50). */
-      /* The BACKDROP no longer scrolls. It used to be `overflow-y-auto` with the
-         card sized to its fields, so a long form ran to 859px at 1440x900 —
-         bottom edge at 907, past the fold — and scrolling to reach Save took
-         the heading and the Save button off screen with it. The card scrolls
-         its own fields now, so the title and the buttons never move. */
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      /* Backdrop click closes. onMouseDown, not onClick: a drag that STARTS on
-         an input and ends on the backdrop (selecting text, say) fires a click
-         on the backdrop and would otherwise discard the edit. */
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
-    >
-      <div
-        /* Deliberately the SAME box as ForgeRecordModal: 880 x 640. This form
-           opens from inside that modal, and a different width there meant the
-           panel visibly jumped the moment you pressed Edit — which is the
-           complaint that started this, just one layer down. */
-        className="flex h-[min(640px,calc(100dvh-2rem))] w-full max-w-[880px] flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div className="shrink-0 border-b border-slate-100 px-6 py-4">
-          <h2 className="text-lg font-semibold text-slate-900">
-            {row ? `Edit ${cfg.singular}` : `New ${cfg.singular}`}
-          </h2>
-        </div>
-        {/* min-h-0 is what makes a flex child scroll instead of overflowing. */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {formFields.map((field) => (
-              <FormField
-                key={field.key}
-                field={field}
-                value={values[field.key]}
-                lookups={lookups}
-                onChange={(v) => setValues((s) => ({ ...s, [field.key]: v }))}
-              />
-            ))}
+    /* The SAME box as ForgeRecordModal, because it is literally the same
+       component. This form was a hand-rolled card at max-w-3xl whose BACKDROP
+       scrolled, so a long form ran to 859px at 1440x900 — bottom edge at 907,
+       past the fold — and scrolling down to reach Save took the heading and the
+       Save button with it. It also meant pressing Edit inside the record modal
+       visibly changed the size of the panel you were looking at, which is the
+       complaint that started this pass, one layer down.
+       z={70}: above the record modal (z 60) it opens from, which is in turn
+       above the nav drawer (z-50). */
+    <IadmModal
+      open
+      onClose={onCancel}
+      product="forge"
+      eyebrow={cfg.singular}
+      title={row ? `Edit ${cfg.singular}` : `New ${cfg.singular}`}
+      size="info"
+      z={70}
+      footer={
+        <div className="flex w-full items-center justify-between gap-3">
+          {/* The validation message belongs beside the button that triggers it,
+              not above the fold of a scrolling field grid. */}
+          <span className="text-sm text-red-600">{err}</span>
+          <div className="flex gap-2">
+            <Button onClick={onCancel}>Cancel</Button>
+            <Button variant="primary" onClick={submit} disabled={saving}>
+              {saving ? 'Saving…' : row ? 'Save changes' : `Create ${cfg.singular}`}
+            </Button>
           </div>
         </div>
-        {err && <div className="shrink-0 px-6 pb-2 text-sm text-red-600">{err}</div>}
-        <div className="flex shrink-0 justify-end gap-2 border-t border-slate-100 px-6 py-4">
-          <Button onClick={onCancel}>Cancel</Button>
-          <Button variant="primary" onClick={submit} disabled={saving}>
-            {saving ? 'Saving…' : row ? 'Save changes' : `Create ${cfg.singular}`}
-          </Button>
-        </div>
+      }
+    >
+      <div className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2 lg:grid-cols-3">
+        {formFields.map((field) => (
+          <FormField
+            key={field.key}
+            field={field}
+            value={values[field.key]}
+            lookups={lookups}
+            onChange={(v) => setValues((s) => ({ ...s, [field.key]: v }))}
+          />
+        ))}
       </div>
-    </div>
+    </IadmModal>
   );
 }
 

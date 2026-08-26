@@ -20,7 +20,7 @@
 import type { EntityKey } from '../../lib/forgeApi';
 
 /** A screen is either one of the bespoke pages, or a registry-driven entity list. */
-export type ForgeScreenKind = 'overview' | 'reports' | 'receipts' | 'setup' | 'entity';
+export type ForgeScreenKind = 'overview' | 'reports' | 'receipts' | 'setup' | 'entity' | 'attention';
 
 export interface ForgeScreen {
   /** URL segment under the software root. '' is the software's landing screen. */
@@ -61,6 +61,9 @@ export const FORGE_SOFTWARE: ForgeSoftware[] = [
       'Case management and fundraising for non-profits — who you serve, what they receive, and where the money comes from.',
     screens: [
       { path: '', label: 'Overview', kind: 'overview' },
+      // Sits directly under Overview because it is a work surface, not a
+      // data source — it is where you go to find out what is waiting on you.
+      { path: 'attention', label: 'Needs attention', kind: 'attention' },
 
       // Programme — who the organisation serves and what it gives them.
       { path: 'clients', label: 'Clients', kind: 'entity', entity: 'clients' },
