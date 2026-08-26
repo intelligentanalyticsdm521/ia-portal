@@ -59,8 +59,15 @@ const ROLE_LABEL: Record<string, string> = {
   funder_contact: 'Funder contact', board: 'Board', staff: 'Staff', prospect: 'Prospect',
 };
 
-export function ForgePersonDetailPage() {
-  const { id } = useParams<{ id: string }>();
+export function ForgePersonDetailPage({ recordId }: { recordId?: string } = {}) {
+  /* The id arrives as a PROP from ForgeSoftwareRouter. These pages used to
+     read useParams().id, which worked when each had its own
+     services/forge_x/:id route. They now sit under a splat
+     (forge/:software/*), where there is no :id param — so id was
+     undefined, the fetch guard returned early, and the page sat on
+     "Loading…" forever. useParams stays as a fallback for direct routing. */
+  const params = useParams<{ id: string }>();
+  const id = recordId ?? params.id;
   const { ready, withParams } = useForgeApi();
   const [person, setPerson] = useState<PersonRow | null>(null);
   const [roles, setRoles] = useState<PersonRole[]>([]);

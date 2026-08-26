@@ -18,6 +18,14 @@ const PAGE_SIZE = 25;
 
 export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; detailBase?: string }) {
   const cfg = FORGE_ENTITIES[entity];
+  /** Link for a foreign-key cell — the referenced record's own page. */
+  const fkHref = (f: FieldDef, row: Record<string, unknown>) => {
+    if (f.type !== 'entity' || !f.entity) return null;
+    const fkId = row[f.key];
+    if (fkId === null || fkId === undefined || fkId === '') return null;
+    return FORGE_ENTITIES[f.entity].detailRoute?.(fkId as string | number) ?? null;
+  };
+
   const detailHref = (id: string | number) =>
     detailBase ? `${detailBase}/${id}` : cfg.detailRoute?.(id);
   const { ready, withParams } = useForgeApi();
@@ -165,8 +173,22 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
                       {listCols.map((f, i) => (
                         <td key={f.key} className={`px-3 py-2 text-slate-700 ${f.width ?? ''}`}>
                           <span className="flex flex-wrap items-center gap-2">
-                            {i === 0 && detailHref(id) ? (
-                              <Link to={detailHref(id) as string} className="font-medium text-slate-900 hover:underline">
+                            {fkHref(f, row) ? (
+                              /* A NAME links to the thing it names. On a
+                                 service row the client column opens the
+                                 CLIENT, not the service — that is what a
+                                 reader expects, and the row keeps its own
+                                 way in via the Open action. */
+                              <Link to={fkHref(f, row) as string} className="font-medium text-slate-900 hover:underline">
+                                {cellValue(row, f)}
+                              </Link>
+                            ) : i === 0 && detailHref(id) ? (
+                              /* A foreign-key cell links to THAT record, not
+                                 this one: the client name on a service row
+                                 opens the client. Records connect both ways —
+                                 down to children, up to parents — so you can
+                                 follow the work without going via the nav. */
+                              <Link to={fkHref(f, row) as string} className="text-slate-900 hover:underline">
                                 {cellValue(row, f)}
                               </Link>
                             ) : f.type === 'lookup' && f.lookup?.includes('status') ? (
@@ -181,6 +203,9 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
                       ))}
                       <td className="px-3 py-2 text-right">
                         <div className="flex justify-end gap-2">
+                          {detailHref(id) && (
+                            <Link to={detailHref(id) as string}><Button>Open</Button></Link>
+                          )}
                           <Button onClick={() => setEditing(row)}>Edit</Button>
                           <Button variant={archived ? 'secondary' : 'danger'} onClick={() => toggleArchive(row)}>
                             {archived ? 'Restore' : 'Archive'}
@@ -216,7 +241,7 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
   );
 }
 
-function EntityForm({ cfg, row, lookups, onCancel, onSave }: {
+export function EntityForm({ cfg, row, lookups, onCancel, onSave }: {
   cfg: typeof FORGE_ENTITIES[EntityKey];
   row: Record<string, unknown> | null;
   lookups: Record<string, { label: string; values: Array<{ id: number; value: string }> }>;

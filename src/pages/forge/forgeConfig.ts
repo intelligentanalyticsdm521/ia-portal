@@ -31,6 +31,13 @@ export interface EntityConfig {
   pk: string;
   primaryField: string;
   detailRoute?: (id: string | number) => string;
+  /**
+   * Child records to show on this record's page. Declared here rather than
+   * written per entity, so ForgeRecordPage stays ONE component: a client
+   * shows their assistance and services, a provider shows what it delivers,
+   * a funder shows its applications.
+   */
+  related?: Array<{ entity: EntityKey; foreignKey: string; title: string }>;
   fields: FieldDef[];
 }
 
@@ -46,6 +53,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'People your organization serves.',
     pk: 'client_id',
     primaryField: 'full_name',
+    related: [{ entity: 'assistance', foreignKey: 'client_id', title: 'Assistance' }, { entity: 'services', foreignKey: 'client_id', title: 'Services' }],
     detailRoute: (id) => screenRoute('hestia', `clients/${id}`),
     fields: [
       f('full_name', 'Name', 'text', { required: true, width: 'w-64' }),
@@ -67,6 +75,8 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'Financial assistance committed to a client over a period.',
     pk: 'assistance_id',
     primaryField: 'client_name',
+    related: [{ entity: 'services', foreignKey: 'assistance_id', title: 'Services delivered' }],
+    detailRoute: (id) => screenRoute('hestia', `assistance/${id}`),
     fields: [
       f('client_id', 'Client', 'entity', { entity: 'clients', displayKey: 'client_name', required: true, width: 'w-56' }),
       f('status', 'Status', 'lookup', { lookup: 'assistance_status' }),
@@ -85,6 +95,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'A client receiving a service from a provider, paid from their assistance.',
     pk: 'service_id',
     primaryField: 'client_name',
+    detailRoute: (id) => screenRoute('hestia', `services/${id}`),
     fields: [
       f('client_id', 'Client', 'entity', { entity: 'clients', displayKey: 'client_name', required: true, width: 'w-52' }),
       f('provider_id', 'Provider', 'entity', { entity: 'providers', displayKey: 'provider_name', width: 'w-52' }),
@@ -110,6 +121,8 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'Vendors delivering services to clients.',
     pk: 'provider_id',
     primaryField: 'name',
+    related: [{ entity: 'services', foreignKey: 'provider_id', title: 'Services delivered' }],
+    detailRoute: (id) => screenRoute('hestia', `providers/${id}`),
     fields: [
       f('name', 'Name', 'text', { required: true, width: 'w-56' }),
       f('provider_type', 'Type', 'lookup', { lookup: 'provider_type' }),
@@ -136,6 +149,8 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'Foundations and grantors your organization applies to.',
     pk: 'funder_id',
     primaryField: 'name',
+    related: [{ entity: 'applications', foreignKey: 'funder_id', title: 'Funding applications' }],
+    detailRoute: (id) => screenRoute('hestia', `funders/${id}`),
     fields: [
       f('name', 'Name', 'text', { required: true, width: 'w-56' }),
       f('primary_contact', 'Contact'),
@@ -158,6 +173,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'Applications your organization has made to funders.',
     pk: 'application_id',
     primaryField: 'funder_name',
+    detailRoute: (id) => screenRoute('hestia', `applications/${id}`),
     fields: [
       f('funder_id', 'Funder', 'entity', { entity: 'funders', displayKey: 'funder_name', width: 'w-52' }),
       f('applied_date', 'Applied', 'date'),
@@ -178,6 +194,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'People who give their time.',
     pk: 'volunteer_id',
     primaryField: 'name',
+    detailRoute: (id) => screenRoute('hestia', `volunteers/${id}`),
     fields: [
       f('name', 'Name', 'text', { required: true, width: 'w-56' }),
       f('status', 'Status', 'lookup', { lookup: 'volunteer_status' }),
@@ -195,6 +212,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'One record per person or organization — donor, volunteer, board member, or someone you serve.',
     pk: 'person_id',
     primaryField: 'full_name',
+    related: [{ entity: 'donations', foreignKey: 'person_id', title: 'Donations' }, { entity: 'pledges', foreignKey: 'person_id', title: 'Pledges' }],
     detailRoute: (id) => screenRoute('hestia', `people/${id}`),
     fields: [
       f('full_name', 'Name', 'text', { required: true, width: 'w-64' }),
@@ -244,6 +262,8 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'Appeals and events — what you asked for, what it cost, what came in.',
     pk: 'campaign_id',
     primaryField: 'name',
+    related: [{ entity: 'donations', foreignKey: 'campaign_id', title: 'Donations' }],
+    detailRoute: (id) => screenRoute('hestia', `campaigns/${id}`),
     fields: [
       f('name', 'Name', 'text', { required: true, width: 'w-56' }),
       f('campaign_type', 'Type', 'lookup', { lookup: 'campaign_type' }),
@@ -264,6 +284,8 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'Where gifts are designated, and whether the donor restricted them.',
     pk: 'fund_id',
     primaryField: 'name',
+    related: [{ entity: 'donations', foreignKey: 'fund_id', title: 'Donations' }],
+    detailRoute: (id) => screenRoute('hestia', `funds/${id}`),
     fields: [
       f('name', 'Name', 'text', { required: true, width: 'w-56' }),
       f('code', 'Code'),
@@ -279,6 +301,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'Promises to give, and how much of each is still outstanding.',
     pk: 'pledge_id',
     primaryField: 'donor_name',
+    detailRoute: (id) => screenRoute('hestia', `pledges/${id}`),
     fields: [
       f('person_id', 'Donor', 'entity', { entity: 'people', displayKey: 'donor_name', required: true, width: 'w-56' }),
       f('total_amount', 'Pledged', 'money'),
@@ -298,6 +321,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'Standing gifts, when each next runs, and which ones have failed.',
     pk: 'recurring_gift_id',
     primaryField: 'donor_name',
+    detailRoute: (id) => screenRoute('hestia', `recurring/${id}`),
     fields: [
       f('person_id', 'Donor', 'entity', { entity: 'people', displayKey: 'donor_name', required: true, width: 'w-56' }),
       f('amount', 'Amount', 'money'),

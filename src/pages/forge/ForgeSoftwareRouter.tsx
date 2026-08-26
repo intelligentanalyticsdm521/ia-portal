@@ -24,13 +24,24 @@ import { ForgeDonationDetailPage } from './ForgeDonationDetailPage';
 import { ForgePersonDetailPage } from './ForgePersonDetailPage';
 import { ForgePage } from './ForgePage';
 import { Card, ForgeLayout } from './ForgeLayout';
+import { ForgeRecordPage } from './ForgeRecordPage';
 import { softwareBySlug, softwareRoot, visibleScreens } from './forgeSoftware';
 
-/** Screens that take a record id: /forge/hestia/clients/42 */
-const DETAIL_PAGES: Record<string, () => JSX.Element> = {
-  clients: () => <ForgeClientDetailPage />,
-  people: () => <ForgePersonDetailPage />,
-  donations: () => <ForgeDonationDetailPage />,
+/**
+ * Screens with a BESPOKE record page: /forge/hestia/clients/42.
+ *
+ * Anything not listed here falls through to ForgeRecordPage, the generic
+ * detail view driven by forgeConfig — so every entity has a record page
+ * without one being written per entity. Only records that genuinely need
+ * more than fields + children + notes + history get their own component.
+ *
+ * The id is passed as a PROP. Under this splat route there is no :id param,
+ * so a page reading useParams().id got undefined and never fetched.
+ */
+const DETAIL_PAGES: Record<string, (id: string) => JSX.Element> = {
+  clients: (id) => <ForgeClientDetailPage recordId={id} />,
+  people: (id) => <ForgePersonDetailPage recordId={id} />,
+  donations: (id) => <ForgeDonationDetailPage recordId={id} />,
 };
 
 export function ForgeSoftwareRouter() {
@@ -74,8 +85,14 @@ export function ForgeSoftwareRouter() {
   // the same visibility as the list — otherwise an unreleased screen stays
   // reachable through its detail URL.
   const visible = visibleScreens(software);
-  if (maybeId && DETAIL_PAGES[screenPath] && visible.some((s) => s.path === screenPath)) {
-    return <ForgePage>{DETAIL_PAGES[screenPath]()}</ForgePage>;
+  const screenForId = visible.find((s) => s.path === screenPath);
+  if (maybeId && screenForId) {
+    const bespoke = DETAIL_PAGES[screenPath];
+    if (bespoke) return <ForgePage>{bespoke(maybeId)}</ForgePage>;
+    // Generic record page for every other entity screen.
+    if (screenForId.kind === 'entity' && screenForId.entity) {
+      return <ForgePage><ForgeRecordPage entity={screenForId.entity} recordId={maybeId} /></ForgePage>;
+    }
   }
 
   // visibleScreens, not screens: an unreleased screen must not be reachable
