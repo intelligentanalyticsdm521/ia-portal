@@ -255,6 +255,8 @@ export function ForgeRecordModal({
                           <dd className="mt-0.5 text-sm text-slate-800">
                             {href ? (
                               <Link to={href} className="font-medium text-slate-900 underline underline-offset-2">{cellValue(row, f)}</Link>
+                            ) : f.type === 'derived' ? (
+                              <Pill tone={String(cellValue(row, f)).startsWith('Receiving') ? 'green' : 'slate'}>{cellValue(row, f)}</Pill>
                             ) : f.type === 'lookup' && f.lookup?.includes('status') && row[f.key] ? (
                               <Pill tone={statusTone(row[f.key] as string)}>{humanizeValue(String(row[f.key]))}</Pill>
                             ) : cellValue(row, f)}

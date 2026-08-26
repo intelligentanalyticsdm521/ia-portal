@@ -80,7 +80,7 @@ export const FORGE_SOFTWARE: ForgeSoftware[] = [
       { path: 'pledges', label: 'Pledges', kind: 'entity', entity: 'pledges', unreleased: true },
       { path: 'recurring', label: 'Recurring Gifts', kind: 'entity', entity: 'recurring', unreleased: true },
       { path: 'funders', label: 'Funders', kind: 'entity', entity: 'funders' },
-      { path: 'applications', label: 'Funding Applications', kind: 'entity', entity: 'applications' },
+      { path: 'applications', label: 'Grant Applications', kind: 'entity', entity: 'applications' },
 
       // Obligations and reporting.
       { path: 'acknowledgements', label: 'Acknowledgements', kind: 'receipts', unreleased: true },

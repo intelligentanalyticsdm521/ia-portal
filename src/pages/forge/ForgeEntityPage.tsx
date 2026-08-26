@@ -346,7 +346,9 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
                                 >
                                   {text}
                                 </button>
-                              ) : f.type === 'lookup' && f.lookup?.includes('status') ? (
+                              ) : f.type === 'derived' ? (
+                              <Pill tone={String(cellValue(row, f)).startsWith('Receiving') ? 'green' : 'slate'}>{cellValue(row, f)}</Pill>
+                            ) : f.type === 'lookup' && f.lookup?.includes('status') ? (
                                 <Pill tone={statusTone(row[f.key] as string)}>{text}</Pill>
                               ) : (
                                 <span className="min-w-0 truncate">{text}</span>

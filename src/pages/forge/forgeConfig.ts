@@ -9,7 +9,11 @@ import type { EntityKey } from '../../lib/forgeApi';
 import { screenRoute } from './forgeSoftware';
 
 export type FieldType =
-  | 'text' | 'longtext' | 'date' | 'daterange' | 'money' | 'number' | 'percent' | 'lookup' | 'entity';
+  | 'text' | 'longtext' | 'date' | 'daterange' | 'money' | 'number' | 'percent' | 'lookup' | 'entity'
+  /** street/city/state/ZIP as ONE column - an address is one fact, not four. */
+  | 'address'
+  /** Computed from the row for display only. Never posted back. */
+  | 'derived';
 
 export interface FieldDef {
   key: string;
@@ -38,6 +42,13 @@ export interface FieldDef {
    * gone rather than converted.
    */
   maxW?: string;
+  /**
+   * For type 'derived'. Reads the row and returns what the cell should say.
+   * Exists so a screen can show a STATUS built from data the API already
+   * returns, without inventing a column to store it. `key` still names a real
+   * column so the sort caret sorts something real.
+   */
+  derive?: (row: Record<string, unknown>) => string;
 }
 
 export interface EntityConfig {
@@ -73,23 +84,33 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     related: [{ entity: 'assistance', foreignKey: 'client_id', title: 'Assistance' }, { entity: 'services', foreignKey: 'client_id', title: 'Services' }],
     detailRoute: (id) => `${screenRoute('hestia', 'clients')}?record=${id}`,
     fields: [
-      f('full_name', 'Name', 'text', { required: true, maxW: 'max-w-[170px]' }),
+      /* Contact details, and nothing else.
+         This screen had assistance_count, service_count and total_awarded on it,
+         which made it a second Assistance screen wearing a different hat - the
+         reasonable-sounding argument was "contact details alone cannot tell you
+         whether we are helping this person", and the result was two screens that
+         answered the same question. Clients answers WHO, Assistance answers WHAT
+         WE COMMITTED, Services answers WHAT IS BEING DELIVERED. The rollups live
+         on the record's Assistance and Services tabs, one click away, where they
+         belong to a person rather than competing with the screen that owns them. */
+      f('full_name', 'Name', 'text', { required: true, maxW: 'max-w-[180px]' }),
       f('phone', 'Phone'),
-      f('city', 'City'),
-      f('county', 'County'),
-      // Rollups from the API. The list's job is "who do we serve, and are we
-      // helping them right now" — contact details alone cannot answer that.
-      // Read-only: computed server-side, never posted back.
-      f('assistance_count', 'Assistance', 'number', { inForm: false }),
-      f('service_count', 'Services', 'number', { inForm: false }),
-      f('total_awarded', 'Awarded', 'money', { inForm: false }),
-      // The grid can afford ONE contact column and phone is the one that is
-      // populated; email was a column of em-dashes paying 71px for its header.
-      // Still on the record and still in the form.
-      f('email', 'Email', 'text', { inList: false }),
+      f('email', 'Email', 'text', { maxW: 'max-w-[200px]' }),
+      f('street', 'Address', 'address', { inForm: false, maxW: 'max-w-[240px]' }),
+      f('county', 'County', 'text', { maxW: 'max-w-[110px]' }),
+      /* The one thing that is not contact detail, because "is this person
+         currently being helped" is the question the list is actually opened to
+         answer. Derived from a rollup the API already returns - no new column,
+         and it reads as a state rather than as a number to compare. */
+      f('service_count', 'Status', 'derived', {
+        inForm: false,
+        derive: (row) => (Number(row.service_count) > 0 ? 'Receiving services' : 'No active services'),
+      }),
+      f('city', 'City', 'text', { inList: false }),
       f('state_province', 'State', 'text', { inList: false }),
-      f('street', 'Street', 'text', { inList: false }),
       f('postal_code', 'ZIP', 'text', { inList: false }),
+      f('assistance_count', 'Assistance awards', 'number', { inForm: false, inList: false }),
+      f('total_awarded', 'Total awarded', 'money', { inForm: false, inList: false }),
       f('additional_names', 'Additional names', 'text', { inList: false }),
     ],
   },
@@ -104,22 +125,25 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     related: [{ entity: 'services', foreignKey: 'assistance_id', title: 'Services delivered' }],
     detailRoute: (id) => `${screenRoute('hestia', 'assistance')}?record=${id}`,
     fields: [
-      /* Lead with the AWARD's own identity, not the client's name. Leading with
-         a person made this screen read as a third client list — you identified
-         the human before you identified the thing the screen is about. `award_ref`
-         is the GL reference, falling back to A-<id> so the column is never a
-         wall of dashes on the (many) awards booked without one. */
-      f('award_ref', 'Award', 'text', { inForm: false, maxW: 'max-w-[130px]' }),
+      /* WHO first, then everything about the award.
+         This led with the award reference on the argument that leading with a
+         person made it read as a client list. That was the wrong fix for the
+         right observation: what made it read as a client list was that CLIENTS
+         also showed award totals. Clients is contact details now, so this screen
+         can lead with the name people actually search for and still be
+         unmistakably about the money - every column after the name is the
+         award. */
       f('client_id', 'Client', 'entity', { entity: 'clients', displayKey: 'client_name', required: true, maxW: 'max-w-[170px]' }),
+      f('award_ref', 'Award', 'text', { inForm: false, maxW: 'max-w-[110px]' }),
       f('status', 'Status', 'lookup', { lookup: 'assistance_status' }),
-      f('start_date', 'Period', 'daterange', { endKey: 'end_date', inForm: false, maxW: 'max-w-[190px]' }),
+      f('start_date', 'Period', 'daterange', { endKey: 'end_date', inForm: false, maxW: 'max-w-[180px]' }),
       f('value_amount', 'Value', 'money'),
-      // Is this award actually being drawn down, or approved and untouched?
+      // Is this award being drawn down, or approved and untouched?
       f('service_count', 'Services', 'number', { inForm: false }),
+      f('referral_source', 'Referred by', 'text', { maxW: 'max-w-[140px]' }),
       f('start_date', 'Start', 'date', { inList: false }),
       f('end_date', 'End', 'date', { inList: false }),
       f('gl_reference', 'GL ref', 'text', { inList: false }),
-      f('referral_source', 'Referral source', 'text', { inList: false }),
     ],
   },
 
@@ -132,22 +156,25 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     primaryField: 'client_name',
     detailRoute: (id) => `${screenRoute('hestia', 'services')}?record=${id}`,
     fields: [
-      /* Six columns, down from ten. This was the widest table in HESTIA (1357px
-         intrinsic inside an 859px box), so its Actions block started 275px past
-         the clip edge — Open/Edit/Archive were invisible at rest. Payment method
-         and Frequency are administration, not identity: they say nothing about
-         who is getting what from whom, and they live on the record instead. */
-      f('client_id', 'Client', 'entity', { entity: 'clients', displayKey: 'client_name', required: true, maxW: 'max-w-[130px]' }),
-      f('provider_id', 'Provider', 'entity', { entity: 'providers', displayKey: 'provider_name', maxW: 'max-w-[120px]' }),
-      f('service_type', 'Type', 'lookup', { lookup: 'service_type', maxW: 'max-w-[95px]' }),
+      /* The most detailed of the three, deliberately. Assistance says what was
+         committed; this says what is actually being delivered, by whom, and how
+         it is paid - so payment method and frequency belong here rather than
+         only on the record.
+         It is the widest table in HESTIA and that is fine: it scrolls inside the
+         page, and the Actions column is pinned to the right so Open/Edit/Archive
+         never move. Widening the PAGE to fit it was the previous answer and it
+         cost the 80% measure the rest of the portal uses. */
+      f('client_id', 'Client', 'entity', { entity: 'clients', displayKey: 'client_name', required: true, maxW: 'max-w-[140px]' }),
+      f('provider_id', 'Provider', 'entity', { entity: 'providers', displayKey: 'provider_name', maxW: 'max-w-[140px]' }),
+      f('service_type', 'Type', 'lookup', { lookup: 'service_type', maxW: 'max-w-[110px]' }),
       f('status', 'Status', 'lookup', { lookup: 'service_status' }),
-      f('start_date', 'Period', 'daterange', { endKey: 'end_date', inForm: false, maxW: 'max-w-[190px]' }),
+      f('start_date', 'Period', 'daterange', { endKey: 'end_date', inForm: false, maxW: 'max-w-[180px]' }),
+      f('payment_method', 'Payment', 'lookup', { lookup: 'payment_method', maxW: 'max-w-[110px]' }),
+      f('payment_frequency', 'Frequency', 'lookup', { lookup: 'payment_frequency', maxW: 'max-w-[110px]' }),
       f('estimated_monthly_cost', 'Monthly', 'money'),
       f('assistance_id', 'Assistance', 'entity', { entity: 'assistance', displayKey: 'assistance_reference', inList: false }),
       f('start_date', 'Start', 'date', { inList: false }),
       f('end_date', 'End', 'date', { inList: false }),
-      f('payment_method', 'Payment method', 'lookup', { lookup: 'payment_method', inList: false }),
-      f('payment_frequency', 'Frequency', 'lookup', { lookup: 'payment_frequency', inList: false }),
       // Not shown in the grid or the form, but declared so it can be FILTERED:
       // the overview's "Needs review" tile links to ?needs_review=1 and the
       // list only accepts query keys the entity declares.
@@ -232,7 +259,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
 
   applications: {
     key: 'applications',
-    title: 'Funding Applications',
+    title: 'Grant Applications',
     singular: 'Application',
     subtitle: 'Applications your organization has made to funders.',
     pk: 'application_id',
@@ -476,6 +503,15 @@ export const cellValue = (row: Record<string, unknown>, field: FieldDef) => {
     if (!to) return `${shortDate(from)} →`;
     if (!from) return `→ ${shortDate(to)}`;
     return `${shortDate(from)} – ${shortDate(to)}`;
+  }
+  if (field.type === 'derived') return field.derive ? field.derive(row) : '—';
+  /* An address is one fact. Four columns of street/city/state/ZIP cost most of
+     the table's width to say what one line says, and three of them were empty
+     on the older records anyway. */
+  if (field.type === 'address') {
+    const parts = [row.street, row.city, [row.state_province, row.postal_code].filter(Boolean).join(' ')]
+      .map((x) => (x == null ? '' : String(x).trim())).filter(Boolean);
+    return parts.length ? parts.join(', ') : '—';
   }
   const v = row[field.key];
   if (v === null || v === undefined || v === '') return '—';
