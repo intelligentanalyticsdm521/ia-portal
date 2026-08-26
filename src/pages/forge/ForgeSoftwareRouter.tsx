@@ -19,30 +19,9 @@ import { ForgeOverviewPage } from './ForgeOverviewPage';
 import { ForgeReceiptsPage } from './ForgeReceiptsPage';
 import { ForgeReportsPage } from './ForgeReportsPage';
 import { ForgeSetupPage } from './ForgeSetupPage';
-import { ForgeClientDetailPage } from './ForgeClientDetailPage';
-import { ForgeDonationDetailPage } from './ForgeDonationDetailPage';
-import { ForgePersonDetailPage } from './ForgePersonDetailPage';
 import { ForgePage } from './ForgePage';
 import { Card, ForgeLayout } from './ForgeLayout';
-import { ForgeRecordPage } from './ForgeRecordPage';
 import { softwareBySlug, softwareRoot, visibleScreens } from './forgeSoftware';
-
-/**
- * Screens with a BESPOKE record page: /forge/hestia/clients/42.
- *
- * Anything not listed here falls through to ForgeRecordPage, the generic
- * detail view driven by forgeConfig — so every entity has a record page
- * without one being written per entity. Only records that genuinely need
- * more than fields + children + notes + history get their own component.
- *
- * The id is passed as a PROP. Under this splat route there is no :id param,
- * so a page reading useParams().id got undefined and never fetched.
- */
-const DETAIL_PAGES: Record<string, (id: string) => JSX.Element> = {
-  clients: (id) => <ForgeClientDetailPage recordId={id} />,
-  people: (id) => <ForgePersonDetailPage recordId={id} />,
-  donations: (id) => <ForgeDonationDetailPage recordId={id} />,
-};
 
 export function ForgeSoftwareRouter() {
   const params = useParams();
@@ -81,22 +60,15 @@ export function ForgeSoftwareRouter() {
   const rest = (params['*'] ?? '').split('/').filter(Boolean);
   const [screenPath = '', maybeId] = rest;
 
-  // Detail pages first: /clients/42 is the clients screen with an id. Gated on
-  // the same visibility as the list — otherwise an unreleased screen stays
-  // reachable through its detail URL.
+  // A record is shown in a MODAL over its list, not on a page of its own —
+  // the pattern every other product here uses. Old /<screen>/<id> links
+  // (and anything already shared) redirect into that, so there is exactly
+  // one record view and nothing that was sent out stops working.
   const visible = visibleScreens(software);
-  const screenForId = visible.find((s) => s.path === screenPath);
-  if (maybeId && screenForId) {
-    const bespoke = DETAIL_PAGES[screenPath];
-    if (bespoke) return <ForgePage>{bespoke(maybeId)}</ForgePage>;
-    // Generic record page for every other entity screen.
-    if (screenForId.kind === 'entity' && screenForId.entity) {
-      return <ForgePage><ForgeRecordPage entity={screenForId.entity} recordId={maybeId} /></ForgePage>;
-    }
+  if (maybeId && visible.some((s) => s.path === screenPath)) {
+    return <Navigate to={`${softwareRoot(slug)}/${screenPath}?record=${encodeURIComponent(maybeId)}`} replace />;
   }
 
-  // visibleScreens, not screens: an unreleased screen must not be reachable
-  // by URL either, or the flag only hides the nav link.
   const screen = visible.find((s) => s.path === screenPath);
   if (!screen) return <Navigate to={softwareRoot(slug)} replace />;
 

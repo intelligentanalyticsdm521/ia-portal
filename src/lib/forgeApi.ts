@@ -26,11 +26,18 @@ export type EntityKey =
   // Phase 2 — the constituent record and the fundraising ledger.
   | 'people' | 'funds' | 'campaigns' | 'donations' | 'pledges' | 'recurring';
 
+/** The headline a list screen leads with — what this screen IS, in numbers. */
+export interface ListSummary {
+  tiles: Array<{ key: string; label: string; hint?: string; money?: boolean; warnIfAny?: boolean }>;
+  values: Record<string, number | null>;
+}
+
 export interface ListResult<T = Record<string, unknown>> {
   entity: string;
   page: number;
   pageSize: number;
   total: number;
+  summary?: ListSummary | null;
   data: T[];
 }
 
