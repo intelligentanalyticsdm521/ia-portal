@@ -891,15 +891,30 @@ function ServiceRouterInner() {
       // CONSULTING_FOUNDER_RELOCATIONS table at the top of this component
       // (founders → /app/admin/consulting/*; non-founders → /overview),
       // so they never reach this switch.
+      // 2026-08-29 — clients are OFF the legacy surface entirely. Rolling In
+      // It's owner was living on these pages (Overview + Deliverables nav, no
+      // Service Requests, a dead intake-submissions call erroring the page)
+      // because the 2026-06-29 relocation only intercepted the five founder
+      // keys and left the client keys serving the pre-rework pages. Every
+      // client entry point (FeatureLocked link, old bookmarks, stale nav)
+      // now lands on the real client surface at /app/consulting/*.
       case 'consulting_overview':
-        // Founders get the agency Overview (needs-you / waiting-on-client /
-        // capacity); clients keep the existing shared summary untouched.
-        consultingPage = effectiveIsFounder ? <ConsultingWorkOverviewPage /> : <ConsultingOverviewPage />;
+        if (!effectiveIsFounder) return <Navigate to="/app/consulting/projects" replace />;
+        consultingPage = <ConsultingWorkOverviewPage />;
         break;
-      case 'consulting_deliverables':     consultingPage = <ConsultingDeliverablesPage />; break;
-      case 'consulting_calendar':         consultingPage = <ConsultingCalendarPage />; break;
+      case 'consulting_deliverables':
+        if (!effectiveIsFounder) return <Navigate to="/app/consulting/deliverables" replace />;
+        consultingPage = <ConsultingDeliverablesPage />;
+        break;
+      case 'consulting_calendar':
+        if (!effectiveIsFounder) return <Navigate to="/app/consulting/projects" replace />;
+        consultingPage = <ConsultingCalendarPage />;
+        break;
       // Founder-only utility surfaces (still accessible by URL)
-      case 'consulting_access_log':       consultingPage = <ConsultingAccessLogPage />; break;
+      case 'consulting_access_log':
+        if (!effectiveIsFounder) return <Navigate to="/app/consulting/projects" replace />;
+        consultingPage = <ConsultingAccessLogPage />;
+        break;
       // Legacy "Build Your X" per-engagement task/deliverable pages —
       // forwarded to the relocated Requests Board (founder admin). The
       // CONSULTING_FOUNDER_RELOCATIONS table only matches the canonical
@@ -915,7 +930,7 @@ function ServiceRouterInner() {
       case 'consulting_engine_deliverables':
         return effectiveIsFounder
           ? <Navigate to="/app/admin/consulting/requests" replace />
-          : <Navigate to="/app/overview" replace />;
+          : <Navigate to="/app/consulting/requests" replace />;
       default: break;
     }
     if (consultingPage) {

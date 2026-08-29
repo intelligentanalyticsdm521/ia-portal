@@ -103,13 +103,11 @@ export default function FeatureLocked({
                 >
                   View plans
                 </a>
-                {/* consulting_requests is not a real service key — it is not in
-                    SERVICE_CATALOG and not routed, so this landed on "Service
-                    not found". consulting_overview is the surface a CLIENT
-                    actually has; the other consulting keys are founder-only and
-                    get relocated to /app/admin/consulting/*. */}
+                {/* 2026-08-29 — clients no longer have ANY legacy consulting
+                    surface (ServiceRouter redirects them off it). Point them
+                    straight at the client consulting surface. */}
                 <a
-                  href="/app/services/consulting_overview"
+                  href="/app/consulting/projects"
                   className="text-sm font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900"
                 >
                   Ask a question
