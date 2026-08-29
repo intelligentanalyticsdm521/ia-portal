@@ -16,7 +16,7 @@
 //     session via sessionStorage — that's the "first-time user nudge"
 //     vs the dashboard-level mount which is permanent.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle2, Circle, ChevronDown, ChevronUp, ArrowRight, X } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
@@ -110,7 +110,18 @@ export function WalkthroughPanel({ variant = "dashboard", product }: Walkthrough
     }
   }, [ready, get, variant]);
 
-  useEffect(() => { load(); }, [load]);
+  // ONE auto-fetch per mount, no matter how often `load`'s identity churns.
+  // This panel mounts in AppShell (every page), so before the key-based
+  // account memo in useAccessToken.ts it re-fetched on every MSAL event —
+  // and a session whose tenant key failed auth looped forever (the 3,226
+  // /auth/verify 404s of 2026-08-26). The ref is the backstop against any
+  // future identity churn; completeTask/skip still call load() directly.
+  const autoLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!ready || autoLoadedRef.current) return;
+    autoLoadedRef.current = true;
+    load();
+  }, [ready, load]);
 
   const visibleTasks = useMemo(() => {
     const list = (tasks || []).filter((t) => t.status === "pending");
