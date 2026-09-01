@@ -58,6 +58,14 @@ export interface EntityConfig {
   subtitle: string;
   pk: string;
   primaryField: string;
+  /**
+   * Extra fields the PICKER appends to distinguish otherwise identical labels.
+   * Assistance is labelled by client name, and a third of clients have more
+   * than one award — so a real customer's picker showed "Renee Hessing" four
+   * times, identically, with no way to tell which award you were attaching to.
+   * At eight fixture rows every client was distinct and it looked fine.
+   */
+  pickerSubtitle?: string[];
   detailRoute?: (id: string | number) => string;
   /**
    * Child records to show on this record's page. Declared here rather than
@@ -122,6 +130,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'Financial assistance committed to a client over a period.',
     pk: 'assistance_id',
     primaryField: 'client_name',
+    pickerSubtitle: ['award_ref', 'value_amount', 'start_date'],
     related: [{ entity: 'services', foreignKey: 'assistance_id', title: 'Services delivered' }],
     detailRoute: (id) => `${screenRoute('hestia', 'assistance')}?record=${id}`,
     fields: [

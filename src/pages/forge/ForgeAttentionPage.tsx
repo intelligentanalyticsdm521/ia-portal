@@ -60,7 +60,21 @@ export function ForgeAttentionPage() {
     withParams(async (p) => {
       const per = await Promise.all(FLAGGABLE.map(async (entity) => {
         const cfg = FORGE_ENTITIES[entity];
-        const r = await listEntity(p, entity, { pageSize: 200, needs_review: 1 });
+        /* Page until the queue is complete. It used to ask for 200 and stop,
+           so with 207 flagged records the screen listed 200 and its own
+           subtitle said "200 records flagged" — while the Services headline
+           said 207 from the same data. A queue that silently omits items is
+           worse than no queue: you work it to empty and seven remain. */
+        const PAGE = 200;
+        const first = await listEntity(p, entity, { pageSize: PAGE, needs_review: 1 });
+        const rowsAll = [...first.data];
+        const totalFlagged = Number(first.total ?? rowsAll.length);
+        for (let pg = 2; rowsAll.length < totalFlagged && rowsAll.length < 5000; pg++) {
+          const nxt = await listEntity(p, entity, { pageSize: PAGE, needs_review: 1, page: pg });
+          if (!nxt.data.length) break;
+          rowsAll.push(...nxt.data);
+        }
+        const r = { ...first, data: rowsAll };
         const nameField = cfg.fields.find((f) => f.key === cfg.primaryField) ?? cfg.fields[0];
         return r.data.map((row) => ({
           entity,

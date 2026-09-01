@@ -76,8 +76,25 @@ export function ForgeRecordModal({
       withParams((p) => getEntityRow<Row>(p, entity, recordId)),
       withParams((p) => getNotes(p, entity, recordId)),
       withParams((p) => getActivity(p, entity, recordId)),
+      /* Page to completion. This asked for 500 and the list route silently caps
+         at 200, so a provider with 215 services showed "Services delivered
+         (200)" and fifteen of them simply did not exist from that record — the
+         same silent-truncation bug as the picker, one screen over. Raising the
+         number does nothing; the cap has to be paged past. */
       ...relatedDefs.map((r) =>
-        withParams((p) => listEntity<Row>(p, r.entity, { [r.foreignKey]: recordId, pageSize: 200 }))),
+        withParams(async (p) => {
+          const PAGE = 200;
+          const first = await listEntity<Row>(p, r.entity, { [r.foreignKey]: recordId, pageSize: PAGE });
+          const data = [...first.data];
+          const total = Number(first.total ?? data.length);
+          for (let pg = 2; data.length < total && data.length < 5000; pg++) {
+            const nxt = await listEntity<Row>(p, r.entity,
+              { [r.foreignKey]: recordId, pageSize: PAGE, page: pg });
+            if (!nxt.data.length) break;
+            data.push(...nxt.data);
+          }
+          return { ...first, data };
+        })),
     ])
       .then(([r, n, a, ...rest]) => {
         if (cancelled) return;
@@ -97,9 +114,9 @@ export function ForgeRecordModal({
      behind it. Guarding here rather than in IadmModal keeps every other call
      site untouched. */
   const closeUnlessNested = useCallback(() => {
-    if (editing || creating) return;
+    if (editing || creating || editingChild) return;
     onClose();
-  }, [onClose, editing, creating]);
+  }, [onClose, editing, creating, editingChild]);
 
   const saveRecord = useCallback(async (values: Row) => {
     await withParams((p) => updateEntityRow(p, entity, recordId, values));

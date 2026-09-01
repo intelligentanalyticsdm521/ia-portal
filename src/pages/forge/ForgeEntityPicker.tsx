@@ -29,7 +29,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getEntityRow, listEntity, type EntityKey } from '../../lib/forgeApi';
-import { FORGE_ENTITIES } from './forgeConfig';
+import { FORGE_ENTITIES, cellValue } from './forgeConfig';
 import { useForgeApi } from './useForge';
 
 type Row = Record<string, unknown>;
@@ -104,6 +104,17 @@ export function ForgeEntityPicker({
   }, []);
 
   const labelOf = (r: Row) => String(r[cfg.primaryField] ?? r[cfg.pk] ?? '');
+  /* Two records may share a label and still be different records — a client with
+     four awards, or two clients genuinely called the same thing. A picker whose
+     options cannot be told apart is not a picker. */
+  const subtitleOf = (r: Row) => (cfg.pickerSubtitle ?? [])
+    .map((k) => {
+      const f = cfg.fields.find((x) => x.key === k);
+      const v = f ? cellValue(r, f) : r[k];
+      return v == null || v === '' || v === '—' ? null : String(v);
+    })
+    .filter(Boolean)
+    .join(' · ');
   const selected = useMemo(
     () => rows.find((r) => String(r[cfg.pk]) === String(value ?? '')) ?? selectedRow ?? undefined,
     [rows, value, cfg.pk, selectedRow]
@@ -161,7 +172,8 @@ export function ForgeEntityPicker({
                   setQuery('');
                 }}
               >
-                {labelOf(r)}
+                <span className="block">{labelOf(r)}</span>
+                {subtitleOf(r) && <span className="block text-xs text-slate-500">{subtitleOf(r)}</span>}
               </button>
             </li>
             ))}
