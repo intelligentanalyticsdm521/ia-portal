@@ -11,7 +11,19 @@ interface TenantSettings {
   email?: string;
   phone?: string;
   website?: string;
+  /** READ-ONLY composed one-liner from core.tenants. PATCH /settings refuses
+   *  it (there is no reliable way to split an arbitrary string back into
+   *  columns) — edit the structured fields below instead. 2026-09-01: this
+   *  page used to bind its Address textarea to `address` and PATCH it back;
+   *  the API logged "address single-line ignored" and echoed the OLD value,
+   *  so the box reverted while the page said "Saved." */
   address?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  stateProvince?: string;
+  postalCode?: string;
+  countryRegion?: string;
   // Shared with your business profile — also surfaced in ARION + customer portal
   logoUrl?: string | null;
   brandColor?: string | null;
@@ -316,8 +328,11 @@ export function OliverSettingsPage() {
       // Only send changed fields (vs current `settings`) so we don't blow
       // away an inherited value by writing back an empty string.
       const payload: Record<string, unknown> = {};
+      // NOTE: `address` is deliberately absent — it is read-only and the API
+      // 400s on it. The structured parts are what persist.
       const k: (keyof TenantSettings)[] = [
-        "tenantFullName", "email", "phone", "website", "address",
+        "tenantFullName", "email", "phone", "website",
+        "addressLine1", "addressLine2", "city", "stateProvince", "postalCode",
         "logoUrl", "brandColor", "billingEmail", "supportEmail",
       ];
       for (const f of k) {
@@ -625,16 +640,58 @@ export function OliverSettingsPage() {
             </div>
           </Field>
         </div>
-        <div style={{ marginTop: 12 }}>
-          <Field label="Address">
-            <textarea
-              rows={2}
-              style={{ ...inputStyle, resize: "vertical" }}
-              placeholder="123 Main St, Springfield IL 62701"
-              value={bizDraft?.address || ""}
-              onChange={(e) => setBizDraft({ ...bizDraft, address: e.target.value })}
+        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 16px" }}>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Field label="Street address">
+              <input
+                type="text"
+                style={inputStyle}
+                placeholder="123 Main St"
+                value={bizDraft?.addressLine1 || ""}
+                onChange={(e) => setBizDraft({ ...bizDraft, addressLine1: e.target.value })}
+              />
+            </Field>
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Field label="Suite / unit (optional)">
+              <input
+                type="text"
+                style={inputStyle}
+                placeholder="Suite 200"
+                value={bizDraft?.addressLine2 || ""}
+                onChange={(e) => setBizDraft({ ...bizDraft, addressLine2: e.target.value })}
+              />
+            </Field>
+          </div>
+          <Field label="City">
+            <input
+              type="text"
+              style={inputStyle}
+              placeholder="Springfield"
+              value={bizDraft?.city || ""}
+              onChange={(e) => setBizDraft({ ...bizDraft, city: e.target.value })}
             />
           </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="State / province">
+              <input
+                type="text"
+                style={inputStyle}
+                placeholder="IL"
+                value={bizDraft?.stateProvince || ""}
+                onChange={(e) => setBizDraft({ ...bizDraft, stateProvince: e.target.value })}
+              />
+            </Field>
+            <Field label="Postal code">
+              <input
+                type="text"
+                style={inputStyle}
+                placeholder="62701"
+                value={bizDraft?.postalCode || ""}
+                onChange={(e) => setBizDraft({ ...bizDraft, postalCode: e.target.value })}
+              />
+            </Field>
+          </div>
         </div>
         <div style={{ marginTop: 10, fontSize: 11, color: "#5A7A8A", lineHeight: 1.5 }}>
           Fields marked <SharedPill /> are inherited from your platform-wide business profile and shared with

@@ -8,9 +8,23 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { Download, Upload, Check, AlertCircle, FileJson } from "lucide-react";
 
+/** Per-section outcome from POST /config/import. `inserted` is rows actually
+ *  written; `skipped_existing` already existed; `failed` threw. Before
+ *  2026-09-01 the API swallowed every insert error and echoed the count of
+ *  items in the FILE, so a restore that wrote nothing still read as a success. */
+interface SectionTally {
+  inserted: number;
+  skipped_existing: number;
+  failed: number;
+  first_error?: string;
+}
+
 interface ImportResult {
   ok: boolean;
-  imported?: Record<string, number>;
+  imported?: Record<string, SectionTally>;
+  /** Sections present in the file that this endpoint has no importer for. */
+  not_imported?: Array<{ section: string; in_file: number }>;
+  failed_total?: number;
   error?: string;
 }
 
@@ -141,17 +155,30 @@ export function SparkConfigBackupPage() {
           {importResult && (
             <div className={`mt-2 text-xs rounded border px-2 py-1.5 flex items-start gap-1 ${importResult.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700"}`}>
               {importResult.ok ? <Check className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" /> : <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />}
-              {importResult.ok ? (
+              {importResult.error ? (
+                <div>{importResult.error}</div>
+              ) : (
                 <div>
-                  Import complete:
+                  {importResult.ok ? "Import complete." : `Import finished with ${importResult.failed_total} failure(s).`}
                   <ul className="mt-0.5 space-y-0.5 font-mono">
                     {Object.entries(importResult.imported || {}).map(([k, v]) => (
-                      <li key={k}>{k}: {String(v)}</li>
+                      <li key={k}>
+                        {k}: added {v?.inserted ?? 0}
+                        {v?.skipped_existing ? `, already there ${v.skipped_existing}` : ""}
+                        {v?.failed ? `, FAILED ${v.failed}` : ""}
+                        {v?.first_error ? ` — ${v.first_error}` : ""}
+                      </li>
                     ))}
                   </ul>
+                  {!!importResult.not_imported?.length && (
+                    <div className="mt-1 not-italic">
+                      Not restored (no importer for these yet — they stay in your file):{" "}
+                      <span className="font-mono">
+                        {importResult.not_imported.map((n) => `${n.section} (${n.in_file})`).join(", ")}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div>{importResult.error}</div>
               )}
             </div>
           )}

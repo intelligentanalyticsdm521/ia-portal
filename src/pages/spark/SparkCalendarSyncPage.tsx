@@ -5,8 +5,9 @@
 //     URL that users subscribe to from Google Calendar / Outlook.
 //   - "Inbound subscriptions" — paste an external iCal URL and we poll it
 //     every N minutes, upserting events into the content calendar.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { SPARK_API_BASE } from "../../lib/sparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import {
   CalendarDays,
@@ -53,13 +54,12 @@ export function SparkCalendarSyncPage() {
   const [error, setError] = useState<unknown>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
-  const apiBase = useMemo(() => {
-    // Best-effort: derive the public LUMEN-API URL for the share link the user copies.
-    // Fall back to placeholder if we don't know.
-    const host = typeof window !== "undefined" ? window.location.host : "";
-    if (host.includes("localhost")) return "http://localhost:8080";
-    return ""; // platform deploys configure VITE_LUMEN_API_BASE_URL via the sparkApi helper
-  }, []);
+  // 2026-09-01 — this returned "" on every non-localhost deploy, so the iCal
+  // URL offered for copy was a bare `/api/v1/calendar.ics/<token>` path. Pasted
+  // into Google Calendar or Outlook it resolves against the PORTAL host and
+  // 404s: the share looked created, the link was silently useless. Use the one
+  // exported LUMEN-API base that sparkApi itself calls.
+  const apiBase = SPARK_API_BASE;
 
   const fetchAll = useCallback(async () => {
     if (!ready) return;

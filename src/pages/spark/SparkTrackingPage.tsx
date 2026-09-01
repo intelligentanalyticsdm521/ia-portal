@@ -2,9 +2,10 @@
 //
 // Shows the copy-paste script tag with the tenant's ID baked in, plus an
 // activity feed of recent tracked events so the user can verify it's working.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { useMsal } from "@azure/msal-react";
+import { SPARK_API_BASE } from "../../lib/sparkApi";
+import { useEffectiveTenantId } from "../../lib/tenantContext";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { Copy, Check, Eye, Globe } from "lucide-react";
 
@@ -18,40 +19,22 @@ interface Touchpoint {
   occurred_at: string;
 }
 
-function tenantIdFromMsalToken(token: string | undefined): string {
-  if (!token) return "";
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return payload.tid || "";
-  } catch { return ""; }
-}
-
 export function SparkTrackingPage() {
   const { get, ready } = useSparkApi();
-  const { instance, accounts } = useMsal();
-  const [tenantId, setTenantId] = useState<string>("");
+  // 2026-09-01 — this used to bake the JWT's `tid` claim into the snippet.
+  // Under the SHARED CIAM directory `tid` is the SAME for every user and
+  // resolves to the founder tenant (see the header comments in
+  // lib/sparkApi.ts / lib/oliverApi.ts), so every client was handed a pixel
+  // that attributed their website traffic to Intelligent Analytics. The real
+  // tenant is the active one in AppState (with the view-as override applied),
+  // which is exactly what sparkApi sends as x-tenant-id.
+  const tenantId = (useEffectiveTenantId() || "").trim();
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [copied, setCopied] = useState<"snippet" | "url" | null>(null);
 
-  const apiBase = useMemo(() => {
-    return (import.meta.env.VITE_SPARK_API_BASE as string) ||
-           (import.meta.env.VITE_LUMEN_API_BASE as string) ||
-           "https://app-lumen-api-prod-c6afftekgua4axh9.centralus-01.azurewebsites.net";
-  }, []);
-
-  // Resolve tenant ID from MSAL token without making a network call
-  useEffect(() => {
-    (async () => {
-      const account = accounts[0];
-      if (!account) return;
-      try {
-        const r = await instance.acquireTokenSilent({ account, scopes: [] });
-        setTenantId(tenantIdFromMsalToken(r.accessToken));
-      } catch { /* no-op */ }
-    })();
-  }, [instance, accounts]);
+  const apiBase = SPARK_API_BASE;
 
   const fetchRecent = useCallback(async () => {
     if (!ready) return;
@@ -70,7 +53,9 @@ export function SparkTrackingPage() {
   const pixelUrl = tenantId ? `${apiBase}/api/v1/tracking/pixel.js?t=${tenantId}` : "";
   const snippet = tenantId
     ? `<!-- IADM SPARK visitor tracking -->\n<script async src="${pixelUrl}"></script>`
-    : "<!-- Loading… -->";
+    // No active business selected — say so rather than sitting on "Loading…"
+    // forever, which is what this showed whenever the tenant never resolved.
+    : "<!-- No business selected — pick one from the header, then reload this page. -->";
 
   async function copyText(text: string, kind: "snippet" | "url") {
     try {

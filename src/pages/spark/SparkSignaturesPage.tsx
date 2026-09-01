@@ -18,13 +18,36 @@ import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { SparkBodyEditor } from "../../components/spark/SparkBodyEditor";
 import { Plus, Star, Trash2, Pencil } from "lucide-react";
 
+// Field names MUST match LUMEN-API GET /api/v1/signatures (routes/signatures.js):
+// rows come straight out of lumen.signature, which stores `body_html` +
+// `body_text`. There is no `body` column and the API never returns one.
+// 2026-09-01: this page declared `body`, so the preview column rendered
+// undefined, openEdit() put undefined into the editor, and — worst of all —
+// create/update POSTed `{ body }`, a key the API ignores. Every signature
+// created from this page was saved with an EMPTY body while the UI reported
+// success (lumen.signature id=4 in prod has body_html/body_text length 0).
 interface Signature {
   id: number;
   name: string;
-  body: string;
+  body_html: string | null;
+  body_text: string | null;
   is_default: boolean;
-  is_active: boolean;
   created_at: string;
+}
+
+/** Plain-text fallback stored alongside the HTML (used by text-only clients). */
+function htmlToText(html: string): string {
+  const NL = String.fromCharCode(10);
+  return html
+    .replace(/<\s*br\s*\/?\s*>/gi, NL)
+    .replace(/<\/\s*(p|div|li|h[1-6])\s*>/gi, NL)
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\n{3,}/g, NL + NL)
+    .trim();
 }
 
 interface SignatureForm {
@@ -36,10 +59,11 @@ interface SignatureForm {
 
 const EMPTY_FORM: SignatureForm = { name: "", body: "", is_default: false };
 
-function previewSnippet(body: string): string {
+function previewSnippet(body: string | null | undefined): string {
   // SparkBodyEditor stores sanitised HTML; strip tags + whitespace + clip
   // for the at-a-glance preview column.
-  const oneLine = body.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const oneLine = String(body || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  if (!oneLine) return "";
   if (oneLine.length <= 80) return oneLine;
   return oneLine.slice(0, 77) + "…";
 }
@@ -71,7 +95,7 @@ export function SparkSignaturesPage() {
   }
 
   function openEdit(s: Signature) {
-    setForm({ id: s.id, name: s.name, body: s.body, is_default: s.is_default });
+    setForm({ id: s.id, name: s.name, body: s.body_html || "", is_default: s.is_default });
     setModalOpen(true);
   }
 
@@ -79,13 +103,21 @@ export function SparkSignaturesPage() {
     if (!form.name.trim() || !form.body.trim()) return;
     setSaving(true);
     try {
+      // Keys are the API's, not the form's — see the Signature interface note.
       const body = {
         name: form.name.trim(),
-        body: form.body,
+        body_html: form.body,
+        body_text: htmlToText(form.body),
         is_default: form.is_default,
       };
       if (form.id) {
         await put(`/api/v1/signatures/${form.id}`, body);
+        // PUT /signatures/:id has no is_default handling — the default flag
+        // only moves through the dedicated endpoint. Without this, ticking
+        // "Set as default" while editing silently did nothing.
+        if (form.is_default && !list.find((s) => s.id === form.id)?.is_default) {
+          await post(`/api/v1/signatures/${form.id}/default`, {});
+        }
       } else {
         await post("/api/v1/signatures", body);
       }
@@ -154,7 +186,11 @@ export function SparkSignaturesPage() {
             {list.map(s => (
               <tr key={s.id} className="border-t border-slate-100 hover:bg-slate-50">
                 <td className="p-2 font-medium text-slate-900">{s.name}</td>
-                <td className="p-2 text-slate-600 text-xs italic">{previewSnippet(s.body)}</td>
+                <td className="p-2 text-slate-600 text-xs italic">
+                  {previewSnippet(s.body_html || s.body_text) || (
+                    <span className="text-rose-600 not-italic">Empty — open Edit and add your closing text.</span>
+                  )}
+                </td>
                 <td className="p-2 text-center">
                   {s.is_default && <Star className="h-4 w-4 text-[#EF6C33] inline" />}
                 </td>

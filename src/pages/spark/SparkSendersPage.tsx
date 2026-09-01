@@ -22,15 +22,22 @@ interface SenderDomain {
   is_default: boolean;
 }
 
+// Field names MUST match LUMEN-API GET /api/v1/senders (routes/senders.js):
+// the row is SELECTed straight out of lumen.sender_address, so it carries
+// `sender_domain_id` and `reply_to_override` — NOT `domain_id` / `reply_to`.
+// 2026-09-01: this page previously declared the short names, which meant
+// openEdit() read undefined into form.domain_id (Save button permanently
+// disabled on edit), the Reply-to column always rendered "—", and the
+// create/update bodies used keys the API ignores (POST 400'd on the missing
+// sender_domain_id; PUT silently dropped the reply-to).
 interface Sender {
   id: number;
   display_name: string;
   local_part: string;
   domain: string;
-  domain_id: number;
-  reply_to: string | null;
+  sender_domain_id: number;
+  reply_to_override: string | null;
   is_default: boolean;
-  is_active: boolean;
   // 2026-06-24 — is_system marks the IA shared default senders seeded by
   // migration 065 (noreply / welcome / support / hello / notifications on
   // ia-dm.com). Surfaced to every tenant so the From dropdown is never
@@ -107,8 +114,8 @@ export function SparkSendersPage() {
       id: s.id,
       display_name: s.display_name,
       local_part: s.local_part,
-      domain_id: s.domain_id,
-      reply_to: s.reply_to || "",
+      domain_id: s.sender_domain_id,
+      reply_to: s.reply_to_override || "",
     });
     setModalOpen(true);
   }
@@ -117,11 +124,12 @@ export function SparkSendersPage() {
     if (!canSave) return;
     setSaving(true);
     try {
+      // Keys are the API's, not the form's — see the Sender interface note.
       const body = {
         display_name: form.display_name.trim(),
         local_part: form.local_part.trim().toLowerCase(),
-        domain_id: form.domain_id,
-        reply_to: form.reply_to.trim() || null,
+        sender_domain_id: form.domain_id,
+        reply_to_override: form.reply_to.trim() || null,
       };
       if (form.id) {
         await put(`/api/v1/senders/${form.id}`, body);
@@ -241,7 +249,7 @@ export function SparkSendersPage() {
                     {s.local_part}@{s.domain}
                   </span>
                 </td>
-                <td className="p-2 text-slate-500 text-xs">{s.reply_to || "—"}</td>
+                <td className="p-2 text-slate-500 text-xs">{s.reply_to_override || "—"}</td>
                 <td className="p-2 text-center">
                   {s.is_default && <Star className="h-4 w-4 text-[#EF6C33] inline" />}
                 </td>
