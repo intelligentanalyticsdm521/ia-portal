@@ -24,8 +24,6 @@ import {
   SubscriptionBillingTab,
   TeamTab,
   ConnectedAccountsTab,
-  NotificationRulesTab,
-  SecurityComplianceTab,
   DataPrivacyTab,
 } from './TenantSettings';
 
@@ -81,13 +79,24 @@ export function PlanPricingSettingsPage() {
 }
 
 export function TeamMembersSettingsPage() {
+  // Rendered WITHOUT <SettingsLayout>: TeamTab is now the real
+  // PlatformTeamAccess component, which brings its own page heading and
+  // padding. Wrapping it would stack two titles ("Team Members" over "Team
+  // access") on the same screen. It keeps the back-link so it still reads as
+  // part of Settings.
   return (
-    <SettingsLayout
-      title="Team Members"
-      description="Manage who has access to your organization. (Per-product OLIVER roles live in OLIVER → Settings → Team Access.)"
-    >
+    <div className="mx-auto max-w-4xl">
+      <div className="px-6 pt-6">
+        <Link
+          to="/app/settings"
+          className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+          All settings
+        </Link>
+      </div>
       <TeamTab />
-    </SettingsLayout>
+    </div>
   );
 }
 
@@ -102,27 +111,17 @@ export function IntegrationsSettingsPage() {
   );
 }
 
-export function NotificationsSettingsPage() {
-  return (
-    <SettingsLayout
-      title="Notification Rules"
-      description="Which events trigger alerts and who gets them."
-    >
-      <NotificationRulesTab />
-    </SettingsLayout>
-  );
-}
-
-export function SecuritySettingsPage() {
-  return (
-    <SettingsLayout
-      title="Security & Compliance"
-      description="Password policy, session timeout, and audit log."
-    >
-      <SecurityComplianceTab />
-    </SettingsLayout>
-  );
-}
+/* 2026-09-01 — NotificationsSettingsPage and SecuritySettingsPage were DELETED
+   along with the tabs behind them. Neither had a backend:
+     * Notification Rules toggled five alerts (SSL expiry, performance drop, new
+       review, weekly rankings, security scan) that are not implemented anywhere
+       in the platform, saving them to localStorage.
+     * Security & Compliance set a password policy and session timeout this app
+       cannot enforce (sign-in lives with the identity provider), also in
+       localStorage, and claimed "Audit log is captured automatically" — while
+       platform.audit_log has zero rows and lib/auditLog.js has no callers.
+   Sign-in facts that ARE true now live on /app/account -> Sign-in. Their routes
+   in App.tsx and their tiles below were removed in the same pass. */
 
 export function DataPrivacySettingsPage() {
   return (
@@ -171,9 +170,8 @@ const SETTINGS_TILES: Array<{
   {
     group: 'Platform',
     items: [
-      { to: '/app/settings/notifications', label: 'Notification Rules', description: 'Email alerts for key events' },
-      { to: '/app/settings/security', label: 'Security & Compliance', description: 'Password policy + session timeout' },
-      { to: '/app/settings/data-privacy', label: 'Data & Privacy', description: 'Export + retention policy' },
+      { to: '/app/account', label: 'Your account & sign-in', description: 'Your name, the address you sign in with, and how to change your password' },
+      { to: '/app/settings/data-privacy', label: 'Data & Privacy', description: 'Request a copy of your data + retention policy' },
     ],
   },
   {

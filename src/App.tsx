@@ -29,8 +29,6 @@ import {
   PlanPricingSettingsPage,
   TeamMembersSettingsPage,
   IntegrationsSettingsPage,
-  NotificationsSettingsPage,
-  SecuritySettingsPage,
   DataPrivacySettingsPage,
 } from './pages/settings/SettingsRoutes';
 import { BrandIdentityPage } from './pages/settings/BrandIdentityPage';
@@ -231,10 +229,8 @@ export function App() {
             <Route path="settings/plan-pricing" element={<PlanPricingSettingsPage />} />
             <Route path="settings/team-members" element={<TeamMembersSettingsPage />} />
             <Route path="settings/integrations" element={<IntegrationsSettingsPage />} />
-            <Route path="settings/notifications" element={<NotificationsSettingsPage />} />
             <Route path="settings/walkthroughs" element={<WalkthroughsPage />} />
             <Route path="settings/tours" element={<SettingsToursPage />} />
-            <Route path="settings/security" element={<SecuritySettingsPage />} />
             <Route path="settings/data-privacy" element={<DataPrivacySettingsPage />} />
             <Route path="settings/argus-data-plan" element={<ArgusDataPlanPage />} />
             <Route path="admin/argus-margin" element={<ArgusMarginPage />} />
