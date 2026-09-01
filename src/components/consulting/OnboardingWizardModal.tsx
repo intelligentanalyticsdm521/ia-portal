@@ -849,7 +849,29 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, cartTier, onClose, onFi
         console.warn("[onboarding] closing with an unsaved section:", current.id, canonicalError);
       }
       if (mode === "finish") {
-        await postFounder("/admin/onboard-client/finish-onboarding", { tenant_id: tenantId, defer_welcome: !!deferWelcome });
+        // 2026-09-01 — finish-onboarding runs five fan-out blocks (portal
+        // config, service catalog, ARION, SPARK, brand voice), each wrapped in
+        // its own non-fatal catch. It used to answer `{ ok: true, finished:
+        // true }` no matter how many of them had failed, so a tenant could
+        // "finish onboarding" with the catalog, ARION and SPARK all missing and
+        // the founder would see a clean close. It now returns a `failures`
+        // list; keep the modal open and show it rather than closing on a green
+        // tick over a half-built account.
+        const finishRes = await postFounder<{ ok?: boolean; failures?: Array<{ step: string; error: string }> }>(
+          "/admin/onboard-client/finish-onboarding",
+          { tenant_id: tenantId, defer_welcome: !!deferWelcome },
+        );
+        const finishFailures = finishRes?.failures || [];
+        if (finishFailures.length) {
+          setErr(
+            `Onboarding finished, but ${finishFailures.length === 1 ? "one part" : `${finishFailures.length} parts`} did not save: ` +
+            finishFailures.map((f) => `${f.step} (${f.error})`).join("; ") +
+            `. The account is created and the welcome has been sent — these pieces need setting up before this business is ready.`,
+          );
+          onFinished?.();   // the tenant IS finished; refresh the caller's view
+          setSaving(false);
+          return;           // stay open so the list is readable
+        }
         onFinished?.();
         onClose();
       } else if (mode === "close") {
