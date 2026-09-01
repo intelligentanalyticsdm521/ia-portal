@@ -45,7 +45,10 @@ interface Domain {
 }
 
 interface DnsRecord { type: string; host: string; value: string; note?: string; }
-interface RecordsResp { domain: string; records: { spf: DnsRecord; dkim_1: DnsRecord; dkim_2: DnsRecord; dmarc: DnsRecord }; }
+// domain_ownership is the TXT that PROVES you own the domain. The API has
+// always returned it; this page listed only spf/dkim/dmarc, so the one record
+// ACS's Domain check reads was invisible — and no domain could ever verify.
+interface RecordsResp { domain: string; records: { domain_ownership: DnsRecord; spf: DnsRecord; dkim_1: DnsRecord; dkim_2: DnsRecord; dmarc: DnsRecord }; }
 interface VerifyResp {
   data: { id: number; domain: string; status: Status; checks: Record<string, { found: boolean; ok?: boolean; value: unknown; includes_acs?: boolean }> };
 }
@@ -308,8 +311,9 @@ export function SparkSenderDomainsPage() {
   async function copyAllDns(records: RecordsResp | null) {
     if (!records) return;
     const lines: string[] = [];
-    (["spf", "dkim_1", "dkim_2", "dmarc"] as const).forEach((k) => {
+    (["domain_ownership", "spf", "dkim_1", "dkim_2", "dmarc"] as const).forEach((k) => {
       const r = records.records[k];
+      if (!r) return;   // ACS-unavailable fallback omits domain_ownership
       lines.push(`${k.toUpperCase()}  (${r.type})`);
       lines.push(`  Host : ${r.host}`);
       lines.push(`  Value: ${r.value}`);
@@ -326,11 +330,12 @@ export function SparkSenderDomainsPage() {
       [
         "Hi,",
         "",
-        `Please publish these 4 DNS records on the ${senderDomain.domain} zone so we can send branded email.`,
+        `Please publish these DNS records on the ${senderDomain.domain} zone so we can send branded email.`,
         "Once they're live, reply to this email and I'll click Verify.",
         "",
-        ...(["spf", "dkim_1", "dkim_2", "dmarc"] as const).flatMap((k) => {
+        ...(["domain_ownership", "spf", "dkim_1", "dkim_2", "dmarc"] as const).flatMap((k) => {
           const r = records.records[k];
+          if (!r) return [];
           return [
             `--- ${k.toUpperCase()} (${r.type}) ---`,
             `Host : ${r.host}`,
@@ -512,14 +517,15 @@ export function SparkSenderDomainsPage() {
               {records && (
                 <div className="space-y-2">
                   <div className="text-xs uppercase font-semibold text-slate-600">Publish these DNS records at your registrar:</div>
-                  {(["spf", "dkim_1", "dkim_2", "dmarc"] as const).map(key => {
+                  {(["domain_ownership", "spf", "dkim_1", "dkim_2", "dmarc"] as const).map(key => {
                     const rec = records.records[key];
+                    if (!rec) return null;   // ACS-unavailable fallback omits domain_ownership
                     const v = verifyResult?.checks?.[key];
                     const ok = v?.found && (v.ok !== false) && (key !== "spf" || v.includes_acs !== false);
                     return (
                       <div key={key} className={`border-2 rounded p-3 ${verifyResult ? (ok ? "border-emerald-200 bg-emerald-50/30" : "border-rose-200 bg-rose-50/30") : "border-slate-200 bg-white"}`}>
                         <div className="flex items-center justify-between mb-1">
-                          <div className="text-xs font-semibold uppercase text-slate-700">{key.replace("_", " ")} <span className="ml-2 text-[10px] text-slate-500 font-mono">({rec.type})</span></div>
+                          <div className="text-xs font-semibold uppercase text-slate-700">{key === "domain_ownership" ? "Domain ownership" : key.replace("_", " ")} <span className="ml-2 text-[10px] text-slate-500 font-mono">({rec.type})</span></div>
                           {verifyResult && (ok ? <Check className="h-4 w-4 text-emerald-600" /> : <X className="h-4 w-4 text-rose-600" />)}
                         </div>
                         <div className="grid grid-cols-3 gap-2 mt-1">
@@ -712,12 +718,13 @@ export function SparkSenderDomainsPage() {
               </div>
             )}
 
-            {/* The 4 records — shown in BOTH paths so the auto path has a
+            {/* The records — shown in BOTH paths so the auto path has a
                 fallback view if anything goes sideways. */}
             {createdRecords && (
               <div className="space-y-2">
-                {(["spf", "dkim_1", "dkim_2", "dmarc"] as const).map(key => {
+                {(["domain_ownership", "spf", "dkim_1", "dkim_2", "dmarc"] as const).map(key => {
                   const rec = createdRecords.records[key];
+                  if (!rec) return null;   // ACS-unavailable fallback omits domain_ownership
                   return (
                     <div key={key} className="border border-slate-200 rounded p-3 bg-white">
                       <div className="text-xs font-semibold uppercase text-slate-700">
