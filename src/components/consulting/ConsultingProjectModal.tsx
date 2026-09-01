@@ -459,8 +459,10 @@ export function ConsultingProjectModal({
         if (!cancelled && Array.isArray(list)) setCategoryOptions(list);
       } catch { /* leave empty — field renders read-only */ }
       try {
-        const r = await get<{ data?: Array<Record<string, string>> }>("/tenant-users");
-        const list = (r as { data?: Array<Record<string, string>> })?.data ?? (r as unknown as Array<Record<string, string>>);
+        // useOliverApi unwraps, so this is already the array. The old
+        // declaration named the envelope and relied on a `??` fallback to work
+        // — correct by accident, and a pattern worth not copying.
+        const list = await get<Array<Record<string, string>>>("/tenant-users");
         if (!cancelled && Array.isArray(list)) {
           setOwnerOptions(
             list

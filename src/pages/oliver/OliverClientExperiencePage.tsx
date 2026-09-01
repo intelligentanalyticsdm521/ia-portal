@@ -42,8 +42,10 @@ export function OliverClientExperiencePage() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const res = await get<{ data: CxState }>("/client-experience");
-      setState(res?.data || null);
+      // 2026-09-01 — useOliverApi unwraps; `res.data` was undefined, so this
+      // page rendered empty regardless of what the API returned.
+      const res = await get<CxState>("/client-experience");
+      setState(res || null);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
   }, [get]);

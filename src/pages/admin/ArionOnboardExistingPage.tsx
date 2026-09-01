@@ -54,12 +54,14 @@ export function ArionOnboardExistingPage() {
     setError(null);
     setBusy(true);
     try {
-      const r = await post<{ data: OnboardResult }>("/admin/arion-onboard-existing", {
+      // 2026-09-01 — useOliverApi unwraps; reading .data gave undefined, so a
+      // successful onboard showed no result at all.
+      const r = await post<OnboardResult>("/admin/arion-onboard-existing", {
         ...form,
         // brandName falls back to legal name if blank
         brandName: form.brandName.trim() || form.name.trim(),
       });
-      setResult(r.data);
+      setResult(r);
     } catch (e) {
       setError((e as Error).message || "Onboarding failed");
     } finally {

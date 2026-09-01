@@ -298,8 +298,11 @@ function DesignTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind
 
   useEffect(() => {
     if (!ready) return;
-    get<{ data: DesignShape }>(`/portals/design?kind=${portalKind}`)
-      .then((r) => setDesign(r.data || defaults))
+    // 2026-09-01 — useOliverApi unwraps the envelope, so `r.data` was
+    // undefined and this ALWAYS fell back to `defaults`: a saved portal design
+    // was never loaded back, so every visit looked unsaved.
+    get<DesignShape>(`/portals/design?kind=${portalKind}`)
+      .then((r) => setDesign(r || defaults))
       .catch(() => setDesign(defaults));
   }, [ready, portalKind, get, defaults]);
 
@@ -635,8 +638,8 @@ function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: Po
     }
     setBinding(true); setMsg(null); setBindResult(null);
     try {
-      const r = await post<{ data: BindResponse }>(`/portal-domains/custom`, { portal_kind: portalKind, hostname: normalized });
-      const data = (r as { data?: BindResponse })?.data ?? (r as unknown as BindResponse);
+      // useOliverApi unwraps — this is already the BindResponse.
+      const data = await post<BindResponse>(`/portal-domains/custom`, { portal_kind: portalKind, hostname: normalized });
       setBindResult(data);
       if (data?.error) {
         setMsg(`Error: ${data.error}`);

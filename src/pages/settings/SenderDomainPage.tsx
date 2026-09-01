@@ -104,8 +104,14 @@ export function SenderDomainPage() {
     setLoading(true);
     setError(null);
     try {
-      const r = await get<{ data: Domain[] }>("/api/v1/sender-domains");
-      setList(r?.data || []);
+      // 2026-09-01 — useLumenApi ALREADY strips the { data: ... } envelope
+      // (lib/lumenApi.ts:145, same as oliverApi). Declaring the envelope here
+      // and then reading `r.data` produced undefined every time, so this list
+      // was permanently empty and the Email Sender Domain settings page showed
+      // no domains for anyone. Note the records fetch a few lines below always
+      // did it correctly — the two calls disagreed in the same file.
+      const r = await get<Domain[]>("/api/v1/sender-domains");
+      setList(Array.isArray(r) ? r : []);
     } catch (err) {
       setError((err as Error).message || "Failed to load sender domains.");
     } finally {
@@ -148,12 +154,12 @@ export function SenderDomainPage() {
     setCreating(true);
     setCreateError(null);
     try {
-      const r = await post<{ data: Domain }>("/api/v1/sender-domains", {
+      const r = await post<Domain>("/api/v1/sender-domains", {
         domain: trimmed,
         display_name: newDisplayName.trim() || null,
         reply_to: newReplyTo.trim() || null,
       });
-      const created = r?.data;
+      const created = r;
       await fetchAll();
       if (created?.id) setSelectedId(created.id);
       setAddOpen(false);

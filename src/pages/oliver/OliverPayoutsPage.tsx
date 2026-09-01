@@ -48,12 +48,24 @@ export function OliverPayoutsPage() {
     if (!ready) return;
     setLoading(true); setError(null);
     try {
-      const r = await get<{ data: PayoutData | null; note?: string }>("/settings/stripe/payouts");
-      setData(r?.data || null);
+      // 2026-09-01 — this read `r.data` and `r.note` on a client that ALREADY
+      // unwraps the envelope (useOliverApi -> lib/oliverApi.ts returns
+      // body.data and discards its siblings). So `r.data` was undefined even
+      // when the request succeeded, and `note` — which the API sent as a
+      // sibling — never arrived at all. The page rendered "no data" whether or
+      // not a Stripe account existed, and a tenant without one got a blank
+      // panel with no explanation.
+      //
+      // The endpoint now puts connected/platform/note INSIDE data, so one
+      // unwrapped object carries every state.
+      const r = await get<(PayoutData & { connected: boolean; note: string | null }) | null>(
+        "/settings/stripe/payouts",
+      );
+      setData(r?.connected ? r : null);
       setNote(r?.note || null);
-      if (r?.data?.payout_schedule) {
-        setInterval(r.data.payout_schedule.interval || "daily");
-        setDelayDays(r.data.payout_schedule.delay_days ?? "");
+      if (r?.payout_schedule) {
+        setInterval(r.payout_schedule.interval || "daily");
+        setDelayDays(r.payout_schedule.delay_days ?? "");
       }
     } catch (err) { setError(err); }
     finally { setLoading(false); }

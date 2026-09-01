@@ -29,17 +29,20 @@ import { PendingChangeBanner } from "../../components/PendingChangeBanner";
 import { CheckoutResultFlash } from "../../components/CheckoutResultFlash";
 import { Check, AlertCircle, ChevronDown, ChevronUp, Users, Briefcase, RotateCw } from "lucide-react";
 
+// 2026-09-01 — this modelled the { data: ... } ENVELOPE, which useOliverApi
+// already strips (lib/oliverApi.ts:135). Every read below went one level too
+// deep, so `usage`, `pricing` and the CX tier were all null and this page
+// rendered nothing at all — no bars, no prices, no tier. The type now describes
+// what the client actually hands back.
 interface UsageResponse {
-  data: {
-    tier: string;
-    usage: {
-      seats: { used: number; limit: number | null };
-      active_jobs: { used: number; limit: number | null };
-      jobs_per_month: { used: number; limit: number | null };
-      active_recurring: { used: number; limit: number | null };
-      pricebook_items: { used: number; limit: number | null };
-      workflow_templates: { used: number; limit: number | null };
-    };
+  tier: string;
+  usage: {
+    seats: { used: number; limit: number | null };
+    active_jobs: { used: number; limit: number | null };
+    jobs_per_month: { used: number; limit: number | null };
+    active_recurring: { used: number; limit: number | null };
+    pricebook_items: { used: number; limit: number | null };
+    workflow_templates: { used: number; limit: number | null };
   };
 }
 
@@ -232,7 +235,7 @@ function fmtNum(n: number | null | undefined): string {
 
 export function OliverUsagePage() {
   const { get, post, ready } = useOliverApi();
-  const [usage, setUsage] = useState<UsageResponse["data"] | null>(null);
+  const [usage, setUsage] = useState<UsageResponse | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 
@@ -281,19 +284,20 @@ export function OliverUsagePage() {
     (async () => {
       setLoading(true); setError(null);
       try {
-        // /tier-limits/usage returns { data: { tier, usage: { seats: {used, limit}, … } } }
+        // The API sends { data: { tier, usage: {…} } }; useOliverApi returns the
+        // INSIDE of that envelope, so these are already unwrapped.
         const [raw, priceRes, cxRes] = await Promise.all([
           get<UsageResponse>("/tier-limits/usage"),
-          get<{ data: PlanPricingRow[] }>("/tier-limits/plan-pricing").catch(() => ({ data: [] as PlanPricingRow[] })),
-          get<{ data: { cxTier: string; pricing: Record<string, { price: number; label: string }> } }>("/client-experience").catch(() => null),
+          get<PlanPricingRow[]>("/tier-limits/plan-pricing").catch(() => [] as PlanPricingRow[]),
+          get<{ cxTier: string; pricing: Record<string, { price: number; label: string }> }>("/client-experience").catch(() => null),
         ]);
         if (!cancelled) {
-          setUsage(raw?.data || null);
+          setUsage(raw || null);
           const pmap: Record<string, PlanPricingRow> = {};
-          (priceRes?.data || []).forEach((r) => { pmap[r.tier] = r; });
+          (Array.isArray(priceRes) ? priceRes : []).forEach((r) => { pmap[r.tier] = r; });
           setPricing(pmap);
-          if (cxRes?.data) setCx({ cxTier: cxRes.data.cxTier, pricing: cxRes.data.pricing });
-          const live = raw?.data?.tier?.toLowerCase();
+          if (cxRes) setCx({ cxTier: cxRes.cxTier, pricing: cxRes.pricing });
+          const live = raw?.tier?.toLowerCase();
           if (isPlatformOwner(activeTenantId)) setTier("business");
           else if (live === "lite" || live === "standard" || live === "pro" || live === "business") setTier(live);
         }

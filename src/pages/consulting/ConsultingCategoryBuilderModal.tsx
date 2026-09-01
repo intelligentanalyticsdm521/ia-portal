@@ -234,11 +234,15 @@ export function ConsultingCategoryBuilderModal({
 
       let saved: CategoryShape;
       if (isEdit && category) {
-        const r = await put<{ data: CategoryShape }>(`/consulting/categories/${category.category_id}`, payload);
-        saved = r?.data as CategoryShape;
+        // 2026-09-01 — useOliverApi unwraps the envelope, so `r.data` was
+        // undefined on BOTH branches and `saved` was always falsy. Every save
+        // therefore hit the throw below and reported "Server did not return the
+        // saved category" — while the category had in fact been saved.
+        const r = await put<CategoryShape>(`/consulting/categories/${category.category_id}`, payload);
+        saved = r;
       } else {
-        const r = await post<{ data: CategoryShape }>("/consulting/categories", payload);
-        saved = r?.data as CategoryShape;
+        const r = await post<CategoryShape>("/consulting/categories", payload);
+        saved = r;
       }
       if (!saved) throw new Error("Server did not return the saved category.");
       onSaved(saved);
