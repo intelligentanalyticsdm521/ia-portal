@@ -15,8 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { IadmModal } from "../../components/IadmModal";
 import {
-  TASK_STAGE_LABELS, TASK_STATUS_LABELS, taskActionsFor,
-} from "../../components/consulting/ConsultingProjectModal";
+  TASK_STAGE_LABELS, TASK_STATUS_LABELS, taskActionsFor, allTaskMoves } from "../../components/consulting/ConsultingProjectModal";
 import type { WorkRow, ReleaseRow, WorkerRow, WorkMeta } from "./workTypes";
 import { PLATFORM_LABEL } from "./workTypes";
 
@@ -219,8 +218,13 @@ export function TaskModal({ row, releases, workers, meta, projects, onClose, onS
                 <option value={`${row.stage}|${row.status}`}>
                   {TASK_STAGE_LABELS[row.stage] || row.stage} — {TASK_STATUS_LABELS[row.status] || row.status}
                 </option>
-                {taskActionsFor(row.stage, row.is_internal).filter((a) => a.value !== `${row.stage}|${row.status}`)
-                  .map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+                {allTaskMoves().map((g) => (
+                  <optgroup key={g.stage} label={g.label}>
+                    {g.options
+                      .filter((o) => o.value !== `${row.stage}|${row.status}`)
+                      .map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </optgroup>
+                ))}
               </select>
               {(row.days_in_stage ?? 0) > 0 && (
                 <p className="mt-1 text-[11px] text-slate-500">{row.days_in_stage} days in this stage</p>

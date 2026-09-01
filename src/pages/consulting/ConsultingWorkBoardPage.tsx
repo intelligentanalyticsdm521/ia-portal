@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { IadmModal } from "../../components/IadmModal";
 import { Plus, AlertCircle, LayoutGrid, List as ListIcon, ChevronDown, ChevronRight, Search, Settings } from "lucide-react";
-import { TASK_STAGE_LABELS, TASK_STATUS_LABELS, taskActionsFor, defaultStatusFor } from "../../components/consulting/ConsultingProjectModal";
+import { TASK_STAGE_LABELS, TASK_STATUS_LABELS, taskActionsFor, defaultStatusFor, allTaskMoves } from "../../components/consulting/ConsultingProjectModal";
 import { TaskModal } from "./TaskModal";
 import {
   type WorkRow, type ReleaseRow, type WorkerRow, type WorkMeta,
@@ -346,8 +346,13 @@ export function ConsultingWorkBoardPage() {
           <option value={`${r.stage}|${r.status}`}>
             {TASK_STAGE_LABELS[r.stage] || r.stage} — {TASK_STATUS_LABELS[r.status] || r.status}
           </option>
-          {taskActionsFor(r.stage, r.is_internal).filter((a) => a.value !== `${r.stage}|${r.status}`)
-            .map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+          {allTaskMoves().map((g) => (
+            <optgroup key={g.stage} label={g.label}>
+              {g.options
+                .filter((o) => o.value !== `${r.stage}|${r.status}`)
+                .map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </optgroup>
+          ))}
         </select>
       </div>
     );
