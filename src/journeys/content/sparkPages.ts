@@ -392,4 +392,102 @@ export const SPARK_PAGES: PageContentMap = {
     body:
       "The plain record — real-time activity, usage against your plan, and the audit log. No scoring, just the facts as they happened.",
   },
+
+  // ── Sending setup ────────────────────────────────────────────────────────
+  // Added 2026-09-01. These are the technical settings a client hits early and
+  // has no way to reason about — Brandon walked Sender Setup cold and could not
+  // tell what it was for, which is the same wall a customer hits.
+  spark_sender_domains: {
+    title: "Sender Setup — proving the internet you're allowed to send",
+    body:
+      "Email providers won't take your word for it. Before Gmail will trust mail that says it's from your business, your domain has to carry a few DNS records that say we're allowed to send on your behalf. That's all this page does: it tells you which records are needed, and where possible publishes them for you. You only do this once per domain.",
+    onPage: [
+      {
+        title: "Automatic or manual — and why it matters",
+        body:
+          "If we host your DNS, we write the records for you: that's the Automatic path, and it's a button. If your domain lives at another registrar, we can't touch it, so we show you the exact records to paste — the Manual path. Neither is better; it only depends on who holds your DNS.",
+      },
+      {
+        title: "The four records, in plain English",
+        body:
+          "Domain ownership proves the domain is yours. SPF lists who may send as you. DKIM (two of them) signs each message so it can't be tampered with in transit. All four must go green before you can send — the ownership one is the record people most often miss.",
+      },
+      {
+        title: "Pending is normal at first",
+        body:
+          "DNS takes minutes to spread around the world, so a domain sits Pending straight after you publish. Come back and press Verify again rather than assuming it failed. Once every check is green the domain is done for good.",
+      },
+      {
+        title: "One SPF record, no exceptions",
+        body:
+          "A domain may only have ONE SPF record. If you already have one — for Google Workspace, or your website host — merge ours into it and keep every existing include. Replacing it is how businesses accidentally stop their own mail from being delivered.",
+      },
+    ],
+  },
+  spark_senders: {
+    title: "Senders — the actual name and address on the email",
+    body:
+      "The domain earns the right to send; a sender is what the recipient actually sees in their inbox — 'Rolling In It <hello@rollinginit.com>'. Add one per address you want to send from, mark the one you use most as default, and set a reply-to if replies should land somewhere else, like a Gmail you actually read.",
+    onPage: [
+      {
+        title: "You need a verified domain first",
+        body:
+          "A sender can only sit on a domain that has passed Sender Setup. If the address you want isn't offered, the domain behind it isn't verified yet — go back one page rather than trying to force it here.",
+      },
+      {
+        title: "Reply-to is the one people forget",
+        body:
+          "You can send as an address that has no mailbox behind it. What you must not do is leave customers replying into a void — set reply-to to an address a human reads. This is exactly how a client's quote replies get lost.",
+      },
+    ],
+  },
+  spark_signatures: {
+    body:
+      "The block that goes at the bottom of your emails — name, role, phone, links. Set it once here and every send picks it up, instead of it being retyped (and drifting) in each template.",
+  },
+  spark_custom_fields: {
+    title: "Custom Fields — the things we didn't think of",
+    body:
+      "Every business tracks something the standard contact record doesn't have: policy renewal date, gate code, dog's name. Define it once here and it becomes a real field on every contact — filterable, segmentable, and usable as a merge tag in a campaign.",
+  },
+  spark_quiet_hours: {
+    title: "Quiet Hours — don't text people at 3am",
+    body:
+      "A tenant-wide window where outbound SMS is held back. Texts land on a phone on a bedside table, and a 3am message is how you lose a customer and earn a complaint. Set the window once; anything scheduled inside it waits until the window opens rather than being dropped.",
+  },
+  spark_tracking: {
+    title: "Tracking Pixels — knowing which visits became customers",
+    body:
+      "A one-line snippet for your website. With it, an anonymous visitor who later fills in a form can be joined up to everything they read beforehand — which is what makes attribution reporting meaningful instead of guesswork. Without it, you only ever see what people did AFTER they were already in your CRM.",
+  },
+  spark_calendar_sync: {
+    body:
+      "Connects your real calendar so bookings and availability stay in step. Once linked, a meeting booked here shows up in the calendar you actually live in, and a busy block there stops it being double-booked here.",
+  },
+  spark_service_category: {
+    body:
+      "Groups what you sell into categories, so reporting and campaign targeting can talk about 'plowing' or 'design work' rather than listing every individual service.",
+  },
+  spark_api_keys: {
+    title: "API Keys — letting other software talk to yours",
+    body:
+      "A key is a password for a program rather than a person. Create one when another system needs to read or write your data, and give it only to that system. Treat it exactly like a password: it is shown once, it is not recoverable, and anything holding it can act as you.",
+    onPage: [
+      {
+        title: "If a key leaks, revoke it",
+        body:
+          "Revoking is instant and safe — the key stops working, and you issue a new one to whatever legitimately needed it. Never leave a suspect key alive because rotating it feels like a hassle.",
+      },
+    ],
+  },
+  spark_secrets: {
+    title: "Tenant Secrets — credentials for your connected accounts",
+    body:
+      "Where the credentials for third-party services you've connected are held. You rarely need this page directly; connections are normally made from the integration itself. Come here to see what is stored and to remove something you've stopped using.",
+  },
+  spark_config_backup: {
+    title: "Configuration Backup — a copy of how you've set things up",
+    body:
+      "Exports your SPARK configuration — dashboards, reports, custom fields, rules and templates — as a file you can re-import. It is a snapshot of your SETUP, not of your contacts or your sends. Worth taking before a big reorganisation, so 'undo' is a real option.",
+  },
 };

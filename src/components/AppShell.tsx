@@ -16,6 +16,7 @@ import { ConsultantModeBanner } from "./consulting/ConsultantModeBanner";
 // users. Self-hides once dismissed (session-scoped) or once there are no
 // pending tasks. Co-exists with all existing setup banners.
 import { WalkthroughPanel } from "./walkthroughs/WalkthroughPanel";
+import { PageHelpButton } from "./PageHelpButton";
 
 // Strip OLIVER nav items that aren't in allowedServiceKeys, and drop any
 // group that becomes empty. Returns the original config when no filter
@@ -365,6 +366,15 @@ export function AppShell() {
 
         {/* Main content area. On mobile, top padding clears the hamburger. */}
         <main className="flex-1 overflow-y-auto bg-[#F2F6F9] pt-12 md:pt-0">
+          {/* 2026-09-01 — help offered FROM the page you are stuck on, not only
+              from the header's Learn menu (which you have to already suspect
+              covers your problem). PageHelpButton resolves the current route
+              against the journeys and opens that exact step; it renders nothing
+              on pages with no authored content, so it never promises help that
+              does not answer the question. */}
+          <div className="flex justify-end px-4 pt-3 md:px-6">
+            <PageHelpButton />
+          </div>
           <Outlet />
         </main>
       </div>
