@@ -53,6 +53,14 @@ export function ForgeEntityPicker({
      itself is the server's job — see the note at the top of this file. */
   useEffect(() => {
     if (!ready) return;
+    /* Only load once the picker is actually OPENED. Every entity field mounts
+       one of these, so a form with four references fired four full-entity loads
+       the instant it appeared — opening New Service pulled up to 1,400 rows
+       before the user had typed anything. Most of those pickers are never
+       touched: a service is usually created from a client, with the client
+       already filled in. The selected record is fetched separately by id below,
+       so a closed picker still shows its value by name. */
+    if (!open) return;
     let cancelled = false;
     const handle = setTimeout(() => {
       setLoading(true);
@@ -80,7 +88,7 @@ export function ForgeEntityPicker({
         .finally(() => { if (!cancelled) setLoading(false); });
     }, query ? 200 : 0);
     return () => { cancelled = true; clearTimeout(handle); };
-  }, [ready, withParams, entity, query]);
+  }, [ready, withParams, entity, query, open]);
 
   /* The selected record may not be in the current search results — you picked
      it, then typed something else, or the form opened with it pre-filled. Fetch
