@@ -559,14 +559,54 @@ export function ConsultingProjectModal({
     }
   }
 
+  // Closing a milestone offers to close its open tasks with it (2026-08-29,
+  // Brandon: "if I close out a milestone it should ask me if I want to complete
+  // the tasks associated with it"). Only the two CLOSING statuses map onto a
+  // task state — project_milestone has no 'cancelled', 'skipped' is its cancel.
+  const MILESTONE_CASCADE: Partial<Record<MilestoneStatus, { verb: string; noun: string }>> = {
+    complete: { verb: "Mark them completed too", noun: "completed" },
+    skipped: { verb: "Cancel them too", noun: "cancelled" },
+  };
+
   async function handleMilestoneStatusChange(mid: string, next: MilestoneStatus) {
     setMilestoneNotice(null);
+    // Ask BEFORE the PATCH, and only when there is actually something to close —
+    // an unconditional prompt on every status change trains people to dismiss it.
+    let cascadeTasks = false;
+    const cascade = MILESTONE_CASCADE[next];
+    if (cascade) {
+      const openTasks = (data?.tasks || []).filter(
+        (t) => t.milestone_id === mid && t.stage !== "completed" && t.stage !== "cancelled",
+      );
+      if (openTasks.length > 0) {
+        const lines = openTasks.slice(0, 5).map((t) => `  - ${t.title}`);
+        if (openTasks.length > 5) lines.push(`  ...and ${openTasks.length - 5} more`);
+        cascadeTasks = window.confirm(
+          [
+            `This milestone still has ${openTasks.length} open task${openTasks.length === 1 ? "" : "s"}:`,
+            "",
+            ...lines,
+            "",
+            `${cascade.verb}?`,
+            "",
+            `OK = also mark them ${cascade.noun}.  Cancel = leave them as they are.`,
+          ].join("\n"),
+        );
+      }
+    }
     try {
       // PATCH /consulting/projects/:id/milestones/:mid is live (backend commit
       // dfb6567). complete stamps completed_at + auto-advances the next
       // milestone; un-complete clears completed_at (Brandon's Rolling In It
       // case); is_payment_trigger milestones flip payment_charge_status='ready'.
-      await patch(`/consulting/projects/${projectId}/milestones/${mid}`, { status: next });
+      const r = await patch<{ tasks_cascaded?: number }>(
+        `/consulting/projects/${projectId}/milestones/${mid}`,
+        { status: next, ...(cascadeTasks ? { cascade_tasks: true } : {}) },
+      );
+      const n = (r as { tasks_cascaded?: number } | undefined)?.tasks_cascaded ?? 0;
+      if (cascadeTasks && n > 0) {
+        setMilestoneNotice(`Milestone updated - ${n} task${n === 1 ? "" : "s"} ${cascade?.noun}.`);
+      }
       await load();
       onChanged?.();
     } catch (e) {
