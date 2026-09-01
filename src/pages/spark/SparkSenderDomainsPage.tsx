@@ -364,7 +364,7 @@ export function SparkSenderDomainsPage() {
       subtitle={subtitle}
       help="Pick where your campaigns send from: the Intelligent Analytics default, or your own business email (white-label). White-label needs 4 DNS records published on your domain — we'll either add them automatically (if we host your site) or give you copy-paste records to hand off to your web admin."
       actions={
-        <button onClick={openWizard} className="text-sm px-3 py-1.5 rounded bg-[#EF6C33] text-white flex items-center gap-1">
+        <button data-tour="sender-add" onClick={openWizard} className="text-sm px-3 py-1.5 rounded bg-[#EF6C33] text-white flex items-center gap-1">
           <Plus className="h-4 w-4" /> Add sender
         </button>
       }
@@ -574,6 +574,7 @@ export function SparkSenderDomainsPage() {
             <>
               <IadmButton variant="ghost" onClick={() => setWizardStep("pick")}>Back</IadmButton>
               <IadmButton
+                data-tour="sender-continue"
                 variant="accent"
                 product="spark"
                 onClick={submitWhiteLabel}
@@ -587,6 +588,7 @@ export function SparkSenderDomainsPage() {
               <IadmButton variant="ghost" onClick={() => setWizardOpen(false)}>Close</IadmButton>
               {!hostingerManaged && createdDomain && (
                 <IadmButton
+                  data-tour="sender-verify"
                   variant="accent"
                   product="spark"
                   onClick={() => verifyNow(createdDomain.id)}
@@ -648,6 +650,7 @@ export function SparkSenderDomainsPage() {
           <div className="p-6 space-y-4 max-w-xl">
             <Labeled label="Sender email address" hint="e.g. welcome@yourbusiness.com or hello@acme.com.">
               <input
+                data-tour="sender-email"
                 value={senderEmail}
                 placeholder="welcome@yourbusiness.com"
                 onChange={(e) => setSenderEmail(e.target.value)}
@@ -657,6 +660,7 @@ export function SparkSenderDomainsPage() {
             </Labeled>
             <Labeled label="Display name (optional)" hint="The name your recipients see in their inbox — usually your business name.">
               <input
+                data-tour="sender-display-name"
                 value={senderDisplayName}
                 placeholder="Acme Co."
                 onChange={(e) => setSenderDisplayName(e.target.value)}

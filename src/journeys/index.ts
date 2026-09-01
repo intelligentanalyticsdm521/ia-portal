@@ -15,14 +15,15 @@ import { STELLA_JOURNEY } from "./stellaJourney";
 import { CONSULTING_JOURNEY } from "./consultingJourney";
 import { ARGUS_JOURNEY } from "./argusJourney";
 import { FORGE_JOURNEY } from "./forgeJourney";
+import { SETTINGS_JOURNEY } from "./settingsJourney";
 import type { Journey, JourneyProduct, JourneyStep } from "./types";
 
 export * from "./types";
-export { SPARK_JOURNEY, OLIVER_JOURNEY, ARION_JOURNEY, STELLA_JOURNEY, CONSULTING_JOURNEY, ARGUS_JOURNEY, FORGE_JOURNEY };
+export { SPARK_JOURNEY, OLIVER_JOURNEY, ARION_JOURNEY, STELLA_JOURNEY, CONSULTING_JOURNEY, ARGUS_JOURNEY, FORGE_JOURNEY, SETTINGS_JOURNEY };
 
 export const ALL_JOURNEYS: Journey[] = [
   ARION_JOURNEY, OLIVER_JOURNEY, SPARK_JOURNEY, STELLA_JOURNEY,
-  CONSULTING_JOURNEY, ARGUS_JOURNEY, FORGE_JOURNEY,
+  CONSULTING_JOURNEY, ARGUS_JOURNEY, FORGE_JOURNEY, SETTINGS_JOURNEY,
 ];
 
 export function journeyFor(product: JourneyProduct): Journey | undefined {

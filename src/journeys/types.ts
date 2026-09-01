@@ -33,7 +33,7 @@ import type {
 
 // consulting/argus/forge joined 2026-09-01 — every product with a nav now has
 // a journey, so no page is left with nowhere to send someone for help.
-export type JourneyProduct = "spark" | "oliver" | "arion" | "stella" | "consulting" | "argus" | "forge";
+export type JourneyProduct = "spark" | "oliver" | "arion" | "stella" | "consulting" | "argus" | "forge" | "settings";
 
 export interface JourneyStep {
   /** Stable, addressable id — e.g. "spark.contacts". Survives content edits;

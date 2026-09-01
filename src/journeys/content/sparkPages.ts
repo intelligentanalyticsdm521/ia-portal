@@ -400,7 +400,7 @@ export const SPARK_PAGES: PageContentMap = {
   spark_sender_domains: {
     title: "Sender Setup — proving the internet you're allowed to send",
     body:
-      "Email providers won't take your word for it. Before Gmail will trust mail that says it's from your business, your domain has to carry a few DNS records that say we're allowed to send on your behalf. That's all this page does: it tells you which records are needed, and where possible publishes them for you. You only do this once per domain.",
+      "Email providers won't take your word for it. Before Gmail will trust mail that says it's from your business, your domain has to carry a few DNS records saying we may send on your behalf. That is all this page does. You start by entering the address you want to send FROM — a full email like hello@yourbusiness.com — and we work the domain out from it. Once per domain, then never again.",
     onPage: [
       {
         title: "Automatic or manual — and why it matters",
@@ -421,6 +421,58 @@ export const SPARK_PAGES: PageContentMap = {
         title: "One SPF record, no exceptions",
         body:
           "A domain may only have ONE SPF record. If you already have one — for Google Workspace, or your website host — merge ours into it and keep every existing include. Replacing it is how businesses accidentally stop their own mail from being delivered.",
+      },
+    ],
+    doIt: [
+      {
+        targetSelector: 'button[data-tour="sender-add"]',
+        advance: "click",
+        title: "Let's set up sending together",
+        body:
+          "This is a once-per-domain job. We'll go through it now and you'll end up able to send email that says it's from your business. Click Add sender.",
+        placement: "bottom",
+      },
+      {
+        targetSelector: 'input[data-tour="sender-email"]',
+        advance: "input",
+        waitForMs: 2000,
+        title: "Type the address you want to send FROM",
+        body:
+          "A full email address, not just the domain — for example hello@yourbusiness.com. It does not need to be a real mailbox; it is the address that appears in the recipient's inbox. We read the domain out of it for you.",
+        placement: "right",
+      },
+      {
+        targetSelector: 'input[data-tour="sender-display-name"]',
+        advance: "next",
+        title: "The name people see (optional)",
+        body:
+          "Usually your business name. In an inbox it reads as 'Your Business <hello@yourbusiness.com>'. Skip it and only the address shows.",
+        placement: "right",
+      },
+      {
+        targetSelector: '[data-tour="sender-continue"]',
+        advance: "click",
+        title: "Continue — we work out the rest",
+        body:
+          "We take the domain from your address, register it with the email provider, and come back with what has to be published on that domain.",
+        placement: "top",
+      },
+      {
+        targetSelector: '[data-tour="sender-verify"], .space-y-2',
+        advance: "next",
+        waitForMs: 4000,
+        title: "The DNS records — what you're looking at",
+        body:
+          "Four records. Domain ownership proves the domain is yours. SPF lists who may send as you. The two DKIM records sign each message so it cannot be altered in transit. If we host your DNS we publish them for you; if not, these get handed to whoever runs your domain.",
+        placement: "top",
+      },
+      {
+        targetSelector: '[data-tour="sender-verify"], .space-y-2',
+        advance: "next",
+        title: "Then verify — and be patient once",
+        body:
+          "DNS takes a few minutes to spread. Pending straight after publishing is normal, not a failure — come back and verify again. Once all four are green the domain is done permanently, and you can pick this address on any campaign.",
+        placement: "top",
       },
     ],
   },
