@@ -71,6 +71,9 @@ export function CommandDashboard() {
   const [oliverStats, setOliverStats] = useState<OliverDashboardStats | null>(null);
   const [sparkNps, setSparkNps] = useState<SparkNpsSummary | null>(null);
   const [sparkGrowth, setSparkGrowth] = useState<SparkGrowth | null>(null);
+  // Distinguishes 'still loading' from 'we asked and it failed'. Without it a
+  // dead feed shows 'Loading focus items…' forever.
+  const [oliverFailed, setOliverFailed] = useState(false);
 
   // v13.0 (2026-07-25) — scores come from the SAME client-side roll-up the
   // Health pages compute (healthSummary.demoBusinessPulse), so the home strip
@@ -95,8 +98,18 @@ export function CommandDashboard() {
 
   const load = useCallback(async () => {
     if (hasOliver && oliver.ready) {
-      try { setOliverToday((await oliver.get<{ data: OliverDashboardToday }>("/dashboard/today"))?.data); } catch { /* skip */ }
-      try { setOliverStats((await oliver.get<{ data: OliverDashboardStats }>("/dashboard/stats"))?.data); } catch { /* skip */ }
+      // 2026-09-01 — DOUBLE UNWRAP. lib/oliverApi already strips the
+      // { data: ... } envelope, so reading `.data` on the result was always
+      // undefined: every OLIVER card on this dashboard rendered "—", and
+      // Today's focus rendered NOTHING AT ALL (its all-clear line requires
+      // oliverToday to be truthy, and its loading line requires both feeds to
+      // be null — with spark loading and oliver undefined, neither branch
+      // matched). That is the "there are no focus items" report.
+      // sparkApi below deliberately does NOT unwrap, so `.data` is correct there.
+      try { setOliverToday(await oliver.get<OliverDashboardToday>("/dashboard/today")); }
+      catch (e) { console.warn("[CommandDashboard] /dashboard/today failed:", e); setOliverFailed(true); }
+      try { setOliverStats(await oliver.get<OliverDashboardStats>("/dashboard/stats")); }
+      catch (e) { console.warn("[CommandDashboard] /dashboard/stats failed:", e); }
     }
     if (hasSpark && spark.ready) {
       try {
@@ -176,8 +189,13 @@ export function CommandDashboard() {
               {oliverToday?.disputes_open ? <li>⚠ {oliverToday.disputes_open} Stripe disputes need response.</li> : null}
               {sparkGrowth?.new_contacts === 0 ? <li>👥 No new contacts in 30 days — capture forms may need attention.</li> : null}
               {sparkNps && sparkNps.nps < 0 ? <li>🔴 NPS is negative — talk to a detractor today.</li> : null}
-              {!oliverToday && !sparkGrowth && <li className="text-gray-500">Loading focus items…</li>}
-              {oliverToday && !oliverToday.overdue_invoices && !oliverToday.open_requests && !oliverToday.disputes_open && sparkGrowth && sparkGrowth.new_contacts > 0 && (!sparkNps || sparkNps.nps >= 0) && <li className="text-emerald-700">✅ No critical signals — keep going.</li>}
+              {!oliverToday && !sparkGrowth && !oliverFailed && <li className="text-gray-500">Loading focus items…</li>}
+              {oliverFailed && !oliverToday && <li className="text-amber-700">Couldn&apos;t load today&apos;s OLIVER figures — the rest of this page is still accurate.</li>}
+              {(oliverToday || sparkGrowth)
+                && !oliverToday?.overdue_invoices && !oliverToday?.open_requests && !oliverToday?.disputes_open
+                && !(sparkGrowth && sparkGrowth.new_contacts === 0)
+                && (!sparkNps || sparkNps.nps >= 0)
+                && <li className="text-emerald-700">✅ No critical signals — keep going.</li>}
             </ul>
           </div>
         </div>

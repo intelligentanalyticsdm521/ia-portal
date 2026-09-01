@@ -81,8 +81,9 @@ export function CommandAlerts() {
           completed_count: number;
           total_steps: number;
         };
-        const r = await oliver.get<{ data: OnboardingStatus }>("/onboarding/status");
-        const ob = r.data;
+        // lib/oliverApi already strips the { data: ... } envelope, so reading
+        // .data here was always undefined and this alert could never fire.
+        const ob = await oliver.get<OnboardingStatus>("/onboarding/status");
         if (ob && !ob.onboarding_completed_at && !ob.all_required_complete) {
           next.push({
             id: "oliver-onboarding-incomplete", severity: "warning", source: "oliver",
@@ -95,8 +96,8 @@ export function CommandAlerts() {
 
       try {
         type OliverToday = { overdue_invoices: number; overdue_amount: number; open_requests: number; disputes_open: number; };
-        const r = await oliver.get<{ data: OliverToday }>("/dashboard/today");
-        const d = r.data;
+        // Same double-unwrap — the overdue-invoice alert never fired either.
+        const d = await oliver.get<OliverToday>("/dashboard/today");
         if (d?.overdue_invoices && d.overdue_invoices > 0) {
           next.push({
             id: "oliver-invoices-overdue", severity: d.overdue_invoices > 5 ? "critical" : "warning", source: "oliver",
