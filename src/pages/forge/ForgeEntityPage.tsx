@@ -57,11 +57,15 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
      customer modal works: a link opens the right record and the back button
      closes it, without giving the record a second home of its own. */
   const openRecordId = searchParams.get('record');
-  const openRecord = (rid: string | number) => {
-    const next = new URLSearchParams(searchParams);
-    next.set('record', String(rid));
-    setSearchParams(next);
-  };
+  /* useCallback because `save` now depends on it — an unstable identity would
+     rebuild the save handler on every keystroke in the search box. */
+  const openRecord = useCallback((rid: string | number) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('record', String(rid));
+      return next;
+    });
+  }, [setSearchParams]);
   const closeRecord = () => {
     const next = new URLSearchParams(searchParams);
     next.delete('record');
@@ -120,14 +124,25 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   const save = useCallback(async (values: Record<string, unknown>, id?: string | number) => {
-    await withParams(async (p) => {
-      if (id) { await updateEntityRow(p, entity, id, values); return; }
-      await createEntityRow(p, entity, values);
+    /* SHOW THE USER THE RECORD THEY JUST MADE.
+       Saving used to close the form and refresh the list, and that was the end
+       of it — on a screen with 313 providers across 13 pages, a new row lands
+       wherever the sort puts it and is invisible. The first person to use this
+       in production created a provider, could not find it, and emailed to ask
+       whether it had worked. It had. Twice more the same day, including once by
+       us. "Did that save?" is not a question the software should leave open.
+       The id comes back from the POST, so open that record: it confirms the save,
+       shows what was stored, and lands you where you would go next anyway. */
+    const created = await withParams(async (p) => {
+      if (id) { await updateEntityRow(p, entity, id, values); return null; }
+      const r = await createEntityRow(p, entity, values);
+      return r?.data?.[cfg.pk] ?? null;
     });
     setCreating(false);
     setEditing(null);
     refresh();
-  }, [withParams, entity, refresh]);
+    if (created != null) openRecord(created);
+  }, [withParams, entity, refresh, cfg.pk, openRecord]);
 
   const toggleArchive = useCallback(async (row: Record<string, unknown>) => {
     const id = row[cfg.pk] as string | number;

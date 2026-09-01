@@ -56,6 +56,12 @@ export function ForgeRecordModal({
   const [noteText, setNoteText] = useState('');
   const [editing, setEditing] = useState(false);
   const [creating, setCreating] = useState<{ entity: EntityKey; initial: Row } | null>(null);
+  /* Editing a row on a CHILD tab. The child tables rendered as plain <tr> with
+     no way in at all: you could see a client's assistance and add another, but
+     not open or change one that already existed — which is the single thing
+     this modal was built for. Reported from production the day after go-live:
+     "I can add a new one but I can't edit anything they currently have." */
+  const [editingChild, setEditingChild] = useState<{ entity: EntityKey; row: Row } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -101,6 +107,16 @@ export function ForgeRecordModal({
     setRefreshKey((k) => k + 1);
     onChanged?.();
   }, [withParams, entity, recordId, onChanged]);
+
+  const saveChild = useCallback(async (values: Row) => {
+    if (!editingChild) return;
+    const cfgChild = FORGE_ENTITIES[editingChild.entity];
+    const childId = editingChild.row[cfgChild.pk] as string | number;
+    await withParams((p) => updateEntityRow(p, editingChild.entity, childId, values));
+    setEditingChild(null);
+    setRefreshKey((k) => k + 1);
+    onChanged?.();
+  }, [withParams, editingChild, onChanged]);
 
   /* Archive lives HERE as well as in the list row, and that is not a
      convenience. The row's Archive button is the last control in the last
@@ -291,11 +307,13 @@ export function ForgeRecordModal({
                           <thead>
                             <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                               {cols.map((f) => <th key={f.key} className="whitespace-nowrap py-2 pr-4 font-semibold">{f.label}</th>)}
+                              <th className="py-2 pr-2 text-right font-semibold">Actions</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {rows.map((r) => (
-                              <tr key={String(r[rcfg.pk])} className="hover:bg-slate-50">
+                              <tr key={String(r[rcfg.pk])} className="cursor-pointer hover:bg-slate-50"
+                                  onClick={(e) => { if (!(e.target as HTMLElement).closest('button,a')) setEditingChild({ entity: def.entity, row: r }); }}>
                                 {cols.map((f) => (
                                   <td key={f.key} className="whitespace-nowrap py-2 pr-4 text-slate-700">
                                     {f.type === 'lookup' && f.lookup?.includes('status') && r[f.key]
@@ -303,6 +321,9 @@ export function ForgeRecordModal({
                                       : cellValue(r, f)}
                                   </td>
                                 ))}
+                                <td className="whitespace-nowrap py-2 pr-2 text-right">
+                                  <Button size="sm" onClick={() => setEditingChild({ entity: def.entity, row: r })}>Edit</Button>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -365,6 +386,16 @@ export function ForgeRecordModal({
           lookups={lookups}
           onCancel={() => setEditing(false)}
           onSave={saveRecord}
+        />
+      )}
+      {editingChild && (
+        <EntityForm
+          key={`editchild-${editingChild.entity}-${String(editingChild.row[FORGE_ENTITIES[editingChild.entity].pk])}`}
+          cfg={FORGE_ENTITIES[editingChild.entity]}
+          row={editingChild.row}
+          lookups={lookups}
+          onCancel={() => setEditingChild(null)}
+          onSave={saveChild}
         />
       )}
       {creating && (
