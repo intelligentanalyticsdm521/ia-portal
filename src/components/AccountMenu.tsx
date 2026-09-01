@@ -94,8 +94,11 @@ export function AccountMenu({
 
           {/* Personal */}
           <MenuSection label="My account">
-            <MenuItem to="/app/account" icon={<User className="h-4 w-4" />} label="Profile & Personal Info" onClick={close} />
-            <MenuItem to="/app/account" icon={<Bell className="h-4 w-4" />} label="Notification Preferences" onClick={close} />
+            {/* 2026-09-01 — "Notification Preferences" was a SECOND entry pointing
+                at the same /app/account route as the one above it, labelled for a
+                Notifications tab that only ever listed alerts nobody sends. Both
+                the tab and this duplicate are gone. */}
+            <MenuItem to="/app/account" icon={<User className="h-4 w-4" />} label="Your account & sign-in" onClick={close} />
             <MenuItem to="/app/settings/tours" icon={<Sparkles className="h-4 w-4" />} label="Tours & Walkthroughs" onClick={close} />
           </MenuSection>
 
@@ -115,9 +118,17 @@ export function AccountMenu({
               strictly cross-product scope. */}
 
           {/* Platform */}
+          {/* 2026-09-01 — "Notification Rules" (/app/settings/notifications) and
+              "Security & Compliance" (/app/settings/security) were removed here
+              along with the pages behind them. Both were mockups: the five alerts
+              Notification Rules toggled are not implemented anywhere and it saved
+              to localStorage; Security & Compliance set a password policy and
+              session timeout this app cannot enforce (sign-in lives with the
+              identity provider) and claimed "Audit log is captured automatically"
+              while platform.audit_log holds zero rows and lib/auditLog.js has no
+              callers. Leaving the menu entries would have pointed at deleted
+              routes — a dead-end menu is not an improvement on a fake page. */}
           <MenuSection label="Platform">
-            <MenuItem to="/app/settings/notifications" icon={<Bell className="h-4 w-4" />} label="Notification Rules" onClick={close} />
-            <MenuItem to="/app/settings/security" icon={<ShieldCheck className="h-4 w-4" />} label="Security & Compliance" onClick={close} />
             <MenuItem to="/app/settings/data-privacy" icon={<DatabaseZap className="h-4 w-4" />} label="Data & Privacy" onClick={close} />
           </MenuSection>
 
