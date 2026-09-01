@@ -89,6 +89,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'People your organization serves.',
     pk: 'client_id',
     primaryField: 'full_name',
+    pickerSubtitle: ['phone', 'city', 'county'],
     related: [{ entity: 'assistance', foreignKey: 'client_id', title: 'Assistance' }, { entity: 'services', foreignKey: 'client_id', title: 'Services' }],
     detailRoute: (id) => `${screenRoute('hestia', 'clients')}?record=${id}`,
     fields: [
@@ -198,6 +199,7 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
     subtitle: 'Vendors delivering services to clients.',
     pk: 'provider_id',
     primaryField: 'name',
+    pickerSubtitle: ['provider_type', 'city'],
     related: [{ entity: 'services', foreignKey: 'provider_id', title: 'Services delivered' }],
     detailRoute: (id) => `${screenRoute('hestia', 'providers')}?record=${id}`,
     fields: [

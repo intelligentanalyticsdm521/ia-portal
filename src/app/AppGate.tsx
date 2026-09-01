@@ -402,10 +402,20 @@ export function AppGate({ children }: { children: React.ReactNode }) {
             // Exhausted auto-recovery in this tab — surface an actionable
             // message. (Flags were already cleared above, so the manual reload
             // starts from clean state.)
+            /* Name the error code and say plainly that this is THIS BROWSER.
+               The old wording read like the server had done something: the
+               founder saw it on his office laptop, could sign in fine on
+               another machine, and reasonably concluded platform-api was down.
+               It was not — zero 5xx, alwaysOn, serving normally. The state that
+               is stuck lives in this browser and nowhere else, and the code
+               tells us which of the four causes it was. Printing it here means
+               nobody has to open DevTools to find out. */
             setError(
-              'Sign-in state appears to be stuck. Click "Clear & Retry" to fully reset ' +
-              'your session storage and reload the page. Your browser tab may have kept ' +
-              'a stale authentication handshake from a prior attempt.'
+              `Sign-in state is stuck in THIS browser (${err.errorCode}). ` +
+              'Nothing is wrong with the server — signing in from another device will work. ' +
+              'Click "Clear & Retry" to reset this browser’s session storage and reload. ' +
+              'If it happens again, clear site data for this domain ' +
+              '(DevTools → Application → Clear site data) and quote the code above.'
             );
           } else {
             console.error('[AppGate MSAL error]', err);
