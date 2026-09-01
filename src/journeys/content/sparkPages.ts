@@ -398,80 +398,110 @@ export const SPARK_PAGES: PageContentMap = {
   // has no way to reason about — Brandon walked Sender Setup cold and could not
   // tell what it was for, which is the same wall a customer hits.
   spark_sender_domains: {
-    title: "Sender Setup — proving the internet you're allowed to send",
+    title: "Sender Setup — deciding what address your emails come from",
     body:
-      "Email providers won't take your word for it. Before Gmail will trust mail that says it's from your business, your domain has to carry a few DNS records saying we may send on your behalf. That is all this page does. You start by entering the address you want to send FROM — a full email like hello@yourbusiness.com — and we work the domain out from it. Once per domain, then never again.",
+      "Every email you send has to come from somewhere, and the receiving inbox has to believe it. This page gives you two ways to get there. Option one hands your business its own address on our email domain — nothing to set up, working in about a minute. Option two sends from your own domain, which is what your customers should see, and needs four records added to that domain once. Both are step-by-step; you can't get lost in either.",
     onPage: [
       {
-        title: "Automatic or manual — and why it matters",
+        title: "Two options, and the honest difference",
         body:
-          "If we host your DNS, we write the records for you: that's the Automatic path, and it's a button. If your domain lives at another registrar, we can't touch it, so we show you the exact records to paste — the Manual path. Neither is better; it only depends on who holds your DNS.",
+          "The Intelligent Analytics option gives you an address like yourbusiness@ia-dm.com. It works instantly because we already own and have proved that domain — there is genuinely nothing for you to do. Your own business email looks better to customers and is the one we recommend, but a domain is not something we can change on your behalf, so somebody has to add four records to it once. Start on option one if you want to send today; move to option two when you have ten minutes and access to your domain.",
       },
       {
-        title: "The four records, in plain English",
+        title: "Sending and receiving are different jobs",
         body:
-          "Domain ownership proves the domain is yours. SPF lists who may send as you. DKIM (two of them) signs each message so it can't be tampered with in transit. All four must go green before you can send — the ownership one is the record people most often miss.",
+          "The address on the front of your email does not have to be a real mailbox — plenty of businesses send from an address nobody logs into. What must be real is the reply address. If someone hits Reply and that address has no mail server behind it, their message disappears and nobody finds out. The walkthrough checks that for you before you finish, which is step four.",
       },
       {
-        title: "Pending is normal at first",
+        title: "The four records, without the jargon",
         body:
-          "DNS takes minutes to spread around the world, so a domain sits Pending straight after you publish. Come back and press Verify again rather than assuming it failed. Once every check is green the domain is done for good.",
+          "The first proves the domain is really yours — it is the one most often missed, and nothing works without it. The second is a public list of who is allowed to send using your address; ours has to be on it. The last two are signing keys, so an inbox can tell the message wasn't altered on the way. A fifth, optional one tells inboxes what to do with fakes; leave it until everything else is green.",
       },
       {
-        title: "One SPF record, no exceptions",
+        title: "Only ever ONE 'who may send as you' record",
         body:
-          "A domain may only have ONE SPF record. If you already have one — for Google Workspace, or your website host — merge ours into it and keep every existing include. Replacing it is how businesses accidentally stop their own mail from being delivered.",
+          "A domain is allowed exactly one of these. If there is already one — for Google Workspace, or your website host — add our part to the existing record and keep everything that is in it. Replacing it is how a business accidentally stops its own email, and it is the single most common way this goes wrong.",
+      },
+      {
+        title: "Waiting is not failing",
+        body:
+          "Records take minutes to spread around the world, sometimes longer. Straight after you add them the check will say 'not yet' — that is expected. Come back and press Check again rather than assuming something broke. If a record is still missing an hour later, it is almost always because the Name and the Value got swapped.",
       },
     ],
     doIt: [
       {
         targetSelector: 'button[data-tour="sender-add"]',
         advance: "click",
-        title: "Let's set up sending together",
+        title: "Let's set your sending address up",
         body:
-          "This is a once-per-domain job. We'll go through it now and you'll end up able to send email that says it's from your business. Click Add sender.",
+          "This is a once-only job and you end up able to send email as your business. Click 'Set up sending'.",
+        placement: "bottom",
+      },
+      {
+        targetSelector: '[data-tour="sender-own-email"]',
+        advance: "click",
+        waitForMs: 2000,
+        title: "Pick the recommended option",
+        body:
+          "Two cards. The left one gives you an address on our domain in a minute — a perfectly good place to start, and you can come back to it any time. We're going to walk the right one, 'Send from my own business email', because that is what your customers should see. Click it.",
         placement: "bottom",
       },
       {
         targetSelector: 'input[data-tour="sender-email"]',
         advance: "input",
         waitForMs: 2000,
-        title: "Type the address you want to send FROM",
+        title: "Step 1 — the address emails come FROM",
         body:
-          "A full email address, not just the domain — for example hello@yourbusiness.com. It does not need to be a real mailbox; it is the address that appears in the recipient's inbox. We read the domain out of it for you.",
+          "A full address on a domain you control, like hello@yourbusiness.com. Not a Gmail or Outlook address — those providers will not let anyone send as them. It does not need to be a mailbox you can log into; it is what appears in the recipient's inbox. We take the domain from the part after the @.",
         placement: "right",
       },
       {
-        targetSelector: 'input[data-tour="sender-display-name"]',
+        targetSelector: '[data-tour="sender-continue"], .spark-page',
         advance: "next",
-        title: "The name people see (optional)",
+        title: "Step 2 — where replies land",
         body:
-          "Usually your business name. In an inbox it reads as 'Your Business <hello@yourbusiness.com>'. Skip it and only the address shows.",
-        placement: "right",
-      },
-      {
-        targetSelector: '[data-tour="sender-continue"]',
-        advance: "click",
-        title: "Continue — we work out the rest",
-        body:
-          "We take the domain from your address, register it with the email provider, and come back with what has to be published on that domain.",
+          "Leave the box ticked and replies come back to the same address. Untick it if you would rather replies went somewhere else — the inbox you actually check every day is usually the right answer. This is the one people get wrong, and they find out when a lead goes missing.",
         placement: "top",
       },
       {
-        targetSelector: '[data-tour="sender-verify"], .space-y-2',
+        targetSelector: 'input[data-tour="sender-display-name"], .spark-page',
+        advance: "next",
+        title: "Step 3 — the name people see",
+        body:
+          "In an inbox the name shows first and the address second. Use the name customers know you by, and keep it short — inboxes cut long names off. The preview underneath shows exactly how it will look.",
+        placement: "right",
+      },
+      {
+        targetSelector: '.spark-page',
+        advance: "next",
+        title: "Step 4 — can that address actually receive?",
+        body:
+          "We look up the reply domain and tell you plainly whether mail can be delivered there. Green means replies will arrive. Red means that domain has no mail server, so anything sent to it vanishes — go back and use a different reply address. Amber means the lookup itself failed and is worth retrying.",
+        placement: "top",
+      },
+      {
+        targetSelector: '[data-tour="sender-verify"], .spark-page',
         advance: "next",
         waitForMs: 4000,
-        title: "The DNS records — what you're looking at",
+        title: "Step 5 — the four records",
         body:
-          "Four records. Domain ownership proves the domain is yours. SPF lists who may send as you. The two DKIM records sign each message so it cannot be altered in transit. If we host your DNS we publish them for you; if not, these get handed to whoever runs your domain.",
+          "If we look after DNS for this domain there is a button and we add them for you. If not, you get all four with Copy buttons, plus 'Email these to my web admin' — which is exactly what to press if somebody else built your website. Each card says in plain English what that record is for; the Name and Value are what gets typed in.",
         placement: "top",
       },
       {
-        targetSelector: '[data-tour="sender-verify"], .space-y-2',
+        targetSelector: '.spark-page',
         advance: "next",
-        title: "Then verify — and be patient once",
+        title: "Step 6 — check, and be patient once",
         body:
-          "DNS takes a few minutes to spread. Pending straight after publishing is normal, not a failure — come back and verify again. Once all four are green the domain is done permanently, and you can pick this address on any campaign.",
+          "Press Check and each record turns green as it goes live. 'Not yet' straight after publishing is normal, not a failure — wait a few minutes and check again. Continue only lights up once the required records have all passed.",
+        placement: "top",
+      },
+      {
+        targetSelector: '.spark-page',
+        advance: "next",
+        title: "Step 7 — switching sending on",
+        body:
+          "The last step connects your domain to the service that issues the send and registers your address on it. Verified has never meant ready — this is the part that makes it true. If it says the final step is pending an Intelligent Analytics administrator, that is ours to finish, not yours: your records are right, and your emails keep going out from the Intelligent Analytics address until it is done.",
         placement: "top",
       },
     ],
