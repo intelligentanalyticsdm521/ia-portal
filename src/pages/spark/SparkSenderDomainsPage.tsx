@@ -49,6 +49,19 @@ import {
 
 type Status = "pending" | "verified" | "failed";
 
+// The thing a person actually means by "sender": the address mail goes out as.
+// This page used to list only DOMAINS, which is the plumbing underneath.
+interface SenderAddress {
+  id: number;
+  local_part: string;
+  domain: string;
+  display_name: string | null;
+  email_address: string;
+  is_default: boolean;
+  domain_status: Status;
+  sender_domain_id: number;
+}
+
 interface Domain {
   id: number;
   domain: string;
@@ -217,6 +230,7 @@ export function SparkSenderDomainsPage() {
   const businessName = active?.tenant?.tenantFullName || active?.tenant?.tenantName || "";
 
   const [list, setList] = useState<Domain[]>([]);
+  const [senders, setSenders] = useState<SenderAddress[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [records, setRecords] = useState<RecordsResp | null>(null);
   const [verifyResult, setVerifyResult] = useState<VerifyData | null>(null);
@@ -272,6 +286,14 @@ export function SparkSenderDomainsPage() {
         get<SparkSettingsResp>("/api/v1/spark-settings").catch(() => null),
       ]);
       setList(d?.data || []);
+      // The addresses are what this page is FOR. Non-fatal: a failure here must
+      // not blank the page, but it is surfaced rather than swallowed.
+      try {
+        const sres = await get<{ data: SenderAddress[] }>("/api/v1/senders");
+        setSenders(sres?.data || []);
+      } catch (e) {
+        console.warn("[senders] address list failed:", (e as Error).message);
+      }
       setSenderMode(s?.data?.sender_mode ?? "ia_default");
     } catch (err) { setError(err); }
     finally { setLoading(false); }
@@ -293,6 +315,14 @@ export function SparkSenderDomainsPage() {
     try {
       const d = await get<{ data: Domain[] }>("/api/v1/sender-domains");
       setList(d?.data || []);
+      // The addresses are what this page is FOR. Non-fatal: a failure here must
+      // not blank the page, but it is surfaced rather than swallowed.
+      try {
+        const sres = await get<{ data: SenderAddress[] }>("/api/v1/senders");
+        setSenders(sres?.data || []);
+      } catch (e) {
+        console.warn("[senders] address list failed:", (e as Error).message);
+      }
     } catch (err) {
       // Never promote a background refresh into a full-page error state.
       console.warn("[sender-setup] list refresh failed:", (err as Error).message);
@@ -673,7 +703,7 @@ export function SparkSenderDomainsPage() {
       help="Decide what address your emails come from. Option 1 gives your business its own address on our email domain — nothing to set up. Option 2 sends from your own domain, which looks more professional but needs four records added to that domain once."
       actions={
         <button data-tour="sender-add" onClick={openWizard} className="text-sm px-3 py-1.5 rounded bg-[#EF6C33] text-white flex items-center gap-1">
-          <Plus className="h-4 w-4" /> Set up sending
+          <Plus className="h-4 w-4" /> Add sender
         </button>
       }
       loading={loading}
@@ -705,9 +735,47 @@ export function SparkSenderDomainsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {/* List */}
-        <div className="lg:col-span-1 border border-slate-200 rounded">
-          {list.length === 0 && <div className="p-6 text-center text-sm text-slate-500">Nothing set up yet. Click "Set up sending" to start.</div>}
-          {list.map(d => (
+        <div className="lg:col-span-1 space-y-3">
+          {/* 2026-09-01 — the addresses now lead. This page listed only sender
+              DOMAINS while a separate "Senders" page listed the addresses and
+              refused to let you add one until you had visited this page first.
+              Two menu entries for one job, ordered back to front. */}
+          <div className="border border-slate-200 rounded">
+            <div className="px-3 py-2 border-b border-slate-100 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Your sending addresses
+            </div>
+            {senders.length === 0 ? (
+              <div className="p-6 text-center text-sm text-slate-500">
+                No sending addresses yet. Click <span className="font-medium">Add sender</span> — it walks you through
+                the whole thing, including the domain.
+              </div>
+            ) : senders.map((sa) => (
+              <button
+                key={sa.id}
+                onClick={() => setSelectedId(sa.sender_domain_id)}
+                className={`w-full text-left p-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 ${selectedId === sa.sender_domain_id ? "bg-[#FFF6F0]" : ""}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-slate-900 truncate flex items-center gap-2">
+                      <Send className="h-3.5 w-3.5 text-slate-500" />
+                      {sa.email_address}
+                      {sa.is_default && <Star className="h-3 w-3 text-[#EF6C33]" />}
+                    </div>
+                    <div className="text-[11px] text-slate-500">{sa.display_name || "(no display name)"}</div>
+                  </div>
+                  {statusPill(sa.domain_status)}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div className="border border-slate-200 rounded">
+            <div className="px-3 py-2 border-b border-slate-100 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Domains they send from
+            </div>
+            {list.length === 0 && <div className="p-6 text-center text-sm text-slate-500">Nothing set up yet.</div>}
+            {list.map(d => (
             <button key={d.id} onClick={() => setSelectedId(d.id)}
               className={`w-full text-left p-3 border-b border-slate-100 hover:bg-slate-50 ${selectedId === d.id ? "bg-[#FFF6F0]" : ""}`}>
               <div className="flex items-center justify-between gap-2">
@@ -722,7 +790,8 @@ export function SparkSenderDomainsPage() {
                 {statusPill(d.status)}
               </div>
             </button>
-          ))}
+            ))}
+          </div>
         </div>
 
         {/* Detail */}

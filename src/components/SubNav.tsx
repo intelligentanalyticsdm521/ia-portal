@@ -847,7 +847,12 @@ const SETTINGS_NAV: SubNavConfig = {
         // SPARK Composer v1.1 (2026-06-24) — sender setup is now a 2-card
         // pick (IA default vs white-label) and Senders + Signatures are
         // separate CRUD pages alongside Sender Domains.
-        { key: "spark_sender_domains", label: "Sender Setup", route: "/app/services/spark_sender_domains" },
+        // 2026-09-01 — was TWO entries, "Sender Setup" and "Senders", which is
+        // the plumbing showing through: one listed sender DOMAINS, the other
+        // listed the addresses, and "Add sender" on the second was disabled
+        // until you had been to the first. Nobody thinks in domains — they
+        // think "I want to send as hello@". One entry now; adding a sender runs
+        // the whole setup, domain and all.
         { key: "spark_senders", label: "Senders", route: "/app/services/spark_senders" },
         { key: "spark_signatures", label: "Signatures", route: "/app/services/spark_signatures" },
         { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys", hidden: true /* cut: platform plumbing */ },

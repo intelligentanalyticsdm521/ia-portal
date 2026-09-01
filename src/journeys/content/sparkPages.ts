@@ -512,9 +512,9 @@ export const SPARK_PAGES: PageContentMap = {
       "The domain earns the right to send; a sender is what the recipient actually sees in their inbox — 'Rolling In It <hello@rollinginit.com>'. Add one per address you want to send from, mark the one you use most as default, and set a reply-to if replies should land somewhere else, like a Gmail you actually read.",
     onPage: [
       {
-        title: "You need a verified domain first",
+        title: "Adding a sender does the whole job",
         body:
-          "A sender can only sit on a domain that has passed Sender Setup. If the address you want isn't offered, the domain behind it isn't verified yet — go back one page rather than trying to force it here.",
+          "This used to be two menu entries — one to verify a domain, another to name an address on it — and Add sender was greyed out until you had been to the first. It is one flow now: Add sender asks what address you want, sorts the domain out behind the scenes, and writes the DNS itself when we manage it.",
       },
       {
         title: "Reply-to is the one people forget",

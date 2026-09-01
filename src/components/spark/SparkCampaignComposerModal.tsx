@@ -939,10 +939,14 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                            real start of the flow: verify a domain there, then name
                            addresses on it under Senders. */
                         <p className="text-[11px] text-slate-500 mt-0.5">
-                          No senders yet — verify a sending domain in{" "}
-                          <a href="/app/services/spark_sender_domains" className="text-[#EF6C33] hover:underline">Sender Setup</a>,
-                          then add an address under{" "}
+                          {/* 2026-09-01 — this used to send people to two places in
+                              sequence: verify a domain in "Sender Setup", THEN name an
+                              address under "Senders". That was the plumbing showing
+                              through, and it is now one page where adding a sender does
+                              both. */}
+                          No senders yet — set one up under{" "}
                           <a href="/app/services/spark_senders" className="text-[#EF6C33] hover:underline">Senders</a>.
+                          It walks you through the whole thing, domain included.
                           Until then campaigns send from the Intelligent Analytics address.
                         </p>
                       )}

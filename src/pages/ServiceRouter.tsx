@@ -226,7 +226,6 @@ const SparkTrackingPage = lazyNamed(() => import('./spark/SparkTrackingPage'), '
 const SparkSenderDomainsPage = lazyNamed(() => import('./spark/SparkSenderDomainsPage'), 'SparkSenderDomainsPage');
 // SPARK Composer v1.1 (2026-06-24) — Senders + Signatures CRUD live in
 // the Settings hub alongside Sender Domains.
-const SparkSendersPage = lazyNamed(() => import('./spark/SparkSendersPage'), 'SparkSendersPage');
 const SparkSignaturesPage = lazyNamed(() => import('./spark/SparkSignaturesPage'), 'SparkSignaturesPage');
 // SparkOnboardingPage removed 2026-06-17 — unified flow via UnifiedSetupCard on Command Center.
 const SparkOnboardingPage = () => <Navigate to="/app" replace />;
@@ -827,7 +826,9 @@ function ServiceRouterInner() {
       case 'spark_tracking': sparkPage = <SparkTrackingPage />; break;
       case 'spark_sender_domains': sparkPage = <SparkSenderDomainsPage />; break;
       // SPARK Composer v1.1 (2026-06-24)
-      case 'spark_senders': sparkPage = <SparkSendersPage />; break;
+      // 2026-09-01 — both keys render the merged page. spark_sender_domains is
+      // kept only so older links, tours and help entries do not 404.
+      case 'spark_senders': sparkPage = <SparkSenderDomainsPage />; break;
       case 'spark_signatures': sparkPage = <SparkSignaturesPage />; break;
       case 'spark_onboarding': sparkPage = <SparkOnboardingPage />; break;
       case 'spark_account_profile': sparkPage = <SparkAccountProfilePage />; break;

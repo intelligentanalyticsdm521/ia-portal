@@ -170,7 +170,7 @@ export function SparkOverviewPage() {
             icon: GlobeIcon,
             title: "Verify your sender domain",
             body: "Deliverability climbs significantly when you send from your own domain instead of the shared sender.",
-            cta: { label: "Sender domains", to: "/app/services/spark_sender_domains" },
+            cta: { label: "Senders", to: "/app/services/spark_senders" },
             // FIX B3 (2026-06-22) — was hardcoded `show: true`. Real count
             // from /api/v1/sender-domains drives this now. `null` =
             // still loading or the request failed; hide in both cases so
