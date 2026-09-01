@@ -60,8 +60,10 @@ export function OliverPortalsHubPage() {
     if (!ready) return;
     setLoading(true); setError(null);
     try {
-      const r = await get<{ data: HubData }>("/portals/hub");
-      setData(r.data || null);
+      // lib/oliverApi already strips the { data: ... } envelope; reading .data
+      // again yielded undefined and this page rendered empty.
+      const r = await get<HubData>("/portals/hub");
+      setData(r || null);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
   }, [get, ready]);
