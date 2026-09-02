@@ -99,6 +99,9 @@ export function OliverQuotesPage({ embedded = false, createSignal = 0, createCar
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  // Where the create-and-send result lands. It has to live on the PAGE:
+  // the form that produced it is unmounted by the time it is read.
+  const [flash, setFlash] = useState<string | null>(null);
   // The combined Quotes & Proposals page owns the two big create cards and
   // drives this page's editor through a counter — bump = open. Zero is the
   // mount value and must not open anything.
@@ -278,6 +281,15 @@ export function OliverQuotesPage({ embedded = false, createSignal = 0, createCar
         { id: 'oliver_service_catalog', label: 'What you sell' },
         { id: 'oliver_win_drivers', label: 'What wins work' },
       ]} />
+      {flash && (
+        <div style={{ margin: "0 0 12px", padding: "10px 14px", borderRadius: 8, fontSize: 13,
+                      background: /fail/i.test(flash) ? "#FEF2F2" : "#ECFDF5",
+                      color: /fail/i.test(flash) ? "#991B1B" : "#065F46",
+                      border: `1px solid ${/fail/i.test(flash) ? "#FECACA" : "#A7F3D0"}` }}>
+          {flash}
+          <button onClick={() => setFlash(null)} style={{ float: "right", background: "none", border: "none", cursor: "pointer", color: "inherit" }}>×</button>
+        </div>
+      )}
       <PageHeader
         title="Quotes"
         subtitle="Send estimates, track acceptance, and convert into jobs"
@@ -389,7 +401,7 @@ export function OliverQuotesPage({ embedded = false, createSignal = 0, createCar
           <div style={{ padding: 20, background: "#EEF3F6" }}>
             <DocumentBrandFrame get={get} docLabel="QUOTE">
               <QuoteCreateForm
-                onCreated={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); reload(); }}
+                onCreated={(msg) => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); setFlash(msg || "Quote created."); reload(); }}
                 onCancel={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); }}
                 initialJobId={initialJobId}
                 initialContactId={initialContactId}

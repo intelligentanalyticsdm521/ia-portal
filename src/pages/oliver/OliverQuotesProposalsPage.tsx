@@ -302,8 +302,14 @@ export function OliverQuotesProposalsPage() {
         subtitle="Every document you've priced or pitched, in one pipeline"
       />
 
+      {/* This banner was unconditionally GREEN. It now carries send outcomes,
+          and "sending failed" painted as a success is the same lie in a nicer
+          colour, so the styling follows the message. */}
       {flash && (
-        <div style={{ margin: "0 0 12px", padding: 10, fontSize: 12, background: "#D1FAE5", color: "#047857", border: "1px solid #A7F3D0", borderRadius: 6 }}>
+        <div style={{ margin: "0 0 12px", padding: 10, fontSize: 12, borderRadius: 6,
+                      background: /fail/i.test(flash) ? "#FEF2F2" : "#D1FAE5",
+                      color: /fail/i.test(flash) ? "#991B1B" : "#047857",
+                      border: `1px solid ${/fail/i.test(flash) ? "#FECACA" : "#A7F3D0"}` }}>
           {flash}
         </div>
       )}
@@ -410,7 +416,7 @@ export function OliverQuotesProposalsPage() {
           <div style={{ padding: 20, background: "#EEF3F6" }}>
             <DocumentBrandFrame get={get} docLabel="QUOTE">
               <QuoteCreateForm
-                onCreated={() => { setCreateOpen(null); setFlash("Quote created."); reload(); }}
+                onCreated={(msg) => { setCreateOpen(null); setFlash(msg || "Quote created."); reload(); }}
                 onCancel={() => setCreateOpen(null)}
               />
             </DocumentBrandFrame>

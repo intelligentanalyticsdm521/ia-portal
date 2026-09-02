@@ -427,7 +427,6 @@ export function CreateProposalDrawer({
   });
   const [taxRate, setTaxRate] = useState("0");
   const [discount, setDiscount] = useState("0");
-  const [sendImmediately, setSendImmediately] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -562,11 +561,11 @@ export function CreateProposalDrawer({
       }));
   }
 
-  async function submit() {
+  async function submit(sendNow = false) {
     if (!title.trim()) { setErr("Type a title at the top of the document first."); return; }
     // Send-immediately needs somewhere to send. Catching this here beats the
     // API's 400 — the customer picker is right above the document.
-    if (sendImmediately && !contactId) { setErr("Pick a customer to send it to, or untick Send immediately and share the link from the draft."); return; }
+    if (sendNow && !contactId) { setErr("Pick a customer to send it to, or press Save draft and share the link yourself."); return; }
     const line_items = collectLineItems();
     if (!line_items.length) { setErr("Add at least one service or priced line."); return; }
     setErr(null); setSaving(true);
@@ -582,7 +581,7 @@ export function CreateProposalDrawer({
         valid_until: validUntil || null,
       });
       let msg = `Created proposal ${res.proposal_number}.`;
-      if (sendImmediately) {
+      if (sendNow) {
         try {
           const sendRes = await api.post<{ url: string }>(`/proposals/${res.proposal_id}/send`);
           msg += ` Sent — public URL: ${sendRes.url}`;
@@ -677,8 +676,12 @@ export function CreateProposalDrawer({
             <span style={{ fontSize: 12, color: "#B91C1C", marginRight: 4 }}>{err}</span>
           )}
           <IadmButton variant="ghost" onClick={onClose} disabled={saving}>Cancel</IadmButton>
-          <IadmButton variant="primary" product="oliver" onClick={submit} disabled={saving}>
-            {saving ? "Creating…" : sendImmediately ? "Create & send" : "Save draft"}
+          <IadmButton variant="ghost" onClick={() => submit(false)} disabled={saving}>
+            {saving ? "Working…" : "Save draft"}
+          </IadmButton>
+          {/* No title= — IadmButton does not take one. The label says it. */}
+          <IadmButton variant="primary" product="oliver" onClick={() => submit(true)} disabled={saving}>
+            {saving ? "Working…" : "Create & send"}
           </IadmButton>
         </>
       }
@@ -714,10 +717,10 @@ export function CreateProposalDrawer({
               <span style={pLabel}>Valid until</span>
               <input type="date" style={pInput} value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
             </label>
-            <label style={{ display: "flex", alignItems: "flex-end", gap: 8, fontSize: 12, color: "#0B1C24", paddingBottom: 8 }}>
-              <input type="checkbox" checked={sendImmediately} onChange={(e) => setSendImmediately(e.target.checked)} />
-              Send immediately
-            </label>
+            {/* 2026-09-02 — the "Send immediately" checkbox that used to sit
+                here is gone. Sending is a primary action and was hidden beside
+                a date field, so the button said "Save draft" unless you found
+                and ticked it. It is now two explicit buttons at the bottom. */}
           </div>
 
           {/* ── The document, AS THE CUSTOMER GETS IT ─────────────────────

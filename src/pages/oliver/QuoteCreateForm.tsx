@@ -72,7 +72,10 @@ interface LineItemDraft {
 }
 
 interface CreateQuoteProps {
-  onCreated: () => void;
+  /** Closes the modal. The message is shown by the page AFTER the modal is
+   *  gone — a send failure set on this form's own error line would be wiped
+   *  off the screen the moment onCreated() unmounted it. */
+  onCreated: (message?: string) => void;
   onCancel: () => void;
   /** When provided, opens the form in "job" mode with this job pre-selected. */
   initialJobId?: string;
@@ -214,7 +217,7 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
     ]);
   }
 
-  async function submit() {
+  async function submit(sendNow = false) {
     setError(null);
     if (mode === "job" && !selectedJobId) { setError("Pick a job first."); return; }
     if (mode === "customer" && !selectedContactId) { setError("Pick a customer first."); return; }
@@ -242,8 +245,31 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
       };
       if (mode === "job") body.job_id = selectedJobId;
       else body.contact_id = selectedContactId;
-      await post("/quotes", body);
-      onCreated();
+
+      // 2026-09-02 — the response used to be thrown away, so this form could
+      // not send what it had just created: you saved a draft, closed the modal,
+      // reopened the quote and pressed Send. useOliverApi unwraps the { data }
+      // envelope, so this IS the quote row.
+      const created = await post<{ quote_id: string }>("/quotes", body);
+
+      if (!sendNow) { onCreated("Quote saved as a draft."); return; }
+
+      if (!created?.quote_id) {
+        // Created, but we cannot address it to send. Say exactly that rather
+        // than letting "Quote created." stand for a quote nobody received.
+        onCreated("Quote created, but we couldn't read its id back to send it — open it from the list and press Send to customer.");
+        return;
+      }
+      try {
+        await post(`/quotes/${created.quote_id}/send`);
+        onCreated("Quote created and sent to the customer.");
+      } catch (e) {
+        // The quote EXISTS. Reporting "create failed" would send someone
+        // hunting for a quote that is already sitting in the list, and
+        // reporting plain success would be the exact lie this release has
+        // spent itself removing.
+        onCreated(`Quote created, but sending failed: ${(e as Error).message} — open it from the list and press Send to customer.`);
+      }
     } catch (e) {
       setError(`Create failed: ${(e as Error).message}`);
     } finally {
@@ -439,12 +465,27 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+        {/* 2026-09-02 — "Create & send" was missing entirely. Creating a quote
+            left you with a draft and no way to send it from here: you closed the
+            modal, found the quote in the list, opened it, and pressed Send to
+            customer. Brandon called that a defect and he is right — sending is
+            the point of writing a quote.
+            Two explicit buttons rather than a "send immediately" tickbox: a
+            primary action should not depend on finding a checkbox. */}
         <Button
-          variant="primary"
-          onClick={submit}
+          variant="secondary"
+          onClick={() => submit(false)}
           disabled={submitting || (mode === "job" ? !selectedJobId : !selectedContactId) || !items.length}
         >
-          {submitting ? "Creating…" : "Create quote (draft)"}
+          {submitting ? "Working…" : "Save as draft"}
+        </Button>
+        <Button
+          variant="primary"
+          onClick={() => submit(true)}
+          disabled={submitting || (mode === "job" ? !selectedJobId : !selectedContactId) || !items.length}
+          title="Create the quote and email it to the customer now"
+        >
+          {submitting ? "Working…" : "Create & send"}
         </Button>
       </div>
     </div>
