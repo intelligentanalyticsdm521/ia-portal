@@ -54,6 +54,16 @@ interface Props {
   ) => Promise<boolean>;
   /** Bump to force a reload — e.g. after scheduling from outside the grid. */
   reloadKey?: number;
+  /**
+   * Extra content for the day-detail modal, rendered above the event list.
+   *
+   * OLIVER passes a time-slot panel here — what is free, what is taken, and a
+   * way to book a new job into a gap. The Command Center passes nothing, so its
+   * day modal stays the plain event list it has always been. Same reason
+   * onDropJob is a prop: this grid serves two products and only one of them
+   * schedules field work.
+   */
+  renderDayExtra?: (dayKey: string, onDone: () => void) => React.ReactNode;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -84,7 +94,7 @@ function addDays(d: Date, n: number) {
   return r;
 }
 
-export function UnifiedCalendarGrid({ kinds, className, locationId, onDropJob, reloadKey }: Props) {
+export function UnifiedCalendarGrid({ kinds, className, locationId, onDropJob, reloadKey, renderDayExtra }: Props) {
   const { get, ready } = useOliverApi();
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
@@ -309,13 +319,16 @@ export function UnifiedCalendarGrid({ kinds, className, locationId, onDropJob, r
           dayKey={openDay}
           events={eventsByDay[openDay] || []}
           onClose={() => setOpenDay(null)}
+          extra={renderDayExtra?.(openDay, () => { setOpenDay(null); void load(); })}
         />
       )}
     </div>
   );
 }
 
-function DayDetailModal({ dayKey, events, onClose }: { dayKey: string; events: UnifiedEvent[]; onClose: () => void }) {
+function DayDetailModal({ dayKey, events, onClose, extra }: {
+  dayKey: string; events: UnifiedEvent[]; onClose: () => void; extra?: React.ReactNode;
+}) {
   const d = new Date(`${dayKey}T12:00:00`);
   const heading = d.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 
@@ -330,6 +343,7 @@ function DayDetailModal({ dayKey, events, onClose }: { dayKey: string; events: U
       size="info"
     >
       <div className="p-4 space-y-2">
+        {extra}
         {events.map((e) => {
           const start = new Date(e.start);
           const end = e.end ? new Date(e.end) : null;

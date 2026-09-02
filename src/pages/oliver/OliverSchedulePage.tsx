@@ -18,6 +18,7 @@ import { PageHeader } from "../../components/oliver/ui";
 import { UnifiedCalendarGrid, type UnifiedEvent } from "../../components/UnifiedCalendarGrid";
 import { NeedsSchedulingRail } from "../../components/oliver/NeedsSchedulingRail";
 import { AssignWorkerPanel } from "../../components/oliver/AssignWorkerPanel";
+import { DaySchedulePanel } from "../../components/oliver/DaySchedulePanel";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 
 import { ReportBar } from '../../components/insights/ReportBar';
@@ -180,6 +181,15 @@ export function OliverSchedulePage() {
               locationId={loc.selectedLocationId}
               onDropJob={scheduleJobOnDay}
               reloadKey={reloadKey}
+              // Clicking a day opens its slots and a way to book into a gap —
+              // the phone-call flow. Only OLIVER passes this; the Command
+              // Center's day modal stays the plain event list.
+              renderDayExtra={(dayKey, onDone) => (
+                <DaySchedulePanel
+                  dayKey={dayKey}
+                  onDone={() => { onDone(); setReloadKey((k) => k + 1); loadKpis(); }}
+                />
+              )}
             />
           </div>
         </div>
