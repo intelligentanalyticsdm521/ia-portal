@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { LEADGEN_LOCKED_KEYS } from '../config/featureFlags';
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import { HeaderBar } from "./HeaderBar";
@@ -54,8 +55,10 @@ function applyConsultingNavFilter(
   isFounder: boolean,
 ): SubNavConfig {
   if (isFounder) return config;
+  // Hotfix B (2026-09-03): Lead Gen keys are founder-only until Brandon has
+  // verified real searches on the IA tenant. Same filter, second key set.
   const filteredGroups = config.groups
-    .map((g) => ({ ...g, items: g.items.filter((i) => !CONSULTING_FOUNDER_ONLY.has(i.key)) }))
+    .map((g) => ({ ...g, items: g.items.filter((i) => !CONSULTING_FOUNDER_ONLY.has(i.key) && !LEADGEN_LOCKED_KEYS.includes(i.key)) }))
     .filter((g) => g.items.length > 0);
   return { ...config, groups: filteredGroups };
 }

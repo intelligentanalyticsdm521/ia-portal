@@ -247,7 +247,13 @@ export function App() {
                 cleanup, schema migrations, etc. */}
             <Route path="admin" element={<PlatformAdminPage />} />
             <Route path="admin/onboard-arion-existing" element={<ArionOnboardExistingPage />} />
-            <Route path="admin/leadgen" element={LEADGEN_ENABLED ? <AdminLeadgenPage /> : <FeatureUnavailable name="Lead Gen admin" />} />
+            {/* Hotfix B (2026-09-03): Lead Gen is live for the IA tenant ONLY until
+                Brandon has verified real searches. RequireFounderRoute bounces
+                everyone else to /app/overview; LUMEN 403s the job routes
+                independently, so a direct API call can't bypass this. */}
+            <Route path="admin/leadgen" element={<RequireFounderRoute />}>
+              <Route index element={LEADGEN_ENABLED ? <AdminLeadgenPage /> : <FeatureUnavailable name="Lead Gen admin" />} />
+            </Route>
             <Route path="admin/infra-health" element={<InfraHealthPage />} />
 
             {/* Sept-A F7 — founder-only client-facing error log (every 4xx/5xx
@@ -330,9 +336,12 @@ export function App() {
             {/* Lead Gen LOCKED 2026-07-27 (LEADGEN_ENABLED=false) — taxonomy
                 produces garbage keyword expansions. Direct-URL access shows a
                 paused notice; nav entries are filtered in serviceCatalog. */}
-            <Route path="spark/leadgen/new" element={LEADGEN_ENABLED ? <SparkLeadGenNewPage /> : <FeatureUnavailable name="Lead Gen" />} />
-            <Route path="spark/leadgen/jobs/:id" element={LEADGEN_ENABLED ? <SparkLeadGenJobPage /> : <FeatureUnavailable name="Lead Gen" />} />
-            <Route path="spark/leadgen/saved" element={LEADGEN_ENABLED ? <SparkLeadGenSavedPage /> : <FeatureUnavailable name="Lead Gen" />} />
+            {/* Hotfix B (2026-09-03): founder-only until verified — see admin/leadgen note. */}
+            <Route path="spark/leadgen" element={<RequireFounderRoute />}>
+              <Route path="new" element={LEADGEN_ENABLED ? <SparkLeadGenNewPage /> : <FeatureUnavailable name="Lead Gen" />} />
+              <Route path="jobs/:id" element={LEADGEN_ENABLED ? <SparkLeadGenJobPage /> : <FeatureUnavailable name="Lead Gen" />} />
+              <Route path="saved" element={LEADGEN_ENABLED ? <SparkLeadGenSavedPage /> : <FeatureUnavailable name="Lead Gen" />} />
+            </Route>
             <Route path="spark/customer-flow" element={<SparkCustomerFlowPage />} />
             <Route path="spark/lifecycle" element={<SparkLifecyclePage />} />
             <Route path="spark/sync-issues" element={<SparkSyncIssuesPage />} />
