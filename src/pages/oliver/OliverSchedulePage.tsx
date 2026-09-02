@@ -17,6 +17,7 @@ import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader } from "../../components/oliver/ui";
 import { UnifiedCalendarGrid, type UnifiedEvent } from "../../components/UnifiedCalendarGrid";
 import { NeedsSchedulingRail } from "../../components/oliver/NeedsSchedulingRail";
+import { AssignWorkerPanel } from "../../components/oliver/AssignWorkerPanel";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 
 import { ReportBar } from '../../components/insights/ReportBar';
@@ -36,6 +37,9 @@ export function OliverSchedulePage() {
   // the job leaves the queue at the same moment it appears on a day.
   const [reloadKey, setReloadKey] = useState(0);
   const [scheduleNote, setScheduleNote] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  // The job just placed on a day, so we can offer assignment while the user is
+  // still thinking about it. Cleared when they close the panel or drop another.
+  const [justScheduled, setJustScheduled] = useState<{ jobId: string; dateYmd: string } | null>(null);
 
   // KPI data: fetch a 90-day window once for the strip on top so it
   // doesn't churn as the grid month changes.
@@ -83,9 +87,10 @@ export function OliverSchedulePage() {
       await patch(`/jobs/${jobId}`, { scheduled_start: start.toISOString() });
       setReloadKey((k) => k + 1);
       loadKpis();
+      setJustScheduled({ jobId, dateYmd });
       setScheduleNote({
         kind: "ok",
-        text: `Scheduled for ${start.toLocaleDateString()} at 9:00 AM. Open the job to change the time or assign someone.`,
+        text: `Scheduled for ${start.toLocaleDateString()} at 9:00 AM. Open the job to change the time.`,
       });
       return true;
     } catch (e) {
@@ -126,6 +131,17 @@ export function OliverSchedulePage() {
         }`}>
           {scheduleNote.text}
         </div>
+      )}
+
+      {/* Assignment is offered right after scheduling — that is when you know
+          who should take it. Nothing is auto-assigned (decision 3). */}
+      {justScheduled && (
+        <AssignWorkerPanel
+          jobId={justScheduled.jobId}
+          dateYmd={justScheduled.dateYmd}
+          onClose={() => setJustScheduled(null)}
+          onAssigned={() => { setReloadKey((k) => k + 1); loadKpis(); }}
+        />
       )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(220px,280px)_1fr]">
