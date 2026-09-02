@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { PaymentsPayoutsCard } from "./PaymentsPayoutsCard";
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { useAccessToken } from '../../auth/useAccessToken';
@@ -512,6 +513,12 @@ export function SubscriptionBillingTab() {
 
       {loading && <div className="rounded-md border bg-gray-50 p-3 text-sm text-gray-500">Loading subscriptions…</div>}
       {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
+      {/* The money side of this page. Fees, payout timing and the bank hand-off
+          all lived nowhere before — a business could not see what we charge
+          them per transaction, and could not tell that their payouts were set
+          to manual and never reaching their bank. */}
+      <PaymentsPayoutsCard />
 
       {/* Per-platform cards */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
