@@ -1,6 +1,7 @@
 import { lazy, Suspense, useMemo } from 'react';
 import { useParams, useLocation, Navigate } from 'react-router-dom';
 import { useIsFounder } from '../hooks/useIsFounder';
+import { LEADGEN_LOCKED_KEYS } from '../config/featureFlags';
 import { SERVICE_VISIBILITY } from '../components/SubNav';
 import { isGatedProduct, isRoutable, requirementLabel } from '../components/navVisibility';
 import { useNavAddons } from '../hooks/useNavAddons';
@@ -431,6 +432,14 @@ function ServiceRouterInner() {
   // (adversarial-review finding).
   if (serviceKey === 'spark_attribution') {
     return <Navigate to="/app/services/spark_ia_insights_trends" replace />;
+  }
+
+  // Hotfix B (2026-09-03) — Lead Gen is live for the IA tenant ONLY until
+  // Brandon has verified real searches. /app/services/spark_search_profiles
+  // is the one Lead Gen page served through the catalog router, so it takes
+  // the same bounce as the dedicated /app/spark/leadgen/* routes.
+  if (serviceKey && LEADGEN_LOCKED_KEYS.includes(serviceKey) && !effectiveIsFounder) {
+    return <Navigate to="/app/overview" replace />;
   }
 
   const service: PortalService | null = useMemo(

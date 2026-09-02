@@ -12,6 +12,8 @@ import { Search } from "lucide-react";
 import { IadmModal } from "./IadmModal";
 import { useAppState } from "../app/AppState";
 import { SERVICE_CATALOG, type PortalService } from "../config/serviceCatalog";
+import { LEADGEN_LOCKED_KEYS } from "../config/featureFlags";
+import { useIsFounder } from "../hooks/useIsFounder";
 
 interface SearchableRoute {
   key: string;
@@ -40,7 +42,7 @@ const SECTION_TO_SERVICE_KEY: Record<PortalService["section"], string | null> = 
   MY_BRAND: null,
 };
 
-function buildSearchableRoutes(_activeServices: Set<string>): SearchableRoute[] {
+function buildSearchableRoutes(_activeServices: Set<string>, isFounder: boolean): SearchableRoute[] {
   // 2026-05-31 — F-127 fix: show ALL non-coming-soon routes regardless of
   // the tenant's active services. Earlier we filtered by active.services
   // but that returned only OLIVER for tenants whose session-verify hadn't
@@ -50,6 +52,8 @@ function buildSearchableRoutes(_activeServices: Set<string>): SearchableRoute[] 
   // for products the tenant doesn't have). Better to be permissive here.
   return SERVICE_CATALOG
     .filter((s) => s.defaultStatus !== "coming_soon")
+    // Hotfix B (2026-09-03): Lead Gen is founder-only until verified — keep it out of search too.
+    .filter((s) => isFounder || !LEADGEN_LOCKED_KEYS.includes(s.key))
     .map((s) => ({
       key: s.key,
       label: s.displayName,
@@ -93,7 +97,8 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
     return s;
   }, [active]);
 
-  const routes = useMemo(() => buildSearchableRoutes(activeServices), [activeServices]);
+  const isFounder = useIsFounder();
+  const routes = useMemo(() => buildSearchableRoutes(activeServices, isFounder), [activeServices, isFounder]);
 
   const results = useMemo(() => {
     if (!query.trim()) {

@@ -1,5 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { useAppState } from "../app/AppState";
+import { useIsFounder } from "../hooks/useIsFounder";
+import { LEADGEN_LOCKED_KEYS } from "../config/featureFlags";
 import {
   LAYER_LABELS,
   SERVICE_CATALOG,
@@ -32,12 +34,15 @@ function navItemClass(isActive: boolean): string {
 
 export function SidebarNav() {
   const { enabledServices } = useAppState();
+  const isFounder = useIsFounder();
+  // Hotfix B (2026-09-03): Lead Gen entries are founder-only until verified.
+  const catalog = isFounder ? SERVICE_CATALOG : SERVICE_CATALOG.filter((s) => !LEADGEN_LOCKED_KEYS.includes(s.key));
 
   // Shared "overview" item (top of nav)
-  const overview = SERVICE_CATALOG.find((s) => s.key === "portal_overview");
+  const overview = catalog.find((s) => s.key === "portal_overview");
 
   // Group services by section, excluding "Shared"
-  const sections = SERVICE_CATALOG.filter((s) => s.section !== "Shared").reduce<
+  const sections = catalog.filter((s) => s.section !== "Shared").reduce<
     Record<PortalService["section"], PortalService[]>
   >((acc, service) => {
     (acc[service.section] ??= []).push(service);
