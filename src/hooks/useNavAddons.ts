@@ -128,7 +128,11 @@ export function useNavAddons(product: GatedProduct | undefined): NavAddonsResult
   }, [wantsArion, activeTenantId, inOwnTenant, scope, getToken]);
 
   return useMemo<NavAddonsResult>(() => {
-    const base = activeAddons();
+    // Hotfix B (2026-09-03): Lead Gen is live for the founder's OWN tenant
+    // (Intelligent Analytics) while Brandon verifies real searches. The
+    // product-wide lock in activeAddons() stays for every other tenant and
+    // for view-as — inOwnTenant is already false there.
+    const base = inOwnTenant ? [...activeAddons(), "leadgen" as NavAddon] : activeAddons();
     if (!wantsArion) return { addons: base, seoAddonTier: null };
     if (inOwnTenant) return { addons: [...base, "seo"], seoAddonTier: OWNER_DEFAULTS.arion.addon };
     if (!state || state.scope !== scope || state.sites == null) return { addons: null, seoAddonTier: null }; // unresolved
