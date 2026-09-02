@@ -38,6 +38,18 @@ interface Props {
   className?: string;
   /** OLIVER multi-location: scope to one location_id. "all"/undefined = business-wide (unchanged). */
   locationId?: string | null;
+  /**
+   * 2026-09-02 — writability arrives as a PROP, not a fork.
+   *
+   * This grid is shared with the Command Center, where dropping a job onto a
+   * day would be meaningless. Passing a handler is what turns the day cells
+   * into drop targets; without one the grid behaves exactly as before.
+   *
+   * Return true if the drop was applied, so the grid knows whether to reload.
+   */
+  onDropJob?: (jobId: string, dateYmd: string) => Promise<boolean>;
+  /** Bump to force a reload — e.g. after scheduling from outside the grid. */
+  reloadKey?: number;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -68,13 +80,15 @@ function addDays(d: Date, n: number) {
   return r;
 }
 
-export function UnifiedCalendarGrid({ kinds, className, locationId }: Props) {
+export function UnifiedCalendarGrid({ kinds, className, locationId, onDropJob, reloadKey }: Props) {
   const { get, ready } = useOliverApi();
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openDay, setOpenDay] = useState<string | null>(null);
+  const [dragOverDay, setDragOverDay] = useState<string | null>(null);
+  const [dropping, setDropping] = useState(false);
 
   // Grid is always 6 rows × 7 cols = 42 cells.
   const gridStart = useMemo(() => startOfGrid(cursor), [cursor]);
@@ -115,7 +129,7 @@ export function UnifiedCalendarGrid({ kinds, className, locationId }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [get, ready, gridStart, gridEnd, kinds, locationId]);
+  }, [get, ready, gridStart, gridEnd, kinds, locationId, reloadKey]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -163,6 +177,7 @@ export function UnifiedCalendarGrid({ kinds, className, locationId }: Props) {
         </div>
         <div className="flex items-center gap-3 text-[11px]">
           {loading && <span className="text-slate-500">Loading…</span>}
+          {dropping && <span className="text-slate-500">Scheduling…</span>}
           {/* 2026-06-22 audit fix: distinguish "loaded zero" from "still
               loading" / "errored" so Brandon's complaint pattern
               ("calendar is broken") is faster to triage. */}
@@ -197,11 +212,29 @@ export function UnifiedCalendarGrid({ kinds, className, locationId }: Props) {
             <button
               key={dayKey}
               onClick={() => setOpenDay(dayKey)}
+              // Drop handlers only bind when a handler was passed. On the
+              // Command Center there is none, so this stays an ordinary button.
+              onDragOver={onDropJob ? (e) => { e.preventDefault(); setDragOverDay(dayKey); } : undefined}
+              onDragLeave={onDropJob ? () => setDragOverDay((d) => (d === dayKey ? null : d)) : undefined}
+              onDrop={onDropJob ? async (e) => {
+                e.preventDefault();
+                setDragOverDay(null);
+                const jobId = e.dataTransfer.getData("application/x-oliver-job-id");
+                if (!jobId) return;   // something else was dragged; ignore it
+                setDropping(true);
+                try {
+                  // Reload only if the caller says the write landed. Redrawing
+                  // on a failed save would show the job on a day it is not on.
+                  if (await onDropJob(jobId, dayKey)) await load();
+                } finally {
+                  setDropping(false);
+                }
+              } : undefined}
               className={`bg-white min-h-[88px] p-1.5 text-left flex flex-col gap-0.5 transition-colors ${
                 inCurrentMonth ? "" : "bg-slate-50"
               } hover:bg-slate-50 cursor-pointer ${
                 isToday ? "ring-2 ring-inset ring-[#FEC82C]" : ""
-              }`}
+              } ${dragOverDay === dayKey ? "ring-2 ring-inset ring-[#1A7DB5] bg-sky-50" : ""}`}
             >
               <div className={`text-[11px] font-medium ${
                 inCurrentMonth ? "text-slate-700" : "text-slate-400"

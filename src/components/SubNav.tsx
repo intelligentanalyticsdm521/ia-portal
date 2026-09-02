@@ -141,7 +141,16 @@ const OLIVER_NAV: SubNavConfig = {
       label: "Jobs", icon: Wrench, collapsible: true, sectionId: "oliver_jobs",
       items: [
         { key: "oliver_job_board", label: "Job Board", route: "/app/services/oliver_job_board", minTier: "standard" },
-        { key: "oliver_schedule", label: "Schedule", route: "/app/services/oliver_schedule", minTier: "standard" },
+        // 2026-09-02 — the Standard gate is gone (Brandon, decision 5): every
+        // tier gets the calendar. Lite is an invoicing tool, but seeing your own
+        // week is a perk and a visual read on availability, and the read
+        // endpoint (/calendar/unified) was never tier-gated anyway. The
+        // Standard+ gates that remain are the ones that matter:
+        // /dispatch/* and /schedule/availability.
+        { key: "oliver_schedule", label: "Schedule", route: "/app/services/oliver_schedule" },
+        // Dispatch was built (OliverDispatchPage, 249 lines) and had no nav
+        // entry at all, so worker assignment was unreachable from the nav.
+        { key: "oliver_dispatch", label: "Dispatch", route: "/app/services/oliver_dispatch", minTier: "standard" },
         { key: "oliver_jobs_archive", label: "Archive", route: "/app/services/oliver_jobs_archive", minTier: "standard" },
       ],
     },
