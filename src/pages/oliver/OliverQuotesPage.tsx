@@ -543,7 +543,15 @@ export function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteI
   // surface to splitsErr so the UI can show "Couldn't load milestones".
   const reloadMilestones = useCallback(async () => {
     try {
-      const list = await api.get<PaymentMilestoneRow[]>(`/quotes/${quoteId}/payment-milestones`);
+      // 2026-09-01 — was GET /quotes/:id/payment-milestones, which 404s:
+      // oliver-api defines POST on that path (routes/quotes.js:732) but no GET.
+      // Reading milestones goes through the generic collection endpoint, the
+      // same one the consulting project modal uses
+      // (routes/paymentMilestones.js:84, parent_kind='quote' per quotes.js:753).
+      // The 404 was the first thing that broke on opening a quote.
+      const list = await api.get<PaymentMilestoneRow[]>(
+        `/payment-milestones?parent_kind=quote&parent_id=${encodeURIComponent(quoteId)}`,
+      );
       setMilestones(Array.isArray(list) ? list : []);
       // Infer the kind from the existing rows so the dropdown reflects
       // saved state on re-open. 2 rows ≈ 50/50, 3 rows ≈ 40/30/30,
@@ -570,6 +578,23 @@ export function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteI
   async function send() {
     setBusy("send"); setErr(null);
     try { await api.post(`/quotes/${q!.quote_id}/send`); await reload(); onChanged(); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setBusy(null); }
+  }
+  // 2026-09-01 — POST /quotes/:id/accept has existed since OL-1 (oliver-api
+  // routes/quotes.js:387) and NOTHING in the Portal called it. The only way a
+  // quote could reach 'accepted' was the customer signing in to the customer
+  // portal — which is Standard+ (lib/tierFeatures.js:137), so an Invoicing
+  // tenant could never have a quote accepted at all, and a tenant who simply
+  // does not run a portal was equally stuck.
+  //
+  // A business accepting on the customer's behalf is the normal case anyway:
+  // they said yes on the phone. This is that button. It does NOT replace the
+  // customer-facing acceptance that quotes still need (see the board task for
+  // public token acceptance) — it removes the hard block in the meantime.
+  async function markAccepted() {
+    setBusy("accept"); setErr(null);
+    try { await api.post(`/quotes/${q!.quote_id}/accept`); await reload(); onChanged(); }
     catch (e) { setErr((e as Error).message); }
     finally { setBusy(null); }
   }
@@ -718,6 +743,12 @@ export function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteI
           <div className="flex-1" />
           <Button variant="ghost" loading={busy === "duplicate"} onClick={duplicate}>Duplicate</Button>
           {q.status === "draft" && <Button variant="primary" loading={busy === "send"} onClick={send}>Send to customer</Button>}
+          {q.status === "sent" && (
+            <Button variant="primary" loading={busy === "accept"} onClick={markAccepted}
+              title="Record that the customer accepted — use this when they said yes by phone or email">
+              Mark accepted
+            </Button>
+          )}
           {q.status === "accepted" && <Button variant="secondary" loading={busy === "convert"} onClick={convert}>Convert to invoice</Button>}
         </>
       }
