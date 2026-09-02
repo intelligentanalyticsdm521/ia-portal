@@ -420,16 +420,27 @@ export function OrganizationTab() {
 //
 // Lives under /app/settings/plan-pricing (hamburger > Plan & Pricing).
 interface ProductMeta {
-  key: "oliver" | "spark" | "arion";
+  key: "oliver" | "spark" | "arion" | "stella" | "forge" | "argus";
   name: string;
   desc: string;
   accent: string;            // brand accent for the card's left rail
-  usagePath: string;         // per-product Plan & Pricing route
+  /** Per-product Plan & Pricing route. OPTIONAL: STELLA, FORGE and ARGUS are
+   *  live but have no self-serve plan page, and a "Manage plan" button
+   *  pointing at a route that does not exist is the dead-link defect this
+   *  release keeps removing. No path -> no button. */
+  usagePath?: string;
 }
 const PLAN_HUB_PRODUCTS: ProductMeta[] = [
   { key: "oliver", name: "OLIVER", desc: "Field service operations — jobs, invoices, recurring", accent: "#FEC82C", usagePath: "/app/services/oliver_usage" },
   { key: "spark",  name: "SPARK",  desc: "Marketing & CRM — campaigns, lists, forms",             accent: "#EF6C33", usagePath: "/app/services/spark_usage" },
   { key: "arion",  name: "ARION",  desc: "Website intelligence — SEO, security, performance",     accent: "#38BDF8", usagePath: "/app/services/arion_usage" },
+  // 2026-09-02 — the second row. All three are live and were missing from the
+  // one page that is supposed to show every platform a business is paying for.
+  // Colours are the locked identities from PRODUCT_ACCENT in IadmModal.tsx, not
+  // approximations: STELLA indigo, FORGE teal, ARGUS lime.
+  { key: "stella", name: "STELLA", desc: "Ledger & data management — books, reporting",           accent: "#4C5BD4" },
+  { key: "forge",  name: "FORGE",  desc: "Custom software, integrations, and platform builds",    accent: "#0F766E" },
+  { key: "argus",  name: "ARGUS",  desc: "Orchestration, automation, and platform intelligence",  accent: "#84CC16" },
 ];
 
 export function SubscriptionBillingTab() {
@@ -472,6 +483,14 @@ export function SubscriptionBillingTab() {
     return () => { cancelled = true; };
   }, [activeTenantId, getToken, refresh, searchParams, setSearchParams, fetchSubscriptions]);
 
+  // Mirrors SELF_SERVE_PRODUCTS in oliver-api lib/productTier.js. FORGE and
+  // ARGUS are live but not self-serve, so they open the tenant's general
+  // billing portal instead of a product-scoped one.
+  const PORTAL_SELF_SERVE = ["oliver", "spark", "arion"] as const;
+  type PortalProduct = (typeof PORTAL_SELF_SERVE)[number];
+  const portalProduct = (k?: ProductMeta["key"]): PortalProduct | undefined =>
+    (PORTAL_SELF_SERVE as readonly string[]).includes(k ?? "") ? (k as PortalProduct) : undefined;
+
   async function openPortal(product?: ProductMeta["key"]) {
     if (!activeTenantId) return;
     setOpeningPortal(product || "any");
@@ -480,7 +499,7 @@ export function SubscriptionBillingTab() {
       const r = await createPortalSession({
         token: t.accessToken,
         tenantId: activeTenantId,
-        product,
+        product: portalProduct(product),
         returnUrl: window.location.origin + "/app/settings/plan-pricing?refresh=1",
       });
       if (r.mode === "portal" && r.url) {
@@ -504,6 +523,12 @@ export function SubscriptionBillingTab() {
     <div className="space-y-6">
       <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} />
 
+      {/* The money side goes first. It sat UNDER the "Your subscriptions"
+          heading, which read as though payout timing were part of a
+          subscription. It is the thing a business checks most and it belongs at
+          the top of the page. */}
+      <PaymentsPayoutsCard />
+
       <SectionLabel
         title="Your subscriptions"
         description={data?.owner
@@ -514,11 +539,6 @@ export function SubscriptionBillingTab() {
       {loading && <div className="rounded-md border bg-gray-50 p-3 text-sm text-gray-500">Loading subscriptions…</div>}
       {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
-      {/* The money side of this page. Fees, payout timing and the bank hand-off
-          all lived nowhere before — a business could not see what we charge
-          them per transaction, and could not tell that their payouts were set
-          to manual and never reaching their bank. */}
-      <PaymentsPayoutsCard />
 
       {/* Per-platform cards */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -576,12 +596,18 @@ export function SubscriptionBillingTab() {
               <div className="mt-4 flex flex-col gap-1.5">
                 {isActive ? (
                   <>
-                    <Link
-                      to={p.usagePath}
-                      className="inline-flex items-center justify-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
-                    >
-                      Manage plan
-                    </Link>
+                    {p.usagePath ? (
+                      <Link
+                        to={p.usagePath}
+                        className="inline-flex items-center justify-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                      >
+                        Manage plan
+                      </Link>
+                    ) : (
+                      <span className="inline-flex items-center justify-center rounded-md border border-dashed border-gray-300 px-3 py-1.5 text-xs text-gray-500">
+                        Plan changes handled by us
+                      </span>
+                    )}
                     {!isOwner && (
                       <button
                         type="button"
@@ -593,7 +619,7 @@ export function SubscriptionBillingTab() {
                       </button>
                     )}
                   </>
-                ) : (
+                ) : p.usagePath ? (
                   <Link
                     to={p.usagePath}
                     className="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold text-white"
@@ -601,6 +627,10 @@ export function SubscriptionBillingTab() {
                   >
                     Add {p.name} to your account
                   </Link>
+                ) : (
+                  <span className="inline-flex items-center justify-center rounded-md border border-dashed border-gray-300 px-3 py-1.5 text-xs text-gray-500">
+                    Ask us about {p.name}
+                  </span>
                 )}
               </div>
             </div>

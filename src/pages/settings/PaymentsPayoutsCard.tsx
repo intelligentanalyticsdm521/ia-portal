@@ -15,7 +15,9 @@
 // BANK cannot be: Stripe requires the account holder to authenticate before
 // changing where money lands, and no link we generate can skip that. So the
 // bank is an honest hand-off with a warning, not a pretend-inline experience.
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { loadConnectAndInitialize } from "@stripe/connect-js";
+import { ConnectComponentsProvider, ConnectAccountManagement } from "@stripe/react-connect-js";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 
@@ -102,15 +104,55 @@ export function PaymentsPayoutsCard() {
     }
   }
 
-  function goToStripeBank() {
-    const ok = window.confirm(
-      "You're leaving Intelligent Analytics.\n\n" +
-        "Stripe holds your bank details and asks you to sign in before changing where your money is sent. " +
-        "We can't change it for you — that's Stripe protecting your account.\n\n" +
-        "Open Stripe now?",
-    );
-    if (ok) window.open("https://dashboard.stripe.com/settings/payouts", "_blank", "noopener,noreferrer");
-  }
+  // Stripe's own account UI, rendered inside this page.
+  //
+  // The first version of this button sent people to dashboard.stripe.com and
+  // they hit a wall: "Your business is connected to a Platform... Use that
+  // Platform to access your account dashboard." Our connected accounts are
+  // platform-controlled, so Stripe refuses direct sign-in on purpose and points
+  // them back at us. This is what it is pointing at.
+  //
+  // The session is minted only when the panel is opened, not on page load.
+  const [bankOpen, setBankOpen] = useState(false);
+  const [connectErr, setConnectErr] = useState<string | null>(null);
+  const [pubKey, setPubKey] = useState<string | null>(null);
+
+  // Opening the panel does two things: proves the session can be minted, and
+  // gets the publishable key. The key comes from the API rather than a
+  // build-time VITE_ var — routes/payments.js already serves it that way, and a
+  // second source is one more thing to drift out of sync.
+  useEffect(() => {
+    if (!bankOpen || pubKey) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await post<{ client_secret: string; publishable_key: string }>(
+          "/settings/stripe/account-session",
+        );
+        if (cancelled) return;
+        if (!r?.publishable_key) throw new Error("Stripe isn't configured on the server.");
+        setPubKey(r.publishable_key);
+      } catch (e) {
+        if (!cancelled) setConnectErr(apiErrorMessage(e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [bankOpen, pubKey, post]);
+
+  const stripeConnect = useMemo(() => {
+    if (!bankOpen || !pubKey) return null;
+    return loadConnectAndInitialize({
+      publishableKey: pubKey,
+      // Must return a FRESH secret on every call — Connect.js also uses this to
+      // refresh the session when it expires.
+      fetchClientSecret: async () => {
+        const r = await post<{ client_secret: string }>("/settings/stripe/account-session");
+        if (!r?.client_secret) throw new Error("No client secret returned");
+        return r.client_secret;
+      },
+      appearance: { variables: { colorPrimary: "#1A7DB5" } },
+    });
+  }, [bankOpen, pubKey, post]);
 
   if (loading) {
     return <div className="rounded-md border bg-gray-50 p-3 text-sm text-gray-500">Loading payments &amp; payouts…</div>;
@@ -212,12 +254,36 @@ export function PaymentsPayoutsCard() {
             Your bank details live with Stripe, not with us — we never see your account number.
           </div>
           <button
-            onClick={goToStripeBank}
+            onClick={() => { setConnectErr(null); setBankOpen((v) => !v); }}
             disabled={!connected}
             className="mt-2 rounded border border-gray-200 bg-white px-2.5 py-1 text-xs text-[#1A7DB5] hover:border-gray-300 disabled:opacity-50"
           >
-            Update bank information →
+            {bankOpen ? "Close" : "Update bank information"}
           </button>
+
+          {connectErr && (
+            <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">
+              {connectErr}
+            </div>
+          )}
+
+          {bankOpen && !stripeConnect && !connectErr && (
+            <div className="mt-2 text-xs text-gray-500">Loading Stripe…</div>
+          )}
+
+          {bankOpen && stripeConnect && (
+            <div className="mt-3 rounded-md border border-gray-200 p-2">
+              <ConnectComponentsProvider connectInstance={stripeConnect}>
+                <ConnectAccountManagement
+                  onLoadError={(e) =>
+                    setConnectErr(
+                      `Stripe couldn't load the account form: ${e.error?.message || "unknown error"}. Try again, or tell us and we'll sort it.`,
+                    )
+                  }
+                />
+              </ConnectComponentsProvider>
+            </div>
+          )}
         </div>
       </div>
 
