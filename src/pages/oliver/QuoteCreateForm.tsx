@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { Button } from "../../components/oliver/ui";
 
 interface JobListItem {
@@ -268,7 +269,7 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
         // hunting for a quote that is already sitting in the list, and
         // reporting plain success would be the exact lie this release has
         // spent itself removing.
-        onCreated(`Quote created, but sending failed: ${(e as Error).message} — open it from the list and press Send to customer.`);
+        onCreated(`Quote created, but sending failed: ${apiErrorMessage(e)} — open it from the list and press Send to customer.`);
       }
     } catch (e) {
       setError(`Create failed: ${(e as Error).message}`);

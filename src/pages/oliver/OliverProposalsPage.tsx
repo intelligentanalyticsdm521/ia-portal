@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { ProposalCatalogPicker, type PickedService } from "../../components/oliver/ProposalCatalogPicker";
 import { DocumentBrandFrame } from "../../components/oliver/DocumentBrandFrame";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
@@ -586,7 +587,7 @@ export function CreateProposalDrawer({
           const sendRes = await api.post<{ url: string }>(`/proposals/${res.proposal_id}/send`);
           msg += ` Sent — public URL: ${sendRes.url}`;
         } catch (e) {
-          msg += ` Send failed: ${(e as Error).message}`;
+          msg += ` Send failed: ${apiErrorMessage(e)}`;
         }
       }
       onCreated(msg);
