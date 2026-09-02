@@ -88,7 +88,12 @@ export function CommandAlerts() {
           next.push({
             id: "oliver-onboarding-incomplete", severity: "warning", source: "oliver",
             title: `Finish setting up OLIVER (${ob.completed_count}/${ob.total_steps})`,
-            description: "Complete guided setup — business profile, Stripe, invoice template, catalog — so you can send your first paid invoice.",
+            // This sentence names the steps the backend actually returns, so it
+            // has to move when that list does. `payout_schedule` joined it
+            // 2026-09-02 — and it belongs in this alert more than any other
+            // step, because "send your first paid invoice" is exactly the
+            // moment a manual payout schedule strands the money in Stripe.
+            description: "Complete guided setup — business profile, Stripe, how you get paid, invoice template, catalog — so you can send your first paid invoice.",
             href: "/app/services/oliver_onboarding",
           });
         }
