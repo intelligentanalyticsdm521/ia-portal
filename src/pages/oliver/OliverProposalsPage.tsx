@@ -102,9 +102,22 @@ const FILTER_PILLS = [
 function fmtMoney(n?: number | null) {
   return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
+// 2026-09-01 — DATE-ONLY values must be formatted in UTC.
+//
+// valid_until is a calendar date, but it is stored as a DATETIMEOFFSET at
+// midnight UTC: entering 09/01/2026 saves 2026-09-01T00:00:00.000Z, which is
+// correct. Rendering that instant with toLocaleDateString() in any timezone
+// west of Greenwich shows the PREVIOUS day — 00:00 UTC is 19:00 on 31 August in
+// Central Time. Brandon typed 09/01/2026 and the list said 8/31/26.
+//
+// The data was never wrong; only the reading of it. Forcing timeZone: "UTC"
+// reads the date back the way it was written. Do NOT "fix" this by shifting the
+// stored value — that breaks it for everyone east of Greenwich instead.
 function fmtDate(d?: string | null) {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString();
+  return new Date(d).toLocaleDateString(undefined, {
+    year: "numeric", month: "short", day: "numeric", timeZone: "UTC",
+  });
 }
 
 export function OliverProposalsPage({ embedded = false, createSignal = 0, createCards }: { embedded?: boolean; createSignal?: number; createCards?: React.ReactNode } = {}) {
