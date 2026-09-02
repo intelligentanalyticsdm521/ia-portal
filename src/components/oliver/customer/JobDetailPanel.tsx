@@ -9,6 +9,7 @@
  * CustomerModal can render them at the bottom.
  */
 import { useCallback, useEffect, useState } from "react";
+import { ScheduleJobModal } from "../ScheduleJobModal";
 import { Button, StatusBadge } from "../ui";
 import { CatalogLineItemPicker, computeLineTotal, type LineItem } from "../CatalogLineItemPicker";
 
@@ -135,6 +136,9 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
 
   useEffect(() => { reload(); }, [reload]);
 
+  // The week-view scheduler, opened from Quick actions.
+  const [schedulingOpen, setSchedulingOpen] = useState(false);
+
   function startEditDetails() {
     if (!job) return;
     setETitle(job.title || "");
@@ -216,6 +220,28 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
   const isTerminal = job.status === "paid" || job.status === "cancelled";
 
   return (
+    <>
+    {schedulingOpen && (
+      <ScheduleJobModal
+        jobId={jobId}
+        jobTitle={job?.title}
+        // How long the QUOTED work says this takes. The job's line items came
+        // from the accepted quote, and each carries durationMinutes off the
+        // service it was sold from — so the scheduler opens pre-filled with the
+        // real length instead of a blind 30-minute guess. Null when nothing on
+        // the job carries a duration, and the modal falls back to an hour.
+        suggestedDuration={
+          lineItems.reduce((sum, it) => sum + (Number(it.duration_minutes) || 0), 0) || null
+        }
+        onClose={() => setSchedulingOpen(false)}
+        onScheduled={async (startIso) => {
+          setSchedulingOpen(false);
+          setToast(`Scheduled for ${new Date(startIso).toLocaleString()}`);
+          await reload();
+          onChanged?.();
+        }}
+      />
+    )}
     <JobLayout
       job={job}
       jobId={jobId}
@@ -227,6 +253,7 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
       eTitle={eTitle} eStart={eStart} eEnd={eEnd} eNotes={eNotes}
       setETitle={setETitle} setEStart={setEStart} setEEnd={setEEnd} setENotes={setENotes}
       startEditDetails={startEditDetails} saveDetails={saveDetails} cancelEditDetails={() => setEditingDetails(false)}
+      setSchedulingOpen={setSchedulingOpen} scheduledDate={job?.scheduledDate}
       lineItems={lineItems} setLineItems={setLineItems}
       lineItemsDirty={lineItemsDirty} lineItemsSubtotal={lineItemsSubtotal}
       saveLineItems={saveLineItems}
@@ -243,6 +270,7 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
         onChanged?.();
       }}
     />
+    </>
   );
 }
 
@@ -274,6 +302,8 @@ type JobLayoutProps = {
   setEEnd: (v: string) => void;
   setENotes: (v: string) => void;
   startEditDetails: () => void;
+  setSchedulingOpen: (v: boolean) => void;
+  scheduledDate?: string;
   saveDetails: () => Promise<void>;
   cancelEditDetails: () => void;
   lineItems: LineItem[];
@@ -444,6 +474,13 @@ function JobLayout(p: JobLayoutProps) {
             <div className="card" style={{ marginBottom: 12 }}>
               <div className="card-ttl">Quick actions</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                {/* 2026-09-02 — "Edit details" was the ONLY route to scheduling
+                    from here, and it is a datetime field: you typed a date blind,
+                    with no idea what else that day held. This opens the week and
+                    shows what is actually free. */}
+                <Button variant="primary" onClick={() => p.setSchedulingOpen(true)}>
+                  {p.scheduledDate ? "Reschedule" : "Schedule job"}
+                </Button>
                 <Button variant="secondary" onClick={p.startEditDetails}>Edit details</Button>
                 <div style={{ fontSize: 10, color: "#94A3B8", textAlign: "center", marginTop: 4 }}>
                   Status moves via the pill above ↑
