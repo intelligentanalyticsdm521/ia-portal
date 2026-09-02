@@ -77,26 +77,53 @@ export function OliverSchedulePage() {
 
   // Drop a queued job onto a day. Writes the SAME field the job detail panel
   // writes (scheduled_start) — a second way in, not a second source of truth.
-  const scheduleJobOnDay = useCallback(async (jobId: string, dateYmd: string) => {
+  const scheduleJobOnDay = useCallback(async (
+    jobId: string,
+    dateYmd: string,
+    from?: { startIso: string; endIso?: string },
+  ) => {
     setScheduleNote(null);
     try {
-      // 9am local, not midnight: a job "at 00:00" reads as unscheduled to a
-      // person. The exact time is adjustable on the job itself.
       const [y, m, d] = dateYmd.split("-").map(Number);
-      const start = new Date(y, m - 1, d, 9, 0, 0);
-      await patch(`/jobs/${jobId}`, { scheduled_start: start.toISOString() });
+      const prev = from ? new Date(from.startIso) : null;
+
+      // Moving an existing job KEEPS its time of day: a 2pm job dragged to
+      // Friday is still at 2pm. Only a job coming out of the queue — which has
+      // no time yet — gets the 9am default, because a job "at 00:00" reads as
+      // unscheduled to a person.
+      const start = prev
+        ? new Date(y, m - 1, d, prev.getHours(), prev.getMinutes(), 0)
+        : new Date(y, m - 1, d, 9, 0, 0);
+
+      const body: Record<string, unknown> = { scheduled_start: start.toISOString() };
+
+      // Shift the end by the same amount so the job keeps its length. Without
+      // this a rescheduled job still ENDS on its old day and spans the gap.
+      if (prev && from?.endIso) {
+        const prevEnd = new Date(from.endIso);
+        if (!Number.isNaN(prevEnd.getTime())) {
+          body.scheduled_end = new Date(prevEnd.getTime() + (start.getTime() - prev.getTime())).toISOString();
+        }
+      }
+
+      await patch(`/jobs/${jobId}`, body);
       setReloadKey((k) => k + 1);
       loadKpis();
-      setJustScheduled({ jobId, dateYmd });
+      // Only offer assignment for a job that just came OUT OF THE QUEUE. A
+      // reschedule usually already has someone on it, and re-prompting every
+      // time you nudge a job across the calendar would be noise.
+      if (!prev) setJustScheduled({ jobId, dateYmd });
       setScheduleNote({
         kind: "ok",
-        text: `Scheduled for ${start.toLocaleDateString()} at 9:00 AM. Open the job to change the time.`,
+        text: prev
+          ? `Moved to ${start.toLocaleDateString()}, still at ${start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`
+          : `Scheduled for ${start.toLocaleDateString()} at 9:00 AM. Open the job to change the time.`,
       });
       return true;
     } catch (e) {
       // Report the failure and DO NOT redraw: showing the job on a day it was
       // never saved to is worse than the error.
-      setScheduleNote({ kind: "err", text: `Couldn't schedule that job: ${apiErrorMessage(e)}` });
+      setScheduleNote({ kind: "err", text: `Couldn't move that job: ${apiErrorMessage(e)}` });
       return false;
     }
   }, [patch, loadKpis]);

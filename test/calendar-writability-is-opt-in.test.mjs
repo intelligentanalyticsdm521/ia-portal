@@ -45,6 +45,8 @@ test("a failed schedule write does not redraw the calendar", () => {
   // is the report-success-over-failed-work shape this release keeps removing.
   assert.match(PAGE, /return false;/,
     "the drop handler must return false when the PATCH fails");
-  assert.match(GRID, /if \(await onDropJob\(jobId, dayKey\)\) await load\(\);/,
+  // The signature gained a `from` argument when drag-to-reschedule landed; the
+  // invariant is unchanged — reload ONLY when the handler returns true.
+  assert.match(GRID, /if \(await onDropJob\([^)]*\)\) await load\(\);/,
     "the grid must reload only when the write actually landed");
 });

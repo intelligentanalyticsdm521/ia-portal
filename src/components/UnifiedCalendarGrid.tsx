@@ -47,7 +47,11 @@ interface Props {
    *
    * Return true if the drop was applied, so the grid knows whether to reload.
    */
-  onDropJob?: (jobId: string, dateYmd: string) => Promise<boolean>;
+  onDropJob?: (
+    jobId: string,
+    dateYmd: string,
+    from?: { startIso: string; endIso?: string },
+  ) => Promise<boolean>;
   /** Bump to force a reload — e.g. after scheduling from outside the grid. */
   reloadKey?: number;
 }
@@ -221,11 +225,17 @@ export function UnifiedCalendarGrid({ kinds, className, locationId, onDropJob, r
                 setDragOverDay(null);
                 const jobId = e.dataTransfer.getData("application/x-oliver-job-id");
                 if (!jobId) return;   // something else was dragged; ignore it
+                const fromStart = e.dataTransfer.getData("application/x-oliver-job-start") || undefined;
+                const fromEnd = e.dataTransfer.getData("application/x-oliver-job-end") || undefined;
+                // Dropped back on the day it already sits on — no write, no
+                // toast, no reload. Saying "rescheduled" here would be a lie.
+                if (fromStart && ymd(new Date(fromStart)) === dayKey) return;
                 setDropping(true);
                 try {
                   // Reload only if the caller says the write landed. Redrawing
                   // on a failed save would show the job on a day it is not on.
-                  if (await onDropJob(jobId, dayKey)) await load();
+                  const from = fromStart ? { startIso: fromStart, endIso: fromEnd } : undefined;
+                  if (await onDropJob(jobId, dayKey, from)) await load();
                 } finally {
                   setDropping(false);
                 }
@@ -242,16 +252,42 @@ export function UnifiedCalendarGrid({ kinds, className, locationId, onDropJob, r
                 {day.getDate()}
               </div>
               <div className="flex-1 flex flex-col gap-0.5 overflow-hidden">
-                {dayEvents.slice(0, 3).map((e) => (
-                  <div
-                    key={e.id}
-                    title={e.title}
-                    className="text-[9px] truncate rounded px-1 py-px font-medium text-white"
-                    style={{ background: e.color }}
-                  >
-                    {e.title}
-                  </div>
-                ))}
+                {dayEvents.slice(0, 3).map((e) => {
+                  // Only JOBS can be dragged, and only in writable mode. A
+                  // campaign, email or social post on this grid is a scheduled
+                  // SEND — dragging one to another day would quietly move when
+                  // it goes out, which is not something to discover by accident.
+                  const jobId = e.kind === "job" && e.id.startsWith("job:")
+                    ? e.id.slice("job:".length)
+                    : null;
+                  const canDrag = !!onDropJob && !!jobId;
+                  return (
+                    <div
+                      key={e.id}
+                      title={canDrag ? `${e.title} — drag to another day to reschedule` : e.title}
+                      draggable={canDrag}
+                      onDragStart={canDrag ? (ev) => {
+                        ev.stopPropagation();
+                        ev.dataTransfer.setData("application/x-oliver-job-id", jobId!);
+                        // Carry the original start so the drop can keep the
+                        // time of day. Moving a 2pm job to Friday should leave
+                        // it at 2pm, not reset it to the default hour.
+                        ev.dataTransfer.setData("application/x-oliver-job-start", e.start);
+                        // ...and the end, so a job that runs 2pm–5pm still runs
+                        // three hours after the move instead of collapsing or
+                        // stretching back to the old day.
+                        if (e.end) ev.dataTransfer.setData("application/x-oliver-job-end", e.end);
+                        ev.dataTransfer.effectAllowed = "move";
+                      } : undefined}
+                      className={`text-[9px] truncate rounded px-1 py-px font-medium text-white ${
+                        canDrag ? "cursor-grab active:cursor-grabbing" : ""
+                      }`}
+                      style={{ background: e.color }}
+                    >
+                      {e.title}
+                    </div>
+                  );
+                })}
                 {dayEvents.length > 3 && (
                   <div className="text-[9px] text-slate-500 px-1">+{dayEvents.length - 3} more</div>
                 )}
