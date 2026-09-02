@@ -465,7 +465,7 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-        <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
         {/* 2026-09-02 — "Create & send" was missing entirely. Creating a quote
             left you with a draft and no way to send it from here: you closed the
             modal, found the quote in the list, opened it, and pressed Send to

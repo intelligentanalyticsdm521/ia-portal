@@ -677,7 +677,10 @@ export function CreateProposalDrawer({
             <span style={{ fontSize: 12, color: "#B91C1C", marginRight: 4 }}>{err}</span>
           )}
           <IadmButton variant="ghost" onClick={onClose} disabled={saving}>Cancel</IadmButton>
-          <IadmButton variant="ghost" onClick={() => submit(false)} disabled={saving}>
+          {/* accent is documented as "second action — Save / Create / Confirm";
+              ghost is Cancel's. Both as ghost put two identical bordered-white
+              buttons side by side, which is how you click the wrong one. */}
+          <IadmButton variant="accent" product="oliver" onClick={() => submit(false)} disabled={saving}>
             {saving ? "Working…" : "Save draft"}
           </IadmButton>
           {/* No title= — IadmButton does not take one. The label says it. */}
