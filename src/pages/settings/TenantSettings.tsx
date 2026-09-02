@@ -523,12 +523,6 @@ export function SubscriptionBillingTab() {
     <div className="space-y-6">
       <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} />
 
-      {/* The money side goes first. It sat UNDER the "Your subscriptions"
-          heading, which read as though payout timing were part of a
-          subscription. It is the thing a business checks most and it belongs at
-          the top of the page. */}
-      <PaymentsPayoutsCard />
-
       <SectionLabel
         title="Your subscriptions"
         description={data?.owner
@@ -637,6 +631,11 @@ export function SubscriptionBillingTab() {
           );
         })}
       </div>
+
+      {/* Below the platform cards: what each transaction costs, when the money
+          lands, and the route to the payout bank. Product cards first — those
+          are what a business came to this page for. */}
+      <PaymentsPayoutsCard />
 
       {/* Total + global billing portal link (when there's anything to manage). */}
       {data && data.hasAnySubscription && !data.owner && (
