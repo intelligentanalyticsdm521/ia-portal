@@ -19,8 +19,8 @@ const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src")
 const GRID = readFileSync(path.join(SRC, "components", "UnifiedCalendarGrid.tsx"), "utf8");
 
 test("the day modal's extra content comes from a prop, not a hardcoded panel", () => {
-  assert.match(GRID, /renderDayExtra\?:/, "it must be an optional prop");
-  assert.match(GRID, /extra=\{renderDayExtra\?\.\(/, "and only rendered when supplied");
+  assert.match(GRID, /renderDayBody\?:/, "it must be an optional prop");
+  assert.match(GRID, /body=\{renderDayBody\?\.\(/, "and only rendered when supplied");
   // The grid must not import OLIVER's panel itself — that would make every
   // consumer pull it in whether they want it or not.
   assert.doesNotMatch(GRID, /DaySchedulePanel/,
@@ -39,8 +39,8 @@ test("only the Schedule page passes a day panel", () => {
   });
   const users = walk(SRC).filter((f) => {
     const src = readFileSync(f, "utf8");
-    return /<UnifiedCalendarGrid/.test(src) && /renderDayExtra=/.test(src);
+    return /<UnifiedCalendarGrid/.test(src) && /renderDayBody=/.test(src);
   }).map((f) => path.basename(f));
   assert.deepEqual(users, ["OliverSchedulePage.tsx"],
-    `expected only the OLIVER Schedule page to pass renderDayExtra; got ${users.join(", ") || "none"}`);
+    `expected only the OLIVER Schedule page to pass renderDayBody; got ${users.join(", ") || "none"}`);
 });

@@ -181,12 +181,13 @@ export function OliverSchedulePage() {
               locationId={loc.selectedLocationId}
               onDropJob={scheduleJobOnDay}
               reloadKey={reloadKey}
-              // Clicking a day opens its slots and a way to book into a gap —
-              // the phone-call flow. Only OLIVER passes this; the Command
-              // Center's day modal stays the plain event list.
-              renderDayExtra={(dayKey, onDone) => (
+              // Clicking a day opens a real day calendar — hours down the side,
+              // jobs in place, free time you can click into. Only OLIVER passes
+              // this; the Command Center's day modal stays the plain event list.
+              renderDayBody={(dayKey, dayEvents, onDone) => (
                 <DaySchedulePanel
                   dayKey={dayKey}
+                  events={dayEvents}
                   onDone={() => { onDone(); setReloadKey((k) => k + 1); loadKpis(); }}
                 />
               )}
