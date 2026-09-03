@@ -7,11 +7,19 @@
 //
 // Reference: C:\dev\claude code\overnight-report\30_LEADGEN_V1_SPEC.md
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams, Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { LeadGenTermsLink } from "../../components/spark/LeadGenTermsLink";
 import { type LeadGenBillingRow, BILLING_STATUS_LABEL, fmtUsd } from "../../lib/leadgenBilling";
+// P4 item 6 — "Source · via Channel", first/last touch, campaign, landing page
+// and the path this person walked. Self-fetching, so the Lead Inbox owner can
+// mount it with the SAME one line next to a selected lead:
+//     <LeadAttributionCard leadId={selectedLead.lead_id} />
+import { LeadAttributionCard } from "../../components/spark/LeadAttributionCard";
+// P5 — hand the "you have N new leads" toast to the SPARK shell, which shows it
+// after the redirect to the inbox.
+import { stashRunComplete } from "../../components/spark/NewLeadsBanner";
 import {
   CheckCircle2, Circle, Loader2, AlertTriangle, ExternalLink, Mail, Phone,
   ArrowLeft, ThumbsUp, ThumbsDown, Sparkles, RefreshCw, Receipt, Lock,
@@ -79,6 +87,11 @@ interface JobStatusResponse {
   // instead of leaving the user puzzling over the gap.
   budget_stopped?: boolean;
   budget_stop_reason?: string | null;
+  // X1 — the soft, directional "we are reaching the limits of this search"
+  // message, worded once on the server so the screen and the completion email
+  // cannot drift apart.
+  pool_strain?: "none" | "tight" | "exhausted" | null;
+  pool_strain_message?: string | null;
 }
 
 // Raw row shape from GET /api/v1/leadgen/jobs/:id — what lumen.search_job
@@ -101,6 +114,11 @@ interface RawJobRow {
   started_at: string | null;
   completed_at: string | null;
   error_message: string | null;
+  // X1 (Release A.2): the server sends a BAND and the exact sentence to show.
+  // No pool count is ever sent to the browser — the internal yield numbers stay
+  // in the database for the monthly review.
+  pool_strain?: "none" | "tight" | "exhausted" | null;
+  pool_strain_message?: string | null;
 }
 
 const STEP_TO_PHASE: Record<string, JobPhase> = {
@@ -137,6 +155,8 @@ function adaptRow(row: RawJobRow): JobStatusResponse {
     error: row.error_message,
     budget_stopped: !!row.budget_stopped,
     budget_stop_reason: row.budget_stop_reason,
+    pool_strain: row.pool_strain ?? null,
+    pool_strain_message: row.pool_strain_message ?? null,
   };
 }
 
@@ -160,6 +180,10 @@ export function SparkLeadGenJobPage() {
   const { id: jobId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { get, post, ready } = useSparkApi();
+  // ?lead=<id> opens one lead's attribution alongside the run that found it.
+  // The Lead Inbox links here when someone asks "where did this one come from?".
+  const [searchParams] = useSearchParams();
+  const focusedLeadId = searchParams.get("lead");
 
   const [status, setStatus] = useState<JobStatusResponse | null>(null);
   const [leads, setLeads] = useState<LeadRow[]>([]);
@@ -228,9 +252,15 @@ export function SparkLeadGenJobPage() {
   // only, no live reveal" so the Lead Inbox is the destination.
   useEffect(() => {
     if (status?.status !== "complete") return;
+    // P5 — the toast. The shell shows it after the redirect, so the user lands
+    // in the inbox already told what happened.
+    stashRunComplete(String(jobId ?? ""), status.delivered_count ?? 0);
+    // Someone who followed a ?lead= link is READING this page — do not yank
+    // them to the inbox mid-sentence.
+    if (focusedLeadId) return;
     const t = setTimeout(() => navigate("/app/services/spark_leads"), 1500);
     return () => clearTimeout(t);
-  }, [status?.status, navigate]);
+  }, [status?.status, status?.delivered_count, jobId, focusedLeadId, navigate]);
 
   // Leads now live in the Lead Inbox (/app/services/spark_leads). The page
   // auto-redirects there 1.5s after completion (see the F-LG.14 effect
@@ -468,6 +498,26 @@ export function SparkLeadGenJobPage() {
             </div>
           </div>
         )}
+
+        {/* X1 (LOCKED) — the search is running out of road. Slate, not red:
+            this is a recommendation, not an error. The wording comes from the
+            server (services/leadgen/runMessages.js) so this card and the
+            completion email say the same thing, and neither ever shows a pool
+            count or widens the search by itself. */}
+        {isComplete && status?.pool_strain_message && (
+          <div className="rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 flex items-start gap-2">
+            <Sparkles className="h-4 w-4 text-slate-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <div className="text-sm font-semibold text-slate-900">About this search</div>
+              <p className="text-[12px] text-slate-700 mt-0.5">{status.pool_strain_message}</p>
+            </div>
+          </div>
+        )}
+
+        {/* P4 item 6 — one lead's journey, when the inbox linked here with
+            ?lead=<id>. Self-fetching; renders nothing for a lead with no
+            website journey to show. */}
+        {focusedLeadId && <LeadAttributionCard leadId={focusedLeadId} />}
 
         {/* Try-expanding prompt */}
         {isComplete && shortfall > 0 && (
