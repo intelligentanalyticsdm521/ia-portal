@@ -343,7 +343,8 @@ function LeadInboxTab() {
     const v = new URLSearchParams(window.location.search).get("verified");
     return v === "true" || v === "false" ? v : "all";
   });
-  const [sortMode, setSortMode] = useState<"default" | "verification">("default");
+  // 2026-09-04 (Brandon): newest first by default, then score; Score and Found headers toggle.
+  const [sortMode, setSortMode] = useState<"newest" | "score" | "verification">("newest");
   const [search, setSearch] = useState("");
   const [actionMenuOpen, setActionMenuOpen] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -365,7 +366,7 @@ function LeadInboxTab() {
       qs.set("limit", "50");
       if (tierFilter !== "all") qs.set("temperature", tierFilter);
       if (verifiedFilter !== "all") qs.set("verified", verifiedFilter);
-      if (sortMode === "verification") qs.set("sort", "verification");
+      if (sortMode !== "newest") qs.set("sort", sortMode);
       const r = await get<LeadListResponse>(`/api/v1/leads?${qs.toString()}`);
       setLeads(r.data || []);
       setMeta(r.meta || null);
@@ -616,19 +617,39 @@ function LeadInboxTab() {
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
             <tr>
               <th className="px-4 py-3">Business</th>
-              <th className="px-4 py-3">Score</th>
+              <th className="px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => { setSortMode((s) => (s === "score" ? "newest" : "score")); setPage(1); }}
+                  className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-slate-700 ${sortMode === "score" ? "text-slate-900" : ""}`}
+                  title={sortMode === "score" ? "Highest score first. Click to go back to newest first." : "Click to sort by score (highest first)."}
+                >
+                  Score
+                  <ArrowUpDown className="h-3 w-3" />
+                </button>
+              </th>
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3">Phone</th>
               <th className="px-4 py-3">Lifecycle</th>
               <th className="px-4 py-3">Source</th>
-              <th className="px-4 py-3">Found</th>
               <th className="px-4 py-3">
                 <button
                   type="button"
-                  onClick={() => { setSortMode((s) => (s === "verification" ? "default" : "verification")); setPage(1); }}
+                  onClick={() => { setSortMode("newest"); setPage(1); }}
+                  className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-slate-700 ${sortMode === "newest" ? "text-slate-900" : ""}`}
+                  title="Newest leads first, then score (the default)."
+                >
+                  Found
+                  <ArrowUpDown className="h-3 w-3" />
+                </button>
+              </th>
+              <th className="px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => { setSortMode((s) => (s === "verification" ? "newest" : "verification")); setPage(1); }}
                   className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-slate-700 ${sortMode === "verification" ? "text-slate-900" : ""}`}
                   title={sortMode === "verification"
-                    ? "Verified first. Click to restore default sort (by score)."
+                    ? "Verified first. Click to go back to newest first."
                     : "Click to sort: verified first, then not-yet-verified, then failed."}
                 >
                   Verified
