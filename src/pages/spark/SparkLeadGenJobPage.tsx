@@ -47,7 +47,7 @@ const PHASE_LABELS: Record<JobPhase, { label: string; help: string }> = {
   queued:               { label: "Queued",               help: "Waiting for a worker to pick up your search." },
   expanding_keywords:   { label: "Expanding keywords",   help: "Building the full keyword set from your category and search mode." },
   expanding_locations:  { label: "Resolving locations",  help: "Computing the cities and ZIPs inside your radius." },
-  discovery:            { label: "Discovery",            help: "Querying Google CSE and Brave Search for candidate domains." },
+  discovery:            { label: "Discovery",            help: "Querying Hunter Discover, Brave and You.com for candidate domains." },
   scoring:              { label: "Scoring",              help: "Filtering against the blocklist, suppression list, and the cross-tenant cache." },
   enriching:            { label: "Enriching contacts",   help: "Pulling email addresses via homepage scrape and Hunter (only where needed)." },
   finalizing:           { label: "Finalizing",           help: "Wrapping up — refunding any shortfall against your max." },
