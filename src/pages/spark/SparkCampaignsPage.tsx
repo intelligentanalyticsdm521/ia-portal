@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+// The email-send half of the shared 60/75/90 banner (LOCKED 2026-09-04) — the
+// same component the contacts page and the Lead Inbox use.
+import { SparkUsageCapacityBanner } from "../../components/spark/SparkCapacityBanner";
 import { EmbeddedReportChart, type ReportSeriesResponse } from "../../components/reporting/EmbeddedReportChart";
 import { SparkCampaignComposerModal } from "../../components/spark/SparkCampaignComposerModal";
 import { ReportBar } from '../../components/insights/ReportBar';
@@ -114,6 +117,7 @@ export function SparkCampaignsPage() {
 
   return (
     <SparkPageShell title="Campaigns" subtitle="Email and SMS campaign management" error={error} loading={loading}>
+      <SparkUsageCapacityBanner metric="emails" className="mb-3" />
       <ReportBar product="spark" detail={insightsPayload?.detail} reports={[
         { id: 'spark_campaigns', label: 'Campaign results' },
         { id: 'spark_send_times', label: 'Best send times' },
