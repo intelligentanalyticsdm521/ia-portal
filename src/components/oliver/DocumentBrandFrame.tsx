@@ -21,6 +21,10 @@ interface BrandData {
   logoUrl?: string | null;
   accentColor: string;
   footerNote?: string;
+  /** Chosen in Brand Identity. Captured since 2026-06-24 but consumed by
+      nothing until now, so picking a font changed no pixel anywhere. */
+  headingFont?: string | null;
+  bodyFont?: string | null;
 }
 
 const FALLBACK: BrandData = { businessName: "Your business", accentColor: "#1A7DB5" };
@@ -41,7 +45,7 @@ export function DocumentBrandFrame({
     (async () => {
       try {
         const [settings, tpl] = await Promise.all([
-          get<{ tenantName?: string; tenantFullName?: string; email?: string; phone?: string; website?: string; logoUrl?: string | null }>("/settings"),
+          get<{ tenantName?: string; tenantFullName?: string; email?: string; phone?: string; website?: string; logoUrl?: string | null; headingFont?: string | null; bodyFont?: string | null }>("/settings"),
           get<{ logoUrl: string | null; accentColor: string; footerNote: string }>("/settings/invoice-template"),
         ]);
         if (cancelled) return;
@@ -55,6 +59,8 @@ export function DocumentBrandFrame({
           logoUrl: tpl.logoUrl || settings.logoUrl || null,
           accentColor: tpl.accentColor || FALLBACK.accentColor,
           footerNote: tpl.footerNote,
+          headingFont: settings.headingFont || null,
+          bodyFont: settings.bodyFont || null,
         });
       } catch {
         // The editor must not be blocked by a branding fetch — render the
@@ -67,11 +73,17 @@ export function DocumentBrandFrame({
 
   const b = brand || FALLBACK;
   const contact = [b.email, b.phone, b.website].filter(Boolean).join("  ·  ");
+  // Same stack the public proposal page uses, so the editor is honest about
+  // what the customer will actually see.
+  const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+  const headingFamily = b.headingFont ? `'${b.headingFont}', ${SANS}` : SANS;
+  const bodyFamily = b.bodyFont ? `'${b.bodyFont}', ${SANS}` : SANS;
 
   return (
     <div style={{
       background: "#fff", borderRadius: 8, overflow: "hidden",
       border: "1px solid #E2E8F0", boxShadow: "0 1px 4px rgba(11,28,36,0.08)",
+      fontFamily: bodyFamily,
     }}>
       {/* Accent bar — the first thing the customer's eye hits on the sent doc. */}
       <div style={{ height: 6, background: b.accentColor }} />
@@ -83,12 +95,12 @@ export function DocumentBrandFrame({
             <img src={b.logoUrl} alt="" style={{ height: 44, maxWidth: 140, objectFit: "contain" }} />
           )}
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 17, fontWeight: 700, color: "#0B1C24", lineHeight: 1.2 }}>{b.businessName}</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: "#0B1C24", lineHeight: 1.2, fontFamily: headingFamily }}>{b.businessName}</div>
             {contact && <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 2 }}>{contact}</div>}
           </div>
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: 2, color: b.accentColor }}>{docLabel}</div>
+          <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: 2, color: b.accentColor, fontFamily: headingFamily }}>{docLabel}</div>
           {docNumber && <div style={{ fontSize: 11, color: "#5A7A8A", fontFamily: "monospace" }}>{docNumber}</div>}
         </div>
       </div>

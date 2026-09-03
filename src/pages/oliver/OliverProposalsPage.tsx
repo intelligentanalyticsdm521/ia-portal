@@ -406,10 +406,27 @@ export function CreateProposalDrawer({
   //
   // scope_html and line_items are RENDERED from the blocks at save, so the
   // backend contract (and the public accept page, and the PDF) is unchanged.
+  type CardItem = { name: string; pitch?: string; price?: string; list_price?: string; per?: string; note?: string; features?: string[]; recommended?: boolean; badge?: string };
   type Block =
     | { key: number; kind: "text"; heading: string; body: string }
-    | { key: number; kind: "service"; name: string; description: string; features: string[]; quantity: number; unit_price: number; recommended?: boolean }
-    | { key: number; kind: "line"; description: string; quantity: number; unit_price: number; recommended?: boolean };
+    | { key: number; kind: "service"; name: string; description: string; features: string[]; quantity: number; unit_price: number; recommended?: boolean;
+        // Which catalogue price this line came from. Quotes, jobs and invoices
+        // have always recorded these; proposals recorded neither, so an
+        // accepted proposal could not be traced back to the price it quoted.
+        offering_id?: string; price_id?: string | null;
+        // "billed monthly" / "billed annually". 98 of 114 active prices are
+        // recurring, and without this the customer reads a bare "$29.99" as
+        // the entire cost of the engagement.
+        cadence?: string | null }
+    | { key: number; kind: "line"; description: string; quantity: number; unit_price: number; recommended?: boolean }
+    // Comparison cards. Deliberately NOT priced into the total: a tier
+    // comparison shows four options and the customer buys one, so summing
+    // them would silently change what they are agreeing to pay. The priced
+    // truth stays in service/line blocks.
+    | { key: number; kind: "cards"; heading: string; intro: string; items: CardItem[] }
+    | { key: number; kind: "callout"; heading: string; panels: { title: string; tone?: "accent" | "warn"; items: string[] }[] }
+    | { key: number; kind: "buckets"; heading: string; intro: string; groups: { title: string; total?: string; rows: { label: string; list?: string; amount?: string }[] }[] }
+    | { key: number; kind: "signature"; heading: string; parties: { name: string; lines?: string[] }[] };
 
   const keyRef = useRef(1);
   const nextKey = () => keyRef.current++;
@@ -510,6 +527,42 @@ export function CreateProposalDrawer({
     });
 
   const addText = () => setBlocks((p) => [...p, { key: nextKey(), kind: "text", heading: "", body: "" }]);
+
+  // Sub-item editors for the composite blocks. Each one patches a single
+  // entry inside a block's array without disturbing its siblings — mutating
+  // in place would lose the other cards on every keystroke.
+  const patchCard = (blockKey: number, idx: number, patch: Partial<CardItem>) =>
+    setBlocks((prev) => prev.map((bl) =>
+      bl.key === blockKey && bl.kind === "cards"
+        ? { ...bl, items: bl.items.map((c, i) => (i === idx ? { ...c, ...patch } : c)) }
+        : bl));
+
+  const patchPanel = (blockKey: number, idx: number, patch: Partial<{ title: string; tone: "accent" | "warn"; items: string[] }>) =>
+    setBlocks((prev) => prev.map((bl) =>
+      bl.key === blockKey && bl.kind === "callout"
+        ? { ...bl, panels: bl.panels.map((pn, i) => (i === idx ? { ...pn, ...patch } : pn)) }
+        : bl));
+
+  const patchGroup = (blockKey: number, idx: number, patch: Partial<{ title: string; total: string; rows: { label: string; list?: string; amount?: string }[] }>) =>
+    setBlocks((prev) => prev.map((bl) =>
+      bl.key === blockKey && bl.kind === "buckets"
+        ? { ...bl, groups: bl.groups.map((g, i) => (i === idx ? { ...g, ...patch } : g)) }
+        : bl));
+
+  const addCards = () => setBlocks((p) => [...p, { key: nextKey(), kind: "cards", heading: "", intro: "", items: [
+    { name: "", pitch: "", price: "", features: [] },
+    { name: "", pitch: "", price: "", features: [], recommended: true },
+  ] }]);
+  const addCallout = () => setBlocks((p) => [...p, { key: nextKey(), kind: "callout", heading: "", panels: [
+    { title: "What is included", tone: "accent", items: [""] },
+    { title: "What is not", tone: "warn", items: [""] },
+  ] }]);
+  const addBuckets = () => setBlocks((p) => [...p, { key: nextKey(), kind: "buckets", heading: "Your total, at a glance", intro: "", groups: [
+    { title: "Starting now", total: "", rows: [{ label: "", list: "", amount: "" }] },
+  ] }]);
+  const addSignature = () => setBlocks((p) => [...p, { key: nextKey(), kind: "signature", heading: "Agreement", parties: [
+    { name: "" }, { name: "" },
+  ] }]);
   const addLine = () => setBlocks((p) => [...p, { key: nextKey(), kind: "line", description: "", quantity: 1, unit_price: 0 }]);
   const addServiceFromCatalog = (picked: PickedService) =>
     setBlocks((p) => [...p, {
@@ -519,10 +572,14 @@ export function CreateProposalDrawer({
       features: picked.parts.features,
       quantity: 1,
       unit_price: picked.parts.unit_price,
+      offering_id: picked.parts.offering_id,
+      price_id: picked.parts.price_id,
+      cadence: picked.parts.cadence,
     }]);
 
   // ── Derived money ────────────────────────────────────────────────────────
-  const priced = blocks.filter((b): b is Extract<Block, { unit_price: number }> => b.kind !== "text");
+  // Money comes from service/line ONLY — never from a comparison card.
+  const priced = blocks.filter((b): b is Extract<Block, { unit_price: number }> => b.kind === "service" || b.kind === "line");
   const subtotal = priced.reduce((s, b) => s + (Number(b.quantity) || 0) * (Number(b.unit_price) || 0), 0);
   const tax = subtotal * (Number(taxRate) / 100);
   const total = Math.max(0, subtotal + tax - Number(discount || 0));
@@ -543,6 +600,38 @@ export function CreateProposalDrawer({
           b.features.length ? `<ul>${b.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>` : "",
         ].filter(Boolean).join("\n");
       }
+      // The new blocks render properly from blocks_json on the customer page.
+      // scope_html is still written for the sent email and for any reader that
+      // predates blocks, so each one degrades to an honest summary here rather
+      // than vanishing from those surfaces.
+      if (b.kind === "cards") {
+        const cards = b.items.filter((c) => (c.name || "").trim()).map((c) => {
+          const price = [c.list_price, c.price].filter(Boolean).join(" -> ");
+          const head = [c.name, price, c.recommended ? "(recommended)" : ""].filter(Boolean).join(" - ");
+          const feats = (c.features || []).filter(Boolean);
+          return "<li>" + esc(head) + (feats.length ? "<ul>" + feats.map((f) => "<li>" + esc(f) + "</li>").join("") + "</ul>" : "") + "</li>";
+        }).join("");
+        if (!cards) return "";
+        return [b.heading.trim() ? "<h3>" + esc(b.heading.trim()) + "</h3>" : "", b.intro.trim() ? paras(b.intro) : "", "<ul>" + cards + "</ul>"].filter(Boolean).join("\n");
+      }
+      if (b.kind === "callout") {
+        const panels = b.panels.map((pn) => {
+          const items = (pn.items || []).filter((x) => x.trim());
+          if (!items.length) return "";
+          return "<h3>" + esc(pn.title) + "</h3><ul>" + items.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ul>";
+        }).filter(Boolean).join("\n");
+        return panels ? [b.heading.trim() ? "<h3>" + esc(b.heading.trim()) + "</h3>" : "", panels].filter(Boolean).join("\n") : "";
+      }
+      if (b.kind === "buckets") {
+        const groups = b.groups.map((g) => {
+          const rows = (g.rows || []).filter((r) => (r.label || "").trim());
+          if (!rows.length) return "";
+          const head = [g.title, g.total].filter(Boolean).join(" - ");
+          return "<h3>" + esc(head) + "</h3><ul>" + rows.map((r) => "<li>" + esc([r.label, r.amount].filter(Boolean).join(" - ")) + "</li>").join("") + "</ul>";
+        }).filter(Boolean).join("\n");
+        return groups ? [b.heading.trim() ? "<h3>" + esc(b.heading.trim()) + "</h3>" : "", b.intro.trim() ? paras(b.intro) : "", groups].filter(Boolean).join("\n") : "";
+      }
+      if (b.kind === "signature") return "";  // a signature line means nothing in an email body
       return ""; // plain priced rows appear in the totals table, not the narrative
     }).filter(Boolean).join("\n\n");
   }
@@ -551,10 +640,20 @@ export function CreateProposalDrawer({
     return priced
       .filter((b) => (b.kind === "service" ? b.name.trim() : b.description.trim()))
       .map((b) => ({
-        description: (b.kind === "service" ? b.name : b.description).trim(),
+        // A recurring price must SAY it is recurring. The amount column shows
+        // a bare number, so "$29.99" with no cadence reads as the whole cost.
+        description: (() => {
+          const base = (b.kind === "service" ? b.name : b.description).trim();
+          const cadence = b.kind === "service" ? b.cadence : null;
+          return cadence && !base.includes(cadence) ? `${base} (${cadence})` : base;
+        })(),
         quantity: Number(b.quantity) || 1,
         unit_price: Number(b.unit_price) || 0,
         line_total: (Number(b.quantity) || 1) * (Number(b.unit_price) || 0),
+        // Ride through line_items_json untouched (parseLineItems passes the
+        // array straight through), so this needs no API or migration change.
+        ...(b.kind === "service" && b.offering_id ? { service_offering_id: b.offering_id } : {}),
+        ...(b.kind === "service" && b.price_id ? { service_price_id: b.price_id } : {}),
         // Rides through line_items_json untouched; the customer page renders
         // it as the "Recommended" pill — the founder's own reference proposal
         // (MS Moments PDF) buckets services exactly this way.
@@ -575,6 +674,10 @@ export function CreateProposalDrawer({
         contact_id: contactId || null,
         title: title.trim(),
         scope_html: renderScopeHtml() || null,
+        // The document as authored. scope_html + line_items above stay exactly
+        // as they were, so nothing that reads them changes; this is what lets
+        // the customer page rebuild the real document instead of a narrative.
+        blocks: { v: 1, blocks: blocks.map(({ key: _k, ...rest }) => rest) },
         terms_html: terms.trim() || null,
         line_items,
         tax_rate: Number(taxRate) / 100,
@@ -628,7 +731,10 @@ export function CreateProposalDrawer({
   const blockToolbar = (b: Block, label: string, color: string) => (
     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
       <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color }}>{label}</span>
-      {b.kind !== "text" && (
+      {/* Only the PRICED blocks carry a document-level Recommended flag;
+          comparison cards each carry their own, and a callout or a
+          signature has nothing to recommend. */}
+      {(b.kind === "service" || b.kind === "line") && (
         <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 600, color: b.recommended ? "#B45309" : "#8AA6B4", cursor: "pointer" }}>
           <input
             type="checkbox"
@@ -817,6 +923,163 @@ export function CreateProposalDrawer({
                       </div>
                     </>
                   )}
+
+                  {b.kind === "cards" && (
+                    <>
+                      {blockToolbar(b, "Comparison cards", "#B45309")}
+                      <input
+                        style={{ ...pInput, fontWeight: 600, marginBottom: 6 }}
+                        placeholder="Section heading - e.g. Choose your ARION tier"
+                        value={b.heading}
+                        onChange={(e) => patchBlock(b.key, { heading: e.target.value } as Partial<Block>)}
+                      />
+                      <textarea
+                        style={{ ...pInput, minHeight: 46, resize: "vertical", marginBottom: 8 }}
+                        placeholder="One line of context above the cards (optional)"
+                        value={b.intro}
+                        onChange={(e) => patchBlock(b.key, { intro: e.target.value } as Partial<Block>)}
+                      />
+                      <div style={{ display: "grid", gap: 8 }}>
+                        {b.items.map((c, ci) => (
+                          <div key={ci} style={{ border: "1px solid #E2E8F0", borderRadius: 6, padding: 10, background: c.recommended ? "#FFF7ED" : "#F8FAFC" }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 96px 96px 64px", gap: 6, marginBottom: 6 }}>
+                              <input style={pInput} placeholder="Tier name" value={c.name}
+                                onChange={(e) => patchCard(b.key, ci, { name: e.target.value })} />
+                              <input style={pInput} placeholder="Was $34.99" value={c.list_price || ""}
+                                onChange={(e) => patchCard(b.key, ci, { list_price: e.target.value })} />
+                              <input style={pInput} placeholder="Now $14" value={c.price || ""}
+                                onChange={(e) => patchCard(b.key, ci, { price: e.target.value })} />
+                              <input style={pInput} placeholder="/mo" value={c.per || ""}
+                                onChange={(e) => patchCard(b.key, ci, { per: e.target.value })} />
+                            </div>
+                            <input style={{ ...pInput, marginBottom: 6 }} placeholder="One-line pitch for this tier"
+                              value={c.pitch || ""} onChange={(e) => patchCard(b.key, ci, { pitch: e.target.value })} />
+                            <textarea
+                              style={{ ...pInput, minHeight: 56, resize: "vertical" }}
+                              placeholder="Features - one per line"
+                              value={(c.features || []).join("\n")}
+                              onChange={(e) => patchCard(b.key, ci, { features: e.target.value.split("\n") })}
+                            />
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
+                              <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 600, color: c.recommended ? "#B45309" : "#8AA6B4", cursor: "pointer" }}>
+                                <input type="checkbox" checked={!!c.recommended}
+                                  onChange={(e) => patchCard(b.key, ci, { recommended: e.target.checked })} />
+                                Recommended
+                              </label>
+                              <input style={{ ...pInput, maxWidth: 190 }} placeholder="Badge override"
+                                value={c.badge || ""} onChange={(e) => patchCard(b.key, ci, { badge: e.target.value })} />
+                              <button style={{ ...miniBtn, marginLeft: "auto", color: "#B91C1C" }} title="Remove card"
+                                onClick={() => patchBlock(b.key, { items: b.items.filter((_, x) => x !== ci) } as Partial<Block>)}>x</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <button style={{ ...addBtn, marginTop: 8 }}
+                        onClick={() => patchBlock(b.key, { items: [...b.items, { name: "", pitch: "", price: "", features: [] }] } as Partial<Block>)}>
+                        + Add card
+                      </button>
+                      <div style={{ fontSize: 10, color: "#8AA6B4", marginTop: 6 }}>
+                        Cards are a comparison - they show options side by side and do not change the total.
+                        The priced truth stays in your services and priced lines.
+                      </div>
+                    </>
+                  )}
+
+                  {b.kind === "callout" && (
+                    <>
+                      {blockToolbar(b, "Two-column callout", "#0F766E")}
+                      <input
+                        style={{ ...pInput, fontWeight: 600, marginBottom: 8 }}
+                        placeholder="Section heading (optional)"
+                        value={b.heading}
+                        onChange={(e) => patchBlock(b.key, { heading: e.target.value } as Partial<Block>)}
+                      />
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        {b.panels.map((pn, pi) => (
+                          <div key={pi} style={{ border: "1px solid #E2E8F0", borderRadius: 6, padding: 10, background: "#F8FAFC" }}>
+                            <input style={{ ...pInput, fontWeight: 600, marginBottom: 6 }} placeholder="Panel title"
+                              value={pn.title} onChange={(e) => patchPanel(b.key, pi, { title: e.target.value })} />
+                            <textarea style={{ ...pInput, minHeight: 76, resize: "vertical" }}
+                              placeholder="One point per line"
+                              value={(pn.items || []).join("\n")}
+                              onChange={(e) => patchPanel(b.key, pi, { items: e.target.value.split("\n") })} />
+                            <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 600, color: "#8AA6B4", marginTop: 6, cursor: "pointer" }}>
+                              <input type="checkbox" checked={pn.tone === "warn"}
+                                onChange={(e) => patchPanel(b.key, pi, { tone: e.target.checked ? "warn" : "accent" })} />
+                              Flag colour (gaps / exclusions)
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {b.kind === "buckets" && (
+                    <>
+                      {blockToolbar(b, "Totals at a glance", "#1D4ED8")}
+                      <input
+                        style={{ ...pInput, fontWeight: 600, marginBottom: 6 }}
+                        placeholder="Section heading"
+                        value={b.heading}
+                        onChange={(e) => patchBlock(b.key, { heading: e.target.value } as Partial<Block>)}
+                      />
+                      <textarea style={{ ...pInput, minHeight: 40, resize: "vertical", marginBottom: 8 }}
+                        placeholder="Context line (optional)"
+                        value={b.intro} onChange={(e) => patchBlock(b.key, { intro: e.target.value } as Partial<Block>)} />
+                      <div style={{ display: "grid", gap: 8 }}>
+                        {b.groups.map((g, gi) => (
+                          <div key={gi} style={{ border: "1px solid #E2E8F0", borderRadius: 6, padding: 10, background: "#F8FAFC" }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 130px 30px", gap: 6, marginBottom: 6 }}>
+                              <input style={{ ...pInput, fontWeight: 600 }} placeholder="Group - e.g. Starting now"
+                                value={g.title} onChange={(e) => patchGroup(b.key, gi, { title: e.target.value })} />
+                              <input style={pInput} placeholder="$74.00 / mo"
+                                value={g.total || ""} onChange={(e) => patchGroup(b.key, gi, { total: e.target.value })} />
+                              <button style={{ ...miniBtn, color: "#B91C1C" }} title="Remove group"
+                                onClick={() => patchBlock(b.key, { groups: b.groups.filter((_, x) => x !== gi) } as Partial<Block>)}>x</button>
+                            </div>
+                            <textarea style={{ ...pInput, minHeight: 60, resize: "vertical" }}
+                              placeholder={"One row per line:  Label | was | amount"}
+                              value={(g.rows || []).map((r) => [r.label, r.list, r.amount].filter((x) => x != null).join(" | ")).join("\n")}
+                              onChange={(e) => patchGroup(b.key, gi, {
+                                rows: e.target.value.split("\n").map((ln) => {
+                                  const parts = ln.split("|").map((x) => x.trim());
+                                  return { label: parts[0] || "", list: parts[1] || "", amount: parts[2] || "" };
+                                }),
+                              })} />
+                          </div>
+                        ))}
+                      </div>
+                      <button style={{ ...addBtn, marginTop: 8 }}
+                        onClick={() => patchBlock(b.key, { groups: [...b.groups, { title: "", total: "", rows: [{ label: "", list: "", amount: "" }] }] } as Partial<Block>)}>
+                        + Add group
+                      </button>
+                    </>
+                  )}
+
+                  {b.kind === "signature" && (
+                    <>
+                      {blockToolbar(b, "Signature block", "#475569")}
+                      <input
+                        style={{ ...pInput, fontWeight: 600, marginBottom: 8 }}
+                        placeholder="Heading - e.g. Agreement and signatures"
+                        value={b.heading}
+                        onChange={(e) => patchBlock(b.key, { heading: e.target.value } as Partial<Block>)}
+                      />
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        {b.parties.map((pt, pi) => (
+                          <input key={pi} style={pInput} placeholder={pi === 0 ? "Customer name" : "Your business name"}
+                            value={pt.name}
+                            onChange={(e) => patchBlock(b.key, {
+                              parties: b.parties.map((x, xi) => (xi === pi ? { ...x, name: e.target.value } : x)),
+                            } as Partial<Block>)} />
+                        ))}
+                      </div>
+                      <div style={{ fontSize: 10, color: "#8AA6B4", marginTop: 6 }}>
+                        Renders signature, printed name and date lines for both parties.
+                      </div>
+                    </>
+                  )}
+
                 </div>
               ))}
             </div>
@@ -825,6 +1088,11 @@ export function CreateProposalDrawer({
               <button onClick={addText} style={addBtn}>+ Written section</button>
               <button onClick={addLine} style={addBtn}>+ Priced line</button>
               <ProposalCatalogPicker get={api.get} ready onPick={addServiceFromCatalog} />
+              <span style={{ width: 1, height: 20, background: "#E2E8F0" }} />
+              <button onClick={addCards} style={addBtn}>+ Comparison cards</button>
+              <button onClick={addCallout} style={addBtn}>+ Two-column callout</button>
+              <button onClick={addBuckets} style={addBtn}>+ Totals at a glance</button>
+              <button onClick={addSignature} style={addBtn}>+ Signature block</button>
             </div>
           </div>
 
