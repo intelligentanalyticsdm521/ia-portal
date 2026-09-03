@@ -133,6 +133,13 @@ export default function SparkLeadGenTermsPage() {
             is reserved for each lead requested; credits for leads that are not delivered are released when the search
             finishes. A business without a verified email is never delivered and never charged.
           </p>
+          <p>
+            With a SPARK Leads package, the leads included in your package are covered by your subscription and any leads
+            beyond them are charged per run at your package&apos;s extra-lead rate. Without a Leads package, searches are
+            pay-per-lead at $1.50 per delivered lead with a minimum of 10 leads per search, and scheduled (recurring)
+            searches are not available. Each paid search produces an invoice and receipt, charged to the card on file; if
+            a payment fails, the leads from that search remain visible but locked until the invoice is paid.
+          </p>
         </Section>
 
         <Section title="8. Accuracy">

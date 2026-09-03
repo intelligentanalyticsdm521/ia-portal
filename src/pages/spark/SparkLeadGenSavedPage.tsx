@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { friendlyApiError } from "../../lib/leadgenBilling";
 import { Play, Trash2, Search, Plus, MapPin, Tag, Clock } from "lucide-react";
 
 interface SearchProfile {
@@ -72,7 +73,9 @@ export function SparkLeadGenSavedPage() {
         setError(new Error("Backend returned no job_id."));
       }
     } catch (err) {
-      setError(err);
+      // Billing refusals (one-off minimum, no card on file, pricing) arrive as
+      // sentences from the server — show those, not the JSON.
+      setError(friendlyApiError(err));
     } finally {
       setRunning(null);
     }

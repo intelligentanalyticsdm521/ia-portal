@@ -11,9 +11,10 @@ import { useNavigate, useParams, Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { LeadGenTermsLink } from "../../components/spark/LeadGenTermsLink";
+import { type LeadGenBillingRow, BILLING_STATUS_LABEL, fmtUsd } from "../../lib/leadgenBilling";
 import {
   CheckCircle2, Circle, Loader2, AlertTriangle, ExternalLink, Mail, Phone,
-  ArrowLeft, ThumbsUp, ThumbsDown, Sparkles, RefreshCw,
+  ArrowLeft, ThumbsUp, ThumbsDown, Sparkles, RefreshCw, Receipt, Lock,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -166,6 +167,9 @@ export function SparkLeadGenJobPage() {
   const [error, setError] = useState<unknown>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkActing, setBulkActing] = useState(false);
+  // Billing for this run (reservation while running; invoice + PDF once settled).
+  // GET /api/v1/leadgen/billing?job_id= → { data: LeadGenBillingRow[] }
+  const [billingRow, setBillingRow] = useState<LeadGenBillingRow | null>(null);
 
   // Poll status every 3s while running.
   // Endpoint: GET /api/v1/leadgen/jobs/:id returns the raw lumen.search_job row;
@@ -204,6 +208,18 @@ export function SparkLeadGenJobPage() {
       return () => clearInterval(t);
     }
   }, [status, fetchStatus]);
+
+  // Billing card: load once, and again when the run finishes (that's when the
+  // invoice is created). Silent on failure — billing never blocks the tracker.
+  const jobStatus = status?.status;
+  useEffect(() => {
+    if (!ready || !jobId) return;
+    let cancelled = false;
+    get<{ data: LeadGenBillingRow[] }>(`/api/v1/leadgen/billing?job_id=${encodeURIComponent(jobId)}`)
+      .then((r) => { if (!cancelled) setBillingRow(r?.data?.[0] ?? null); })
+      .catch(() => { /* ignore */ });
+    return () => { cancelled = true; };
+  }, [get, ready, jobId, jobStatus]);
 
   // F-LG.14: when the job completes, send the user to the Lead Inbox where
   // the Run Summary banner and the new rows live. Delay 1.5s so they get to
@@ -379,6 +395,55 @@ export function SparkLeadGenJobPage() {
             )}
           </div>
         )}
+
+        {/* Billing for this run — reservation while running, invoice + PDF once
+            settled. Leads of an unpaid run stay locked in the Lead Inbox. */}
+        {billingRow && (() => {
+          const b = billingRow;
+          const tone = BILLING_STATUS_LABEL[b.status] ?? { label: b.status, tone: "muted" as const };
+          const toneCls = tone.tone === "ok" ? "bg-emerald-100 text-emerald-800" : tone.tone === "warn" ? "bg-amber-100 text-amber-800" : tone.tone === "bad" ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-700";
+          const settled = b.status !== "reserved";
+          const credits = settled ? (b.credits_consumed ?? 0) : (b.credits_reserved ?? 0);
+          const metered = settled ? (b.metered_delivered ?? 0) : (b.metered_reserved ?? 0);
+          return (
+            <div className="rounded-xl bg-white border border-slate-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <Receipt className="h-4 w-4 text-slate-500" />
+                <div>
+                  <div className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                    Billing for this run
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${toneCls}`}>{tone.label}</span>
+                    {b.leads_locked && (
+                      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-800" title="Leads are visible but locked until the invoice is paid.">
+                        <Lock className="h-3 w-3" /> Leads locked
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[12px] text-slate-600 mt-0.5">
+                    {credits > 0 && <>{credits} included</>}
+                    {credits > 0 && metered > 0 && " · "}
+                    {metered > 0 && <>{metered} at {fmtUsd(b.rate_cents)} = <span className="font-semibold">{fmtUsd(settled ? b.amount_cents : (b.metered_reserved ?? 0) * (b.rate_cents ?? 0))}</span></>}
+                    {credits === 0 && metered === 0 && "No charge"}
+                    {!settled && metered > 0 && " — invoiced for delivered leads when the run finishes"}
+                    {b.error_message && <span className="text-rose-700"> · {b.error_message}</span>}
+                  </div>
+                </div>
+              </div>
+              {(b.hosted_invoice_url || b.invoice_pdf) && (
+                <div className="flex items-center gap-2 text-xs">
+                  {b.hosted_invoice_url && (
+                    <a href={b.hosted_invoice_url} target="_blank" rel="noreferrer noopener" className="px-2.5 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1">
+                      {b.status === "invoice_open" || b.status === "invoice_failed" ? "Pay invoice" : "Invoice"} <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                  {b.invoice_pdf && (
+                    <a href={b.invoice_pdf} target="_blank" rel="noreferrer noopener" className="px-2.5 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">PDF</a>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* F-LG.14: budget-cap banner. Triggers when the orchestrator halted
             the run because target × N call budget hit zero — typically a
