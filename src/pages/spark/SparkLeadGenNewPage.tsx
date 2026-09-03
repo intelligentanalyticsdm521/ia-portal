@@ -37,6 +37,18 @@ interface ZipHit { zip: string; city?: string; state?: string }
 interface StateRow { id: number; abbr: string; name: string }
 
 interface ExpandedKeyword { term: string; weight: number; source: string }
+/** Expansion + the customer's own typed topics (weight 1, source "typed"), deduped case-insensitively. */
+function withTypedTopics(expanded: ExpandedKeyword[], typed: string[]): ExpandedKeyword[] {
+  const seen = new Set(expanded.map((k) => k.term.toLowerCase()));
+  const extra: ExpandedKeyword[] = [];
+  for (const t of typed) {
+    const s = String(t || "").trim();
+    if (!s || seen.has(s.toLowerCase())) continue;
+    seen.add(s.toLowerCase());
+    extra.push({ term: s, weight: 1, source: "typed" });
+  }
+  return [...extra, ...expanded];
+}
 // Backend (/api/v1/leadgen/locations/expand) returns
 // { data: { cities: [{id, name, lat, lon, miles}], zips, origin } }.
 // Cities don't carry a state in the response (the request scoped them), but
@@ -450,9 +462,12 @@ export function SparkLeadGenNewPage() {
           mode: debouncedKw.mode,
           category_id: debouncedKw.categoryId,
         });
-        if (!cancelled) setPreviewKw(r?.data?.terms || []);
+        // The typed topics themselves are always searched (the server seeds the
+        // job from them when expansion has nothing) — show them in the preview
+        // so a custom topic like "snow" never previews as "0 keywords".
+        if (!cancelled) setPreviewKw(withTypedTopics(r?.data?.terms || [], debouncedKw.termTexts));
       } catch {
-        if (!cancelled) setPreviewKw([]);
+        if (!cancelled) setPreviewKw(withTypedTopics([], debouncedKw.termTexts));
       } finally {
         if (!cancelled) setPreviewKwLoading(false);
       }
