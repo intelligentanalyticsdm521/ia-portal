@@ -331,6 +331,28 @@ const StellaCoaPage = lazyNamed(() => import('./stella/StellaCoaPage'), 'StellaC
 const StellaVendorsPage = lazyNamed(() => import('./stella/StellaVendorsPage'), 'StellaVendorsPage');
 const StellaReportsPage = lazyNamed(() => import('./stella/StellaReportsPage'), 'StellaReportsPage');
 const StellaComingSoonPage = lazyNamed(() => import('./stella/StellaComingSoonPage'), 'StellaComingSoonPage');
+// Database Manager (Layer 3a) — real as of the STELLA Layer 3 build.
+const StellaViewRegistryPage = lazyNamed(() => import('./stella/dbmanager/ViewRegistryPage'), 'StellaViewRegistryPage');
+const StellaManualEntryPage = lazyNamed(() => import('./stella/dbmanager/ManualEntryPage'), 'StellaManualEntryPage');
+const StellaImportsPage = lazyNamed(() => import('./stella/dbmanager/ImportsPage'), 'StellaImportsPage');
+const StellaTagsPage = lazyNamed(() => import('./stella/dbmanager/TagsPage'), 'StellaTagsPage');
+const StellaCustomFieldsPage = lazyNamed(() => import('./stella/dbmanager/CustomFieldsPage'), 'StellaCustomFieldsPage');
+const StellaDocumentsPage = lazyNamed(() => import('./stella/dbmanager/DocumentsPage'), 'StellaDocumentsPage');
+const StellaCompliancePage = lazyNamed(() => import('./stella/dbmanager/CompliancePage'), 'StellaCompliancePage');
+const StellaWarningsPage = lazyNamed(() => import('./stella/dbmanager/WarningsPage'), 'StellaWarningsPage');
+// M3 QuickBooks parity — journal/reconciliation/audit, receipts, and the two
+// pages that replace the P3/P5 scaffolds in StellaLedgerShellPages.
+const StellaAccountingPage = lazyNamed(() => import('./stella/accounting/AccountingPage'), 'StellaAccountingPage');
+const StellaReceiptsPage = lazyNamed(() => import('./stella/accounting/ReceiptsPage'), 'StellaReceiptsPage');
+const StellaMileageMaterialsRealPage = lazyNamed(() => import('./stella/accounting/MileageMaterialsPage'), 'StellaMileageMaterialsPage');
+const StellaPeriodCloseRealPage = lazyNamed(() => import('./stella/accounting/PeriodClosePage'), 'StellaPeriodClosePage');
+// M2 Custom Reporting — the six surfaces that replace the coming-soon sheet.
+const StellaReportLibraryPage = lazyNamed(() => import('./stella/reporting/ReportLibraryPage'), 'StellaReportLibraryPage');
+const StellaReportBuilderPage = lazyNamed(() => import('./stella/reporting/ReportBuilderPage'), 'StellaReportBuilderPage');
+const StellaDashboardsPage = lazyNamed(() => import('./stella/reporting/DashboardsPage'), 'StellaDashboardsPage');
+const StellaScheduledReportsPage = lazyNamed(() => import('./stella/reporting/ScheduledReportsPage'), 'StellaScheduledReportsPage');
+const StellaSqlEditorPage = lazyNamed(() => import('./stella/reporting/SqlEditorPage'), 'StellaSqlEditorPage');
+const StellaExportsPage = lazyNamed(() => import('./stella/reporting/ExportsPage'), 'StellaExportsPage');
 // Live Ledger shells (2026-07-30 consolidation — 8-item nav cap): Mileage &
 // Materials is one two-tab page; Bank + Period Close are Settings-hub pages.
 const StellaMileageMaterialsPage = lazyNamed(() => import('./stella/StellaLedgerShellPages'), 'StellaMileageMaterialsPage');
@@ -592,8 +614,10 @@ function ServiceRouterInner() {
       case 'stella_ledger_transactions': stellaPage = <StellaTransactionsPage />; break;
       case 'stella_ledger_vendors': stellaPage = <StellaVendorsPage />; break;
       case 'stella_ledger_coa': stellaPage = <StellaCoaPage />; break;
-      case 'stella_ledger_mileage_materials': stellaPage = <StellaMileageMaterialsPage />; break;
+      case 'stella_ledger_mileage_materials': stellaPage = <StellaMileageMaterialsRealPage />; break;
       case 'stella_ledger_reports': stellaPage = <StellaReportsPage />; break;
+      case 'stella_ledger_receipts': stellaPage = <StellaReceiptsPage />; break;
+      case 'stella_ledger_accounting': stellaPage = <StellaAccountingPage />; break;
       // Unit Economics (Layer 2 — live)
       case 'stella_ue_margins': stellaPage = <StellaMarginsPage />; break;
       case 'stella_ue_allocations': stellaPage = <StellaAllocationsPage />; break;
@@ -602,7 +626,7 @@ function ServiceRouterInner() {
       // SETTINGS_KEYS so deriveProduct renders them in Settings mode; the
       // pages themselves stay STELLA-branded.
       case 'stella_settings_bank': stellaPage = <StellaBankPage />; break;
-      case 'stella_settings_period_close': stellaPage = <StellaPeriodClosePage />; break;
+      case 'stella_settings_period_close': stellaPage = <StellaPeriodCloseRealPage />; break;
       // IA Insights — Trends + Intelligence build AFTER the Aug-6 insights
       // redesign, following that structure (founder direction 2026-07-30).
       // Reports (stella_ledger_reports) is the live financial-statements page.
@@ -611,22 +635,31 @@ function ServiceRouterInner() {
       // Database Manager + Custom Reporting (Layer 3 — locked / coming soon).
       // Every db_/report_ key renders the STELLA coming-soon sheet (padlock +
       // tier badge driven by the catalog row).
-      case 'stella_db_registry':
-      case 'stella_db_entry':
-      case 'stella_db_upload':
-      case 'stella_db_tags':
-      case 'stella_db_custom_fields':
-      case 'stella_db_import_history':
-      case 'stella_db_documents':
-      case 'stella_db_compliance':
-      case 'stella_db_warnings':
-      case 'stella_report_library':
-      case 'stella_report_builder':
-      case 'stella_report_dashboards':
-      case 'stella_report_scheduled':
-      case 'stella_report_sql':
-      case 'stella_report_exports':
         stellaPage = <StellaComingSoonPage service={service} />; break;
+
+      // ── Custom Reporting (Layer 3b) — LIVE ───────────────────────────────
+      case 'stella_report_library': stellaPage = <StellaReportLibraryPage />; break;
+      case 'stella_report_builder': stellaPage = <StellaReportBuilderPage />; break;
+      case 'stella_report_dashboards': stellaPage = <StellaDashboardsPage />; break;
+      case 'stella_report_scheduled': stellaPage = <StellaScheduledReportsPage />; break;
+      // Pro+ — the page itself renders the upgrade panel from the API's 403.
+      case 'stella_report_sql': stellaPage = <StellaSqlEditorPage />; break;
+      case 'stella_report_exports': stellaPage = <StellaExportsPage />; break;
+
+      // ── Database Manager (Layer 3a) — LIVE ───────────────────────────────
+      // Tier floor is enforced by the API (standard+, decision D2); the pages
+      // render the upgrade panel from the 403 rather than guessing here.
+      case 'stella_db_registry': stellaPage = <StellaViewRegistryPage />; break;
+      case 'stella_db_entry': stellaPage = <StellaManualEntryPage />; break;
+      // "Uploads & Import History" is ONE page with two tabs; the retired
+      // stella_db_import_history key deep-links to the same place.
+      case 'stella_db_upload':
+      case 'stella_db_import_history': stellaPage = <StellaImportsPage />; break;
+      case 'stella_db_tags': stellaPage = <StellaTagsPage />; break;
+      case 'stella_db_custom_fields': stellaPage = <StellaCustomFieldsPage />; break;
+      case 'stella_db_documents': stellaPage = <StellaDocumentsPage />; break;
+      case 'stella_db_compliance': stellaPage = <StellaCompliancePage />; break;
+      case 'stella_db_warnings': stellaPage = <StellaWarningsPage />; break;
       default: break;
     }
     if (stellaPage) {

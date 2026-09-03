@@ -714,7 +714,9 @@ const STELLA_NAV: SubNavConfig = {
         { key: "stella_ledger_transactions", label: "Transactions", route: "/app/services/stella_ledger_transactions" },
         { key: "stella_ledger_vendors", label: "Vendors & Customers", route: "/app/services/stella_ledger_vendors" },
         { key: "stella_ledger_coa", label: "Chart of Accounts", route: "/app/services/stella_ledger_coa" },
+        { key: "stella_ledger_receipts", label: "Receipts", route: "/app/services/stella_ledger_receipts" },
         { key: "stella_ledger_mileage_materials", label: "Mileage & Materials", route: "/app/services/stella_ledger_mileage_materials" },
+        { key: "stella_ledger_accounting", label: "Accounting", route: "/app/services/stella_ledger_accounting" },
       ],
     },
     {
@@ -743,28 +745,28 @@ const STELLA_NAV: SubNavConfig = {
       // opens the STELLA coming-soon sheet (StellaComingSoonPage).
       label: "Database Manager", icon: Server, collapsible: true, sectionId: "stella_db",
       items: [
-        { key: "stella_db_registry", label: "View Registry", route: "/app/services/stella_db_registry", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_entry", label: "Manual Entry", route: "/app/services/stella_db_entry", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_registry", label: "View Registry", route: "/app/services/stella_db_registry", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_entry", label: "Manual Entry", route: "/app/services/stella_db_entry", tag: { label: "S", color: STELLA_TAG } },
         // Import History folded into the Upload surface (batch list + rollback
         // live on the same page per master §5.3) — keeps this group at the 8 cap.
-        { key: "stella_db_upload", label: "Uploads & Import History", route: "/app/services/stella_db_upload", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_tags", label: "Tags", route: "/app/services/stella_db_tags", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_custom_fields", label: "Custom Fields", route: "/app/services/stella_db_custom_fields", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_documents", label: "Documents", route: "/app/services/stella_db_documents", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_compliance", label: "Compliance Reminders", route: "/app/services/stella_db_compliance", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_warnings", label: "Data Engineer Warnings", route: "/app/services/stella_db_warnings", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_upload", label: "Uploads & Import History", route: "/app/services/stella_db_upload", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_tags", label: "Tags", route: "/app/services/stella_db_tags", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_custom_fields", label: "Custom Fields", route: "/app/services/stella_db_custom_fields", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_documents", label: "Documents", route: "/app/services/stella_db_documents", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_compliance", label: "Compliance Reminders", route: "/app/services/stella_db_compliance", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_warnings", label: "Data Engineer Warnings", route: "/app/services/stella_db_warnings", tag: { label: "S", color: STELLA_TAG } },
       ],
     },
     {
       // Layer 3b — LOCKED.
       label: "Custom Reporting", icon: BarChart2, collapsible: true, sectionId: "stella_report",
       items: [
-        { key: "stella_report_library", label: "Report Library", route: "/app/services/stella_report_library", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_report_builder", label: "Report Builder", route: "/app/services/stella_report_builder", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_report_dashboards", label: "Dashboards", route: "/app/services/stella_report_dashboards", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_report_scheduled", label: "Scheduled Reports", route: "/app/services/stella_report_scheduled", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_report_sql", label: "SQL Editor", route: "/app/services/stella_report_sql", gated: true, tag: { label: "Pro", color: STELLA_TAG } },
-        { key: "stella_report_exports", label: "Exports", route: "/app/services/stella_report_exports", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_library", label: "Report Library", route: "/app/services/stella_report_library", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_builder", label: "Report Builder", route: "/app/services/stella_report_builder", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_dashboards", label: "Dashboards", route: "/app/services/stella_report_dashboards", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_scheduled", label: "Scheduled Reports", route: "/app/services/stella_report_scheduled", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_sql", label: "SQL Editor", route: "/app/services/stella_report_sql", tag: { label: "Pro", color: STELLA_TAG } },
+        { key: "stella_report_exports", label: "Exports", route: "/app/services/stella_report_exports", tag: { label: "S", color: STELLA_TAG } },
       ],
     },
   ],
