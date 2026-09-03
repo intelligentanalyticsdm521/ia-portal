@@ -478,6 +478,11 @@ export function SparkLeadGenNewPage() {
     customer_category_id: form.category?.id ?? null,
     industry_id: form.category?.industry_id ?? null,
     terms: form.terms.map((t) => ({ id: t.id > 0 ? t.id : null, term: t.term })),
+    // 2026-09-04 — the job must run exactly what the Live Preview showed. The
+    // preview's expanded keyword list and radius-resolved cities go with the
+    // request; the raw form (manual topics, anchor cities) stays for the record.
+    expanded_terms: previewKw.map((t) => t.term),
+    expanded_city_ids: previewLoc.cities.map((c) => c.city_id),
     search_mode: form.searchMode,
     state: form.state,
     city_ids: form.cities.map((c) => c.id),
@@ -486,7 +491,7 @@ export function SparkLeadGenNewPage() {
     zips: form.zips.map((z) => z.zip),
     include_cold_leads: form.includeCold,
     max_leads: form.maxLeads,
-  }), [form]);
+  }), [form, previewKw, previewLoc]);
 
   async function handleStart() {
     if (!canSubmit) return;
