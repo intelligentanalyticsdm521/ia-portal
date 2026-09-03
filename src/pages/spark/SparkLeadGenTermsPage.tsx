@@ -9,6 +9,8 @@
 // list-building for third parties. The search-engine attribution wording lives
 // here too (several engines, including Brave Search; nothing they return is stored).
 import type { ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 
 const EFFECTIVE = "September 4, 2026";
@@ -24,10 +26,27 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export default function SparkLeadGenTermsPage() {
+  const navigate = useNavigate();
+  // Brandon 2026-09-04: "we need a back button so they can get out of the terms
+  // without clicking a bunch of navigation paths." Go back to wherever the reader
+  // came from; a direct/bookmarked visit has nowhere to go back to → Lead Inbox.
+  const goBack = () => {
+    if (window.history.length > 1) navigate(-1);
+    else navigate("/app/services/spark_lead_inbox");
+  };
   return (
     <SparkPageShell
       title="Lead Use Terms"
       subtitle={`SPARK Lead Gen — version ${VERSION}, effective ${EFFECTIVE}`}
+      actions={
+        <button
+          type="button"
+          onClick={goBack}
+          className="text-xs px-2.5 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 flex items-center gap-1"
+        >
+          <ArrowLeft className="h-3 w-3" /> Back
+        </button>
+      }
       error={null}
       loading={false}
     >

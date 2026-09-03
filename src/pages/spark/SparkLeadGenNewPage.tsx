@@ -143,7 +143,7 @@ function AutocompleteCombo<T>({
             <div className="px-3 py-2 text-xs text-slate-400">Searching…</div>
           )}
           {!loading && results.length === 0 && value.trim() && (
-            <div className="px-3 py-2 text-xs text-slate-400">No matches — your term will be added as a custom keyword.</div>
+            <div className="px-3 py-2 text-xs text-slate-400">No matches — add it under Search topics as a custom term. It becomes your search seed and is queued for the category review.</div>
           )}
           {results.map((r, i) => (
             <button
@@ -206,6 +206,16 @@ export function SparkLeadGenNewPage() {
   const [previewKwLoading, setPreviewKwLoading] = useState(false);
   const [previewLoc, setPreviewLoc] = useState<ExpandLocResponse>({ cities: [], zip_count: 0 });
   const [previewLocLoading, setPreviewLocLoading] = useState(false);
+  // Brandon 2026-09-04: "we should be able to deselect cities and expanded
+  // keywords … so someone can say oh I don't want this general contractor."
+  // Exclusions are kept by value so they survive a preview refresh; the job
+  // runs exactly the ACTIVE lists (server prefers expanded_terms / expanded_city_ids).
+  const [excludedTerms, setExcludedTerms] = useState<Set<string>>(new Set());
+  const [excludedCityIds, setExcludedCityIds] = useState<Set<number>>(new Set());
+  const toggleTerm = (term: string) => setExcludedTerms((prev) => { const n = new Set(prev); if (n.has(term)) n.delete(term); else n.add(term); return n; });
+  const toggleCity = (id: number) => setExcludedCityIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const activeKw = useMemo(() => previewKw.filter((k) => !excludedTerms.has(k.term)), [previewKw, excludedTerms]);
+  const activeCities = useMemo(() => previewLoc.cities.filter((c) => !excludedCityIds.has(c.city_id)), [previewLoc, excludedCityIds]);
 
   // Tenant Lead Gen credit pool. Drives the max-leads cap + the Usage card in
   // the right sidebar. Endpoint = GET /leadgen/credits (LUMEN-API), returns
@@ -356,7 +366,8 @@ export function SparkLeadGenNewPage() {
 
   useEffect(() => {
     if (!ready) return;
-    if (!debouncedKw.categoryId && debouncedKw.termIds.length === 0) {
+    // Custom-only searches (no taxonomy category, typed topics) still get a preview.
+    if (!debouncedKw.categoryId && debouncedKw.termTexts.length === 0) {
       setPreviewKw([]); return;
     }
     let cancelled = false;
@@ -443,10 +454,16 @@ export function SparkLeadGenNewPage() {
   const estCostUsd = 0;
   const estTimeStr = "4–7 min";
 
+  // Brandon 2026-09-04: a topic that is not a taxonomy category ("snow removal")
+  // must still be searchable — a custom search topic is enough; the server seeds
+  // the job from it and queues it for the quarterly category review.
+  const hasSeed = !!form.category || form.terms.length > 0;
   const canSubmit =
-    !!form.category &&
+    hasSeed &&
     !!form.state &&
     (form.cities.length > 0 || form.zips.length > 0) &&
+    (previewKw.length === 0 || activeKw.length > 0) &&
+    (previewLoc.cities.length === 0 || activeCities.length > 0) &&
     form.maxLeads > 0 &&
     !submitting;
 
@@ -482,8 +499,9 @@ export function SparkLeadGenNewPage() {
     // 2026-09-04 — the job must run exactly what the Live Preview showed. The
     // preview's expanded keyword list and radius-resolved cities go with the
     // request; the raw form (manual topics, anchor cities) stays for the record.
-    expanded_terms: previewKw.map((t) => t.term),
-    expanded_city_ids: previewLoc.cities.map((c) => c.city_id),
+    // Only the ACTIVE (not deselected) keywords and cities go to the job.
+    expanded_terms: activeKw.map((t) => t.term),
+    expanded_city_ids: activeCities.map((c) => c.city_id),
     search_mode: form.searchMode,
     state: form.state,
     city_ids: form.cities.map((c) => c.id),
@@ -492,7 +510,7 @@ export function SparkLeadGenNewPage() {
     zips: form.zips.map((z) => z.zip),
     include_cold_leads: form.includeCold,
     max_leads: form.maxLeads,
-  }), [form, previewKw, previewLoc]);
+  }), [form, activeKw, activeCities]);
 
   async function handleStart() {
     if (!canSubmit) return;
@@ -854,22 +872,37 @@ export function SparkLeadGenNewPage() {
             <div className="px-4 py-3 border-b border-slate-100">
               <div className="text-[11px] font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
                 <span className="flex items-center gap-1.5"><Search className="h-3 w-3" /> Expanded keywords</span>
-                <span className="text-slate-400 tabular-nums">{previewKwLoading ? "…" : previewKw.length}</span>
+                <span className="text-slate-400 tabular-nums">
+                  {previewKwLoading ? "…" : excludedTerms.size ? `${activeKw.length} of ${previewKw.length}` : previewKw.length}
+                </span>
               </div>
               {previewKw.length === 0 && !previewKwLoading && (
-                <div className="text-[11px] text-slate-400 italic">Pick a category to see expansion.</div>
+                <div className="text-[11px] text-slate-400 italic">Pick a category or add a search topic to see expansion.</div>
+              )}
+              {previewKw.length > 0 && (
+                <div className="text-[10px] text-slate-400 mb-1">Click a keyword to leave it out of this search.</div>
               )}
               <ul className="space-y-0.5 max-h-44 overflow-y-auto">
-                {previewKw.slice(0, 15).map((k, i) => (
-                  <li key={i} className="flex items-center gap-2 text-[12px]">
-                    <Check className="h-3 w-3 text-emerald-600" />
-                    <span className="truncate" title={k.term}>{k.term}</span>
-                    {k.weight < 1 && <span className="text-[9px] text-slate-400 tabular-nums ml-auto">w {k.weight.toFixed(2)}</span>}
-                  </li>
-                ))}
+                {previewKw.map((k) => {
+                  const off = excludedTerms.has(k.term);
+                  return (
+                    <li key={k.term}>
+                      <button
+                        type="button"
+                        onClick={() => toggleTerm(k.term)}
+                        title={off ? "Excluded — click to include" : "Included — click to exclude"}
+                        className={`w-full flex items-center gap-2 text-[12px] text-left rounded px-1 -mx-1 hover:bg-slate-50 ${off ? "text-slate-400 line-through" : "text-slate-800"}`}
+                      >
+                        {off ? <X className="h-3 w-3 text-slate-400 flex-shrink-0" /> : <Check className="h-3 w-3 text-emerald-600 flex-shrink-0" />}
+                        <span className="truncate">{k.term}</span>
+                        {k.weight < 1 && <span className="text-[9px] text-slate-400 tabular-nums ml-auto">w {k.weight.toFixed(2)}</span>}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
-              {previewKw.length > 15 && (
-                <div className="text-[11px] text-slate-400 mt-1">+ {previewKw.length - 15} more (uncheckable)</div>
+              {previewKw.length > 0 && activeKw.length === 0 && (
+                <div className="text-[11px] text-red-600 mt-1">Keep at least one keyword.</div>
               )}
             </div>
 
@@ -878,23 +911,38 @@ export function SparkLeadGenNewPage() {
               <div className="text-[11px] font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
                 <span className="flex items-center gap-1.5"><MapPin className="h-3 w-3" /> Locations</span>
                 <span className="text-slate-400 tabular-nums">
-                  {previewLocLoading ? "…" : `${previewLoc.cities.length} cit${previewLoc.cities.length === 1 ? "y" : "ies"} · ${previewLoc.zip_count} ZIPs`}
+                  {previewLocLoading
+                    ? "…"
+                    : `${excludedCityIds.size ? `${activeCities.length} of ` : ""}${previewLoc.cities.length} cit${previewLoc.cities.length === 1 ? "y" : "ies"} · ${previewLoc.zip_count} ZIPs`}
                 </span>
               </div>
               {previewLoc.cities.length === 0 && !previewLocLoading && (
                 <div className="text-[11px] text-slate-400 italic">Add a state and at least one city or ZIP.</div>
               )}
+              {previewLoc.cities.length > 0 && (
+                <div className="text-[10px] text-slate-400 mb-1">Click a city to leave it out of this search.</div>
+              )}
               <ul className="space-y-0.5 max-h-44 overflow-y-auto">
-                {previewLoc.cities.slice(0, 10).map((c) => (
-                  <li key={c.city_id} className="flex items-center gap-2 text-[12px]">
-                    <Check className="h-3 w-3 text-emerald-600" />
-                    <span className="truncate">{c.name}, {c.state}</span>
-                    <span className="text-[9px] text-slate-400 tabular-nums ml-auto">{c.miles.toFixed(0)} mi</span>
-                  </li>
-                ))}
+                {previewLoc.cities.map((c) => {
+                  const off = excludedCityIds.has(c.city_id);
+                  return (
+                    <li key={c.city_id}>
+                      <button
+                        type="button"
+                        onClick={() => toggleCity(c.city_id)}
+                        title={off ? "Excluded — click to include" : "Included — click to exclude"}
+                        className={`w-full flex items-center gap-2 text-[12px] text-left rounded px-1 -mx-1 hover:bg-slate-50 ${off ? "text-slate-400 line-through" : "text-slate-800"}`}
+                      >
+                        {off ? <X className="h-3 w-3 text-slate-400 flex-shrink-0" /> : <Check className="h-3 w-3 text-emerald-600 flex-shrink-0" />}
+                        <span className="truncate">{c.name}, {c.state}</span>
+                        <span className="text-[9px] text-slate-400 tabular-nums ml-auto">{c.miles.toFixed(0)} mi</span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
-              {previewLoc.cities.length > 10 && (
-                <div className="text-[11px] text-slate-400 mt-1">+ {previewLoc.cities.length - 10} more</div>
+              {previewLoc.cities.length > 0 && activeCities.length === 0 && (
+                <div className="text-[11px] text-red-600 mt-1">Keep at least one city.</div>
               )}
             </div>
 
@@ -926,7 +974,7 @@ export function SparkLeadGenNewPage() {
               <button
                 type="button"
                 onClick={() => setShowSaveModal(true)}
-                disabled={!form.category}
+                disabled={!hasSeed}
                 className="w-full rounded-md border border-slate-300 bg-white text-slate-700 text-xs font-medium py-1.5 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
               >
                 <Save className="h-3 w-3" /> Save this search
