@@ -2,6 +2,10 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+// Banners everywhere (LOCKED 2026-09-04): the same 60/75/90 component the Lead
+// Inbox and the campaign sends use, so "you are running out" always looks and
+// reads the same wherever it happens.
+import { SparkUsageCapacityBanner } from "../../components/spark/SparkCapacityBanner";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkContactModal } from "../../components/spark/SparkContactModal";
@@ -611,6 +615,7 @@ export function SparkContactsPage() {
       loading={loading}
       error={error}
     >
+      <SparkUsageCapacityBanner metric="contacts" className="mb-3" />
       <ReportBar product="spark" detail={insightsPayload?.detail} reports={[
         { id: 'spark_list_health', label: 'List health' },
         { id: 'spark_contact_sources', label: 'By source' },
