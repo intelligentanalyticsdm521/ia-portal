@@ -38,6 +38,9 @@ interface AttributionData {
   business_name: string | null;
   source: string | null;
   source_label: string;
+  /** "search" = a B2B search lead (never a website visitor) · "inbound" = a
+   *  form / landing page / referral · "import" · "unknown". */
+  source_kind: "search" | "inbound" | "import" | "unknown";
   contact_id: number | null;
   has_journey: boolean;
   channel: string | null;
@@ -133,7 +136,7 @@ export function LeadAttributionCard({ leadId, className = "" }: { leadId: number
 
         {!data.has_journey ? (
           <p className="text-[12px] text-slate-500">
-            {data.source === "leadgen"
+            {data.source_kind === "search"
               ? "This business came from a B2B lead search, so there is no website journey to show — nobody browsed your site before they landed here."
               : "No website visits are linked to this lead yet. They appear once the visitor tracking pixel has seen this person on your site."}
           </p>
