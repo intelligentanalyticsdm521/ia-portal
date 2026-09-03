@@ -29,8 +29,6 @@ import {
   PlanPricingSettingsPage,
   TeamMembersSettingsPage,
   IntegrationsSettingsPage,
-  NotificationsSettingsPage,
-  SecuritySettingsPage,
   DataPrivacySettingsPage,
 } from './pages/settings/SettingsRoutes';
 import { BrandIdentityPage } from './pages/settings/BrandIdentityPage';
@@ -50,8 +48,6 @@ import { InfraHealthPage } from './pages/admin/InfraHealthPage';
 import { SparkPricingPage } from './pages/spark/SparkPricingPage';
 
 // #77 — Proposal Templates. Explicit route because the desired URL
-// (/app/oliver/quotes/templates) doesn't fit the /services/:serviceKey shape.
-import { OliverProposalTemplatesPage } from './pages/oliver/OliverProposalTemplatesPage';
 
 // Tenant contact-intelligence weight tuning page. Lives at a dedicated
 // /app/spark/contact-scoring route (rather than the service-key router)
@@ -93,7 +89,8 @@ import { ConsultingTenantWorkspacePage } from './pages/consulting/ConsultingTena
 // path param. Client lands here from a SPARK email link after the founder
 // hits "Send Intake" on a project.
 import { ConsultingIntakeFormPage } from './pages/consulting/ConsultingIntakeFormPage';
-import { ForgeClientDetailPage } from './pages/forge/ForgeClientDetailPage';
+import { ForgeSoftwareRouter } from './pages/forge/ForgeSoftwareRouter';
+import { LegacyForgeRedirect } from './pages/forge/LegacyForgeRedirect';
 
 // Consultant workspace entry — captures /c/:tid → sessionStorage → /app.
 import { ConsultantWorkspaceEntry } from './app/ConsultantWorkspaceEntry';
@@ -235,10 +232,8 @@ export function App() {
             <Route path="settings/plan-pricing" element={<PlanPricingSettingsPage />} />
             <Route path="settings/team-members" element={<TeamMembersSettingsPage />} />
             <Route path="settings/integrations" element={<IntegrationsSettingsPage />} />
-            <Route path="settings/notifications" element={<NotificationsSettingsPage />} />
             <Route path="settings/walkthroughs" element={<WalkthroughsPage />} />
             <Route path="settings/tours" element={<SettingsToursPage />} />
-            <Route path="settings/security" element={<SecuritySettingsPage />} />
             <Route path="settings/data-privacy" element={<DataPrivacySettingsPage />} />
             <Route path="settings/argus-data-plan" element={<ArgusDataPlanPage />} />
             <Route path="admin/argus-margin" element={<ArgusMarginPage />} />
@@ -365,13 +360,16 @@ export function App() {
               path="services/consulting/tenant-workspace/:tenantId"
               element={<ConsultingTenantWorkspacePage />}
             />
-
-            {/* FORGE › HESTIA — client detail. Outside the
-                /services/:serviceKey router because it carries a path param. */}
-            <Route
-              path="services/forge_clients/:id"
-              element={<ForgeClientDetailPage />}
-            />
+            {/* FORGE is a product LINE that can host many bespoke builds, so
+                its software lives under a PATH rather than one service key per
+                screen: /app/services/forge/<software>/<screen>, with detail
+                pages at .../<screen>/<id>. One route serves every screen of
+                every build — each build declares its own in forgeSoftware.ts.
+                /app/services/forge_overview stays the LINE landing page. */}
+            <Route path="services/forge/:software/*" element={<ForgeSoftwareRouter />} />
+            {/* The old flat URLs were live only briefly; redirect them rather
+                than 404 a bookmark. Non-FORGE keys fall through untouched. */}
+            <Route path="services/:legacyForgeKey/:id" element={<LegacyForgeRedirect withId />} />
 
             {/* F4 (Consulting Rework 2026-06-25) — client-facing intake form
                 player. URL: /app/consulting/intake/:submissionId. Outside the
@@ -415,11 +413,6 @@ export function App() {
                 }
               />
             </Route>
-
-            {/* #77 — Proposal Templates (Quotes → Templates). Explicit
-                route so the URL is /app/oliver/quotes/templates rather than
-                the service-key catch-all. Must come BEFORE the catch-all. */}
-            <Route path="oliver/quotes/templates" element={<OliverProposalTemplatesPage />} />
 
             {/* All feature-specific pages routed by service key */}
             <Route path="services/:serviceKey" element={<ServiceRouter />} />

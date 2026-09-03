@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { Button } from "../../components/oliver/ui";
 
 interface JobListItem {
@@ -72,7 +73,10 @@ interface LineItemDraft {
 }
 
 interface CreateQuoteProps {
-  onCreated: () => void;
+  /** Closes the modal. The message is shown by the page AFTER the modal is
+   *  gone — a send failure set on this form's own error line would be wiped
+   *  off the screen the moment onCreated() unmounted it. */
+  onCreated: (message?: string) => void;
   onCancel: () => void;
   /** When provided, opens the form in "job" mode with this job pre-selected. */
   initialJobId?: string;
@@ -104,7 +108,6 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
   const [items, setItems] = useState<LineItemDraft[]>([{ ...blankItem }]);
   const [validUntil, setValidUntil] = useState("");
   const [notes, setNotes] = useState("");
-  const [docType, setDocType] = useState<"quote" | "proposal">("quote");
   const [coupons, setCoupons] = useState<CouponLite[]>([]);
   const [taxMode, setTaxMode] = useState<"percent" | "amount">("percent");
   const [taxRate, setTaxRate] = useState("");
@@ -215,7 +218,7 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
     ]);
   }
 
-  async function submit() {
+  async function submit(sendNow = false) {
     setError(null);
     if (mode === "job" && !selectedJobId) { setError("Pick a job first."); return; }
     if (mode === "customer" && !selectedContactId) { setError("Pick a customer first."); return; }
@@ -243,8 +246,31 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
       };
       if (mode === "job") body.job_id = selectedJobId;
       else body.contact_id = selectedContactId;
-      await post(docType === "proposal" ? "/proposals" : "/quotes", body);
-      onCreated();
+
+      // 2026-09-02 — the response used to be thrown away, so this form could
+      // not send what it had just created: you saved a draft, closed the modal,
+      // reopened the quote and pressed Send. useOliverApi unwraps the { data }
+      // envelope, so this IS the quote row.
+      const created = await post<{ quote_id: string }>("/quotes", body);
+
+      if (!sendNow) { onCreated("Quote saved as a draft."); return; }
+
+      if (!created?.quote_id) {
+        // Created, but we cannot address it to send. Say exactly that rather
+        // than letting "Quote created." stand for a quote nobody received.
+        onCreated("Quote created, but we couldn't read its id back to send it — open it from the list and press Send to customer.");
+        return;
+      }
+      try {
+        await post(`/quotes/${created.quote_id}/send`);
+        onCreated("Quote created and sent to the customer.");
+      } catch (e) {
+        // The quote EXISTS. Reporting "create failed" would send someone
+        // hunting for a quote that is already sitting in the list, and
+        // reporting plain success would be the exact lie this release has
+        // spent itself removing.
+        onCreated(`Quote created, but sending failed: ${apiErrorMessage(e)} — open it from the list and press Send to customer.`);
+      }
     } catch (e) {
       setError(`Create failed: ${(e as Error).message}`);
     } finally {
@@ -253,18 +279,26 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
   }
 
   return (
-    <div className="card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-        <div>
-          <div className="card-ttl">New {docType}</div>
-          <div className="card-sub">{docType === "proposal" ? "A proposal is a quote with narrative + notes — same line items & pricing." : "Itemized pricing the customer can accept; convert to an invoice."}</div>
-        </div>
-        <button onClick={onCancel} style={{ background: "none", border: "none", color: "#5A7A8A", cursor: "pointer", fontSize: 12 }}>Cancel</button>
-      </div>
+    // No card chrome or own header any more — this form always renders inside
+    // the branded document modal now, which carries the title, the business
+    // header and the close control. A second "New quote" heading and a second
+    // Cancel inside the page were the doubled chrome the modal move removes.
+    <div>
 
-      <div className="ptabs" style={{ marginBottom: 12 }}>
-        <button className={`ptab${docType === "quote" ? " active" : ""}`} onClick={() => setDocType("quote")}>Quote</button>
-        <button className={`ptab${docType === "proposal" ? " active" : ""}`} onClick={() => setDocType("proposal")}>Proposal</button>
+      {/* The Proposal tab is gone.
+          It posted to /proposals with no title, which that endpoint requires,
+          so every proposal saved from here answered 400 "title required" — and
+          the form had no field to put one in. A proposal is not a quote with a
+          different label either: it carries a narrative, terms, a tracked send
+          and click-to-accept, none of which this form collects.
+          The real editor lives on the Proposals page, which had no nav row
+          until today and so could not be found. */}
+      <div style={{ marginBottom: 12, padding: "8px 10px", borderRadius: 6, background: "#F4F8FA", border: "1px solid #E2ECF1", fontSize: 12, color: "#3A5A6A" }}>
+        Writing a proposal instead?{" "}
+        <a href="/app/services/oliver_proposals" style={{ color: "#0B6E8C", fontWeight: 600 }}>
+          Open the proposal editor
+        </a>{" "}
+        — it adds a narrative, terms, tracked sending and click-to-accept.
       </div>
 
       {templates.length > 0 && (
@@ -406,7 +440,7 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
             </div>
           )}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0", gap: 8 }}>
-            <span style={{ color: "#5A7A8A", whiteSpace: "nowrap" }}>{docType === "proposal" ? "Proposal" : "Quote"} discount</span>
+            <span style={{ color: "#5A7A8A", whiteSpace: "nowrap" }}>Quote discount</span>
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <DiscountPicker d={invDisc} coupons={coupons} onChange={setInvDisc} />
               <span style={{ width: 64, textAlign: "right", color: "#059669" }}>{totals.invDiscount > 0 ? `−$${totals.invDiscount.toFixed(2)}` : "—"}</span>
@@ -431,13 +465,28 @@ export function QuoteCreateForm({ onCreated, onCancel, initialJobId, initialCont
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-        <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+        {/* 2026-09-02 — "Create & send" was missing entirely. Creating a quote
+            left you with a draft and no way to send it from here: you closed the
+            modal, found the quote in the list, opened it, and pressed Send to
+            customer. Brandon called that a defect and he is right — sending is
+            the point of writing a quote.
+            Two explicit buttons rather than a "send immediately" tickbox: a
+            primary action should not depend on finding a checkbox. */}
         <Button
-          variant="primary"
-          onClick={submit}
+          variant="secondary"
+          onClick={() => submit(false)}
           disabled={submitting || (mode === "job" ? !selectedJobId : !selectedContactId) || !items.length}
         >
-          {submitting ? "Creating…" : `Create ${docType} (draft)`}
+          {submitting ? "Working…" : "Save as draft"}
+        </Button>
+        <Button
+          variant="primary"
+          onClick={() => submit(true)}
+          disabled={submitting || (mode === "job" ? !selectedJobId : !selectedContactId) || !items.length}
+          title="Create the quote and email it to the customer now"
+        >
+          {submitting ? "Working…" : "Create & send"}
         </Button>
       </div>
     </div>

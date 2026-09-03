@@ -392,4 +392,184 @@ export const SPARK_PAGES: PageContentMap = {
     body:
       "The plain record — real-time activity, usage against your plan, and the audit log. No scoring, just the facts as they happened.",
   },
+
+  // ── Sending setup ────────────────────────────────────────────────────────
+  // Added 2026-09-01. These are the technical settings a client hits early and
+  // has no way to reason about — Brandon walked Sender Setup cold and could not
+  // tell what it was for, which is the same wall a customer hits.
+  spark_sender_domains: {
+    title: "Sender Setup — deciding what address your emails come from",
+    body:
+      "Every email you send has to come from somewhere, and the receiving inbox has to believe it. This page gives you two ways to get there. Option one hands your business its own address on our email domain — nothing to set up, working in about a minute. Option two sends from your own domain, which is what your customers should see, and needs four records added to that domain once. Both are step-by-step; you can't get lost in either.",
+    onPage: [
+      {
+        title: "Two options, and the honest difference",
+        body:
+          "The Intelligent Analytics option gives you an address like yourbusiness@ia-dm.com. It works instantly because we already own and have proved that domain — there is genuinely nothing for you to do. Your own business email looks better to customers and is the one we recommend, but a domain is not something we can change on your behalf, so somebody has to add four records to it once. Start on option one if you want to send today; move to option two when you have ten minutes and access to your domain.",
+      },
+      {
+        title: "Sending and receiving are different jobs",
+        body:
+          "The address on the front of your email does not have to be a real mailbox — plenty of businesses send from an address nobody logs into. What must be real is the reply address. If someone hits Reply and that address has no mail server behind it, their message disappears and nobody finds out. The walkthrough checks that for you before you finish, which is step four.",
+      },
+      {
+        title: "The four records, without the jargon",
+        body:
+          "The first proves the domain is really yours — it is the one most often missed, and nothing works without it. The second is a public list of who is allowed to send using your address; ours has to be on it. The last two are signing keys, so an inbox can tell the message wasn't altered on the way. A fifth, optional one tells inboxes what to do with fakes; leave it until everything else is green.",
+      },
+      {
+        title: "Only ever ONE 'who may send as you' record",
+        body:
+          "A domain is allowed exactly one of these. If there is already one — for Google Workspace, or your website host — add our part to the existing record and keep everything that is in it. Replacing it is how a business accidentally stops its own email, and it is the single most common way this goes wrong.",
+      },
+      {
+        title: "Waiting is not failing",
+        body:
+          "Records take minutes to spread around the world, sometimes longer. Straight after you add them the check will say 'not yet' — that is expected. Come back and press Check again rather than assuming something broke. If a record is still missing an hour later, it is almost always because the Name and the Value got swapped.",
+      },
+    ],
+    doIt: [
+      {
+        targetSelector: 'button[data-tour="sender-add"]',
+        advance: "click",
+        title: "Let's set your sending address up",
+        body:
+          "This is a once-only job and you end up able to send email as your business. Click 'Set up sending'.",
+        placement: "bottom",
+      },
+      {
+        targetSelector: '[data-tour="sender-own-email"]',
+        advance: "click",
+        waitForMs: 2000,
+        title: "Pick the recommended option",
+        body:
+          "Two cards. The left one gives you an address on our domain in a minute — a perfectly good place to start, and you can come back to it any time. We're going to walk the right one, 'Send from my own business email', because that is what your customers should see. Click it.",
+        placement: "bottom",
+      },
+      {
+        targetSelector: 'input[data-tour="sender-email"]',
+        advance: "input",
+        waitForMs: 2000,
+        title: "Step 1 — the address emails come FROM",
+        body:
+          "A full address on a domain you control, like hello@yourbusiness.com. Not a Gmail or Outlook address — those providers will not let anyone send as them. It does not need to be a mailbox you can log into; it is what appears in the recipient's inbox. We take the domain from the part after the @.",
+        placement: "right",
+      },
+      {
+        targetSelector: '[data-tour="sender-continue"], .spark-page',
+        advance: "next",
+        title: "Step 2 — where replies land",
+        body:
+          "Leave the box ticked and replies come back to the same address. Untick it if you would rather replies went somewhere else — the inbox you actually check every day is usually the right answer. This is the one people get wrong, and they find out when a lead goes missing.",
+        placement: "top",
+      },
+      {
+        targetSelector: 'input[data-tour="sender-display-name"], .spark-page',
+        advance: "next",
+        title: "Step 3 — the name people see",
+        body:
+          "In an inbox the name shows first and the address second. Use the name customers know you by, and keep it short — inboxes cut long names off. The preview underneath shows exactly how it will look.",
+        placement: "right",
+      },
+      {
+        targetSelector: '.spark-page',
+        advance: "next",
+        title: "Step 4 — can that address actually receive?",
+        body:
+          "We look up the reply domain and tell you plainly whether mail can be delivered there. Green means replies will arrive. Red means that domain has no mail server, so anything sent to it vanishes — go back and use a different reply address. Amber means the lookup itself failed and is worth retrying.",
+        placement: "top",
+      },
+      {
+        targetSelector: '[data-tour="sender-verify"], .spark-page',
+        advance: "next",
+        waitForMs: 4000,
+        title: "Step 5 — the four records",
+        body:
+          "If we look after DNS for this domain there is a button and we add them for you. If not, you get all four with Copy buttons, plus 'Email these to my web admin' — which is exactly what to press if somebody else built your website. Each card says in plain English what that record is for; the Name and Value are what gets typed in.",
+        placement: "top",
+      },
+      {
+        targetSelector: '.spark-page',
+        advance: "next",
+        title: "Step 6 — check, and be patient once",
+        body:
+          "Press Check and each record turns green as it goes live. 'Not yet' straight after publishing is normal, not a failure — wait a few minutes and check again. Continue only lights up once the required records have all passed.",
+        placement: "top",
+      },
+      {
+        targetSelector: '.spark-page',
+        advance: "next",
+        title: "Step 7 — switching sending on",
+        body:
+          "The last step connects your domain to the service that issues the send and registers your address on it. Verified has never meant ready — this is the part that makes it true. If it says the final step is pending an Intelligent Analytics administrator, that is ours to finish, not yours: your records are right, and your emails keep going out from the Intelligent Analytics address until it is done.",
+        placement: "top",
+      },
+    ],
+  },
+  spark_senders: {
+    title: "Senders — the actual name and address on the email",
+    body:
+      "The domain earns the right to send; a sender is what the recipient actually sees in their inbox — 'Rolling In It <hello@rollinginit.com>'. Add one per address you want to send from, mark the one you use most as default, and set a reply-to if replies should land somewhere else, like a Gmail you actually read.",
+    onPage: [
+      {
+        title: "Adding a sender does the whole job",
+        body:
+          "This used to be two menu entries — one to verify a domain, another to name an address on it — and Add sender was greyed out until you had been to the first. It is one flow now: Add sender asks what address you want, sorts the domain out behind the scenes, and writes the DNS itself when we manage it.",
+      },
+      {
+        title: "Reply-to is the one people forget",
+        body:
+          "You can send as an address that has no mailbox behind it. What you must not do is leave customers replying into a void — set reply-to to an address a human reads. This is exactly how a client's quote replies get lost.",
+      },
+    ],
+  },
+  spark_signatures: {
+    body:
+      "The block that goes at the bottom of your emails — name, role, phone, links. Set it once here and every send picks it up, instead of it being retyped (and drifting) in each template.",
+  },
+  spark_custom_fields: {
+    title: "Custom Fields — the things we didn't think of",
+    body:
+      "Every business tracks something the standard contact record doesn't have: policy renewal date, gate code, dog's name. Define it once here and it becomes a real field on every contact — filterable, segmentable, and usable as a merge tag in a campaign.",
+  },
+  spark_quiet_hours: {
+    title: "Quiet Hours — don't text people at 3am",
+    body:
+      "A tenant-wide window where outbound SMS is held back. Texts land on a phone on a bedside table, and a 3am message is how you lose a customer and earn a complaint. Set the window once; anything scheduled inside it waits until the window opens rather than being dropped.",
+  },
+  spark_tracking: {
+    title: "Tracking Pixels — knowing which visits became customers",
+    body:
+      "A one-line snippet for your website. With it, an anonymous visitor who later fills in a form can be joined up to everything they read beforehand — which is what makes attribution reporting meaningful instead of guesswork. Without it, you only ever see what people did AFTER they were already in your CRM.",
+  },
+  spark_calendar_sync: {
+    body:
+      "Connects your real calendar so bookings and availability stay in step. Once linked, a meeting booked here shows up in the calendar you actually live in, and a busy block there stops it being double-booked here.",
+  },
+  spark_service_category: {
+    body:
+      "Groups what you sell into categories, so reporting and campaign targeting can talk about 'plowing' or 'design work' rather than listing every individual service.",
+  },
+  spark_api_keys: {
+    title: "API Keys — letting other software talk to yours",
+    body:
+      "A key is a password for a program rather than a person. Create one when another system needs to read or write your data, and give it only to that system. Treat it exactly like a password: it is shown once, it is not recoverable, and anything holding it can act as you.",
+    onPage: [
+      {
+        title: "If a key leaks, revoke it",
+        body:
+          "Revoking is instant and safe — the key stops working, and you issue a new one to whatever legitimately needed it. Never leave a suspect key alive because rotating it feels like a hassle.",
+      },
+    ],
+  },
+  spark_secrets: {
+    title: "Tenant Secrets — credentials for your connected accounts",
+    body:
+      "Where the credentials for third-party services you've connected are held. You rarely need this page directly; connections are normally made from the integration itself. Come here to see what is stored and to remove something you've stopped using.",
+  },
+  spark_config_backup: {
+    title: "Configuration Backup — a copy of how you've set things up",
+    body:
+      "Exports your SPARK configuration — dashboards, reports, custom fields, rules and templates — as a file you can re-import. It is a snapshot of your SETUP, not of your contacts or your sends. Worth taking before a big reorganisation, so 'undo' is a real option.",
+  },
 };

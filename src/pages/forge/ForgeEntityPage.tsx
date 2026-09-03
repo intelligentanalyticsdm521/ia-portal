@@ -3,20 +3,32 @@
  * entity, driven by forgeConfig. The legacy app had thirteen near-identical
  * PHP files; this is that idea with types, real pagination and a proper form.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { IadmModal } from '../../components/IadmModal';
+import { useSearchParams } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import {
   archiveEntityRow, createEntityRow, listEntity, updateEntityRow,
   type EntityKey, type ListResult,
 } from '../../lib/forgeApi';
 import { Button, Card, EmptyState, ForgeLayout, Pill, statusTone } from './ForgeLayout';
-import { FORGE_ENTITIES, cellValue, type FieldDef } from './forgeConfig';
+import { FORGE_ENTITIES, cellValue, humanizeValue, isNumericField, money, type FieldDef } from './forgeConfig';
+import { ForgeEntityPicker } from './ForgeEntityPicker';
+import { ForgeRecordModal } from './ForgeRecordModal';
 import { describeError, useDebounced, useForgeApi, useForgeLookups } from './useForge';
 
 const PAGE_SIZE = 25;
 
 export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; detailBase?: string }) {
   const cfg = FORGE_ENTITIES[entity];
+  /** Link for a foreign-key cell — the referenced record's own page. */
+  const fkHref = (f: FieldDef, row: Record<string, unknown>) => {
+    if (f.type !== 'entity' || !f.entity) return null;
+    const fkId = row[f.key];
+    if (fkId === null || fkId === undefined || fkId === '') return null;
+    return FORGE_ENTITIES[f.entity].detailRoute?.(fkId as string | number) ?? null;
+  };
+
   const detailHref = (id: string | number) =>
     detailBase ? `${detailBase}/${id}` : cfg.detailRoute?.(id);
   const { ready, withParams } = useForgeApi();
@@ -26,7 +38,45 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [includeArchived, setIncludeArchived] = useState(false);
-  const [filters, setFilters] = useState<Record<string, string>>({});
+  /* Sorting. Blanks always sink server-side, in both directions — a column
+     that is 74% populated otherwise puts a wall of dashes at one end and
+     reads as broken rather than incomplete. */
+  const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc' } | null>(null);
+  const toggleSort = (col: string) => setSort((cur) =>
+    !cur || cur.col !== col ? { col, dir: 'asc' }
+      : cur.dir === 'asc' ? { col, dir: 'desc' }
+        : null);
+  // Seed filters from the URL so a link can point at a SUBSET, not just a
+  // screen. The overview's "Needs review" tile links to
+  // .../services?needs_review=1 and must land on those rows — a tile that
+  // counts three records and then shows all ninety is worse than not
+  // linking at all. Only keys the entity actually declares are accepted, so
+  // a stray query string cannot inject a filter the API will reject.
+  const [searchParams, setSearchParams] = useSearchParams();
+  /* The open record lives in the URL (?record=<id>), the way the OLIVER
+     customer modal works: a link opens the right record and the back button
+     closes it, without giving the record a second home of its own. */
+  const openRecordId = searchParams.get('record');
+  /* useCallback because `save` now depends on it — an unstable identity would
+     rebuild the save handler on every keystroke in the search box. */
+  const openRecord = useCallback((rid: string | number) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('record', String(rid));
+      return next;
+    });
+  }, [setSearchParams]);
+  const closeRecord = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('record');
+    setSearchParams(next);
+  };
+  const [filters, setFilters] = useState<Record<string, string>>(() => {
+    const seeded: Record<string, string> = {};
+    const known = new Set(FORGE_ENTITIES[entity].fields.map((f) => f.key));
+    searchParams.forEach((value, key) => { if (known.has(key)) seeded[key] = value; });
+    return seeded;
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
@@ -37,7 +87,23 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
   const listCols = useMemo(() => cfg.fields.filter((f) => f.inList), [cfg]);
   const filterable = useMemo(() => cfg.fields.filter((f) => f.type === 'lookup'), [cfg]);
 
-  useEffect(() => { setPage(1); }, [q, includeArchived, filters, entity]);
+  useEffect(() => { setPage(1); }, [q, includeArchived, filters, sort, entity]);
+
+  /* Drop the previous screen's rows the instant the entity changes.
+     Without this the fetch effect set `result` but never cleared it, and the
+     loading branch below is `loading && !result` — so Providers rendered the
+     CLIENT rows still sitting in state, under the Providers heading and the
+     Providers column headers. Worse than a flicker: the stale <tr>s all keyed
+     on `row[cfg.pk]`, which is undefined for the wrong entity, so React saw
+     duplicate keys, refused to reconcile them away and orphaned them into the
+     DOM permanently — every nav click stacking another screen's rows on top.
+     That is the "providers page is showing clients" report, and the
+     mismatched cell counts in those ghost rows are also what made the action
+     buttons appear at two different x positions in one column.
+     The router now also keys this component per entity (ForgeSoftwareRouter),
+     which remounts it; this is the second belt, for any caller that swaps
+     `entity` on a surviving instance. */
+  useEffect(() => { setResult(null); }, [entity]);
 
   useEffect(() => {
     if (!ready) return;
@@ -46,25 +112,37 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
     setError(null);
     withParams((p) => listEntity(p, entity, {
       page, pageSize: PAGE_SIZE, q: q || undefined,
+      sort: sort ? `${sort.col} ${sort.dir}` : undefined,
       includeArchived: includeArchived || undefined, ...filters,
     }))
       .then((r) => { if (!cancelled) setResult(r); })
       .catch((err) => { if (!cancelled) setError(describeError(err, cfg.title.toLowerCase())); console.error(err); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [ready, withParams, entity, page, q, includeArchived, filters, refreshKey, cfg.title]);
+  }, [ready, withParams, entity, page, q, includeArchived, filters, sort, refreshKey, cfg.title]);
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   const save = useCallback(async (values: Record<string, unknown>, id?: string | number) => {
-    await withParams(async (p) => {
-      if (id) { await updateEntityRow(p, entity, id, values); return; }
-      await createEntityRow(p, entity, values);
+    /* SHOW THE USER THE RECORD THEY JUST MADE.
+       Saving used to close the form and refresh the list, and that was the end
+       of it — on a screen with 313 providers across 13 pages, a new row lands
+       wherever the sort puts it and is invisible. The first person to use this
+       in production created a provider, could not find it, and emailed to ask
+       whether it had worked. It had. Twice more the same day, including once by
+       us. "Did that save?" is not a question the software should leave open.
+       The id comes back from the POST, so open that record: it confirms the save,
+       shows what was stored, and lands you where you would go next anyway. */
+    const created = await withParams(async (p) => {
+      if (id) { await updateEntityRow(p, entity, id, values); return null; }
+      const r = await createEntityRow(p, entity, values);
+      return r?.data?.[cfg.pk] ?? null;
     });
     setCreating(false);
     setEditing(null);
     refresh();
-  }, [withParams, entity, refresh]);
+    if (created != null) openRecord(created);
+  }, [withParams, entity, refresh, cfg.pk, openRecord]);
 
   const toggleArchive = useCallback(async (row: Record<string, unknown>) => {
     const id = row[cfg.pk] as string | number;
@@ -73,6 +151,29 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
   }, [withParams, entity, cfg.pk, refresh]);
 
   const totalPages = result ? Math.max(1, Math.ceil(result.total / PAGE_SIZE)) : 1;
+
+  /* The Actions column is pinned to the right edge of the scroll box (below),
+     so Open/Edit/Archive are reachable however wide the table gets. Its
+     left-edge shadow is the only cue that columns continue underneath it: this
+     wrapper reserves ZERO layout height for a scrollbar (measured — the platform
+     uses overlay scrollbars) and the page itself never scrolls sideways, so
+     there is otherwise nothing on screen saying there is more to the right.
+     Drawing that shadow when nothing is hidden would be a lie, so it is measured
+     rather than always on. */
+  const scrollBox = useRef<HTMLDivElement | null>(null);
+  const [canScrollX, setCanScrollX] = useState(false);
+  useEffect(() => {
+    const el = scrollBox.current;
+    if (!el) return;
+    const measure = () => setCanScrollX(el.scrollWidth - el.clientWidth > 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    // The table, not just the box: a column can get wider without the box
+    // changing size at all, and that is exactly the case worth catching.
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, [result, listCols]);
 
   return (
     <ForgeLayout
@@ -107,7 +208,7 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
               >
                 <option value="">All</option>
                 {(lookups[field.lookup ?? '']?.values ?? []).map((v) => (
-                  <option key={v.id} value={v.value}>{v.value}</option>
+                  <option key={v.id} value={v.value}>{humanizeValue(v.value)}</option>
                 ))}
               </select>
             </label>
@@ -119,6 +220,33 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
           </label>
         </div>
       </Card>
+
+      {result?.summary && result.summary.tiles.length > 0 && (
+        /* What this screen is FOR, in its own units. Clients counts people,
+           Assistance counts money committed, Services counts arrangements in
+           flight — the same chain measured three ways, and each screen is the
+           only place its own number is true. A grid alone never says that.
+           Unfiltered on purpose: this is the screen's identity, not a readout
+           of whatever filter happens to be applied. */
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {result.summary.tiles.map((t) => {
+            const v = result.summary?.values?.[t.key];
+            const warn = Boolean(t.warnIfAny) && Number(v ?? 0) > 0;
+            return (
+              <div
+                key={t.key}
+                className={`rounded-xl border px-4 py-3 ${warn ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white'}`}
+              >
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t.label}</div>
+                <div className={`mt-1 text-2xl font-semibold tabular-nums ${warn ? 'text-amber-800' : 'text-slate-900'}`}>
+                  {t.money ? money(v) : Number(v ?? 0).toLocaleString()}
+                </div>
+                {t.hint && <div className="mt-0.5 text-xs text-slate-500">{t.hint}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <Card
         title={result ? `${result.total.toLocaleString()} ${result.total === 1 ? cfg.singular.toLowerCase() : cfg.title.toLowerCase()}` : cfg.title}
@@ -135,12 +263,35 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
         ) : !result?.data.length ? (
           <EmptyState>No {cfg.title.toLowerCase()} match this view.</EmptyState>
         ) : (
-          <div className="overflow-x-auto">
+          /* -mx-6 lets the table use the card's padding as table padding
+             instead of losing it: 48px of width back on every screen, which is
+             most of a column. The first and last cells carry px-6 so the text
+             still lines up with the card's own title. */
+          <div ref={scrollBox} className="-mx-6 overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  {listCols.map((f) => <th key={f.key} className="px-3 py-2">{f.label}</th>)}
-                  <th className="px-3 py-2 text-right">Actions</th>
+                  {listCols.map((f, i) => {
+                    const active = sort?.col === f.key;
+                    const numeric = isNumericField(f);
+                    return (
+                      <th key={f.key} className={`px-2.5 py-2 ${i === 0 ? "pl-5" : ""} ${numeric ? "text-right" : ""}`}>
+                        <button
+                          type="button"
+                          onClick={() => toggleSort(f.key)}
+                          className={`inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-wide ${active ? "text-slate-900" : "hover:text-slate-700"}`}
+                          title={`Sort by ${f.label} — empty values always last`}
+                        >
+                          {f.label}
+                          <span className="text-[10px] leading-none">
+                            {active ? (sort?.dir === "asc" ? "▲" : "▼") : "↕"}
+                          </span>
+                        </button>
+                      </th>
+                    );
+                  })}
+                  {/* Pinned, and opaque, or the scrolled columns show through it. */}
+                  <th className="sticky right-0 z-20 bg-white px-2.5 py-2 pr-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -148,30 +299,98 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
                   const id = row[cfg.pk] as string | number;
                   const archived = Boolean(row.is_archived);
                   return (
-                    <tr key={String(id)} className={`border-b border-slate-100 ${archived ? 'opacity-60' : ''}`}>
-                      {listCols.map((f, i) => (
-                        <td key={f.key} className={`px-3 py-2 text-slate-700 ${f.width ?? ''}`}>
-                          <span className="flex flex-wrap items-center gap-2">
-                            {i === 0 && detailHref(id) ? (
-                              <Link to={detailHref(id) as string} className="font-medium text-slate-900 hover:underline">
-                                {cellValue(row, f)}
-                              </Link>
+                    <tr
+                      key={String(id)}
+                      /* The whole ROW opens this record. Four screens lead with
+                         the record's own name and three lead with a foreign key
+                         (a service row starts with the CLIENT), so "click the
+                         name" could never be the rule everywhere. Clicking a
+                         link or a button inside the row still does its own
+                         thing — a client name goes to the client. */
+                      onClick={(e) => {
+                        const el = e.target as HTMLElement;
+                        if (el.closest('a,button')) return;
+                        openRecord(id);
+                      }}
+                      /* `group` so the pinned Actions cell can repaint itself on
+                         row hover — it needs its own opaque background to hide
+                         the columns sliding under it, which otherwise swallows
+                         the row highlight on exactly the cell you are aiming at. */
+                      className={`group cursor-pointer border-b border-slate-100 hover:bg-slate-50 ${archived ? 'opacity-60' : ''}`}
+                    >
+                      {listCols.map((f, i) => {
+                        const numeric = isNumericField(f);
+                        const text = cellValue(row, f);
+                        return (
+                          <td
+                            key={f.key}
+                            /* align-middle + a fixed line height keeps every row
+                               the same height whether a cell holds text, a dash
+                               or a pill — mixed content was making the action
+                               buttons sit at different heights down the column. */
+                            className={`px-2.5 py-2 align-middle leading-6 text-slate-700 ${i === 0 ? "pl-5" : ""} ${
+                              numeric ? "text-right tabular-nums" : ""
+                            }`}
+                          >
+                            {/* The cap lives on this wrapper, not the <td>: under
+                                `table-layout: auto` a max-width on the cell is a
+                                suggestion, but a max-width on a block INSIDE it
+                                really does cap the column's max-content width.
+                                min-w-0 is what lets the value shrink far enough
+                                to ellipsise inside a flex row. */}
+                            <div
+                              className={`flex items-center gap-2 ${numeric ? "ml-auto justify-end" : ""} ${f.maxW ?? "max-w-[150px]"}`}
+                              title={numeric ? undefined : text}
+                            >
+                              {fkHref(f, row) ? (
+                                /* A NAME links to the thing it names. On a
+                                   service row the client column opens the
+                                   CLIENT, not the service — that is what a
+                                   reader expects, and the row keeps its own
+                                   way in via the Open action. */
+                                <Link to={fkHref(f, row) as string} className="min-w-0 truncate font-medium text-slate-900 hover:underline">
+                                  {text}
+                                </Link>
+                              ) : i === 0 ? (
+                                /* Not a foreign key — this cell IS the record's
+                                   own name, so it opens the record modal. */
+                                <button
+                                  type="button"
+                                  onClick={() => openRecord(id)}
+                                  className="min-w-0 truncate font-medium text-slate-900 hover:underline"
+                                >
+                                  {text}
+                                </button>
+                              ) : f.type === 'derived' ? (
+                              <Pill tone={String(cellValue(row, f)).startsWith('Receiving') ? 'green' : 'slate'}>{cellValue(row, f)}</Pill>
                             ) : f.type === 'lookup' && f.lookup?.includes('status') ? (
-                              <Pill tone={statusTone(row[f.key] as string)}>{cellValue(row, f)}</Pill>
-                            ) : (
-                              <span>{cellValue(row, f)}</span>
-                            )}
-                            {i === 0 && archived && <Pill>Archived</Pill>}
-                            {i === 0 && Boolean(row.needs_review) && <Pill tone="amber">Needs review</Pill>}
+                                <Pill tone={statusTone(row[f.key] as string)}>{text}</Pill>
+                              ) : (
+                                <span className="min-w-0 truncate">{text}</span>
+                              )}
+                              {i === 0 && archived && <Pill>Archived</Pill>}
+                              {i === 0 && Boolean(row.needs_review) && <Pill tone="amber">Needs review</Pill>}
+                            </div>
+                          </td>
+                        );
+                      })}
+                      <td
+                        className={`sticky right-0 z-10 whitespace-nowrap bg-white px-2.5 py-2 pr-4 text-right align-middle group-hover:bg-slate-50 ${
+                          canScrollX ? 'shadow-[-10px_0_10px_-10px_rgba(15,23,42,0.35)]' : ''
+                        }`}
+                      >
+                        <div className="inline-flex items-center justify-end gap-1.5">
+                          <Button size="sm" onClick={() => openRecord(id)}>Open</Button>
+                          {/* Below `sm` the pinned column would eat 224px of a
+                              308px scroll box and leave 84px for the data. Only
+                              Open stays; Edit and Archive are on the record,
+                              which is where a phone should be doing this anyway. */}
+                          <span className="hidden items-center gap-1.5 sm:inline-flex">
+                            <Button size="sm" onClick={() => setEditing(row)}>Edit</Button>
+                            <Button size="sm" variant={archived ? 'secondary' : 'danger'} onClick={() => toggleArchive(row)}>
+                              {archived ? 'Restore' : 'Archive'}
+                            </Button>
                           </span>
-                        </td>
-                      ))}
-                      <td className="px-3 py-2 text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button onClick={() => setEditing(row)}>Edit</Button>
-                          <Button variant={archived ? 'secondary' : 'danger'} onClick={() => toggleArchive(row)}>
-                            {archived ? 'Restore' : 'Archive'}
-                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -183,8 +402,27 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
         )}
       </Card>
 
+      {openRecordId && (
+        <ForgeRecordModal
+          key={`record-${openRecordId}`}
+          entity={entity}
+          recordId={openRecordId}
+          onClose={closeRecord}
+          /* Editing or archiving from inside the record used to leave the list
+             behind it showing the values it had before. */
+          onChanged={refresh}
+        />
+      )}
+
       {(creating || editing) && (
         <EntityForm
+          /* A NEW component instance per record. EntityForm seeds its fields
+             from `row` in a useState initializer, which React runs only on
+             mount — so any path that reuses the instance leaves the previous
+             (or empty) values on screen. That is how the edit modal came up
+             blank. The key makes reuse impossible; the effect inside the form
+             is the second belt. */
+          key={editing ? `edit-${String(editing[cfg.pk])}` : 'new'}
           cfg={cfg}
           row={editing}
           lookups={lookups}
@@ -196,9 +434,12 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
   );
 }
 
-function EntityForm({ cfg, row, lookups, onCancel, onSave }: {
+export function EntityForm({ cfg, row, initial, lookups, onCancel, onSave }: {
   cfg: typeof FORGE_ENTITIES[EntityKey];
   row: Record<string, unknown> | null;
+  /** Pre-filled values when CREATING — e.g. the client you opened this from,
+   *  so adding assistance to a client does not make you pick them again. */
+  initial?: Record<string, unknown>;
   lookups: Record<string, { label: string; values: Array<{ id: number; value: string }> }>;
   onCancel: () => void;
   onSave: (values: Record<string, unknown>, id?: string | number) => Promise<void>;
@@ -207,13 +448,26 @@ function EntityForm({ cfg, row, lookups, onCancel, onSave }: {
   const [values, setValues] = useState<Record<string, unknown>>(() => {
     const init: Record<string, unknown> = {};
     for (const f of formFields) {
-      const v = row?.[f.key];
+      const v = row?.[f.key] ?? initial?.[f.key];
       init[f.key] = f.type === 'date' && v ? String(v).slice(0, 10) : (v ?? '');
     }
     return init;
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Re-seed if `row` ever changes under a surviving instance. Belt and braces
+  // alongside the key above — a blank edit form is not a cosmetic bug, it is a
+  // save away from wiping a client's record.
+  useEffect(() => {
+    const next: Record<string, unknown> = {};
+    for (const f of formFields) {
+      const v = row?.[f.key] ?? initial?.[f.key];
+      next[f.key] = f.type === 'date' && v ? String(v).slice(0, 10) : (v ?? '');
+    }
+    setValues(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row]);
 
   const submit = async () => {
     const missing = formFields.find((f) => f.required && !String(values[f.key] ?? '').trim());
@@ -228,33 +482,49 @@ function EntityForm({ cfg, row, lookups, onCancel, onSave }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-6">
-      <div className="w-full max-w-3xl rounded-2xl bg-white shadow-xl">
-        <div className="border-b border-slate-100 px-6 py-4">
-          <h2 className="text-lg font-semibold text-slate-900">
-            {row ? `Edit ${cfg.singular}` : `New ${cfg.singular}`}
-          </h2>
+    /* The SAME box as ForgeRecordModal, because it is literally the same
+       component. This form was a hand-rolled card at max-w-3xl whose BACKDROP
+       scrolled, so a long form ran to 859px at 1440x900 — bottom edge at 907,
+       past the fold — and scrolling down to reach Save took the heading and the
+       Save button with it. It also meant pressing Edit inside the record modal
+       visibly changed the size of the panel you were looking at, which is the
+       complaint that started this pass, one layer down.
+       z={70}: above the record modal (z 60) it opens from, which is in turn
+       above the nav drawer (z-50). */
+    <IadmModal
+      open
+      onClose={onCancel}
+      product="forge"
+      eyebrow={cfg.singular}
+      title={row ? `Edit ${cfg.singular}` : `New ${cfg.singular}`}
+      size="info"
+      z={70}
+      footer={
+        <div className="flex w-full items-center justify-between gap-3">
+          {/* The validation message belongs beside the button that triggers it,
+              not above the fold of a scrolling field grid. */}
+          <span className="text-sm text-red-600">{err}</span>
+          <div className="flex gap-2">
+            <Button onClick={onCancel}>Cancel</Button>
+            <Button variant="primary" onClick={submit} disabled={saving}>
+              {saving ? 'Saving…' : row ? 'Save changes' : `Create ${cfg.singular}`}
+            </Button>
+          </div>
         </div>
-        <div className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2">
-          {formFields.map((field) => (
-            <FormField
-              key={field.key}
-              field={field}
-              value={values[field.key]}
-              lookups={lookups}
-              onChange={(v) => setValues((s) => ({ ...s, [field.key]: v }))}
-            />
-          ))}
-        </div>
-        {err && <div className="px-6 pb-2 text-sm text-red-600">{err}</div>}
-        <div className="flex justify-end gap-2 border-t border-slate-100 px-6 py-4">
-          <Button onClick={onCancel}>Cancel</Button>
-          <Button variant="primary" onClick={submit} disabled={saving}>
-            {saving ? 'Saving…' : row ? 'Save changes' : `Create ${cfg.singular}`}
-          </Button>
-        </div>
+      }
+    >
+      <div className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2 lg:grid-cols-3">
+        {formFields.map((field) => (
+          <FormField
+            key={field.key}
+            field={field}
+            value={values[field.key]}
+            lookups={lookups}
+            onChange={(v) => setValues((s) => ({ ...s, [field.key]: v }))}
+          />
+        ))}
       </div>
-    </div>
+    </IadmModal>
   );
 }
 
@@ -272,15 +542,43 @@ function FormField({ field, value, lookups, onChange }: {
   const cls = 'mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 shadow-sm';
 
   if (field.type === 'lookup') {
+    const options = lookups[field.lookup ?? '']?.values ?? [];
+    const current = String(value ?? '');
     return (
       <label className={field.type === 'lookup' ? '' : 'sm:col-span-2'}>
         {label}
         <select className={cls} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)}>
           <option value="">—</option>
-          {(lookups[field.lookup ?? '']?.values ?? []).map((v) => (
-            <option key={v.id} value={v.value}>{v.value}</option>
+          {/* A <select> silently shows nothing when its value is not among the
+              options, and the next save then writes that nothing back. If the
+              record holds a value the list no longer contains — a lookup entry
+              renamed or deactivated after the fact — keep it as an option so it
+              stays visible and survives an unrelated edit. */}
+          {current && !options.some((v) => v.value === current) && (
+            <option value={current}>{humanizeValue(current)} (not in list)</option>
+          )}
+          {options.map((v) => (
+            <option key={v.id} value={v.value}>{humanizeValue(v.value)}</option>
           ))}
         </select>
+      </label>
+    );
+  }
+
+  if (field.type === 'entity' && field.entity) {
+    /* Pick a related record by NAME. This used to be a bare number box
+       labelled "Record ID" — attaching a service to a client meant knowing
+       the client was number 147. The old system let you choose from a list;
+       asking someone to memorise ids was a regression, not a simplification. */
+    return (
+      <label>
+        {label}
+        <ForgeEntityPicker
+          entity={field.entity}
+          value={value}
+          onChange={onChange}
+          className={cls}
+        />
       </label>
     );
   }
@@ -305,9 +603,7 @@ function FormField({ field, value, lookups, onChange }: {
         value={String(value ?? '')}
         onChange={(e) => onChange(e.target.value)}
       />
-      {field.type === 'entity' && (
-        <span className="mt-1 block text-xs text-slate-400">Record ID</span>
-      )}
+
     </label>
   );
 }

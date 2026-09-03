@@ -48,12 +48,24 @@ export function OliverPayoutsPage() {
     if (!ready) return;
     setLoading(true); setError(null);
     try {
-      const r = await get<{ data: PayoutData | null; note?: string }>("/settings/stripe/payouts");
-      setData(r?.data || null);
+      // 2026-09-01 — this read `r.data` and `r.note` on a client that ALREADY
+      // unwraps the envelope (useOliverApi -> lib/oliverApi.ts returns
+      // body.data and discards its siblings). So `r.data` was undefined even
+      // when the request succeeded, and `note` — which the API sent as a
+      // sibling — never arrived at all. The page rendered "no data" whether or
+      // not a Stripe account existed, and a tenant without one got a blank
+      // panel with no explanation.
+      //
+      // The endpoint now puts connected/platform/note INSIDE data, so one
+      // unwrapped object carries every state.
+      const r = await get<(PayoutData & { connected: boolean; note: string | null }) | null>(
+        "/settings/stripe/payouts",
+      );
+      setData(r?.connected ? r : null);
       setNote(r?.note || null);
-      if (r?.data?.payout_schedule) {
-        setInterval(r.data.payout_schedule.interval || "daily");
-        setDelayDays(r.data.payout_schedule.delay_days ?? "");
+      if (r?.payout_schedule) {
+        setInterval(r.payout_schedule.interval || "daily");
+        setDelayDays(r.payout_schedule.delay_days ?? "");
       }
     } catch (err) { setError(err); }
     finally { setLoading(false); }
@@ -93,9 +105,20 @@ export function OliverPayoutsPage() {
                 <div className="card-ttl">Account status</div>
                 <div className="card-sub">Connected Stripe account: <code className="text-xs">{data.stripe_account_id}</code></div>
               </div>
-              <button onClick={fetchData} className="text-xs px-2.5 py-1 rounded border border-slate-200 flex items-center gap-1">
-                <RefreshCw className="h-3 w-3" /> Refresh
-              </button>
+              <div className="flex items-center gap-2">
+                {/* There was no route from this page to the bank account the money
+                    actually lands in. The Stripe BILLING portal cannot show it —
+                    that one is for paying US, and has no payout bank at all — so
+                    anyone looking for it had nowhere to go. */}
+                <a href="https://dashboard.stripe.com/settings/payouts" target="_blank" rel="noreferrer"
+                  className="text-xs px-2.5 py-1 rounded border border-slate-200 flex items-center gap-1 text-[#1A7DB5] hover:underline"
+                  title="Change the bank account your payouts are sent to, in your own Stripe dashboard">
+                  Payout bank <ExternalLink className="h-3 w-3" />
+                </a>
+                <button onClick={fetchData} className="text-xs px-2.5 py-1 rounded border border-slate-200 flex items-center gap-1">
+                  <RefreshCw className="h-3 w-3" /> Refresh
+                </button>
+              </div>
             </div>
             <div className="px-4 pb-4 grid grid-cols-3 gap-3">
               <StatusTile label="Charges" ok={data.charges_enabled} />
@@ -108,9 +131,14 @@ export function OliverPayoutsPage() {
                 <ul className="text-xs space-y-0.5 list-disc list-inside">
                   {data.requirements.currently_due.map(r => <li key={r}>{r}</li>)}
                 </ul>
-                <a href={`https://dashboard.stripe.com/connect/accounts/${data.stripe_account_id}`} target="_blank" rel="noreferrer"
+                {/* 2026-09-02 — this pointed at dashboard.stripe.com/connect/accounts/<id>,
+                    which is the PLATFORM's admin view of the account. This page is
+                    client-facing (routed at oliver_payouts, no founder gate), so the
+                    business clicking it landed somewhere they have no access to. The
+                    account owner signs in to their OWN Stripe dashboard. */}
+                <a href="https://dashboard.stripe.com/" target="_blank" rel="noreferrer"
                   className="inline-flex items-center gap-1 mt-2 text-xs font-semibold text-[#1A7DB5] hover:underline">
-                  Resolve in Stripe <ExternalLink className="h-3 w-3" />
+                  Resolve in your Stripe dashboard <ExternalLink className="h-3 w-3" />
                 </a>
               </div>
             )}
@@ -199,7 +227,7 @@ export function OliverPayoutsPage() {
                         <td><span className={`px-2 py-0.5 rounded text-[11px] border ${p.status === "paid" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : p.status === "failed" ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>{p.status}</span></td>
                         <td className="text-xs text-slate-600">{p.arrival_date ? new Date(p.arrival_date).toLocaleDateString() : "—"}</td>
                         <td className="text-xs text-slate-500">{p.method}</td>
-                        <td><a href={`https://dashboard.stripe.com/connect/accounts/${data.stripe_account_id}/payouts/${p.id}`} target="_blank" rel="noreferrer" className="text-xs text-[#1A7DB5] hover:underline">View →</a></td>
+                        <td><a href={`https://dashboard.stripe.com/payouts/${p.id}`} target="_blank" rel="noreferrer" className="text-xs text-[#1A7DB5] hover:underline">View →</a></td>
                       </tr>
                     ))}
                   </tbody>

@@ -1,5 +1,7 @@
 import { lazy, Suspense, useMemo } from 'react';
-import { useParams, useLocation, Navigate } from 'react-router-dom';
+import { ForgeLinePage } from './forge/ForgeLinePage';
+import { LEGACY_FORGE_ROUTES } from './forge/forgeSoftware';
+import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { useIsFounder } from '../hooks/useIsFounder';
 import { LEADGEN_LOCKED_KEYS } from '../config/featureFlags';
 import { SERVICE_VISIBILITY } from '../components/SubNav';
@@ -33,20 +35,7 @@ import { SERVICE_CATALOG, resolveServiceStatus, type PortalService, type Service
 import { ArionPageWrapper } from '../arion/ArionPageWrapper';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { ComingSoonBanner } from '../components/ComingSoonBanner';
-import { ForgeOverviewPage } from './forge/ForgeOverviewPage';
-import { ForgeEntityPage } from './forge/ForgeEntityPage';
-import type { EntityKey } from '../lib/forgeApi';
 
-// FORGE › HESTIA. One component serves every entity screen, driven by config.
-const FORGE_ENTITY_BY_KEY: Record<string, EntityKey> = {
-  forge_clients: 'clients',
-  forge_assistance: 'assistance',
-  forge_services: 'services',
-  forge_providers: 'providers',
-  forge_funders: 'funders',
-  forge_applications: 'applications',
-  forge_volunteers: 'volunteers',
-};
 
 // Business Profile un-gated 2026-07-22 — GBP Connect (client-owned OAuth +
 // create + in-portal verification) shipped and walked; the 2026-06-28
@@ -237,7 +226,6 @@ const SparkTrackingPage = lazyNamed(() => import('./spark/SparkTrackingPage'), '
 const SparkSenderDomainsPage = lazyNamed(() => import('./spark/SparkSenderDomainsPage'), 'SparkSenderDomainsPage');
 // SPARK Composer v1.1 (2026-06-24) — Senders + Signatures CRUD live in
 // the Settings hub alongside Sender Domains.
-const SparkSendersPage = lazyNamed(() => import('./spark/SparkSendersPage'), 'SparkSendersPage');
 const SparkSignaturesPage = lazyNamed(() => import('./spark/SparkSignaturesPage'), 'SparkSignaturesPage');
 // SparkOnboardingPage removed 2026-06-17 — unified flow via UnifiedSetupCard on Command Center.
 const SparkOnboardingPage = () => <Navigate to="/app" replace />;
@@ -652,9 +640,18 @@ function ServiceRouterInner() {
 
   // FORGE › HESTIA — the first FORGE software.
   if (service.section === 'FORGE') {
-    if (service.key === 'forge_overview') return <ForgeOverviewPage />;
-    const forgeEntity = FORGE_ENTITY_BY_KEY[service.key];
-    if (forgeEntity) return <ForgeEntityPage entity={forgeEntity} />;
+    // FORGE software no longer lives behind service keys — it lives under
+    // /app/services/forge/<software>/<screen> (see forgeSoftware.ts), which is
+    // what lets one product line host a build per client. What remains here is
+    // the LINE landing page: an invitation to commission software, plus a way
+    // into whatever builds this tenant owns. It reads no client data, so every
+    // tenant may see it.
+    if (service.key === 'forge_overview') return <ForgeLinePage />;
+    // Every other legacy forge_* key is a screen that moved under
+    // /app/services/forge/<software>/. Redirect so an old bookmark or an
+    // emailed link lands on the real page instead of a generic stub.
+    const moved = LEGACY_FORGE_ROUTES[service.key];
+    if (moved) return <Navigate to={moved} replace />;
   }
 
   if (service.section === 'OLIVER') {
@@ -847,7 +844,9 @@ function ServiceRouterInner() {
       case 'spark_tracking': sparkPage = <SparkTrackingPage />; break;
       case 'spark_sender_domains': sparkPage = <SparkSenderDomainsPage />; break;
       // SPARK Composer v1.1 (2026-06-24)
-      case 'spark_senders': sparkPage = <SparkSendersPage />; break;
+      // 2026-09-01 — both keys render the merged page. spark_sender_domains is
+      // kept only so older links, tours and help entries do not 404.
+      case 'spark_senders': sparkPage = <SparkSenderDomainsPage />; break;
       case 'spark_signatures': sparkPage = <SparkSignaturesPage />; break;
       case 'spark_onboarding': sparkPage = <SparkOnboardingPage />; break;
       case 'spark_account_profile': sparkPage = <SparkAccountProfilePage />; break;
@@ -911,15 +910,30 @@ function ServiceRouterInner() {
       // CONSULTING_FOUNDER_RELOCATIONS table at the top of this component
       // (founders → /app/admin/consulting/*; non-founders → /overview),
       // so they never reach this switch.
+      // 2026-08-29 — clients are OFF the legacy surface entirely. Rolling In
+      // It's owner was living on these pages (Overview + Deliverables nav, no
+      // Service Requests, a dead intake-submissions call erroring the page)
+      // because the 2026-06-29 relocation only intercepted the five founder
+      // keys and left the client keys serving the pre-rework pages. Every
+      // client entry point (FeatureLocked link, old bookmarks, stale nav)
+      // now lands on the real client surface at /app/consulting/*.
       case 'consulting_overview':
-        // Founders get the agency Overview (needs-you / waiting-on-client /
-        // capacity); clients keep the existing shared summary untouched.
-        consultingPage = effectiveIsFounder ? <ConsultingWorkOverviewPage /> : <ConsultingOverviewPage />;
+        if (!effectiveIsFounder) return <Navigate to="/app/consulting/projects" replace />;
+        consultingPage = <ConsultingWorkOverviewPage />;
         break;
-      case 'consulting_deliverables':     consultingPage = <ConsultingDeliverablesPage />; break;
-      case 'consulting_calendar':         consultingPage = <ConsultingCalendarPage />; break;
+      case 'consulting_deliverables':
+        if (!effectiveIsFounder) return <Navigate to="/app/consulting/deliverables" replace />;
+        consultingPage = <ConsultingDeliverablesPage />;
+        break;
+      case 'consulting_calendar':
+        if (!effectiveIsFounder) return <Navigate to="/app/consulting/projects" replace />;
+        consultingPage = <ConsultingCalendarPage />;
+        break;
       // Founder-only utility surfaces (still accessible by URL)
-      case 'consulting_access_log':       consultingPage = <ConsultingAccessLogPage />; break;
+      case 'consulting_access_log':
+        if (!effectiveIsFounder) return <Navigate to="/app/consulting/projects" replace />;
+        consultingPage = <ConsultingAccessLogPage />;
+        break;
       // Legacy "Build Your X" per-engagement task/deliverable pages —
       // forwarded to the relocated Requests Board (founder admin). The
       // CONSULTING_FOUNDER_RELOCATIONS table only matches the canonical
@@ -935,7 +949,7 @@ function ServiceRouterInner() {
       case 'consulting_engine_deliverables':
         return effectiveIsFounder
           ? <Navigate to="/app/admin/consulting/requests" replace />
-          : <Navigate to="/app/overview" replace />;
+          : <Navigate to="/app/consulting/requests" replace />;
       default: break;
     }
     if (consultingPage) {

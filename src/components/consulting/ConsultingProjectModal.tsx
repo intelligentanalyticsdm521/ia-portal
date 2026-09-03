@@ -306,21 +306,51 @@ export const TASK_ACTIONS: Record<string, Array<{ value: string; label: string }
   cancelled: [{ value: "in_progress|in_progress", label: "Revive → In Progress" }],
 };
 
-/** Moves allowed ONLY on agency-owned (internal) work. Internal work has no
- *  client to review or approve it, so forcing it through Client Review meant
- *  approving your own ticket on behalf of a client that doesn't exist. Mirrors
- *  INTERNAL_EXTRA_EDGES in oliver-api routes/consultingRequests.js — the server
- *  enforces the same rule, this just surfaces it. */
-export const INTERNAL_EXTRA_ACTIONS: Record<string, Array<{ value: string; label: string }>> = {
-  in_progress: [{ value: "completed|completed", label: "Mark Completed" }],
+/** Every stage with the statuses it owns — mirrors STAGE_STATUSES in
+ *  oliver-api routes/consultingRequests.js. A status that isn't listed under
+ *  its stage there is rejected as `invalid_status`, so this map and that one
+ *  must agree. */
+export const TASK_STAGE_STATUSES: Record<string, string[]> = {
+  new: ["not_reviewed", "needs_client_discussion", "work_approved", "cancelled"],
+  in_progress: ["in_progress", "blocked", "waiting_on_client", "ready_for_client_review"],
+  client_review: ["awaiting_client", "revision_requested", "approved_by_client"],
+  revision: ["in_revision", "blocked", "ready_for_re_review"],
+  client_revision_review: ["awaiting_client", "more_revisions_requested", "revisions_approved"],
+  approved: ["ready_to_deploy", "deploying"],
+  completed: ["completed"],
+  cancelled: ["cancelled"],
 };
 
-/** Legal actions for a stage, including internal-only shortcuts when the work
- *  belongs to the agency itself. */
-export function taskActionsFor(stage: string, isInternal?: boolean): Array<{ value: string; label: string }> {
-  const base = TASK_ACTIONS[stage] || [];
-  if (!isInternal) return base;
-  return [...base, ...(INTERNAL_EXTRA_ACTIONS[stage] || [])];
+/** The status a stage lands on when you pick the stage rather than a status. */
+export function defaultStatusFor(stage: string): string {
+  return (TASK_STAGE_STATUSES[stage] || [])[0] || "";
+}
+
+/** EVERY move available to a founder, grouped by stage for an <optgroup> menu.
+ *
+ *  2026-08-29 (Brandon): "I need a way to go from in progress to completed
+ *  directly or any status. I don't always need to go to client review steps."
+ *  The old menu offered only TASK_ACTIONS[stage] — a curated shortlist that
+ *  mirrored the server's adjacency map — so In Progress led nowhere but Client
+ *  Review, and marking work done meant dragging the client through a review
+ *  they never asked for. The server now accepts any (stage,status) pair, so the
+ *  menu offers all of them; TASK_ACTIONS stays only for its friendlier labels
+ *  on the common path. */
+export function allTaskMoves(): Array<{ stage: string; label: string; options: Array<{ value: string; label: string }> }> {
+  return Object.entries(TASK_STAGE_STATUSES).map(([stage, statuses]) => ({
+    stage,
+    label: TASK_STAGE_LABELS[stage] || stage,
+    options: statuses.map((status) => ({
+      value: `${stage}|${status}`,
+      label: TASK_STATUS_LABELS[status] || status,
+    })),
+  }));
+}
+
+/** Kept for the quick-action labels ("Send for Client Review"). No longer a
+ *  restriction — see allTaskMoves(). */
+export function taskActionsFor(stage: string, _isInternal?: boolean): Array<{ value: string; label: string }> {
+  return TASK_ACTIONS[stage] || [];
 }
 
 // ─── Modal props ─────────────────────────────────────────────────────────
@@ -429,8 +459,10 @@ export function ConsultingProjectModal({
         if (!cancelled && Array.isArray(list)) setCategoryOptions(list);
       } catch { /* leave empty — field renders read-only */ }
       try {
-        const r = await get<{ data?: Array<Record<string, string>> }>("/tenant-users");
-        const list = (r as { data?: Array<Record<string, string>> })?.data ?? (r as unknown as Array<Record<string, string>>);
+        // useOliverApi unwraps, so this is already the array. The old
+        // declaration named the envelope and relied on a `??` fallback to work
+        // — correct by accident, and a pattern worth not copying.
+        const list = await get<Array<Record<string, string>>>("/tenant-users");
         if (!cancelled && Array.isArray(list)) {
           setOwnerOptions(
             list
@@ -529,14 +561,54 @@ export function ConsultingProjectModal({
     }
   }
 
+  // Closing a milestone offers to close its open tasks with it (2026-08-29,
+  // Brandon: "if I close out a milestone it should ask me if I want to complete
+  // the tasks associated with it"). Only the two CLOSING statuses map onto a
+  // task state — project_milestone has no 'cancelled', 'skipped' is its cancel.
+  const MILESTONE_CASCADE: Partial<Record<MilestoneStatus, { verb: string; noun: string }>> = {
+    complete: { verb: "Mark them completed too", noun: "completed" },
+    skipped: { verb: "Cancel them too", noun: "cancelled" },
+  };
+
   async function handleMilestoneStatusChange(mid: string, next: MilestoneStatus) {
     setMilestoneNotice(null);
+    // Ask BEFORE the PATCH, and only when there is actually something to close —
+    // an unconditional prompt on every status change trains people to dismiss it.
+    let cascadeTasks = false;
+    const cascade = MILESTONE_CASCADE[next];
+    if (cascade) {
+      const openTasks = (data?.tasks || []).filter(
+        (t) => t.milestone_id === mid && t.stage !== "completed" && t.stage !== "cancelled",
+      );
+      if (openTasks.length > 0) {
+        const lines = openTasks.slice(0, 5).map((t) => `  - ${t.title}`);
+        if (openTasks.length > 5) lines.push(`  ...and ${openTasks.length - 5} more`);
+        cascadeTasks = window.confirm(
+          [
+            `This milestone still has ${openTasks.length} open task${openTasks.length === 1 ? "" : "s"}:`,
+            "",
+            ...lines,
+            "",
+            `${cascade.verb}?`,
+            "",
+            `OK = also mark them ${cascade.noun}.  Cancel = leave them as they are.`,
+          ].join("\n"),
+        );
+      }
+    }
     try {
       // PATCH /consulting/projects/:id/milestones/:mid is live (backend commit
       // dfb6567). complete stamps completed_at + auto-advances the next
       // milestone; un-complete clears completed_at (Brandon's Rolling In It
       // case); is_payment_trigger milestones flip payment_charge_status='ready'.
-      await patch(`/consulting/projects/${projectId}/milestones/${mid}`, { status: next });
+      const r = await patch<{ tasks_cascaded?: number }>(
+        `/consulting/projects/${projectId}/milestones/${mid}`,
+        { status: next, ...(cascadeTasks ? { cascade_tasks: true } : {}) },
+      );
+      const n = (r as { tasks_cascaded?: number } | undefined)?.tasks_cascaded ?? 0;
+      if (cascadeTasks && n > 0) {
+        setMilestoneNotice(`Milestone updated - ${n} task${n === 1 ? "" : "s"} ${cascade?.noun}.`);
+      }
       await load();
       onChanged?.();
     } catch (e) {
@@ -1929,9 +2001,13 @@ export function TaskDetailModal({
             <option value={`${task.stage}|${task.status}`}>
               {busy === "status" ? "Saving…" : `${TASK_STAGE_LABELS[task.stage] || task.stage} — ${TASK_STATUS_LABELS[task.status] || task.status}`}
             </option>
-            {(TASK_ACTIONS[task.stage] || [])
-              .filter((a) => a.value !== `${task.stage}|${task.status}`)
-              .map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+            {allTaskMoves().map((g) => (
+              <optgroup key={g.stage} label={g.label}>
+                {g.options
+                  .filter((o) => o.value !== `${task.stage}|${task.status}`)
+                  .map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </optgroup>
+            ))}
           </select>
         </div>
 
@@ -2115,11 +2191,13 @@ function MilestoneTasksSection({
                     <option value={`${t.stage}|${t.status}`}>
                       {busyId === t.id ? "Saving…" : `${TASK_STAGE_LABELS[t.stage] || t.stage} — ${TASK_STATUS_LABELS[t.status] || t.status}`}
                     </option>
-                    {(TASK_ACTIONS[t.stage] || [])
-                      .filter((a) => a.value !== `${t.stage}|${t.status}`)
-                      .map((a) => (
-                        <option key={a.value} value={a.value}>{a.label}</option>
-                      ))}
+                    {allTaskMoves().map((g) => (
+                      <optgroup key={g.stage} label={g.label}>
+                        {g.options
+                          .filter((o) => o.value !== `${t.stage}|${t.status}`)
+                          .map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </optgroup>
+                    ))}
                   </select>
                 ) : (
                   <span className="flex-shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">

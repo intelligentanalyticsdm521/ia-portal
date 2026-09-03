@@ -262,4 +262,118 @@ export const STELLA_PAGES: PageContentMap = {
       },
     ],
   },
+
+  // ── Unit Economics ───────────────────────────────────────────────────────
+  // Added 2026-09-01: 20 of STELLA's 28 nav pages had no teaching copy, the
+  // worst coverage of any product.
+  stella_ue_allocations: {
+    title: "Allocations — splitting shared costs fairly",
+    body:
+      "Some costs don't belong to one job: insurance, the truck, your software. Allocation decides how those get spread across the work, so a job's true cost isn't just its materials. Pick a method (by revenue, by hours, evenly, and so on), run it, and the run history shows exactly what moved and when.",
+    onPage: [
+      {
+        title: "The method is a judgement, not a fact",
+        body:
+          "There is no single correct way to split overhead. Choose the one that matches how the cost is actually driven — spread by hours if it's time-driven, by revenue if it scales with size — and stay consistent, because the comparison between months is what you're really after.",
+      },
+    ],
+  },
+  stella_ue_reconciliation: {
+    title: "Reconciliation — does the ledger agree with the rest of the platform?",
+    body:
+      "Checks allocated costs back against the source systems — the jobs in OLIVER, the sends in SPARK, the sites in ARION. It answers one question: does what the books say match what actually happened? A difference here is a signal to look, not a number to edit.",
+  },
+  stella_ia_insights_trends: {
+    body:
+      "Income against expenses over time, where spend is heading, and how margin is moving. Direction matters more than any single month — one bad month is noise, three in a row is a trend.",
+  },
+  stella_ia_insights_intelligence: {
+    body:
+      "The modelled read on your finances — unusual spend, costs drifting from their norm, and early cash-flow signals. It points at things worth a look; it does not touch your books.",
+  },
+
+  // ── Database Manager ─────────────────────────────────────────────────────
+  stella_db_registry: {
+    title: "View Registry — the catalogue of what you can report on",
+    body:
+      "A list of every data view available to report against, and who can see it. Think of it as the index at the front of the book: before building a report you look here to find what's actually available.",
+  },
+  stella_db_entry: {
+    body:
+      "Type data straight in, using the shape the system already knows. Useful for the handful of records that don't arrive from anywhere else and aren't worth a spreadsheet import.",
+  },
+  stella_db_upload: {
+    title: "Uploads — bring a spreadsheet in, safely",
+    body:
+      "Import a CSV or Excel file. It validates BEFORE committing, shows you what would land and what it objects to, and can roll a batch back after the fact. Import history means a bad file is an inconvenience rather than a mess to unpick by hand.",
+    onPage: [
+      {
+        title: "Always read the validation step",
+        body:
+          "The point of validating first is that you see the broken rows while nothing has been written. Fix the file and re-upload — that is far cheaper than committing and then hunting the bad rows through your ledger.",
+      },
+    ],
+  },
+  stella_db_tags: {
+    body:
+      "Labels you can attach to records so you can group and filter by something the standard fields don't capture. Tags are cheap and informal — use them before you reach for a custom field.",
+  },
+  stella_db_custom_fields: {
+    body:
+      "Where a tag isn't enough, a custom field adds a proper, typed field to a record — one that can be validated, reported on, and relied upon.",
+  },
+  stella_db_documents: {
+    body:
+      "Files kept with the records they belong to — folders, tags and links back to the entity. Somewhere a receipt or a contract can live next to the transaction it explains.",
+  },
+  stella_db_compliance: {
+    title: "Compliance Reminders — dates you can't afford to miss",
+    body:
+      "Track the recurring obligations a business forgets: filings, renewals, registrations. Note that this page keeps the list — it does NOT email you. Treat it as a register you check, not an alarm that will find you.",
+  },
+  stella_db_warnings: {
+    body:
+      "A queue for data problems worth a human look — duplicates, gaps, values that don't add up. The queue exists now; the rules that raise entries into it are still being built, so an empty page here is expected rather than broken.",
+  },
+
+  // ── Custom Reporting ─────────────────────────────────────────────────────
+  stella_report_library: {
+    body:
+      "Your saved reports, in folders. Run one, change its chart, or export it straight from the row. This is where a report you built last quarter is still waiting.",
+  },
+  stella_report_builder: {
+    title: "Report Builder — pick fields, get a report",
+    body:
+      "Choose the fields you care about and it works out the rest: numbers get totalled, everything else becomes a grouping. Change the date bucket, switch the chart, add a filter, save it. The preview runs the same engine a saved or scheduled report uses, so what you see is genuinely what you'll get.",
+  },
+  stella_report_dashboards: {
+    body:
+      "Several reports on one screen, each tile running its own query. The thing to have open on a Monday morning rather than clicking through five separate reports.",
+  },
+  stella_report_scheduled: {
+    title: "Scheduled Reports — set it, then check it worked",
+    body:
+      "Have a report built and delivered on a schedule. Run it once by hand first: a schedule that quietly fails for a month is worse than no schedule, and the row shows failures in red with the reason.",
+  },
+  stella_report_sql: {
+    title: "SQL Editor — for when the builder isn't enough",
+    body:
+      "Write a query directly. Two rules are enforced for you: use bare table names, and everything is already limited to your business — you cannot read another tenant's data, and nothing here can write. Every query, including refused ones, is logged.",
+  },
+  stella_report_exports: {
+    body:
+      "CSV, Excel and PDF copies of any saved report, with one history covering both manual exports and scheduled runs.",
+  },
+
+  // ── STELLA settings ──────────────────────────────────────────────────────
+  stella_settings_bank: {
+    title: "Bank and card accounts — where transactions come from",
+    body:
+      "Connect an account and transactions flow in automatically instead of being typed. Everything then lands in the Inbox for you to categorise, which is the difference between books that stay current and books you rebuild in a panic each quarter.",
+  },
+  stella_settings_period_close: {
+    title: "Period Close — drawing a line under a month",
+    body:
+      "Closing a period locks it, so a stray edit can't quietly change a month you've already reported on. It checks the ledger balances before it will let you close, and reopening is deliberate and recorded. Close a month once you're confident in it, not before.",
+  },
 };

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { IadmModal } from "../../components/IadmModal";
+import { DocumentBrandFrame } from "../../components/oliver/DocumentBrandFrame";
 import { useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useOliverLocations } from "../../hooks/useOliverLocations";
@@ -65,12 +67,25 @@ const FILTER_PILLS = [
 function fmtMoney(n?: number | null) {
   return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
+// 2026-09-01 — DATE-ONLY values must be formatted in UTC.
+//
+// valid_until is a calendar date, but it is stored as a DATETIMEOFFSET at
+// midnight UTC: entering 09/01/2026 saves 2026-09-01T00:00:00.000Z, which is
+// correct. Rendering that instant with toLocaleDateString() in any timezone
+// west of Greenwich shows the PREVIOUS day — 00:00 UTC is 19:00 on 31 August in
+// Central Time. Brandon typed 09/01/2026 and the list said 8/31/26.
+//
+// The data was never wrong; only the reading of it. Forcing timeZone: "UTC"
+// reads the date back the way it was written. Do NOT "fix" this by shifting the
+// stored value — that breaks it for everyone east of Greenwich instead.
 function fmtDate(d?: string | null) {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  return new Date(d).toLocaleDateString(undefined, {
+    year: "numeric", month: "short", day: "numeric", timeZone: "UTC",
+  });
 }
 
-export function OliverQuotesPage() {
+export function OliverQuotesPage({ embedded = false, createSignal = 0, createCards }: { embedded?: boolean; createSignal?: number; createCards?: React.ReactNode } = {}) {
   // Reports covering THIS function (Brandon 2026-08-14). Above any early
   // return — a hook below one runs on some renders only.
   const insightsPayload = useProductInsightsPayload('oliver');
@@ -84,6 +99,13 @@ export function OliverQuotesPage() {
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  // Where the create-and-send result lands. It has to live on the PAGE:
+  // the form that produced it is unmounted by the time it is read.
+  const [flash, setFlash] = useState<string | null>(null);
+  // The combined Quotes & Proposals page owns the two big create cards and
+  // drives this page's editor through a counter — bump = open. Zero is the
+  // mount value and must not open anything.
+  useEffect(() => { if (createSignal > 0) setShowCreate(true); }, [createSignal]);
   const [initialJobId, setInitialJobId] = useState<string | undefined>();
   const [initialContactId, setInitialContactId] = useState<string | undefined>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -259,10 +281,19 @@ export function OliverQuotesPage() {
         { id: 'oliver_service_catalog', label: 'What you sell' },
         { id: 'oliver_win_drivers', label: 'What wins work' },
       ]} />
+      {flash && (
+        <div style={{ margin: "0 0 12px", padding: "10px 14px", borderRadius: 8, fontSize: 13,
+                      background: /fail/i.test(flash) ? "#FEF2F2" : "#ECFDF5",
+                      color: /fail/i.test(flash) ? "#991B1B" : "#065F46",
+                      border: `1px solid ${/fail/i.test(flash) ? "#FECACA" : "#A7F3D0"}` }}>
+          {flash}
+          <button onClick={() => setFlash(null)} style={{ float: "right", background: "none", border: "none", cursor: "pointer", color: "inherit" }}>×</button>
+        </div>
+      )}
       <PageHeader
         title="Quotes"
         subtitle="Send estimates, track acceptance, and convert into jobs"
-        actions={!showCreate && <Button variant="primary" onClick={() => setShowCreate(true)}>+ Create quote</Button>}
+        actions={!embedded && !showCreate && <Button variant="primary" onClick={() => setShowCreate(true)}>+ Create quote</Button>}
       />
 
       <div className="stat-row">
@@ -293,6 +324,10 @@ export function OliverQuotesPage() {
           <div className="stat-delta neu">sent · within 3 days</div>
         </div>
       </div>
+
+      {/* Founder sketch 2026-08-19: the big create cards sit HERE — below the
+          value stats, above the list — supplied by the combined page. */}
+      {createCards}
 
       {/* Funnel — visual hierarchy of where quotes are stuck */}
       {rows.length > 0 && (
@@ -351,19 +386,36 @@ export function OliverQuotesPage() {
       )}
 
       {showCreate && (
-        <QuoteCreateForm
-          onCreated={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); reload(); }}
-          onCancel={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); }}
-          initialJobId={initialJobId}
-          initialContactId={initialContactId}
-        />
+        /* Founder 2026-08-19: quotes are edited in a pop-up modal ON the
+           branded document — the same accent bar, logo and footer the customer
+           receives — not in an inline card that looks nothing like the send. */
+        <IadmModal
+          open
+          onClose={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); }}
+          product="oliver"
+          eyebrow="OLIVER · QUOTES & PROPOSALS"
+          title="New quote"
+          subtitle="What you see here is what the customer receives."
+          size="info"
+        >
+          <div style={{ padding: 20, background: "#EEF3F6" }}>
+            <DocumentBrandFrame get={get} docLabel="QUOTE">
+              <QuoteCreateForm
+                onCreated={(msg) => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); setFlash(msg || "Quote created."); reload(); }}
+                onCancel={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); }}
+                initialJobId={initialJobId}
+                initialContactId={initialContactId}
+              />
+            </DocumentBrandFrame>
+          </div>
+        </IadmModal>
       )}
 
       {!rows.length && !showCreate ? (
         <EmptyState
           title="No quotes yet"
           description="Create your first quote to send pricing to a customer. Accepted quotes auto-flow to invoices."
-          action={<Button variant="primary" onClick={() => setShowCreate(true)}>+ Create quote</Button>}
+          action={!embedded ? <Button variant="primary" onClick={() => setShowCreate(true)}>+ Create quote</Button> : undefined}
         />
       ) : !rows.length && showCreate ? null : (
         <>
@@ -485,7 +537,7 @@ function statusBadgeStyle(status: string): React.CSSProperties {
   };
 }
 
-function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: string; onClose: () => void; onChanged: () => void; api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T>; patch: <T>(p: string, b: unknown) => Promise<T>; del: <T>(p: string) => Promise<T> }; }) {
+export function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: string; onClose: () => void; onChanged: () => void; api: { get: <T>(p: string) => Promise<T>; post: <T>(p: string, b?: unknown) => Promise<T>; patch: <T>(p: string, b: unknown) => Promise<T>; del: <T>(p: string) => Promise<T> }; }) {
   const [q, setQ] = useState<QuoteDetail | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -516,7 +568,15 @@ function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: stri
   // surface to splitsErr so the UI can show "Couldn't load milestones".
   const reloadMilestones = useCallback(async () => {
     try {
-      const list = await api.get<PaymentMilestoneRow[]>(`/quotes/${quoteId}/payment-milestones`);
+      // 2026-09-01 — was GET /quotes/:id/payment-milestones, which 404s:
+      // oliver-api defines POST on that path (routes/quotes.js:732) but no GET.
+      // Reading milestones goes through the generic collection endpoint, the
+      // same one the consulting project modal uses
+      // (routes/paymentMilestones.js:84, parent_kind='quote' per quotes.js:753).
+      // The 404 was the first thing that broke on opening a quote.
+      const list = await api.get<PaymentMilestoneRow[]>(
+        `/payment-milestones?parent_kind=quote&parent_id=${encodeURIComponent(quoteId)}`,
+      );
       setMilestones(Array.isArray(list) ? list : []);
       // Infer the kind from the existing rows so the dropdown reflects
       // saved state on re-open. 2 rows ≈ 50/50, 3 rows ≈ 40/30/30,
@@ -543,6 +603,23 @@ function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: stri
   async function send() {
     setBusy("send"); setErr(null);
     try { await api.post(`/quotes/${q!.quote_id}/send`); await reload(); onChanged(); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setBusy(null); }
+  }
+  // 2026-09-01 — POST /quotes/:id/accept has existed since OL-1 (oliver-api
+  // routes/quotes.js:387) and NOTHING in the Portal called it. The only way a
+  // quote could reach 'accepted' was the customer signing in to the customer
+  // portal — which is Standard+ (lib/tierFeatures.js:137), so an Invoicing
+  // tenant could never have a quote accepted at all, and a tenant who simply
+  // does not run a portal was equally stuck.
+  //
+  // A business accepting on the customer's behalf is the normal case anyway:
+  // they said yes on the phone. This is that button. It does NOT replace the
+  // customer-facing acceptance that quotes still need (see the board task for
+  // public token acceptance) — it removes the hard block in the meantime.
+  async function markAccepted() {
+    setBusy("accept"); setErr(null);
+    try { await api.post(`/quotes/${q!.quote_id}/accept`); await reload(); onChanged(); }
     catch (e) { setErr((e as Error).message); }
     finally { setBusy(null); }
   }
@@ -691,6 +768,12 @@ function QuoteDetailDrawer({ quoteId, onClose, onChanged, api }: { quoteId: stri
           <div className="flex-1" />
           <Button variant="ghost" loading={busy === "duplicate"} onClick={duplicate}>Duplicate</Button>
           {q.status === "draft" && <Button variant="primary" loading={busy === "send"} onClick={send}>Send to customer</Button>}
+          {q.status === "sent" && (
+            <Button variant="primary" loading={busy === "accept"} onClick={markAccepted}
+              title="Record that the customer accepted — use this when they said yes by phone or email">
+              Mark accepted
+            </Button>
+          )}
           {q.status === "accepted" && <Button variant="secondary" loading={busy === "convert"} onClick={convert}>Convert to invoice</Button>}
         </>
       }

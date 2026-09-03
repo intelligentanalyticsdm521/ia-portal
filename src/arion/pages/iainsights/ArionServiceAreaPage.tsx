@@ -37,10 +37,18 @@ export function ArionServiceAreaPage() {
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [regionsInput, setRegionsInput] = useState("");
   const [zipsInput, setZipsInput] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
+  // 2026-09-01 — `if (!activeSiteId) return;` used to bail BEFORE the
+  // `finally { setLoading(false) }`, and `loading` starts true. A tenant with
+  // no ARION site (or before the site id resolved) therefore sat on
+  // "Loading service area config…" forever with nothing else on screen. The
+  // load error was swallowed too, so a 500 looked identical to an empty form.
+  // Both now end in a state the page can actually render and explain.
   const fetchArea = useCallback(async () => {
-    if (!activeSiteId || !activeTenantId) return;
+    if (!activeTenantId || !activeSiteId) { setLoading(false); return; }
     setLoading(true);
+    setLoadError(null);
     try {
       const token = await getToken();
       const base = import.meta.env.VITE_ARION_API_BASE_URL as string;
@@ -52,13 +60,18 @@ export function ArionServiceAreaPage() {
       setRegionsInput((cur.regions || []).join(", "));
       setZipsInput((cur.zips || []).join(", "));
       if (body?.service_category) setServiceCategory(body.service_category);
-    } catch { /* swallow */ }
+    } catch (err) { setLoadError((err as Error).message || "Could not load your service area."); }
     finally { setLoading(false); }
   }, [activeSiteId, activeTenantId, getToken]);
   useEffect(() => { fetchArea(); }, [fetchArea]);
 
   async function save() {
-    if (!activeSiteId || !activeTenantId) return;
+    // Silently doing nothing on click is how this page used to behave with no
+    // site selected. Say why instead.
+    if (!activeTenantId || !activeSiteId) {
+      alert("No website is selected yet, so there's nothing to save this against. Pick a site first.");
+      return;
+    }
     setSaving(true);
     try {
       const token = await getToken();
@@ -108,6 +121,8 @@ export function ArionServiceAreaPage() {
     return <div className="p-4 text-sm text-slate-500">Loading service area config…</div>;
   }
 
+  const noSite = !activeTenantId || !activeSiteId;
+
   return (
     <div className="p-4 max-w-3xl mx-auto">
       <div className="mb-4">
@@ -118,6 +133,17 @@ export function ArionServiceAreaPage() {
           Where your business actually serves customers. The Visibility &amp; Reach trend engine uses this to flag traffic from outside your service area — that traffic doesn't convert for a local service business, so its presence inflates impression counts without contributing real opportunity.
         </p>
       </div>
+
+      {noSite && (
+        <div className="mb-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          No website is selected, so there's nothing to save this against yet. Add or pick a site in ARION first — this page can't store a service area without one.
+        </div>
+      )}
+      {loadError && (
+        <div className="mb-3 rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+          Couldn't load your saved service area: {loadError} The form below is empty — saving now would overwrite whatever is stored. Reload the page first.
+        </div>
+      )}
 
       <div className="rounded-lg border border-slate-200 bg-white p-4 mb-3">
         <div className="flex items-center gap-2 mb-2">

@@ -250,10 +250,17 @@ export function ClientConsultingDeliverablesPage() {
     return (
       <div className="rounded-xl bg-slate-50 border border-slate-200 px-6 py-12 text-center">
         <Inbox className="mx-auto h-8 w-8 text-slate-400 mb-2" />
-        <div className="text-sm font-semibold text-slate-700">No deliverables yet.</div>
+        <div className="text-sm font-semibold text-slate-700">No approved deliverables yet.</div>
+        {/* 2026-08-29 — the old copy promised that work submitted FOR REVIEW
+            shows up here. It doesn't: this library is approval-gated
+            (consultingDeliverables.js filters status='approved'), so a client
+            with a design sitting in review read an empty page as broken.
+            Say where the in-review item actually is. */}
         <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-          When Intelligent Analytics submits work for your review — designs, proposals,
-          brand assets — it&apos;ll show up here.
+          This is your library of finished work — designs, proposals, and brand assets
+          land here once you&apos;ve approved them. Anything waiting on you right now is
+          under <strong>Service Requests</strong>, where you can review it and approve or
+          ask for changes.
         </p>
       </div>
     );

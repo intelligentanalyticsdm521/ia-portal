@@ -7,6 +7,7 @@ import { IconRail, type ProductKey } from "./IconRail";
 import { SubNav, SUB_NAV_CONFIGS, SETTINGS_KEYS, type SubNavConfig } from "./SubNav";
 import { useOliverRole } from "../hooks/useOliverRole";
 import { useAppState } from "../app/AppState";
+import { isActingAsClient } from "../lib/actingAsClient";
 import { ArgusChatbot } from "./argus/ArgusChatbot";
 import { EmergencyActAsBanner } from "./EmergencyActAsBanner";
 import { EmergencyActAsToast } from "./EmergencyActAsToast";
@@ -16,6 +17,7 @@ import { ConsultantModeBanner } from "./consulting/ConsultantModeBanner";
 // users. Self-hides once dismissed (session-scoped) or once there are no
 // pending tasks. Co-exists with all existing setup banners.
 import { WalkthroughPanel } from "./walkthroughs/WalkthroughPanel";
+import { PageHelpButton } from "./PageHelpButton";
 
 // Strip OLIVER nav items that aren't in allowedServiceKeys, and drop any
 // group that becomes empty. Returns the original config when no filter
@@ -84,7 +86,7 @@ function deriveProduct(pathname: string): ProductKey {
   //
   // Brandon 2026-08-06: "OLIVER templates is working but for some reason it's
   // closing the nav page." Quotes & Proposals templates live at
-  // /app/oliver/quotes/templates, which doesn't match the /app/services/<key>
+  // a non-/services route, which doesn't match the /app/services/<key>
   // pattern below — so this function fell through to "overview" and the whole
   // OLIVER SubNav disappeared while you were still inside OLIVER.
   if (/^\/app\/oliver(\/|$)/.test(pathname)) return "oliver";
@@ -102,9 +104,6 @@ function deriveProduct(pathname: string): ProductKey {
   // the moment you entered Image Studio (Brandon's "nav bar doesn't work").
   if (keyMatch && keyMatch[1].startsWith("my_brand_")) return "arion";
 
-  const match = pathname.match(/\/app\/services\/([a-z]+)_/);
-  if (!match) return "overview";
-  const prefix = match[1];
   const map: Record<string, ProductKey> = {
     arion: "arion",
     oliver: "oliver",
@@ -115,7 +114,24 @@ function deriveProduct(pathname: string): ProductKey {
     argus: "argus",
     consulting: "consulting",
   };
-  return map[prefix] ?? "overview";
+
+  // NESTED form first: /app/services/<product>/<feature>/<function>.
+  //
+  // FORGE moved here so one product line can host a build per client
+  // (/app/services/forge/hestia/clients), and the other products are following.
+  // The flat matcher below requires an UNDERSCORE after the product name, so a
+  // nested path matched nothing, this returned "overview", and the entire
+  // SubNav unmounted the moment you clicked a FORGE nav item — which reads as
+  // the navigation closing itself. Same failure mode as the My Brand and
+  // OLIVER-templates fixes above; this is the third time, hence the general
+  // rule rather than another special case.
+  const nested = pathname.match(/^\/app\/services\/([a-z]+)(?:\/|$)/);
+  if (nested && map[nested[1]]) return map[nested[1]];
+
+  // FLAT form: /app/services/<product>_<screen>.
+  const match = pathname.match(/\/app\/services\/([a-z]+)_/);
+  if (!match) return "overview";
+  return map[match[1]] ?? "overview";
 }
 
 /** Get the default route for a product (first nav item).
@@ -184,10 +200,28 @@ export function AppShell() {
   // We do NOT use useClientTenantIdOverride()/activeTenantId-vs-home checks —
   // those are too broad and caused the 2026-06-28 regression where founder nav
   // disappeared in Brandon's own IA tenant.
-  const actingAsClient = (() => {
-    try { return sessionStorage.getItem('iadm.portal.consultantWorkspace.v1') === 'true'; }
-    catch { return false; }
-  })();
+  //
+  // 2026-08-24 — the flag alone was not enough. It is set ONLY by entering
+  // through /c/:tid (the Access Portal button). A founder who reaches a client
+  // tenant any other legitimate way — notably the "Switch Tenant" control on
+  // the access-error screen — carried no flag, so the portal still treated him
+  // as founder while his active tenant was the client's: clicking Consulting
+  // went to /app/admin/consulting/clients (the founder Clients board) instead
+  // of the client surface, and the client's projects, deliverables and work
+  // tasks were nowhere to be seen.
+  //
+  // So ALSO treat "my active tenant is not my own tenant" as acting-as-client.
+  // The 2026-06-28 regression this file warns about — founder nav vanishing in
+  // Brandon's own IA tenant — came from a check that had nothing to compare
+  // against. `homeTenantId` is that missing piece: /session/verify returns the
+  // founder tenant for IA team members, so in his own tenant the two ids are
+  // equal and founder nav is untouched. Both ids must be present before this
+  // can fire, so it cannot trip while bootstrap is still resolving.
+  const actingAsClient = isActingAsClient(
+    isFounder,
+    appState.activeTenantId,
+    appState.bootstrap?.homeTenantId
+  );
   const effectiveIsFounder = isFounder && !actingAsClient;
 
   const handleProductSelect = useCallback(
@@ -335,6 +369,15 @@ export function AppShell() {
 
         {/* Main content area. On mobile, top padding clears the hamburger. */}
         <main className="flex-1 overflow-y-auto bg-[#F2F6F9] pt-12 md:pt-0">
+          {/* 2026-09-01 — help offered FROM the page you are stuck on, not only
+              from the header's Learn menu (which you have to already suspect
+              covers your problem). PageHelpButton resolves the current route
+              against the journeys and opens that exact step; it renders nothing
+              on pages with no authored content, so it never promises help that
+              does not answer the question. */}
+          <div className="flex justify-end px-4 pt-3 md:px-6">
+            <PageHelpButton />
+          </div>
           <Outlet />
         </main>
       </div>

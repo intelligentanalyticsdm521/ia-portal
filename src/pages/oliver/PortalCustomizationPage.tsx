@@ -55,8 +55,10 @@ export function PortalCustomizationPage() {
     setLoading(true);
     setError(null);
     try {
-      const r = await get<{ data: PortalCustomization }>("/portal-customization");
-      setData(r.data || null);
+      // lib/oliverApi already strips the { data: ... } envelope; reading .data
+      // again yielded undefined and this page rendered empty.
+      const r = await get<PortalCustomization>("/portal-customization");
+      setData(r || null);
     } catch (err) {
       setError(err);
     } finally {

@@ -53,7 +53,9 @@ export interface InteractiveStep {
 
 export interface InteractiveFlow {
   id: string;
-  product: "oliver" | "spark" | "arion" | "stella" | "consulting" | "platform";
+  // argus/forge added 2026-09-01 alongside their journeys — this union has to
+  // admit every JourneyProduct or journeyToInteractive() cannot type-check.
+  product: "oliver" | "spark" | "arion" | "stella" | "consulting" | "argus" | "forge" | "settings" | "platform";
   title: string;
   oneLiner: string;
   estimatedMinutes: number;

@@ -66,8 +66,10 @@ export function ConsultingOverviewPage() {
     setLoading(true);
     setError(null);
     try {
-      const r = await get<{ data: OverviewResponse }>("/consulting-overview");
-      setData(r.data);
+      // lib/oliverApi already strips the { data: ... } envelope; reading .data
+      // again yielded undefined and this surface rendered empty.
+      const r = await get<OverviewResponse>("/consulting-overview");
+      setData(r);
     } catch (e) { setError((e as Error).message); }
     finally { setLoading(false); }
   }, [get, ready]);

@@ -275,4 +275,16 @@ export const ARION_PAGES: PageContentMap = {
     body:
       "The same data run through models rather than counted — where things are heading, what's unusual, and where effort pays off most. Start with the opportunities: they're ranked by what they're actually worth.",
   },
+
+  // Added 2026-09-01 — the last ARION nav pages with no teaching copy.
+  arion_service_area: {
+    title: "Service Area — where you actually work",
+    body:
+      "The towns and radius you serve. This is not just a map on your website: it feeds the local-relevance checks in SEO and decides which searches you're expected to show up for. Set it honestly — claiming the whole state when you work one county makes every ranking report look worse than it is.",
+  },
+  arion_plugin_provisioning: {
+    title: "Plugin Provisioning — connecting your WordPress site",
+    body:
+      "Installs and configures the IA plugin on your site, which is what lets the portal read real data and act on the site rather than guessing. Until this is done, website pages here show what we can see from outside only.",
+  },
 };

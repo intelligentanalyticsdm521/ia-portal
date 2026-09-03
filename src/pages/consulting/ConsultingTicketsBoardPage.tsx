@@ -148,8 +148,14 @@ export function ConsultingTicketsBoardPage() {
       const params = new URLSearchParams();
       if (clientFilter) params.set("client_tenant_id", clientFilter);
       if (engTypeFilter) params.set("engagement_type", engTypeFilter);
-      const r = await get<{ data: { tickets: Ticket[] } }>(`/consulting-tickets${params.toString() ? `?${params}` : ""}`);
-      const list = r.data?.tickets || [];
+      // 2026-09-01 — useOliverApi already strips the { data: ... } envelope
+      // (lib/oliverApi.ts:135), so `r.data` was undefined and this board showed
+      // ZERO tickets no matter how many existed. The same mistake is repeated
+      // on the clients list, the ticket detail, the category colours and the
+      // convert-to-project types below — the whole page was reading one level
+      // too deep, which is why it looked empty rather than broken.
+      const r = await get<{ tickets: Ticket[] }>(`/consulting-tickets${params.toString() ? `?${params}` : ""}`);
+      const list = r?.tickets || [];
       setTickets(list);
       // Infer viewer side from the first ticket (works once a ticket exists; otherwise provider by default)
       if (list[0]) {
@@ -166,8 +172,8 @@ export function ConsultingTicketsBoardPage() {
   const loadClients = useCallback(async () => {
     if (!ready) return;
     try {
-      const r = await get<{ data: { clients: Client[] } }>(`/consulting-tickets/_/clients`);
-      setClients(r.data?.clients || []);
+      const r = await get<{ clients: Client[] }>(`/consulting-tickets/_/clients`);
+      setClients(r?.clients || []);
       setViewerSide("provider");
       setHasConsultingAccess(true);
     } catch {
@@ -204,10 +210,10 @@ export function ConsultingTicketsBoardPage() {
       name: string;
       icon?: string | null;
     }
-    get<{ data: CategoryRow[] }>("/consulting/categories")
+    get<CategoryRow[]>("/consulting/categories")
       .then((r) => {
         if (cancelled) return;
-        const rows = Array.isArray(r?.data) ? r.data : [];
+        const rows = Array.isArray(r) ? r : [];
         if (rows.length === 0) return;
         // Stable color assignment: index into CATEGORY_CHIP_COLORS by the
         // category's position in the alphabetised list. Stable per-name
@@ -469,8 +475,8 @@ function TicketDetailModal({ ticketId, onClose, onChanged }: { ticketId: string;
 
   const load = useCallback(async () => {
     try {
-      const r = await get<{ data: any }>(`/consulting-tickets/${ticketId}`);
-      setDetail(r.data);
+      const r = await get<any>(`/consulting-tickets/${ticketId}`);
+      setDetail(r);
     } catch (e) { setErr((e as Error).message); }
   }, [get, ticketId]);
 
@@ -480,8 +486,8 @@ function TicketDetailModal({ ticketId, onClose, onChanged }: { ticketId: string;
   // when the operator opens the convert form, to avoid wasting a call)
   useEffect(() => {
     if (!showConvert || convertTypes.length > 0) return;
-    get<{ data: { types: any[] } }>("/consulting-projects/_/types")
-      .then(r => setConvertTypes(r.data?.types || []))
+    get<{ types: any[] }>("/consulting-projects/_/types")
+      .then(r => setConvertTypes(r?.types || []))
       .catch(() => {});
   }, [showConvert, convertTypes.length, get]);
 

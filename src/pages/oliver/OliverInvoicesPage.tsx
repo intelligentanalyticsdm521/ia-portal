@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { IadmModal } from "../../components/IadmModal";
+import { DocumentBrandFrame } from "../../components/oliver/DocumentBrandFrame";
 import { useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
@@ -338,14 +340,29 @@ export function OliverInvoicesPage() {
       </div>
 
       {showCreate && (
-        <div className="mb-4">
-          <InvoiceCreateForm
-            onCreated={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); reload(); }}
-            onCancel={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); }}
-            initialJobId={initialJobId}
-            initialContactId={initialContactId}
-          />
-        </div>
+        /* Founder 2026-08-19: invoices get the same treatment as quotes — a
+           pop-up modal ON the branded document (accent bar, logo, footer as
+           the customer receives it), not a screen-switching inline card. */
+        <IadmModal
+          open
+          onClose={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); }}
+          product="oliver"
+          eyebrow="OLIVER · BILLING"
+          title="New invoice"
+          subtitle="What you see here is what the customer receives."
+          size="info"
+        >
+          <div style={{ padding: 20, background: "#EEF3F6" }}>
+            <DocumentBrandFrame get={get} docLabel="INVOICE">
+              <InvoiceCreateForm
+                onCreated={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); reload(); }}
+                onCancel={() => { setShowCreate(false); setInitialJobId(undefined); setInitialContactId(undefined); }}
+                initialJobId={initialJobId}
+                initialContactId={initialContactId}
+              />
+            </DocumentBrandFrame>
+          </div>
+        </IadmModal>
       )}
 
       {!rows.length && !showCreate ? (

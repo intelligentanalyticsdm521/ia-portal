@@ -264,7 +264,7 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_reminders', displayName: 'Reminders', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_reminders', description: 'Overdue invoice tracker. See which automated reminders have fired and send manual nudges.' },
   { key: 'oliver_onboarding', displayName: 'Get Started', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_onboarding', description: 'Guided 5-step setup wizard for new tenants.' },
   { key: 'oliver_settings', displayName: 'Business Setup', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_settings', description: 'Deprecated — profile moved to Organization Settings, templates to Template Library, connections to Connected Accounts.' },
-  { key: 'oliver_templates', displayName: 'Template Library', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_templates', description: 'Invoice, quote, and proposal templates. Branding pulled from your business profile.' },
+  { key: 'oliver_templates', displayName: 'Document Design', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_templates', description: 'How your invoices, quotes and proposals look. Lives in Business Setup with the invoice template.' },
   { key: 'oliver_team_access', displayName: 'Team Access', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_team_access', description: 'Assign Admin or Accountant roles to OLIVER users. Accountants get a read-only Billing/Reports view.' },
   { key: 'oliver_locations', displayName: 'Locations', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_locations', description: 'Business locations — scope jobs, team, invoices and reports per location. A second location needs OLIVER Business.' },
   { key: 'oliver_coupons', displayName: 'Coupons', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_coupons', description: 'Discount codes & promotion codes, synced bidirectionally with Stripe.' },
@@ -348,9 +348,11 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_audience_sync', displayName: 'Audience Sync', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_audience_sync', description: 'Export hashed audiences for Google Ads Customer Match + Meta Custom Audiences (Business).' },
   { key: 'spark_journey_builder', displayName: 'Journey Builder', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_journey_builder', description: 'Visual graph editor for branching automation journeys with yes/no edge wiring.' },
   { key: 'spark_tracking', displayName: 'Visitor Tracking', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_tracking', description: 'One-line tracking snippet for your website: visitor identification, pageview attribution, page-visit scoring triggers (Business).' },
-  { key: 'spark_sender_domains', displayName: 'Sender Setup', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_sender_domains', description: 'Pick the Intelligent Analytics default sender, or white-label your own business email with auto/manual DNS handoff.' },
+  // 2026-09-01 — 'spark_sender_domains' (Sender Setup) merged into 'spark_senders'.
+  // Its route still resolves so existing links and tours keep working, but it is
+  // no longer a separate thing in the menu.
   // SPARK Composer v1.1 (2026-06-24) — Senders + Signatures CRUD.
-  { key: 'spark_senders', displayName: 'Senders', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_senders', description: 'Multiple named From-addresses on your verified sender domains (welcome@, support@, hello@).' },
+  { key: 'spark_senders', displayName: 'Senders', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_senders', description: 'The addresses your email goes out from (hello@, support@, welcome@). Adding one walks you through the whole setup, including the domain.' },
   { key: 'spark_signatures', displayName: 'Signatures', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_signatures', description: 'Reusable closing blocks (signatures) picked from the SPARK Composer Signature dropdown.' },
   { key: 'spark_onboarding', displayName: 'Get Started', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_onboarding', description: 'Guided onboarding checklist — profile, sender domain, contact import, first campaign, first automation.' },
   { key: 'spark_account_profile', displayName: 'Business Profile', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_account_profile', description: 'Review-and-save your shared business profile (name, contact, address, branding). One source of truth across every product.' },
@@ -407,6 +409,17 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'forge_funders', displayName: 'Funders', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_funders', description: 'Foundations and grantors your organization applies to.' },
   { key: 'forge_applications', displayName: 'Funding Applications', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_applications', description: 'Applications your organization has made to funders.' },
   { key: 'forge_volunteers', displayName: 'Volunteers', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_volunteers', description: 'People who give their time.' },
+  // Phase 2 — fundraising, acknowledgements and reporting. Same gating as the
+  // rest of HESTIA: the per-software `forge_hestia` key, not the FORGE line.
+  { key: 'forge_people', displayName: 'People', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_people', description: 'One record per person or organization — donor, volunteer, board member, or someone you serve.' },
+  { key: 'forge_donations', displayName: 'Donations', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_donations', description: 'Every gift received, with what is deductible and where it was designated.' },
+  { key: 'forge_campaigns', displayName: 'Campaigns', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_campaigns', description: 'Appeals and events — what you asked for, what it cost, what came in.' },
+  { key: 'forge_funds', displayName: 'Funds', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_funds', description: 'Where gifts are designated, and whether the donor restricted them.' },
+  { key: 'forge_pledges', displayName: 'Pledges', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_pledges', description: 'Promises to give, and how much of each is still outstanding.' },
+  { key: 'forge_recurring', displayName: 'Recurring Gifts', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_recurring', description: 'Standing gifts, when each next runs, and which ones have failed.' },
+  { key: 'forge_receipts', displayName: 'Acknowledgements', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_receipts', description: 'Written acknowledgements and year-end giving statements, to the IRS rules.' },
+  { key: 'forge_reports', displayName: 'Reports', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_reports', description: 'Fundraising, program and financial reporting — the questions a board, a funder and the IRS ask.' },
+  { key: 'forge_setup', displayName: 'Organization Setup', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_setup', description: 'Legal identity, fiscal year, receipt wording and payment setup.' },
   {
     key: 'forge_integrations',
     displayName: 'Integrations',

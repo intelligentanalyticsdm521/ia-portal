@@ -8,7 +8,12 @@ import { acquireApiToken } from "./msalToken";
 import { emergencyActAsHeaders } from "./emergencyActAs";
 import { getCurrentTenantOverride } from "./tenantContext";
 
-const SPARK_API_BASE =
+// Exported (2026-09-01): pages that hand the USER a LUMEN-API URL to paste
+// elsewhere — the tracking snippet, the iCal share link — used to re-derive
+// this base themselves. SparkCalendarSyncPage's copy returned "" in prod, so
+// the calendar URL it offered was a bare path that resolved against the
+// portal host and 404'd in Google Calendar. One exported constant, no copies.
+export const SPARK_API_BASE =
   (import.meta.env.VITE_SPARK_API_BASE as string) ||
   (import.meta.env.VITE_LUMEN_API_BASE as string) ||
   "https://app-lumen-api-prod-c6afftekgua4axh9.centralus-01.azurewebsites.net";

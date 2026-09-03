@@ -10,17 +10,16 @@
 // The old /consulting-tickets surface read lumen.consulting_ticket — the
 // abandoned fork, verified 0 rows in prod — and is fully replaced by this.
 //
-// Access gate: GET /consulting/access → { has_byb_sub }. 404/4xx degrade to
-// permissive; the requests endpoint still tenant-scopes server-side.
+// Access gating lives in ClientConsultingLayout (nav-visibility, Delta 2
+// LOCKED) — this page renders only when that layout has unlocked /requests.
 
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { IadmModal } from "../../components/IadmModal";
 // Shared with ClientConsultingProjectModal so the client sees ONE review
 // dialog whether they arrive from here or from a project milestone.
 import { ClientTaskDetailModal, type ClientTaskLike } from "../../components/consulting/ClientTaskDetailModal";
-import { MessageCircle, Plus, AlertCircle, Sparkles } from "lucide-react";
+import { MessageCircle, Plus, AlertCircle } from "lucide-react";
 
 interface ServiceRequest {
   id: string;
@@ -40,11 +39,6 @@ interface ServiceRequest {
     file_url?: string | null;
     status: string;
   }>;
-}
-
-interface AccessResponse {
-  has_byb_sub?: boolean;
-  [k: string]: unknown;
 }
 
 // Client-perspective labels for the 7-stage pipeline.
@@ -84,34 +78,6 @@ function fmtRel(iso?: string | null): string {
   const d = Math.floor(h / 24);
   if (d < 30) return `${d}d ago`;
   return new Date(iso).toLocaleDateString();
-}
-
-// ─── Upsell card ────────────────────────────────────────────────────────
-function UpsellCard() {
-  return (
-    <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 p-8 text-center max-w-2xl mx-auto">
-      <div className="mx-auto h-12 w-12 rounded-full bg-amber-200 flex items-center justify-center mb-3">
-        <Sparkles className="h-6 w-6 text-amber-700" />
-      </div>
-      <h2 className="text-lg font-bold text-slate-900">Service Requests is a Build Your Brand feature</h2>
-      <p className="text-sm text-slate-600 mt-2 max-w-md mx-auto">
-        Build Your Brand subscribers get unlimited on-demand design, copy, and
-        consulting requests routed straight to the Intelligent Analytics team.
-        Upgrade your plan to start filing requests.
-      </p>
-      <div className="mt-4">
-        <Link
-          to="/pricing"
-          className="inline-flex items-center gap-1 rounded-full bg-[#EF6C33] px-4 py-2 text-sm font-bold text-white hover:bg-[#d95d27]"
-        >
-          See Build Your Brand plans
-        </Link>
-      </div>
-      <p className="mt-3 text-[11px] text-slate-500">
-        Already subscribed? Refresh the page — your access updates within a minute of checkout.
-      </p>
-    </div>
-  );
 }
 
 // ─── New Request modal ──────────────────────────────────────────────────
@@ -210,8 +176,6 @@ function NewRequestModal({
 // ─── Page ────────────────────────────────────────────────────────────────
 export function ClientConsultingServiceRequestsPage() {
   const { get, patch, download, uploadClient, ready } = useOliverApi();
-  const [hasByb, setHasByb] = useState<boolean | null>(null);
-  const [accessChecked, setAccessChecked] = useState(false);
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -221,25 +185,17 @@ export function ClientConsultingServiceRequestsPage() {
   // Default to ACTIVE work; completed/cancelled stay one click away.
   const [filter, setFilter] = useState<"active" | "all" | "completed" | "cancelled">("active");
 
-  useEffect(() => {
-    if (!ready) return;
-    let cancelled = false;
-    get<AccessResponse>("/consulting/access")
-      .then((r) => {
-        if (cancelled) return;
-        setHasByb(r && typeof r.has_byb_sub === "boolean" ? r.has_byb_sub : true);
-        setAccessChecked(true);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setHasByb(true);
-        setAccessChecked(true);
-      });
-    return () => { cancelled = true; };
-  }, [get, ready]);
+  // 2026-08-29 — the page-level BYB gate is GONE. ClientConsultingLayout is
+  // the authoritative gate (Delta 2 LOCKED): rule B (open project, no BYB —
+  // e.g. MS Moments) must still see Service Requests, but /consulting/access
+  // reports BYB-subscription-only, so gating here would upsell a client the
+  // layout just unlocked. (It also never actually gated: the page read
+  // `has_byb_sub` while the API returns `hasBybAccess`, so the check always
+  // fell through to permissive.) The layout redirects locked clients off
+  // /requests before this page mounts.
 
   const load = useCallback(async () => {
-    if (!ready || !accessChecked || hasByb === false) return;
+    if (!ready) return;
     setLoading(true);
     setError(null);
     try {
@@ -252,7 +208,7 @@ export function ClientConsultingServiceRequestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [get, ready, accessChecked, hasByb]);
+  }, [get, ready]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -277,18 +233,6 @@ export function ClientConsultingServiceRequestsPage() {
     if (filter === "cancelled") return r.stage === "cancelled";
     return r.stage !== "completed" && r.stage !== "cancelled"; // active
   });
-
-  if (!accessChecked) {
-    return (
-      <div className="card" style={{ padding: 24, color: "#5A7A8A", fontSize: 13 }}>
-        Checking your access…
-      </div>
-    );
-  }
-
-  if (hasByb === false) {
-    return <UpsellCard />;
-  }
 
   return (
     // Same layout convention as the founder surfaces: centered, never

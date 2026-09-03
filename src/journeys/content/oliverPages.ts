@@ -194,4 +194,26 @@ export const OLIVER_PAGES: PageContentMap = {
     body:
       "The plain operational record — activity logs and exports, without any scoring on top. This is what you pull when you need the raw facts for an accountant or a dispute.",
   },
+
+  // Added 2026-09-01 — the last OLIVER nav pages with no teaching copy.
+  oliver_settings: {
+    title: "Business Setup — the details every document inherits",
+    body:
+      "Your business name, contact details, logo and brand colour. This is not decoration: every quote, invoice and proposal a customer receives is built from what's here, so a blank field shows up as a blank on a document someone is being asked to pay.",
+    onPage: [
+      {
+        title: "Fill this before you send anything",
+        body:
+          "A quote from a business with no logo, no phone number and a generic sender reads as suspicious — and money documents are exactly where suspicion costs you. Ten minutes here pays for itself on the first send.",
+      },
+    ],
+  },
+  oliver_team_access: {
+    body:
+      "Who on your team can get in, and what they're allowed to do. Give people the least they need — an office admin rarely needs to change pricing, and a crew member rarely needs invoices.",
+  },
+  oliver_locations: {
+    body:
+      "For businesses running from more than one place. Locations let scheduling, reporting and pricing differ per site instead of averaging everything into one blur.",
+  },
 };

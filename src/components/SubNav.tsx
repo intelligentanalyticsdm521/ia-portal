@@ -16,6 +16,7 @@ import {
 import { useProductTier } from "../hooks/useProductTier";
 import { useNavAddons } from "../hooks/useNavAddons";
 import { useAppState } from "../app/AppState";
+import { FORGE_SOFTWARE, screenRoute, softwareRoot, visibleScreens } from "../pages/forge/forgeSoftware";
 import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
 import { productColor } from "../config/productTheme";
 
@@ -56,6 +57,16 @@ export interface SubNavGroup {
   collapsible?: boolean;
   icon?: ComponentType<{ className?: string }>;
   sectionId?: string; // used for auto-collapse matching
+  /**
+   * FORGE only. The `forge_<software>` service key that grants this group.
+   * Set it on EVERY group belonging to one piece of software, including its
+   * sub-sections, so a tenant sees all of it or none of it.
+   *
+   * This used to be inferred from a `forge_` sectionId prefix, which meant a
+   * new sub-section of an existing build looked like a separate product the
+   * tenant did not own, and vanished from the nav.
+   */
+  softwareKey?: string;
   /**
    * Optional explicit "landing" route for this section. When a user clicks the
    * collapsible section header, they navigate here AND the section expands.
@@ -130,7 +141,16 @@ const OLIVER_NAV: SubNavConfig = {
       label: "Jobs", icon: Wrench, collapsible: true, sectionId: "oliver_jobs",
       items: [
         { key: "oliver_job_board", label: "Job Board", route: "/app/services/oliver_job_board", minTier: "standard" },
-        { key: "oliver_schedule", label: "Schedule", route: "/app/services/oliver_schedule", minTier: "standard" },
+        // 2026-09-02 — the Standard gate is gone (Brandon, decision 5): every
+        // tier gets the calendar. Lite is an invoicing tool, but seeing your own
+        // week is a perk and a visual read on availability, and the read
+        // endpoint (/calendar/unified) was never tier-gated anyway. The
+        // Standard+ gates that remain are the ones that matter:
+        // /dispatch/* and /schedule/availability.
+        { key: "oliver_schedule", label: "Schedule", route: "/app/services/oliver_schedule" },
+        // Dispatch was built (OliverDispatchPage, 249 lines) and had no nav
+        // entry at all, so worker assignment was unreachable from the nav.
+        { key: "oliver_dispatch", label: "Dispatch", route: "/app/services/oliver_dispatch", minTier: "standard" },
         { key: "oliver_jobs_archive", label: "Archive", route: "/app/services/oliver_jobs_archive", minTier: "standard" },
       ],
     },
@@ -153,14 +173,14 @@ const OLIVER_NAV: SubNavConfig = {
       label: "Billing", icon: CreditCard, collapsible: true, sectionId: "oliver_billing",
       items: [
         { key: "oliver_quotes", label: "Quotes & Proposals", route: "/app/services/oliver_quotes" },
-        // #77 — Proposal Templates. Sits directly under Quotes & Proposals
-        // because it's the templates library for that surface.
-        { key: "oliver_proposal_templates", label: "Templates", route: "/app/oliver/quotes/templates" },
+        // ONE destination for both documents (founder 2026-08-19): the page
+        // tabs between Quotes and Proposals, and each create opens its own
+        // branded modal editor. A second "Proposals" nav row lasted a day.
         { key: "oliver_invoices", label: "Invoices", route: "/app/services/oliver_invoices" },
         // Recurring services are jobs (TIER_CAPS lite max_active_recurring = 0) → Standard+.
         { key: "oliver_recurring", label: "Subscriptions", route: "/app/services/oliver_recurring", minTier: "standard" },
         { key: "oliver_payments", label: "Payments", route: "/app/services/oliver_payments" },
-        { key: "oliver_templates", label: "Templates", route: "/app/services/oliver_templates" },
+
       ],
     },
     {
@@ -615,24 +635,41 @@ const FORGE_NAV: SubNavConfig = {
   productName: "Integrations & Software",
   tagline: "FORGE",
   groups: [
-    {
-      label: "HESTIA — Non-Profit Software",
+    // ONE collapsible section per BUILD, generated from the software registry
+    // (pages/forge/forgeSoftware.ts) rather than written out here.
+    //
+    // FORGE is a product LINE, not a product: it can host a build per client,
+    // each with its own `forge_<slug>` entitlement so one client never sees
+    // another's software. Hand-maintaining sections here would mean editing
+    // this file for every new build — and an earlier revision that split ONE
+    // build across three sibling sections showed the failure mode: with two
+    // builds you get HESTIA, Fundraising, Reporting, OtherBuild, Fundraising…
+    // and no way to tell which section belongs to which software.
+    ...FORGE_SOFTWARE.map((sw) => ({
+      label: `${sw.name} — ${sw.tagline}`,
+      icon: Heart,
       collapsible: true,
-      sectionId: "forge_hestia",
-      landingRoute: "/app/services/forge_overview",
-      items: [
-        { key: "forge_overview", label: "Overview", route: "/app/services/forge_overview" },
-        { key: "forge_clients", label: "Clients", route: "/app/services/forge_clients" },
-        { key: "forge_assistance", label: "Assistance", route: "/app/services/forge_assistance" },
-        { key: "forge_services", label: "Services", route: "/app/services/forge_services" },
-        { key: "forge_providers", label: "Providers", route: "/app/services/forge_providers" },
-        { key: "forge_funders", label: "Funders", route: "/app/services/forge_funders" },
-        { key: "forge_applications", label: "Funding Applications", route: "/app/services/forge_applications" },
-        { key: "forge_volunteers", label: "Volunteers", route: "/app/services/forge_volunteers" },
-      ],
-    },
+      sectionId: `forge_${sw.slug}`,
+      softwareKey: sw.serviceKey,
+      landingRoute: softwareRoot(sw.slug),
+      items: visibleScreens(sw)
+        .filter((sc) => !sc.hidden)
+        .map((sc) => ({
+          key: `forge_${sw.slug}_${sc.path || "overview"}`,
+          label: sc.label,
+          route: screenRoute(sw.slug, sc.path),
+        })),
+    })),
+    // Integrations belongs to the FORGE LINE, not to any one build, so it is
+    // its own top-level section — a sibling of the software sections, never a
+    // child of one. It carries no softwareKey, so it stays visible to a tenant
+    // who owns no builds at all.
     {
-      label: "",
+      label: "Integrations",
+      icon: Server,
+      collapsible: true,
+      sectionId: "forge_line_integrations",
+      landingRoute: "/app/services/forge_integrations",
       items: [
         { key: "forge_integrations", label: "Integrations", route: "/app/services/forge_integrations" },
       ],
@@ -790,9 +827,15 @@ const SETTINGS_NAV: SubNavConfig = {
         // REMOVED: oliver_portal_domains (feature, in main nav W&A)
         // REMOVED: oliver_coupons (feature, in main nav Products & Services)
         // REMOVED: oliver_categories (feature, in main nav Products & Services)
-        // REMOVED: oliver_templates (feature → moved to main nav Billing)
+        // oliver_templates came back here 2026-08-19, reversing F-93. It is how
+        // your documents LOOK — letterhead, colours, which template an invoice
+        // or proposal renders with. That is configuration you set once, and it
+        // belongs beside the invoice template in Business Setup rather than in
+        // Billing, where it sat four rows from a different row also called
+        // "Templates" and nothing on screen said which was which.
         // REMOVED: oliver_addons (feature, in main nav W&A)
         { key: "oliver_settings", label: "Business Setup", route: "/app/services/oliver_settings" },
+        { key: "oliver_templates", label: "Document Design", route: "/app/services/oliver_templates" },
         { key: "oliver_workflow_settings", label: "Workflow Settings", route: "/app/services/oliver_workflow_settings" },
         { key: "oliver_service_categories", label: "Service Categories", route: "/app/services/oliver_service_categories" },
         { key: "oliver_team_access", label: "Team Access", route: "/app/services/oliver_team_access" },
@@ -812,7 +855,12 @@ const SETTINGS_NAV: SubNavConfig = {
         // SPARK Composer v1.1 (2026-06-24) — sender setup is now a 2-card
         // pick (IA default vs white-label) and Senders + Signatures are
         // separate CRUD pages alongside Sender Domains.
-        { key: "spark_sender_domains", label: "Sender Setup", route: "/app/services/spark_sender_domains" },
+        // 2026-09-01 — was TWO entries, "Sender Setup" and "Senders", which is
+        // the plumbing showing through: one listed sender DOMAINS, the other
+        // listed the addresses, and "Add sender" on the second was disabled
+        // until you had been to the first. Nobody thinks in domains — they
+        // think "I want to send as hello@". One entry now; adding a sender runs
+        // the whole setup, domain and all.
         { key: "spark_senders", label: "Senders", route: "/app/services/spark_senders" },
         { key: "spark_signatures", label: "Signatures", route: "/app/services/spark_signatures" },
         { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys", hidden: true /* cut: platform plumbing */ },
@@ -970,7 +1018,7 @@ function getDefaultSection(path: string): string | null {
   // main nav (Templates, Webhooks, Audience Sync, Audit Log, Review Widget,
   // Coupons, Categories, Booking, etc.) are intentionally excluded —
   // they expand their main-nav group instead.
-  if (path.includes("/oliver_settings") || path.includes("/oliver_workflow_settings") || path.includes("/oliver_service_categories") || path.includes("/oliver_team_access") || path.includes("/oliver_locations")) return "settings_oliver";
+  if (path.includes("/oliver_settings") || path.includes("/oliver_templates") || path.includes("/oliver_workflow_settings") || path.includes("/oliver_service_categories") || path.includes("/oliver_team_access") || path.includes("/oliver_locations")) return "settings_oliver";
   if (path.includes("/arion_service_area") || path.includes("/arion_plugin_provisioning")) return "settings_arion";
   // My Brand is a FEATURE section in the ARION main nav (IA re-cut 2026-07-21)
   // — the hub (arion_brand) and every my_brand_* child expand it.
@@ -1041,8 +1089,10 @@ function getDefaultSection(path: string): string | null {
   if (path.includes("/oliver_contacts") || path.includes("/oliver_service_requests") || path.includes("/oliver_booking")) return "oliver_customers";
   if (path.includes("/oliver_catalog") || path.includes("/oliver_categories") || path.includes("/oliver_service_categories") || path.includes("/oliver_coupons")) return "oliver_products";
   if (path.includes("/oliver_expenses") || path.includes("/oliver_job_costing")) return "oliver_expenses";
-  // F-93 — oliver_templates moved from Settings → Billing main nav.
-  if (path.includes("/oliver_quotes") || path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders") || path.includes("/oliver_templates") || path.includes("/oliver/quotes/templates")) return "oliver_billing";
+  // 2026-08-19 — oliver_templates went back to Settings (Document Design), so
+  // it must NOT resolve to the Billing section any more or the wrong nav group
+  // opens. oliver_proposals is Billing.
+  if (path.includes("/oliver_quotes") || path.includes("/oliver_proposals") || path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders")) return "oliver_billing";
   // F-114 — Portals hub + legacy Portal Designer / Portals & Domains all live in the W&A group.
   if (path.includes("/oliver_portals_hub") || path.includes("/oliver_portal_designer") || path.includes("/oliver_portal_domains") || path.includes("/oliver_automations") || path.includes("/oliver_addons") || path.includes("/oliver_workflow_settings")) return "oliver_workflow";
   if (path.includes("/oliver_ia_insights")) return "oliver_ia_insights";
@@ -1160,14 +1210,17 @@ export function SubNav({ config }: SubNavProps) {
   // client B is noise at best and a disclosure at worst. So: a tenant sees the
   // FORGE software they own and nothing else, and a tenant who owns none gets
   // one pointer to the public catalogue instead of a list of other people's
-  // builds. Software groups are identified by a `forge_<software>` sectionId,
-  // which is also the service key that grants them.
+  // builds. A software group declares its `softwareKey` explicitly — the
+  // `forge_<software>` service key that grants it. One piece of software can
+  // span several groups (HESTIA has Case Management, Fundraising and
+  // Reporting); they all carry the same softwareKey and so appear or vanish
+  // together.
   let visibleGroups = gatedGroups;
   if (productKey === "forge") {
-    const isSoftware = (g: SubNavGroup) => !!g.sectionId && g.sectionId.startsWith("forge_");
+    const isSoftware = (g: SubNavGroup) => !!g.softwareKey;
     const hadSoftware = gatedGroups.some(isSoftware);
     visibleGroups = gatedGroups.filter(
-      (g) => !isSoftware(g) || ownedProducts.has(g.sectionId as string)
+      (g) => !isSoftware(g) || ownedProducts.has(g.softwareKey as string)
     );
     if (hadSoftware && !visibleGroups.some(isSoftware)) {
       visibleGroups = [

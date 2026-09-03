@@ -804,16 +804,74 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, cartTier, onClose, onFi
     setSaving(true); setErr(null);
     try {
       // Per-section canonical-table writes (G1 confirmed: save then continue).
-      // Best-effort — if a write fails, log + continue so Save & Continue
-      // never blocks. The JSON-blob save below is the durable record.
-      try { await flushSectionToCanonical(current.id, state, { patch, sparkApi }); }
-      catch (e) { console.warn("[onboarding] canonical write failed for", current.id, e); }
+      //
+      // 2026-09-01 — this used to be:
+      //     try { await flushSectionToCanonical(...) }
+      //     catch (e) { console.warn("[onboarding] canonical write failed", e); }
+      // ...immediately followed by the JSON-blob save and a step tick. So a
+      // failed write into the REAL tables produced a console line nobody reads
+      // and a wizard that said the step was saved. That is exactly how a
+      // business finishes onboarding "successfully" with nothing configured —
+      // and how, in production, one tenant's lifecycle preset was recorded in
+      // the blob but has no row in core.tenant_lifecycle_config at all.
+      //
+      // The blob still saves either way (it is the resume record, and losing it
+      // would be worse), and Save & Close / Save & Finish still work — but the
+      // failure is now SHOWN, named by section, instead of being swallowed.
+      let canonicalError: string | null = null;
+      try {
+        await flushSectionToCanonical(current.id, state, { patch, sparkApi });
+      } catch (e) {
+        canonicalError = (e as Error)?.message || String(e);
+        console.warn("[onboarding] canonical write failed for", current.id, e);
+      }
 
       await postFounder("/admin/onboard-client/save-onboarding", {
         tenant_id: tenantId, step: stepIdx, section: current.id, state, mode,
       });
+
+      if (canonicalError && mode !== "close") {
+        // Hold the user on this step for Continue and Finish: your answers are
+        // kept (the blob saved), but this step is NOT set up, and saying
+        // otherwise is the bug being fixed here.
+        //
+        // Save & Close is deliberately exempt. Someone closing the wizard is
+        // leaving anyway, and refusing to let them out would turn a bad write
+        // into a trap with no way past it. They get the warning on the way out.
+        setErr(
+          `This step was not saved to your account: ${canonicalError}. ` +
+          `Your answers are kept — try Save again, and tell us if it keeps failing.`,
+        );
+        setSaving(false);
+        return;
+      }
+      if (canonicalError) {
+        console.warn("[onboarding] closing with an unsaved section:", current.id, canonicalError);
+      }
       if (mode === "finish") {
-        await postFounder("/admin/onboard-client/finish-onboarding", { tenant_id: tenantId, defer_welcome: !!deferWelcome });
+        // 2026-09-01 — finish-onboarding runs five fan-out blocks (portal
+        // config, service catalog, ARION, SPARK, brand voice), each wrapped in
+        // its own non-fatal catch. It used to answer `{ ok: true, finished:
+        // true }` no matter how many of them had failed, so a tenant could
+        // "finish onboarding" with the catalog, ARION and SPARK all missing and
+        // the founder would see a clean close. It now returns a `failures`
+        // list; keep the modal open and show it rather than closing on a green
+        // tick over a half-built account.
+        const finishRes = await postFounder<{ ok?: boolean; failures?: Array<{ step: string; error: string }> }>(
+          "/admin/onboard-client/finish-onboarding",
+          { tenant_id: tenantId, defer_welcome: !!deferWelcome },
+        );
+        const finishFailures = finishRes?.failures || [];
+        if (finishFailures.length) {
+          setErr(
+            `Onboarding finished, but ${finishFailures.length === 1 ? "one part" : `${finishFailures.length} parts`} did not save: ` +
+            finishFailures.map((f) => `${f.step} (${f.error})`).join("; ") +
+            `. The account is created and the welcome has been sent — these pieces need setting up before this business is ready.`,
+          );
+          onFinished?.();   // the tenant IS finished; refresh the caller's view
+          setSaving(false);
+          return;           // stay open so the list is readable
+        }
         onFinished?.();
         onClose();
       } else if (mode === "close") {
@@ -4139,20 +4197,42 @@ async function flushSectionToCanonical(
     return;
   }
   if (sectionId === "oliver_customer_portal" || sectionId === "oliver_employee_portal") {
-    // OLIVER portal config goes to oliver.tenant_settings via PATCH /settings
-    // (same endpoint extends with portal_* fields). Backend tonight may not
-    // yet accept these keys — the call is wrapped in try/catch in the caller.
+    // 2026-09-01 FIXED. This used to PATCH /settings with keys shaped
+    // `customerPortalWelcome`, `employeePortalShowA`, and so on. PATCH /settings
+    // destructures a fixed list of business-profile fields and reads NONE of
+    // those keys — so the request 200'd, the wizard ticked the step off, and
+    // every value fell on the floor. The step only ever appeared to work
+    // because the separate finish-onboarding fan-out wrote the same values much
+    // later, which also meant Save & Continue was a lie and abandoning the
+    // wizard before Finish lost the lot.
+    //
+    // PATCH /settings/portal is the endpoint that owns these columns. It was
+    // extended in the same pass to cover the logo, header colour and the whole
+    // crew/employee side (previously write-once at onboarding, with no screen
+    // anywhere to change them afterwards).
     const v = sectionId === "oliver_customer_portal"
       ? state.oliver.customer_portal
       : state.oliver.employee_portal;
-    const prefix = sectionId === "oliver_customer_portal" ? "customer" : "employee";
-    await api.patch("/settings", {
-      [`${prefix}PortalWelcome`]: v.welcome || "",
-      [`${prefix}PortalLogo`]: v.logo_override || "",
-      [`${prefix}PortalHeaderColor`]: v.header_color || "",
-      [`${prefix}PortalShowA`]: v.show_a,
-      [`${prefix}PortalShowB`]: v.show_b,
-    });
+
+    if (sectionId === "oliver_customer_portal") {
+      await api.patch("/settings/portal", {
+        welcomeMessage: v.welcome || "",
+        logoUrl: v.logo_override || "",
+        headerColor: v.header_color || "",
+        showRequestWork: v.show_a,
+        showMessaging: v.show_b,
+      });
+    } else {
+      await api.patch("/settings/portal", {
+        employee: {
+          welcomeMessage: v.welcome || "",
+          logoUrl: v.logo_override || "",
+          headerColor: v.header_color || "",
+          showSchedule: v.show_a,
+          showDispatch: v.show_b,
+        },
+      });
+    }
     return;
   }
   if (sectionId === "spark_welcome_email") {
@@ -4175,7 +4255,11 @@ async function flushSectionToCanonical(
         sender_email: v.sender_email,
         source: "onboarding_modal",
       });
-    } catch (e) { console.warn("[onboarding] welcome email save deferred:", e); }
+    } catch (e) {
+      // Was swallowed with a console.warn — the wizard then reported the
+      // welcome-email step saved while no template row existed.
+      throw new Error(`welcome email template: ${(e as Error)?.message || String(e)}`);
+    }
     return;
   }
   if (sectionId === "arion_integrations") {
@@ -4257,7 +4341,9 @@ async function flushSectionToCanonical(
         voice_examples: voiceExamples,
       });
     } catch (e) {
-      console.warn("[onboarding] brand_voice_profile upsert deferred:", e);
+      // Was swallowed. Brand voice feeds ARION copy, SPARK campaigns, STELLA
+      // and OLIVER message tone — losing it quietly degrades all four.
+      throw new Error(`brand voice profile: ${(e as Error)?.message || String(e)}`);
     }
     return;
   }
@@ -4290,6 +4376,12 @@ async function flushSectionToCanonical(
       return;
     }
     const spark = api.sparkApi;
+    // 2026-09-01 — every write below used to end in `catch { console.warn }`,
+    // so a tenant could finish the SPARK step with no sender domain, no sender
+    // address, no signature and no settings, and be told it saved. Failures are
+    // collected here and thrown together at the end of the section so the user
+    // sees all of them at once rather than fixing one to reveal the next.
+    const sparkFailures: string[] = [];
 
     // 1) Sender domain registration (white-label only).
     let senderDomainId: number | null = null;
@@ -4321,11 +4413,16 @@ async function flushSectionToCanonical(
           }
         }
       } catch (e) {
-        console.warn("[onboarding] sender domain register deferred:", e);
+        sparkFailures.push(`sender domain: ${(e as Error)?.message || String(e)}`);
       }
     }
 
     // 2) Sender addresses — POST one row at a time. Skip blank rows.
+    // If the domain registration above failed there is no domain to hang them
+    // on. Say so explicitly rather than looping zero times in silence.
+    if (!senderDomainId && v.sender_mode === "white_label" && v.senders.some((s) => s.local_part)) {
+      sparkFailures.push("senders were not created because the sending domain could not be registered");
+    }
     if (senderDomainId) {
       for (const s of v.senders) {
         if (!s.local_part) continue;
@@ -4338,7 +4435,7 @@ async function flushSectionToCanonical(
             reply_to_override: s.reply_to_override || null,
           });
         } catch (e) {
-          console.warn("[onboarding] sender create deferred:", s.local_part, e);
+          sparkFailures.push(`sender ${s.local_part}: ${(e as Error)?.message || String(e)}`);
         }
       }
     }
@@ -4354,7 +4451,7 @@ async function flushSectionToCanonical(
           is_default: !!sig.is_default,
         });
       } catch (e) {
-        console.warn("[onboarding] signature create deferred:", sig.name, e);
+        sparkFailures.push(`signature ${sig.name || "(unnamed)"}: ${(e as Error)?.message || String(e)}`);
       }
     }
 
@@ -4380,8 +4477,10 @@ async function flushSectionToCanonical(
         spark_first_campaign_goal: v.first_campaign_goal || "",
       });
     } catch (e) {
-      console.warn("[onboarding] spark settings bundle deferred:", e);
+      sparkFailures.push(`SPARK settings: ${(e as Error)?.message || String(e)}`);
     }
+
+    if (sparkFailures.length) throw new Error(sparkFailures.join("; "));
     return;
   }
   // owner / arion / oliver_payments / oliver_templates / oliver_catalog /

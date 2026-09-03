@@ -22,7 +22,7 @@
 // }
 
 import { useEffect, useState } from "react";
-import { Outlet, useNavigate } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { BookConsultationCTA } from "./BookConsultationCTA";
@@ -45,6 +45,8 @@ export function ClientConsultingLayout() {
   const [vis, setVis] = useState<NavVisibility | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const location = useLocation();
+  const onProjectsRoute = location.pathname.startsWith("/app/consulting/projects");
 
   useEffect(() => {
     if (!ready) return;
@@ -125,9 +127,10 @@ export function ClientConsultingLayout() {
       <div className="space-y-4 max-w-7xl">
         <Outlet />
 
-        {/* Rule C — deliverables-only clients: surface the CTA at the bottom
-            so they know how to reactivate consulting. */}
-        {vis?.show_book_cta && (
+        {/* Booking is offered to every client with no active project. The
+            Projects page renders its own CTA as its empty state (2026-08-29),
+            so skip it here to avoid stacking two identical cards. */}
+        {vis?.show_book_cta && !onProjectsRoute && (
           <BookConsultationCTA variant="compact" bookUrl={vis.book_cta_url} />
         )}
       </div>

@@ -16,7 +16,7 @@
 //     session via sessionStorage — that's the "first-time user nudge"
 //     vs the dashboard-level mount which is permanent.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle2, Circle, ChevronDown, ChevronUp, ArrowRight, X } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
@@ -110,7 +110,18 @@ export function WalkthroughPanel({ variant = "dashboard", product }: Walkthrough
     }
   }, [ready, get, variant]);
 
-  useEffect(() => { load(); }, [load]);
+  // ONE auto-fetch per mount, no matter how often `load`'s identity churns.
+  // This panel mounts in AppShell (every page), so before the key-based
+  // account memo in useAccessToken.ts it re-fetched on every MSAL event —
+  // and a session whose tenant key failed auth looped forever (the 3,226
+  // /auth/verify 404s of 2026-08-26). The ref is the backstop against any
+  // future identity churn; completeTask/skip still call load() directly.
+  const autoLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!ready || autoLoadedRef.current) return;
+    autoLoadedRef.current = true;
+    load();
+  }, [ready, load]);
 
   const visibleTasks = useMemo(() => {
     const list = (tasks || []).filter((t) => t.status === "pending");
@@ -121,12 +132,15 @@ export function WalkthroughPanel({ variant = "dashboard", product }: Walkthrough
   // Hide entirely when there's nothing to show + no error to surface.
   if (variant === "header" && headerDismissed) return null;
   if (!tasks) return null; // initial loading — render nothing rather than a skeleton bar
-  if (visibleTasks.length === 0 && variant === "header") return null;
-  if (visibleTasks.length === 0 && variant === "dashboard" && (summary?.done || 0) === 0) {
-    // Brand-new tenant with no tasks seeded yet — don't render an empty card.
-    return null;
-  }
-  if (error && visibleTasks.length === 0) return null;
+  // 2026-09-01 — NOTHING PENDING MEANS NOTHING TO SHOW.
+  //
+  // This used to hide only when done === 0, i.e. a brand-new tenant with no
+  // tasks seeded. The moment you actually FINISHED your setup the count went
+  // to 10/10 and the card became permanent: "All caught up — great job!"
+  // sitting on the Command Center forever, with no way to dismiss it. A
+  // checklist that will not leave after you complete it is worse than no
+  // checklist, because it trains you to ignore the whole area.
+  if (visibleTasks.length === 0) return null;
 
   const totalForProgress = (summary?.total ?? visibleTasks.length) || 0;
   const completedForProgress = (summary?.done ?? 0) + (summary?.skipped ?? 0);
@@ -308,11 +322,6 @@ export function WalkthroughPanel({ variant = "dashboard", product }: Walkthrough
         </ul>
       )}
 
-      {!collapsed && visibleTasks.length === 0 && (
-        <div className="border-t px-4 py-6 text-center text-xs text-slate-500">
-          No pending tasks. Your dashboard is clear — check out the data!
-        </div>
-      )}
     </div>
   );
 }

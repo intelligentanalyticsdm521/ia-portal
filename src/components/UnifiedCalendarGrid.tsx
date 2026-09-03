@@ -38,6 +38,32 @@ interface Props {
   className?: string;
   /** OLIVER multi-location: scope to one location_id. "all"/undefined = business-wide (unchanged). */
   locationId?: string | null;
+  /**
+   * 2026-09-02 — writability arrives as a PROP, not a fork.
+   *
+   * This grid is shared with the Command Center, where dropping a job onto a
+   * day would be meaningless. Passing a handler is what turns the day cells
+   * into drop targets; without one the grid behaves exactly as before.
+   *
+   * Return true if the drop was applied, so the grid knows whether to reload.
+   */
+  onDropJob?: (
+    jobId: string,
+    dateYmd: string,
+    from?: { startIso: string; endIso?: string },
+  ) => Promise<boolean>;
+  /** Bump to force a reload — e.g. after scheduling from outside the grid. */
+  reloadKey?: number;
+  /**
+   * Extra content for the day-detail modal, rendered above the event list.
+   *
+   * OLIVER passes a real day calendar here — an hour grid with jobs in place
+   * and free time you can click — and it REPLACES the event list. The Command
+   * Center passes nothing and keeps the plain list it has always had. Same
+   * reason onDropJob is a prop: this grid serves two products and only one of
+   * them schedules field work.
+   */
+  renderDayBody?: (dayKey: string, events: UnifiedEvent[], onDone: () => void) => React.ReactNode;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -68,13 +94,15 @@ function addDays(d: Date, n: number) {
   return r;
 }
 
-export function UnifiedCalendarGrid({ kinds, className, locationId }: Props) {
+export function UnifiedCalendarGrid({ kinds, className, locationId, onDropJob, reloadKey, renderDayBody }: Props) {
   const { get, ready } = useOliverApi();
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openDay, setOpenDay] = useState<string | null>(null);
+  const [dragOverDay, setDragOverDay] = useState<string | null>(null);
+  const [dropping, setDropping] = useState(false);
 
   // Grid is always 6 rows × 7 cols = 42 cells.
   const gridStart = useMemo(() => startOfGrid(cursor), [cursor]);
@@ -115,7 +143,7 @@ export function UnifiedCalendarGrid({ kinds, className, locationId }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [get, ready, gridStart, gridEnd, kinds, locationId]);
+  }, [get, ready, gridStart, gridEnd, kinds, locationId, reloadKey]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -163,6 +191,7 @@ export function UnifiedCalendarGrid({ kinds, className, locationId }: Props) {
         </div>
         <div className="flex items-center gap-3 text-[11px]">
           {loading && <span className="text-slate-500">Loading…</span>}
+          {dropping && <span className="text-slate-500">Scheduling…</span>}
           {/* 2026-06-22 audit fix: distinguish "loaded zero" from "still
               loading" / "errored" so Brandon's complaint pattern
               ("calendar is broken") is faster to triage. */}
@@ -197,11 +226,35 @@ export function UnifiedCalendarGrid({ kinds, className, locationId }: Props) {
             <button
               key={dayKey}
               onClick={() => setOpenDay(dayKey)}
+              // Drop handlers only bind when a handler was passed. On the
+              // Command Center there is none, so this stays an ordinary button.
+              onDragOver={onDropJob ? (e) => { e.preventDefault(); setDragOverDay(dayKey); } : undefined}
+              onDragLeave={onDropJob ? () => setDragOverDay((d) => (d === dayKey ? null : d)) : undefined}
+              onDrop={onDropJob ? async (e) => {
+                e.preventDefault();
+                setDragOverDay(null);
+                const jobId = e.dataTransfer.getData("application/x-oliver-job-id");
+                if (!jobId) return;   // something else was dragged; ignore it
+                const fromStart = e.dataTransfer.getData("application/x-oliver-job-start") || undefined;
+                const fromEnd = e.dataTransfer.getData("application/x-oliver-job-end") || undefined;
+                // Dropped back on the day it already sits on — no write, no
+                // toast, no reload. Saying "rescheduled" here would be a lie.
+                if (fromStart && ymd(new Date(fromStart)) === dayKey) return;
+                setDropping(true);
+                try {
+                  // Reload only if the caller says the write landed. Redrawing
+                  // on a failed save would show the job on a day it is not on.
+                  const from = fromStart ? { startIso: fromStart, endIso: fromEnd } : undefined;
+                  if (await onDropJob(jobId, dayKey, from)) await load();
+                } finally {
+                  setDropping(false);
+                }
+              } : undefined}
               className={`bg-white min-h-[88px] p-1.5 text-left flex flex-col gap-0.5 transition-colors ${
                 inCurrentMonth ? "" : "bg-slate-50"
               } hover:bg-slate-50 cursor-pointer ${
                 isToday ? "ring-2 ring-inset ring-[#FEC82C]" : ""
-              }`}
+              } ${dragOverDay === dayKey ? "ring-2 ring-inset ring-[#1A7DB5] bg-sky-50" : ""}`}
             >
               <div className={`text-[11px] font-medium ${
                 inCurrentMonth ? "text-slate-700" : "text-slate-400"
@@ -209,16 +262,42 @@ export function UnifiedCalendarGrid({ kinds, className, locationId }: Props) {
                 {day.getDate()}
               </div>
               <div className="flex-1 flex flex-col gap-0.5 overflow-hidden">
-                {dayEvents.slice(0, 3).map((e) => (
-                  <div
-                    key={e.id}
-                    title={e.title}
-                    className="text-[9px] truncate rounded px-1 py-px font-medium text-white"
-                    style={{ background: e.color }}
-                  >
-                    {e.title}
-                  </div>
-                ))}
+                {dayEvents.slice(0, 3).map((e) => {
+                  // Only JOBS can be dragged, and only in writable mode. A
+                  // campaign, email or social post on this grid is a scheduled
+                  // SEND — dragging one to another day would quietly move when
+                  // it goes out, which is not something to discover by accident.
+                  const jobId = e.kind === "job" && e.id.startsWith("job:")
+                    ? e.id.slice("job:".length)
+                    : null;
+                  const canDrag = !!onDropJob && !!jobId;
+                  return (
+                    <div
+                      key={e.id}
+                      title={canDrag ? `${e.title} — drag to another day to reschedule` : e.title}
+                      draggable={canDrag}
+                      onDragStart={canDrag ? (ev) => {
+                        ev.stopPropagation();
+                        ev.dataTransfer.setData("application/x-oliver-job-id", jobId!);
+                        // Carry the original start so the drop can keep the
+                        // time of day. Moving a 2pm job to Friday should leave
+                        // it at 2pm, not reset it to the default hour.
+                        ev.dataTransfer.setData("application/x-oliver-job-start", e.start);
+                        // ...and the end, so a job that runs 2pm–5pm still runs
+                        // three hours after the move instead of collapsing or
+                        // stretching back to the old day.
+                        if (e.end) ev.dataTransfer.setData("application/x-oliver-job-end", e.end);
+                        ev.dataTransfer.effectAllowed = "move";
+                      } : undefined}
+                      className={`text-[9px] truncate rounded px-1 py-px font-medium text-white ${
+                        canDrag ? "cursor-grab active:cursor-grabbing" : ""
+                      }`}
+                      style={{ background: e.color }}
+                    >
+                      {e.title}
+                    </div>
+                  );
+                })}
                 {dayEvents.length > 3 && (
                   <div className="text-[9px] text-slate-500 px-1">+{dayEvents.length - 3} more</div>
                 )}
@@ -240,13 +319,16 @@ export function UnifiedCalendarGrid({ kinds, className, locationId }: Props) {
           dayKey={openDay}
           events={eventsByDay[openDay] || []}
           onClose={() => setOpenDay(null)}
+          body={renderDayBody?.(openDay, eventsByDay[openDay] || [], () => { setOpenDay(null); void load(); })}
         />
       )}
     </div>
   );
 }
 
-function DayDetailModal({ dayKey, events, onClose }: { dayKey: string; events: UnifiedEvent[]; onClose: () => void }) {
+function DayDetailModal({ dayKey, events, onClose, body }: {
+  dayKey: string; events: UnifiedEvent[]; onClose: () => void; body?: React.ReactNode;
+}) {
   const d = new Date(`${dayKey}T12:00:00`);
   const heading = d.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 
@@ -260,6 +342,10 @@ function DayDetailModal({ dayKey, events, onClose }: { dayKey: string; events: U
       subtitle={`${events.length} event${events.length === 1 ? "" : "s"}`}
       size="info"
     >
+      {/* A supplied body OWNS the day — OLIVER renders a real hour grid with the
+          jobs in place, so the flat list below would be the same information
+          twice. Without one, the list is the day view, unchanged. */}
+      {body ? <div className="p-4">{body}</div> : (
       <div className="p-4 space-y-2">
         {events.map((e) => {
           const start = new Date(e.start);
@@ -302,6 +388,7 @@ function DayDetailModal({ dayKey, events, onClose }: { dayKey: string; events: U
           <div className="text-center text-sm text-slate-500 py-8">Nothing scheduled this day.</div>
         )}
       </div>
+      )}
     </IadmModal>
   );
 }

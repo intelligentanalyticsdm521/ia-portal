@@ -81,13 +81,19 @@ export function CommandAlerts() {
           completed_count: number;
           total_steps: number;
         };
-        const r = await oliver.get<{ data: OnboardingStatus }>("/onboarding/status");
-        const ob = r.data;
+        // lib/oliverApi already strips the { data: ... } envelope, so reading
+        // .data here was always undefined and this alert could never fire.
+        const ob = await oliver.get<OnboardingStatus>("/onboarding/status");
         if (ob && !ob.onboarding_completed_at && !ob.all_required_complete) {
           next.push({
             id: "oliver-onboarding-incomplete", severity: "warning", source: "oliver",
             title: `Finish setting up OLIVER (${ob.completed_count}/${ob.total_steps})`,
-            description: "Complete guided setup — business profile, Stripe, invoice template, catalog — so you can send your first paid invoice.",
+            // This sentence names the steps the backend actually returns, so it
+            // has to move when that list does. `payout_schedule` joined it
+            // 2026-09-02 — and it belongs in this alert more than any other
+            // step, because "send your first paid invoice" is exactly the
+            // moment a manual payout schedule strands the money in Stripe.
+            description: "Complete guided setup — business profile, Stripe, how you get paid, invoice template, catalog — so you can send your first paid invoice.",
             href: "/app/services/oliver_onboarding",
           });
         }
@@ -95,8 +101,8 @@ export function CommandAlerts() {
 
       try {
         type OliverToday = { overdue_invoices: number; overdue_amount: number; open_requests: number; disputes_open: number; };
-        const r = await oliver.get<{ data: OliverToday }>("/dashboard/today");
-        const d = r.data;
+        // Same double-unwrap — the overdue-invoice alert never fired either.
+        const d = await oliver.get<OliverToday>("/dashboard/today");
         if (d?.overdue_invoices && d.overdue_invoices > 0) {
           next.push({
             id: "oliver-invoices-overdue", severity: d.overdue_invoices > 5 ? "critical" : "warning", source: "oliver",

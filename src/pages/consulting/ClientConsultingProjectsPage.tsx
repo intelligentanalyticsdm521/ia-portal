@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Folder, Clock } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { ClientConsultingProjectModal } from "../../components/consulting/ClientConsultingProjectModal";
+import { BookConsultationCTA } from "../../components/consulting/BookConsultationCTA";
 
 interface ClientProject {
   project_id: string;
@@ -192,15 +193,21 @@ export function ClientConsultingProjectsPage() {
     );
   }
 
+  // 2026-08-29 (Brandon) — Consulting is open to every client, so "no
+  // projects" is a normal state, not a locked one. Projects with nothing in
+  // flight is the BOOK AN APPOINTMENT surface.
   if (sorted.length === 0) {
     return (
-      <div className="rounded-xl bg-slate-50 border border-slate-200 px-6 py-12 text-center">
-        <Folder className="mx-auto h-8 w-8 text-slate-400 mb-2" />
-        <div className="text-sm font-semibold text-slate-700">No projects yet.</div>
-        <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-          When Intelligent Analytics kicks off work for you, your projects will appear here
-          with their phases, deliverables, and status.
-        </p>
+      <div className="space-y-3">
+        <div className="rounded-xl bg-slate-50 border border-slate-200 px-6 py-10 text-center">
+          <Folder className="mx-auto h-8 w-8 text-slate-400 mb-2" />
+          <div className="text-sm font-semibold text-slate-700">No projects yet.</div>
+          <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+            When we kick off work for you, your projects appear here with their phases,
+            deliverables, and status. Want to get something started? Book a time below.
+          </p>
+        </div>
+        <BookConsultationCTA variant="compact" />
       </div>
     );
   }

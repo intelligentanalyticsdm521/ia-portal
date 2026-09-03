@@ -35,20 +35,36 @@ import { DEV_AUTH, DEV_TOKEN_RESULT } from '../lib/devAuth';
  */
 export function useActiveAccount(): AccountInfo {
   const { accounts } = useMsal();
+  const first = accounts[0];
+  // Memoize on the account KEY, never on `accounts` (or the object) — MSAL
+  // rebuilds the accounts array with fresh AccountInfo instances on its own
+  // events, including the acquireTokenSilent calls our fetches make. Keyed on
+  // identity, every api hook's `get` was recreated per event, every
+  // `useEffect([load])` refired, and that fetch raised the next MSAL event —
+  // a self-sustaining fetch loop. One stuck tab produced 3,226 /auth/verify
+  // 404s on 2026-08-26 evening this way (and the argus-credits 403 bursts are
+  // the same loop through the HeaderBar badge). A stale object is safe here:
+  // consumers only pass it back to MSAL to select the account for token calls.
+  const accountKey = first?.homeAccountId ?? first?.localAccountId ?? null;
   return useMemo(
-    () => (DEV_AUTH ? (DEV_TOKEN_RESULT.account as unknown as AccountInfo) : accounts[0]),
-    [accounts]
+    () => (DEV_AUTH ? (DEV_TOKEN_RESULT.account as unknown as AccountInfo) : first),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [accountKey]
   );
 }
 
 export function useAccessToken() {
   const { instance, accounts } = useMsal();
 
+  // Same key-based memo as useActiveAccount above — see the loop note there.
+  const firstAccount = accounts[0];
+  const firstAccountKey = firstAccount?.homeAccountId ?? firstAccount?.localAccountId ?? null;
   const activeAccount: AccountInfo | null = useMemo(
     // Under dev auth there is no MSAL account and never will be. Hand back a
     // stand-in so AppGate's `if (!activeAccount)` guards don't dead-end.
-    () => (DEV_AUTH ? (DEV_TOKEN_RESULT.account as unknown as AccountInfo) : accounts[0] || null),
-    [accounts]
+    () => (DEV_AUTH ? (DEV_TOKEN_RESULT.account as unknown as AccountInfo) : firstAccount || null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [firstAccountKey]
   );
 
   const getToken = useCallback(async (): Promise<AuthenticationResult> => {

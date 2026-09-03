@@ -34,8 +34,11 @@ export function useWalkthrough() {
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
-    get<{ data: WalkthroughState }>("/onboarding/walkthrough-state")
-      .then((r) => { if (!cancelled) setState((r as { data: WalkthroughState })?.data || null); })
+    // 2026-09-01 — useOliverApi unwraps the envelope, so the cast to
+    // { data: WalkthroughState } and the .data read produced undefined: every
+    // walkthrough's saved state came back null and progress never restored.
+    get<WalkthroughState>("/onboarding/walkthrough-state")
+      .then((r) => { if (!cancelled) setState(r || null); })
       .catch(() => { if (!cancelled) setState(null); })
       .finally(() => { if (!cancelled) setLoaded(true); });
     return () => { cancelled = true; };

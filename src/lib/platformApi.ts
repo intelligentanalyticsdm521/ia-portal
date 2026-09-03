@@ -343,6 +343,34 @@ export interface MeAccessResponse {
   };
 }
 
+// 2026-09-01 — the access endpoints answer in snake_case
+// (user_id, full_name, has_explicit_role, is_self) while this interface — and
+// every component reading it — is camelCase. The response was handed straight
+// back with `as PlatformTenantUser[]`, so TypeScript happily agreed and
+// `u.userId` was undefined at runtime.
+//
+// What that looked like: the list rendered, because `email` and `role` happen to
+// spell the same either way, but the display name was blank and EVERY action
+// keyed on the id sent `undefined` — so toggling product access PATCHed
+// /tenant-users/undefined/products, SQL Server rejected "undefined" as a
+// uniqueidentifier, and the 500 came back to the user as "Error loading users."
+//
+// Normalising here, at the client boundary, keeps the API contract untouched
+// for any other consumer and makes the declared type honest. An `as` cast is
+// not a check — that is the same hole as the {data:...} double-unwrap.
+function toTenantUser(raw: any): PlatformTenantUser {
+  return {
+    userId: raw?.userId ?? raw?.user_id ?? '',
+    email: raw?.email ?? '',
+    displayName: raw?.displayName ?? raw?.full_name
+      ?? ([raw?.first_name, raw?.last_name].filter(Boolean).join(' ') || null),
+    role: raw?.role,
+    hasExplicitRole: raw?.hasExplicitRole ?? raw?.has_explicit_role ?? false,
+    products: Array.isArray(raw?.products) ? raw.products : [],
+    isSelf: raw?.isSelf ?? raw?.is_self ?? false,
+  };
+}
+
 export interface PlatformTenantUser {
   userId: string;
   email: string;
@@ -400,7 +428,8 @@ export async function listTenantUsers(params: {
       : `Request failed (${res.status})`;
     throw new PlatformApiError(msg, res.status, body);
   }
-  return body as { users: PlatformTenantUser[] };
+  const rawUsers = (body as any)?.users;
+  return { users: Array.isArray(rawUsers) ? rawUsers.map(toTenantUser) : [] };
 }
 
 export async function updateTenantUserRole(params: {
@@ -428,7 +457,7 @@ export async function updateTenantUserRole(params: {
       : `Request failed (${res.status})`;
     throw new PlatformApiError(msg, res.status, body);
   }
-  return body as PlatformTenantUser;
+  return toTenantUser(body);
 }
 
 export async function updateTenantUserProducts(params: {
@@ -456,7 +485,7 @@ export async function updateTenantUserProducts(params: {
       : `Request failed (${res.status})`;
     throw new PlatformApiError(msg, res.status, body);
   }
-  return body as PlatformTenantUser;
+  return toTenantUser(body);
 }
 
 export interface PendingInvitation {

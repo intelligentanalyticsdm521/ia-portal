@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "node --import ./scripts/test-ts-loader.mjs --test test"
+    "test": "node --import ./scripts/test-ts-loader.mjs --test test",
+    "dev:hestia2": "vite --mode hestia2 --port 5176 --strictPort --host ::"
   },
   "dependencies": {
     "@azure/msal-browser": "^3.14.0",
@@ -18,6 +19,8 @@
     "@fontsource/oswald": "^5.3.0",
     "@fontsource/playfair-display": "^5.3.0",
     "@fontsource/poppins": "^5.3.0",
+    "@stripe/connect-js": "^3.4.6",
+    "@stripe/react-connect-js": "^3.4.4",
     "@stripe/react-stripe-js": "^6.4.0",
     "@stripe/stripe-js": "^9.6.0",
     "@tiptap/extension-image": "3.27.1",

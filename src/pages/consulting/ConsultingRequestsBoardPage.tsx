@@ -14,7 +14,7 @@ import { Plus, AlertCircle } from "lucide-react";
 import {
   TASK_STAGE_LABELS,
   TASK_STATUS_LABELS,
-  TASK_ACTIONS,
+  allTaskMoves,
   TaskDetailModal,
   type ConsultingTask,
   type TaskDeliverable,
@@ -333,11 +333,13 @@ export function ConsultingRequestsBoardPage() {
                             <option value={`${r.stage}|${r.status}`}>
                               {busyId === r.id ? "Saving…" : (TASK_STATUS_LABELS[r.status] || r.status)}
                             </option>
-                            {(TASK_ACTIONS[r.stage] || [])
-                              .filter((a) => a.value !== `${r.stage}|${r.status}`)
-                              .map((a) => (
-                                <option key={a.value} value={a.value}>{a.label}</option>
-                              ))}
+                            {allTaskMoves().map((g) => (
+                              <optgroup key={g.stage} label={g.label}>
+                                {g.options
+                                  .filter((o) => o.value !== `${r.stage}|${r.status}`)
+                                  .map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                              </optgroup>
+                            ))}
                           </select>
                         </div>
                       ))

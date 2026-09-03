@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { IadmModal } from "../../components/IadmModal";
 import { Plus, AlertCircle, LayoutGrid, List as ListIcon, ChevronDown, ChevronRight, Search, Settings } from "lucide-react";
-import { TASK_STAGE_LABELS, TASK_STATUS_LABELS, taskActionsFor } from "../../components/consulting/ConsultingProjectModal";
+import { TASK_STAGE_LABELS, TASK_STATUS_LABELS, taskActionsFor, defaultStatusFor, allTaskMoves } from "../../components/consulting/ConsultingProjectModal";
 import { TaskModal } from "./TaskModal";
 import {
   type WorkRow, type ReleaseRow, type WorkerRow, type WorkMeta,
@@ -144,13 +144,20 @@ export function ConsultingWorkBoardPage() {
     finally { setBusyId(null); }
   };
 
-  /** The legal "stage|status" for moving `r` into `stage`, or null if the stage
-   *  machine has no such transition (e.g. new -> approved). Prefers a non-cancel
-   *  action so dropping on a column never silently cancels work. */
-  const actionTo = (r: WorkRow, stage: string): string | null => {
-    const legal = taskActionsFor(r.stage, r.is_internal).filter((a) => a.value.split("|")[0] === stage);
-    if (!legal.length) return null;
-    return (legal.find((a) => !a.value.startsWith("cancelled|")) || legal[0]).value;
+  /** The "stage|status" for moving `r` into `stage`.
+   *
+   *  2026-08-29: this used to consult the stage machine and return null when
+   *  the move wasn't an allowed edge — so dropping a card on a lane the machine
+   *  disliked (In Progress -> Completed, the one Brandon actually wanted) did
+   *  nothing at all, with no error. A founder may now move work to any stage,
+   *  so every lane is a valid target. Prefer the curated action's status when
+   *  one exists (it carries the intended status, e.g. Client Review ->
+   *  awaiting_client); otherwise fall back to the stage's default status. */
+  const actionTo = (r: WorkRow, stage: string): string => {
+    const curated = taskActionsFor(r.stage, r.is_internal)
+      .filter((a) => a.value.split("|")[0] === stage)
+      .find((a) => !a.value.startsWith("cancelled|"));
+    return curated ? curated.value : `${stage}|${defaultStatusFor(stage)}`;
   };
 
   const transition = async (r: WorkRow, value: string) => {
@@ -339,8 +346,13 @@ export function ConsultingWorkBoardPage() {
           <option value={`${r.stage}|${r.status}`}>
             {TASK_STAGE_LABELS[r.stage] || r.stage} — {TASK_STATUS_LABELS[r.status] || r.status}
           </option>
-          {taskActionsFor(r.stage, r.is_internal).filter((a) => a.value !== `${r.stage}|${r.status}`)
-            .map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+          {allTaskMoves().map((g) => (
+            <optgroup key={g.stage} label={g.label}>
+              {g.options
+                .filter((o) => o.value !== `${r.stage}|${r.status}`)
+                .map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </optgroup>
+          ))}
         </select>
       </div>
     );
@@ -362,12 +374,10 @@ export function ConsultingWorkBoardPage() {
               isDropTarget ? "border-[#EF6C33] ring-2 ring-[#EF6C33]/40" : "border-slate-200"
             }`}
             onDragOver={(e) => {
-              // Only accept the drop if the move is actually legal for the
-              // dragged card's current stage — the stage machine is
-              // server-validated, so a drop we can't express as a legal
-              // transition would just 4xx.
+              // Every lane is a valid target now that a founder may move work
+              // to any stage (2026-08-29) — only a drop onto its own lane is a
+              // no-op.
               if (!draggingRow || draggingRow.stage === stage) return;
-              if (!actionTo(draggingRow, stage)) return;
               e.preventDefault();
               e.dataTransfer.dropEffect = "move";
               const key = `${laneKey}:${stage}`;
@@ -383,12 +393,7 @@ export function ConsultingWorkBoardPage() {
               const id = e.dataTransfer.getData("text/plain");
               const r = rows.find((x) => x.id === id);
               if (!r || r.stage === stage) return;
-              const value = actionTo(r, stage);
-              if (!value) {
-                setError(`Can't move "${r.title}" straight to ${TASK_STAGE_LABELS[stage] || stage}.`);
-                return;
-              }
-              transition(r, value);
+              transition(r, actionTo(r, stage));
             }}>
             <div className="flex items-center justify-between rounded-t-xl border-b-2 bg-white px-3 py-2"
                  style={{ borderBottomColor: STAGE_TINT[stage] }}>

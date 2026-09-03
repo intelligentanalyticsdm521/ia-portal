@@ -67,11 +67,19 @@ const FILTER_PILLS = [
 const isInactive = (r: CoaAccount) => r.is_active === false || r.is_active === 0;
 
 export function StellaCoaPage() {
-  const { get, patch, ready } = useStellaApi();
+  const { get, patch, post, ready } = useStellaApi();
   const navigate = useNavigate();
   const [rows, setRows] = useState<CoaAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
+  // 2026-09-01 — a new business had NO way to get a chart of accounts.
+  // lib/coaSeed.js holds the standard ~40-account COA and its own comment
+  // says it is seeded on new-tenant setup, but nothing ever called it: the
+  // only path is POST /ledger/coa {seed:true}, which no screen sent. So this
+  // empty state described seeding while offering no way to do it, and every
+  // downstream STELLA surface was unusable — including the OLIVER income
+  // sync, which needs account 4000 and silently imports nothing without it.
+  const [seeding, setSeeding] = useState(false);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(false);
@@ -242,8 +250,27 @@ export function StellaCoaPage() {
 
       {!rows.length && !loading ? (
         <EmptyState
-          title="Chart of Accounts not seeded yet"
-          description="Every business starts with a standard service-business chart of accounts. Once seeded, your accounts appear here and you can add or rename them to match how you run the books."
+          title="Set up your chart of accounts"
+          description="A chart of accounts is the list of buckets your money moves between — cash, sales, materials, fuel. Nothing else in the ledger works without it. We'll create the standard set for a service business; rename, add or hide any of them afterwards."
+          action={
+            <Button
+              onClick={async () => {
+                setSeeding(true);
+                setError(null);
+                try {
+                  await post("/ledger/coa", { seed: true });
+                  await reload();
+                } catch (e) {
+                  setError(e);
+                } finally {
+                  setSeeding(false);
+                }
+              }}
+              disabled={seeding}
+            >
+              {seeding ? "Setting up…" : "Create my chart of accounts"}
+            </Button>
+          }
         />
       ) : (
         <>
