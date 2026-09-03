@@ -9,13 +9,16 @@
 //
 // Reference: C:\dev\claude code\overnight-report\30_LEADGEN_V1_SPEC.md
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { LeadGenTermsLink, LeadGenTermsNotice } from "../../components/spark/LeadGenTermsLink";
 import {
+  type LeadGenCredits, BILLING_SETTINGS_ROUTE, fmtUsd, friendlyApiError, hasLeadsPackage, splitRun,
+} from "../../lib/leadgenBilling";
+import {
   Search, MapPin, Sparkles, DollarSign, Clock, Play, Save,
-  X, ChevronDown, Check, Tag, Snowflake, Building2, Info,
+  X, ChevronDown, Check, Tag, Snowflake, Building2, Info, CreditCard, CalendarClock,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -91,9 +94,20 @@ const SEARCH_MODES: Array<{ value: SearchMode; label: string; help: string }> = 
 
 const RADIUS_STEPS = [0, 5, 10, 25, 30, 50, 100];
 
-// V1.1 will pull this from /usage/tier-caps. Hardcoded for V1 launch.
+// Slider bounds until /leadgen/credits answers (then the real package drives them).
 const MAX_LEADS_CAP = 100;
-const COST_PER_LEAD_USD = 0.18; // rough rule-of-thumb estimate, "subject to actual Hunter spend"
+// Slider step (Brandon 2026-09-04: one-off minimum 10, steps of 5). The server
+// caps a run at 1000.
+const LEADS_STEP = 5;
+const LEADS_HARD_CAP = 1000;
+
+const PACKAGE_LABEL: Record<string, string> = {
+  essentials: "Essentials 50",
+  growth: "Growth 100",
+  authority: "Authority 150",
+  override: "Sponsored allotment",
+  none: "Pay per lead",
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Hooks: debounced value + autocomplete helpers
@@ -279,14 +293,10 @@ export function SparkLeadGenNewPage() {
   const activeKw = useMemo(() => previewKw.filter((k) => !excludedTerms.has(k.term)), [previewKw, excludedTerms]);
   const activeCities = useMemo(() => previewLoc.cities.filter((c) => !excludedCityIds.has(c.city_id)), [previewLoc, excludedCityIds]);
 
-  // Tenant Lead Gen credit pool. Drives the max-leads cap + the Usage card in
-  // the right sidebar. Endpoint = GET /leadgen/credits (LUMEN-API), returns
-  // { monthly_allotment, remaining, overage_per_lead_cents }.
-  const [credits, setCredits] = useState<{
-    monthly_allotment: number;
-    remaining: number;
-    overage_per_lead_cents: number;
-  } | null>(null);
+  // Tenant billing facts — package, included/remaining leads this period, the
+  // per-lead rate for extras (from Stripe), card on file. Drives the slider,
+  // the live estimate and the Start gate. GET /leadgen/credits (LUMEN-API).
+  const [credits, setCredits] = useState<LeadGenCredits | null>(null);
 
   // Load states once on mount.
   useEffect(() => {
@@ -302,21 +312,29 @@ export function SparkLeadGenNewPage() {
     })();
   }, [get, ready]);
 
-  // Load tenant credit pool once on mount. Silent-fail leaves credits=null so
-  // the UI falls back to the legacy fixed cap; better than blocking the form.
+  // Load the billing facts once on mount. Silent-fail leaves credits=null so
+  // the UI falls back to the legacy fixed cap; the server still enforces.
   useEffect(() => {
     if (!ready) return;
     (async () => {
       try {
-        // GET /api/v1/leadgen/credits → { data: { monthly_allotment, remaining, overage_per_lead_cents, ... } }
-        type CreditsResp = { data: { monthly_allotment: number; remaining: number; overage_per_lead_cents: number } };
-        const r = await get<CreditsResp>("/api/v1/leadgen/credits");
+        // GET /api/v1/leadgen/credits → { data: LeadGenCredits }
+        const r = await get<{ data: LeadGenCredits }>("/api/v1/leadgen/credits");
         if (r?.data) {
+          const d = r.data;
           setCredits({
-            monthly_allotment: Number(r.data.monthly_allotment) || 0,
-            remaining: Number(r.data.remaining) || 0,
-            overage_per_lead_cents: Number(r.data.overage_per_lead_cents) || 100,
+            ...d,
+            included: Number(d.included) || 0,
+            remaining: Number(d.remaining) || 0,
+            delivered_this_period: Number(d.delivered_this_period) || 0,
+            reserved_in_flight: Number(d.reserved_in_flight) || 0,
+            rate_cents: Number(d.rate_cents) || 0,
+            one_off_min: Number(d.one_off_min) || 10,
+            card_on_file: !!d.card_on_file,
           });
+          // A one-off run can't go under the minimum — lift the default if needed.
+          const min = hasLeadsPackage(d) ? LEADS_STEP : Number(d.one_off_min) || 10;
+          setForm((f) => (f.maxLeads < min ? { ...f, maxLeads: min } : f));
         }
       } catch {
         // Silent — cap stays at legacy fallback, no user-facing error.
@@ -521,20 +539,22 @@ export function SparkLeadGenNewPage() {
     return () => { cancelled = true; };
   }, [debouncedLoc, post, ready]);
 
-  // ── derived ────────────────────────────────────────────────────────────
-  // Max = whatever the tenant's subscription allotment currently provides.
-  // In Brandon's billing model there is NO per-lead overage. Extra volume
-  // comes from either (a) increasing the subscription's Extra-Leads add-on
-  // quantity (per-tier pack sizes: Essentials=5, Growth/Authority=10) or
-  // (b) an ad-hoc lead-pack product — not yet built. So the slider is a
-  // hard stop at remaining; the "buy more" affordance sits below.
-  const dynamicMaxCap = credits ? credits.remaining : MAX_LEADS_CAP;
+  // ── derived (billing model, Brandon 2026-09-04) ────────────────────────
+  // The slider may run PAST the included leads: extras are metered per run at
+  // the tier rate ("20 more at $1.15 = $23.00 on your card ending 4242"). A
+  // tenant without a Leads package pays per delivered lead, minimum 10 per run.
+  const subscriber = hasLeadsPackage(credits);
+  const minLeads = credits ? (subscriber ? LEADS_STEP : credits.one_off_min) : 10;
+  const dynamicMaxCap = credits
+    ? Math.min(LEADS_HARD_CAP, Math.max(100, Math.ceil((credits.remaining + 100) / 50) * 50))
+    : MAX_LEADS_CAP;
+  const split = useMemo(() => splitRun(credits, form.maxLeads), [credits, form.maxLeads]);
+  const needsCard = !!credits && split.metered > 0 && !credits.card_on_file;
+  const pricingUnavailable = !!credits && split.metered > 0 && credits.rate_source !== "stripe";
 
-  // Estimated cost is $0 for leads within the monthly allotment (they're
-  // already paid for by the subscription). Kept as a stable computed for
-  // the sidebar; when we wire ad-hoc purchase the response will drive
-  // cost directly from Stripe.
-  const estCostUsd = 0;
+  // Estimated cost = the metered portion at the real per-lead rate (delivered
+  // leads only — fewer delivered means a smaller invoice).
+  const estCostUsd = split.meteredCents / 100;
   const estTimeStr = "4–7 min";
 
   // Brandon 2026-09-04: a topic that is not a taxonomy category ("snow removal")
@@ -547,7 +567,9 @@ export function SparkLeadGenNewPage() {
     (form.cities.length > 0 || form.zips.length > 0) &&
     (previewKw.length === 0 || activeKw.length > 0) &&
     (previewLoc.cities.length === 0 || activeCities.length > 0) &&
-    form.maxLeads > 0 &&
+    form.maxLeads >= minLeads &&
+    !needsCard &&
+    !pricingUnavailable &&
     !submitting;
 
   // ── handlers ───────────────────────────────────────────────────────────
@@ -650,7 +672,8 @@ export function SparkLeadGenNewPage() {
         setError(new Error("Backend returned no job_id. Endpoint may not be live yet."));
       }
     } catch (err) {
-      setError(err);
+      // 400 under the one-off minimum · 402 no card on file · 503 pricing not set up
+      setError(friendlyApiError(err));
     } finally {
       setSubmitting(false);
     }
@@ -941,28 +964,67 @@ export function SparkLeadGenNewPage() {
                 <span>Max leads</span>
                 <span className="text-[11px] normal-case text-slate-400">
                   {credits
-                    ? `${credits.remaining.toLocaleString()} available this month`
+                    ? subscriber
+                      ? `${credits.remaining.toLocaleString()} of ${credits.included.toLocaleString()} included left this period`
+                      : `${fmtUsd(credits.rate_cents)} per lead · minimum ${credits.one_off_min}`
                     : `Tier cap: ${MAX_LEADS_CAP}`}
                 </span>
               </label>
               <div className="mt-0.5 flex items-center gap-2">
                 <input
                   type="range"
-                  min={10}
+                  min={minLeads}
                   max={dynamicMaxCap}
-                  step={10}
+                  step={LEADS_STEP}
                   value={form.maxLeads}
                   onChange={(e) => setForm({ ...form, maxLeads: Number(e.target.value) })}
                   className="flex-1 accent-[#EF6C33]"
                 />
                 <span className="text-sm font-semibold text-slate-900 tabular-nums w-12 text-right">{form.maxLeads}</span>
               </div>
-              {credits && credits.remaining < credits.monthly_allotment * 0.25 && (
-                <p className="text-[11px] text-amber-700 mt-1 font-medium">
-                  Running low. Add an Extra Leads pack to your subscription — or top up ad-hoc for this run (coming soon).
+              {/* Live estimate — the same split the server bills: included first, then metered. */}
+              {credits && (
+                <p className="text-[11px] mt-1.5 text-slate-700" data-testid="leadgen-estimate-line">
+                  {subscriber ? (
+                    <>
+                      <span className="font-semibold">{split.fromCredits.toLocaleString()}</span> included this period
+                      {split.metered > 0 ? (
+                        <>
+                          {" · "}<span className="font-semibold">{split.metered.toLocaleString()}</span> more at {fmtUsd(credits.rate_cents)} ={" "}
+                          <span className="font-semibold">{fmtUsd(split.meteredCents)}</span>
+                          {credits.card_on_file ? ` on your card ending ${credits.card_last4 ?? "····"}` : ""}
+                        </>
+                      ) : " — no charge for this run"}
+                    </>
+                  ) : (
+                    <>
+                      {fmtUsd(credits.rate_cents)} per lead · minimum {credits.one_off_min} · up to{" "}
+                      <span className="font-semibold">{fmtUsd(split.meteredCents)}</span>
+                      {credits.card_on_file ? ` on your card ending ${credits.card_last4 ?? "····"}` : ""}
+                    </>
+                  )}
                 </p>
               )}
-              <p className="text-[11px] text-slate-500 mt-1">Included in your subscription. Need more? Increase your Extra Leads add-on quantity on your plan.</p>
+              {needsCard && (
+                <p className="text-[11px] text-amber-800 mt-1 font-medium flex items-center gap-1.5">
+                  <CreditCard className="h-3 w-3" />
+                  {subscriber
+                    ? `${split.metered} of these leads are beyond your included ${credits!.included}. `
+                    : "Pay-per-lead searches need a card on file. "}
+                  <Link to={BILLING_SETTINGS_ROUTE} className="underline text-[#B84817] hover:text-[#EF6C33]">Add a card in Billing</Link>
+                  {subscriber ? " or lower the max." : "."}
+                </p>
+              )}
+              {pricingUnavailable && !needsCard && (
+                <p className="text-[11px] text-amber-800 mt-1 font-medium">
+                  Per-lead pricing isn't available right now — runs within your included leads still work.
+                </p>
+              )}
+              <p className="text-[11px] text-slate-500 mt-1">
+                Billed per <strong>delivered</strong> lead only. {subscriber
+                  ? "Leads beyond your included allowance are invoiced when the run finishes."
+                  : "A SPARK Leads package includes leads every month at a lower rate and unlocks scheduled searches."}
+              </p>
             </div>
           </Section>
         </div>
@@ -971,32 +1033,51 @@ export function SparkLeadGenNewPage() {
         <aside className="lg:sticky lg:top-4 self-start space-y-4">
           {/* Usage / plan pool — visible at the TOP so the customer always
               sees what they have available before they commit to a run. */}
-          {credits && (() => {
-            const used = Math.max(0, credits.monthly_allotment - credits.remaining);
-            const pct = credits.monthly_allotment > 0
-              ? Math.min(100, Math.round((used / credits.monthly_allotment) * 100))
+          {credits && subscriber && (() => {
+            const used = Math.max(0, credits.included - credits.remaining);
+            const pct = credits.included > 0
+              ? Math.min(100, Math.round((used / credits.included) * 100))
               : 0;
             const barColor = pct >= 90 ? "bg-rose-500" : pct >= 70 ? "bg-amber-500" : "bg-emerald-500";
+            const periodEnd = credits.period_end ? new Date(credits.period_end).toLocaleDateString() : null;
             return (
               <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
                 <div className="flex items-center justify-between mb-1.5">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-700">Lead Gen usage</div>
-                  <div className="text-[10px] text-slate-400 tabular-nums">this month</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-700">Included leads</div>
+                  <div className="text-[10px] text-slate-400">{PACKAGE_LABEL[credits.package] ?? credits.package}</div>
                 </div>
                 <div className="flex items-baseline gap-1.5 mb-2">
                   <span className="text-2xl font-bold text-slate-900 tabular-nums">{credits.remaining.toLocaleString()}</span>
-                  <span className="text-xs text-slate-500">/ {credits.monthly_allotment.toLocaleString()} remaining</span>
+                  <span className="text-xs text-slate-500">/ {credits.included.toLocaleString()} left{periodEnd ? ` · renews ${periodEnd}` : " this period"}</span>
                 </div>
                 <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
                   <div className={`h-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
                 </div>
                 <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
                   <span>{used.toLocaleString()} used</span>
-                  <span>Need more? Add pack on your plan</span>
+                  <span>Extra leads {fmtUsd(credits.rate_cents)} each, per run</span>
                 </div>
               </div>
             );
           })()}
+          {credits && !subscriber && (
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-700">Pay per lead</div>
+                <div className="text-[10px] text-slate-400">no Leads package</div>
+              </div>
+              <div className="flex items-baseline gap-1.5 mb-1">
+                <span className="text-2xl font-bold text-slate-900 tabular-nums">{fmtUsd(credits.rate_cents)}</span>
+                <span className="text-xs text-slate-500">per delivered lead · minimum {credits.one_off_min} per run</span>
+              </div>
+              <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                <CreditCard className="h-3 w-3" />
+                {credits.card_on_file
+                  ? `Card on file ending ${credits.card_last4 ?? "····"}`
+                  : <>No card on file — <Link to={BILLING_SETTINGS_ROUTE} className="underline hover:text-slate-800">add one in Billing</Link></>}
+              </div>
+            </div>
+          )}
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="px-4 py-2.5 border-b border-slate-100 bg-gradient-to-br from-orange-50/60 to-white">
               <div className="text-[10px] font-bold uppercase tracking-wider text-[#EF6C33]">Live preview</div>
@@ -1088,7 +1169,13 @@ export function SparkLeadGenNewPage() {
               <div>
                 <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wide flex items-center gap-1"><DollarSign className="h-3 w-3" /> Est. cost</div>
                 <div className="text-lg font-bold text-slate-900 tabular-nums mt-0.5">${estCostUsd.toFixed(2)}</div>
-                <div className="text-[10px] text-slate-400 leading-tight">Subject to actual Hunter spend</div>
+                <div className="text-[10px] text-slate-400 leading-tight">
+                  {credits
+                    ? split.metered > 0
+                      ? `${split.metered} × ${fmtUsd(credits.rate_cents)} · delivered leads only`
+                      : "Within your included leads"
+                    : "Loading your plan…"}
+                </div>
               </div>
               <div>
                 <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wide flex items-center gap-1"><Clock className="h-3 w-3" /> Est. time</div>
@@ -1107,6 +1194,12 @@ export function SparkLeadGenNewPage() {
               >
                 <Play className="h-3.5 w-3.5" /> {submitting ? "Starting…" : "Start Search"}
               </button>
+              {needsCard && (
+                <p className="text-[11px] text-amber-800 text-center flex items-center justify-center gap-1">
+                  <CreditCard className="h-3 w-3" />
+                  <Link to={BILLING_SETTINGS_ROUTE} className="underline font-medium">Add a card in Billing</Link> to start this search.
+                </p>
+              )}
               <LeadGenTermsNotice />
               <button
                 type="button"
@@ -1116,12 +1209,20 @@ export function SparkLeadGenNewPage() {
               >
                 <Save className="h-3 w-3" /> Save this search
               </button>
+              {/* Decision B5: scheduled (recurring) searches are a subscriber feature. */}
+              {credits && !subscriber && (
+                <p className="text-[11px] text-slate-500 text-center flex items-center justify-center gap-1.5">
+                  <CalendarClock className="h-3 w-3 text-slate-400" />
+                  Recurring (scheduled) searches are included with a SPARK Leads package.
+                </p>
+              )}
             </div>
           </div>
 
           <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-[11px] text-slate-500 leading-relaxed">
             <Info className="h-3 w-3 inline-block mr-1 text-slate-400" />
-            Billed per delivered lead. If we find fewer than your max, you&apos;re only charged for what we deliver.
+            Billed per delivered lead. If we find fewer than your max, you&apos;re only charged for what we deliver — the invoice
+            and receipt arrive by email when the run finishes and are listed under Lead Inbox → Billing.
           </div>
         </aside>
       </div>

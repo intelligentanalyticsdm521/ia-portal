@@ -27,24 +27,27 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Sparkles, MoreVertical, Search, X, CheckCircle2, Bell, ShieldCheck, ShieldX,
   ShieldAlert, ArrowUpDown, Plus, ShieldOff, Trash2, Pencil, MapPin, HelpCircle,
+  Lock, ExternalLink, Receipt,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { LeadGenTermsLink } from "../../components/spark/LeadGenTermsLink";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
+import { type LeadGenBillingRow, BILLING_STATUS_LABEL, fmtUsd, friendlyApiError } from "../../lib/leadgenBilling";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab plumbing
 // ─────────────────────────────────────────────────────────────────────────────
 
-type TabKey = "inbox" | "suppressed" | "territories";
+type TabKey = "inbox" | "suppressed" | "territories" | "billing";
 
-const TAB_ORDER: TabKey[] = ["inbox", "suppressed", "territories"];
+const TAB_ORDER: TabKey[] = ["inbox", "suppressed", "territories", "billing"];
 
 const TAB_LABEL: Record<TabKey, string> = {
   inbox: "Lead Inbox",
   suppressed: "Suppressed Domains",
   territories: "Territories",
+  billing: "Billing",
 };
 
 // Plain-English explainers shown in the per-tab info modals. Brandon's locked
@@ -138,6 +141,33 @@ const TAB_INFO: Record<TabKey, { title: string; body: React.ReactNode }> = {
       </div>
     ),
   },
+  billing: {
+    title: "How is Lead Gen billed?",
+    body: (
+      <div className="space-y-3 text-sm text-slate-700">
+        <p>
+          Every B2B lead search is billed per <strong>delivered</strong> lead — a business with a
+          verified email. If we find fewer than you asked for, you only pay for what we deliver.
+        </p>
+        <p>
+          With a <strong>SPARK Leads package</strong> a set number of leads is included every billing
+          period; leads beyond that are charged per run at your package's rate. Without a package
+          you pay per lead, with a minimum of 10 leads per run.
+        </p>
+        <p>
+          Each paid run produces an invoice and receipt (emailed to you, and listed here with a PDF).
+          If a payment fails, the leads from that run stay visible but <strong>locked</strong> until
+          the invoice is paid.
+        </p>
+        <p className="font-semibold text-slate-900 pt-1">Use this tab to:</p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>See what each run cost and how many leads it delivered.</li>
+          <li>Open or download the invoice for your records.</li>
+          <li>Pay an outstanding invoice to unlock its leads.</li>
+        </ul>
+      </div>
+    ),
+  },
 };
 
 interface Props {
@@ -150,7 +180,7 @@ interface Props {
 function readTabFromUrl(): TabKey | null {
   if (typeof window === "undefined") return null;
   const v = new URLSearchParams(window.location.search).get("tab");
-  return v === "inbox" || v === "suppressed" || v === "territories" ? v : null;
+  return v === "inbox" || v === "suppressed" || v === "territories" || v === "billing" ? v : null;
 }
 
 export function SparkLeadInboxPage({ initialTab }: Props = {}) {
@@ -220,6 +250,7 @@ export function SparkLeadInboxPage({ initialTab }: Props = {}) {
       {tab === "inbox" && <LeadInboxTab />}
       {tab === "suppressed" && <SuppressedDomainsTab />}
       {tab === "territories" && <TerritoriesTab />}
+      {tab === "billing" && <BillingTab />}
 
       {/* Per-tab info modal. IadmModal info-size (1200 × 80vh) gives Brandon
           plenty of room for the explainer without feeling cramped. */}
@@ -317,6 +348,10 @@ interface Lead {
   verification_status: "promoted" | "suppressed" | "verification_unavailable" | null;
   verification_reasons_json: string | null;
   created_at: string;
+  // Billing model: leads of a run whose invoice is unpaid are locked (visible, not promotable).
+  locked?: boolean | number | null;
+  contact_masked?: boolean;
+  search_job_id?: number | null;
 }
 
 function firstRefusalReason(json: string | null | undefined): string | null {
@@ -473,7 +508,8 @@ function LeadInboxTab() {
       const contactId = (r as { data?: { contact_id?: number } })?.data?.contact_id;
       setLeads((rows) => rows.map((row) => row.id === lead.id ? { ...row, contact_id: contactId ?? row.contact_id, status: "accepted" } : row));
     } catch (err) {
-      alert(`Promote failed: ${(err as Error).message}`);
+      // 409 lead_locked_unpaid arrives as a sentence from the server.
+      alert(`Promote failed: ${friendlyApiError(err).message}`);
     } finally {
       setBusyId(null);
     }
@@ -716,6 +752,12 @@ function LeadInboxTab() {
                           Cached
                         </span>
                       )}
+                      {!!l.locked && (
+                        <span title="Locked — the invoice for this lead's search run is unpaid. Pay it under the Billing tab to unlock."
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-100 text-amber-800 ring-1 ring-amber-200">
+                          <Lock className="h-3 w-3" /> Locked
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -727,8 +769,15 @@ function LeadInboxTab() {
                       <span className="ml-1 opacity-70">{tier ? tier[0].toUpperCase() : "—"}</span>
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-700">{l.email || <span className="text-slate-400">—</span>}</td>
-                  <td className="px-4 py-3 text-xs text-slate-700">{l.phone || <span className="text-slate-400">—</span>}</td>
+                  {/* Locked (unpaid run): the server masks email/phone — "j•••@example.com" — until the invoice is paid. */}
+                  <td className="px-4 py-3 text-xs text-slate-700">
+                    {l.email || <span className="text-slate-400">—</span>}
+                    {!!l.locked && l.email && <div className="text-[10px] text-amber-700">Pay the invoice to view</div>}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-700">
+                    {l.phone || <span className="text-slate-400">—</span>}
+                    {!!l.locked && l.phone && <div className="text-[10px] text-amber-700">Pay the invoice to view</div>}
+                  </td>
                   <td className="px-4 py-3 text-xs text-slate-700">{l.lifecycle_stage || "lead"}</td>
                   <td className="px-4 py-3 text-[10px] text-slate-500">{sourceLabel(l.source || l.sources_found)}</td>
                   <td className="px-4 py-3 text-[10px] text-slate-500 whitespace-nowrap">{new Date(l.created_at).toLocaleDateString()}</td>
@@ -783,10 +832,11 @@ function LeadInboxTab() {
                         <div className="absolute right-0 top-full mt-1 z-20 rounded-lg bg-white shadow-lg ring-1 ring-slate-200 py-1 w-44 text-left">
                           <button
                             onClick={() => onPromote(l)}
-                            disabled={!!l.contact_id}
+                            disabled={!!l.contact_id || !!l.locked}
+                            title={l.locked ? "Locked until the invoice for this run is paid (Billing tab)." : undefined}
                             className="w-full px-3 py-1.5 text-xs text-left hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            {l.contact_id ? "✓ Already a contact" : "Promote to contact"}
+                            {l.contact_id ? "✓ Already a contact" : l.locked ? "Locked — payment pending" : "Promote to contact"}
                           </button>
                           <button onClick={() => onSuppress(l)} className="w-full px-3 py-1.5 text-xs text-left hover:bg-rose-50 text-rose-700">
                             Suppress domain
@@ -831,6 +881,142 @@ function LeadInboxTab() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BillingTab — receipts: one row per search run with what it cost, the invoice
+// and the PDF (GET /api/v1/leadgen/billing; loading it also refreshes any open
+// invoice from Stripe and unlocks the leads of a run that has since been paid).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function BillingTab() {
+  const { get, ready } = useSparkApi();
+  const [rows, setRows] = useState<LeadGenBillingRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<unknown>(null);
+
+  const load = useCallback(async () => {
+    if (!ready) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await get<{ data: LeadGenBillingRow[] }>("/api/v1/leadgen/billing?limit=200");
+      setRows(r?.data || []);
+    } catch (err) {
+      setError(friendlyApiError(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [get, ready]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const totals = useMemo(() => {
+    let paid = 0, due = 0;
+    for (const r of rows) {
+      if (r.status === "paid") paid += r.amount_cents ?? 0;
+      if (r.status === "invoice_open" || r.status === "invoice_failed") due += r.amount_cents ?? 0;
+    }
+    return { paid, due };
+  }, [rows]);
+
+  if (loading && rows.length === 0) return <div className="text-sm text-slate-500 py-6">Loading…</div>;
+  if (error) {
+    return (
+      <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+        <div className="font-semibold">Couldn't load billing.</div>
+        <div className="mt-1 text-xs">{error instanceof Error ? error.message : String(error)}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-xs text-slate-600 flex items-center gap-4">
+          <span className="inline-flex items-center gap-1.5"><Receipt className="h-3.5 w-3.5 text-slate-400" /> {rows.length} run{rows.length === 1 ? "" : "s"}</span>
+          <span>Paid <span className="font-semibold text-slate-900 tabular-nums">{fmtUsd(totals.paid)}</span></span>
+          {totals.due > 0 && <span className="text-amber-800">Payment due <span className="font-semibold tabular-nums">{fmtUsd(totals.due)}</span></span>}
+        </div>
+        <button onClick={load} className="text-xs px-2.5 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">Refresh</button>
+      </div>
+
+      <div className="rounded-xl bg-white ring-1 ring-slate-200 overflow-x-auto">
+        <table className="min-w-full text-left text-sm">
+          <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Run</th>
+              <th className="px-4 py-3">Date</th>
+              <th className="px-4 py-3 text-right">Requested</th>
+              <th className="px-4 py-3 text-right">Delivered</th>
+              <th className="px-4 py-3 text-right">Included</th>
+              <th className="px-4 py-3 text-right">Charged</th>
+              <th className="px-4 py-3 text-right">Amount</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3 text-right">Invoice</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((r) => {
+              const settled = r.status !== "reserved" && r.status !== "settling";
+              const s = BILLING_STATUS_LABEL[r.status] ?? { label: r.status, tone: "muted" as const };
+              const toneCls = s.tone === "ok" ? "bg-emerald-100 text-emerald-800" : s.tone === "warn" ? "bg-amber-100 text-amber-800" : s.tone === "bad" ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-700";
+              const metered = settled ? r.metered_delivered : r.metered_reserved;
+              return (
+                <tr key={r.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3">
+                    <a href={`/app/spark/leadgen/jobs/${r.job_id}`} className="font-semibold text-slate-900 hover:text-[#EF6C33]">{r.run_name}</a>
+                    <div className="text-[10px] text-slate-500">Run #{r.job_id}</div>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">{new Date(r.completed_at || r.created_at).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 text-xs text-slate-700 text-right tabular-nums">{r.target_count}</td>
+                  <td className="px-4 py-3 text-xs text-slate-700 text-right tabular-nums">{settled ? (r.delivered_count ?? 0) : "…"}</td>
+                  <td className="px-4 py-3 text-xs text-slate-700 text-right tabular-nums">{settled ? (r.credits_consumed ?? 0) : (r.credits_reserved ?? 0)}</td>
+                  <td className="px-4 py-3 text-xs text-slate-700 text-right tabular-nums">
+                    {metered ? <>{metered} × {fmtUsd(r.rate_cents)}</> : <span className="text-slate-400">—</span>}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-900 text-right tabular-nums font-semibold">
+                    {settled ? fmtUsd(r.amount_cents) : <span className="text-slate-400 font-normal">up to {fmtUsd((r.metered_reserved ?? 0) * (r.rate_cents ?? 0))}</span>}
+                    {r.status === "refunded" && (r.refund_amount_cents ?? 0) > 0 && <div className="text-[10px] text-slate-500 font-normal">refunded {fmtUsd(r.refund_amount_cents)}</div>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${toneCls}`} title={r.error_message || undefined}>{s.label}</span>
+                    {r.leads_locked && (
+                      <span className="ml-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-800" title="Leads from this run are locked until the invoice is paid.">
+                        <Lock className="h-3 w-3" /> leads locked
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    {r.hosted_invoice_url ? (
+                      <a href={r.hosted_invoice_url} target="_blank" rel="noreferrer noopener" className="text-xs text-[#B84817] hover:text-[#EF6C33] inline-flex items-center gap-1 mr-2">
+                        {r.leads_locked ? "Pay invoice" : "Invoice"} <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : null}
+                    {r.invoice_pdf ? (
+                      <a href={r.invoice_pdf} target="_blank" rel="noreferrer noopener" className="text-xs text-slate-600 hover:text-slate-900 underline">PDF</a>
+                    ) : null}
+                    {!r.hosted_invoice_url && !r.invoice_pdf && <span className="text-xs text-slate-400">—</span>}
+                  </td>
+                </tr>
+              );
+            })}
+            {!loading && rows.length === 0 && (
+              <tr>
+                <td colSpan={9} className="px-4 py-12 text-center text-sm text-slate-500">
+                  No runs yet. <a href="/app/spark/leadgen/b2b_new" className="text-[#EF6C33] font-semibold underline">Start a new B2B Lead Run →</a>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-slate-500">
+        Billed per delivered lead. Included leads come from your SPARK Leads package; extras are invoiced per run and charged to
+        your card on file. Invoices and receipts are also emailed by Stripe.
+      </p>
     </div>
   );
 }
