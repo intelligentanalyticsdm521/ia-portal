@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { LeadGenTermsLink } from "../../components/spark/LeadGenTermsLink";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -176,6 +177,7 @@ export function SparkLeadInboxPage({ initialTab }: Props = {}) {
     <SparkPageShell
       title="Lead Inbox"
       subtitle="B2B leads, suppression list, and territories — all in one place"
+      actions={<LeadGenTermsLink />}
     >
       {/* Tab strip. Brandon's locked SPARK pattern: orange underline for the
           active tab, slate text for inactive, with a small (?) info button
@@ -625,7 +627,7 @@ function LeadInboxTab() {
           </div>
         </div>
         <a
-          href="/app/spark/leadgen/new"
+          href="/app/spark/leadgen/b2b_new"
           className="inline-flex items-center gap-1.5 rounded-lg bg-[#EF6C33] px-4 py-2 text-sm font-semibold text-white hover:bg-[#D85F2A]"
         >
           <Sparkles className="h-4 w-4" />
@@ -803,7 +805,7 @@ function LeadInboxTab() {
               <tr>
                 <td colSpan={9} className="px-4 py-12 text-center text-sm text-slate-500">
                   {leads.length === 0
-                    ? <>You haven't run a sweep yet. <a href="/app/spark/leadgen/new" className="text-[#EF6C33] font-semibold underline">Start a new B2B Lead Run →</a></>
+                    ? <>You haven't run a sweep yet. <a href="/app/spark/leadgen/b2b_new" className="text-[#EF6C33] font-semibold underline">Start a new B2B Lead Run →</a></>
                     : `No leads match "${search}".`}
                 </td>
               </tr>

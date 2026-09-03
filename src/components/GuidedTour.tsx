@@ -663,7 +663,7 @@ export const SPARK_QUICK_TOUR: TourDef = {
     {
       title: "Sales — Lead Generator (NEW)",
       body: "Search for B2B prospects by category + location + radius. Picks expanded keywords from the IA taxonomy, hits Google Custom Search + Hunter enrichment, scores each lead 4-dimensional, and lands them in your Lead Inbox for review.",
-      targetSelector: "a[href='/app/spark/leadgen/new']",
+      targetSelector: "a[href='/app/spark/leadgen/b2b_new']",
       placement: "right",
     },
     {

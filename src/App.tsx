@@ -63,6 +63,7 @@ import { SparkContactScoringPage } from './pages/spark/SparkContactScoringPage';
 import { SparkLeadGenNewPage } from './pages/spark/SparkLeadGenNewPage';
 import { SparkLeadGenJobPage } from './pages/spark/SparkLeadGenJobPage';
 import { SparkLeadGenSavedPage } from './pages/spark/SparkLeadGenSavedPage';
+import SparkLeadGenTermsPage from './pages/spark/SparkLeadGenTermsPage';
 import SparkCustomerFlowPage from './pages/spark/SparkCustomerFlowPage';
 import SparkLifecyclePage from './pages/spark/SparkLifecyclePage';
 import SparkSyncIssuesPage from './pages/spark/SparkSyncIssuesPage';
@@ -338,7 +339,11 @@ export function App() {
                 paused notice; nav entries are filtered in serviceCatalog. */}
             {/* Hotfix B (2026-09-03): founder-only until verified — see admin/leadgen note. */}
             <Route path="spark/leadgen" element={<RequireFounderRoute />}>
-              <Route path="new" element={LEADGEN_ENABLED ? <SparkLeadGenNewPage /> : <FeatureUnavailable name="Lead Gen" />} />
+              {/* 2026-09-04: "new" → "b2b_new" (there will be several lead gens: B2B, inbound, B2C, premium).
+                  The old path redirects so bookmarks and the guided tour keep working. */}
+              <Route path="new" element={<Navigate to="/app/spark/leadgen/b2b_new" replace />} />
+              <Route path="b2b_new" element={LEADGEN_ENABLED ? <SparkLeadGenNewPage /> : <FeatureUnavailable name="Lead Gen" />} />
+              <Route path="terms" element={<SparkLeadGenTermsPage />} />
               <Route path="jobs/:id" element={LEADGEN_ENABLED ? <SparkLeadGenJobPage /> : <FeatureUnavailable name="Lead Gen" />} />
               <Route path="saved" element={LEADGEN_ENABLED ? <SparkLeadGenSavedPage /> : <FeatureUnavailable name="Lead Gen" />} />
             </Route>

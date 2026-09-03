@@ -98,7 +98,7 @@ export function SparkLeadGenSavedPage() {
       loading={loading}
       actions={
         <Link
-          to="/app/spark/leadgen/new"
+          to="/app/spark/leadgen/b2b_new"
           className="text-xs px-3 py-1.5 rounded bg-[#EF6C33] text-white hover:bg-[#D85F2A] flex items-center gap-1"
         >
           <Plus className="h-3.5 w-3.5" /> New search
@@ -109,9 +109,9 @@ export function SparkLeadGenSavedPage() {
         <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 py-16 text-center">
           <Search className="h-8 w-8 mx-auto text-slate-300 mb-2" />
           <div className="text-sm font-medium text-slate-700">No saved searches yet</div>
-          <div className="text-xs text-slate-500 mt-1">Create a search in <Link to="/app/spark/leadgen/new" className="text-[#EF6C33] hover:underline">New Search</Link> and click "Save this search" to add it here.</div>
+          <div className="text-xs text-slate-500 mt-1">Create a search in <Link to="/app/spark/leadgen/b2b_new" className="text-[#EF6C33] hover:underline">New Search</Link> and click "Save this search" to add it here.</div>
           <Link
-            to="/app/spark/leadgen/new"
+            to="/app/spark/leadgen/b2b_new"
             className="mt-4 inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded bg-[#EF6C33] text-white"
           >
             <Plus className="h-3.5 w-3.5" /> New search

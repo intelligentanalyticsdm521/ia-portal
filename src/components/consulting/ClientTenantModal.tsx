@@ -204,6 +204,8 @@ export function ClientTenantModal({ open, tenantId, tenantName, onClose }: Props
                   <Route path="spark/pricing" element={<SparkPricingPage />} />
                   <Route path="spark/contact-scoring" element={<SparkContactScoringPage />} />
                   <Route path="spark/leadgen/new" element={<FeatureUnavailable name="Lead Gen" />} />
+                  <Route path="spark/leadgen/b2b_new" element={<FeatureUnavailable name="Lead Gen" />} />
+                  <Route path="spark/leadgen/terms" element={<FeatureUnavailable name="Lead Gen" />} />
                   <Route path="spark/leadgen/jobs/:id" element={<FeatureUnavailable name="Lead Gen" />} />
                   <Route path="spark/leadgen/saved" element={<FeatureUnavailable name="Lead Gen" />} />
                   <Route path="spark/customer-flow" element={<SparkCustomerFlowPage />} />

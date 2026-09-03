@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { LeadGenTermsLink, LeadGenTermsNotice } from "../../components/spark/LeadGenTermsLink";
 import {
   Search, MapPin, Sparkles, DollarSign, Clock, Play, Save,
   X, ChevronDown, Check, Tag, Snowflake, Building2, Info,
@@ -533,9 +534,10 @@ export function SparkLeadGenNewPage() {
   // ── render ─────────────────────────────────────────────────────────────
   return (
     <SparkPageShell
-      title="New Lead Search"
+      title="New B2B Lead Search"
       subtitle="Find verified B2B leads — see exactly what you're searching for before you pay"
       help="Set your category, location, and search mode. The live preview on the right shows expanded keywords, resolved cities/ZIPs, estimated cost, and estimated runtime. Nothing runs (and you're not charged) until you click Start Search."
+      actions={<LeadGenTermsLink />}
       error={error}
       loading={false}
     >
@@ -920,6 +922,7 @@ export function SparkLeadGenNewPage() {
               >
                 <Play className="h-3.5 w-3.5" /> {submitting ? "Starting…" : "Start Search"}
               </button>
+              <LeadGenTermsNotice />
               <button
                 type="button"
                 onClick={() => setShowSaveModal(true)}

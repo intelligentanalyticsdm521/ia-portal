@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { LeadGenTermsLink } from "../../components/spark/LeadGenTermsLink";
 import {
   CheckCircle2, Circle, Loader2, AlertTriangle, ExternalLink, Mail, Phone,
   ArrowLeft, ThumbsUp, ThumbsDown, Sparkles, RefreshCw,
@@ -292,8 +293,9 @@ export function SparkLeadGenJobPage() {
       loading={loading && !status}
       actions={
         <div className="flex items-center gap-2">
+          <LeadGenTermsLink className="mr-1" />
           <button
-            onClick={() => navigate("/app/spark/leadgen/new")}
+            onClick={() => navigate("/app/spark/leadgen/b2b_new")}
             className="text-xs px-2.5 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 flex items-center gap-1"
           >
             <ArrowLeft className="h-3 w-3" /> New search
@@ -413,7 +415,7 @@ export function SparkLeadGenJobPage() {
               </div>
             </div>
             <Link
-              to="/app/spark/leadgen/new"
+              to="/app/spark/leadgen/b2b_new"
               className="text-xs px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 whitespace-nowrap flex items-center gap-1"
             >
               <RefreshCw className="h-3 w-3" /> Expand search
